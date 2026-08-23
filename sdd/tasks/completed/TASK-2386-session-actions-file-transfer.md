@@ -209,10 +209,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Added `exec_upload_file`/`exec_wait_for_download` to
+`session_actions.py`. Upload goes through `driver.fill(selector, path)` —
+the only file-input interaction available on `AbstractDriver` (verified: no
+`upload_file`/`set_input_files` on the ABC or on `SeleniumDriver`/
+`PlaywrightDriver`); `SeleniumDriver.fill()` wraps `element.clear()` +
+`element.send_keys()`, which is exactly how Selenium automates file inputs,
+so this works for the Selenium backend. Multiple files are newline-joined
+(matching the legacy Selenium branch's convention). Added an opt-in
+`PARROT_SCRAPING_FILES_ROOT` env-var root guard (`_resolve_within_root()`)
+used by both upload paths and `download_path`/`move_to`, since the scope
+and AC required rejecting path traversal but neither the model nor the
+public `exec_upload_file`/`exec_wait_for_download` signatures in the spec
+carry a root parameter — this keeps the guard opt-in and backward
+compatible (unset env var → no traversal check, existing behaviour).
+`exec_wait_for_download` polls for a size-stable, non-empty file matching
+`filename_pattern` (skipping `.tmp`/`.crdownload`/`.part`/`.download`
+suffixes), honours `move_to`/`delete_after`. 13 new tests pass; full
+`packages/ai-parrot-tools/tests/scraping/` suite re-run — only the same 7
+pre-existing, unrelated `CrawlEngine`/FEAT-013 failures remain. `ruff
+check` clean except the same `UP006`/`UP035`/`UP045` pyupgrade-style debt
+already present in `advanced_actions.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Upload is effectively Selenium-oriented —
+Playwright's `Locator.fill()` does not support `<input type="file">`
+elements at all (a Playwright/browser limitation, not a design choice), and
+`AbstractDriver` exposes no native per-driver upload hook to fall back on;
+this matches the Codebase Contract's explicit "Does NOT Exist" note that no
+generic upload method exists, so no substitute was invented. (2) The
+`exec_wait_for_download()` test scaffold (`test_pattern_and_move_to`)
+pre-creates the target file *before* calling the function, which is
+incompatible with the legacy tool.py behaviour of diffing against a
+pre-call directory snapshot (that file would be filtered out as "not new").
+To satisfy the given test, download detection polls for any size-stable,
+non-empty file matching the pattern rather than only newly-appeared ones —
+a deliberate, test-driven simplification, not an oversight.
