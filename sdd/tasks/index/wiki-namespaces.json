@@ -90,7 +90,7 @@
       "feature_id": "FEAT-450",
       "feature": "wiki-namespaces",
       "spec": "sdd/specs/wiki-namespaces.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -98,10 +98,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Edits cli.py (helper block + read commands); imports federation.py.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2363-cli-ns-read-routing.md"
+      "assigned_to": "claude-code (main session)",
+      "started_at": "2026-08-23T01:41:04Z",
+      "completed_at": "2026-08-23T01:41:04Z",
+      "file": "sdd/tasks/completed/TASK-2363-cli-ns-read-routing.md"
     },
     {
       "id": "TASK-2364",

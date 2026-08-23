@@ -38,15 +38,24 @@ import click
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
+    qualify_id,
     truncate_to_tokens,
+)
+from parrot.knowledge.wiki.federation import (
+    FederatedWikiStore,
+    NamespaceSkip,
+    resolve_namespaces,
 )
 from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
+    WikiNamespaceConfig,
     WikiProjectConfig,
     find_project_root,
+    load_global_registry,
     load_project_config,
+    merge_namespaces,
     save_project_config,
     wiki_write_lock,
 )
@@ -83,6 +92,155 @@ UPSERT_LOCK_WAIT_SECONDS = 3.0
 path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."
 )
+
+#: Shared `--ns` option for the read commands (FEAT-450).
+ns_option = click.option(
+    "--ns",
+    "ns_opt",
+    default=None,
+    help=(
+        "Namespace to read: a name (or comma-separated names), 'all' "
+        "(default when namespaces are configured), or 'local'."
+    ),
+)
+
+
+def _declared_namespaces(
+    config: WikiProjectConfig,
+) -> dict[str, tuple[WikiNamespaceConfig, str]]:
+    """Merge the repo and global namespace registries (repo wins).
+
+    Args:
+        config: The repo's project config.
+
+    Returns:
+        ``name -> (config, origin)`` for every declared namespace.
+    """
+    try:
+        registry = load_global_registry()
+    except WikiConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return merge_namespaces(config.namespaces, registry.namespaces)
+
+
+def _selected_namespaces(ns_opt: str | None) -> set[str] | None:
+    """Namespace names a ``--ns`` selector asks to resolve.
+
+    Args:
+        ns_opt: The raw ``--ns`` value.
+
+    Returns:
+        ``None`` for a broadcast (every namespace), otherwise the named
+        subset — empty for ``--ns local``, which needs none opened.
+    """
+    if ns_opt is None or ns_opt == "all":
+        return None
+    return {
+        part.strip()
+        for part in ns_opt.split(",")
+        if part.strip() and part.strip() != "local"
+    }
+
+
+def _unknown_namespace(ns_opt: str, known: list[str]) -> click.ClickException:
+    """Build the error raised for a ``--ns`` name that is not declared."""
+    listing = ", ".join(sorted(known)) or "(none declared)"
+    return click.ClickException(
+        f"Unknown namespace {ns_opt!r}. Known: {listing} "
+        "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
+    )
+
+
+def _federate(
+    root: Path,
+    config: WikiProjectConfig,
+    local: BaseWikiStore,
+    ns_opt: str | None,
+) -> BaseWikiStore:
+    """Wrap the local plane in its federated namespaces, honouring ``--ns``.
+
+    Returns the local store untouched when no namespace is declared (or
+    when ``--ns local`` asked for exactly that), so a project without
+    namespaces behaves as it always has.
+
+    Args:
+        root: Repository root.
+        config: The repo's project config.
+        local: The already-opened local plane.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        The store the command should read from.
+
+    Raises:
+        click.ClickException: The selector names an undeclared namespace,
+            or one that could not be opened.
+    """
+    declared = _declared_namespaces(config)
+    only = _selected_namespaces(ns_opt)
+    if only is not None:
+        unknown = sorted(only - set(declared))
+        if unknown:
+            raise _unknown_namespace(", ".join(unknown), list(declared))
+        if not only:
+            # `--ns local` — nothing foreign to open.
+            return local
+    if not declared:
+        return local
+    handles, skipped = _run(resolve_namespaces(root, config, only=only))
+    federated = FederatedWikiStore(local, config.wiki_name, handles, skipped)
+    try:
+        return federated.scoped(ns_opt)
+    except KeyError as exc:
+        name = str(exc.args[0])
+        skip = next((s for s in skipped if s.name == name), None)
+        if skip is not None:
+            hint = f" Fix: {skip.hint}" if skip.hint else ""
+            raise click.ClickException(
+                f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}"
+            ) from exc
+        raise _unknown_namespace(name, list(declared)) from exc
+
+
+def _qualify_for_ns(page_id: str, ns_opt: str | None) -> str:
+    """Qualify a bare page id with the single namespace ``--ns`` selected.
+
+    Args:
+        page_id: The id as typed, qualified or not.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        ``<ns>::<page_id>`` when ``ns_opt`` names exactly one namespace
+        and the id is not already qualified; the id unchanged otherwise.
+    """
+    if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
+        return page_id
+    return qualify_id(ns_opt, page_id)
+
+
+def _collect_skips(store: BaseWikiStore) -> list[NamespaceSkip]:
+    """Namespaces this store could not serve (resolve-time and per-call)."""
+    seen: dict[str, NamespaceSkip] = {}
+    for skip in [
+        *(getattr(store, "skipped", None) or []),
+        *(getattr(store, "last_skipped", None) or []),
+    ]:
+        seen.setdefault(skip.name, skip)
+    return list(seen.values())
+
+
+def _echo_skips(store: BaseWikiStore, *, err: bool = False) -> None:
+    """Print one trailing note per skipped namespace (never an error).
+
+    Args:
+        store: The store the command read from.
+        err: Write to stderr (used when stdout carries JSON).
+    """
+    for skip in _collect_skips(store):
+        hint = f" — {skip.hint}" if skip.hint else ""
+        click.echo(
+            f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err
+        )
 
 def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
@@ -200,6 +358,7 @@ def _resolve_read_store(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None = None,
 ) -> BaseWikiStore:
     """Open a store for a read command (``query`` / ``page`` / ``related``).
 
@@ -219,6 +378,11 @@ def _resolve_read_store(
     config (ArangoDB is server-hosted — there is no local ``--store``
     directory to point at) and connects eagerly here, so an unreachable
     server fails with a clear message before any query is attempted.
+
+    Whichever branch resolves the *local* plane, its declared namespaces
+    are then federated on top (FEAT-450) and narrowed by ``ns_opt``.
+    ``--store`` is the one exception: it targets one specific pre-built
+    store, so it never federates.
     """
     if backend_opt == "arangodb":
         root, config = _resolve_project(path_)
@@ -230,7 +394,7 @@ def _resolve_read_store(
                 f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
                 f"{exc}"
             ) from exc
-        return store
+        return _federate(root, config, store, ns_opt)
     store_override = store_opt
     if not store_override and not path_:
         # Only consult the env when neither an explicit store nor an
@@ -246,9 +410,14 @@ def _resolve_read_store(
                 f"No wiki database at {storage_dir / 'wiki.db'}. Build it "
                 "first, or point --store at the right root."
             )
+        if ns_opt not in (None, "local"):
+            raise click.ClickException(
+                "--store targets one pre-built store and never federates; "
+                "drop --store to read namespaces."
+            )
         return create_wiki_store(storage_dir, backend=backend)
     root, config = _resolve_project(path_)
-    return _require_built(root, config)
+    return _federate(root, config, _require_built(root, config), ns_opt)
 
 
 #: Shared `--store`/`--backend` options for the read commands.
@@ -1086,6 +1255,7 @@ def upsert(
 )
 @click.option("--category", default=None, help="Filter by page category.")
 @_store_options
+@ns_option
 @click.option(
     "--table",
     "as_table",
@@ -1108,6 +1278,7 @@ def query(
     category: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_table: bool,
     show_body: bool,
     as_json: bool,
@@ -1120,9 +1291,12 @@ def query(
     with `wikitoolkit page <id>` to read a full page, or
     `wikitoolkit related <id>` to walk the graph.
     """
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
     rows = _run(store.search_fts(question, category=category, limit=top_k))
-    rows = _normalize_scores(rows)
+    if not isinstance(store, FederatedWikiStore):
+        # A federated store already normalised each namespace and applied
+        # its weight; a second global min-max here would undo that.
+        rows = _normalize_scores(rows)
 
     # Hydrate the top hit's body once, for --body across every renderer.
     if show_body and rows:
@@ -1132,15 +1306,18 @@ def query(
 
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
+        _echo_skips(store, err=True)
         return
     if not rows:
         click.echo(
             f"No wiki results for {question!r}. The wiki may be stale — "
             "try `wikitoolkit build`, or fall back to code search."
         )
+        _echo_skips(store)
         return
     if as_table:
         _render_results_table(rows, question, show_body=show_body)
+        _echo_skips(store)
         return
     packed = pack_results(rows, budget_tokens=budget)
     click.echo(f"# Wiki results for: {question}\n")
@@ -1151,6 +1328,7 @@ def query(
     )
     if show_body and rows[0].get("body"):
         click.echo(f"\n## {rows[0].get('title')}\n{rows[0]['body']}")
+    _echo_skips(store)
     click.echo(
         "Next: `wikitoolkit page <id>` for a full page · "
         "`wikitoolkit related <id>` for linked pages."
@@ -1167,6 +1345,7 @@ def query(
     help="Truncate the body to roughly this many tokens.",
 )
 @_store_options
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def page(
     page_id: str,
@@ -1174,10 +1353,16 @@ def page(
     max_tokens: int | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_json: bool,
 ) -> None:
-    """Read one wiki page in full (progressive disclosure)."""
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    """Read one wiki page in full (progressive disclosure).
+
+    PAGE_ID may carry a namespace prefix (``other::file:a.py``); with
+    ``--ns <name>`` a bare id is resolved inside that namespace.
+    """
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
+    page_id = _qualify_for_ns(page_id, ns_opt)
     data = _run(store.get_page(page_id, include_body=True))
     if data is None:
         raise click.ClickException(
@@ -1211,6 +1396,7 @@ def page(
     show_default=True,
 )
 @_store_options
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def related(
     page_id: str,
@@ -1219,10 +1405,16 @@ def related(
     direction: str,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_json: bool,
 ) -> None:
-    """List pages linked to PAGE_ID by typed edges."""
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    """List pages linked to PAGE_ID by typed edges.
+
+    PAGE_ID may carry a namespace prefix (``other::dir:pkg``); with
+    ``--ns <name>`` a bare id is resolved inside that namespace.
+    """
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
+    page_id = _qualify_for_ns(page_id, ns_opt)
     rows = _run(store.neighbors(page_id, rel=rel, direction=direction))
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
@@ -1240,9 +1432,10 @@ def related(
 
 @wiki.command()
 @path_option
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
-def status(path_: str | None, as_json: bool) -> None:
-    """Show wiki plane statistics and source staleness."""
+def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
+    """Show wiki plane statistics, namespaces, and source staleness."""
     root, config = _resolve_project(path_)
     if not config.is_built(root):
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
@@ -1256,8 +1449,14 @@ def status(path_: str | None, as_json: bool) -> None:
                 f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
                 f"{exc}"
             ) from exc
+    # Source staleness is a property of the LOCAL plane — the manager
+    # must see the real store, not the federation wrapping it.
     sources = _open_sources(root, config, store=store)
-    stats = _run(store.stats())
+    read_store = _federate(root, config, store, ns_opt)
+    stats = _run(read_store.stats())
+    namespaces = stats.pop("namespaces", None)
+    ns_skipped = stats.pop("skipped", None)
+    stats.pop("local", None)
     entries = sources.list_sources()
     stale = [e.source_id for e in entries if sources.is_stale(e.source_id)]
     payload = {
@@ -1270,6 +1469,9 @@ def status(path_: str | None, as_json: bool) -> None:
         "stale_sources": len(stale),
         "languages": {name: s.mode for name, s in all_scanners().items()},
     }
+    if namespaces is not None:
+        payload["namespaces"] = namespaces
+        payload["skipped"] = ns_skipped or []
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
@@ -1284,6 +1486,21 @@ def status(path_: str | None, as_json: bool) -> None:
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
+    if namespaces:
+        click.echo("\nNamespaces:")
+        header = f"  {'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} {'pages':>7}  status"
+        click.echo(header)
+        for name in sorted(namespaces):
+            block = namespaces[name]
+            pages = block.get("pages")
+            click.echo(
+                f"  {name:<16} {block.get('kind', ''):<9} "
+                f"{block.get('backend', ''):<9} {block.get('origin', ''):<7} "
+                f"{'-' if pages is None else pages:>7}  {block.get('status', '')}"
+            )
+    for skip in ns_skipped or []:
+        hint = f" — {skip.get('hint')}" if skip.get("hint") else ""
+        click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
 

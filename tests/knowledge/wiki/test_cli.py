@@ -890,3 +890,238 @@ class TestSupervisedIngestInteractive:
         _header, entries = ManifestReader(manifest_path).read()
         assert entries[0].decision == "admit"
         assert entries[0].decision_source == "human"
+
+
+def _second_repo(tmp_path: Path, runner: CliRunner, name: str = "other") -> Path:
+    """Build a second, independent wiki project with colliding page ids."""
+    other = tmp_path / name
+    (other / "pkg").mkdir(parents=True)
+    (other / "pkg" / "store.py").write_text(PY_STORE, encoding="utf-8")
+    (other / "pkg" / "util.py").write_text(PY_UTIL, encoding="utf-8")
+    (other / "README.md").write_text(
+        "# Other\n\nAnother demo project.", encoding="utf-8"
+    )
+    _build(runner, other)
+    return other
+
+
+def _write_namespaces(repo: Path, namespaces: dict) -> None:
+    """Declare namespaces in the repo's ``.parrot/wiki.json``."""
+    path = config_path(repo)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["namespaces"] = namespaces
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+@pytest.fixture
+def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep the developer's real ~/.parrot/wikis.json out of the tests."""
+    home = tmp_path / "parrot-home"
+    monkeypatch.setenv("PARROT_HOME", str(home))
+    return home
+
+
+@pytest.mark.usefixtures("isolated_home")
+class TestNamespaceReads:
+    """FEAT-450 — ``--ns`` routing on query / page / related / status."""
+
+    def test_query_broadcasts_and_qualifies(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert "file:pkg/store.py" in ids
+        assert "other::file:pkg/store.py" in ids
+
+    def test_query_ns_explicit(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+
+        only_other = runner.invoke(
+            wiki,
+            ["query", "store", "--path", str(repo), "--ns", "other", "--json"],
+        )
+        assert only_other.exit_code == 0, only_other.output
+        rows = json.loads(only_other.output)
+        assert rows
+        assert all(r["concept_id"].startswith("other::") for r in rows)
+
+        only_local = runner.invoke(
+            wiki,
+            ["query", "store", "--path", str(repo), "--ns", "local", "--json"],
+        )
+        assert only_local.exit_code == 0, only_local.output
+        rows = json.loads(only_local.output)
+        assert rows
+        assert all("::" not in r["concept_id"] for r in rows)
+
+        broadcast = runner.invoke(
+            wiki,
+            ["query", "store", "--path", str(repo), "--ns", "all", "--json"],
+        )
+        assert broadcast.exit_code == 0, broadcast.output
+        ids = {r["concept_id"] for r in json.loads(broadcast.output)}
+        assert any(i.startswith("other::") for i in ids)
+        assert any("::" not in i for i in ids)
+
+    def test_query_unknown_namespace_errors(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--ns", "nope"]
+        )
+        assert result.exit_code != 0
+        assert "Unknown namespace" in result.output
+        assert "other" in result.output
+
+    def test_no_namespaces_is_unchanged(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert ids
+        assert all("::" not in i for i in ids)
+
+    def test_store_flag_never_federates(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+        result = runner.invoke(
+            wiki,
+            [
+                "query",
+                "store",
+                "--store",
+                str(load_project_config(repo).storage_path(repo)),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert ids and all("::" not in i for i in ids)
+
+    def test_explicit_path_beats_env_with_namespaces(
+        self, runner, repo, tmp_path, monkeypatch
+    ):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+        monkeypatch.setenv("WIKI_STORE", str(repo / "somewhere-else"))
+        result = runner.invoke(
+            wiki,
+            ["query", "utility helpers", "--path", str(repo), "--json"],
+        )
+        assert result.exit_code == 0, result.output
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert "file:pkg/util.py" in ids
+
+    def test_page_and_related_with_qualified_id(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+
+        page = runner.invoke(
+            wiki,
+            ["page", "other::file:pkg/store.py", "--path", str(repo)],
+        )
+        assert page.exit_code == 0, page.output
+        assert "other::file:pkg/store.py" in page.output
+
+        rel = runner.invoke(
+            wiki, ["related", "other::dir:pkg", "--path", str(repo), "--json"]
+        )
+        assert rel.exit_code == 0, rel.output
+        rows = json.loads(rel.output)
+        assert rows
+        assert all(r["concept_id"].startswith("other::") for r in rows)
+
+    def test_page_ns_option_qualifies_bare_id(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+        page = runner.invoke(
+            wiki,
+            [
+                "page",
+                "file:pkg/store.py",
+                "--path",
+                str(repo),
+                "--ns",
+                "other",
+                "--json",
+            ],
+        )
+        assert page.exit_code == 0, page.output
+        assert json.loads(page.output)["concept_id"] == "other::file:pkg/store.py"
+
+    def test_status_lists_namespaces(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+
+        result = runner.invoke(wiki, ["status", "--path", str(repo)])
+        assert result.exit_code == 0, result.output
+        assert "Namespaces:" in result.output
+        assert "other" in result.output
+
+        as_json = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
+        assert as_json.exit_code == 0, as_json.output
+        payload = json.loads(as_json.output)
+        assert payload["namespaces"]["other"]["status"] == "ok"
+        assert payload["skipped"] == []
+        # The local plane's own numbers are untouched.
+        assert payload["stats"]["pages"] > 0
+        assert "namespaces" not in payload["stats"]
+
+    def test_status_shows_unbuilt_namespace(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        (tmp_path / "empty").mkdir()
+        _write_namespaces(repo, {"empty": {"path": str(tmp_path / "empty")}})
+        result = runner.invoke(wiki, ["status", "--path", str(repo)])
+        assert result.exit_code == 0, result.output
+        assert "unbuilt" in result.output
+        assert "wikitoolkit build --path" in result.output
+
+    def test_status_without_namespaces_is_unchanged(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert "namespaces" not in payload
+        assert "skipped" not in payload
+
+    def test_query_notes_a_skipped_namespace(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        (tmp_path / "empty").mkdir()
+        _write_namespaces(repo, {"empty": {"path": str(tmp_path / "empty")}})
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo)])
+        assert result.exit_code == 0, result.output
+        assert "skipped: unbuilt" in result.output
+
+    def test_global_registry_namespace_is_read(
+        self, runner, repo, tmp_path, isolated_home
+    ):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        isolated_home.mkdir(parents=True, exist_ok=True)
+        (isolated_home / "wikis.json").write_text(
+            json.dumps(
+                {"version": 1, "namespaces": {"glob": {"path": str(other)}}}
+            ),
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert any(i.startswith("glob::") for i in ids)
