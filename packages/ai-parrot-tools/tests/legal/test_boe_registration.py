@@ -87,3 +87,38 @@ class TestBOERegistration:
 
         assert isinstance(report, RefreshReport)
         assert any("Provenance edge sync failed" in e for e in report.errors)
+
+    async def test_sync_boe_propagates_relation_fetch_errors(self, monkeypatch):
+        """A partial relation-fetch failure surfaces in report.errors, not just stats."""
+        from parrot.knowledge.ontology.refresh import RefreshReport
+        from parrot_tools.legal.boe import sync_boe
+
+        class _FakePipeline:
+            def __init__(self, **kwargs):
+                pass
+
+            async def run(self, tenant_id, domain=None):
+                return RefreshReport(
+                    tenant=tenant_id,
+                    started_at=datetime.now(UTC),
+                )
+
+        async def _fake_sync_provenance_edges(ctx, graph_store, boe_source):
+            return {}, ["relation fetch for BOE-A-2020-17340 failed: boom"]
+
+        monkeypatch.setattr(
+            "parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline
+        )
+        monkeypatch.setattr(
+            "parrot_tools.legal.boe.sync.TenantOntologyManager.resolve",
+            lambda self, tenant_id, domain=None: object(),
+        )
+        monkeypatch.setattr(
+            "parrot_tools.legal.boe.sync._sync_provenance_edges",
+            _fake_sync_provenance_edges,
+        )
+
+        report = await sync_boe("legal_civil")
+
+        assert isinstance(report, RefreshReport)
+        assert any("BOE-A-2020-17340" in e for e in report.errors)

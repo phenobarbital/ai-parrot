@@ -127,7 +127,7 @@ class BOEDataSource(ExtractDataSource):
         """
         return sorted(_NORMA_FIELDS | _ARTICULO_FIELDS)
 
-    async def extract_relations(self) -> list[dict[str, Any]]:
+    async def extract_relations(self) -> tuple[list[dict[str, Any]], list[str]]:
         """Return the ``modifica``/``deroga`` provenance relations.
 
         ``ExtractDataSource.extract()`` only ever returns node records
@@ -146,17 +146,26 @@ class BOEDataSource(ExtractDataSource):
         both on the SAME ``BOEDataSource`` instance to avoid re-fetching
         each configured norm twice.
 
+        Never raises — mirrors ``extract()``'s error-surfacing contract:
+        a fetch/parse failure for a given ``boe_id`` yields no relations
+        for that norm plus an entry in the returned ``errors`` list,
+        instead of being silently swallowed.
+
         Returns:
-            Flattened list of relation records across all configured
-            ``boe_ids``, each ``{"type": "modifica"|"deroga", "from":
-            <boe_id>, "to": <boe_id or articulo_key>}``.
+            A ``(relations, errors)`` tuple: the flattened list of
+            relation records across all configured ``boe_ids``, each
+            ``{"type": "modifica"|"deroga", "from": <boe_id>, "to": <boe_id
+            or articulo_key>}``; and any fetch/parse errors encountered
+            (``ParsedNorm.errors``) along the way.
         """
         boe_ids = list(self.config.get("boe_ids", []))
         relations: list[dict[str, Any]] = []
+        errors: list[str] = []
         for boe_id in boe_ids:
             parsed = await self._get_parsed_norm(boe_id)
             relations.extend(parsed.relations)
-        return relations
+            errors.extend(parsed.errors)
+        return relations, errors
 
     def _target_entity(self, fields: list[str] | None) -> str:
         """Infer which entity (norma|articulo|both) is being refreshed.

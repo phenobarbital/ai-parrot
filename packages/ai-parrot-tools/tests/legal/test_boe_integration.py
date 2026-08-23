@@ -214,8 +214,9 @@ class TestProvenanceEdgeSync:
         boe_source = BOEDataSource(name="boe", config={"boe_ids": [BOE_FIXTURE_ID]})
         session = _mock_aiohttp_response(boe_corpus)
         with patch("aiohttp.ClientSession", return_value=session):
-            stats = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
+            stats, errors = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
 
+        assert errors == []
         assert "modifica" in stats
         assert "deroga" in stats
         assert stats["modifica"].edges_created == stats["modifica"].total_source
@@ -230,5 +231,21 @@ class TestProvenanceEdgeSync:
 
     async def test_no_boe_ids_creates_no_edges(self, fake_store, legal_tenant_ctx):
         boe_source = BOEDataSource(name="boe", config={})
-        stats = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
+        stats, errors = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
         assert stats == {}
+        assert errors == []
+
+    async def test_fetch_failure_surfaces_as_error_not_silent_empty(self, fake_store, legal_tenant_ctx):
+        """A relation-fetch failure must show up in errors, not look like "no edges"."""
+        boe_source = BOEDataSource(name="boe", config={"boe_ids": [BOE_FIXTURE_ID]})
+
+        async def _boom(url):
+            raise RuntimeError("network down")
+
+        boe_source._fetch_raw = _boom
+
+        stats, errors = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
+
+        assert stats == {}
+        assert errors
+        assert any("network down" in e for e in errors)

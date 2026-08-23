@@ -382,3 +382,23 @@ inefficiency, not a bug (#3).
 amendment-chain norm/article choice (Artículo 50, Ley 40/2015) still
 needs explicit sign-off — see the norm/article note above. Unchanged by
 this follow-up.
+
+**Second follow-up (independent `codex exec review` of the first
+follow-up commit)**: an adversarial review of the fixes above surfaced
+two more P2 correctness gaps, both fixed in a second commit:
+- `article_key()`'s whitespace-only sanitisation was insufficient —
+  designators with accented Latin letters or other non-ASCII/punctuation
+  (e.g. `"único"`, `"Disposición adicional primera"`) still produced an
+  invalid ArangoDB `_key` byte even after the first follow-up. Replaced
+  with `_sanitize_key_component()`: NFKD transliteration to ASCII, then
+  collapsing any run of characters outside ArangoDB's `_key` grammar to
+  a single `_`.
+- `BOEDataSource.extract_relations()` silently dropped `ParsedNorm.errors`
+  (unlike `extract()`, which surfaces them) — a fetch/parse failure for
+  the relation-fetch pass would look like "no modifica/deroga edges"
+  instead of a reported failure. `extract_relations()` now returns
+  `(relations, errors)`; `sync._sync_provenance_edges()` and `sync_boe()`
+  propagate those errors into `RefreshReport.errors`.
+
+71 legal tests + 67 core ontology tests pass after this second follow-up;
+ruff clean.

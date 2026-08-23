@@ -126,8 +126,9 @@ class TestBOEDataSource:
     async def test_extract_relations_returns_modifica_and_deroga(self, source, fixture_xml):
         session = _mock_aiohttp_response(fixture_xml)
         with patch("aiohttp.ClientSession", return_value=session):
-            relations = await source.extract_relations()
+            relations, errors = await source.extract_relations()
 
+        assert errors == []
         assert any(r["type"] == "modifica" for r in relations)
         assert any(r["type"] == "deroga" for r in relations)
 
@@ -142,4 +143,27 @@ class TestBOEDataSource:
 
     async def test_extract_relations_no_boe_ids_returns_empty(self):
         source = BOEDataSource(name="boe", config={})
-        assert await source.extract_relations() == []
+        assert await source.extract_relations() == ([], [])
+
+    async def test_extract_relations_surfaces_fetch_errors(self, source, monkeypatch):
+        """A fetch failure must not be silently swallowed as "no relations"."""
+
+        async def _boom(url):
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr(source, "_fetch_raw", _boom)
+
+        relations, errors = await source.extract_relations()
+
+        assert relations == []
+        assert errors
+        assert any("network down" in e for e in errors)
+
+    async def test_extract_relations_surfaces_parser_errors(self, source):
+        """Malformed upstream payload populates errors, not just extract()'s."""
+        session = _mock_aiohttp_response("<not-valid-boe/>")
+        with patch("aiohttp.ClientSession", return_value=session):
+            relations, errors = await source.extract_relations()
+
+        assert relations == []
+        assert errors

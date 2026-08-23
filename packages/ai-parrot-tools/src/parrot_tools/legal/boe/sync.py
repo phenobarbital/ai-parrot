@@ -90,8 +90,11 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
     try:
         ctx = tenant_manager.resolve(tenant_id, domain="legal")
         boe_source = datasource_factory.get("boe", source_configs["boe"])
-        relation_stats = await _sync_provenance_edges(ctx, graph_store, boe_source)
+        relation_stats, relation_errors = await _sync_provenance_edges(
+            ctx, graph_store, boe_source,
+        )
         report.discovery_results.update(relation_stats)
+        report.errors.extend(relation_errors)
     except Exception as e:  # noqa: BLE001 — degrade into report.errors, don't raise
         report.errors.append(f"Provenance edge sync failed: {e}")
 
@@ -102,7 +105,7 @@ async def _sync_provenance_edges(
     ctx: TenantContext,
     graph_store: OntologyGraphStore,
     boe_source: Any,
-) -> dict[str, DiscoveryStats]:
+) -> tuple[dict[str, DiscoveryStats], list[str]]:
     """Create `modifica`/`deroga` edges from the datasource's parsed relations.
 
     Args:
@@ -117,12 +120,16 @@ async def _sync_provenance_edges(
             avoids re-fetching each configured norm).
 
     Returns:
-        Per-relation-type DiscoveryStats (``total_source`` = relation
-        records seen, ``edges_created`` = edges written), keyed by
-        relation name (e.g. "modifica", "deroga") — merged into
-        ``RefreshReport.discovery_results`` by the caller.
+        A ``(stats, errors)`` tuple: per-relation-type DiscoveryStats
+        (``total_source`` = relation records seen, ``edges_created`` =
+        edges written), keyed by relation name (e.g. "modifica",
+        "deroga") — merged into ``RefreshReport.discovery_results`` by
+        the caller; and any ``boe_source.extract_relations()`` fetch/parse
+        errors, so a partial failure (e.g. the modifying norm's own fetch
+        fails) is surfaced in ``RefreshReport.errors`` instead of
+        silently producing fewer edges than expected.
     """
-    relations = await boe_source.extract_relations()
+    relations, errors = await boe_source.extract_relations()
 
     edges_by_type: dict[str, list[dict[str, Any]]] = {}
     for relation in relations:
@@ -149,4 +156,4 @@ async def _sync_provenance_edges(
             total_source=len(edges),
             edges_created=created,
         )
-    return stats
+    return stats, errors
