@@ -32,7 +32,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "File-independent from TASK-2369 (YAML config vs Python module), so it COULD run in parallel. Spec §Worktree Strategy selects per-spec isolation: all tasks run sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2370-legal-ontology-entities.md"
+      "completed_at": "2026-08-23T01:24:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2370-legal-ontology-entities.md"
     },
     {
       "id": "TASK-2371",
