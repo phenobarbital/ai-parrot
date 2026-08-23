@@ -318,10 +318,67 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-08-24
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+Module 1 landed as specified, at the single shared seam.
+
+- `_unwrap_response(response, _depth=0)` added to `core/result.py` immediately
+  above `build_node_metadata`, with `_MAX_UNWRAP_DEPTH = 5` as the explicit
+  recursion cap. It treats a mapping as an envelope only when a `"response"`
+  key is present, wraps the membership test in a bare `except Exception` so an
+  exotic `__contains__` cannot make it raise, and returns its input unchanged
+  in every other case. It needs no `parrot.models.responses` import (it keys on
+  dict shape, not on types), so the `try/except ImportError` guard below it is
+  untouched.
+- `build_node_metadata` now calls it as the first statement of its body,
+  before the metadata locals and the `isinstance` ladder. The `output`
+  argument is deliberately NOT unwrapped (per Scope / spec G6).
+- `client=` is now passed to the `NodeExecutionInfo(...)` constructor, derived
+  from the already-resolved `client_obj` as `type(client_obj).__name__`. Added
+  guard: when `agent.llm` still holds raw config (a `str`/`dict`/`list`/
+  `tuple`/`bytes` — the pre-`configure()` state) `client` stays `None` rather
+  than reporting a useless `"str"`. Covered by
+  `test_build_node_metadata_client_none_without_agent`.
+- Rewrote the walrus `if` into an explicit block to hoist `client`; truthiness
+  semantics of the original are preserved exactly.
+
+Tests: 8 added to `tests/test_flow_primitives/test_result.py` (the 7 the task
+specified plus `test_build_node_metadata_client_none_without_agent` for the
+raw-config guard). `test_build_node_metadata_crew_shape_unchanged` asserts
+crew/flow parity the strong way — `flow_info.to_dict() == crew_info.to_dict()`
+for a bare `AgentResponse` vs. the same response inside an envelope.
+
+Verification:
+- `test_flow_primitives/test_result.py`: 39 passed (31 pre-existing + 8 new).
+- Crew regression suites (AC13): 32 passed, unchanged from baseline.
+- `tests/bots/flows/` + `tests/test_flow_primitives/`: 707 passed
+  (measured baseline on clean `dev` was 699; +8 new).
+- `tests/flows/checkpoint/`: 65 passed, 9 skipped.
+
+**Environment notes (not defects introduced by this task)**:
+1. pytest hangs at *interpreter exit* (post-summary) in suites that touch
+   DocumentDB/`ExecutionWikiRecorder`; reproduced on clean `dev` in the main
+   checkout. Worked around with a `timeout`-wrapped runner that reads the
+   summary line.
+2. Running `tests/bots/flows/` + `tests/test_flow_primitives/` +
+   `tests/flows/checkpoint/` in ONE process yields 9 `ContextSnapshot`
+   model-identity failures in `flows/checkpoint/`. Reproduced identically on
+   clean `dev` in the main checkout (9 failed, 755 passed) — pre-existing
+   cross-suite import pollution, unrelated to FEAT-447. Each suite is green in
+   isolation. Relevant to AC14, which asks for the three directories in one
+   command; recorded for the reviewer rather than fixed (out of scope).
+
+**Deviations from spec**: none.
+
+Notes on AC16 (`ruff`/`mypy` clean): the repo declares no `[tool.ruff]`
+config, so `ruff check` runs with defaults and reports 56 pre-existing
+findings on `core/result.py` (mostly `UP006`/`UP045` — the file annotates with
+`Optional[...]`/`Dict[...]` throughout). My additions add exactly 3 `UP045`
+hits, all from `Optional[Any]` annotations that match the surrounding file's
+style; converting only my lines to `X | None` would make the new code
+inconsistent with the other 17 annotations in the same file, and converting
+the whole file is scope creep. The one new `I001` in the test file WAS fixed.
+`mypy` reports the same 2 pre-existing errors (lines 36, 616) before and
+after — no new type errors.

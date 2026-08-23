@@ -14,7 +14,7 @@
       "feature_id": "FEAT-447",
       "feature": "agentsflow-result-fidelity",
       "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Edits core/result.py, the shared metadata seam used by BOTH executors (5 crew call sites + flow + decision nodes). Must land FIRST and ALONE, gated on the crew regression suites — it is the only change in FEAT-447 that can silently break AgentCrew.",
       "assigned_to": null,
       "started_at": "2026-08-23T23:10:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2326-shared-unwrap-response.md"
+      "completed_at": "2026-08-23T23:48:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2326-shared-unwrap-response.md"
     },
     {
       "id": "TASK-2327",
