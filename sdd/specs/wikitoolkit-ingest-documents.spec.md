@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-451
 **Date**: 2026-08-23
 **Author**: Jesus Lara (spec: Claude session 2026-08-23)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Builds on**: FEAT-402 (`sdd/specs/supervised-wiki-ingestion.spec.md`)
 
@@ -84,6 +84,15 @@ through to the wiki page as YAML frontmatter.
 - **Document metadata extraction.** Author, title, page/word count,
   creation date, content type, and originating URL are extracted per
   document into a normalized `DocumentMetadata` model.
+- **Existing `.md` frontmatter is honored.** When a markdown or plain-text
+  source already carries leading YAML frontmatter, it is parsed as a
+  *metadata source* and **stripped from the body handed to the triage
+  LLM** — never fed to the model as prose.
+- **Triage provenance travels with the page.** The FEAT-402 decision trail
+  (`composite_score`, `decision`, `decision_source`, `charter_version`) is
+  emitted in the page frontmatter alongside the descriptive document
+  metadata, so a reader or agent can see *why* a page was admitted without
+  querying the sources table.
 - **Metadata persisted twice, for two audiences.**
   - *Machine/audit*: new additive columns on the `sources` table
     (`doc_metadata` JSON, `content_type`, `loader`) via the existing
@@ -143,7 +152,8 @@ The pipeline becomes:
 2. **Acquire** — `DocumentAcquirer.acquire(ref)` returns
    `AcquiredDocument(text, metadata)`:
    - plain-text suffix (`PLAIN_TEXT_EXTENSIONS`) → direct read, no
-     optional dependency;
+     optional dependency; any leading YAML frontmatter is parsed into
+     `DocumentMetadata` and **stripped** from the returned `text`;
    - otherwise → `parrot_loaders.factory.get_loader_class(suffix)`,
      lazily imported, degrading to a warning + skip when
      `ai-parrot-loaders` is absent (exactly the `_loader_for` precedent);
@@ -155,7 +165,9 @@ The pipeline becomes:
    same `DocumentAcquirer` (so `_load_source` and triage agree on the
    text), stamps `doc_metadata` / `content_type` / `loader` onto the
    `SourceManifestEntry`, and prefixes each generated page body with
-   `render_frontmatter(metadata)`.
+   `render_frontmatter(metadata, provenance)` — where `provenance` is
+   built from the `ManifestDocEntry` already passed as `triage=` plus the
+   `charter_version` argument `ingest()` already receives.
 
 Content is acquired **twice** per admitted document (once for triage,
 once for apply) — matching the existing code's shape, where `_triage_all`
@@ -189,7 +201,8 @@ CLI: wikitoolkit ingest <SOURCE>
         ├─ SourceCollectionManager  ──→ sources table
         │     + doc_metadata (JSON) + content_type + loader
         └─ _build_page_records
-              └─ body = render_frontmatter(metadata) + body
+              └─ body = render_frontmatter(metadata, provenance) + body
+                        (provenance ← triage entry + charter_version)
                                     │
                                     └→ WikiPageRecord.body → WikiStore → export
 ```
@@ -242,11 +255,29 @@ class DocumentMetadata(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 class AcquiredDocument(BaseModel):
-    """Text + metadata produced by the acquisition layer."""
+    """Text + metadata produced by the acquisition layer.
+
+    `text` has any leading YAML frontmatter STRIPPED — whatever it
+    carried is already folded into `metadata`.
+    """
 
     ref: DocumentRef
     text: str
     metadata: DocumentMetadata
+
+class TriageProvenance(BaseModel):
+    """FEAT-402 decision trail, rendered into the page frontmatter.
+
+    Built from the `ManifestDocEntry` (review.py:135) already handed to
+    `WikiIngestOrchestrator.ingest()` as `triage=`, plus the
+    `charter_version` argument that call already receives. Introduces no
+    new plumbing — it only surfaces what `ingest()` already holds.
+    """
+
+    composite_score: float | None = None
+    decision: str | None = None          # admit | archive | discard
+    decision_source: str | None = None   # heuristic | model | human | auto
+    charter_version: str | None = None
 
 class DocumentAcquisitionError(Exception):
     """Raised when a document cannot be decoded or fetched.
@@ -295,13 +326,31 @@ class DocumentAcquirer:
     async def acquire(self, ref: DocumentRef) -> AcquiredDocument:
         """Raises DocumentAcquisitionError on undecodable/unfetchable input."""
 
-def render_frontmatter(metadata: DocumentMetadata) -> str:
+def render_frontmatter(
+    metadata: DocumentMetadata,
+    provenance: TriageProvenance | None = None,
+) -> str:
     """Render deterministic YAML frontmatter for a wiki page body.
 
     Fixed key order, sorted collections, `None` fields omitted, and a
     trailing `---\n` — same determinism contract as
     `parrot.knowledge.okf.frontmatter.project_frontmatter`. Returns ""
     when every field is None (never emits an empty `---\n---\n` block).
+
+    Descriptive document fields come first; `provenance` (when given) is
+    rendered under a single nested `triage:` key so the descriptive and
+    audit halves can never collide on a key name.
+    """
+
+
+def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """Split leading YAML frontmatter off a text document.
+
+    Returns ``(parsed_mapping, body_without_frontmatter)``, or
+    ``({}, text)`` unchanged when there is no leading ``---`` block, when
+    the block never terminates, or when it does not parse as a YAML
+    mapping — malformed frontmatter is never a hard error, it is simply
+    left inline.
     """
 ```
 
@@ -324,7 +373,7 @@ which raises `click.ClickException` with the same clarity Click gave before.
 ### Module 1: `documents.py` — models + `resolve_sources`
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/documents.py` (new)
 - **Responsibility**: `DocumentRef`, `DocumentMetadata`, `AcquiredDocument`,
-  `DocumentAcquisitionError`, and `resolve_sources()`. Pure, no I/O beyond
+  `TriageProvenance`, `DocumentAcquisitionError`, and `resolve_sources()`. Pure, no I/O beyond
   `Path.rglob` / `Path.is_file`. Directory walking preserves the exact
   semantics of today's `_discover_documents` (cli.py:2093-2114).
 - **Depends on**: nothing new.
@@ -332,8 +381,10 @@ which raises `click.ClickException` with the same clarity Click gave before.
 ### Module 2: `DocumentAcquirer` — loader-backed extraction
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/documents.py`
 - **Responsibility**: `acquire()` — plain-text branch, loader branch
-  (lazy `parrot_loaders` import, graceful skip when absent), and metadata
-  normalization from `Document.metadata` into `DocumentMetadata`. PDF
+  (lazy `parrot_loaders` import, graceful skip when absent), `split_frontmatter()`
+  applied to every text-branch document so pre-existing YAML frontmatter
+  becomes metadata instead of LLM prose, and metadata normalization from
+  `Document.metadata` into `DocumentMetadata`. PDF
   `page_count` is read via `pymupdf` (already a core dependency, used by
   `pageindex/pdf_to_markdown.py`) since MarkItDown does not expose it.
 - **Depends on**: Module 1.
@@ -350,9 +401,12 @@ which raises `click.ClickException` with the same clarity Click gave before.
 
 ### Module 4: `render_frontmatter`
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/documents.py`
-- **Responsibility**: deterministic YAML projection of `DocumentMetadata`.
-  Fixed field order, `None` omitted, `extra` keys sorted, values escaped
-  by `yaml.safe_dump`. Returns `""` for fully-empty metadata.
+- **Responsibility**: `render_frontmatter(metadata, provenance=None)` —
+  deterministic YAML projection of `DocumentMetadata`, with
+  `TriageProvenance` rendered under a nested `triage:` key. Fixed field
+  order, `None` omitted, `extra` keys sorted, values escaped by
+  `yaml.safe_dump`. Returns `""` when both inputs are fully empty. Also
+  owns `split_frontmatter()` (the inverse), used by Module 2.
 - **Depends on**: Module 1.
 
 ### Module 5: `SourceManifestEntry` + sources-table migration
@@ -373,9 +427,12 @@ which raises `click.ClickException` with the same clarity Click gave before.
 - **Responsibility**: `_load_source` delegates to `DocumentAcquirer`;
   `ingest()` accepts an optional pre-acquired `AcquiredDocument` (so the
   CLI can pass the triage-lane result and skip re-acquisition), persists
-  metadata via Module 5, and passes `frontmatter=` into
-  `_build_page_records` (ingest.py:709), which prefixes it onto each
-  `WikiPageRecord.body`. Frontmatter is prefixed to the **body only** —
+  metadata via Module 5, builds a `TriageProvenance` from the `triage=`
+  entry and `charter_version` it already receives, and passes
+  `frontmatter=` into `_build_page_records` (ingest.py:709), which
+  prefixes it onto each `WikiPageRecord.body`. Every page derived from one
+  source gets **identical** frontmatter (resolved §8) — no per-page
+  `page_range` derivation. Frontmatter is prefixed to the **body only** —
   `summary` and `token_count` semantics are unchanged except that
   `token_count` now covers the frontmatter it actually stores.
 - **Depends on**: Modules 2, 4, 5.
@@ -417,6 +474,10 @@ which raises `click.ClickException` with the same clarity Click gave before.
 | `test_acquire_url_fetch` | 3 | aiohttp mocked; temp file written, suffix from `Content-Type`, `source_url` set, temp file removed afterwards. |
 | `test_acquire_url_timeout` | 3 | Fetch timeout → `DocumentAcquisitionError`, no temp file left behind. |
 | `test_acquire_url_size_cap` | 3 | Response exceeding `max_bytes` → `DocumentAcquisitionError`. |
+| `test_split_frontmatter_roundtrip` | 4 | `---`-delimited YAML → `(mapping, body)`; body excludes the block. |
+| `test_split_frontmatter_malformed` | 4 | Unterminated block / non-mapping YAML → `({}, text)` unchanged, no raise. |
+| `test_acquire_strips_md_frontmatter` | 2 | `.md` with frontmatter → `text` starts at the body, `metadata.title`/`author` populated from the block. |
+| `test_render_frontmatter_provenance` | 4 | `TriageProvenance` renders under a nested `triage:` key; descriptive keys unaffected. |
 | `test_render_frontmatter_deterministic` | 4 | Same metadata → byte-identical output across calls; key order fixed. |
 | `test_render_frontmatter_omits_none` | 4 | `None` fields absent from output; `extra` keys sorted. |
 | `test_render_frontmatter_empty` | 4 | All-`None` metadata → `""` (no empty `---\n---\n`). |
@@ -434,6 +495,8 @@ which raises `click.ClickException` with the same clarity Click gave before.
 | `test_ingest_url` | Mocked aiohttp serving a PDF → page created with `source_url` in frontmatter. |
 | `test_undecodable_never_reaches_llm` | Stub triage adapter asserts it is **never called** for the undecodable document (the anti-mojibake guarantee, asserted not assumed). |
 | `test_build_unaffected` | `wikitoolkit build` output byte-identical with FEAT-451 code present (inherited FEAT-402 regression guard). |
+| `test_ingest_page_carries_provenance` | `--auto` ingest → page frontmatter `triage:` block carries `composite_score`, `decision`, `decision_source`, `charter_version` matching the manifest entry. |
+| `test_multi_page_pdf_identical_frontmatter` | A PDF split into several wiki pages → every page's frontmatter block is byte-identical. |
 | `test_legacy_pages_unchanged` | Pages ingested before FEAT-451 keep frontmatter-less bodies after a re-open (no backfill). |
 
 ### Test Data / Fixtures
@@ -477,6 +540,17 @@ def no_parrot_loaders(monkeypatch):
 - [ ] Every wiki page generated by `ingest` begins with a YAML frontmatter
       block that `yaml.safe_load` parses, containing at least `title`,
       `content_type`, and `loader`; `None` fields are omitted.
+- [ ] That frontmatter carries a nested `triage:` block with
+      `composite_score`, `decision`, `decision_source`, and
+      `charter_version` matching the manifest entry for that source.
+- [ ] All pages derived from a single multi-page source carry **identical**
+      frontmatter blocks.
+- [ ] A `.md` source with leading YAML frontmatter has that block parsed
+      into `DocumentMetadata` and **stripped** from the text passed to
+      `IngestTriageRouter.triage()` — asserted directly against the stub
+      adapter's received content, not inferred.
+- [ ] Malformed frontmatter (unterminated block, non-mapping YAML) is left
+      inline and never raises.
 - [ ] `render_frontmatter` is byte-deterministic for equal input.
 - [ ] `SourceManifestEntry` carries `doc_metadata`, `content_type`, and
       `loader`; they round-trip through both the sqlite and Arango backends.
@@ -746,6 +820,14 @@ def extract_markdown_per_page(pdf_path: str | Path) -> list[tuple[int, str]]  # 
   sources, store, toolkit, tools, triage, vault_scan).
 - ~~`SourceManifestEntry.doc_metadata` / `.content_type` / `.loader`~~ — do not
   exist yet; you are adding them (models.py:189-224 has only the FEAT-402 four).
+- ~~`parrot.knowledge.okf.frontmatter.split_frontmatter`~~ — the OKF module
+  exports only `project_frontmatter` (frontmatter.py:101) and
+  `parse_frontmatter` (frontmatter.py:154), and `parse_frontmatter` returns a
+  `ConceptFrontmatter` **model** — not a `(mapping, body)` tuple, and it never
+  returns the stripped body. Write `split_frontmatter` yourself in
+  `documents.py`; the regex precedent is `MarkdownLoader.
+  _extract_metadata_from_markdown` (markdown.py:364-372):
+  `re.match(r'^---\n(.*?)\n---\n', md_text, re.DOTALL)`.
 - ~~`WikiPageRecord.metadata` / `.frontmatter`~~ — no such field. Frontmatter is
   prefixed onto the existing `body` string; do not invent a new column.
 - ~~`SourceCollectionManager.add_url()` / `add_source(url)`~~ — `add_source`
@@ -878,26 +960,28 @@ Resolved during spec Q&A (2026-08-23, *Owner: Jesus Lara*):
       **both** — a `doc_metadata` JSON column (plus `content_type`,
       `loader`) on `SourceManifestEntry`, **and** page frontmatter.
 
+Resolved on spec approval (2026-08-23, *Owner: Jesus Lara*):
+
+- [x] Should an existing `.md` source's own YAML frontmatter be parsed as a
+      *metadata source* (feeding the emitted frontmatter and stripped from
+      the body the LLM sees), or left inline as body text? — *Resolved*:
+      **adopt now**, in v1. Folded into §1 Goals, §2 acquire step, Modules
+      2 and 4, the `split_frontmatter()` interface, §4 and §5.
+- [x] Should the frontmatter carry the FEAT-402 triage provenance
+      (`composite_score`, `decision_source`, `charter_version`) alongside
+      the document metadata? — *Resolved*: **yes, carried**, under a nested
+      `triage:` key. Folded into `TriageProvenance`, `render_frontmatter`'s
+      signature, Modules 4 and 6, §4 and §5.
+- [x] For a multi-page source that PageIndex splits into several wiki
+      pages, identical frontmatter or a derived per-page `page_range`? —
+      *Resolved*: **identical** on every page. Folded into Module 6, §4
+      and §5.
+
 Still open:
 
-- [ ] Should an existing `.md` source's own YAML frontmatter be parsed as a
-      *metadata source* (feeding the emitted frontmatter and stripped from the
-      body the LLM sees), or left inline as body text as it is today? The
-      "passthrough" option was offered in Q&A and not selected, so v1 leaves
-      it inline — but `MarkdownLoader._extract_metadata_from_markdown`
-      (markdown.py:364-372) already parses it for free, so adopting it later
-      is nearly free. — *Owner: Jesus Lara*
-- [ ] Should the frontmatter carry the FEAT-402 triage provenance
-      (`composite_score`, `decision_source`, `charter_version`) alongside the
-      document metadata, or stay purely descriptive of the source document?
-      Descriptive-only is assumed for v1. — *Owner: Jesus Lara*
 - [ ] Is a content-addressed acquisition cache under
       `<storage_dir>/ingest-cache/` wanted in v1, or deferred? Deferred is
       assumed. — *Owner: implementation*
-- [ ] For a multi-page PDF that PageIndex splits into several wiki pages,
-      should every page get identical document frontmatter, or should a
-      per-page `page_range` be derived? Identical is assumed for v1. —
-      *Owner: implementation*
 
 ---
 
@@ -928,3 +1012,4 @@ git worktree add -b feat-451-wikitoolkit-ingest-documents \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-23 | Jesus Lara / Claude | Initial draft — loader-backed acquisition, file/folder/URL sources, document metadata to manifest columns + page frontmatter |
+| 0.2 | 2026-08-23 | Jesus Lara / Claude | Approved. Folded three §8 resolutions into the design: `.md` frontmatter parsed-and-stripped (`split_frontmatter`), triage provenance emitted under a nested `triage:` key (`TriageProvenance`), identical frontmatter across a source's pages |
