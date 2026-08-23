@@ -88,6 +88,9 @@ seconds later `wikitoolkit query` can find it.
   fleeting-thought capture needs). Revisit after FEAT-451.
 - **Raw-audio entry points** (HTTP upload, watched folder, email attachment).
 - **Changing `handle_voice()` itself.** Untouched by this feature.
+- **Phase-2 LLM entity extraction on the notes plane.** No per-capture
+  extraction and **no scheduled extraction job** — see §8. The notes wiki ships
+  with entity extraction off, matching the meetings plane's default.
 - **Injecting a `FederatedWikiStore` into `LLMWikiToolkit`.** FEAT-450 lists
   this as optional and explicitly not required for its own acceptance
   (`wiki-namespaces.spec.md:153`); it is not in scope here either.
@@ -359,21 +362,6 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):   # existing, extended
   `wikitoolkit query` reaches audio notes and `--ns notes` targets them.
 - **Depends on**: **FEAT-450 merged.** See §7 and Worktree Strategy.
 
-### Module 7: Scheduled entity extraction on the notes plane
-- **Path**: `agents/fireflies_wiki.py`
-- **Responsibility**: A `@schedule`d job that runs Phase-2 LLM entity extraction
-  over the notes wiki tree, so audio notes contribute CONCEPT nodes to the graph.
-- **Why scheduled and not per-capture**: `ingest_source()` (`wiki/toolkit.py:166`)
-  has **no** `extract_entities` parameter, and `WikiConfig` has no such field.
-  Extraction is `WikiIngestOrchestrator.extract_entities(tree_name, wiki_config,
-  granularity, custom_instructions)` (`wiki/ingest.py:439`), reached inside
-  `LLMWikiToolkit` only via `ingest_obsidian_vault` (`wiki/toolkit.py:298`).
-  It **iterates the whole PageIndex tree**, not the newly added page — so calling
-  it per capture would cost O(n) LLM calls per note and would violate the
-  acceptance criterion "exactly one LLM call per note". A scheduled sweep
-  delivers the graph value without putting it in the latency-critical path.
-- **Depends on**: Module 2.
-
 ---
 
 ## 4. Test Specification
@@ -494,9 +482,6 @@ def fake_notes_wiki(mocker):
 - [ ] FEAT-450 is merged before this feature's branch is merged (see §7)
 - [ ] Notes wiki registered as a namespace and reachable via
       `wikitoolkit query --ns notes` (G2, Module 6)
-- [ ] Entity extraction over the notes plane runs on a **schedule**, never in
-      the capture path — the capture path's one-LLM-call budget is unchanged
-      (Module 7)
 - [ ] `capture_audio_note` is reachable from typed text messages as well as
       voice transcripts; its `language` argument is optional and `None` for
       typed input (Module 3, Module 4)
@@ -907,12 +892,17 @@ git worktree add -b feat-452-audio-notes-obsidian \
 - [x] Does the notes wiki warrant `extract_entities=True` (Phase-2 LLM entity
   extraction) at ingest? The meetings plane defaults it off
   (`_EXTRACT_ENTITIES`, `agents/fireflies_wiki.py:155`). Personal notes are
-  short, so cost is low and graph value may be high. Deferrable.
-  — *Owner: Jesus Lara*: yes.
-  **Implementation constraint discovered during decomposition**: `ingest_source`
-  has no `extract_entities` parameter and extraction iterates the whole tree
-  (`wiki/ingest.py:439`), so it CANNOT run per capture without violating the
-  "exactly one LLM call per note" criterion. Realized as scheduled Module 7.
+  short, so cost is low and graph value may be high.
+  — *Owner: Jesus Lara*: **no — do not run entity extraction, and do not add a
+  scheduled job for it.** Rationale recorded during decomposition: `ingest_source`
+  (`wiki/toolkit.py:166`) has no `extract_entities` parameter and `WikiConfig` has
+  no such field; extraction is `WikiIngestOrchestrator.extract_entities`
+  (`wiki/ingest.py:439`), which iterates the **whole** PageIndex tree rather than
+  the newly added page. Per-capture it would cost O(n) LLM calls per note and
+  violate the "exactly one LLM call per note" criterion; as a scheduled sweep it
+  would add an operational surface the feature does not need. The notes plane
+  therefore ships **without** Phase-2 entity extraction — matching the meetings
+  plane's own default (`_EXTRACT_ENTITIES=False`).
 
 ---
 
@@ -921,4 +911,4 @@ git worktree add -b feat-452-audio-notes-obsidian \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-23 | Jesus Lara (Claude session) | Initial draft from `audio-notes-obsidian.brainstorm.md` (Option A) |
-| 0.2 | 2026-08-23 | Jesus Lara (Claude session) | Approved. Open questions resolved: no retroactive prune; capture reachable from typed text; entity extraction enabled — realized as scheduled Module 7 (cannot run per capture, see §3 Module 7) |
+| 0.2 | 2026-08-23 | Jesus Lara (Claude session) | Approved. Open questions resolved: no retroactive prune; capture reachable from typed text; **no entity extraction** on the notes plane and no scheduled job for it (see §1 Non-Goals, §8) |
