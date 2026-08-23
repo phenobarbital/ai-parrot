@@ -1,0 +1,482 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The source is a detailed design skeleton whose author already marked ~20 reuse claims with a VERIFY flag. The job is not to localize a defect but to confirm/refute each claimed building block in the repo and close three open questions (GraphIndex namespaces, tool-call budgets, lazy-ingest queue). Refine round (user-requested): +12 queries across FEAT-450 overlap, tenant provisioning/migration cost, AQL traversal surface, and the ingestion/chunking path.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Confirm GraphIndexToolkit exists and enumerate its real tool names vs the claimed ground_claim/traverse/find_references",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "class GraphIndexToolkit|def ground_claim|def traverse|def find_references",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Establish whether GraphIndex supports multiple namespaces over shared collections (closes OQ1)",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "namespace",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex",
+        "include": "*.py",
+        "max_results": 80
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Inspect the legal tooling just added in commit db9b32dff to avoid re-specifying work already done",
+      "type": "git_log",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages",
+        "since": "45.days.ago",
+        "max_results": 15
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Locate any existing legal-domain code (BOE/CENDOJ/ECLI/EUR-Lex) so the proposal reports greenfield vs extension accurately",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "cendoj|CENDOJ|ECLI|eurlex|EUR-Lex|BOE-A-|celex|CELEX",
+        "path": "packages",
+        "max_results": 80
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Verify KnowledgeRouter (FEAT-200) exists with deterministic vocabulary + embedding fallback and namespaced concept_id",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "class KnowledgeRouter|concept_id|RoutingDecision",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Verify the anti-hallucination contract GroundednessReport and how deterministic-first / LLM-judge grounding is structured",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "GroundednessReport|class Groundedness|groundedness",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Determine whether per-execution tool-call budgets are enforceable in ToolManager (the design requires code-enforced CENDOJ caps, not prompt caps)",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "max_calls|call_budget|budget|rate_limit|max_iterations",
+        "path": "packages/ai-parrot/src/parrot/tools",
+        "include": "*.py",
+        "max_results": 80
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Verify AbstractToolkit lifecycle hooks (_open/_close/auto_open) that a shared throttled CENDOJ client would rely on",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "auto_open|def _open|def _close|_ensure_open",
+        "path": "packages/ai-parrot/src/parrot/tools",
+        "include": "*.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Verify the scheduler decorator @schedule used for daily incremental BOE/EUR-Lex sync",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "def schedule|@schedule|class Scheduler",
+        "path": "packages/ai-parrot/src/parrot/scheduler",
+        "include": "*.py",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Verify structured output plumbing (StructuredOutputConfig / ask(structured_output=)) that backs the LegalAnswer contract",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "StructuredOutputConfig|structured_output",
+        "path": "packages/ai-parrot/src/parrot/bots",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "Confirm loaders named in the reuse inventory actually exist in parrot_loaders",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "class PDFMarkdownLoader|class HTMLLoader|class WebLoader|class MarkdownLoader",
+        "path": "packages/ai-parrot-loaders",
+        "include": "*.py",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Verify ToolNode and AgentCrew.run_flow exist for the deterministic retrieval DAG",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "class ToolNode|def run_flow",
+        "path": "packages/ai-parrot/src/parrot/bots/flows",
+        "include": "*.py",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q013",
+      "intent": "Verify AuditLedger / permission_context referenced by the CENDOJ attributability requirement",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "AuditLedger|permission_context|audit_ledger",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q014",
+      "intent": "Check whether parrot.interfaces exists as a home for the proposed parrot.interfaces.legal contracts",
+      "type": "tree",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/interfaces",
+        "max_depth": 2
+      }
+    },
+    {
+      "id": "Q015",
+      "intent": "Find existing HTTP throttling / circuit-breaker / retry infrastructure reusable by the CENDOJ shared client",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "circuit_breaker|CircuitBreaker|Semaphore|Retry-After|backoff",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q016",
+      "intent": "Determine the queue/worker primitive available for OQ6 (async lazy ingestion after answering)",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "qworker|QueueWorker|enqueue|task_queue",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "Verify the ArangoDB store/graph backend the design assumes for GraphIndex persistence",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "class ArangoStore|arango|named_graph|create_graph",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q018",
+      "intent": "Verify ontology layer (OntoGraph) claimed as the L0 legal concept vocabulary",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "class OntoGraph|class Ontology",
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology",
+        "include": "*.py",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q019",
+      "intent": "Determine what FEAT-450 wiki-namespaces covers and whether it resolves the OQ1 namespace gap",
+      "type": "grep",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F002",
+      "params": {
+        "pattern": "wiki-namespaces|wiki_namespaces|FEAT-450",
+        "path": "sdd",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q020",
+      "intent": "Find any namespace-related spec or proposal work in the SDD tree that predates or overlaps this feature",
+      "type": "grep",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F002",
+      "params": {
+        "pattern": "namespace",
+        "path": "sdd/specs",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q021",
+      "intent": "Check git history for in-flight namespace work not yet on dev",
+      "type": "git_log",
+      "priority": 2,
+      "depth": 2,
+      "parent_id": "F002",
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge",
+        "since": "60.days.ago",
+        "max_results": 25
+      }
+    },
+    {
+      "id": "Q022",
+      "intent": "Audit how a tenant is provisioned and whether collections can be added to a live tenant (quantifies C15 migration risk)",
+      "type": "grep",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F002",
+      "params": {
+        "pattern": "class TenantOntologyManager|def initialize_tenant|def create_collection|ensure_collection",
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology",
+        "include": "*.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q023",
+      "intent": "Determine whether ontology refresh/migration tooling exists for evolving a live graph schema",
+      "type": "read",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F002",
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py",
+        "lines": [
+          1,
+          50
+        ]
+      }
+    },
+    {
+      "id": "Q024",
+      "intent": "Establish the real cost of the tenant-per-materia option by reading graph_store tenant handling",
+      "type": "grep",
+      "priority": 2,
+      "depth": 2,
+      "parent_id": "F002",
+      "params": {
+        "pattern": "tenant|arango_db|db_name",
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q025",
+      "intent": "Judge whether temporal traversals are expressible declaratively or need custom AQL",
+      "type": "grep",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F011",
+      "params": {
+        "pattern": "traversal_pattern|TraversalPattern|aql|AQL",
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q026",
+      "intent": "Inspect AQL validation constraints that any custom legal traversal must satisfy",
+      "type": "read",
+      "priority": 2,
+      "depth": 2,
+      "parent_id": "F011",
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/validators.py",
+        "lines": [
+          1,
+          60
+        ]
+      }
+    },
+    {
+      "id": "Q027",
+      "intent": "Check whether ontology YAML can declare traversal patterns with bind params (would make article_in_force declarative)",
+      "type": "grep",
+      "priority": 2,
+      "depth": 2,
+      "parent_id": "F011",
+      "params": {
+        "pattern": "traversal|pattern|aql",
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q028",
+      "intent": "Trace GraphIndexBuilder stages to place legal ingestion in the existing pipeline",
+      "type": "grep",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F011",
+      "params": {
+        "pattern": "class GraphIndexBuilder|def build|stage|Stage",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/builder.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q029",
+      "intent": "Establish whether the chunk to pgvector embedding path can carry as_of/version metadata for filtered retrieval",
+      "type": "grep",
+      "priority": 1,
+      "depth": 2,
+      "parent_id": "F011",
+      "params": {
+        "pattern": "chunk|embedding|vectorize|metadata",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/embed.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q030",
+      "intent": "Determine the incremental refresh / soft-delete mechanism that per-version article updates would use",
+      "type": "grep",
+      "priority": 2,
+      "depth": 2,
+      "parent_id": "F011",
+      "params": {
+        "pattern": "soft.?delete|replace_document_slice|incremental|upsert",
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex",
+        "include": "*.py",
+        "max_results": 50
+      }
+    }
+  ],
+  "expected_findings": [
+    "GraphIndex exists but its namespace/multi-graph story is the single riskiest assumption (OQ1)",
+    "No legal-domain code exists yet; the recent 'legal resources' commit may be a partial head start",
+    "KnowledgeRouter, GroundednessReport, structured outputs and the toolkit pattern exist as claimed",
+    "Code-enforced per-execution tool-call budgets may NOT exist in ToolManager and would be new work",
+    "parrot.interfaces.legal is greenfield"
+  ],
+  "meta": {
+    "wiki_queries": [
+      {
+        "id": "W001",
+        "intent": "Orient on the GraphIndex subsystem",
+        "cmd": "wikitoolkit query 'GraphIndex knowledge graph builder ArangoDB'"
+      },
+      {
+        "id": "W002",
+        "intent": "GraphIndex toolkit tools",
+        "cmd": "wikitoolkit query 'GraphIndexToolkit ground_claim traverse find_references'"
+      },
+      {
+        "id": "W003",
+        "intent": "KnowledgeRouter design",
+        "cmd": "wikitoolkit query 'KnowledgeRouter ontological routing concept vocabulary'"
+      },
+      {
+        "id": "W004",
+        "intent": "Groundedness / anti-hallucination",
+        "cmd": "wikitoolkit query 'GroundednessReport citation grounding verification'"
+      },
+      {
+        "id": "W005",
+        "intent": "ToolManager budgets and tool policy",
+        "cmd": "wikitoolkit query 'ToolManager tool call limits policy enforcement'"
+      },
+      {
+        "id": "W006",
+        "intent": "Legal tooling recently added",
+        "cmd": "wikitoolkit query 'legal resources toolkit BOE jurisprudence'"
+      },
+      {
+        "id": "W007",
+        "intent": "Scheduler",
+        "cmd": "wikitoolkit query 'scheduler schedule decorator periodic jobs'"
+      },
+      {
+        "id": "W008",
+        "intent": "Ontology layer",
+        "cmd": "wikitoolkit query 'ontology OntoGraph concept taxonomy'"
+      }
+    ],
+    "wiki_available": true,
+    "source_signals": {
+      "named_entities": [
+        "GraphIndex",
+        "ArangoDB",
+        "CENDOJ",
+        "BOE",
+        "EUR-Lex",
+        "CELLAR",
+        "KnowledgeRouter",
+        "GroundednessReport",
+        "AbstractToolkit",
+        "AgentCrew",
+        "PgVector",
+        "ECLI"
+      ],
+      "verbs": [
+        "verify",
+        "ingest",
+        "traverse",
+        "route",
+        "ground",
+        "cite"
+      ],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": {
+      "files_read": 22,
+      "grep_calls": 15,
+      "git_calls": 2
+    }
+  }
+}
