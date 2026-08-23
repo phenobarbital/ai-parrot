@@ -454,7 +454,12 @@ class VaultIngestTool(AbstractTool):
             )
             await self._store.upsert_pages(scan.dir_records)
             await self._store.add_edges(scan.dir_edges)
-            removed = await _prune_removed(self._store, sources, vault, scan)
+            # scope="root": this plane may also hold the repo's own
+            # codebase pages — prune only what lives under the vault
+            # (FEAT-450, D4.4).
+            removed = await _prune_removed(
+                self._store, sources, vault, scan, scope="root"
+            )
             store_stats = await self._store.stats()
 
         try:

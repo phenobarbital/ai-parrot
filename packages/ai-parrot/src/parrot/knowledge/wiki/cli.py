@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 from collections import Counter
 from datetime import UTC, datetime
@@ -600,26 +601,76 @@ async def _prune_removed(
     sources: SourceCollectionManager,
     root: Path,
     scan: Any,
+    *,
+    scope: str = "plane",
 ) -> int:
-    """Drop pages/sources no longer in scan scope (full builds only).
+    """Drop pages/sources no longer in scan scope.
 
     Covers deleted files as well as files that fell out of scope
     (newly ignored directories, changed suffix filters).
+
+    Two scopes, because a plane is not always one corpus (FEAT-450,
+    D4.4):
+
+    - ``"plane"`` — the whole plane IS this scan's corpus, so anything
+      the scan did not produce is stale. This is what ``build`` does.
+    - ``"root"`` — the scan covers only ``root``, and the plane may hold
+      other corpora (a vault ingested into a repo's plane, say). Only
+      sources living under ``root`` are eligible, ``file:`` pages go
+      only through those sources' slices, and a ``dir:`` page is removed
+      only when nothing under it survives. Without this, ingesting a
+      vault into a repo plane deletes every codebase page, and the next
+      ``build`` deletes the notes straight back.
+
+    Args:
+        store: The plane being pruned.
+        sources: Source manifest for that plane.
+        root: Directory the scan covered.
+        scan: The fresh scan result.
+        scope: ``"plane"`` (default) or ``"root"``.
+
+    Returns:
+        Number of sources and pages removed.
     """
     expected_files = {fs.record.concept_id for fs in scan.files}
     expected_dirs = {r.concept_id for r in scan.dir_records}
     expected_uris = {
         str((root / fs.rel_path).resolve()) for fs in scan.files
     }
+    root_prefix = str(root.resolve()) + os.sep
     removed = 0
 
     for entry in await asyncio.to_thread(sources.list_sources):
-        if entry.source_uri not in expected_uris:
-            await store.replace_source_slice(entry.source_id, [], [])
-            await asyncio.to_thread(sources.remove_source, entry.source_id)
-            removed += 1
+        if entry.source_uri in expected_uris:
+            continue
+        if scope == "root" and not entry.source_uri.startswith(root_prefix):
+            # Another corpus sharing this plane — not ours to prune.
+            continue
+        await store.replace_source_slice(entry.source_id, [], [])
+        await asyncio.to_thread(sources.remove_source, entry.source_id)
+        removed += 1
 
     stubs = await store.list_pages(limit=1_000_000)
+    if scope == "root":
+        # The source slices above already removed this root's stale
+        # `file:` pages; only empty `dir:` pages of this root are left.
+        surviving = {str(stub.get("concept_id", "")) for stub in stubs}
+        for cid in sorted(surviving):
+            if not cid.startswith("dir:") or cid in expected_dirs:
+                continue
+            prefix = cid[len("dir:") :]
+            if prefix in ("", "."):
+                continue
+            covered = f"{prefix}/"
+            if any(
+                other != cid and other.split(":", 1)[-1].startswith(covered)
+                for other in surviving
+            ):
+                continue
+            if await store.delete_page(cid):
+                removed += 1
+        return removed
+
     for stub in stubs:
         cid = str(stub.get("concept_id", ""))
         if cid.startswith("file:") and cid not in expected_files:
