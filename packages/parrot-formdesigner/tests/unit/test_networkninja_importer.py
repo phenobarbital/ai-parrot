@@ -13,7 +13,6 @@ from parrot_formdesigner.tools.services.networkninja import (
     stable_form_uid,
 )
 
-
 # ---------------------------------------------------------------------------
 # Spec §4 fixtures (verbatim from spec)
 # ---------------------------------------------------------------------------
@@ -203,9 +202,7 @@ def test_networkninja_formula_mapping(networkninja_formula_row):
     svc = _svc()
     schema = svc.to_form_schema(networkninja_formula_row)
     fields = list(schema.iter_all_fields())
-    assert any(f.field_type == FieldType.FORMULA for f in fields), (
-        "Expected at least one FORMULA field"
-    )
+    assert any(f.field_type == FieldType.FORMULA for f in fields), "Expected at least one FORMULA field"
     formula_field = next(f for f in fields if f.field_type == FieldType.FORMULA)
     assert formula_field.meta is not None
     assert formula_field.meta.get("expression") is None
@@ -232,9 +229,9 @@ def test_networkninja_signature_mapping():
     svc = _svc()
     schema = svc.to_form_schema(_make_row("FIELD_SIGNATURE_CAPTURE"))
     fields = list(schema.iter_all_fields())
-    assert any(f.field_type == FieldType.SIGNATURE for f in fields), (
-        "Expected SIGNATURE field; FIELD_SIGNATURE_CAPTURE must not be skipped"
-    )
+    assert any(
+        f.field_type == FieldType.SIGNATURE for f in fields
+    ), "Expected SIGNATURE field; FIELD_SIGNATURE_CAPTURE must not be skipped"
 
 
 # ---------------------------------------------------------------------------
@@ -293,9 +290,7 @@ def test_networkninja_legacy_null_block_type():
                 }
             ]
         ),
-        "metadata": [
-            {"column_id": 1, "column_name": "c1", "data_type": "FIELD_TEXT", "description": "Q"}
-        ],
+        "metadata": [{"column_id": 1, "column_name": "c1", "data_type": "FIELD_TEXT", "description": "Q"}],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -400,9 +395,9 @@ def test_new_map_entries_all_covered(data_type: str, expected_type: FieldType):
     schema = svc.to_form_schema(_make_row(data_type))
     fields = list(schema.iter_all_fields())
     assert fields, f"Expected at least one field for data_type '{data_type}'"
-    assert fields[0].field_type == expected_type, (
-        f"data_type '{data_type}' mapped to {fields[0].field_type!r}, expected {expected_type!r}"
-    )
+    assert (
+        fields[0].field_type == expected_type
+    ), f"data_type '{data_type}' mapped to {fields[0].field_type!r}, expected {expected_type!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -450,22 +445,42 @@ def test_report_aproximado_status():
 def test_metadata_options_populate_select():
     """FIELD_SELECT with form_metadata.options yields FieldOption(value=option_id, label=option_value)."""
     row = {
-        "formid": 1, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [{
-                "question_id": 1, "question_column_name": "10211",
-                "question_description": "Role", "validations": [],
-                "question_logic_groups": [],
-            }],
-        }],
-        "metadata": [{
-            "column_id": 1, "column_name": "10211", "data_type": "FIELD_SELECT",
-            "description": "Role", "options": [
-                {"is_active": True, "option_id": "6091", "column_name": 10211,
-                 "option_value": "Field Merchandiser"},
-            ],
-        }],
+        "formid": 1,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10211",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    }
+                ],
+            }
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "10211",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {
+                        "is_active": True,
+                        "option_id": "6091",
+                        "column_name": 10211,
+                        "option_value": "Field Merchandiser",
+                    },
+                ],
+            }
+        ],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -481,23 +496,38 @@ def test_metadata_options_populate_select():
 def test_metadata_options_scale_1_10():
     """A 1-10 scale select (options only in metadata) yields 10 options."""
     options = [
-        {"is_active": True, "option_id": str(i), "column_name": 10212, "option_value": str(i)}
-        for i in range(1, 11)
+        {"is_active": True, "option_id": str(i), "column_name": 10212, "option_value": str(i)} for i in range(1, 11)
     ]
     row = {
-        "formid": 2, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [{
-                "question_id": 1, "question_column_name": "10212",
-                "question_description": "Quality", "validations": [],
-                "question_logic_groups": [],
-            }],
-        }],
-        "metadata": [{
-            "column_id": 1, "column_name": "10212", "data_type": "FIELD_SELECT",
-            "description": "Quality", "options": options,
-        }],
+        "formid": 2,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10212",
+                        "question_description": "Quality",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    }
+                ],
+            }
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "10212",
+                "data_type": "FIELD_SELECT",
+                "description": "Quality",
+                "options": options,
+            }
+        ],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -509,22 +539,38 @@ def test_metadata_options_scale_1_10():
 def test_inactive_option_marked_disabled():
     """is_active=false option imported with disabled=True, still present."""
     row = {
-        "formid": 3, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [{
-                "question_id": 1, "question_column_name": "10213",
-                "question_description": "Role", "validations": [],
-                "question_logic_groups": [],
-            }],
-        }],
-        "metadata": [{
-            "column_id": 1, "column_name": "10213", "data_type": "FIELD_SELECT",
-            "description": "Role", "options": [
-                {"is_active": True, "option_id": "1", "column_name": 10213, "option_value": "Active"},
-                {"is_active": False, "option_id": "2", "column_name": 10213, "option_value": "Retired"},
-            ],
-        }],
+        "formid": 3,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10213",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    }
+                ],
+            }
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "10213",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {"is_active": True, "option_id": "1", "column_name": 10213, "option_value": "Active"},
+                    {"is_active": False, "option_id": "2", "column_name": 10213, "option_value": "Retired"},
+                ],
+            }
+        ],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -537,23 +583,43 @@ def test_inactive_option_marked_disabled():
 def test_metadata_primary_over_inline():
     """When both metadata and inline options exist, metadata wins."""
     row = {
-        "formid": 4, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [{
-                "question_id": 1, "question_column_name": "10214",
-                "question_description": "Role", "validations": [],
-                "question_logic_groups": [],
-                "options": [{"value": "inline1", "label": "Inline One"}],
-            }],
-        }],
-        "metadata": [{
-            "column_id": 1, "column_name": "10214", "data_type": "FIELD_SELECT",
-            "description": "Role", "options": [
-                {"is_active": True, "option_id": "6091", "column_name": 10214,
-                 "option_value": "Field Merchandiser"},
-            ],
-        }],
+        "formid": 4,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10214",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                        "options": [{"value": "inline1", "label": "Inline One"}],
+                    }
+                ],
+            }
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "10214",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {
+                        "is_active": True,
+                        "option_id": "6091",
+                        "column_name": 10214,
+                        "option_value": "Field Merchandiser",
+                    },
+                ],
+            }
+        ],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -564,20 +630,36 @@ def test_metadata_primary_over_inline():
 def test_inline_fallback_when_metadata_empty():
     """Empty metadata options -> inline options used (no regression)."""
     row = {
-        "formid": 5, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [{
-                "question_id": 1, "question_column_name": "10215",
-                "question_description": "Role", "validations": [],
-                "question_logic_groups": [],
-                "options": [{"value": "inline1", "label": "Inline One"}],
-            }],
-        }],
-        "metadata": [{
-            "column_id": 1, "column_name": "10215", "data_type": "FIELD_SELECT",
-            "description": "Role", "options": [],
-        }],
+        "formid": 5,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10215",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                        "options": [{"value": "inline1", "label": "Inline One"}],
+                    }
+                ],
+            }
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "10215",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [],
+            }
+        ],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -589,33 +671,46 @@ def test_inline_fallback_when_metadata_empty():
 def test_logic_group_fallback_when_no_metadata():
     """No metadata catalog -> logic-group text used as value & label."""
     row = {
-        "formid": 6, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [
-                {
-                    "question_id": 1, "question_column_name": "10216",
-                    "question_description": "Role", "validations": [],
-                    "question_logic_groups": [],
-                },
-                {
-                    "question_id": 2, "question_column_name": "99",
-                    "question_description": "Dep", "validations": [],
-                    "question_logic_groups": [{
-                        "conditions": [{
-                            "condition_logic": "EQUALS",
-                            "condition_question_reference_id": 1,
-                            "condition_comparison_value": "Field Merchandiser",
-                        }],
-                    }],
-                },
-            ],
-        }],
+        "formid": 6,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10216",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 2,
+                        "question_column_name": "99",
+                        "question_description": "Dep",
+                        "validations": [],
+                        "question_logic_groups": [
+                            {
+                                "conditions": [
+                                    {
+                                        "condition_logic": "EQUALS",
+                                        "condition_question_reference_id": 1,
+                                        "condition_comparison_value": "Field Merchandiser",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
         "metadata": [
-            {"column_id": 1, "column_name": "10216", "data_type": "FIELD_SELECT",
-             "description": "Role", "options": []},
-            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT",
-             "description": "Dep", "options": []},
+            {"column_id": 1, "column_name": "10216", "data_type": "FIELD_SELECT", "description": "Role", "options": []},
+            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT", "description": "Dep", "options": []},
         ],
     }
     svc = _svc()
@@ -629,36 +724,59 @@ def test_logic_group_fallback_when_no_metadata():
 def test_condition_reindexed_to_option_id():
     """EQUALS on a metadata-backed select -> FieldCondition.value == option_id."""
     row = {
-        "formid": 7, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [
-                {
-                    "question_id": 1, "question_column_name": "10217",
-                    "question_description": "Role", "validations": [],
-                    "question_logic_groups": [],
-                },
-                {
-                    "question_id": 2, "question_column_name": "99",
-                    "question_description": "Dep", "validations": [],
-                    "question_logic_groups": [{
-                        "conditions": [{
-                            "condition_logic": "EQUALS",
-                            "condition_question_reference_id": 1,
-                            "condition_comparison_value": "Field Merchandiser",
-                        }],
-                    }],
-                },
-            ],
-        }],
+        "formid": 7,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10217",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 2,
+                        "question_column_name": "99",
+                        "question_description": "Dep",
+                        "validations": [],
+                        "question_logic_groups": [
+                            {
+                                "conditions": [
+                                    {
+                                        "condition_logic": "EQUALS",
+                                        "condition_question_reference_id": 1,
+                                        "condition_comparison_value": "Field Merchandiser",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
         "metadata": [
-            {"column_id": 1, "column_name": "10217", "data_type": "FIELD_SELECT",
-             "description": "Role", "options": [
-                 {"is_active": True, "option_id": "6091", "column_name": 10217,
-                  "option_value": "Field Merchandiser"},
-             ]},
-            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT",
-             "description": "Dep", "options": []},
+            {
+                "column_id": 1,
+                "column_name": "10217",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {
+                        "is_active": True,
+                        "option_id": "6091",
+                        "column_name": 10217,
+                        "option_value": "Field Merchandiser",
+                    },
+                ],
+            },
+            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT", "description": "Dep", "options": []},
         ],
     }
     svc = _svc()
@@ -672,36 +790,59 @@ def test_condition_reindexed_to_option_id():
 def test_condition_unmatched_comparison_value_preserved():
     """comparison_value absent from catalog -> original value kept, no crash."""
     row = {
-        "formid": 8, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [
-                {
-                    "question_id": 1, "question_column_name": "10218",
-                    "question_description": "Role", "validations": [],
-                    "question_logic_groups": [],
-                },
-                {
-                    "question_id": 2, "question_column_name": "99",
-                    "question_description": "Dep", "validations": [],
-                    "question_logic_groups": [{
-                        "conditions": [{
-                            "condition_logic": "EQUALS",
-                            "condition_question_reference_id": 1,
-                            "condition_comparison_value": "Unknown Value",
-                        }],
-                    }],
-                },
-            ],
-        }],
+        "formid": 8,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10218",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 2,
+                        "question_column_name": "99",
+                        "question_description": "Dep",
+                        "validations": [],
+                        "question_logic_groups": [
+                            {
+                                "conditions": [
+                                    {
+                                        "condition_logic": "EQUALS",
+                                        "condition_question_reference_id": 1,
+                                        "condition_comparison_value": "Unknown Value",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
         "metadata": [
-            {"column_id": 1, "column_name": "10218", "data_type": "FIELD_SELECT",
-             "description": "Role", "options": [
-                 {"is_active": True, "option_id": "6091", "column_name": 10218,
-                  "option_value": "Field Merchandiser"},
-             ]},
-            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT",
-             "description": "Dep", "options": []},
+            {
+                "column_id": 1,
+                "column_name": "10218",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {
+                        "is_active": True,
+                        "option_id": "6091",
+                        "column_name": 10218,
+                        "option_value": "Field Merchandiser",
+                    },
+                ],
+            },
+            {"column_id": 2, "column_name": "99", "data_type": "FIELD_TEXT", "description": "Dep", "options": []},
         ],
     }
     svc = _svc()
@@ -715,58 +856,97 @@ def test_condition_unmatched_comparison_value_preserved():
 def test_options_source_provenance():
     """ImportDiffEntry.options_source is metadata/inline/logic_groups/none as appropriate."""
     row = {
-        "formid": 9, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [
-                {
-                    "question_id": 1, "question_column_name": "meta_col",
-                    "question_description": "Meta", "validations": [],
-                    "question_logic_groups": [],
-                },
-                {
-                    "question_id": 2, "question_column_name": "inline_col",
-                    "question_description": "Inline", "validations": [],
-                    "question_logic_groups": [],
-                    "options": [{"value": "i1", "label": "Inline"}],
-                },
-                {
-                    "question_id": 3, "question_column_name": "logic_col",
-                    "question_description": "Logic", "validations": [],
-                    "question_logic_groups": [],
-                },
-                {
-                    "question_id": 4, "question_column_name": "none_col",
-                    "question_description": "None", "validations": [],
-                    "question_logic_groups": [],
-                },
-                {
-                    "question_id": 5, "question_column_name": "dep_col",
-                    "question_description": "Dep", "validations": [],
-                    "question_logic_groups": [{
-                        "conditions": [{
-                            "condition_logic": "EQUALS",
-                            "condition_question_reference_id": 3,
-                            "condition_comparison_value": "Logic Value",
-                        }],
-                    }],
-                },
-            ],
-        }],
+        "formid": 9,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "meta_col",
+                        "question_description": "Meta",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 2,
+                        "question_column_name": "inline_col",
+                        "question_description": "Inline",
+                        "validations": [],
+                        "question_logic_groups": [],
+                        "options": [{"value": "i1", "label": "Inline"}],
+                    },
+                    {
+                        "question_id": 3,
+                        "question_column_name": "logic_col",
+                        "question_description": "Logic",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 4,
+                        "question_column_name": "none_col",
+                        "question_description": "None",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 5,
+                        "question_column_name": "dep_col",
+                        "question_description": "Dep",
+                        "validations": [],
+                        "question_logic_groups": [
+                            {
+                                "conditions": [
+                                    {
+                                        "condition_logic": "EQUALS",
+                                        "condition_question_reference_id": 3,
+                                        "condition_comparison_value": "Logic Value",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
         "metadata": [
-            {"column_id": 1, "column_name": "meta_col", "data_type": "FIELD_SELECT",
-             "description": "Meta", "options": [
-                 {"is_active": True, "option_id": "1", "column_name": "meta_col",
-                  "option_value": "Meta Val"},
-             ]},
-            {"column_id": 2, "column_name": "inline_col", "data_type": "FIELD_SELECT",
-             "description": "Inline", "options": []},
-            {"column_id": 3, "column_name": "logic_col", "data_type": "FIELD_SELECT",
-             "description": "Logic", "options": []},
-            {"column_id": 4, "column_name": "none_col", "data_type": "FIELD_SELECT",
-             "description": "None", "options": []},
-            {"column_id": 5, "column_name": "dep_col", "data_type": "FIELD_TEXT",
-             "description": "Dep", "options": []},
+            {
+                "column_id": 1,
+                "column_name": "meta_col",
+                "data_type": "FIELD_SELECT",
+                "description": "Meta",
+                "options": [
+                    {"is_active": True, "option_id": "1", "column_name": "meta_col", "option_value": "Meta Val"},
+                ],
+            },
+            {
+                "column_id": 2,
+                "column_name": "inline_col",
+                "data_type": "FIELD_SELECT",
+                "description": "Inline",
+                "options": [],
+            },
+            {
+                "column_id": 3,
+                "column_name": "logic_col",
+                "data_type": "FIELD_SELECT",
+                "description": "Logic",
+                "options": [],
+            },
+            {
+                "column_id": 4,
+                "column_name": "none_col",
+                "data_type": "FIELD_SELECT",
+                "description": "None",
+                "options": [],
+            },
+            {"column_id": 5, "column_name": "dep_col", "data_type": "FIELD_TEXT", "description": "Dep", "options": []},
         ],
     }
     svc = _svc()
@@ -782,22 +962,37 @@ def test_options_source_provenance():
 def test_option_id_cast_to_str():
     """Integer option_id cast to str for FieldOption.value."""
     row = {
-        "formid": 10, "orgid": 1, "form_name": "F", "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [{
-                "question_id": 1, "question_column_name": "10219",
-                "question_description": "Role", "validations": [],
-                "question_logic_groups": [],
-            }],
-        }],
-        "metadata": [{
-            "column_id": 1, "column_name": "10219", "data_type": "FIELD_SELECT",
-            "description": "Role", "options": [
-                {"is_active": True, "option_id": 6091, "column_name": 10219,
-                 "option_value": "Field Merchandiser"},
-            ],
-        }],
+        "formid": 10,
+        "orgid": 1,
+        "form_name": "F",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "10219",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    }
+                ],
+            }
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "10219",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {"is_active": True, "option_id": 6091, "column_name": 10219, "option_value": "Field Merchandiser"},
+                ],
+            }
+        ],
     }
     svc = _svc()
     schema = svc.to_form_schema(row)
@@ -815,30 +1010,47 @@ def test_malformed_metadata_options_do_not_crash():
     still builds (regression for the FEAT-325 re-import crash).
     """
     row = {
-        "formid": 50, "orgid": 74, "form_name": "Lovesac Event Form",
+        "formid": 50,
+        "orgid": 74,
+        "form_name": "Lovesac Event Form",
         "description": None,
-        "question_blocks": [{
-            "block_id": 1, "block_type": "simple", "block_logic_groups": [],
-            "questions": [
-                {"question_id": 1, "question_column_name": "2493",
-                 "question_description": "Notes", "validations": [],
-                 "question_logic_groups": []},
-                {"question_id": 2, "question_column_name": "2500",
-                 "question_description": "Role", "validations": [],
-                 "question_logic_groups": []},
-            ],
-        }],
+        "question_blocks": [
+            {
+                "block_id": 1,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 1,
+                        "question_column_name": "2493",
+                        "question_description": "Notes",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                    {
+                        "question_id": 2,
+                        "question_column_name": "2500",
+                        "question_description": "Role",
+                        "validations": [],
+                        "question_logic_groups": [],
+                    },
+                ],
+            }
+        ],
         "metadata": [
             # double-encoded empty array as a JSON *string* on a text column
-            {"column_id": 1, "column_name": "2493", "data_type": "FIELD_TEXT",
-             "description": "Notes", "options": "[]"},
+            {"column_id": 1, "column_name": "2493", "data_type": "FIELD_TEXT", "description": "Notes", "options": "[]"},
             # a well-formed select alongside it must still populate
-            {"column_id": 2, "column_name": "2500", "data_type": "FIELD_SELECT",
-             "description": "Role", "options": [
-                 {"is_active": True, "option_id": "6091", "column_name": 2500,
-                  "option_value": "Field Merchandiser"},
-                 "garbage-non-dict-entry",  # dropped, not crashed
-             ]},
+            {
+                "column_id": 2,
+                "column_name": "2500",
+                "data_type": "FIELD_SELECT",
+                "description": "Role",
+                "options": [
+                    {"is_active": True, "option_id": "6091", "column_name": 2500, "option_value": "Field Merchandiser"},
+                    "garbage-non-dict-entry",  # dropped, not crashed
+                ],
+            },
         ],
     }
     svc = _svc()
@@ -881,9 +1093,7 @@ def test_child_uids_are_stable_across_imports(networkninja_survey_row):
     first = svc.to_form_schema(networkninja_survey_row)
     second = svc.to_form_schema(networkninja_survey_row)
 
-    assert [s.section_uid for s in first.sections] == [
-        s.section_uid for s in second.sections
-    ]
+    assert [s.section_uid for s in first.sections] == [s.section_uid for s in second.sections]
     assert {f.field_id: f.field_uid for f in first.iter_all_fields()} == {
         f.field_id: f.field_uid for f in second.iter_all_fields()
     }
@@ -911,9 +1121,7 @@ def test_all_uids_within_a_form_are_unique(networkninja_survey_row):
     schema = svc.to_form_schema(networkninja_survey_row)
 
     uids = (
-        [schema.form_uid]
-        + [s.section_uid for s in schema.sections]
-        + [f.field_uid for f in schema.iter_all_fields()]
+        [schema.form_uid] + [s.section_uid for s in schema.sections] + [f.field_uid for f in schema.iter_all_fields()]
     )
     assert len(uids) == len(set(uids))
 
@@ -1004,8 +1212,7 @@ def _gated_row(*, logic_key: str = "block_logic_groups") -> dict:
                 "data_type": "FIELD_SELECT",
                 "description": "Visit type",
                 "options": [
-                    {"option_id": "4784", "option_value": "Lunch & Learn",
-                     "column_name": 9050, "is_active": True},
+                    {"option_id": "4784", "option_value": "Lunch & Learn", "column_name": 9050, "is_active": True},
                 ],
             },
             {
@@ -1072,9 +1279,12 @@ def _validated_row(data_type: str, validations: list[dict]) -> dict:
 def test_lte_value_becomes_an_inclusive_max():
     """``lteValue`` maps straight onto ``max_value``."""
     schema = _svc().to_form_schema(
-        _validated_row("FIELD_MONEY", [
-            {"validation_type": "lteValue", "validation_comparison_value": "5000"},
-        ])
+        _validated_row(
+            "FIELD_MONEY",
+            [
+                {"validation_type": "lteValue", "validation_comparison_value": "5000"},
+            ],
+        )
     )
 
     field = next(schema.iter_all_fields())
@@ -1085,10 +1295,13 @@ def test_lte_value_becomes_an_inclusive_max():
 def test_lt_value_on_an_integer_becomes_max_minus_one():
     """Over the integers, "< 10" and "<= 9" are the same bound."""
     schema = _svc().to_form_schema(
-        _validated_row("FIELD_INTEGER", [
-            {"validation_type": "responseRequired"},
-            {"validation_type": "ltValue", "validation_comparison_value": "10"},
-        ])
+        _validated_row(
+            "FIELD_INTEGER",
+            [
+                {"validation_type": "responseRequired"},
+                {"validation_type": "ltValue", "validation_comparison_value": "10"},
+            ],
+        )
     )
 
     field = next(schema.iter_all_fields())
@@ -1101,9 +1314,12 @@ def test_exclusive_bound_on_a_float_is_reported_not_widened():
     """An inexpressible bound must be flagged, never silently relaxed."""
     svc = _svc()
     _, report = svc.import_with_report(
-        _validated_row("FIELD_FLOAT2", [
-            {"validation_type": "ltValue", "validation_comparison_value": "10"},
-        ])
+        _validated_row(
+            "FIELD_FLOAT2",
+            [
+                {"validation_type": "ltValue", "validation_comparison_value": "10"},
+            ],
+        )
     )
 
     (entry,) = report.fields
@@ -1115,9 +1331,12 @@ def test_unmapped_validation_is_not_reported_as_clean():
     """The diff report must not claim fidelity it did not achieve."""
     svc = _svc()
     _, report = svc.import_with_report(
-        _validated_row("FIELD_TEXT", [
-            {"validation_type": "someFutureRule", "validation_comparison_value": "x"},
-        ])
+        _validated_row(
+            "FIELD_TEXT",
+            [
+                {"validation_type": "someFutureRule", "validation_comparison_value": "x"},
+            ],
+        )
     )
 
     (entry,) = report.fields
@@ -1128,10 +1347,13 @@ def test_unmapped_validation_is_not_reported_as_clean():
 def test_tightest_bound_wins():
     """Several bounds on one field collapse to the most restrictive."""
     schema = _svc().to_form_schema(
-        _validated_row("FIELD_INTEGER", [
-            {"validation_type": "lteValue", "validation_comparison_value": "50"},
-            {"validation_type": "ltValue", "validation_comparison_value": "10"},
-        ])
+        _validated_row(
+            "FIELD_INTEGER",
+            [
+                {"validation_type": "lteValue", "validation_comparison_value": "50"},
+                {"validation_type": "ltValue", "validation_comparison_value": "10"},
+            ],
+        )
     )
 
     assert next(schema.iter_all_fields()).constraints.max_value == 9
@@ -1152,9 +1374,7 @@ def test_column_repeated_across_blocks_does_not_abort_the_import():
     """
     row = _gated_row()
     # Repeat the driver question in the second block.
-    row["question_blocks"][1]["questions"].append(
-        dict(row["question_blocks"][0]["questions"][0])
-    )
+    row["question_blocks"][1]["questions"].append(dict(row["question_blocks"][0]["questions"][0]))
 
     schema, report = _svc().import_with_report(row)
 
@@ -1171,9 +1391,7 @@ def test_column_repeated_across_blocks_does_not_abort_the_import():
 def test_first_occurrence_of_a_repeated_column_is_the_one_kept():
     """The earlier block owns the column; the later one loses it."""
     row = _gated_row()
-    row["question_blocks"][1]["questions"].insert(
-        0, dict(row["question_blocks"][0]["questions"][0])
-    )
+    row["question_blocks"][1]["questions"].insert(0, dict(row["question_blocks"][0]["questions"][0]))
 
     schema = _svc().to_form_schema(row)
 
@@ -1191,19 +1409,22 @@ def test_alternative_logic_groups_gate_on_or_not_and():
     hidden no matter what the user answers.
     """
     row = _gated_row()
-    row["question_blocks"][1]["block_logic_groups"].append({
-        "logic_group_id": 3211,
-        "conditions": [{
-            "condition_id": 3415,
-            "condition_logic": "EQUALS",
-            "condition_option_id": 4782,
-            "condition_comparison_value": "Brand Ambassador",
-            "condition_question_reference_id": 566,
-        }],
-    })
+    row["question_blocks"][1]["block_logic_groups"].append(
+        {
+            "logic_group_id": 3211,
+            "conditions": [
+                {
+                    "condition_id": 3415,
+                    "condition_logic": "EQUALS",
+                    "condition_option_id": 4782,
+                    "condition_comparison_value": "Brand Ambassador",
+                    "condition_question_reference_id": 566,
+                }
+            ],
+        }
+    )
     row["metadata"][0]["options"].append(
-        {"option_id": "4782", "option_value": "Brand Ambassador",
-         "column_name": 9050, "is_active": True}
+        {"option_id": "4782", "option_value": "Brand Ambassador", "column_name": 9050, "is_active": True}
     )
 
     rule = _svc().to_form_schema(row).sections[1].depends_on
@@ -1229,19 +1450,20 @@ async def test_alternative_groups_actually_fire_in_the_evaluator():
         row["question_blocks"][1]["block_logic_groups"][0],
         {
             "logic_group_id": 3211,
-            "conditions": [{
-                "condition_id": 3415,
-                "condition_logic": "EQUALS",
-                "condition_option_id": 4782,
-                "condition_comparison_value": "Brand Ambassador",
-                "condition_question_reference_id": 566,
-            }],
+            "conditions": [
+                {
+                    "condition_id": 3415,
+                    "condition_logic": "EQUALS",
+                    "condition_option_id": 4782,
+                    "condition_comparison_value": "Brand Ambassador",
+                    "condition_question_reference_id": 566,
+                }
+            ],
         },
     ]
     row["question_blocks"][1]["block_logic_groups"] = []
     row["metadata"][0]["options"].append(
-        {"option_id": "4782", "option_value": "Brand Ambassador",
-         "column_name": 9050, "is_active": True}
+        {"option_id": "4782", "option_value": "Brand Ambassador", "column_name": 9050, "is_active": True}
     )
 
     schema = _svc().to_form_schema(row)
@@ -1265,27 +1487,38 @@ def test_multi_field_groups_keep_conjunction():
     orgid 74). Flattening them to OR would widen what the form reveals.
     """
     row = _gated_row()
-    row["question_blocks"][1]["questions"].append({
-        "question_id": 800,
-        "question_column_name": "9200",
-        "question_description": "Region",
-        "question_logic_groups": [],
-        "validations": [],
-    })
-    row["metadata"].append({
-        "column_id": 3, "column_name": "9200", "data_type": "FIELD_TEXT",
-        "description": "Region", "options": [],
-    })
-    row["question_blocks"][1]["block_logic_groups"].append({
-        "logic_group_id": 3212,
-        "conditions": [{
-            "condition_id": 3416,
-            "condition_logic": "EQUALS",
-            "condition_option_id": None,
-            "condition_comparison_value": "West",
-            "condition_question_reference_id": 800,
-        }],
-    })
+    row["question_blocks"][1]["questions"].append(
+        {
+            "question_id": 800,
+            "question_column_name": "9200",
+            "question_description": "Region",
+            "question_logic_groups": [],
+            "validations": [],
+        }
+    )
+    row["metadata"].append(
+        {
+            "column_id": 3,
+            "column_name": "9200",
+            "data_type": "FIELD_TEXT",
+            "description": "Region",
+            "options": [],
+        }
+    )
+    row["question_blocks"][1]["block_logic_groups"].append(
+        {
+            "logic_group_id": 3212,
+            "conditions": [
+                {
+                    "condition_id": 3416,
+                    "condition_logic": "EQUALS",
+                    "condition_option_id": None,
+                    "condition_comparison_value": "West",
+                    "condition_question_reference_id": 800,
+                }
+            ],
+        }
+    )
 
     rule = _svc().to_form_schema(row).sections[1].depends_on
 
@@ -1294,22 +1527,28 @@ def test_multi_field_groups_keep_conjunction():
 
 
 def test_fractional_exclusive_bound_uses_a_ceiling():
-    """"< 10.5" on an integer must allow 10, not cap at 9.5."""
+    """ "< 10.5" on an integer must allow 10, not cap at 9.5."""
     schema = _svc().to_form_schema(
-        _validated_row("FIELD_INTEGER", [
-            {"validation_type": "ltValue", "validation_comparison_value": "10.5"},
-        ])
+        _validated_row(
+            "FIELD_INTEGER",
+            [
+                {"validation_type": "ltValue", "validation_comparison_value": "10.5"},
+            ],
+        )
     )
 
     assert next(schema.iter_all_fields()).constraints.max_value == 10
 
 
 def test_negative_fractional_exclusive_bound():
-    """"< -3.5" on an integer must cap at -4."""
+    """ "< -3.5" on an integer must cap at -4."""
     schema = _svc().to_form_schema(
-        _validated_row("FIELD_INTEGER", [
-            {"validation_type": "ltValue", "validation_comparison_value": "-3.5"},
-        ])
+        _validated_row(
+            "FIELD_INTEGER",
+            [
+                {"validation_type": "ltValue", "validation_comparison_value": "-3.5"},
+            ],
+        )
     )
 
     assert next(schema.iter_all_fields()).constraints.max_value == -4
@@ -1436,11 +1675,10 @@ async def test_store_group_alternatives_evaluate_correctly():
 
     row = _gated_row()
     row["question_blocks"][1]["questions"][0]["store_groups"] = [
-        "Ring of Fire", "Epson Test Store",
+        "Ring of Fire",
+        "Epson Test Store",
     ]
-    row["question_blocks"][1]["questions"][0]["question_logic_groups"] = (
-        row["question_blocks"][1]["block_logic_groups"]
-    )
+    row["question_blocks"][1]["questions"][0]["question_logic_groups"] = row["question_blocks"][1]["block_logic_groups"]
     row["question_blocks"][1]["block_logic_groups"] = []
 
     schema = _svc().to_form_schema(row)
@@ -1451,21 +1689,24 @@ async def test_store_group_alternatives_evaluate_correctly():
 
     # Right store, right answer -> visible.
     hit = await evaluator.resolve(
-        schema, {"field_9050": "4784"},
+        schema,
+        {"field_9050": "4784"},
         visit_context={"store_groups": ["Ring of Fire"]},
     )
     assert hit.visible["field_9100"] is True
 
     # Right store, wrong answer -> hidden (the shared condition still gates).
     wrong_answer = await evaluator.resolve(
-        schema, {"field_9050": "4782"},
+        schema,
+        {"field_9050": "4782"},
         visit_context={"store_groups": ["Ring of Fire"]},
     )
     assert wrong_answer.visible["field_9100"] is False
 
     # Right answer, wrong store -> hidden.
     wrong_store = await evaluator.resolve(
-        schema, {"field_9050": "4784"},
+        schema,
+        {"field_9050": "4784"},
         visit_context={"store_groups": ["Best Buy"]},
     )
     assert wrong_store.visible["field_9100"] is False
@@ -1476,7 +1717,8 @@ async def test_store_group_alternatives_evaluate_correctly():
 
     # The other alternative group also fires on its own store.
     other_group = await evaluator.resolve(
-        schema, {"field_9050": "4784"},
+        schema,
+        {"field_9050": "4784"},
         visit_context={"store_groups": ["Epson Test Store"]},
     )
     assert other_group.visible["field_9100"] is True

@@ -52,9 +52,7 @@ def _make_request(body: dict) -> MagicMock:
     req.query.get = MagicMock(return_value="")
     req.json = AsyncMock(return_value=body)
     req.__contains__ = lambda self, key: False
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     req.session = {"session": {"programs": [_TEST_TENANT]}}
     return req
 
@@ -168,8 +166,10 @@ def _make_store_gated_form() -> FormSchema:
                 LogicGroup(
                     conditions=[
                         FieldCondition(
-                            source="visit_context", key="store_groups",
-                            operator=ConditionOperator.CONTAINS, value="Ring of Fire",
+                            source="visit_context",
+                            key="store_groups",
+                            operator=ConditionOperator.CONTAINS,
+                            value="Ring of Fire",
                         )
                     ]
                 )
