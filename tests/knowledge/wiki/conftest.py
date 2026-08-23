@@ -35,6 +35,24 @@ def pytest_configure(config: pytest.Config) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def isolated_parrot_home(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Point ``PARROT_HOME`` at a temp dir for every wiki test (FEAT-450).
+
+    The global namespace registry lives at ``PARROT_HOME/wikis.json``.
+    Without this, a developer's real ``~/.parrot/wikis.json`` would
+    federate their own namespaces into the test suite's queries.
+
+    Returns:
+        The isolated parrot home (usually empty).
+    """
+    home = tmp_path_factory.mktemp("parrot-home")
+    monkeypatch.setenv("PARROT_HOME", str(home))
+    return home
+
+
 @pytest.fixture
 def wiki_config(tmp_path: Path) -> WikiConfig:
     """WikiConfig pointing to an isolated tmp_path storage directory.

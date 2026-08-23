@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Assigned-to**: unassigned
@@ -172,8 +172,8 @@ async def test_search_scopes_namespace(tk_fed):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: LLMWikiToolkit.__init__ accepts store=<BaseWikiStore> (bypasses the config-driven construction; sources stay local). New _federated/_is_namespace/_store_for/_search_for (per-namespace WikiCombinedSearch cached by name). browse_pages/read_page/expand/search/search_compact/find_related dispatch on wiki_name; list_wikis enumerates namespaces and skips; _config_for accepts a namespace name / all / local and names the known namespaces in its error. 12 new tests.
 
 **Deviations from spec**: none

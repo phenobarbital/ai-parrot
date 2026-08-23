@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -147,8 +147,8 @@ def test_stub_elides_title_for_qualified_id():
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: NS_SEPARATOR, split_namespaced_id, qualify_id in context.py; _ID_PREFIX_RE now tolerates an optional leading <ns>:: so stub title elision works for qualified ids. 11 new tests in test_context.py.
 
-**Deviations from spec**: none
+**Deviations from spec**: split_namespaced_id additionally rejects a head that is itself a <kind>: prefix (e.g. 'file:a::b.py'), so a local path containing '::' is never mis-split. Ran ruff --fix on context.py (UP035/UP045 pre-existed).

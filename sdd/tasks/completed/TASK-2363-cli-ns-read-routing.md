@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2362
@@ -177,8 +177,8 @@ def test_status_shows_unbuilt_namespace(runner, repo, tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: cli.py: ns_option + helpers (_declared_namespaces, _selected_namespaces, _federate, _qualify_for_ns, _collect_skips/_echo_skips); _resolve_read_store gained ns_opt and federates on both project branches (never for --store); query/page/related/status take --ns; query prints skip notes (stderr under --json); page/related qualify a bare id under --ns <name>; status prints a Namespaces table and adds namespaces/skipped to --json. 14 new CLI tests + a PARROT_HOME autouse isolation fixture in both wiki conftests.
 
-**Deviations from spec**: none
+**Deviations from spec**: 1) query skips the CLI-side _normalize_scores when the store is federated — a second global min-max would undo the per-namespace normalisation+weight the spec requires. 2) --store combined with a --ns other than 'local' is a ClickException rather than a silently ignored flag. 3) status keeps passing the LOCAL store to _open_sources (source staleness is a local-plane property) and pops namespaces/skipped/local out of stats into the top-level payload, so payload['stats'] keeps its exact old shape.

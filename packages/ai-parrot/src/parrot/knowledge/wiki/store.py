@@ -379,6 +379,14 @@ class BaseWikiStore(ABC):
 
     # -- shared concrete behaviour ----------------------------------------
 
+    def _assert_writable(self) -> None:
+        """Hook for stores that can be opened read-only.
+
+        The base implementation is a no-op; :class:`SQLiteWikiStore`
+        overrides it to refuse writes when opened with
+        ``read_only=True`` (FEAT-450).
+        """
+
     async def rebuild_from_tree(
         self,
         tree: dict[str, Any],
@@ -401,7 +409,11 @@ class BaseWikiStore(ABC):
 
         Returns:
             ``{"pages_written": N}``
+
+        Raises:
+            PermissionError: When the store is read-only.
         """
+        self._assert_writable()
         from parrot.knowledge.pageindex.utils import get_nodes
 
         structure = tree.get("structure", tree)
@@ -443,8 +455,15 @@ class SQLiteWikiStore(BaseWikiStore):
 
     Args:
         db_path: Path of the ``wiki.db`` file.  Parent directories are
-            created automatically.
+            created automatically (except in read-only mode).
         wiki_name: Optional wiki name recorded in the ``meta`` table.
+        read_only: Open the plane strictly for reading (FEAT-450). No
+            parent ``mkdir``, no schema replay, no column migration and
+            no sidecar creation — every connection goes straight to
+            :meth:`_connect_readonly`, and every write method raises
+            :class:`PermissionError`. Used for foreign namespaces, whose
+            planes belong to another project and must never be mutated
+            by a read here.
 
     Example::
 
@@ -482,20 +501,36 @@ class SQLiteWikiStore(BaseWikiStore):
             or "unable to open database file" in msg
         )
 
-    def __init__(self, db_path: str | Path, wiki_name: str = "") -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        wiki_name: str = "",
+        *,
+        read_only: bool = False,
+    ) -> None:
         self._db_path = Path(db_path)
-        try:
-            self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            # Tolerate a permission failure only when an existing plane
-            # can plausibly be served read-only; otherwise nothing can
-            # work and the caller should see the real error now.
-            if exc.errno not in (
-                errno.EROFS,
-                errno.EACCES,
-                errno.EPERM,
-            ) or not self._db_path.is_file():
-                raise
+        self._read_only = read_only
+        if read_only:
+            # An unbuilt plane must fail here, not on the first query,
+            # so the namespace resolver can classify it as "unbuilt".
+            if not self._db_path.is_file():
+                raise FileNotFoundError(
+                    f"read-only wiki store has no plane at {self._db_path}"
+                )
+        else:
+            try:
+                self._db_path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                # Tolerate a permission failure only when an existing
+                # plane can plausibly be served read-only; otherwise
+                # nothing can work and the caller should see the real
+                # error now.
+                if exc.errno not in (
+                    errno.EROFS,
+                    errno.EACCES,
+                    errno.EPERM,
+                ) or not self._db_path.is_file():
+                    raise
         self._wiki_name = wiki_name
         self._warned_read_only = False
         self._init_lock = asyncio.Lock()
@@ -505,6 +540,22 @@ class SQLiteWikiStore(BaseWikiStore):
     def db_path(self) -> Path:
         """Path of the underlying SQLite file."""
         return self._db_path
+
+    @property
+    def read_only(self) -> bool:
+        """Whether this store was opened strictly for reading."""
+        return self._read_only
+
+    def _assert_writable(self) -> None:
+        """Refuse a write on a store opened with ``read_only=True``.
+
+        Raises:
+            PermissionError: When the store is read-only.
+        """
+        if self._read_only:
+            raise PermissionError(
+                f"read-only wiki store: {self._db_path}"
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -531,6 +582,38 @@ class SQLiteWikiStore(BaseWikiStore):
         misclassified error cannot permanently disable writes and an
         environment that becomes writable again heals automatically.
         """
+        if self._read_only:
+            # Opt-in read-only (FEAT-450): never probe/replay/migrate —
+            # the write-first path is what creates sidecars and mutates
+            # a foreign plane. On a quiescent plane, ``immutable=1`` is
+            # tried BEFORE the ``mode=ro`` ladder: a WAL reader in
+            # ``mode=ro`` creates the ``-shm``/``-wal`` sidecars when
+            # the directory is writable, and a foreign namespace must
+            # leave no trace at all. A live sidecar means a writer is
+            # around, so the ladder (which locks and sees their commits)
+            # is used instead.
+            if self._sidecars_quiescent():
+                yielded = False
+                try:
+                    async with self._connect_immutable() as conn:
+                        # Re-check AFTER the open: ``immutable=1`` promises
+                        # SQLite the file cannot change, so a writer that
+                        # started between the probe and the open would make
+                        # this connection read torn data. Narrow that window
+                        # by confirming the plane is still quiescent before
+                        # handing the connection out; if it is not, fall
+                        # through to the locking ``mode=ro`` ladder, which
+                        # sees the writer's commits correctly.
+                        if self._sidecars_quiescent():
+                            yielded = True
+                            yield conn
+                            return
+                except sqlite3.OperationalError:
+                    if yielded:
+                        raise
+            async with self._connect_readonly() as conn:
+                yield conn
+            return
         placeholders = ", ".join("?" * len(_SCHEMA_TABLES))
         yielded = False
         try:
@@ -574,6 +657,48 @@ class SQLiteWikiStore(BaseWikiStore):
             ):
                 raise
         async with self._connect_readonly() as conn:
+            yield conn
+
+    def _sidecars_quiescent(self) -> bool:
+        """Whether the plane has no live ``-wal`` / ``-journal`` sidecar.
+
+        Mirrors the safety check the read-only ladder applies before its
+        ``immutable=1`` rung: a non-empty sidecar means committed data
+        an immutable connection would not see. Fails closed — an
+        un-inspectable sidecar counts as live.
+
+        Returns:
+            ``True`` when an immutable open is safe.
+        """
+        for suffix in ("-wal", "-journal"):
+            sidecar = self._db_path.with_name(self._db_path.name + suffix)
+            try:
+                if sidecar.stat().st_size > 0:
+                    return False
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return False
+        return True
+
+    @asynccontextmanager
+    async def _connect_immutable(self) -> AsyncIterator[aiosqlite.Connection]:
+        """Open the plane with ``immutable=1`` — creates no sidecars.
+
+        Only safe on a quiescent plane (see :meth:`_sidecars_quiescent`);
+        callers are responsible for that check.
+
+        Yields:
+            A read-only connection.
+        """
+        base = f"file:{quote(str(self._db_path))}"
+        async with aiosqlite.connect(
+            f"{base}?mode=ro&immutable=1", uri=True
+        ) as conn:
+            conn.row_factory = aiosqlite.Row
+            # The file open is lazy — force it before yielding.
+            await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+            self._log_read_only_once()
             yield conn
 
     @asynccontextmanager
@@ -654,7 +779,14 @@ class SQLiteWikiStore(BaseWikiStore):
             raise imm_exc from plain_ro_error
 
     def _log_read_only_once(self) -> None:
-        """Warn (once per store) that reads are being served degraded."""
+        """Warn (once per store) that reads are being served degraded.
+
+        Silent when the store was opened with ``read_only=True``: that
+        is the caller's explicit intent (a foreign namespace), not a
+        degradation worth warning about.
+        """
+        if self._read_only:
+            return
         if not self._warned_read_only:
             self._warned_read_only = True
             self.logger.warning(
@@ -759,7 +891,11 @@ class SQLiteWikiStore(BaseWikiStore):
 
         Returns:
             Number of pages written.
+
+        Raises:
+            PermissionError: When the store is read-only.
         """
+        self._assert_writable()
         if not pages:
             return 0
         async with self._connect() as conn:
@@ -777,7 +913,11 @@ class SQLiteWikiStore(BaseWikiStore):
 
         Returns:
             Number of edges written.
+
+        Raises:
+            PermissionError: When the store is read-only.
         """
+        self._assert_writable()
         if not edges:
             return 0
         async with self._connect() as conn:
@@ -810,7 +950,11 @@ class SQLiteWikiStore(BaseWikiStore):
 
         Returns:
             ``{"pages_deleted": N, "pages_written": M, "edges_written": K}``
+
+        Raises:
+            PermissionError: When the store is read-only.
         """
+        self._assert_writable()
         edges = edges or []
         new_ids = {page.concept_id for page in pages}
         async with self._connect() as conn:
@@ -879,7 +1023,11 @@ class SQLiteWikiStore(BaseWikiStore):
 
         Returns:
             ``True`` when a page row was actually deleted.
+
+        Raises:
+            PermissionError: When the store is read-only.
         """
+        self._assert_writable()
         async with self._connect() as conn:
             cur = await conn.execute(
                 "DELETE FROM pages WHERE concept_id = ?", (concept_id,)
@@ -910,7 +1058,11 @@ class SQLiteWikiStore(BaseWikiStore):
             concept_id: Page the vector belongs to.
             vector: Embedding as a list of floats (stored as float32).
             model: Identifier of the embedding model used.
+
+        Raises:
+            PermissionError: When the store is read-only.
         """
+        self._assert_writable()
         async with self._connect() as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO embeddings (concept_id, vector, model)"

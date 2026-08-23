@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -195,8 +195,8 @@ def test_merge_repo_wins():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: WikiNamespaceConfig (+kind/target, exactly-one validator, database->arangodb), WikiProjectConfig.namespaces with key validation, GlobalWikiRegistry, parrot_home()/global_registry_path() (PARROT_HOME, read per call), atomic 0o600 save_global_registry, load_global_registry, merge_namespaces, resolve_entry_base, validate_namespace_name. 26 new unit tests. project.py stays stdlib+pydantic.
 
-**Deviations from spec**: none
+**Deviations from spec**: Applied ruff --fix UP045 (Optional -> X | None) across project.py so 'ruff check project.py' is clean; 8 of those violations pre-existed this task.
