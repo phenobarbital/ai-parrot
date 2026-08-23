@@ -49,6 +49,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Literal, Optional
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
@@ -281,8 +282,23 @@ class WikiIngestOrchestrator:
                 triage or ingest mojibake.
         """
         t0 = time.monotonic()
-        source_path_obj = Path(source_path).resolve()
-        source_uri = str(source_path_obj)
+        # FEAT-451 bug fix (revealed by TASK-2358's test_ingest_url):
+        # Path(<url>).resolve() resolves a URL against the process cwd as
+        # if it were a relative filesystem path (e.g. "https://h/a.pdf"
+        # -> "<cwd>/https:/h/a.pdf"), so source_uri would never match the
+        # identity IngestTriageRouter.triage() already computed for the
+        # same URL — str(Path(ref.uri)) (spec-accepted; TASK-2357's own
+        # contract: "For a URL ref, pass Path(ref.uri) — triage only uses
+        # it for identity/hashing"), WITHOUT ever resolving against cwd.
+        # Skip .resolve() for a URL source_path so this method's own
+        # identity computation matches that same (single-slash-collapsed,
+        # un-resolved) convention instead of diverging from it.
+        if urlparse(source_path).scheme in ("http", "https"):
+            source_path_obj = Path(source_path)
+            source_uri = str(source_path_obj)
+        else:
+            source_path_obj = Path(source_path).resolve()
+            source_uri = str(source_path_obj)
 
         effective_destination: Optional[Literal["admit", "archive", "discard"]] = None
         if triage is not None:
@@ -328,13 +344,28 @@ class WikiIngestOrchestrator:
                 entry = await asyncio.to_thread(
                     self._sources.add_source, source_path_obj
                 )
+                source_id = entry.source_id
             except (FileNotFoundError, OSError) as exc:
                 # File does not exist; generate a deterministic placeholder ID.
                 source_id = (
                     f"src-{uuid.uuid5(uuid.NAMESPACE_URL, source_uri).hex[:12]}"
                 )
-                return self._error_report(source_id, source_uri, t0, str(exc))
-            source_id = entry.source_id
+                if triage is None:
+                    return self._error_report(source_id, source_uri, t0, str(exc))
+                # FEAT-451 bug fix (revealed by TASK-2358's test_ingest_url):
+                # add_source() calls path.stat() (sources.py), which always
+                # raises for a URL source_path — there is no local file to
+                # stat. On the supervised (triage-driven) path, defer full
+                # registration to record_decision() (Step 5), which already
+                # tolerates a source_path that does not exist on disk (its
+                # own docstring: "a rejected document may never have been
+                # registered ... at all") — keep going instead of erroring.
+                self.logger.debug(
+                    "add_source could not stat %s (%s) — deferring"
+                    " registration to record_decision (triage-driven).",
+                    source_uri,
+                    exc,
+                )
 
         # Step 2 — acquire content (FEAT-451: loader-backed, not a raw
         # read_text()). Reuse the caller's already-acquired document when

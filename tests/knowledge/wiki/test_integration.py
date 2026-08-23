@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
+import yaml
 
 from parrot.knowledge.wiki import (
     LLMWikiToolkit,
@@ -33,6 +34,7 @@ from parrot.knowledge.wiki import (
     SourceCollectionManager,
     WikiBookkeeper,
     WikiPageCategory,
+    WikiPageRecord,
     WikiStore,
 )
 from parrot.knowledge.wiki.models import WikiLintReport
@@ -498,9 +500,14 @@ class _FakeTriageAdapter:
             ),
         }
         self.calls = 0
+        #: FEAT-451: every prompt this adapter has been asked to score —
+        #: the direct, not-inferred evidence that a skipped (undecodable)
+        #: document's content never reached the LLM.
+        self.received_prompts: list[str] = []
 
     async def ask_structured(self, prompt, output_type, temperature=0.0, system_prompt=None):
         self.calls += 1
+        self.received_prompts.append(prompt)
         for marker, output in self.outputs.items():
             if marker in prompt:
                 return output
@@ -748,3 +755,507 @@ class TestBuildUnaffected:
         assert all(
             p.get("category") != WikiPageCategory.ARCHIVE.value for p in pages
         )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-451: binary documents, URLs, and metadata frontmatter — end to end.
+# ---------------------------------------------------------------------------
+
+
+def _make_permissive_charter():
+    """A charter whose thresholds admit any document scored 1.0/0.5/1.0.
+
+    Matches ``_FakeTriageAdapter``'s no-marker-matched fallback (the
+    first-inserted ``ADMIT_MARKER`` output) and ``_FakeNoveltyScorer``'s
+    no-marker-matched fallback (novelty=0.5): composite = 1.0*0.4 +
+    0.5*0.35 + 1.0*0.25 = 0.825 >= admit(0.75).
+    """
+    from parrot.knowledge.wiki.charter import (
+        CalibrationPolicy,
+        Charter,
+        CharterScope,
+        Thresholds,
+    )
+
+    return Charter(
+        version="1",
+        scope=CharterScope(include=[], exclude=[]),
+        weights={"density": 0.4, "novelty": 0.35, "durability": 0.25},
+        thresholds=Thresholds(admit=0.75, reject=0.35),
+        calibration=CalibrationPolicy(),
+    )
+
+
+class TestFeat451DocumentIngestEndToEnd:
+    """FEAT-451: loader-backed acquisition, URLs, and page frontmatter —
+    the full pipeline (DocumentAcquirer -> IngestTriageRouter ->
+    WikiIngestOrchestrator), not just the units TASK-2351..2357 proved
+    independently.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ingest_pdf_end_to_end(self, tmp_path: Path, sample_pdf: Path) -> None:
+        """PDF -> --auto-equivalent admit -> a page exists, its body starts
+        with ``---``, the block parses via ``yaml.safe_load`` and carries
+        ``page_count``/``content_type``; the sources row has ``doc_metadata``."""
+        from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        acquired = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
+        )
+
+        charter = _make_permissive_charter()
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        entry = await router.triage(sample_pdf, acquired.text)
+        assert entry.proposed_action == "admit"
+
+        pi = _make_pi_mock(
+            insert_content_result={
+                "tree_name": "test-wiki",
+                "new_node_ids": ["n-0001"],
+                "title": "Contrato Marco 2026",
+                "summary": "Page one body text.",
+            }
+        )
+        pi.get_tree = AsyncMock(return_value={})
+        bookkeeper = WikiBookkeeper()
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(pi, None, sources, bookkeeper, store=store)
+        wiki_config = WikiConfig(
+            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
+        )
+
+        report = await orch.ingest(
+            str(sample_pdf),
+            wiki_config,
+            triage=entry,
+            charter_version=charter.version,
+            acquired=acquired,
+        )
+        assert report.status == "ok"
+
+        source_id = sources.find_by_uri(str(sample_pdf.resolve()))
+        source_entry = sources.get_source(source_id)
+        assert source_entry is not None
+        page_id = source_entry.pages_generated[0]
+        page = await store.get_page(page_id)
+        assert page is not None
+        assert page["body"].startswith("---\n")
+
+        meta = yaml.safe_load(page["body"].split("---\n", 2)[1])
+        assert meta["content_type"] == "application/pdf"
+        assert meta["page_count"] == 2
+
+        assert source_entry.doc_metadata is not None
+        assert source_entry.loader
+
+    @pytest.mark.asyncio
+    async def test_ingest_page_carries_provenance(
+        self, tmp_path: Path, sample_pdf: Path
+    ) -> None:
+        """The nested ``triage:`` block matches the manifest entry's
+        composite score, decision, decision source, and charter version."""
+        from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        acquired = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
+        )
+        charter = _make_permissive_charter()
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        entry = await router.triage(sample_pdf, acquired.text)
+        entry.decision = entry.proposed_action
+        entry.decision_source = "human"
+
+        pi = _make_pi_mock(
+            insert_content_result={
+                "tree_name": "test-wiki",
+                "new_node_ids": ["n-0001"],
+                "title": "Contrato Marco 2026",
+                "summary": "Page one body text.",
+            }
+        )
+        pi.get_tree = AsyncMock(return_value={})
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(
+            pi, None, sources, WikiBookkeeper(), store=store
+        )
+        wiki_config = WikiConfig(
+            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
+        )
+        await orch.ingest(
+            str(sample_pdf),
+            wiki_config,
+            triage=entry,
+            charter_version="9.9",
+            acquired=acquired,
+        )
+
+        source_id = sources.find_by_uri(str(sample_pdf.resolve()))
+        page_id = sources.get_source(source_id).pages_generated[0]
+        page = await store.get_page(page_id)
+        meta = yaml.safe_load(page["body"].split("---\n", 2)[1])
+        assert meta["triage"]["composite_score"] == pytest.approx(entry.composite)
+        assert meta["triage"]["decision"] == entry.decision
+        assert meta["triage"]["decision_source"] == "human"
+        assert meta["triage"]["charter_version"] == "9.9"
+
+    @pytest.mark.asyncio
+    async def test_multi_page_pdf_identical_frontmatter(
+        self, tmp_path: Path, sample_pdf: Path
+    ) -> None:
+        """All pages derived from one multi-page source carry a
+        byte-identical frontmatter block."""
+        from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        acquired = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
+        )
+        charter = _make_permissive_charter()
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        entry = await router.triage(sample_pdf, acquired.text)
+
+        # Three node ids — PageIndex split this source into 3 pages.
+        pi = _make_pi_mock(
+            insert_content_result={
+                "tree_name": "test-wiki",
+                "new_node_ids": ["n-0001", "n-0002", "n-0003"],
+                "title": "Contrato Marco 2026",
+                "summary": "Page one body text.",
+            }
+        )
+        pi.get_tree = AsyncMock(return_value={})
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(
+            pi, None, sources, WikiBookkeeper(), store=store
+        )
+        wiki_config = WikiConfig(
+            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
+        )
+        await orch.ingest(
+            str(sample_pdf),
+            wiki_config,
+            triage=entry,
+            charter_version=charter.version,
+            acquired=acquired,
+        )
+
+        source_id = sources.find_by_uri(str(sample_pdf.resolve()))
+        page_ids = sources.get_source(source_id).pages_generated
+        assert len(page_ids) == 3
+        blocks = []
+        for pid in page_ids:
+            page = await store.get_page(pid)
+            assert page["body"].startswith("---\n")
+            blocks.append(page["body"].split("---\n", 2)[1])
+        assert len(set(blocks)) == 1
+
+    @pytest.mark.asyncio
+    async def test_ingest_single_file(self, tmp_path: Path) -> None:
+        """A single document path (not a directory) resolves to exactly
+        one ref / one manifest entry."""
+        from parrot.knowledge.wiki.documents import resolve_sources
+
+        src = tmp_path / "single.md"
+        src.write_text("# Single\n\nOne document, one entry.", encoding="utf-8")
+
+        refs = resolve_sources(str(src))
+        assert len(refs) == 1
+        assert refs[0].is_url is False
+
+    @pytest.mark.asyncio
+    async def test_ingest_url(
+        self, tmp_path: Path, mock_aiohttp_pdf
+    ) -> None:
+        """A mocked URL fetch is extracted, triaged, and ingested — the
+        resulting page frontmatter carries ``source_url``."""
+        from parrot.knowledge.wiki.documents import DocumentAcquirer, resolve_sources
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        refs = resolve_sources("https://example.test/doc.pdf")
+        assert len(refs) == 1
+        ref = refs[0]
+        assert ref.is_url is True
+
+        acquired = await DocumentAcquirer().acquire(ref)
+        assert acquired.metadata.source_url == "https://example.test/doc.pdf"
+
+        charter = _make_permissive_charter()
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        entry = await router.triage(Path(ref.uri), acquired.text)
+
+        pi = _make_pi_mock(
+            insert_content_result={
+                "tree_name": "test-wiki",
+                "new_node_ids": ["n-0001"],
+                "title": "Remote Doc",
+                "summary": "Page one body text.",
+            }
+        )
+        pi.get_tree = AsyncMock(return_value={})
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        orch = WikiIngestOrchestrator(
+            pi, None, sources, WikiBookkeeper(), store=store
+        )
+        wiki_config = WikiConfig(
+            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
+        )
+        report = await orch.ingest(
+            ref.uri,
+            wiki_config,
+            triage=entry,
+            charter_version=charter.version,
+            acquired=acquired,
+        )
+        assert report.status == "ok"
+
+        # NOTE: entry.source_uri (not the raw ref.uri) is the pipeline's
+        # canonical identity for a URL source — IngestTriageRouter.triage()
+        # takes a Path (spec §1 Non-Goals: frozen signature; TASK-2357's
+        # own contract says "pass Path(ref.uri) — triage only uses it for
+        # identity/hashing"), and constructing a Path from a URL string
+        # collapses "//" to "/". WikiIngestOrchestrator.ingest() mirrors
+        # that same convention (see its FEAT-451 comment) so the two
+        # never diverge.
+        source_id = sources.find_by_uri(entry.source_uri)
+        page_id = sources.get_source(source_id).pages_generated[0]
+        page = await store.get_page(page_id)
+        meta = yaml.safe_load(page["body"].split("---\n", 2)[1])
+        assert meta["source_url"] == "https://example.test/doc.pdf"
+
+    @pytest.mark.asyncio
+    async def test_undecodable_never_reaches_llm(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The anti-mojibake guarantee: an undecodable document is skipped
+        before triage, asserted directly against the stub adapter's
+        received prompts — never inferred from output."""
+        import builtins
+
+        from parrot.knowledge.wiki.documents import (
+            DocumentAcquirer,
+            DocumentAcquisitionError,
+            resolve_sources,
+        )
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        corpus = tmp_path / "mixed"
+        corpus.mkdir()
+        (corpus / "good.md").write_text(
+            "# Good\n\nA plain markdown document.", encoding="utf-8"
+        )
+        (corpus / "bad.pdf").write_bytes(b"not a real pdf at all")
+
+        # Force ai-parrot-loaders unavailable so the undecodable .pdf
+        # deterministically fails acquisition regardless of what real
+        # loaders happen to tolerate in this environment.
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("parrot_loaders"):
+                raise ImportError("simulated: ai-parrot-loaders not installed")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        charter = _make_permissive_charter()
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        acquirer = DocumentAcquirer()
+
+        refs = resolve_sources(str(corpus))
+        skipped: list[str] = []
+        triaged_uris: list[str] = []
+        for ref in refs:
+            try:
+                acquired = await acquirer.acquire(ref)
+            except DocumentAcquisitionError:
+                skipped.append(ref.uri)
+                continue
+            entry = await router.triage(Path(ref.uri), acquired.text)
+            triaged_uris.append(entry.source_uri)
+
+        assert any(uri.endswith("bad.pdf") for uri in skipped)
+        assert not any(uri.endswith("bad.pdf") for uri in triaged_uris)
+        # Direct evidence: the LLM stub's received prompts never carry
+        # anything derived from the undecodable document (it was never
+        # read as text in the first place — acquisition failed first).
+        assert adapter.calls == len(triaged_uris) == 1
+        assert all(
+            "bad.pdf" not in prompt for prompt in adapter.received_prompts
+        )
+
+    def test_ingest_mixed_corpus(
+        self, tmp_path: Path, mixed_corpus: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """All decodable docs (plain .md, .md with frontmatter, .pdf,
+        .docx) are triaged, the undecodable .pdf is skipped and reported,
+        and the run still exits 0 — driven through the real CLI, not the
+        lower-level pipeline (complements the test above). Skips cleanly
+        (via ``mixed_corpus``'s own ``importorskip``) when python-docx is
+        not installed."""
+        import parrot.knowledge.pageindex.toolkit as pageindex_toolkit
+        from click.testing import CliRunner
+        from parrot.knowledge.wiki import cli as cli_module
+        from parrot.knowledge.wiki.cli import wiki
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        charter_dir = repo / ".parrot"
+        charter_dir.mkdir(parents=True, exist_ok=True)
+        (charter_dir / "charter.yaml").write_text(
+            "version: \"1\"\n"
+            "scope:\n  include: []\n  exclude: []\n"
+            "weights:\n  density: 0.4\n  novelty: 0.35\n  durability: 0.25\n"
+            "thresholds:\n  admit: 0.75\n  reject: 0.35\n"
+            "calibration: {}\n",
+            encoding="utf-8",
+        )
+
+        light = _FakeTriageAdapter()
+        heavy = _FakeTriageAdapter()
+
+        def _fake_build_adapters(lightweight_model, model):
+            return light, heavy, "fake-light-model", True
+
+        def _fake_build_novelty_scorer(root, config, store):
+            return _FakeNoveltyScorer(novelty_by_marker={})
+
+        class _StubPageIndexToolkit:
+            def __init__(self, adapter, storage_dir, lightweight_model=None, **kwargs):
+                self._n = 0
+
+            async def insert_content(self, tree_name, content, parent_node_id=None, hint=None):
+                self._n += 1
+                return {
+                    "tree_name": tree_name,
+                    "new_node_ids": [f"node-{self._n:04d}"],
+                    "title": "Stub",
+                    "summary": content[:80],
+                }
+
+            async def get_tree(self, tree_name):
+                return {}
+
+        monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
+        monkeypatch.setattr(
+            cli_module, "_build_novelty_scorer", _fake_build_novelty_scorer
+        )
+        monkeypatch.setattr(
+            pageindex_toolkit, "PageIndexToolkit", _StubPageIndexToolkit
+        )
+        monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "stub:light")
+        monkeypatch.setenv("WIKI_MODEL", "stub:heavy")
+
+        result = CliRunner().invoke(
+            wiki, ["ingest", str(mixed_corpus), "--path", str(repo), "--dry-run"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "skipped" in result.output.lower()
+        # plain.md, with_frontmatter.md, contrato.pdf, decision.docx — 4
+        # decodable documents; bad.pdf is skipped before ever reaching
+        # the triage adapter.
+        assert light.calls == 4
+
+    @pytest.mark.asyncio
+    async def test_legacy_pages_unchanged(self, tmp_path: Path) -> None:
+        """Pages ingested before FEAT-451 keep their frontmatter-less
+        bodies — no backfill migration runs when a later document, ingested
+        through the FEAT-451 supervised path, is added to the same wiki."""
+        from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
+        legacy_record = WikiPageRecord(
+            concept_id="legacy-page-1",
+            title="Legacy Page",
+            summary="A page ingested before FEAT-451.",
+            body="Just plain body text, no frontmatter.",
+            source_id="src-legacy",
+        )
+        await store.upsert_pages([legacy_record])
+
+        new_doc = tmp_path / "new.md"
+        new_doc.write_text(
+            "# New\n\nA freshly ingested document.", encoding="utf-8"
+        )
+        acquired = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(new_doc), suffix=".md")
+        )
+
+        charter = _make_permissive_charter()
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        entry = await router.triage(new_doc, acquired.text)
+
+        pi = _make_pi_mock(
+            insert_content_result={
+                "tree_name": "test-wiki",
+                "new_node_ids": ["n-new-1"],
+                "title": "New",
+                "summary": "fresh",
+            }
+        )
+        pi.get_tree = AsyncMock(return_value={})
+        orch = WikiIngestOrchestrator(
+            pi, None, sources, WikiBookkeeper(), store=store
+        )
+        wiki_config = WikiConfig(
+            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
+        )
+        await orch.ingest(
+            str(new_doc),
+            wiki_config,
+            triage=entry,
+            charter_version=charter.version,
+            acquired=acquired,
+        )
+
+        # The legacy page — untouched by an unrelated document's ingest.
+        refetched = await store.get_page("legacy-page-1")
+        assert refetched is not None
+        assert refetched["body"] == "Just plain body text, no frontmatter."
+        assert not refetched["body"].startswith("---\n")

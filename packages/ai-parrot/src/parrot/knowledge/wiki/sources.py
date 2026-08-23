@@ -34,6 +34,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from parrot.knowledge.wiki.models import SourceManifestEntry
 
@@ -383,8 +384,18 @@ class SourceCollectionManager:
         # Resolve to an absolute path, matching add_source's convention,
         # so find_by_uri correctly matches sources already tracked via
         # add_source (and dedupes consistently for future lookups).
-        path = Path(path).resolve()
-        source_uri = str(path)
+        #
+        # FEAT-451 bug fix (revealed by TASK-2358's test_ingest_url):
+        # Path(<url>).resolve() mangles a URL — collapses "//" to "/" and
+        # resolves it against the process cwd as if it were relative, so
+        # a URL source's manifest identity would never match the
+        # DocumentAcquirer/ManifestDocEntry's own uri. A URL source_uri
+        # is kept verbatim; only local paths are resolved.
+        if urlparse(str(path)).scheme in ("http", "https"):
+            source_uri = str(path)
+        else:
+            path = Path(path).resolve()
+            source_uri = str(path)
         existing_id = self.find_by_uri(source_uri)
         existing = self.get_source(existing_id) if existing_id else None
 

@@ -5,6 +5,9 @@ Provides reusable fixtures for:
 - ``sample_source`` / ``sample_sources`` — markdown files in a temp dir
 - ``mock_pi`` / ``mock_gi`` / ``mock_okf`` — mocked toolkits for use in
   unit and integration tests that must not make real LLM API calls
+- ``sample_pdf`` / ``undecodable_file`` / ``mixed_corpus`` /
+  ``mock_aiohttp_pdf`` — FEAT-451 document-acquisition fixtures, shared
+  by the loader-backed ingest unit and integration tests
 """
 
 import os
@@ -228,3 +231,168 @@ async def arango_test_db(arango_params: dict[str, Any]):
             await admin_db.drop_database(db_name)
         finally:
             await admin_db.close()
+
+
+# ---------------------------------------------------------------------------
+# FEAT-451: document-acquisition fixtures (loader-backed `ingest`).
+#
+# No binary fixture is ever committed to the repo — PDFs are built at
+# runtime with ``pymupdf`` (already a core dep, precedent:
+# ``pageindex/pdf_to_markdown.py``), DOCX with ``python-docx`` (an
+# ``ai-parrot-loaders`` extra — guarded with ``pytest.importorskip`` so
+# the suite still collects cleanly without it installed).
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_pdf(tmp_path: Path) -> Path:
+    """A small 2-page PDF with Author/Title set, written via pymupdf.
+
+    Args:
+        tmp_path: Pytest-provided temporary directory.
+
+    Returns:
+        Path to the generated PDF.
+    """
+    import pymupdf
+
+    doc = pymupdf.open()
+    try:
+        for text in ("Page one body text.", "Page two body text."):
+            page = doc.new_page()
+            page.insert_text((72, 72), text)
+        doc.set_metadata({"author": "Legal Dept", "title": "Contrato Marco 2026"})
+        path = tmp_path / "contrato.pdf"
+        doc.save(str(path))
+    finally:
+        doc.close()
+    return path
+
+
+@pytest.fixture
+def undecodable_file(tmp_path: Path) -> Path:
+    """Random bytes with a ``.pdf`` suffix — must be skipped, never triaged.
+
+    Args:
+        tmp_path: Pytest-provided temporary directory.
+
+    Returns:
+        Path to a file that is not valid PDF content.
+    """
+    path = tmp_path / "bad.pdf"
+    path.write_bytes(os.urandom(256))
+    return path
+
+
+@pytest.fixture
+def mixed_corpus(tmp_path: Path, sample_pdf: Path, undecodable_file: Path) -> Path:
+    """A folder with ``.md`` (with and without frontmatter), ``.pdf``,
+    ``.docx``, and one undecodable file — the full skip-and-report
+    surface in one corpus.
+
+    Args:
+        tmp_path: Pytest-provided temporary directory.
+        sample_pdf: FEAT-451 PDF fixture (copied in by content).
+        undecodable_file: FEAT-451 undecodable-file fixture (copied in
+            by content).
+
+    Returns:
+        Path to the mixed corpus directory.
+    """
+    docx = pytest.importorskip("docx", reason="python-docx not installed")
+
+    folder = tmp_path / "mixed_corpus"
+    folder.mkdir()
+    (folder / "plain.md").write_text(
+        "# Plain\n\nA plain markdown source, no frontmatter.",
+        encoding="utf-8",
+    )
+    (folder / "with_frontmatter.md").write_text(
+        "---\ntitle: Contrato\nauthor: Legal\n---\n"
+        "# Body\n\nMarkdown content with leading YAML frontmatter.",
+        encoding="utf-8",
+    )
+    (folder / "contrato.pdf").write_bytes(sample_pdf.read_bytes())
+
+    document = docx.Document()
+    document.add_heading("DOCX Source", level=1)
+    document.add_paragraph("A DOCX document with a durable decision.")
+    document.save(str(folder / "decision.docx"))
+
+    (folder / "bad.pdf").write_bytes(undecodable_file.read_bytes())
+    return folder
+
+
+class _FakeAiohttpContentStream:
+    """Async ``resp.content.iter_chunked()`` double (FEAT-451)."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+
+    async def iter_chunked(self, _size: int):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeAiohttpResponse:
+    """Async-context-manager ``aiohttp`` response double (FEAT-451)."""
+
+    def __init__(self, *, status: int, headers: dict, chunks: list[bytes], url: str) -> None:
+        self.status = status
+        self.headers = headers
+        self.content = _FakeAiohttpContentStream(chunks)
+        self.url = url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAiohttpGetContextManager:
+    def __init__(self, response: _FakeAiohttpResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAiohttpSession:
+    def __init__(self, response: _FakeAiohttpResponse) -> None:
+        self._response = response
+
+    def get(self, _url: str, **_kwargs: Any):
+        return _FakeAiohttpGetContextManager(self._response)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+@pytest.fixture
+def mock_aiohttp_pdf(monkeypatch: pytest.MonkeyPatch, sample_pdf: Path):
+    """Mock an aiohttp fetch that streams back ``sample_pdf``'s real bytes
+    with ``Content-Type: application/pdf`` (also used by TASK-2354).
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        sample_pdf: FEAT-451 PDF fixture — its bytes are the mocked body.
+    """
+    body = sample_pdf.read_bytes()
+    response = _FakeAiohttpResponse(
+        status=200,
+        headers={"Content-Type": "application/pdf"},
+        chunks=[body],
+        url="https://example.test/doc.pdf",
+    )
+    session = _FakeAiohttpSession(response)
+    monkeypatch.setattr(
+        "parrot.knowledge.wiki.documents.aiohttp.ClientSession",
+        lambda **kwargs: session,
+    )
