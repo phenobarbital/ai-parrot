@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:19:31+00:00",
-      "file": "sdd/tasks/completed/TASK-2369-legal-id-utilities.md"
+      "file": "sdd/tasks/completed/TASK-2369-legal-id-utilities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2370",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:24:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2370-legal-ontology-entities.md"
+      "file": "sdd/tasks/completed/TASK-2370-legal-ontology-entities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2371",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:25:51+00:00",
-      "file": "sdd/tasks/completed/TASK-2371-article-in-force-traversal.md"
+      "file": "sdd/tasks/completed/TASK-2371-article-in-force-traversal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2372",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:34:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2372-boe-consolidated-parser.md"
+      "file": "sdd/tasks/completed/TASK-2372-boe-consolidated-parser.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2373",
@@ -101,7 +105,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:39:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2373-boe-datasource.md"
+      "file": "sdd/tasks/completed/TASK-2373-boe-datasource.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2374",
@@ -121,7 +126,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:42:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2374-registration-and-sync-entrypoint.md"
+      "file": "sdd/tasks/completed/TASK-2374-registration-and-sync-entrypoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2375",
@@ -141,7 +147,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:43:51+00:00",
-      "file": "sdd/tasks/completed/TASK-2375-temporal-resolution-helper.md"
+      "file": "sdd/tasks/completed/TASK-2375-temporal-resolution-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2376",
@@ -162,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
       "completed_at": "2026-08-23T01:50:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2376-integration-tests-amendment-chain.md"
+      "file": "sdd/tasks/completed/TASK-2376-integration-tests-amendment-chain.md",
+      "verification": "verified"
     }
   ]
 }
