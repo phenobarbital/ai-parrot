@@ -1,4 +1,4 @@
-"""Unit tests for parrot.knowledge.wiki.documents (FEAT-451, TASK-2351/2352/2353)."""
+"""Unit tests for parrot.knowledge.wiki.documents (FEAT-451, TASK-2351/2352/2353/2354)."""
 
 import builtins
 from pathlib import Path
@@ -249,3 +249,196 @@ class TestAcquireLocal:
         text = src.read_text()
         head = text.split("class DocumentAcquirer")[0]
         assert "import parrot_loaders" not in head
+
+
+# --- aiohttp mocking helpers (TASK-2354) -----------------------------------
+#
+# No aioresponses-style dependency is installed in this repo; the codebase's
+# existing precedent for mocking aiohttp (tests/tools/gigsmart/test_client.py)
+# is a hand-rolled async-context-manager double. These mirror that shape:
+# a fake ClientSession whose get() yields a fake response supporting
+# `async with session.get(url) as resp:` and `resp.content.iter_chunked()`.
+
+
+class _FakeContentStream:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def iter_chunked(self, _size):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeResponse:
+    def __init__(self, *, status, headers, chunks, url):
+        self.status = status
+        self.headers = headers
+        self.content = _FakeContentStream(chunks)
+        self.url = url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeGetContextManager:
+    def __init__(self, *, response=None, exc=None):
+        self._response = response
+        self._exc = exc
+
+    async def __aenter__(self):
+        if self._exc is not None:
+            raise self._exc
+        return self._response
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeClientSession:
+    def __init__(self, *, response=None, exc=None):
+        self._response = response
+        self._exc = exc
+
+    def get(self, _url, **_kwargs):
+        return _FakeGetContextManager(response=self._response, exc=self._exc)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+def _install_fake_session(monkeypatch, *, response=None, exc=None):
+    fake_session = _FakeClientSession(response=response, exc=exc)
+    monkeypatch.setattr(
+        "parrot.knowledge.wiki.documents.aiohttp.ClientSession",
+        lambda **_kwargs: fake_session,
+    )
+
+
+@pytest.fixture
+def url_pdf_bytes(tmp_path):
+    """Bytes of a real, tiny, pymupdf-generated PDF (so downstream loader
+    extraction actually succeeds, not just the fetch itself)."""
+    import pymupdf
+
+    p = tmp_path / "src.pdf"
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 72), "Hello from URL")
+        doc.save(str(p))
+    finally:
+        doc.close()
+    return p.read_bytes()
+
+
+@pytest.fixture
+def mock_aiohttp_pdf(monkeypatch, url_pdf_bytes):
+    resp = _FakeResponse(
+        status=200,
+        headers={"Content-Type": "application/pdf"},
+        chunks=[url_pdf_bytes],
+        url="https://example.test/doc.pdf",
+    )
+    _install_fake_session(monkeypatch, response=resp)
+
+
+@pytest.fixture
+def mock_aiohttp_pdf_no_extension(monkeypatch, url_pdf_bytes):
+    resp = _FakeResponse(
+        status=200,
+        headers={"Content-Type": "application/pdf"},
+        chunks=[url_pdf_bytes],
+        url="https://example.test/download",
+    )
+    _install_fake_session(monkeypatch, response=resp)
+
+
+@pytest.fixture
+def mock_aiohttp_404(monkeypatch):
+    resp = _FakeResponse(
+        status=404, headers={}, chunks=[], url="https://example.test/missing.pdf"
+    )
+    _install_fake_session(monkeypatch, response=resp)
+
+
+@pytest.fixture
+def mock_aiohttp_huge(monkeypatch):
+    resp = _FakeResponse(
+        status=200,
+        headers={"Content-Type": "application/pdf"},
+        chunks=[b"x" * 2048],
+        url="https://example.test/big.pdf",
+    )
+    _install_fake_session(monkeypatch, response=resp)
+
+
+@pytest.fixture
+def mock_aiohttp_timeout(monkeypatch):
+    _install_fake_session(monkeypatch, exc=TimeoutError("simulated timeout"))
+
+
+class TestAcquireUrl:
+    async def test_fetch_sets_source_url(self, mock_aiohttp_pdf):
+        ref = DocumentRef(uri="https://example.test/doc.pdf", is_url=True, suffix=".pdf")
+        doc = await DocumentAcquirer().acquire(ref)
+        assert doc.metadata.source_url == "https://example.test/doc.pdf"
+        assert doc.ref.uri == "https://example.test/doc.pdf"
+
+    async def test_suffix_from_content_type(self, mock_aiohttp_pdf_no_extension):
+        """URL path has no extension; Content-Type: application/pdf decides."""
+        ref = DocumentRef(uri="https://example.test/download", is_url=True, suffix="")
+        doc = await DocumentAcquirer().acquire(ref)
+        assert doc.metadata.content_type == "application/pdf"
+
+    @pytest.mark.parametrize("url", ["ftp://h/a.pdf", "file:///etc/passwd"])
+    async def test_rejects_non_http_scheme(self, url):
+        ref = DocumentRef(uri=url, is_url=True, suffix=".pdf")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer().acquire(ref)
+
+    async def test_non_2xx_raises(self, mock_aiohttp_404):
+        ref = DocumentRef(uri="https://example.test/missing.pdf", is_url=True, suffix=".pdf")
+        with pytest.raises(DocumentAcquisitionError, match="404"):
+            await DocumentAcquirer().acquire(ref)
+
+    async def test_size_cap(self, mock_aiohttp_huge):
+        ref = DocumentRef(uri="https://example.test/big.pdf", is_url=True, suffix=".pdf")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer(max_bytes=1024).acquire(ref)
+
+    async def test_timeout(self, mock_aiohttp_timeout):
+        ref = DocumentRef(uri="https://example.test/slow.pdf", is_url=True, suffix=".pdf")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer(fetch_timeout=0.01).acquire(ref)
+
+    async def test_no_temp_file_leaks(self, tmp_path, monkeypatch, mock_aiohttp_404):
+        """Temp dir is empty after a failed fetch."""
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.setattr(
+            "parrot.knowledge.wiki.documents.tempfile.gettempdir",
+            lambda: str(tmp_path),
+        )
+        ref = DocumentRef(uri="https://example.test/missing.pdf", is_url=True, suffix=".pdf")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer().acquire(ref)
+        assert list(tmp_path.iterdir()) == []
+
+    async def test_no_temp_file_leaks_on_size_cap(self, tmp_path, monkeypatch, mock_aiohttp_huge):
+        """Temp dir is empty after a size-cap violation mid-download."""
+        monkeypatch.setattr(
+            "parrot.knowledge.wiki.documents.tempfile.gettempdir",
+            lambda: str(tmp_path),
+        )
+        monkeypatch.setattr(
+            "parrot.knowledge.wiki.documents.tempfile.tempdir", None, raising=False
+        )
+        ref = DocumentRef(uri="https://example.test/big.pdf", is_url=True, suffix=".pdf")
+        with pytest.raises(DocumentAcquisitionError):
+            await DocumentAcquirer(max_bytes=1024, cache_dir=tmp_path).acquire(ref)
+        assert list(tmp_path.iterdir()) == []

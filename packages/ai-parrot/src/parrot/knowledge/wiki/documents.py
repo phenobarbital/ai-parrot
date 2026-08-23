@@ -18,10 +18,12 @@ import asyncio
 import logging
 import mimetypes
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import aiohttp
 import click
 import pymupdf
 import yaml
@@ -444,6 +446,29 @@ def _validate_extracted_text(text: str, path: Path) -> None:
         )
 
 
+def _resolve_url_suffix(content_type: str | None, url: str) -> str:
+    """Resolve a filename suffix for a downloaded URL.
+
+    Resolution order: the ``Content-Type`` response header (mapped via
+    ``mimetypes.guess_extension``), then the URL path's own suffix, then
+    ``""``.
+
+    Args:
+        content_type: The response's ``Content-Type`` header value, if
+            any (may carry a ``; charset=...`` suffix).
+        url: The original URL, used as a fallback source for the suffix.
+
+    Returns:
+        A lowercased suffix including the dot, or ``""`` when unresolved.
+    """
+    if content_type:
+        mime = content_type.split(";", 1)[0].strip()
+        guessed = mimetypes.guess_extension(mime)
+        if guessed:
+            return guessed.lower()
+    return Path(urlparse(url).path).suffix.lower()
+
+
 class DocumentAcquirer:
     """Extracts markdown text + metadata from a :class:`DocumentRef`.
 
@@ -500,10 +525,106 @@ class DocumentAcquirer:
         return await self._acquire_via_loader(ref, path)
 
     async def _acquire_url(self, ref: DocumentRef) -> AcquiredDocument:
-        """Fetch and acquire a remote document. Implemented in TASK-2354."""
-        raise NotImplementedError(
-            "URL acquisition is implemented in TASK-2354"
-        )
+        """Fetch a remote document, then acquire it via the local branches.
+
+        The URL is downloaded to a temp file and dispatched through the
+        same plain-text / loader branches used for local documents — there
+        is no separate extraction path for remote documents. The temp
+        file is always removed, including on error.
+
+        Args:
+            ref: The document ref being acquired. ``ref.uri`` must be an
+                ``http(s)://`` URL.
+
+        Returns:
+            The extracted :class:`AcquiredDocument`. ``metadata.source_url``
+            is set to the original URL, and ``.ref`` is the original URL
+            ref — never the temp path, which no longer exists once this
+            returns.
+
+        Raises:
+            DocumentAcquisitionError: On an unsupported scheme, a
+                non-2xx response, a size-cap violation, a fetch timeout,
+                or an extraction failure on the downloaded content.
+        """
+        parsed = urlparse(ref.uri)
+        if parsed.scheme not in ("http", "https"):
+            raise DocumentAcquisitionError(
+                f"Unsupported URL scheme {parsed.scheme!r}: {ref.uri}"
+            )
+        tmp_path, suffix = await self._download(ref.uri)
+        try:
+            local = DocumentRef(uri=str(tmp_path), is_url=False, suffix=suffix)
+            acquired = await self.acquire(local)
+            acquired.metadata.source_url = ref.uri
+            acquired.ref = ref  # record the URL, not the temp path
+            return acquired
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    async def _download(self, url: str) -> tuple[Path, str]:
+        """Fetch *url* into a capped local temp file.
+
+        Streams the response body in chunks — never buffers the whole
+        response in memory — aborting once ``self.max_bytes`` is exceeded
+        (measured on bytes actually read, not trusted from
+        ``Content-Length``). The scheme is re-checked against the
+        *final*, post-redirect URL.
+
+        Args:
+            url: The ``http(s)://`` URL to fetch.
+
+        Returns:
+            ``(path, suffix)`` of the downloaded temp file. ``suffix`` is
+            resolved from the ``Content-Type`` response header when
+            present, else the URL path's own suffix, else ``""``.
+
+        Raises:
+            DocumentAcquisitionError: On an unsupported scheme after
+                redirect, a non-2xx status, a size-cap violation, or any
+                network/timeout error. Any partially-written temp file is
+                removed before raising.
+        """
+        timeout = aiohttp.ClientTimeout(total=self.fetch_timeout)
+        tmp_path: Path | None = None
+        success = False
+        try:
+            async with (
+                aiohttp.ClientSession(timeout=timeout) as session,
+                session.get(url) as resp,
+            ):
+                if not (200 <= resp.status < 300):
+                    raise DocumentAcquisitionError(
+                        f"{url}: fetch failed with HTTP status {resp.status}"
+                    )
+                final_scheme = urlparse(str(resp.url)).scheme
+                if final_scheme not in ("http", "https"):
+                    raise DocumentAcquisitionError(
+                        "Unsupported URL scheme after redirect "
+                        f"{final_scheme!r}: {resp.url}"
+                    )
+
+                suffix = _resolve_url_suffix(resp.headers.get("Content-Type"), url)
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=suffix, dir=self.cache_dir
+                ) as tmp:
+                    tmp_path = Path(tmp.name)
+                    total = 0
+                    async for chunk in resp.content.iter_chunked(65536):
+                        total += len(chunk)
+                        if total > self.max_bytes:
+                            raise DocumentAcquisitionError(
+                                f"{url}: response exceeded "
+                                f"max_bytes={self.max_bytes}"
+                            )
+                        await asyncio.to_thread(tmp.write, chunk)
+            success = True
+            return tmp_path, suffix
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            raise DocumentAcquisitionError(f"{url}: fetch failed: {exc}") from exc
+        finally:
+            if not success and tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
 
     async def _acquire_plaintext(
         self, ref: DocumentRef, path: Path
