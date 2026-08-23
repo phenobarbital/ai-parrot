@@ -288,6 +288,20 @@ pre-existing baseline categories (verified against `dev`'s copy and the
 TASK-2380 commit — same categories, same lines, only shifted). Committed
 with `git add -f agents/fireflies_wiki.py`.
 
+**Post-hoc addendum (adversarial code review, same day)**: the reviewer
+flagged (IMPORTANT) that the `/note`-armed branch of `ask()` bypasses
+`BasicAgent.ask()`'s input guardrail pipeline (prompt-injection detection),
+tracing/OTEL spans, and conversation-memory recording — a real trade-off
+that was implicit rather than documented. Addressed by adding an explicit
+"Deliberate trade-off" paragraph to `ask()`'s docstring
+(`agents/fireflies_wiki.py`) spelling out exactly what does and doesn't run
+for the armed path, and confirming the non-armed path is an unconditional,
+guardrail-preserving passthrough. Accepted as-is (not re-architected) given
+the single-operator, non-conversational nature of a capture action; no
+test changes needed since behavior is unchanged, only documented.
+`pytest tests/test_fireflies_wiki_agent.py` re-run after the docstring
+edit → 58 passed.
+
 **Deviations from spec**: (1) The scope's "extend the agent's system
 prompt" is implemented via the verified `instructions` constructor kwarg
 (`BasicAgent.__init__` → `self.goal`) rather than mutating

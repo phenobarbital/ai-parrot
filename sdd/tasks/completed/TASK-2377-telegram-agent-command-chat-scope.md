@@ -251,4 +251,20 @@ byte-identical. Could not obtain a green run of these two files in this
 sandbox; recommend re-running them in CI/a networked environment before
 merge.
 
+**Environment hazard, logged for the record**: twice during this feature's
+implementation, an external automated process (a "style: apply black
+formatting (post sdd-worker)" auto-commit, not initiated by this
+sdd-worker session — three OTHER `claude --agent sdd-worker` processes
+were concurrently running on this machine per `ps aux`) reformatted the
+*entire* `wrapper.py` file (300+ line diff vs. this task's actual ~24-line
+change) directly on this worktree's branch, twice, within seconds of each
+other. Both were caught (via `git diff dev...HEAD --stat` showing an
+unexpectedly large diff) and reverted with `git revert` before this
+feature's branch was pushed; `git diff dev...HEAD` for `wrapper.py` is
+confirmed back to the intended ~24/23-line change. Pushed immediately
+after the second revert to reduce the window for further interference —
+matching the project's own recorded lesson on concurrent sdd-worker
+worktree hazards. No task code was lost; this is disclosed for traceability
+in case reflog/cherry-pick recovery is ever needed.
+
 **Deviations from spec**: none

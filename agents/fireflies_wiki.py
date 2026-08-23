@@ -832,6 +832,18 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         docstring and the agent's ``instructions``) are byte-identical to
         before this method existed (G7).
 
+        Deliberate trade-off (code review, FEAT-452): the armed branch
+        calls :meth:`_force_capture` directly and does NOT go through
+        ``BasicAgent.ask()`` — so the input guardrail pipeline
+        (prompt-injection detection), tracing/OTEL spans,
+        ``current_user_id``/``current_session_id`` contextvars, and
+        conversation-memory recording all do NOT run for a forced capture.
+        Accepted for a single-operator personal-use agent: a captured
+        message is a discrete write action, not a conversational turn, and
+        the raw transcript is never re-surfaced as an answer to the user.
+        The non-armed path is unaffected — it is an unconditional
+        passthrough to the real ``ask()``, guardrails included.
+
         Args:
             question: The user's message text (transcribed voice or typed).
             *args: Forwarded to the parent ``ask()`` unchanged.
