@@ -484,6 +484,163 @@ class TestNotesWikiPlane:
 
 
 # ---------------------------------------------------------------------------
+# Audio-note capture toolkit (TASK-2380, G1/G2/G5) — capture_audio_note
+# ---------------------------------------------------------------------------
+
+_STRUCTURED_RESPONSE = (
+    "## Title\nBuy Milk\n\n"
+    "## Tags\nshopping, reminder\n\n"
+    "## Summary\nRecordar comprar leche.\n\n"
+    "## Key Points\n- comprar leche en la tienda\n\n"
+    "## Action Items\n- ir a la tienda hoy"
+)
+
+
+@pytest.fixture
+def toolkit(agent_module, tmp_path):
+    """An AudioNoteCaptureToolkit with every collaborator mocked.
+
+    ``obsidian.create_note`` and ``notes_wiki.ingest_source`` are
+    ``AsyncMock``s the test can reconfigure; ``llm_call`` defaults to a
+    well-formed structured response.
+    """
+    obsidian = MagicMock()
+    obsidian.create_note = AsyncMock(return_value={"created": True, "file": {}})
+
+    notes_wiki = MagicMock()
+    notes_wiki.ingest_source = AsyncMock(return_value={})
+
+    llm_call = AsyncMock(return_value=_STRUCTURED_RESPONSE)
+
+    cls = agent_module.AudioNoteCaptureToolkit
+    tk = cls(
+        obsidian_toolkit=obsidian,
+        notes_wiki_provider=lambda: notes_wiki,
+        llm_call=llm_call,
+        vault_path=tmp_path / "vault",
+    )
+    # Expose the mocks for assertions without re-deriving them from the toolkit.
+    tk._test_obsidian = obsidian
+    tk._test_notes_wiki = notes_wiki
+    tk._test_llm_call = llm_call
+    return tk
+
+
+class TestAudioNoteCapture:
+    """The single capture_audio_note tool: structure -> vault write -> wiki ingest."""
+
+    @pytest.mark.asyncio
+    async def test_note_path_and_transcript_preserved(self, toolkit):
+        """Note lands in audio-notes/ with the raw transcript under ## Transcript."""
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["vault_path"].startswith("audio-notes/")
+        content = toolkit._test_obsidian.create_note.call_args.kwargs["content"]
+        assert "## Transcript" in content
+        assert "recordar comprar leche" in content
+
+    @pytest.mark.asyncio
+    async def test_language_split(self, toolkit):
+        """Spanish body, English title and tags."""
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["structured"] is True
+        frontmatter = toolkit._test_obsidian.create_note.call_args.kwargs["frontmatter"]
+        assert frontmatter["okf"]["title"] == "Buy Milk"
+        assert frontmatter["tags"] == ["shopping", "reminder"]
+        content = toolkit._test_obsidian.create_note.call_args.kwargs["content"]
+        assert "Recordar comprar leche." in content
+
+    @pytest.mark.asyncio
+    async def test_slug_collision_retries_with_suffix(self, toolkit):
+        """FileExistsError on the first path -> retry as -2."""
+        toolkit._test_obsidian.create_note = AsyncMock(
+            side_effect=[FileExistsError(), {"created": True, "file": {}}]
+        )
+
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["note_title"].endswith("-2")
+        assert toolkit._test_obsidian.create_note.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_writes_verbatim(self, toolkit):
+        """Structuring failure still writes a note, flagged structured=False."""
+        toolkit._test_llm_call.side_effect = RuntimeError("llm down")
+
+        result = await toolkit.capture_audio_note("just a raw thought", language="en")
+
+        assert result["structured"] is False
+        content = toolkit._test_obsidian.create_note.call_args.kwargs["content"]
+        assert "just a raw thought" in content
+
+    @pytest.mark.asyncio
+    async def test_wiki_unavailable_keeps_note(self, toolkit, agent_module, tmp_path):
+        """_notes_wiki is None -> note written, wiki_ingested False."""
+        cls = agent_module.AudioNoteCaptureToolkit
+        tk = cls(
+            obsidian_toolkit=toolkit._test_obsidian,
+            notes_wiki_provider=lambda: None,
+            llm_call=toolkit._test_llm_call,
+            vault_path=tmp_path / "vault",
+        )
+
+        result = await tk.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["wiki_ingested"] is False
+        assert result["wiki_reason"]
+        toolkit._test_obsidian.create_note.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ingest_error_keeps_note(self, toolkit):
+        """ingest_source raising does not propagate and does not lose the note."""
+        toolkit._test_notes_wiki.ingest_source = AsyncMock(
+            side_effect=RuntimeError("wiki down")
+        )
+
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["wiki_ingested"] is False
+        assert "wiki down" in result["wiki_reason"]
+        toolkit._test_obsidian.create_note.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_vault_failure_surfaces(self, toolkit):
+        """A vault write failure is NOT swallowed."""
+        toolkit._test_obsidian.create_note = AsyncMock(side_effect=OSError("disk full"))
+
+        with pytest.raises(OSError):
+            await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+    @pytest.mark.asyncio
+    async def test_ingest_source_receives_absolute_path(self, toolkit):
+        """ingest_source is called with an absolute path, not a vault-relative one."""
+        await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        args, _kwargs = toolkit._test_notes_wiki.ingest_source.call_args
+        assert Path(args[1]).is_absolute()
+
+    @pytest.mark.asyncio
+    async def test_exactly_one_llm_call(self, toolkit):
+        """The capture path makes exactly one LLM call."""
+        await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert toolkit._test_llm_call.await_count == 1
+
+    def test_toolkit_exposes_single_tool(self, toolkit):
+        """Only capture_audio_note is exposed; helpers stay private."""
+        assert [t.name for t in toolkit.get_tools()] == ["capture_audio_note"]
+
+    @pytest.mark.asyncio
+    async def test_typed_input_without_language(self, toolkit):
+        """language=None (typed note) works."""
+        result = await toolkit.capture_audio_note("remember to buy milk")
+
+        assert result["structured"] is True
+        assert toolkit._test_llm_call.await_count == 1
+
+
+# ---------------------------------------------------------------------------
 # Vault scoping (TASK-2378, G6) — _ingest_vault_into_wiki
 # ---------------------------------------------------------------------------
 
