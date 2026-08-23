@@ -75,6 +75,11 @@ def agent(agent_module, tmp_path):
     inst.weekly_recipients = ["weekly@example.com"]
     inst._wiki = None
 
+    inst.notes_wiki_name = "notes"
+    inst.notes_wiki_storage_dir = tmp_path / "wiki-notes"
+    inst.notes_folder = "audio-notes"
+    inst._notes_wiki = None
+
     inst.obsidian_toolkit = MagicMock()
     inst.obsidian_toolkit.read_note = AsyncMock(return_value={"content": ""})
     inst.client = MagicMock()
@@ -331,6 +336,151 @@ class TestSyncMeetingsToWiki:
 
         assert report["status"] == "error"
         assert "fireflies down" in report["error"]
+
+
+# ---------------------------------------------------------------------------
+# Notes wiki plane (TASK-2379, G2) — _build_notes_wiki_toolkit
+# ---------------------------------------------------------------------------
+
+class TestNotesWikiPlane:
+    """A separate LLMWikiToolkit instance backs audio-note captures."""
+
+    @staticmethod
+    def _patch_wiki_construction(monkeypatch, agent, *, create_wiki_error=None):
+        """Patch the graph/wiki-config/toolkit seams _build_notes_wiki_toolkit uses.
+
+        Returns:
+            The ``fake_toolkit`` MagicMock returned by the patched
+            ``LLMWikiToolkit(...)`` constructor, with ``create_wiki`` as an
+            ``AsyncMock`` (optionally raising ``create_wiki_error``).
+        """
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+        import parrot.knowledge.wiki.models as wiki_models
+        import parrot.knowledge.wiki.toolkit as wiki_toolkit_module
+
+        monkeypatch.setattr(
+            graphindex_factory,
+            "build_graph_memory_toolkit",
+            AsyncMock(return_value=MagicMock(name="graph_toolkit")),
+        )
+        monkeypatch.setattr(wiki_models, "WikiConfig", MagicMock(name="WikiConfig"))
+
+        fake_toolkit = MagicMock(name="LLMWikiToolkit_instance")
+        fake_toolkit.create_wiki = AsyncMock(
+            side_effect=create_wiki_error, return_value={}
+        )
+        monkeypatch.setattr(
+            wiki_toolkit_module,
+            "LLMWikiToolkit",
+            MagicMock(return_value=fake_toolkit),
+        )
+        monkeypatch.setattr(agent, "_build_pageindex_toolkit", MagicMock(return_value=None))
+        return fake_toolkit
+
+    @pytest.mark.asyncio
+    async def test_separate_instance_from_meetings(self, agent, monkeypatch):
+        """The notes plane is a distinct toolkit from the meetings plane."""
+        self._patch_wiki_construction(monkeypatch, agent)
+        agent._wiki = MagicMock(name="meetings_toolkit")
+
+        agent._notes_wiki = await agent._build_notes_wiki_toolkit()
+
+        assert agent._notes_wiki is not None
+        assert agent._notes_wiki is not agent._wiki
+
+    def test_defaults(self, agent):
+        """Unset env yields notes / ~/.parrot/wikis/notes / audio-notes."""
+        assert agent.notes_wiki_name == "notes"
+        assert agent.notes_folder == "audio-notes"
+
+    @pytest.mark.asyncio
+    async def test_create_wiki_called_and_idempotent(self, agent, monkeypatch):
+        """create_wiki bootstraps the plane and tolerates a second configure()."""
+        fake_toolkit = self._patch_wiki_construction(monkeypatch, agent)
+
+        await agent._build_notes_wiki_toolkit()
+        await agent._build_notes_wiki_toolkit()  # second configure() pass
+
+        assert fake_toolkit.create_wiki.await_count == 2
+        fake_toolkit.create_wiki.assert_awaited_with(agent.notes_wiki_name)
+
+    @pytest.mark.asyncio
+    async def test_create_wiki_failure_does_not_null_the_toolkit(self, agent, monkeypatch):
+        """A create_wiki error is logged but the toolkit is still returned."""
+        self._patch_wiki_construction(
+            monkeypatch, agent, create_wiki_error=RuntimeError("disk full")
+        )
+
+        result = await agent._build_notes_wiki_toolkit()
+
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_build_failure_returns_none(self, agent, monkeypatch):
+        """A construction error leaves _notes_wiki as None without raising."""
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+
+        monkeypatch.setattr(
+            graphindex_factory,
+            "build_graph_memory_toolkit",
+            AsyncMock(side_effect=RuntimeError("graph plane unavailable")),
+        )
+
+        agent._notes_wiki = await agent._build_notes_wiki_toolkit()
+
+        assert agent._notes_wiki is None
+
+    @pytest.mark.asyncio
+    async def test_meetings_plane_unaffected(self, agent, monkeypatch):
+        """self._wiki still builds via the unmodified meetings code path."""
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+        import parrot.knowledge.wiki.models as wiki_models
+        import parrot.knowledge.wiki.toolkit as wiki_toolkit_module
+
+        monkeypatch.setattr(
+            graphindex_factory,
+            "build_graph_memory_toolkit",
+            AsyncMock(return_value=MagicMock(name="graph_toolkit")),
+        )
+        monkeypatch.setattr(wiki_models, "WikiConfig", MagicMock(name="WikiConfig"))
+        meetings_toolkit = MagicMock(name="meetings_toolkit_instance")
+        monkeypatch.setattr(
+            wiki_toolkit_module,
+            "LLMWikiToolkit",
+            MagicMock(return_value=meetings_toolkit),
+        )
+        monkeypatch.setattr(agent, "_build_pageindex_toolkit", MagicMock(return_value=None))
+
+        agent._wiki = await agent._build_wiki_toolkit()
+
+        assert agent._wiki is meetings_toolkit
+
+    @pytest.mark.asyncio
+    async def test_graph_tenant_isolated(self, agent, monkeypatch):
+        """build_graph_memory_toolkit receives tenant_id=notes_wiki_name."""
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+        import parrot.knowledge.wiki.models as wiki_models
+        import parrot.knowledge.wiki.toolkit as wiki_toolkit_module
+
+        graph_mock = AsyncMock(return_value=MagicMock(name="graph_toolkit"))
+        monkeypatch.setattr(
+            graphindex_factory, "build_graph_memory_toolkit", graph_mock
+        )
+        monkeypatch.setattr(wiki_models, "WikiConfig", MagicMock(name="WikiConfig"))
+        fake_toolkit = MagicMock(name="LLMWikiToolkit_instance")
+        fake_toolkit.create_wiki = AsyncMock(return_value={})
+        monkeypatch.setattr(
+            wiki_toolkit_module,
+            "LLMWikiToolkit",
+            MagicMock(return_value=fake_toolkit),
+        )
+        monkeypatch.setattr(agent, "_build_pageindex_toolkit", MagicMock(return_value=None))
+
+        await agent._build_notes_wiki_toolkit()
+
+        _args, kwargs = graph_mock.call_args
+        assert kwargs["tenant_id"] == agent.notes_wiki_name
+        assert kwargs["tenant_id"] != agent.wiki_name
 
 
 # ---------------------------------------------------------------------------

@@ -154,6 +154,16 @@ _WIKI_STORAGE_DIR: str = config.get(
 )
 _EXTRACT_ENTITIES: bool = _bool_env("FIREFLIES_WIKI_EXTRACT_ENTITIES", False)
 
+#: Audio-notes wiki plane (FEAT-452 — separate from the meetings wiki so
+#: personal captures don't dilute meeting retrieval; see spec §2 "Two
+#: separate wiki toolkit instances").
+_AUDIO_NOTES_WIKI_NAME: str = config.get("AUDIO_NOTES_WIKI_NAME", fallback="notes")
+_AUDIO_NOTES_WIKI_STORAGE_DIR: str = config.get(
+    "AUDIO_NOTES_WIKI_STORAGE_DIR",
+    fallback=str(Path.home() / ".parrot" / "wikis" / "notes"),
+)
+_AUDIO_NOTES_FOLDER: str = config.get("AUDIO_NOTES_FOLDER", fallback="audio-notes")
+
 #: Run bounds.
 _SYNC_LIMIT: int = _int_env("FIREFLIES_WIKI_SYNC_LIMIT", 20)
 _ANALYSIS_LIMIT: int = _int_env("FIREFLIES_WIKI_ANALYSIS_LIMIT", 20)
@@ -170,6 +180,10 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         wiki_storage_dir: Root directory of the wiki's storage planes.
         daily_recipients: Addresses for the 08:00 digest.
         weekly_recipients: Addresses for the Monday insights email.
+        notes_wiki_name: Identifier for the separate audio-notes wiki plane
+            (FEAT-452) — distinct from ``wiki_name``.
+        notes_wiki_storage_dir: Root directory of the notes wiki's storage.
+        notes_folder: Vault subfolder audio-note captures are written to.
 
     Example::
 
@@ -186,6 +200,9 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         wiki_storage_dir: Optional[str | Path] = None,
         daily_recipients: Optional[List[str]] = None,
         weekly_recipients: Optional[List[str]] = None,
+        notes_wiki_name: Optional[str] = None,
+        notes_wiki_storage_dir: Optional[str | Path] = None,
+        notes_folder: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the agent.
@@ -199,6 +216,13 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 ``FIREFLIES_WIKI_DAILY_RECIPIENTS``.
             weekly_recipients: Weekly insights addresses. Defaults to
                 ``FIREFLIES_WIKI_WEEKLY_RECIPIENTS``.
+            notes_wiki_name: Audio-notes wiki identifier — a **separate**
+                plane from ``wiki_name`` (FEAT-452). Defaults to
+                ``AUDIO_NOTES_WIKI_NAME``.
+            notes_wiki_storage_dir: Audio-notes wiki storage root. Defaults
+                to ``AUDIO_NOTES_WIKI_STORAGE_DIR``.
+            notes_folder: Vault subfolder for audio-note captures. Defaults
+                to ``AUDIO_NOTES_FOLDER``.
             **kwargs: Forwarded to :class:`FirefliesObsidianAgent`. ``llm``
                 defaults to Claude Haiku 4.5 when the caller does not pin one.
         """
@@ -223,6 +247,19 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         #: Set in :meth:`configure`; ``None`` when the wiki plane is unavailable.
         self._wiki: Optional[Any] = None
 
+        # --- Audio-notes wiki plane (FEAT-452) --------------------------
+        self.notes_wiki_name: str = notes_wiki_name or _AUDIO_NOTES_WIKI_NAME
+        self.notes_wiki_storage_dir: Path = Path(
+            notes_wiki_storage_dir or _AUDIO_NOTES_WIKI_STORAGE_DIR
+        ).expanduser()
+        self.notes_folder: str = notes_folder or _AUDIO_NOTES_FOLDER
+
+        #: Set in :meth:`configure`; ``None`` when the notes plane is
+        #: unavailable. A DISTINCT LLMWikiToolkit instance from ``self._wiki``
+        #: — ``_config_for`` raises on a wiki_name mismatch, so one toolkit
+        #: cannot serve both planes.
+        self._notes_wiki: Optional[Any] = None
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -239,6 +276,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         """
         await super().configure(app)
         self._wiki = await self._build_wiki_toolkit()
+        self._notes_wiki = await self._build_notes_wiki_toolkit()
 
     async def _build_wiki_toolkit(self) -> Optional[Any]:
         """Construct the ``LLMWikiToolkit`` backing meeting ingestion.
@@ -326,6 +364,82 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             self.logger.warning(
                 "PageIndexToolkit unavailable (%s); wiki pages will be written "
                 "to the retrieval plane only.",
+                exc,
+            )
+            return None
+
+    async def _build_notes_wiki_toolkit(self) -> Optional[Any]:
+        """Construct the **separate** ``LLMWikiToolkit`` backing audio notes.
+
+        FEAT-452, Module 2. A near-copy of :meth:`_build_wiki_toolkit`
+        pointed at the notes storage root instead of the meetings one.
+        A second toolkit instance is mandatory, not optional:
+        ``LLMWikiToolkit._config_for`` raises ``ValueError`` when the
+        requested ``wiki_name`` does not match the toolkit's own configured
+        wiki, so ``self._wiki`` cannot also serve the ``notes`` plane.
+
+        Because the two planes use different storage roots they share no
+        manifest and no ``wiki.db`` — there is no cross-instance
+        consistency hazard.
+
+        Bootstraps the layout with an idempotent ``create_wiki()`` call so
+        repeat ``configure()`` calls (e.g. process restarts) do not error.
+
+        Returns:
+            A wired ``LLMWikiToolkit`` for the notes plane, or ``None`` when
+            construction fails.
+        """
+        try:
+            from parrot.knowledge.graphindex.factory import (
+                build_graph_memory_toolkit,
+            )
+            from parrot.knowledge.wiki.models import WikiConfig
+            from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+
+            storage = self.notes_wiki_storage_dir
+            storage.mkdir(parents=True, exist_ok=True)
+
+            pageindex_toolkit = self._build_pageindex_toolkit(storage)
+            graph_toolkit = await build_graph_memory_toolkit(
+                storage / "graph",
+                tenant_id=self.notes_wiki_name,
+                agent_id=self.name,
+            )
+
+            wiki_config = WikiConfig(
+                wiki_name=self.notes_wiki_name,
+                storage_dir=storage,
+                sync_graph=True,
+            )
+            toolkit = LLMWikiToolkit(
+                pageindex_toolkit,
+                graph_toolkit,
+                None,
+                wiki_config,
+                agent_id=self.name,
+            )
+
+            try:
+                await toolkit.create_wiki(self.notes_wiki_name)
+            except Exception as exc:  # noqa: BLE001 — bootstrap must not null the toolkit
+                self.logger.warning(
+                    "create_wiki(%s) failed (%s); continuing with the "
+                    "existing layout.",
+                    self.notes_wiki_name,
+                    exc,
+                )
+
+            self.logger.info(
+                "Notes LLMWikiToolkit ready (wiki=%s, storage=%s, pageindex=%s)",
+                self.notes_wiki_name,
+                storage,
+                "on" if pageindex_toolkit is not None else "off",
+            )
+            return toolkit
+        except Exception as exc:  # noqa: BLE001 — notes plane is best-effort
+            self.logger.warning(
+                "Notes LLMWikiToolkit unavailable (%s); audio-note captures "
+                "will be written to Obsidian only.",
                 exc,
             )
             return None
