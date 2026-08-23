@@ -48,9 +48,7 @@ def repo(tmp_path: Path) -> Path:
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "store.py").write_text(PY_STORE, encoding="utf-8")
     (tmp_path / "pkg" / "util.py").write_text(PY_UTIL, encoding="utf-8")
-    (tmp_path / "README.md").write_text(
-        "# Demo\n\nA demo project.", encoding="utf-8"
-    )
+    (tmp_path / "README.md").write_text("# Demo\n\nA demo project.", encoding="utf-8")
     return tmp_path
 
 
@@ -60,9 +58,7 @@ def runner() -> CliRunner:
 
 
 def _build(runner: CliRunner, repo: Path, *extra: str):
-    result = runner.invoke(
-        wiki, ["build", "--path", str(repo), "--no-git", *extra]
-    )
+    result = runner.invoke(wiki, ["build", "--path", str(repo), "--no-git", *extra])
     assert result.exit_code == 0, result.output
     return result
 
@@ -76,9 +72,7 @@ class TestBuildLock:
     def test_build_refuses_while_another_writer_holds_the_lock(self, runner, repo):
         with wiki_write_lock(_store_dir(repo)) as held:
             assert held is True
-            result = runner.invoke(
-                wiki, ["build", "--path", str(repo), "--no-git"]
-            )
+            result = runner.invoke(wiki, ["build", "--path", str(repo), "--no-git"])
         assert result.exit_code != 0
         assert "in progress" in result.output.lower()
 
@@ -104,9 +98,7 @@ class TestBuild:
 
     def test_changed_file_reingested(self, runner, repo):
         _build(runner, repo)
-        (repo / "pkg" / "util.py").write_text(
-            '"""Utility helpers v2."""\n', encoding="utf-8"
-        )
+        (repo / "pkg" / "util.py").write_text('"""Utility helpers v2."""\n', encoding="utf-8")
         result = _build(runner, repo)
         assert "1 ingested" in result.output
 
@@ -115,9 +107,7 @@ class TestBuild:
         (repo / "pkg" / "util.py").unlink()
         result = _build(runner, repo)
         assert "removed" in result.output
-        page = runner.invoke(
-            wiki, ["page", "file:pkg/util.py", "--path", str(repo)]
-        )
+        page = runner.invoke(wiki, ["page", "file:pkg/util.py", "--path", str(repo)])
         assert page.exit_code != 0
 
     def test_custom_name_and_backend(self, runner, repo):
@@ -125,18 +115,14 @@ class TestBuild:
         config = load_project_config(repo)
         assert config.wiki_name == "kb"
         assert config.backend == "memory"
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo)])
         assert result.exit_code == 0, result.output
 
 
 class TestQuery:
     def test_query_returns_packed_stubs(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["query", "key value store", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["query", "key value store", "--path", str(repo)])
         assert result.exit_code == 0, result.output
         assert "file:pkg/store.py" in result.output
         assert "wikitoolkit page" in result.output  # follow-up hint
@@ -153,17 +139,13 @@ class TestQuery:
         assert all(0.0 <= r["score"] <= 1.0 for r in rows)
 
     def test_query_without_build_fails_with_guidance(self, runner, repo):
-        result = runner.invoke(
-            wiki, ["query", "anything", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["query", "anything", "--path", str(repo)])
         assert result.exit_code != 0
         assert "wikitoolkit build" in result.output
 
     def test_query_no_results_message(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["query", "zzzqqqxyzzy", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["query", "zzzqqqxyzzy", "--path", str(repo)])
         assert result.exit_code == 0
         assert "No wiki results" in result.output
 
@@ -173,9 +155,7 @@ class TestQuery:
     def test_query_table_renders_human_output(self, runner, repo):
         # Ported llmwiki capability: --table shows a Rich table.
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["query", "key value store", "--path", str(repo), "--table"]
-        )
+        result = runner.invoke(wiki, ["query", "key value store", "--path", str(repo), "--table"])
         assert result.exit_code == 0, result.output
         assert "LLM Wiki" in result.output
         assert "Score" in result.output and "store.py" in result.output
@@ -184,8 +164,7 @@ class TestQuery:
         _build(runner, repo)
         result = runner.invoke(
             wiki,
-            ["query", "key value store", "--path", str(repo),
-             "--body", "--json"],
+            ["query", "key value store", "--path", str(repo), "--body", "--json"],
         )
         assert result.exit_code == 0, result.output
         rows = json.loads(result.output)
@@ -196,10 +175,7 @@ class TestQuery:
         # directly (here the project's own plane by absolute --store),
         # without needing .parrot/wiki.json resolution.
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["query", "utility helpers", "--store",
-                   self._store_dir(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "utility helpers", "--store", self._store_dir(repo), "--json"])
         assert result.exit_code == 0, result.output
         rows = json.loads(result.output)
         assert any(r["concept_id"] == "file:pkg/util.py" for r in rows)
@@ -215,35 +191,27 @@ class TestQuery:
         # An ambient WIKI_STORE must NOT redirect a --path-scoped query.
         _build(runner, repo)
         monkeypatch.setenv("WIKI_STORE", str(repo / "somewhere-else"))
-        result = runner.invoke(
-            wiki, ["query", "utility helpers", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "utility helpers", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         rows = json.loads(result.output)
         assert any(r["concept_id"] == "file:pkg/util.py" for r in rows)
 
     def test_query_store_missing_dir_errors(self, runner, repo):
-        result = runner.invoke(
-            wiki, ["query", "x", "--store", str(repo / "does-not-exist")]
-        )
+        result = runner.invoke(wiki, ["query", "x", "--store", str(repo / "does-not-exist")])
         assert result.exit_code != 0
         assert "No wiki store directory" in result.output
 
     def test_query_store_missing_db_errors(self, runner, repo):
         # Directory exists but holds no wiki.db → friendly guidance.
         (repo / "emptystore").mkdir()
-        result = runner.invoke(
-            wiki, ["query", "x", "--store", str(repo / "emptystore")]
-        )
+        result = runner.invoke(wiki, ["query", "x", "--store", str(repo / "emptystore")])
         assert result.exit_code != 0
         assert "No wiki database" in result.output
 
     def test_page_and_related_accept_store(self, runner, repo):
         _build(runner, repo)
         sd = self._store_dir(repo)
-        page = runner.invoke(
-            wiki, ["page", "file:pkg/store.py", "--store", sd]
-        )
+        page = runner.invoke(wiki, ["page", "file:pkg/store.py", "--store", sd])
         assert page.exit_code == 0, page.output
         rel = runner.invoke(wiki, ["related", "dir:pkg", "--store", sd])
         assert rel.exit_code == 0, rel.output
@@ -252,9 +220,7 @@ class TestQuery:
 class TestPageAndRelated:
     def test_page_full_read(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["page", "file:pkg/store.py", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["page", "file:pkg/store.py", "--path", str(repo)])
         assert result.exit_code == 0
         assert "In-memory key-value store" in result.output
 
@@ -263,8 +229,12 @@ class TestPageAndRelated:
         result = runner.invoke(
             wiki,
             [
-                "page", "file:pkg/store.py",
-                "--path", str(repo), "--max-tokens", "5",
+                "page",
+                "file:pkg/store.py",
+                "--path",
+                str(repo),
+                "--max-tokens",
+                "5",
             ],
         )
         assert result.exit_code == 0
@@ -272,9 +242,7 @@ class TestPageAndRelated:
 
     def test_related_shows_contains_edge(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["related", "file:pkg/store.py", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["related", "file:pkg/store.py", "--path", str(repo)])
         assert result.exit_code == 0
         assert "dir:pkg" in result.output
         assert "contains" in result.output
@@ -283,24 +251,16 @@ class TestPageAndRelated:
 class TestUpsert:
     def test_upsert_explicit_path(self, runner, repo):
         _build(runner, repo)
-        (repo / "pkg" / "util.py").write_text(
-            '"""Utility helpers v2."""\n', encoding="utf-8"
-        )
-        result = runner.invoke(
-            wiki, ["upsert", "pkg/util.py", "--path", str(repo)]
-        )
+        (repo / "pkg" / "util.py").write_text('"""Utility helpers v2."""\n', encoding="utf-8")
+        result = runner.invoke(wiki, ["upsert", "pkg/util.py", "--path", str(repo)])
         assert result.exit_code == 0, result.output
         assert "Upserted 1" in result.output
-        page = runner.invoke(
-            wiki, ["page", "file:pkg/util.py", "--path", str(repo)]
-        )
+        page = runner.invoke(wiki, ["page", "file:pkg/util.py", "--path", str(repo)])
         assert "v2" in page.output
 
     def test_upsert_preserves_incoming_edges(self, runner, repo):
         _build(runner, repo)
-        (repo / "pkg" / "util.py").write_text(
-            '"""Utility helpers v3."""\n', encoding="utf-8"
-        )
+        (repo / "pkg" / "util.py").write_text('"""Utility helpers v3."""\n', encoding="utf-8")
         runner.invoke(wiki, ["upsert", "pkg/util.py", "--path", str(repo)])
         result = runner.invoke(
             wiki,
@@ -313,9 +273,7 @@ class TestUpsert:
     def test_upsert_deleted_file_removes_pages(self, runner, repo):
         _build(runner, repo)
         (repo / "pkg" / "util.py").unlink()
-        result = runner.invoke(
-            wiki, ["upsert", "pkg/util.py", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["upsert", "pkg/util.py", "--path", str(repo)])
         assert result.exit_code == 0
         assert "removed 1" in result.output
 
@@ -323,9 +281,7 @@ class TestUpsert:
         _build(runner, repo)
         state = repo / ".parrot" / "wiki.json"
         assert state.exists()
-        result = runner.invoke(
-            wiki, ["upsert", ".parrot/wiki.json", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["upsert", ".parrot/wiki.json", "--path", str(repo)])
         assert result.exit_code == 0
         assert "No wiki-relevant files" in result.output
 
@@ -338,24 +294,18 @@ class TestUpsert:
         (bundle / "wiki_stats.json").write_text("{}", encoding="utf-8")
         (bundle / "index.md").write_text("# Legacy wiki\n", encoding="utf-8")
 
-        result = runner.invoke(
-            wiki, ["upsert", "docs/legacy_wiki/index.md", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["upsert", "docs/legacy_wiki/index.md", "--path", str(repo)])
         assert result.exit_code == 0
         assert "No wiki-relevant files" in result.output
 
-    def test_upsert_skips_while_another_writer_holds_the_lock(
-        self, runner, repo, monkeypatch
-    ):
+    def test_upsert_skips_while_another_writer_holds_the_lock(self, runner, repo, monkeypatch):
         # The git post-commit hook must never stall behind a build that
         # can run for minutes, nor write the store underneath it.
         monkeypatch.setattr(cli_module, "UPSERT_LOCK_WAIT_SECONDS", 0.1)
         _build(runner, repo)
         with wiki_write_lock(_store_dir(repo)) as held:
             assert held is True
-            result = runner.invoke(
-                wiki, ["upsert", "pkg/util.py", "--path", str(repo)]
-            )
+            result = runner.invoke(wiki, ["upsert", "pkg/util.py", "--path", str(repo)])
         assert result.exit_code == 0
         assert "in progress" in result.output.lower()
 
@@ -369,9 +319,7 @@ class TestUpsert:
 
     def test_upsert_before_build_is_noop(self, runner, tmp_path):
         (tmp_path / "a.py").write_text("x = 1", encoding="utf-8")
-        result = runner.invoke(
-            wiki, ["upsert", "a.py", "--path", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["upsert", "a.py", "--path", str(tmp_path)])
         assert result.exit_code == 0
         assert "not built" in result.output
 
@@ -379,9 +327,7 @@ class TestUpsert:
 class TestStatusAndExport:
     def test_status_json(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["status", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
         assert result.exit_code == 0
         payload = json.loads(result.output)
         assert payload["stats"]["pages"] >= 3
@@ -389,9 +335,7 @@ class TestStatusAndExport:
 
     def test_export_markdown_bundle(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["export", "--path", str(repo), "-o", "docs/wiki"]
-        )
+        result = runner.invoke(wiki, ["export", "--path", str(repo), "-o", "docs/wiki"])
         assert result.exit_code == 0, result.output
         out = repo / "docs" / "wiki"
         assert (out / "index.md").exists()
@@ -399,8 +343,7 @@ class TestStatusAndExport:
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True,
-                   capture_output=True)
+    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
 
 
 class TestChangedFilesFromGit:
@@ -430,7 +373,9 @@ class TestChangedFilesFromGit:
         _git(tmp_path, "commit", "-q", "-m", "base")
         default_branch = subprocess.run(
             ["git", "-C", str(tmp_path), "rev-parse", "--abbrev-ref", "HEAD"],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
 
         _git(tmp_path, "checkout", "-q", "-b", "feature")
@@ -492,9 +437,7 @@ class _FakeTriageAdapter:
 
         self.output = TriageOutput(
             briefing="A dense, durable document with a clear decision.",
-            scores=DimensionScores(
-                density=density, novelty=novelty, durability=durability
-            ),
+            scores=DimensionScores(density=density, novelty=novelty, durability=durability),
             claims=[],
             sensitive=sensitive,
         )
@@ -582,9 +525,7 @@ class TestSupervisedIngestModes:
 
     def test_cli_ingest_mode_flags_exclusive(self, runner, repo, docs_folder):
         # No mode flag at all.
-        result = runner.invoke(
-            wiki, ["ingest", str(docs_folder), "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["ingest", str(docs_folder), "--path", str(repo)])
         assert result.exit_code != 0
         assert "mode" in result.output.lower()
 
@@ -603,19 +544,13 @@ class TestSupervisedIngestModes:
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output.lower()
 
-    def test_cli_ingest_missing_charter_errors(
-        self, runner, repo, docs_folder, stub_ingest_wiring
-    ):
-        result = runner.invoke(
-            wiki, ["ingest", str(docs_folder), "--path", str(repo), "--dry-run"]
-        )
+    def test_cli_ingest_missing_charter_errors(self, runner, repo, docs_folder, stub_ingest_wiring):
+        result = runner.invoke(wiki, ["ingest", str(docs_folder), "--path", str(repo), "--dry-run"])
         assert result.exit_code != 0
         assert "charter" in result.output.lower()
 
     def test_cli_ingest_missing_model_errors(self, runner, repo, docs_folder):
-        result = runner.invoke(
-            wiki, ["ingest", str(docs_folder), "--path", str(repo), "--dry-run"]
-        )
+        result = runner.invoke(wiki, ["ingest", str(docs_folder), "--path", str(repo), "--dry-run"])
         assert result.exit_code != 0
         assert "model" in result.output.lower()
 
@@ -633,9 +568,7 @@ class TestSupervisedIngestCrossProviderModels:
         class _SpyToolkit(_FakePageIndexToolkit):
             def __init__(self, adapter, storage_dir, lightweight_model=None, **kwargs):
                 captured["lightweight_model"] = lightweight_model
-                super().__init__(
-                    adapter, storage_dir, lightweight_model=lightweight_model, **kwargs
-                )
+                super().__init__(adapter, storage_dir, lightweight_model=lightweight_model, **kwargs)
 
         def _fake_build_adapters(lightweight_model, model):
             return (
@@ -646,9 +579,7 @@ class TestSupervisedIngestCrossProviderModels:
             )
 
         monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
-        monkeypatch.setattr(
-            cli_module, "_build_novelty_scorer", lambda root, config, store: _FakeNoveltyScorer()
-        )
+        monkeypatch.setattr(cli_module, "_build_novelty_scorer", lambda root, config, store: _FakeNoveltyScorer())
         monkeypatch.setattr(_pageindex_toolkit, "PageIndexToolkit", _SpyToolkit)
         monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "groq:llama")
         monkeypatch.setenv("WIKI_MODEL", "groq:llama-big" if same_provider else "anthropic:claude")
@@ -668,27 +599,17 @@ class TestSupervisedIngestCrossProviderModels:
         assert result.exit_code == 0, result.output
         return captured
 
-    def test_same_provider_passes_lightweight_model_through(
-        self, runner, repo, docs_folder, charter_file, monkeypatch
-    ):
-        captured = self._invoke_with_spy(
-            runner, repo, docs_folder, charter_file, monkeypatch, same_provider=True
-        )
+    def test_same_provider_passes_lightweight_model_through(self, runner, repo, docs_folder, charter_file, monkeypatch):
+        captured = self._invoke_with_spy(runner, repo, docs_folder, charter_file, monkeypatch, same_provider=True)
         assert captured["lightweight_model"] == "light-model-id"
 
-    def test_cross_provider_models_drop_lightweight_model(
-        self, runner, repo, docs_folder, charter_file, monkeypatch
-    ):
-        captured = self._invoke_with_spy(
-            runner, repo, docs_folder, charter_file, monkeypatch, same_provider=False
-        )
+    def test_cross_provider_models_drop_lightweight_model(self, runner, repo, docs_folder, charter_file, monkeypatch):
+        captured = self._invoke_with_spy(runner, repo, docs_folder, charter_file, monkeypatch, same_provider=False)
         assert captured["lightweight_model"] is None
 
 
 class TestSupervisedIngestDryRun:
-    def test_cli_ingest_dry_run(
-        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring
-    ):
+    def test_cli_ingest_dry_run(self, runner, repo, docs_folder, charter_file, stub_ingest_wiring):
         """--dry-run emits a manifest with null decisions and ingests nothing."""
         from parrot.knowledge.wiki.review import ManifestReader
 
@@ -719,9 +640,7 @@ class TestSupervisedIngestDryRun:
 
         config = load_project_config(repo)
         store_dir = config.storage_path(repo)
-        assert not (store_dir / "pageindex").exists() or not any(
-            (store_dir / "pageindex").iterdir()
-        )
+        assert not (store_dir / "pageindex").exists() or not any((store_dir / "pageindex").iterdir())
 
     def test_cli_ingest_dry_run_claims_stripped_without_extract(
         self, runner, repo, docs_folder, charter_file, stub_ingest_wiring
@@ -750,9 +669,7 @@ class TestSupervisedIngestDryRun:
 
 
 class TestSupervisedIngestReview:
-    def test_cli_ingest_review_apply(
-        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring
-    ):
+    def test_cli_ingest_review_apply(self, runner, repo, docs_folder, charter_file, stub_ingest_wiring):
         """--review applies edited decisions; re-run is idempotent."""
         from parrot.knowledge.wiki.review import ManifestReader
 
@@ -816,9 +733,7 @@ class TestSupervisedIngestReview:
 
 
 class TestSupervisedIngestAuto:
-    def test_cli_ingest_auto_audit_flags(
-        self, runner, repo, charter_file, stub_ingest_wiring
-    ):
+    def test_cli_ingest_auto_audit_flags(self, runner, repo, charter_file, stub_ingest_wiring):
         """--auto flags a stratified audit sample per charter fractions."""
         from parrot.knowledge.wiki.review import ManifestReader
 
@@ -895,6 +810,306 @@ class TestSupervisedIngestInteractive:
         assert entries[0].decision_source == "human"
 
 
+# ---------------------------------------------------------------------------
+# FEAT-451 (TASK-2357): widened SOURCE argument, DocumentAcquirer wiring,
+# skip reporting.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_pdf(tmp_path: Path) -> Path:
+    """A tiny real PDF, written via pymupdf (goes through the loader branch)."""
+    import pymupdf
+
+    p = tmp_path / "sample.pdf"
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text((72, 72), "A durable architectural decision about migration.")
+        doc.set_metadata({"title": "Decision Doc", "author": "Legal"})
+        doc.save(str(p))
+    finally:
+        doc.close()
+    return p
+
+
+@pytest.fixture
+def nested_corpus(tmp_path: Path) -> Path:
+    """A top-level file plus a nested one, for --no-recursive testing."""
+    folder = tmp_path / "nested_corpus"
+    folder.mkdir()
+    (folder / "top.md").write_text("# Top\n\nTop-level durable decision content.", encoding="utf-8")
+    sub = folder / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n\nNested durable decision content.", encoding="utf-8")
+    return folder
+
+
+@pytest.fixture
+def mixed_corpus(tmp_path: Path) -> Path:
+    """One good .md + one undecodable .pdf, for skip-and-report testing."""
+    folder = tmp_path / "mixed_corpus"
+    folder.mkdir()
+    (folder / "good.md").write_text("# Good doc\n\nSome durable decision content.", encoding="utf-8")
+    (folder / "bad.pdf").write_bytes(b"not a real pdf at all")
+    return folder
+
+
+@pytest.fixture
+def no_parrot_loaders(monkeypatch):
+    """Force `from parrot_loaders... import ...` to raise ImportError —
+    deterministic acquisition failure regardless of what real PDF/loader
+    libraries happen to tolerate in this environment."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("simulated: ai-parrot-loaders not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+class _FakeAiohttpContentStream:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def iter_chunked(self, _size):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeAiohttpResponse:
+    def __init__(self, *, status, headers, chunks, url):
+        self.status = status
+        self.headers = headers
+        self.content = _FakeAiohttpContentStream(chunks)
+        self.url = url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAiohttpGetContextManager:
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAiohttpSession:
+    def __init__(self, response):
+        self._response = response
+
+    def get(self, _url, **_kwargs):
+        return _FakeAiohttpGetContextManager(self._response)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+@pytest.fixture
+def mock_aiohttp_pdf(monkeypatch, sample_pdf):
+    """Mock a URL fetch that streams back the real sample_pdf's bytes, so
+    downstream loader extraction actually succeeds, not just the fetch."""
+    body = sample_pdf.read_bytes()
+    resp = _FakeAiohttpResponse(
+        status=200,
+        headers={"Content-Type": "application/pdf"},
+        chunks=[body],
+        url="https://example.test/doc.pdf",
+    )
+    session = _FakeAiohttpSession(resp)
+    monkeypatch.setattr(
+        "parrot.knowledge.wiki.documents.aiohttp.ClientSession",
+        lambda **kwargs: session,
+    )
+
+
+class TestIngestSourceArgument:
+    """FEAT-451 (TASK-2357): SOURCE widened to dir | file | URL."""
+
+    def test_single_file_dry_run(self, runner, repo, sample_pdf, charter_file, stub_ingest_wiring):
+        """A single document path (not a directory) produces a one-entry manifest."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(sample_pdf),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        _header, entries = ManifestReader(manifest_path).read()
+        assert len(entries) == 1
+
+    def test_url_dry_run(self, runner, repo, charter_file, stub_ingest_wiring, mock_aiohttp_pdf):
+        """An http(s):// SOURCE is fetched, extracted, and triaged."""
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                "https://example.test/doc.pdf",
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Triaged 1 document" in result.output
+
+    def test_missing_path_clean_error(self, runner, repo):
+        """A nonexistent SOURCE exits non-zero with a clean Click error —
+        no traceback (resolve_sources raises click.ClickException)."""
+        result = runner.invoke(
+            wiki,
+            ["ingest", "/no/such/path/at/all", "--path", str(repo), "--dry-run"],
+        )
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+
+    def test_no_recursive(self, runner, repo, nested_corpus, charter_file, stub_ingest_wiring):
+        """--no-recursive only walks the directory's immediate children."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(nested_corpus),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+                "--no-recursive",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        _header, entries = ManifestReader(manifest_path).read()
+        assert len(entries) == 1
+        assert entries[0].source_uri.endswith("top.md")
+
+    def test_undecodable_skipped_and_reported(
+        self,
+        runner,
+        repo,
+        mixed_corpus,
+        charter_file,
+        stub_ingest_wiring,
+        no_parrot_loaders,
+    ):
+        """One bad doc: skipped, counted, reported — run still succeeds and
+        the other document is still triaged."""
+        light, _heavy = stub_ingest_wiring
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(mixed_corpus),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "skipped" in result.output.lower()
+        assert "1" in result.output  # skipped count
+        # router.triage() is never reached for the skipped document — the
+        # only successful acquisition (and thus only triage call) is the
+        # good .md.
+        assert light.calls == 1
+
+    def test_fetch_timeout_reaches_acquirer(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring, monkeypatch
+    ):
+        """--fetch-timeout reaches DocumentAcquirer.__init__."""
+        captured: dict = {}
+        orig_init = cli_module.DocumentAcquirer.__init__
+
+        def _spy_init(self, *args, **kwargs):
+            captured.update(kwargs)
+            return orig_init(self, *args, **kwargs)
+
+        monkeypatch.setattr(cli_module.DocumentAcquirer, "__init__", _spy_init)
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+                "--fetch-timeout",
+                "5.5",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert captured.get("fetch_timeout") == 5.5
+
+    def test_auto_reuses_acquired_no_double_acquisition(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring, monkeypatch
+    ):
+        """--auto passes the triage lane's AcquiredDocument into
+        orch.ingest(acquired=...) — the document is acquired exactly once,
+        not once for triage and again for apply."""
+        import parrot.knowledge.wiki.documents as documents_module
+
+        call_count = {"n": 0}
+        orig_acquire = documents_module.DocumentAcquirer.acquire
+
+        async def _counting_acquire(self, ref):
+            call_count["n"] += 1
+            return await orig_acquire(self, ref)
+
+        monkeypatch.setattr(documents_module.DocumentAcquirer, "acquire", _counting_acquire)
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--auto",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert call_count["n"] == 1
+
+    def test_discover_documents_removed(self):
+        assert not hasattr(cli_module, "_discover_documents")
 def _second_repo(tmp_path: Path, runner: CliRunner, name: str = "other") -> Path:
     """Build a second, independent wiki project with colliding page ids."""
     other = tmp_path / name

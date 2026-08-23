@@ -21,6 +21,7 @@
   - [`page`](#parrot-wiki-page)
   - [`related`](#parrot-wiki-related)
   - [`upsert`](#parrot-wiki-upsert)
+  - [`ingest`](#parrot-wiki-ingest)
   - [`export`](#parrot-wiki-export)
 - [Querying an external / pre-built store](#querying-an-external--pre-built-store)
 - [Namespaces (multi-wiki federation)](#namespaces-multi-wiki-federation)
@@ -397,6 +398,122 @@ Deleted files have their pages removed. Directory overview pages are refreshed b
 the next full `parrot wiki build`. `--changed` correctly handles **merge
 commits** (it reports files relative to the first parent), so a `git merge`
 doesn't leave the wiki stale.
+
+### `parrot wiki ingest`
+
+Charter-driven, supervised ingestion of a document corpus — binary formats,
+URLs, and metadata frontmatter (FEAT-451, on top of FEAT-402's triage/manifest/
+HITL-review pipeline). Unlike `build` (deterministic, offline, no-LLM, source
+code only), `ingest` triages each document against an editorial charter before
+it becomes a wiki page: free heuristics reject duplicates/oversized files, a
+lightweight model scores the rest, and only gray-zone documents escalate to a
+heavier model.
+
+```
+parrot wiki ingest [OPTIONS] SOURCE
+```
+
+`SOURCE` accepts **one of three shapes**:
+
+| Shape | Example | Behavior |
+| --- | --- | --- |
+| Directory | `./contracts/` | Recursive walk by default (`--recursive`/`--no-recursive`); dotfiles and dot-directories (`.git/`, `.parrot/`) are skipped. |
+| Single file | `./contracts/msa.pdf` | Exactly one document. |
+| `http(s)://` URL | `https://host/report.pdf` | Fetched over `aiohttp` (timeout: `--fetch-timeout`), extracted, then dispatched through the same pipeline as a local file. No link-following/crawling — one URL is one document. |
+
+A nonexistent local path or an unsupported scheme exits non-zero with a clean
+error message (no traceback).
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--path TEXT` | auto-detect | Repo root. |
+| `--charter TEXT` | `<repo>/.parrot/charter.yaml` | Editorial charter YAML. |
+| `--dry-run` | off | Triage everything, write a manifest, ingest nothing. |
+| `--review PATH` | — | Apply human-edited decisions from a `manifest.jsonl`. |
+| `--interactive` | off | Prompt per-document (questionary) before applying. |
+| `--auto` | off | Charter thresholds decide automatically; flags a stratified audit sample. |
+| `--extract` | off | EXPERIMENTAL: include extracted claims in the manifest (v1 admission is document-level). |
+| `--lightweight-model TEXT` | `$WIKI_LIGHTWEIGHT_MODEL` | Stage-1 triage model (`provider:model`). |
+| `--model TEXT` | `$WIKI_MODEL` | Stage-2 escalation / page-generation model (`provider:model`). |
+| `--audit-rate FLOAT` | `0.1` | Fraction of `--auto` decisions flagged for stratified audit review. |
+| `--manifest PATH` | `<storage_dir>/ingest-manifest.jsonl` | Manifest output path. |
+| `--recursive` / `--no-recursive` | `--recursive` | When `SOURCE` is a directory, whether to walk it recursively. |
+| `--fetch-timeout FLOAT` | `30.0` | Timeout (seconds) for a URL `SOURCE` fetch. |
+
+Exactly one of `--dry-run` / `--review` / `--interactive` / `--auto` is
+required; they are mutually exclusive.
+
+```bash
+parrot wiki ingest ./contracts --dry-run                     # triage a directory, write a manifest
+parrot wiki ingest ./contracts/msa.pdf --dry-run              # a single document
+parrot wiki ingest https://host/report.pdf --dry-run          # a remote document
+parrot wiki ingest ./contracts --auto --audit-rate 0.2        # thresholds decide, 20% audited
+parrot wiki ingest ./contracts --review ingest-manifest.jsonl # apply hand-edited decisions
+```
+
+**Supported formats.** Plain-text/Markdown formats are read directly, no extra
+dependency required. Everything else is extracted through the optional
+[`ai-parrot-loaders`](../packages/ai-parrot-loaders/README.md) package
+(`uv pip install ai-parrot-loaders`):
+
+| Format | Extensions | Needs `ai-parrot-loaders`? |
+| --- | --- | --- |
+| Markdown / MDX | `.md`, `.markdown`, `.mdx` | No |
+| Plain text | `.txt`, `.text` | No |
+| reStructuredText | `.rst` | No |
+| PDF | `.pdf` | Yes |
+| Word | `.docx` | Yes |
+| PowerPoint | `.pptx`, `.ppt` | Yes |
+| Excel | `.xlsx`, `.xls` | Yes |
+| HTML | `.html` | Yes |
+| EPUB | `.epub` | Yes |
+
+**When `ai-parrot-loaders` is not installed**, binary-format documents are
+**skipped, counted, and reported** — never triaged as corrupted text and never
+charged an LLM call. Every ingest-triaging mode's summary line reports the
+skipped count (e.g. `Triaged 8 document(s), skipped 2. Manifest: ...`); pass
+`-v`/`--verbose` (the `parrot wiki` group flag) to also list the skipped paths.
+If you see `skipped: contrato.pdf` in the output, that document needs
+`ai-parrot-loaders` installed.
+
+**Page frontmatter contract.** Every page `ingest` creates begins with a
+deterministic YAML frontmatter block — the same document, re-ingested with the
+same metadata, always produces byte-identical output:
+
+```yaml
+---
+title: Contrato Marco 2026
+author: Legal Dept
+created_at: '2026-01-15T00:00:00'
+page_count: 2
+content_type: application/pdf
+loader: MarkdownLoader
+extra:
+  some_loader_specific_key: value
+triage:
+  composite_score: 0.825
+  decision: admit
+  decision_source: model
+  charter_version: '1'
+---
+
+<page body>
+```
+
+- Descriptive fields (`title`, `author`, `created_at`, `modified_at`,
+  `page_count`, `word_count`, `language`, `content_type`, `source_url`,
+  `loader`) come first, in that fixed order; `None` fields are omitted
+  entirely.
+- Unmapped loader-specific metadata lands under a sorted `extra:` block —
+  nothing is silently dropped.
+- The FEAT-402 triage decision travels alongside the descriptive metadata
+  under a nested `triage:` key, so a reader (or agent) can see *why* a page
+  was admitted without querying the sources table.
+- All pages derived from one multi-page source carry an **identical**
+  frontmatter block.
+- This is a supervised-ingestion-only feature: `parrot wiki build`/`upsert`
+  never emit frontmatter, and pages ingested before FEAT-451 are never
+  backfilled.
 
 ### `parrot wiki export`
 

@@ -306,10 +306,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added `render_frontmatter()` and `split_frontmatter()` to
+`documents.py`, following the OKF `project_frontmatter` determinism
+contract (fixed field order via `_FRONTMATTER_FIELD_ORDER`, sorted `extra`
+keys, `None` omitted, `yaml.safe_dump(sort_keys=False, allow_unicode=True,
+default_flow_style=False)`). `split_frontmatter` uses a CRLF-tolerant regex
+mirroring `MarkdownLoader._extract_metadata_from_markdown` and never raises
+on malformed input. All 21 tests in `tests/knowledge/wiki/test_documents.py`
+pass (12 new); `ruff check` and `mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -82,7 +82,7 @@ class WikiConfig(BaseModel):
 
     wiki_name: str = Field(..., description="Unique wiki name / identifier")
     storage_dir: Path = Field(..., description="Root storage directory")
-    source_dir: Optional[Path] = Field(
+    source_dir: Path | None = Field(
         default=None,
         description="Raw sources directory; defaults to storage_dir/sources",
     )
@@ -94,11 +94,11 @@ class WikiConfig(BaseModel):
         default_factory=lambda: {"pageindex": 0.6, "graphindex": 0.4},
         description="Score weights per search backend; must sum to ~1.0",
     )
-    lightweight_model: Optional[str] = Field(
+    lightweight_model: str | None = Field(
         default=None,
         description="LLM model for fast CoT analysis step",
     )
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None,
         description="LLM model for heavyweight generation step",
     )
@@ -119,7 +119,7 @@ class WikiConfig(BaseModel):
             "Explicit selection only — no auto-fallback."
         ),
     )
-    charter_path: Optional[Path] = Field(
+    charter_path: Path | None = Field(
         default=None,
         description=(
             "Path to a supervised-ingestion editorial charter YAML file "
@@ -145,14 +145,10 @@ class WikiConfig(BaseModel):
         """
         for key, weight in v.items():
             if not (0.0 <= weight <= 1.0):
-                raise ValueError(
-                    f"search_weights['{key}'] = {weight} is outside [0, 1]"
-                )
+                raise ValueError(f"search_weights['{key}'] = {weight} is outside [0, 1]")
         total = sum(v.values())
         if abs(total - 1.0) > 0.01:
-            raise ValueError(
-                f"search_weights values must sum to ~1.0 (got {total:.4f})"
-            )
+            raise ValueError(f"search_weights values must sum to ~1.0 (got {total:.4f})")
         return v
 
 
@@ -183,6 +179,17 @@ class SourceManifestEntry(BaseModel):
             not applicable.
         composite_score: The weighted composite triage score in
             ``[0, 1]``, or ``None`` when not applicable.
+        doc_metadata: FEAT-451 extracted ``DocumentMetadata`` as a dict
+            (author, page_count, created_at, etc. — see
+            ``parrot.knowledge.wiki.documents.DocumentMetadata``).
+            ``None`` for sources ingested before FEAT-451, or when no
+            metadata was extracted.
+        content_type: FEAT-451 MIME type of the source document (e.g.
+            ``"application/pdf"``), as resolved by the acquisition layer.
+            ``None`` when not applicable.
+        loader: FEAT-451 name of the loader used to extract this document
+            (e.g. ``"MarkdownLoader"``, or ``"plaintext"``). ``None`` when
+            not applicable.
     """
 
     source_id: str = Field(..., description="Stable source identifier")
@@ -198,29 +205,40 @@ class SourceManifestEntry(BaseModel):
         default="ingested",
         description="Source lifecycle status",
     )
-    destination: Optional[str] = Field(
+    destination: str | None = Field(
         default=None,
         description=(
             "Supervised-ingestion (FEAT-402) triage destination: "
             "'wiki' | 'archive' | 'discard'. None when not triaged."
         ),
     )
-    decision_source: Optional[str] = Field(
+    decision_source: str | None = Field(
         default=None,
         description=(
-            "Who/what made the triage decision: 'heuristic' | 'model' | "
-            "'human' | 'auto'. None when not triaged."
+            "Who/what made the triage decision: 'heuristic' | 'model' | " "'human' | 'auto'. None when not triaged."
         ),
     )
-    charter_version: Optional[str] = Field(
+    charter_version: str | None = Field(
         default=None,
         description="Editorial charter version the decision was made against.",
     )
-    composite_score: Optional[float] = Field(
+    composite_score: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
         description="Weighted composite triage score in [0, 1].",
+    )
+    doc_metadata: dict[str, Any] | None = Field(
+        default=None,
+        description=("FEAT-451: extracted DocumentMetadata as a dict. " "None for sources ingested before FEAT-451."),
+    )
+    content_type: str | None = Field(
+        default=None,
+        description="FEAT-451: MIME type of the source document.",
+    )
+    loader: str | None = Field(
+        default=None,
+        description="FEAT-451: name of the loader used to extract this document.",
     )
 
 
@@ -251,12 +269,9 @@ class WikiSearchResult(BaseModel):
     )
     source: str = Field(
         ...,
-        description=(
-            "Search leg: 'lexical'/'vector' (WikiStore) or "
-            "'pageindex'/'graphindex' (legacy)"
-        ),
+        description=("Search leg: 'lexical'/'vector' (WikiStore) or " "'pageindex'/'graphindex' (legacy)"),
     )
-    token_count: Optional[int] = Field(
+    token_count: int | None = Field(
         default=None,
         ge=0,
         description="Token cost of the full page body (for budgeting)",
@@ -265,7 +280,7 @@ class WikiSearchResult(BaseModel):
         default="",
         description="Short content excerpt or summary",
     )
-    category: Optional[WikiPageCategory] = Field(
+    category: WikiPageCategory | None = Field(
         default=None,
         description="Wiki page category if known",
     )
