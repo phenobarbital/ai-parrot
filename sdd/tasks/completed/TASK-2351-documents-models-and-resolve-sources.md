@@ -274,10 +274,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Created `documents.py` with `DocumentRef`, `DocumentMetadata`,
+`AcquiredDocument`, `TriageProvenance`, `DocumentAcquisitionError`, and
+`resolve_sources()`. Directory-walk semantics verified byte-for-byte against
+`cli.py:2093-2114` `_discover_documents` before implementing. All 9 unit
+tests in `tests/knowledge/wiki/test_documents.py` pass; `ruff check` and
+`mypy` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

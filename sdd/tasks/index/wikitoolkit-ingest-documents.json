@@ -14,7 +14,7 @@
       "feature_id": "FEAT-451",
       "feature": "wikitoolkit-ingest-documents",
       "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root of the dependency graph — every other task imports these models. Nothing can start before it.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2351-documents-models-and-resolve-sources.md"
+      "completed_at": "2026-08-23T01:02:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2351-documents-models-and-resolve-sources.md"
     },
     {
       "id": "TASK-2352",
