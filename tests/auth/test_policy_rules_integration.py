@@ -20,6 +20,21 @@ from parrot.auth.models import PolicyRuleConfig
 from parrot.registry.registry import AgentRegistry, BotConfig
 from parrot.bots.abstract import AbstractBot
 
+# Patch through the imported module object rather than a dotted string:
+# pkgutil.resolve_name (used by mock.patch and monkeypatch.setattr) walks
+# attributes from `sys.modules['parrot']`, and `parrot` is a PEP 420
+# namespace package whose submodule attributes are not reliably bound on
+# CI — hence "module 'parrot' has no attribute 'bots'" even though the
+# submodule imports fine. The module object sidesteps resolution entirely.
+#
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot.bots.abstract as _bots_abstract  # noqa: F401
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -130,9 +145,9 @@ class TestScenario1RetrievalEnforcement:
         bot.logger = MagicMock()
         bot.session = AbstractBot.session.__get__(bot, BotClass)
 
-        with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
-             patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
-             patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
+        with patch.object(_bots_abstract, '_PBAC_AVAILABLE', True), \
+             patch.object(_bots_abstract, '_EvalContext', MagicMock(return_value=MagicMock())), \
+             patch.object(_bots_abstract, '_ResourceType', MagicMock(AGENT='AGENT')):
             with pytest.raises(web.HTTPUnauthorized):
                 async with bot.session(request=request):
                     pass
@@ -154,9 +169,9 @@ class TestScenario1RetrievalEnforcement:
         bot.logger = MagicMock()
         bot.session = AbstractBot.session.__get__(bot, BotClass)
 
-        with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
-             patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
-             patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
+        with patch.object(_bots_abstract, '_PBAC_AVAILABLE', True), \
+             patch.object(_bots_abstract, '_EvalContext', MagicMock(return_value=MagicMock())), \
+             patch.object(_bots_abstract, '_ResourceType', MagicMock(AGENT='AGENT')):
             async with bot.session(request=request) as b:
                 assert b is not None
 

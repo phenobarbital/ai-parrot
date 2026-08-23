@@ -254,7 +254,11 @@ def index_page(prefix: str = "", tenant: str = "") -> str:
     Returns:
         HTML body string for the landing page.
     """
+    import json as _json
+
     p = _normalize_prefix(prefix)
+    # Sanitize tenant for safe embedding in JS context (prevent XSS)
+    safe_tenant = _json.dumps(tenant)
     return f"""\
 <h1>AI Form Builder</h1>
 <p>Describe the form you need in plain language, or load an existing form from the database.</p>
@@ -304,7 +308,7 @@ def index_page(prefix: str = "", tenant: str = "") -> str:
 
 <script>
 const FORM_PREFIX = {p!r};
-const TENANT = {tenant!r};
+const TENANT = {safe_tenant};
 function showError(container, message) {{
   const banner = document.createElement('div');
   banner.className = 'error-banner';

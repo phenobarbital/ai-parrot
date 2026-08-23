@@ -109,6 +109,25 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
     #: (`variance_analysis` raises without it).
     _SNAPSHOT_PARAMS: ClassVar[dict] = {"snapshot_col": "snapshot_date"}
 
+    #: Explicit replay SQL for the `snapshots` dataset, threaded by
+    #: `publish_recipe` into `DataSourceSpec.sql`. `troc.finance_projection`
+    #: is registered as a `TableSource`, which REJECTS any fetch without an
+    #: explicit statement (and any bare `SELECT *`) — without this the
+    #: published recipe saves fine but every replay aborts at the `data`
+    #: stage. Columns are exactly what the three finance transformers declare
+    #: in `requires_columns` (division, project + the four money columns)
+    #: plus the `snapshot_col` they compare across days; the table's primary
+    #: key IS (snapshot_date, division, project), so this is already the
+    #: natural grain — no pandas-side aggregation of a wider read.
+    _DATASET_SQL: ClassVar[dict] = {
+        FINANCE_DATASET: (
+            "SELECT snapshot_date, division, project, "
+            "rev_actual, rev_budget, ebitda_actual, ebitda_budget "
+            "FROM troc.finance_projection "
+            "ORDER BY snapshot_date, division, project"
+        ),
+    }
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Configure the agent's LLM default.
 
@@ -215,6 +234,7 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             mode="data-splice",
             sections=cls._transform_sections(),
             params=dict(cls._SNAPSHOT_PARAMS),
+            dataset_sql=dict(cls._DATASET_SQL),
             layout=LayoutSpec(
                 component="Report",
                 properties={
@@ -239,6 +259,7 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             mode="data-splice",
             sections=cls._transform_sections(),
             params=dict(cls._SNAPSHOT_PARAMS),
+            dataset_sql=dict(cls._DATASET_SQL),
             layout=LayoutSpec(
                 component="Infographic",
                 properties={

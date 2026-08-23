@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 from .schema import walk_fields
 
 if TYPE_CHECKING:
-    from .constraints import FieldCondition
+    from .constraints import FieldCondition, DependencyRule
     from .schema import FormField, FormSchema, FormSection
 
 
@@ -30,8 +30,9 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
 
     Walks every field in the form (via ``iter_fields_recursive()``) and
     resolves ``depends_on`` conditions/operations and ``post_depends``
-    entries (including their nested ``operation``) in place. Mutates and
-    returns the same ``form`` instance.
+    entries (including their nested ``operation``) in place, then does the
+    same for each ``FormSection.depends_on``. Mutates and returns the same
+    ``form`` instance.
 
     Idempotent: a reference that already parses as a UUID is validated
     against the form's known UIDs and passed through unchanged — running
@@ -47,7 +48,8 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
         ValueError: If a rule references a duplicate ``field_id`` (the form
             itself is ambiguous), or references an unknown/empty
             ``field_id``/``field_uid``. The error names the owning field's
-            ``field_id`` and the offending reference.
+            ``field_id`` — or the owning section's ``section_id`` — and the
+            offending reference.
     """
     by_fid: dict[str, FormField] = {}
     for f in form.iter_fields_recursive():
@@ -96,10 +98,23 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
             return
         cond.field_uid = uuid.UUID(_uid_for(cond.field_id or "", owner, "condition"))
 
+    def _resolve_rule(rule: DependencyRule, owner: str) -> None:
+        """Resolve a rule's conditions, flat list AND nested groups.
+
+        A condition inside ``groups`` is a condition like any other: left
+        unresolved it keeps ``field_uid=None``, and ``_eval_condition``
+        reads the answer through that uid, so the whole group silently
+        never matches.
+        """
+        for c in rule.conditions:
+            _resolve_condition(c, owner)
+        for g in rule.groups or []:
+            for c in g.conditions:
+                _resolve_condition(c, owner)
+
     for f in form.iter_fields_recursive():
         if f.depends_on:
-            for c in f.depends_on.conditions:
-                _resolve_condition(c, f.field_id)
+            _resolve_rule(f.depends_on, f.field_id)
             for op in f.depends_on.operations or []:
                 op.operands = [
                     _uid_for(o, f.field_id, "operation operand") for o in op.operands
@@ -117,6 +132,22 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
                 post.operation.target = _uid_for(
                     post.operation.target, f.field_id, "post operation target"
                 )
+
+    # Section rules need resolving too. They were skipped here for as long as
+    # nothing evaluated them; now that RuleEvaluator gates a section's fields
+    # on `FormSection.depends_on`, an unresolved section condition reads as
+    # "never satisfied" and would hide the section forever.
+    for section in form.sections:
+        if not section.depends_on:
+            continue
+        _resolve_rule(section.depends_on, section.section_id)
+        for op in section.depends_on.operations or []:
+            op.operands = [
+                _uid_for(o, section.section_id, "operation operand")
+                for o in op.operands
+            ]
+            op.target = _uid_for(op.target, section.section_id, "operation target")
+
     return form
 
 

@@ -14,6 +14,21 @@ from aiohttp import web
 # We need a concrete subclass for testing (AbstractBot is abstract)
 from parrot.bots.abstract import AbstractBot
 
+# Patch through the imported module object rather than a dotted string:
+# pkgutil.resolve_name (used by mock.patch and monkeypatch.setattr) walks
+# attributes from `sys.modules['parrot']`, and `parrot` is a PEP 420
+# namespace package whose submodule attributes are not reliably bound on
+# CI — hence "module 'parrot' has no attribute 'bots'" even though the
+# submodule imports fine. The module object sidesteps resolution entirely.
+#
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot.bots.abstract as _bots_abstract  # noqa: F401
+
 
 def _make_mock_bot():
     """Create a minimal concrete AbstractBot subclass for testing."""
@@ -63,7 +78,7 @@ class TestGetPolicyRules:
 
     def _make_bot(self, bot_class):
         """Create bot instance with mocked client."""
-        with patch('parrot.bots.abstract.SUPPORTED_CLIENTS', {'mock': lambda **kw: self.mock_client}):
+        with patch.object(_bots_abstract, 'SUPPORTED_CLIENTS', {'mock': lambda **kw: self.mock_client}):
             try:
                 return bot_class(name='test_bot', llm='mock:model')
             except Exception:
@@ -176,9 +191,9 @@ class TestSessionPBAC:
         pdp = self._make_mock_pdp(evaluator)
         request.app.get.return_value = pdp
 
-        with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
-             patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
-             patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
+        with patch.object(_bots_abstract, '_PBAC_AVAILABLE', True), \
+             patch.object(_bots_abstract, '_EvalContext', MagicMock(return_value=MagicMock())), \
+             patch.object(_bots_abstract, '_ResourceType', MagicMock(AGENT='AGENT')):
             request.app.get.return_value = pdp
 
             async with bot.session(request=request) as b:
@@ -194,9 +209,9 @@ class TestSessionPBAC:
         pdp = self._make_mock_pdp(evaluator)
         request.app.get.return_value = pdp
 
-        with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
-             patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
-             patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
+        with patch.object(_bots_abstract, '_PBAC_AVAILABLE', True), \
+             patch.object(_bots_abstract, '_EvalContext', MagicMock(return_value=MagicMock())), \
+             patch.object(_bots_abstract, '_ResourceType', MagicMock(AGENT='AGENT')):
             with pytest.raises(web.HTTPUnauthorized):
                 async with bot.session(request=request):
                     pass
@@ -212,9 +227,9 @@ class TestSessionPBAC:
         pdp = self._make_mock_pdp(evaluator)
         request.app.get.return_value = pdp
 
-        with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
-             patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
-             patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
+        with patch.object(_bots_abstract, '_PBAC_AVAILABLE', True), \
+             patch.object(_bots_abstract, '_EvalContext', MagicMock(return_value=MagicMock())), \
+             patch.object(_bots_abstract, '_ResourceType', MagicMock(AGENT='AGENT')):
             # Should NOT raise — fail-open on evaluator errors
             async with bot.session(request=request) as b:
                 assert b is bot
@@ -225,6 +240,6 @@ class TestSessionPBAC:
         bot = self._make_bot_instance()
         request = self._make_mock_request()
 
-        with patch('parrot.bots.abstract._PBAC_AVAILABLE', False):
+        with patch.object(_bots_abstract, '_PBAC_AVAILABLE', False):
             async with bot.session(request=request) as b:
                 assert b is bot

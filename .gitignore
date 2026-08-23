@@ -21,6 +21,12 @@ plugins/*
 examples/**/*.py
 !examples/autonomous_analyst/**/*.py
 !examples/data/whatif_scenario_e2e.py
+# AWS Bedrock sample agents are documentation — they ship with the repo, so
+# new scripts here must not need `git add -f`.
+!examples/agents/aws/**/*.py
+# FEAT-438 OpenAI-compatible-client smoke scripts are documentation too —
+# credential-gated, run manually, meant to ship with the repo.
+!examples/clients/smoke/**/*.py
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv

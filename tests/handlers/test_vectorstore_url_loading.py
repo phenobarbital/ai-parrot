@@ -9,6 +9,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.stores.models import Document
 
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot_loaders.webscraping  # noqa: F401
+import parrot_loaders.youtube  # noqa: F401
+
 
 # ── Fixtures ─────────────────────────────────────────────────────────
 

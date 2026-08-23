@@ -21,8 +21,10 @@
   - [`page`](#parrot-wiki-page)
   - [`related`](#parrot-wiki-related)
   - [`upsert`](#parrot-wiki-upsert)
+  - [`ingest`](#parrot-wiki-ingest)
   - [`export`](#parrot-wiki-export)
 - [Querying an external / pre-built store](#querying-an-external--pre-built-store)
+- [Namespaces (multi-wiki federation)](#namespaces-multi-wiki-federation)
 - [Project configuration (`.parrot/wiki.json`)](#project-configuration-parrotwikijson)
 - [`parrot claude` command reference](#parrot-claude-command-reference)
   - [`install`](#parrot-claude-install)
@@ -397,6 +399,122 @@ the next full `parrot wiki build`. `--changed` correctly handles **merge
 commits** (it reports files relative to the first parent), so a `git merge`
 doesn't leave the wiki stale.
 
+### `parrot wiki ingest`
+
+Charter-driven, supervised ingestion of a document corpus — binary formats,
+URLs, and metadata frontmatter (FEAT-451, on top of FEAT-402's triage/manifest/
+HITL-review pipeline). Unlike `build` (deterministic, offline, no-LLM, source
+code only), `ingest` triages each document against an editorial charter before
+it becomes a wiki page: free heuristics reject duplicates/oversized files, a
+lightweight model scores the rest, and only gray-zone documents escalate to a
+heavier model.
+
+```
+parrot wiki ingest [OPTIONS] SOURCE
+```
+
+`SOURCE` accepts **one of three shapes**:
+
+| Shape | Example | Behavior |
+| --- | --- | --- |
+| Directory | `./contracts/` | Recursive walk by default (`--recursive`/`--no-recursive`); dotfiles and dot-directories (`.git/`, `.parrot/`) are skipped. |
+| Single file | `./contracts/msa.pdf` | Exactly one document. |
+| `http(s)://` URL | `https://host/report.pdf` | Fetched over `aiohttp` (timeout: `--fetch-timeout`), extracted, then dispatched through the same pipeline as a local file. No link-following/crawling — one URL is one document. |
+
+A nonexistent local path or an unsupported scheme exits non-zero with a clean
+error message (no traceback).
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--path TEXT` | auto-detect | Repo root. |
+| `--charter TEXT` | `<repo>/.parrot/charter.yaml` | Editorial charter YAML. |
+| `--dry-run` | off | Triage everything, write a manifest, ingest nothing. |
+| `--review PATH` | — | Apply human-edited decisions from a `manifest.jsonl`. |
+| `--interactive` | off | Prompt per-document (questionary) before applying. |
+| `--auto` | off | Charter thresholds decide automatically; flags a stratified audit sample. |
+| `--extract` | off | EXPERIMENTAL: include extracted claims in the manifest (v1 admission is document-level). |
+| `--lightweight-model TEXT` | `$WIKI_LIGHTWEIGHT_MODEL` | Stage-1 triage model (`provider:model`). |
+| `--model TEXT` | `$WIKI_MODEL` | Stage-2 escalation / page-generation model (`provider:model`). |
+| `--audit-rate FLOAT` | `0.1` | Fraction of `--auto` decisions flagged for stratified audit review. |
+| `--manifest PATH` | `<storage_dir>/ingest-manifest.jsonl` | Manifest output path. |
+| `--recursive` / `--no-recursive` | `--recursive` | When `SOURCE` is a directory, whether to walk it recursively. |
+| `--fetch-timeout FLOAT` | `30.0` | Timeout (seconds) for a URL `SOURCE` fetch. |
+
+Exactly one of `--dry-run` / `--review` / `--interactive` / `--auto` is
+required; they are mutually exclusive.
+
+```bash
+parrot wiki ingest ./contracts --dry-run                     # triage a directory, write a manifest
+parrot wiki ingest ./contracts/msa.pdf --dry-run              # a single document
+parrot wiki ingest https://host/report.pdf --dry-run          # a remote document
+parrot wiki ingest ./contracts --auto --audit-rate 0.2        # thresholds decide, 20% audited
+parrot wiki ingest ./contracts --review ingest-manifest.jsonl # apply hand-edited decisions
+```
+
+**Supported formats.** Plain-text/Markdown formats are read directly, no extra
+dependency required. Everything else is extracted through the optional
+[`ai-parrot-loaders`](../packages/ai-parrot-loaders/README.md) package
+(`uv pip install ai-parrot-loaders`):
+
+| Format | Extensions | Needs `ai-parrot-loaders`? |
+| --- | --- | --- |
+| Markdown / MDX | `.md`, `.markdown`, `.mdx` | No |
+| Plain text | `.txt`, `.text` | No |
+| reStructuredText | `.rst` | No |
+| PDF | `.pdf` | Yes |
+| Word | `.docx` | Yes |
+| PowerPoint | `.pptx`, `.ppt` | Yes |
+| Excel | `.xlsx`, `.xls` | Yes |
+| HTML | `.html` | Yes |
+| EPUB | `.epub` | Yes |
+
+**When `ai-parrot-loaders` is not installed**, binary-format documents are
+**skipped, counted, and reported** — never triaged as corrupted text and never
+charged an LLM call. Every ingest-triaging mode's summary line reports the
+skipped count (e.g. `Triaged 8 document(s), skipped 2. Manifest: ...`); pass
+`-v`/`--verbose` (the `parrot wiki` group flag) to also list the skipped paths.
+If you see `skipped: contrato.pdf` in the output, that document needs
+`ai-parrot-loaders` installed.
+
+**Page frontmatter contract.** Every page `ingest` creates begins with a
+deterministic YAML frontmatter block — the same document, re-ingested with the
+same metadata, always produces byte-identical output:
+
+```yaml
+---
+title: Contrato Marco 2026
+author: Legal Dept
+created_at: '2026-01-15T00:00:00'
+page_count: 2
+content_type: application/pdf
+loader: MarkdownLoader
+extra:
+  some_loader_specific_key: value
+triage:
+  composite_score: 0.825
+  decision: admit
+  decision_source: model
+  charter_version: '1'
+---
+
+<page body>
+```
+
+- Descriptive fields (`title`, `author`, `created_at`, `modified_at`,
+  `page_count`, `word_count`, `language`, `content_type`, `source_url`,
+  `loader`) come first, in that fixed order; `None` fields are omitted
+  entirely.
+- Unmapped loader-specific metadata lands under a sorted `extra:` block —
+  nothing is silently dropped.
+- The FEAT-402 triage decision travels alongside the descriptive metadata
+  under a nested `triage:` key, so a reader (or agent) can see *why* a page
+  was admitted without querying the sources table.
+- All pages derived from one multi-page source carry an **identical**
+  frontmatter block.
+- This is a supervised-ingestion-only feature: `parrot wiki build`/`upsert`
+  never emit frontmatter, and pages ingested before FEAT-451 are never
+  backfilled.
+
 ### `parrot wiki export`
 
 Export the wiki as a human-readable markdown bundle (one file per page with YAML
@@ -449,6 +567,238 @@ Resolution precedence for `--store` / `--backend`:
 --store flag  >  WIKI_STORE env  >  project .parrot/wiki.json plane
 --backend flag >  WIKI_STORE_BACKEND env  >  sqlite
 ```
+
+---
+
+## Namespaces (multi-wiki federation)
+
+`--store` reads **one** other plane. **Namespaces** let one wiki read **several**
+named ones at once: the sibling libraries a project depends on, an Obsidian vault
+of notes, a corpus of legislation in ArangoDB. Register them once, then every
+read command — and the MCP tools — spans all of them.
+
+```bash
+parrot wiki ns add asyncdb --project ../asyncdb --description "async DB drivers"
+parrot wiki query "connection pool"      # searches this repo AND asyncdb
+# - [file:pkg/store.py] Store — In-memory key-value store. (score=1.00)
+# - [asyncdb::file:asyncdb/pool.py] pool — Connection pooling. (score=0.87)
+```
+
+### Ids: local stays bare, foreign gets a prefix
+
+A foreign page is addressed `<namespace>::<id>` (`asyncdb::file:pool.py`). **Local
+ids are never prefixed**, so nothing about a single-wiki setup changes. The
+prefix is a routing address, not storage: the underlying planes never see it.
+Pass a qualified id verbatim to `page` and `related` — they route on it.
+
+### The four kinds
+
+Exactly one source per entry decides how the namespace is opened:
+
+| Kind | Registered with | Resolves to |
+| --- | --- | --- |
+| `path` | `--project DIR` | that project's own `.parrot/wiki.json` → its plane and backend |
+| `store` | `--store DIR [--backend sqlite\|memory]` | a pre-built store directory (`wiki.db` inside, for sqlite) |
+| `database` | `--database NAME [--credentials-env PREFIX]` | an ArangoDB database (credentials from `PREFIX_HOST`, `PREFIX_PASSWORD`, …) |
+| `vault` | `--vault DIR` | an Obsidian vault — resolved exactly like `path`, and it must contain `.obsidian/` |
+
+### Where they are declared
+
+Two registries, merged on every read, **repo entries winning** on a name clash:
+
+- `.parrot/wiki.json` → `namespaces` — this repository's own.
+- `~/.parrot/wikis.json` (`PARROT_HOME/wikis.json`) → available from every
+  project. Written with mode `0600`.
+
+```json
+{
+  "namespaces": {
+    "asyncdb": { "path": "../asyncdb", "description": "asyncdb driver layer" },
+    "notes":   { "vault": "~/Obsidian/Work" },
+    "legal":   { "database": "wiki_legal", "credentials_env": "ARANGODB", "weight": 0.8 }
+  }
+}
+```
+
+`ns add` resolves whatever path you type against your **current directory**,
+then stores it in the form the registry reads back: relative to the repo root
+for a repo entry (so `../asyncdb` keeps working in every clone) and absolute for
+a global one. **`ns add` is the only writer of either file** — `build` never
+registers a wiki behind your back, and concurrent `ns add --global` calls are
+serialised so neither loses the other's entry.
+
+Names match `^[A-Za-z0-9][A-Za-z0-9_.:-]*$`, may contain a single `:` (so
+`legal:civil` can mirror a GraphIndex namespace), never `::`, and can be neither
+`all` nor `local` — those are routing keywords.
+
+### `ns` command reference
+
+```bash
+parrot wiki ns list [--json]
+parrot wiki ns add NAME (--project DIR | --store DIR [--backend B]
+                         | --database NAME [--credentials-env PREFIX]
+                         | --vault DIR)
+                        [--description TEXT] [--weight 0.0-1.0] [--global]
+parrot wiki ns remove NAME [--global]
+```
+
+`ns list` shows name, kind, backend, origin (`repo`/`global`), whether the plane
+is built, and the target. `--weight` (default `1.0`) scales that namespace's
+scores in merged results — useful to keep a large reference corpus from crowding
+out your own code.
+
+### Reading: `--ns` on `query` / `page` / `related` / `status`
+
+```bash
+parrot wiki query "connection pool"                  # broadcast (the default)
+parrot wiki query "connection pool" --ns asyncdb     # just that namespace
+parrot wiki query "connection pool" --ns local       # just this repo
+parrot wiki query "connection pool" --ns asyncdb,notes
+parrot wiki page  asyncdb::file:asyncdb/pool.py
+parrot wiki page  file:asyncdb/pool.py --ns asyncdb  # equivalent
+parrot wiki status                                   # + a Namespaces table
+```
+
+Scores are **min-max normalised per namespace** and then multiplied by that
+namespace's weight before merging, so a five-page plane cannot outrank a
+five-hundred-page one just because BM25 is corpus-relative. Every JSON row
+carries a `namespace` key (`null` for local).
+
+An unknown name exits non-zero and lists the known ones. `status --ns <name>`
+reports **that namespace's** counters and identity, not the local project's.
+
+Foreign planes are opened strictly **read-only**, on every backend: a SQLite
+namespace is never migrated and leaves no `-wal`/`-shm` sidecar behind, and an
+ArangoDB namespace is *verified* rather than provisioned — pointing `--database`
+at a name that does not exist reports the namespace as `unbuilt` instead of
+quietly creating an empty database on the server. A plane written by an older
+version of the wiki is reported as `invalid` with the `build --force` command
+that would refresh it, rather than failing every query.
+
+### Writing: `--ns` on `remember` / `note` / `link`
+
+A write targets exactly **one** plane. Without `--ns` it is the local one; with
+`--ns <name>` that namespace is opened read-write for the call:
+
+```bash
+parrot wiki remember "pool sizing is per-event-loop" --ns asyncdb
+parrot wiki note asyncdb::file:asyncdb/pool.py "checked against 2.1"  --ns asyncdb
+parrot wiki link file:a.py file:b.py --rel references --ns asyncdb
+```
+
+`--ns all` is rejected — there is no broadcast write. A page id qualified with a
+*different* namespace than the one selected is rejected too, so a note can never
+land in the wrong plane. There are no cross-namespace edges.
+
+The MCP tools have no `--ns`, so `wiki_remember` / `wiki_note` always write to
+the local plane; handed a namespaced page id they return a tool error naming the
+CLI command to use, and write nothing.
+
+### Precedence and skips
+
+The existing chain is unchanged; `--ns` only selects **within** whatever plane it
+resolved, and `--store` never federates:
+
+```
+--store flag  >  WIKI_STORE env  >  project .parrot/wiki.json plane
+--backend flag >  WIKI_STORE_BACKEND env  >  sqlite
+--ns  selects namespaces of the resolved project plane (not with --store)
+```
+
+A namespace that is unbuilt or unreachable is **skipped with a note**, never a
+failure — the rest still answer:
+
+```
+$ parrot wiki query "pool"
+...
+(namespace 'notes' skipped: unbuilt — wikitoolkit build --path /home/me/Obsidian/Work)
+```
+
+### The vault kind
+
+An Obsidian vault needs no new scanner: `build --path <vault>` already detects
+`.obsidian/` and ingests the notes (category `document`, `[[wiki-links]]` as
+edges), writing the plane **inside the vault** at `<vault>/.parrot/wiki`.
+
+```bash
+parrot wiki build --path ~/Obsidian/Work        # once, and after big edits
+parrot wiki ns add notes --vault ~/Obsidian/Work
+parrot wiki query "retro action items"          # → notes::file:Retro.md
+```
+
+Two consequences worth knowing: `.parrot/` lives inside the vault, so a synced
+vault (Dropbox / iCloud / Obsidian Sync) carries the plane along — register the
+vault with `--store` pointing elsewhere if that is unwanted; and `.parrot/` is
+excluded from vault scans, so the plane is never ingested as notes.
+
+### Recipe: `FirefliesWikiAgent`'s audio-notes plane (FEAT-452)
+
+`agents/fireflies_wiki.py`'s `AudioNoteCaptureToolkit` (Telegram `/note` and
+capture-intent routing) writes each captured voice/text note to a **separate**
+`notes` `LLMWikiToolkit` plane — its own `wiki_name`/`storage_dir`, distinct
+from the `meetings` plane the same agent also owns. That plane is written and
+ingested immediately at capture time (`ingest_source`, not `create_page`, so
+a later incremental pass never double-authors the page), but it is a bare
+storage root, not a wiki *project* with its own `.parrot/`. Without a
+namespace registration it is invisible to `wikitoolkit query` / the MCP tools
+— this is the **`store`** kind, registered once per deployment:
+
+```bash
+# Defaults (override via AUDIO_NOTES_WIKI_NAME / AUDIO_NOTES_WIKI_STORAGE_DIR
+# if the deployment set non-default values — the namespace name and --store
+# path below MUST match whatever the agent is actually configured with):
+wikitoolkit ns add notes \
+  --store "${AUDIO_NOTES_WIKI_STORAGE_DIR:-$HOME/.parrot/wikis/notes}" \
+  --backend sqlite \
+  --description "FEAT-452 audio-notes capture plane (personal voice/text notes)"
+
+# Verify:
+wikitoolkit ns list --json      # expect: notes | kind=store | built=true
+
+# Reach it:
+wikitoolkit query --ns notes "<phrase from a captured note>"
+wikitoolkit query "<phrase from a captured note>"   # default --ns all broadcast also reaches it
+```
+
+**A fresh deployment must run the `ns add` command once** (it is a local,
+gitignored `.parrot/wiki.json` / `~/.parrot/wikis.json` entry — see
+"Where they are declared" above — never committed and never auto-registered
+by agent code; `FirefliesWikiAgent.configure()` only builds/bootstraps the
+plane's own storage via `create_wiki()`, it does not touch either registry).
+Re-run it after moving `AUDIO_NOTES_WIKI_STORAGE_DIR` or renaming
+`AUDIO_NOTES_WIKI_NAME`.
+
+The `meetings` plane (`FIREFLIES_WIKI_STORAGE_DIR`) is intentionally **not**
+registered as a namespace by this recipe — it stays reachable only as
+whatever `wikitoolkit`'s own local/`--store` plane happens to be for that
+deployment, unaffected by the `notes` registration.
+
+A vault can also be ingested **into a repo's own plane** (the `vault_ingest`
+tool). Two corpora then share one plane, and neither prunes the other: a source
+registered outside the directory being scanned is never removed, and a page
+still backed by a live source is never swept — so `build` and `vault_ingest` can
+alternate without deleting each other's pages.
+
+### MCP and agent tools
+
+`wiki_query`, `wiki_page` and `wiki_related` take an optional `namespace`
+argument with the same values as `--ns`, and `wiki_status` reports `namespaces`
+and `skipped`. `wikitoolkit mcp` resolves the project's namespaces at startup and
+serves them through the same tools — no extra configuration.
+
+`LLMWikiToolkit` accepts a pre-built store (`LLMWikiToolkit(..., store=federated)`);
+`list_wikis()` then enumerates the namespaces and the read methods dispatch on
+`wiki_name`.
+
+### Not in v1 (follow-ups)
+
+- **Intent routing** — picking a namespace automatically from its `description`
+  (the field is already stored for this).
+- **RRF / smarter fusion** — merging is min-max + weight today.
+- **Cross-namespace edges** — `link` cannot connect two planes.
+- **Multi-target writes** — `--ns` takes exactly one namespace.
+- **Obsidian write-back** — `remember --ns <vault-ns>` writes the plane, not a
+  new `.md` note in the vault.
 
 ---
 
@@ -672,6 +1022,12 @@ parrot wiki query "AgentsFlow DAG executor" --store docs/parrot --table --body
 | Results look stale | Re-run `parrot wiki build`; check `parrot wiki status` for stale sources. |
 | Existing `post-commit` hook not chained | It isn't a POSIX-sh script — add `wikitoolkit upsert --changed --quiet` to it manually. |
 | Query returns nothing | Try broader terms, drop `--category`, or rebuild; fall back to code search. |
+| `Unknown namespace 'x'` | The name is in neither registry — check `parrot wiki ns list`, or add it with `parrot wiki ns add`. |
+| `(namespace 'x' skipped: unbuilt — ...)` | That namespace has no plane yet — run the `wikitoolkit build` command the note prints. |
+| `(namespace 'x' skipped: unreachable)` | The plane could not be opened (ArangoDB down, path gone) — check `parrot wiki ns list` and the credentials env prefix. |
+| `A write targets exactly one namespace` | `remember`/`note`/`link` take a single `--ns <name>`; `all` is not a write target. |
+| `Page id 'a::x' belongs to namespace 'a'` | Pass `--ns a` so the write goes to that plane, or drop the prefix to write locally. |
+| `<dir> is not an Obsidian vault` | `ns add --vault` requires an `.obsidian/` directory — use `--project` for a plain wiki project. |
 
 ---
 

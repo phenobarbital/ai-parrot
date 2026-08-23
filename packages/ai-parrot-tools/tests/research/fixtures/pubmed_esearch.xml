@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Illustrative excerpt of an NCBI E-utilities `esearch` response for
+  db=pubmed (see FEAT-426 TASK-2239). Kept here as a reference fixture;
+  the offline unit tests exercise `AcademicResearchToolkit` against a
+  fake `Bio.Entrez` module (see `test_academic_pubmed.py`) rather than
+  parsing this file directly, since `biopython` is an optional dependency
+  not installed in the base test environment (spec goal G6 — fixtures
+  only, no live network in CI).
+-->
+<eSearchResult>
+  <Count>2</Count>
+  <RetMax>2</RetMax>
+  <RetStart>0</RetStart>
+  <IdList>
+    <Id>12345678</Id>
+    <Id>87654321</Id>
+  </IdList>
+  <TranslationSet/>
+  <QueryTranslation>crispr[All Fields]</QueryTranslation>
+</eSearchResult>

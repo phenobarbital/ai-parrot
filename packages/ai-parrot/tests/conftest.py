@@ -22,6 +22,32 @@ def pytest_collection_modifyitems(config, items):  # noqa: D401
             if "real_llm" in item.keywords:
                 item.add_marker(skip_real_llm)
 
+
+@pytest.fixture(autouse=True)
+def _reset_injection_engine_singleton():
+    """Reset FEAT-439's process-wide injection-engine singleton, repo-wide.
+
+    ``parrot.bots.guardrails.builtin.prompt_injection._resolve_injection_engine()``
+    memoizes its result in a module-level ``_RESOLVED_INJECTION_ENGINE``
+    (``_UNSET`` sentinel) so N bots share one resolved engine in
+    production. Left unreset between tests, whichever test constructs the
+    FIRST ``PromptInjectionGuardrail``/bot-with-``injection_detection=True``
+    in the whole pytest process "wins" — every later test's construction
+    silently reuses that memoized engine/mock regardless of what it
+    itself patches, corrupting unrelated suites
+    (e.g. ``test_guardrails_input_migration.py``) that never even import
+    this module directly. Autouse + defined at the top-level ``tests/``
+    conftest so it applies to ``tests/unit/`` AND ``tests/integration/``
+    without every test file needing to know this internal exists.
+    """
+    import parrot.bots.guardrails.builtin.prompt_injection as _pi_module
+
+    _pi_module._RESOLVED_INJECTION_ENGINE = _pi_module._UNSET
+    _pi_module._WARMUP_DONE = False
+    yield
+    _pi_module._RESOLVED_INJECTION_ENGINE = _pi_module._UNSET
+    _pi_module._WARMUP_DONE = False
+
 # Ensure the project root is importable as ``parrot`` when running tests without
 # installing the package.  Several tests import modules directly from the
 # source tree, so we add the repository root to ``sys.path`` at collection time.

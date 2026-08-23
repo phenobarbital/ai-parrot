@@ -21,7 +21,23 @@ from aiohttp import web
 # Resolve source root relative to this test file location
 # ---------------------------------------------------------------------------
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SRC_ROOT = _PROJECT_ROOT / "packages" / "ai-parrot" / "src"
+def _parrot_source(relative: str) -> Path:
+    """Locate a ``parrot.*`` source file across the uv workspace packages.
+
+    Modules migrate between distributions — ``parrot.handlers`` and
+    ``parrot.manager`` now ship from ai-parrot-server, not from core — so
+    resolve by finding the file instead of hardcoding a package name.
+    """
+    for _pkg in sorted((_PROJECT_ROOT / "packages").iterdir()):
+        _candidate = _pkg / "src" / relative
+        if _candidate.is_file():
+            return _candidate
+    raise FileNotFoundError(
+        f"{{relative!r}} not found under any packages/*/src in the workspace"
+    )
+
+
+_SRC_ROOT = _parrot_source("parrot/handlers/agent.py").parents[2]
 
 # ---------------------------------------------------------------------------
 # Helpers / Fixtures

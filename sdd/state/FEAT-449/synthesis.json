@@ -1,0 +1,981 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-449",
+  "mode": "enrichment",
+  "summary_oneline": "A legal LLM Wiki fits ai-parrot's knowledge stack far better than the source assumed — the legal vocabulary, the deterministic traversals, the incremental sync and the read-only guarantee are all existing declarative machinery — but two of its stated 'closed' decisions are refuted, temporal validity remains wholly greenfield, and a parallel feature (FEAT-450) is already building the multi-brain layer it needs.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/graphindex/toolkit.py",
+      "symbol": "GraphIndexToolkit",
+      "lines": "72",
+      "role": "agent-facing graph tools; ground_claim/traverse/find_references confirmed, plus write tools behind a _write_supported gate and graph_history/revert_write",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "TenantContext",
+      "lines": "406-421",
+      "role": "the ONLY multi-graph discriminator that exists: tenant_id + arango_db + pgvector_schema + merged ontology",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py",
+      "symbol": "tenant factory",
+      "lines": "49-68",
+      "role": "constructs arango_db=f\"db_{tenant_id}\" — proves database-per-tenant isolation",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/persist.py",
+      "symbol": "GraphIndexPersistence",
+      "lines": "1-26",
+      "role": "ArangoDB write path via OntologyGraphStore + pgvector embeddings; per-tenant commit collections",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "EntityDef",
+      "lines": "40-64",
+      "role": "declarative entity definition (collection, key_field, properties, vectorize, extend) — the extension point for legal collections",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/merger.py",
+      "symbol": "OntologyMerger.merge",
+      "lines": "26-51",
+      "role": "merges ontology YAML files into a per-tenant MergedOntology",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "symbol": "initialize_tenant",
+      "lines": "71",
+      "role": "auto-provisions Arango collections from entity/relation defs",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/field_services.ontology.yaml",
+      "symbol": "field_services ontology",
+      "role": "the only shipped domain ontology — direct template for a legal.ontology.yaml",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/meta_ontology.py",
+      "symbol": "KIND_TO_COLLECTION / EDGE_KIND_TO_COLLECTION",
+      "lines": "285-312",
+      "role": "GraphIndex's closed gi_* vocabulary (9 entities / 10 relations), documented as additive to tenant ontologies",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/mixins/intent_router.py",
+      "symbol": "IntentRouterMixin",
+      "lines": "123",
+      "role": "the actual router (datasets, tools, vector stores, graph sources) — the real target for the source's 'KnowledgeRouter'",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/intent.py",
+      "symbol": "OntologyIntentResolver",
+      "lines": "1-14",
+      "role": "soft-deprecated dual-path (keyword fast path + LLM) resolver; must NOT be built on",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/groundedness/policy.py",
+      "symbol": "GroundednessReport",
+      "lines": "58",
+      "role": "the anti-hallucination report contract claimed by the source",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/groundedness/scorer.py",
+      "symbol": "GroundednessScorer.score",
+      "lines": "56-74",
+      "role": "deterministic (detection-only) groundedness scoring over an EvidenceIndex",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.execute_tool",
+      "lines": "1519, 1573-1610",
+      "role": "the interception seam where a code-enforced CENDOJ call budget would live",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/pbac.py",
+      "symbol": "PBACToolCallGuardrail",
+      "lines": "1-14",
+      "role": "existing TOOL_CALL guardrail; runs first in execute_tool; ALLOW/DENY only, no counting",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/guardrails/base.py",
+      "symbol": "GuardrailStage.TOOL_CALL",
+      "lines": "15-30",
+      "role": "the pre-execution stage a call-budget guardrail would register against",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/compression/budget.py",
+      "symbol": "CircuitBreaker",
+      "lines": "195",
+      "role": "the repo's only CircuitBreaker — reference implementation for the CENDOJ breaker, but coupled to codec latency",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/scheduler/__init__.py",
+      "symbol": "schedule",
+      "lines": "1-20",
+      "role": "lazy shim; the @schedule decorator resolves into ai-parrot-server[scheduler]",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/crew/tool_node.py",
+      "symbol": "ToolNode",
+      "lines": "168",
+      "role": "deterministic tool step for the retrieval DAG in the source's 4.2",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/vectorstoresearch.py",
+      "symbol": "VectorStoreSearchTool",
+      "lines": "48",
+      "role": "PgVector chunk retrieval tool mounted per knowledge base",
+      "evidence": [
+        "F009",
+        "F010"
+      ]
+    },
+    {
+      "path": "agents/security_advisor.py",
+      "symbol": "SecurityAdvisor / _audit_citations",
+      "lines": "1-27, 424-433",
+      "role": "working precedent: read-only grounded agent, mandatory references, citations re-audited, unvalidated items routed to human review",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/mixin.py",
+      "symbol": "GraphMemoryMixin",
+      "lines": "30",
+      "role": "mounts a GraphIndex graph onto an agent as tools",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "examples/knowledge_wiki/wiki.py",
+      "symbol": "LLM Wiki example",
+      "lines": "1-24",
+      "role": "closest existing 'LLM Wiki' composition: PageIndex + GraphIndex + Ontology; degrades gracefully without ArangoDB",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/autonomous/orchestrator.py",
+      "symbol": "AutonomousOrchestrator",
+      "lines": "231, 1400-1414",
+      "role": "the in-repo enqueue/resume primitive relevant to OQ6 (async lazy ingest); re-enqueue is explicitly non-idempotent",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/__init__.py",
+      "symbol": "interfaces package",
+      "lines": "1-9",
+      "role": "mixins package — NOT a Pydantic contracts home; refutes the proposed parrot.interfaces.legal placement",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+      "symbol": "AuditLedger / AuditLedgerEntry",
+      "lines": "80, 296",
+      "role": "attribution ledger for the CENDOJ 'attributable to a lawyer, not a crawler' requirement",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "sdd/state/FEAT-450/source.md",
+      "symbol": "FEAT-450 wiki-namespaces",
+      "lines": "1-40",
+      "role": "live parallel proposal federating N wiki stores behind ns::id; its Problem statement names the lawyer multi-brain case explicitly and includes an arangodb namespace kind keyed by database",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py",
+      "symbol": "ArangoDBWikiStore",
+      "lines": "160-175",
+      "role": "wiki plane already isolates one Arango database per wiki via a database constructor arg",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/models.py",
+      "symbol": "WikiPageCategory / WikiSearchResult",
+      "lines": "25, 227-268",
+      "role": "the wiki plane's data model is pages+categories, with no entity/relation vocabulary for legal edges",
+      "evidence": [
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ingest.py",
+      "symbol": "wiki ingest orchestrator",
+      "lines": "1-22",
+      "role": "already bridges the wiki plane into GraphIndex via sync_graph=True, making a layered architecture viable",
+      "evidence": [
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "symbol": "ensure_collection / initialize_tenant",
+      "lines": "71, 462-488",
+      "role": "idempotent on-demand vertex/edge collection creation — legal collections can be added to a live tenant",
+      "evidence": [
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/tenant.py",
+      "symbol": "TenantOntologyManager",
+      "lines": "29, 167, 198, 208, 280-338",
+      "role": "templated tenant DB naming plus overlay/YAML-chain resolution — makes tenant-per-materia cheap and layerable",
+      "evidence": [
+        "F016"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py",
+      "symbol": "refresh pipeline / DiffResult",
+      "lines": "1-34",
+      "role": "existing CRON delta sync: EXTRACT/DIFF/APPLY(upsert+soft-delete)/REDISCOVER/SYNC pgvector/INVALIDATE — the BOE-EUR-Lex incremental sync the source planned to build",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "TraversalPattern",
+      "lines": "263-290",
+      "role": "declarative AQL template + bind vars + trigger_intents + authorization + post-traversal tool_call — makes article_in_force/case_chain/what_applies configuration",
+      "evidence": [
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/validators.py",
+      "symbol": "AQL validators",
+      "lines": "1-28",
+      "role": "rejects mutation keywords, system collections and JS in graph queries — enforces read-only below the tool layer",
+      "evidence": [
+        "F019"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/builder.py",
+      "symbol": "GraphIndexBuilder / ingest_document",
+      "lines": "1-17, 353-390",
+      "role": "6-stage pipeline with atomic per-document refresh via replace_document_slice — the mechanism for CENDOJ lazy ingest and consolidated re-ingest",
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/schema.py",
+      "symbol": "UniversalNode / NodeKind",
+      "lines": "143-171",
+      "role": "GraphIndex write path uses a CLOSED NodeKind enum with free-form metadata only in domain_tags — typed legal entities need the ontology write path instead",
+      "evidence": [
+        "F020"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/extractors/loader.py",
+      "symbol": "LoaderExtractor",
+      "role": "existing bridge from parrot_loaders output into the graph pipeline",
+      "evidence": [
+        "F020"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "GraphIndex has no namespace concept; the only isolation unit is TenantContext, which allocates a separate ArangoDB database (and pgvector schema) per tenant",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "The source's OQ1 'Closed: single Arango DB, GraphIndex namespaces over shared collections, tenancy as a second discriminator' is not implementable as written. Either legal materias become tenants (one DB each, inverting the OQ1 decision), or a namespace discriminator is new framework work."
+    },
+    {
+      "statement": "The graph entity/edge vocabulary is declarative YAML merged per tenant, with auto-provisioning of Arango collections and a shipped domain example",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "The legal collections (norma, articulo, sentencia, modifica, deroga, cita...) are configuration, not a GraphIndex fork. This is the single largest de-risking of the design."
+    },
+    {
+      "statement": "No temporal-validity machinery exists anywhere in parrot/knowledge/ (2 grep hits, both unrelated)",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "versions[], article_in_force(as_of), per-version chunks and as_of-filtered vector retrieval are entirely new, with no pattern to copy. This is the design's hardest component and its correctness gate."
+    },
+    {
+      "statement": "The TOOL_CALL guardrail seam exists and runs first inside ToolManager.execute_tool, but zero counting/rate-limiting guardrails ship",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "Code-enforced CENDOJ budgets are achievable as a new Guardrail subclass on an existing extension point — small, well-bounded new work, not a ToolManager change."
+    },
+    {
+      "statement": "A grounded, read-only, citation-audited advisory agent already exists end-to-end in agents/security_advisor.py, including a citation re-audit that gates automated action",
+      "evidence": [
+        "F010"
+      ],
+      "implication": "LegalAnswerAgent and the verified/pending_verification gate should extend a proven pattern rather than be designed fresh; note agents/ is gitignored and needs git add -f."
+    },
+    {
+      "statement": "The @schedule decorator lives in the ai-parrot-server[scheduler] satellite, reachable from core only via a lazy __getattr__ shim",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "Daily BOE/EUR-Lex sync implies an ai-parrot-server dependency or an external scheduler calling an ingestion entrypoint; the spec must say which."
+    },
+    {
+      "statement": "parrot.interfaces is documented as a mixins package for bot functionality, not a home for domain data models",
+      "evidence": [
+        "F012"
+      ],
+      "implication": "CaseRef/CendojVerification/LegalAnswer belong in the toolkit tree (the source's own parrot_tools/legal/... layout), not at parrot.interfaces.legal."
+    },
+    {
+      "statement": "No legal-domain code exists in the repo; the commit titled 'new tooling for legal resources' added only the design document",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "Nothing to reconcile or migrate — but also no partial head start, so every sprint in the roadmap is from zero."
+    },
+    {
+      "statement": "The repo's only CircuitBreaker is embedded in the compression codec latency router; there is no shared throttled HTTP client abstraction",
+      "evidence": [
+        "F008"
+      ],
+      "implication": "The CENDOJ shared client (semaphore pacing, Retry-After, 15-min breaker) is new infrastructure with one class worth studying, not inheriting."
+    },
+    {
+      "statement": "FEAT-450 wiki-namespaces is a live parallel proposal whose stated goal explicitly includes composing a lawyer's legislation/jurisprudence/own-cases brains behind ns::id routing, with an arangodb namespace kind keyed by database",
+      "evidence": [
+        "F014"
+      ],
+      "implication": "The brain-federation half of U1 is being solved concurrently. This feature should consume FEAT-450 rather than design its own multiplicity scheme — and should coordinate, since FEAT-450 v1 defers the intent-based router that the legal design's 4.1 assumes."
+    },
+    {
+      "statement": "The wiki plane models pages and categories, not typed entities, but its ingest orchestrator already mirrors nodes into GraphIndex via sync_graph=True",
+      "evidence": [
+        "F015"
+      ],
+      "implication": "A layered answer is available: wiki namespaces for brain selection and document ingest, GraphIndex+Ontology beneath for the typed legal graph. These are complementary, not a fork."
+    },
+    {
+      "statement": "Collections can be added to a live tenant idempotently via ensure_collection, and tenant database naming is a configurable template with overlay support",
+      "evidence": [
+        "F016"
+      ],
+      "implication": "Choosing tenant-per-materia is reversible and incremental; the 'wrong choice means migrate everything' fear is materially weaker than assumed."
+    },
+    {
+      "statement": "A six-stage CRON delta-sync pipeline already exists at the ontology layer (EXTRACT/DIFF/APPLY with soft-delete/REDISCOVER/SYNC embeddings/INVALIDATE)",
+      "evidence": [
+        "F017"
+      ],
+      "implication": "boe_sync_consolidated(since) and the daily incremental sync are largely configuration of existing machinery, not new infrastructure."
+    },
+    {
+      "statement": "TraversalPattern expresses a named AQL template with bind variables, keyword fast-path triggers, declarative authorization and a post-traversal tool_call, loadable from ontology overlays",
+      "evidence": [
+        "F018"
+      ],
+      "implication": "The deterministic traversals in 3.4 become declarative config with as_of as a bind variable, and the CENDOJ verification step has a native hook — removing the query layer from the greenfield column."
+    },
+    {
+      "statement": "Graph queries are validated read-only at the AQL layer: mutations, system collections and JavaScript are rejected",
+      "evidence": [
+        "F019"
+      ],
+      "implication": "The read-only-agent invariant is enforced below the tool layer, so the source's separate writer/reader toolkit split may be unnecessary ceremony."
+    },
+    {
+      "statement": "There are two distinct write paths — GraphIndexBuilder writing UniversalNodes under a closed NodeKind enum, and the ontology EntityDef path writing arbitrary typed collections",
+      "evidence": [
+        "F020",
+        "F003"
+      ],
+      "implication": "Typed legal entities require the ontology path, but the loader/embedding/incremental-refresh pipeline lives on the GraphIndex path. Reconciling the two is a design decision the source never considered and is now the sharpest open technical question."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "parrot_tools/legal/ids.py — ECLI/ROJ/BOE/CELEX regex + normalisation, shared by every legal toolkit",
+      "parrot_tools/legal/{boe,eurlex,tc,hudoc,cendoj}/ — one AbstractToolkit per source",
+      "legal.ontology.yaml — entity/relation defs AND the traversal patterns for article_in_force / case_chain / what_applies (declarative, per F018)",
+      "The temporal-validity DATA MODEL: versions[] on articulo, per-version chunking, and the derived flag — still no in-repo precedent (F011)",
+      "A counting Guardrail at GuardrailStage.TOOL_CALL enforcing per-execution CENDOJ call budgets",
+      "A shared throttled CENDOJ HTTP client (process-level semaphore, jittered pacing, Retry-After, circuit breaker, immutable cache)",
+      "LegalAnswer / LegalClaim / SourceRef contracts plus the retrieval-set post-check",
+      "A reconciliation between the GraphIndex UniversalNode write path and the ontology EntityDef write path (F020)"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/",
+        "change": "add legal.ontology.yaml alongside field_services.ontology.yaml",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/guardrails/builtin/",
+        "change": "add a call-budget guardrail next to pbac.py/moderation.py",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/",
+        "change": "ONLY IF the namespace fork is chosen — add a namespace discriminator; otherwise untouched",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py",
+        "change": "configure legal sources into the existing delta-sync pipeline rather than writing a new sync",
+        "evidence": [
+          "F017"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ingest.py",
+        "change": "potentially consume as the document/brain layer above the typed graph, per FEAT-450",
+        "evidence": [
+          "F015",
+          "F014"
+        ]
+      }
+    ],
+    "untouched": [
+      "GraphIndexToolkit — its tool surface already covers the read path (F001)",
+      "The groundedness subsystem — used as-is (F006)",
+      "ToolManager.execute_tool — the guardrail seam is used, not modified (F007)",
+      "IntentRouterMixin — configured, not forked (F005)",
+      "Loaders — PDFMarkdownLoader/HTMLLoader/WebLoader/MarkdownLoader used as shipped (F009)",
+      "ontology/validators.py — read-only AQL enforcement inherited as-is (F019)",
+      "TraversalPattern machinery — authored against, not modified (F018)",
+      "GraphIndexBuilder incremental refresh — configured via LoaderExtractor, not forked (F020)"
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "Grounded read-only agent with mandatory references and a citation re-audit gating automated action",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "pattern": "Declarative YAML domain ontology with auto-provisioned collections",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "pattern": "Deterministic ToolNode stages before any LLM node in the DAG",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "pattern": "Per-toolkit model modules rather than a central contracts package",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "pattern": "Declarative TraversalPattern with bind variables and trigger_intents instead of bespoke traversal code",
+        "evidence": [
+          "F018"
+        ]
+      },
+      {
+        "pattern": "Atomic per-document refresh via replace_document_slice for lazy ingest",
+        "evidence": [
+          "F020"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Two incompatible write paths — GraphIndexBuilder's closed NodeKind enum vs the ontology's arbitrary typed collections — and the loader/embedding/incremental pipeline sits on the wrong one for typed legal entities",
+        "evidence": [
+          "F020",
+          "F003"
+        ],
+        "severity": "high"
+      },
+      {
+        "risk": "The temporal-validity DATA MODEL remains entirely greenfield and is the design's correctness gate; the EUR-Lex half rests on a diff-derived approximation the source itself flags as derived=true",
+        "evidence": [
+          "F011"
+        ],
+        "severity": "high"
+      },
+      {
+        "risk": "CENDOJ is the only verification path for Spanish ordinary case law and is an unsanctioned scrape with a captcha/429 posture; if unusable, the verified tier collapses to commercial backends or nothing",
+        "evidence": [
+          "F004",
+          "F008"
+        ],
+        "severity": "high"
+      },
+      {
+        "risk": "FEAT-450 is building the multi-brain layer concurrently and defers the intent router this design depends on; uncoordinated, the two features will duplicate or contradict each other",
+        "evidence": [
+          "F014"
+        ],
+        "severity": "medium"
+      },
+      {
+        "risk": "A five-sprint roadmap with two blocking spikes is far past what a single spec should carry",
+        "evidence": [
+          "F004"
+        ],
+        "severity": "medium"
+      }
+    ],
+    "scope_confidence": "medium"
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "GraphIndexToolkit exists and exposes ground_claim, traverse and find_references under exactly those names",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct grep on the class and all three method definitions with line numbers."
+    },
+    {
+      "id": "C2",
+      "statement": "GraphIndex has no namespace mechanism; graph isolation is one ArangoDB database per tenant via TenantContext",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Exhaustive case-insensitive grep of the package returned a single unrelated hit, and TenantContext.arango_db plus factory.py's db_{tenant_id} were read directly."
+    },
+    {
+      "id": "C3",
+      "statement": "The legal entity/edge vocabulary can be added as a declarative YAML ontology without forking GraphIndex",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "EntityDef fields, OntologyMerger.merge(yaml_paths), initialize_tenant and a shipped domain ontology were each read directly."
+    },
+    {
+      "id": "C4",
+      "statement": "No legal-domain code exists in the repo",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "Zero matches for the union of cendoj/eurlex/celex/BOE-A-/ECLI across all packages, plus the commit stat showing one doc-only file."
+    },
+    {
+      "id": "C5",
+      "statement": "There is no KnowledgeRouter; routing belongs to IntentRouterMixin and the ontology resolver it replaced is soft-deprecated",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "No symbol match, plus the deprecation notice read verbatim in intent.py's docstring."
+    },
+    {
+      "id": "C6",
+      "statement": "GroundednessReport and a deterministic groundedness scorer exist as a full subsystem",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "Class and method definitions located with line numbers; package contents listed."
+    },
+    {
+      "id": "C7",
+      "statement": "Per-execution tool-call budgets can be enforced at GuardrailStage.TOOL_CALL, but no counting guardrail ships today",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "The seam was read in manager.py and pbac.py; the absence is a zero-count grep across the whole guardrails tree."
+    },
+    {
+      "id": "C8",
+      "statement": "No temporal-validity or as-of machinery exists in the knowledge layer",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "Two grep hits across the entire subtree, both an unrelated local variable."
+    },
+    {
+      "id": "C9",
+      "statement": "agents/security_advisor.py is a working precedent for the LegalAnswerAgent pattern including the verified/pending gate",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "Module docstring and _audit_citations docstring read directly; both describe mandatory references and routing unvalidated items to human review."
+    },
+    {
+      "id": "C10",
+      "statement": "The @schedule decorator is only available with ai-parrot-server[scheduler] installed",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "The core scheduler package is a 38-line lazy shim whose _SERVER_CLASSES mapping and install hint were read in full."
+    },
+    {
+      "id": "C11",
+      "statement": "parrot.interfaces is the wrong home for the legal Pydantic contracts",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "Package docstring defines it as mixins for bot functionality; contents are connection interfaces."
+    },
+    {
+      "id": "C12",
+      "statement": "AuditLedger and permission_context can carry CENDOJ request attribution",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "medium",
+      "reasoning": "Both exist and permission_context demonstrably reaches ToolManager.execute_tool, but two distinct AuditLedger classes exist and neither was read in depth to confirm it fits per-tool-call attribution."
+    },
+    {
+      "id": "C13",
+      "statement": "The autonomous orchestrator is the available primitive for OQ6's deferred lazy ingestion",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "medium",
+      "reasoning": "Enqueue/resume/re-enqueue exist in the server satellite, but it is designed for autonomous executions, not a general ingest queue, and re-enqueue is documented as non-idempotent."
+    },
+    {
+      "id": "C14",
+      "statement": "The CENDOJ shared client must be built from scratch; only a codec-coupled CircuitBreaker exists to study",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "medium",
+      "reasoning": "The single CircuitBreaker was located and its purpose read, and no HTTP-facing usage was found — but absence of a throttled client rests on a filename/symbol search rather than an exhaustive audit."
+    },
+    {
+      "id": "C15",
+      "statement": "Choosing the multiplicity model wrong is recoverable: collections are added to live tenants idempotently and tenant DB naming is templated",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "medium",
+      "reasoning": "ensure_collection and the templated db name were read directly; 'recoverable' still extrapolates beyond any migration tooling actually examined."
+    },
+    {
+      "id": "C16",
+      "statement": "FEAT-450 wiki-namespaces is a live parallel proposal that explicitly targets the lawyer multi-brain use case and supports an arangodb namespace keyed by database",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "Its source.md and its own F015 finding were read directly, including the verbatim lawyer sentence."
+    },
+    {
+      "id": "C17",
+      "statement": "The wiki plane cannot carry typed legal entities, but already bridges into GraphIndex via sync_graph=True",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "Both the models module and the ingest orchestrator's documented step 5 were read directly."
+    },
+    {
+      "id": "C18",
+      "statement": "An incremental delta-sync pipeline with soft-delete and embedding sync already exists at the ontology layer",
+      "evidence": [
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "The six stages are enumerated verbatim in refresh.py's module docstring."
+    },
+    {
+      "id": "C19",
+      "statement": "The deterministic legal traversals can be authored as declarative TraversalPatterns with as_of as a bind variable",
+      "evidence": [
+        "F018"
+      ],
+      "confidence": "medium",
+      "reasoning": "The TraversalPattern contract supports AQL templates with bind variables and a tool_call hook, but no temporal pattern was found in practice, so applicability to as_of resolution is inferred."
+    },
+    {
+      "id": "C20",
+      "statement": "Read-only graph access is enforced at the AQL layer independently of tool-level guardrails",
+      "evidence": [
+        "F019"
+      ],
+      "confidence": "high",
+      "reasoning": "The mutation, system-collection and JS regexes were read directly in validators.py."
+    },
+    {
+      "id": "C21",
+      "statement": "Typed legal entities require the ontology write path, while the loader/embedding/incremental pipeline runs on the GraphIndex UniversalNode path",
+      "evidence": [
+        "F020",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "UniversalNode.kind is a closed NodeKind enum mapped to fixed gi_* collections, whereas EntityDef accepts arbitrary collections; both were read directly."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Given that FEAT-450 is already building wiki namespaces for exactly this multi-brain case (F014) and that typed legal entities need the ontology write path rather than the GraphIndex one (F020,C21), what is the substrate split?",
+      "blocks_claims": [
+        "C2",
+        "C16",
+        "C17",
+        "C21"
+      ],
+      "plausible_answers": [
+        "Layered: FEAT-450 wiki namespaces for brain selection and document ingest, one ontology tenant per materia beneath for the typed legal graph — uses existing machinery on both levels and makes this feature depend on FEAT-450",
+        "Single ontology tenant, materia as a node property and edge filter, no wiki namespaces — simplest and independent of FEAT-450, but no hard isolation between domains",
+        "Add a namespace discriminator to GraphIndex itself — matches the source's OQ1 as written but is new core work that likely duplicates FEAT-450"
+      ],
+      "ask_user": true,
+      "user_answer": "Layered: FEAT-450 wiki namespaces for brain selection and document ingest, with one ontology tenant per materia beneath carrying the typed legal graph. This inverts the source's OQ1 — isolation is a database per materia, not namespaces over shared collections.",
+      "resolved": true
+    },
+    {
+      "id": "U6",
+      "question": "Should this feature block on FEAT-450, or proceed independently and integrate later?",
+      "blocks_claims": [
+        "C16"
+      ],
+      "plausible_answers": [
+        "Block — sequence FEAT-450 first so the legal wiki consumes finished namespace routing",
+        "Proceed independently on the typed graph (ontology tenant) and integrate namespaces when FEAT-450 lands",
+        "Merge the two efforts and treat the legal wiki as FEAT-450's first real consumer"
+      ],
+      "ask_user": true,
+      "user_answer": "Proceed independently and integrate later. Build the typed legal graph on an ontology tenant now; adopt namespace routing when FEAT-450 lands. The integration seam is the wiki ingest sync_graph bridge.",
+      "resolved": true
+    },
+    {
+      "id": "U2",
+      "question": "Does the firm hold (or intend to buy) a vLex or Aranzadi licence?",
+      "blocks_claims": [
+        "C4"
+      ],
+      "plausible_answers": [
+        "Yes — then the commercial backend becomes the primary verifier and CENDOJ scraping can be dropped or demoted, removing the largest legal and operational risk",
+        "No — CENDOJ is the only verification path for TS/AP case law and the OQ3 spike becomes blocking",
+        "Undecided — spec the verify/search/fetch contract backend-agnostically and defer the choice"
+      ],
+      "ask_user": true,
+      "user_answer": "No commercial licence. CENDOJ is the only verification path for Spanish ordinary case law, so the OQ3 spike is blocking and the terms-of-use risk must be owned explicitly.",
+      "resolved": true
+    },
+    {
+      "id": "U3",
+      "question": "What is the v1 deliverable? The source's roadmap is five sprints with two blocking spikes, which is well past one spec.",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "Sprint 1 only — BOE norms graph with article_in_force and zero LLM, as a self-contained spec",
+        "Spikes only — OQ3 (CENDOJ) and OQ4 (CELLAR) as a throwaway spike spec, then re-plan",
+        "One vertical slice end-to-end for a single materia, accepting shallow coverage"
+      ],
+      "ask_user": true,
+      "user_answer": "Sprint 1 only — the BOE norms graph with zero LLM: legal.ontology.yaml, BOE consolidated ingestion, versions[], and article_in_force as declarative TraversalPatterns, tested against known amendment chains.",
+      "resolved": true
+    },
+    {
+      "id": "U4",
+      "question": "Will the deployment include ai-parrot-server, or is this a core-only install?",
+      "blocks_claims": [
+        "C10",
+        "C13"
+      ],
+      "plausible_answers": [
+        "Yes — @schedule and the autonomous orchestrator are available, so daily sync and deferred ingest (OQ6) use in-repo machinery",
+        "No — daily sync needs an external cron calling an ingestion entrypoint, and OQ6 must resolve to synchronous ingest"
+      ],
+      "ask_user": true,
+      "user_answer": "Yes — ai-parrot-server is in the deployment, so @schedule and the autonomous orchestrator are available for daily sync and for deferred lazy ingest (OQ6).",
+      "resolved": true
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "All five unknowns are resolved and v1 is now scoped to a single self-contained deliverable (BOE norms graph, zero LLM) whose substrate, sequencing and deployment are all decided — the architectural fork that argued for brainstorming has been closed by D1 and D2."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017",
+      "F018",
+      "F019",
+      "F020"
+    ],
+    "findings_unused": [],
+    "notes": "Two research rounds; round two added at user request (FEAT-450 overlap, tenant provisioning/migration, AQL surface, ingestion path). Net effect: the design is MORE feasible than round one suggested — legal collections, traversals, incremental sync and read-only enforcement are all existing declarative machinery — while two risks sharpened: the GraphIndex-vs-ontology write-path split (new, C21) and the concurrent FEAT-450 overlap (C16). Temporal validity remains the one genuinely greenfield component. Phase 5 resolved all five unknowns (D1-D5), collapsing the architectural fork and narrowing v1 from a five-sprint roadmap to Sprint 1 only; recommendation moved from sdd-brainstorm to sdd-spec."
+  },
+  "resolved_decisions": [
+    {
+      "id": "D1",
+      "from": "U1",
+      "decision": "Layered: FEAT-450 wiki namespaces for brain selection and document ingest, with one ontology tenant per materia beneath carrying the typed legal graph. This inverts the source's OQ1 — isolation is a database per materia, not namespaces over shared collections.",
+      "consequences": [
+        "The source's OQ1 'Closed' decision is formally superseded — record the inversion in the spec.",
+        "Legal collections are provisioned per materia tenant via ensure_collection/initialize_tenant (F016).",
+        "The GraphIndex UniversalNode write path is NOT the store for typed legal entities; the ontology EntityDef path is (C21, F020)."
+      ],
+      "evidence": [
+        "F002",
+        "F003",
+        "F014",
+        "F015",
+        "F016",
+        "F020"
+      ]
+    },
+    {
+      "id": "D2",
+      "from": "U6",
+      "decision": "Proceed independently and integrate later. Build the typed legal graph on an ontology tenant now; adopt namespace routing when FEAT-450 lands. The integration seam is the wiki ingest sync_graph bridge.",
+      "consequences": [
+        "No hard dependency on FEAT-450 for v1; namespace routing is a post-v1 integration.",
+        "Coordinate on FEAT-450's deferred intent router, which the legal design's 4.1 assumes.",
+        "v1 addresses a single materia, so brain federation is not yet on the critical path."
+      ],
+      "evidence": [
+        "F014",
+        "F015"
+      ]
+    },
+    {
+      "id": "D3",
+      "from": "U2",
+      "decision": "No commercial licence. CENDOJ is the only verification path for Spanish ordinary case law, so the OQ3 spike is blocking and the terms-of-use risk must be owned explicitly.",
+      "consequences": [
+        "The OQ3 CENDOJ spike is blocking for any 'verified' Spanish case-law tier.",
+        "The verify/search/fetch contract should still be written backend-agnostically so a licence can be adopted later without redesign.",
+        "Terms-of-use risk ownership must be stated in the spec (carried over from the displaced U5)."
+      ],
+      "evidence": [
+        "F004",
+        "F008"
+      ]
+    },
+    {
+      "id": "D4",
+      "from": "U3",
+      "decision": "Sprint 1 only — the BOE norms graph with zero LLM: legal.ontology.yaml, BOE consolidated ingestion, versions[], and article_in_force as declarative TraversalPatterns, tested against known amendment chains.",
+      "consequences": [
+        "v1 excludes CENDOJ, case law, the router, and LegalAnswer — so D3's blocking spike does not block v1.",
+        "v1 targets the one genuinely greenfield component (the temporal data model, F011) while reusing TraversalPattern (F018) and refresh.py (F017).",
+        "Sprints 2-5 of the source roadmap become follow-up features, not this spec."
+      ],
+      "evidence": [
+        "F011",
+        "F017",
+        "F018"
+      ]
+    },
+    {
+      "id": "D5",
+      "from": "U4",
+      "decision": "Yes — ai-parrot-server is in the deployment, so @schedule and the autonomous orchestrator are available for daily sync and for deferred lazy ingest (OQ6).",
+      "consequences": [
+        "@schedule is available for daily BOE sync (F009); no external cron required.",
+        "OQ6 can resolve to deferred ingest via the autonomous orchestrator, noting its non-idempotent re-enqueue caveat (C13, F011).",
+        "v1 is zero-LLM and BOE-only, so OQ6 is not yet exercised."
+      ],
+      "evidence": [
+        "F009",
+        "F011"
+      ]
+    }
+  ]
+}

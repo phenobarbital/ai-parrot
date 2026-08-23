@@ -8,6 +8,7 @@ import ast
 import asyncio
 import inspect
 import json
+import os
 import re
 import uuid
 import contextlib
@@ -553,7 +554,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         """Return Agent-specific tools."""
         if not self._SAFE_ID.match(self.agent_id):
             raise ValueError(f"Unsafe agent_id for path construction: {self.agent_id!r}")
-        report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
+        report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents').resolve()
+        # Security: verify resolved path stays within STATIC_DIR
+        _static_base = Path(STATIC_DIR).resolve()
+        if not str(report_dir).startswith(str(_static_base) + os.sep):
+            raise ValueError(f"Path traversal detected for agent_id: {self.agent_id!r}")
         report_dir.mkdir(parents=True, exist_ok=True)
         if not tools:
             tools = []

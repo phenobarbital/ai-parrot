@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.25.36",
+    "ai-parrot>=0.26.1",
     "PyGithub>=2.1",
     "ddgs>=9.5.2",
 ]
@@ -84,8 +84,19 @@ security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
 # zeep pin aligned with packages/ai-parrot/pyproject.toml's existing "zeep[async]==4.3.3".
 # All three already arrive transitively via ai-parrot; this makes them explicit.
 workday = ["zeep[async]>=4.3.3", "pandas>=2.0", "aiohttp>=3.9"]
+# FEAT-426: OpenDataToolkit + AcademicResearchToolkit external data libraries.
+# habanero is capped at <2.4 on purpose: every habanero >=2.4 requires
+# packaging>=26.2 and tqdm>=4.67.3, but xai-sdk (ai-parrot[all-fast]) caps
+# packaging<26 in *all* published versions and querysource caps tqdm<=4.67.1,
+# so >=2.4 makes the `all` extra unresolvable. 2.3.x needs only
+# packaging>=24.1 / tqdm>=4.66.5 and exposes the same Crossref API used by
+# research/academic.py. Lift the cap once xai-sdk relaxes its packaging pin.
+research = [
+    "wbgapi>=1.0", "sdmx1>=2.27", "habanero>=2.3,<2.4",
+    "biopython>=1.80", "arxiv>=3.0.0",
+]
 all = [
-    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research]"
 ]
 
 [project.urls]

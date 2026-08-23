@@ -865,9 +865,10 @@ class SharepointClient(O365Client):
         self._drive_id = None
 
     def _pattern_is_api_safe(self, pattern: str) -> bool:
-        """
-        Return True if 'pattern' can be safely passed to Graph search (no wildcards/regex),
-        otherwise False (e.g., contains * ? [ ] { } ( ) ^ $ | \ ).
+        r"""Return True if *pattern* can be passed to Graph search safely.
+
+        Returns ``False`` when the string contains wildcard or regex
+        metacharacters (``* ? [ ] { } ( ) ^ $ | \``).
         """
         return not re.search(r'[*?\[\]\{\}\(\)\^\$|\\]', pattern or "")
 

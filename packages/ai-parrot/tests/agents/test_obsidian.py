@@ -6,13 +6,62 @@ Covers:
 - Note title generation and deduplication
 """
 
-import pytest
+import asyncio
 import json
+import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.agents.obsidian import FirefliesObsidianAgent
+import pytest
+from parrot.agents.obsidian import (
+    FirefliesFilters,
+    FirefliesObsidianAgent,
+    _filters_to_tool_args,
+    _merge_filters,
+)
+from parrot.clients.codex_agent import CodexAgentRunOptions, OpenAICodexClient
+from pydantic import ValidationError
+
+
+class _FakeCodexClient(OpenAICodexClient):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.commands: list[list[str]] = []
+        self.inputs: list[str | None] = []
+        self.output = """## Summary
+The team reviewed the launch plan, confirmed the release owner, and agreed to publish the checklist.
+
+## Follow-ups
+1. Confirm the launch checklist owner
+2. Share the final release notes
+
+## Insights
+- Release ownership is clear
+- The checklist is the main next step
+"""
+        self.stdout = json.dumps(
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 24,
+                    "total_tokens": 36,
+                },
+            }
+        )
+
+    async def _run_cli_command(
+        self,
+        command: list[str],
+        input_text: str | None = None,
+    ) -> tuple[str, str, int]:
+        self.commands.append(command)
+        self.inputs.append(input_text)
+        output_index = command.index("-o") + 1
+        Path(command[output_index]).write_text(self.output, encoding="utf-8")
+        return self.stdout, "", 0
 
 
 @pytest.fixture
@@ -31,6 +80,7 @@ def agent(vault_path):
         name="TestFirefliesAgent",
         vault_path=str(vault_path),
         fireflies_token="test-token-12345",
+        injection_detection=False,
     )
     return agent
 
@@ -244,6 +294,21 @@ class TestSyncMethod:
 class TestSummarizeMethod:
     """Test summarize_transcript method."""
 
+    def test_explicit_codex_llm_is_active_client(self, vault_path):
+        """FirefliesObsidianAgent keeps an explicit Codex LLM on self.client."""
+        agent = FirefliesObsidianAgent(
+            name="CodexFirefliesAgent",
+            vault_path=str(vault_path),
+            llm="openai-codex:gpt-codex-test",
+            llm_kwargs={"backend": "cli"},
+            injection_detection=False,
+            use_tools=False,
+        )
+
+        assert isinstance(agent.client, OpenAICodexClient)
+        assert agent.client is agent.llm
+        assert agent.client.model == "gpt-codex-test"
+
     @pytest.mark.asyncio
     async def test_summarize_reads_note(self, agent):
         """Summarize reads note from vault."""
@@ -252,7 +317,7 @@ class TestSummarizeMethod:
             return_value={"content": "Meeting transcript"}
         )
         agent.client = AsyncMock()
-        agent.client.completion = AsyncMock(
+        agent.client.complete = AsyncMock(
             return_value=MagicMock(message="## Summary\nTest\n\n## Follow-ups\n1. Item")
         )
 
@@ -268,13 +333,13 @@ class TestSummarizeMethod:
             return_value={"content": "Meeting transcript"}
         )
         agent.client = AsyncMock()
-        agent.client.completion = AsyncMock(
+        agent.client.complete = AsyncMock(
             return_value=MagicMock(message="## Summary\nTest")
         )
 
         await agent.summarize_transcript("test-meeting")
 
-        agent.client.completion.assert_called_once()
+        agent.client.complete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_summarize_updates_note(self, agent):
@@ -285,7 +350,7 @@ class TestSummarizeMethod:
         )
         agent.obsidian_toolkit.update_note = AsyncMock()
         agent.client = AsyncMock()
-        agent.client.completion = AsyncMock(
+        agent.client.complete = AsyncMock(
             return_value=MagicMock(message="## Summary\nTest\n\n## Follow-ups\n1. Item\n\n## Insights\n- Point")
         )
 
@@ -293,6 +358,87 @@ class TestSummarizeMethod:
 
         agent.obsidian_toolkit.update_note.assert_called_once()
         assert result["updated"] is True
+
+    @pytest.mark.asyncio
+    async def test_summarize_with_codex_client(self, vault_path):
+        """Summarize a real vault note through a CLI-backed Codex client."""
+        codex = _FakeCodexClient(backend="cli")
+        agent = FirefliesObsidianAgent(
+            name="CodexFirefliesAgent",
+            vault_path=str(vault_path),
+            llm=codex,
+            injection_detection=False,
+            use_tools=False,
+        )
+        await agent.obsidian_toolkit.create_note(
+            path="meetings/2026-08-20-launch-sync.md",
+            content=(
+                "Speaker A: We need a launch checklist owner.\n"
+                "Speaker B: I will own it and share release notes tomorrow."
+            ),
+        )
+
+        result = await agent.summarize_transcript(
+            "2026-08-20-launch-sync",
+            granularity="minimal",
+        )
+
+        assert result["status"] == "ok"
+        assert result["updated"] is True
+        assert "launch plan" in result["summary"]
+        assert len(result["follow_ups"]) == 2
+        assert len(result["insights"]) == 2
+        assert codex.commands
+        assert "launch checklist owner" in (codex.inputs[0] or "")
+
+    @pytest.mark.real_llm
+    @pytest.mark.asyncio
+    async def test_real_codex_client_summarizes_temp_obsidian_note(self, vault_path):
+        """Opt-in smoke: real OpenAICodexClient + FirefliesObsidianAgent."""
+        if not shutil.which("codex"):
+            pytest.skip("codex CLI is not installed")
+
+        model = os.getenv("PARROT_CODEX_TEST_MODEL")
+        backend = os.getenv("PARROT_CODEX_BACKEND", "cli")
+        agent = FirefliesObsidianAgent(
+            name="RealCodexFirefliesAgent",
+            vault_path=str(vault_path),
+            llm=f"openai-codex:{model}" if model else "openai-codex",
+            llm_kwargs={
+                "backend": backend,
+                "run_options": CodexAgentRunOptions(
+                    backend=backend,
+                    model=model or "",
+                    sandbox="read-only",
+                    approval_policy="never",
+                    expose_parrot_tools=False,
+                    ephemeral=True,
+                    ignore_rules=True,
+                ),
+            },
+            injection_detection=False,
+            use_tools=False,
+        )
+        await agent.obsidian_toolkit.create_note(
+            path="meetings/2026-08-20-real-codex-smoke.md",
+            content=(
+                "Alex: We agreed to ship the Fireflies Obsidian sync next week.\n"
+                "Mira: I will validate Codex as the summarization client and "
+                "write down any integration risks."
+            ),
+        )
+
+        result = await asyncio.wait_for(
+            agent.summarize_transcript(
+                "2026-08-20-real-codex-smoke",
+                granularity="minimal",
+            ),
+            timeout=180,
+        )
+
+        assert result["status"] == "ok"
+        assert result["updated"] is True
+        assert result["summary"]
 
     @pytest.mark.asyncio
     async def test_summarize_handles_missing_note(self, agent):
@@ -337,3 +483,631 @@ class TestGetExistingMeetings:
 
         # Should return empty set on error
         assert titles == set()
+
+
+class TestExistingMeetingsRealToolkitShape:
+    """Regression: list_notes() returns VaultFileInfo dicts, not titles.
+
+    The real ``ObsidianToolkit.list_notes()`` returns
+    ``{"notes": [VaultFileInfo.model_dump(), ...], "count": N}`` — those
+    descriptors carry ``path``/``name``/``size``/``mtime`` and have **no**
+    ``title`` key. Reading ``note["title"]`` therefore yielded an empty set,
+    which silently disabled both ``skip_existing`` and the summarization
+    phase.
+    """
+
+    @pytest.mark.asyncio
+    async def test_titles_derived_from_file_stem(self, agent):
+        """Titles come from the file stem when no 'title' key exists."""
+        agent.obsidian_toolkit = AsyncMock()
+        agent.obsidian_toolkit.list_notes = AsyncMock(
+            return_value={
+                "notes": [
+                    {
+                        "path": "meetings/2026-08-19-troc360-mobile-sync.md",
+                        "name": "2026-08-19-troc360-mobile-sync.md",
+                        "size": 1024,
+                        "mtime": 1.0,
+                        "is_note": True,
+                        "is_canvas": False,
+                    },
+                    {
+                        "path": "meetings/2026-08-17-inventory-review.md",
+                        "name": "2026-08-17-inventory-review.md",
+                        "size": 512,
+                        "mtime": 2.0,
+                        "is_note": True,
+                        "is_canvas": False,
+                    },
+                ],
+                "count": 2,
+            }
+        )
+
+        titles = await agent._get_existing_meeting_titles()
+
+        assert titles == {
+            "2026-08-19-troc360-mobile-sync",
+            "2026-08-17-inventory-review",
+        }
+
+    @pytest.mark.asyncio
+    async def test_titles_round_trip_through_real_vault(self, agent, vault_path):
+        """A note created via the real toolkit is found again by its title."""
+        note_title = agent._make_note_title("2026-08-19T10:00:00", "Weekly Sync")
+        await agent.obsidian_toolkit.create_note(
+            path=f"{agent.meetings_folder}/{note_title}.md",
+            content="Transcript body",
+        )
+
+        titles = await agent._get_existing_meeting_titles()
+
+        assert note_title in titles
+
+
+class TestHasAnalysis:
+    """Test the _has_analysis marker check."""
+
+    @pytest.mark.asyncio
+    async def test_detects_missing_analysis(self, agent):
+        """A freshly synced note reports no analysis."""
+        await agent.obsidian_toolkit.create_note(
+            path=f"{agent.meetings_folder}/2026-08-19-plain.md",
+            content="Just a transcript.",
+        )
+
+        assert await agent._has_analysis("2026-08-19-plain") is False
+
+    @pytest.mark.asyncio
+    async def test_detects_existing_analysis(self, agent):
+        """A note carrying the Analysis heading reports True."""
+        enhanced = agent._append_analysis_section(
+            "Transcript body", "A summary", ["Q1"], ["Insight"]
+        )
+        await agent.obsidian_toolkit.create_note(
+            path=f"{agent.meetings_folder}/2026-08-19-analyzed.md",
+            content=enhanced,
+        )
+
+        assert await agent._has_analysis("2026-08-19-analyzed") is True
+
+    @pytest.mark.asyncio
+    async def test_missing_note_is_not_analyzed(self, agent):
+        """A note that does not exist reports False instead of raising."""
+        assert await agent._has_analysis("does-not-exist") is False
+
+
+class TestSummarizePendingTranscripts:
+    """Test the batch summarization entry point."""
+
+    @pytest.mark.asyncio
+    async def test_summarizes_every_pending_note(self, agent):
+        """All notes without analysis are summarized, not just the newest."""
+        agent._get_existing_meeting_titles = AsyncMock(
+            return_value={"2026-08-19-a", "2026-08-19-b", "2026-08-18-c"}
+        )
+        agent._has_analysis = AsyncMock(return_value=False)
+        agent.summarize_transcript = AsyncMock(
+            return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
+        )
+
+        outcome = await agent.summarize_pending_transcripts()
+
+        assert outcome["status"] == "ok"
+        assert sorted(outcome["analyzed"]) == ["2026-08-18-c", "2026-08-19-a", "2026-08-19-b"]
+        assert agent.summarize_transcript.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_skips_already_analyzed_notes(self, agent):
+        """Notes that already carry an Analysis section are skipped."""
+        agent._get_existing_meeting_titles = AsyncMock(
+            return_value={"2026-08-19-a", "2026-08-19-b"}
+        )
+        agent._has_analysis = AsyncMock(side_effect=[True, False])
+        agent.summarize_transcript = AsyncMock(
+            return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
+        )
+
+        outcome = await agent.summarize_pending_transcripts()
+
+        assert len(outcome["analyzed"]) == 1
+        assert len(outcome["skipped"]) == 1
+        assert agent.summarize_transcript.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_force_reanalyzes(self, agent):
+        """force=True ignores the already-analyzed marker."""
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-19-a"})
+        agent._has_analysis = AsyncMock(return_value=True)
+        agent.summarize_transcript = AsyncMock(
+            return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
+        )
+
+        outcome = await agent.summarize_pending_transcripts(force=True)
+
+        assert outcome["analyzed"] == ["2026-08-19-a"]
+        agent._has_analysis.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_limit_bounds_llm_calls(self, agent):
+        """limit caps how many notes are analyzed per run."""
+        agent._get_existing_meeting_titles = AsyncMock(
+            return_value={f"2026-08-19-{i}" for i in range(5)}
+        )
+        agent._has_analysis = AsyncMock(return_value=False)
+        agent.summarize_transcript = AsyncMock(
+            return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
+        )
+
+        outcome = await agent.summarize_pending_transcripts(limit=2)
+
+        assert len(outcome["analyzed"]) == 2
+        assert agent.summarize_transcript.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_explicit_titles_take_precedence(self, agent):
+        """Passing note_titles skips the vault scan."""
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"unused"})
+        agent._has_analysis = AsyncMock(return_value=False)
+        agent.summarize_transcript = AsyncMock(
+            return_value={"status": "ok", "summary": "s", "follow_ups": [], "insights": []}
+        )
+
+        outcome = await agent.summarize_pending_transcripts(
+            note_titles=["2026-08-19-explicit"]
+        )
+
+        assert outcome["analyzed"] == ["2026-08-19-explicit"]
+        agent._get_existing_meeting_titles.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_failures_are_collected_not_raised(self, agent):
+        """One failing note does not abort the batch."""
+        agent._get_existing_meeting_titles = AsyncMock(
+            return_value={"2026-08-19-a", "2026-08-19-b"}
+        )
+        agent._has_analysis = AsyncMock(return_value=False)
+        agent.summarize_transcript = AsyncMock(
+            side_effect=[
+                {"status": "error", "error": "LLM timeout"},
+                {"status": "ok", "summary": "s", "follow_ups": [], "insights": []},
+            ]
+        )
+
+        outcome = await agent.summarize_pending_transcripts()
+
+        assert outcome["status"] == "partial"
+        assert len(outcome["analyzed"]) == 1
+        assert outcome["errors"][0]["error"] == "LLM timeout"
+
+
+class TestSyncReportsSyncedNotes:
+    """Sync report exposes the titles it created."""
+
+    @pytest.mark.asyncio
+    async def test_report_has_notes_key(self, agent):
+        """The report carries a 'notes' list of created note titles."""
+        agent.add_fireflies_mcp_server = AsyncMock(return_value=[])
+        agent._call_fireflies_tool = AsyncMock(return_value=[])
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts()
+
+        assert report["notes"] == []
+
+
+class TestStripListMarker:
+    """The parser must not leave a marker for _append_analysis_section to double."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("1. Has the pallet shipped?", "Has the pallet shipped?"),
+            ("2) Where are they?", "Where are they?"),
+            ("- Shoe organizers first", "Shoe organizers first"),
+            ("- - double bullet", "double bullet"),
+            ("* asterisk bullet", "asterisk bullet"),
+            ("no marker at all", "no marker at all"),
+        ],
+    )
+    def test_marker_stripped(self, raw, expected):
+        from parrot.agents.obsidian import _strip_list_marker
+
+        assert _strip_list_marker(raw) == expected
+
+    def test_rendered_section_has_single_bullet(self):
+        """End-to-end: parsed items render as one '- ' each."""
+        class MockAIMessage:
+            def __init__(self, msg):
+                self.message = msg
+
+        response = MockAIMessage(
+            "## Summary\nA summary.\n\n"
+            "## Follow-ups\n1. First question?\n2. Second question?\n\n"
+            "## Insights\n- First insight\n- Second insight\n"
+        )
+        parsed = FirefliesObsidianAgent._parse_analysis_response(response)
+        rendered = FirefliesObsidianAgent._append_analysis_section(
+            "Transcript", parsed["summary"], parsed["follow_ups"], parsed["insights"]
+        )
+
+        assert "- First question?" in rendered
+        assert "- 1. " not in rendered
+        assert "- - " not in rendered
+
+
+class TestStripAnalysisSection:
+    """Re-analysis must replace the Analysis block, never stack a second one."""
+
+    def test_strips_appended_block(self):
+        """The block written by _append_analysis_section round-trips away."""
+        transcript = "Speaker A: hello\nSpeaker B: hi"
+        enhanced = FirefliesObsidianAgent._append_analysis_section(
+            transcript, "A summary", ["Q1"], ["Insight"]
+        )
+
+        assert (
+            FirefliesObsidianAgent._strip_analysis_section(enhanced) == transcript
+        )
+
+    def test_plain_transcript_untouched(self):
+        """A note with no Analysis block is returned unchanged."""
+        transcript = "Speaker A: hello"
+
+        assert (
+            FirefliesObsidianAgent._strip_analysis_section(transcript) == transcript
+        )
+
+    @pytest.mark.asyncio
+    async def test_reanalysis_keeps_one_section(self, agent):
+        """Summarizing twice leaves exactly one Analysis heading."""
+        note_title = "2026-08-19-twice"
+        await agent.obsidian_toolkit.create_note(
+            path=f"{agent.meetings_folder}/{note_title}.md",
+            content="Speaker A: hello",
+        )
+
+        class MockAIMessage:
+            def __init__(self, msg):
+                self.message = msg
+
+        agent.client = MagicMock()
+        agent.client.complete = AsyncMock(
+            return_value=MockAIMessage(
+                "## Summary\nA summary.\n\n## Follow-ups\n1. Q?\n\n## Insights\n- I\n"
+            )
+        )
+
+        await agent.summarize_transcript(note_title)
+        await agent.summarize_transcript(note_title)
+
+        note = await agent.obsidian_toolkit.read_note(
+            path=f"{agent.meetings_folder}/{note_title}"
+        )
+        assert note["content"].count(FirefliesObsidianAgent.ANALYSIS_HEADING) == 1
+
+
+class TestFirefliesFilters:
+    """Test the FirefliesFilters Pydantic model (TASK-2346)."""
+
+    def test_valid_construction(self):
+        f = FirefliesFilters(from_date="2026-08-01", mine=True)
+        assert f.from_date == "2026-08-01"
+        assert f.mine is True
+
+    def test_rejects_bad_scope(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(scope="invalid")
+
+    def test_rejects_malformed_email_in_organizers(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(organizers=["not-an-email"])
+
+    def test_rejects_malformed_email_in_participants(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(participants=["also-not-an-email"])
+
+    def test_defaults(self):
+        f = FirefliesFilters()
+        assert f.scope == "all"
+        assert f.organizers == []
+        assert f.participants == []
+        assert f.from_date is None
+        assert f.to_date is None
+        assert f.keyword is None
+        assert f.mine is None
+        assert f.channel_id is None
+
+    def test_keyword_max_length_enforced(self):
+        with pytest.raises(ValidationError):
+            FirefliesFilters(keyword="x" * 256)
+
+
+class TestFiltersToToolArgs:
+    """Test the _filters_to_tool_args() field-name mapping (TASK-2346)."""
+
+    def test_maps_camel_case_fields(self):
+        f = FirefliesFilters(
+            from_date="2026-08-01", to_date="2026-08-31", channel_id="abc123"
+        )
+        args = _filters_to_tool_args(f)
+        assert args["fromDate"] == "2026-08-01"
+        assert args["toDate"] == "2026-08-31"
+        assert args["channelId"] == "abc123"
+
+    def test_passthrough_fields_unchanged(self):
+        f = FirefliesFilters(keyword="standup", scope="title", mine=True)
+        args = _filters_to_tool_args(f)
+        assert args["keyword"] == "standup"
+        assert args["scope"] == "title"
+        assert args["mine"] is True
+
+    def test_email_lists_serialized_as_strings(self):
+        f = FirefliesFilters(
+            organizers=["boss@company.com"],
+            participants=["a@x.com", "b@x.com"],
+        )
+        args = _filters_to_tool_args(f)
+        assert args["organizers"] == ["boss@company.com"]
+        assert args["participants"] == ["a@x.com", "b@x.com"]
+
+    def test_unset_fields_omitted(self):
+        args = _filters_to_tool_args(FirefliesFilters())
+        assert "fromDate" not in args
+        assert "toDate" not in args
+        assert "keyword" not in args
+        assert "scope" not in args  # default "all" is omitted too
+        assert "organizers" not in args
+        assert "participants" not in args
+        assert "mine" not in args
+        assert "channelId" not in args
+
+
+class TestMergeFilters:
+    """Test the _merge_filters() field-by-field precedence (TASK-2347)."""
+
+    def test_call_wins_on_shared_field(self):
+        default = FirefliesFilters(mine=False)
+        call = FirefliesFilters(mine=True)
+        merged = _merge_filters(default, call)
+        assert merged.mine is True
+
+    def test_default_fills_unset_call_fields(self):
+        default = FirefliesFilters(channel_id="X")
+        call = FirefliesFilters(mine=True)
+        merged = _merge_filters(default, call)
+        assert merged.channel_id == "X"
+        assert merged.mine is True
+
+    def test_both_none_returns_none(self):
+        assert _merge_filters(None, None) is None
+
+    def test_only_default_set(self):
+        default = FirefliesFilters(mine=True)
+        merged = _merge_filters(default, None)
+        assert merged.mine is True
+
+    def test_only_call_set(self):
+        call = FirefliesFilters(mine=True)
+        merged = _merge_filters(None, call)
+        assert merged.mine is True
+
+    def test_does_not_mutate_inputs(self):
+        default = FirefliesFilters(channel_id="X")
+        call = FirefliesFilters(mine=True)
+        _merge_filters(default, call)
+        assert default.mine is None
+        assert call.channel_id is None
+
+
+class TestDefaultFiltersConstructor:
+    """Test the default_filters constructor kwarg (TASK-2347)."""
+
+    def test_stores_default_filters(self, vault_path):
+        agent = FirefliesObsidianAgent(
+            vault_path=str(vault_path),
+            fireflies_token="test-token",
+            default_filters=FirefliesFilters(mine=True),
+            injection_detection=False,
+        )
+        assert agent.default_filters.mine is True
+
+    def test_default_filters_none_when_omitted(self, agent):
+        assert agent.default_filters is None
+
+
+class TestSyncPagination:
+    """Test sync_fireflies_transcripts()'s filters + pagination (TASK-2348)."""
+
+    @pytest.mark.asyncio
+    async def test_no_filters_single_call_unchanged(self, agent):
+        """Zero-filter callers still make exactly one tool call."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            return_value=MagicMock(success=True, result="")
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+
+        await agent.sync_fireflies_transcripts(limit=10)
+
+        agent._call_fireflies_tool.assert_called_once()
+        call_args = agent._call_fireflies_tool.call_args.args
+        assert call_args[0] == "fireflies_get_transcripts"
+        assert call_args[1]["limit"] == 10
+        assert call_args[1]["skip"] == 0
+        # No filter keys leaked in when filters=None and no default_filters
+        assert "fromDate" not in call_args[1]
+        assert "channelId" not in call_args[1]
+
+    @pytest.mark.asyncio
+    async def test_filters_merge_into_tool_args(self, agent):
+        """Passing filters maps to the correct camelCase tool args."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            return_value=MagicMock(success=True, result="")
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+
+        await agent.sync_fireflies_transcripts(
+            limit=10,
+            filters=FirefliesFilters(from_date="2026-08-01", mine=True),
+        )
+
+        call_args = agent._call_fireflies_tool.call_args.args
+        assert call_args[1]["fromDate"] == "2026-08-01"
+        assert call_args[1]["mine"] is True
+
+    @pytest.mark.asyncio
+    async def test_paginates_beyond_fifty(self, agent):
+        """limit > 50 issues multiple calls with increasing skip."""
+        page1 = "\n".join(f'  - id: "id{i}"' for i in range(50))
+        page2 = "\n".join(f'  - id: "id{i}"' for i in range(50, 70))
+        transcript_calls = [
+            MagicMock(success=True, result=page1),
+            MagicMock(success=True, result=page2),
+        ] + [MagicMock(success=True, result="transcript text")] * 70
+
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(side_effect=transcript_calls)
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts(limit=70)
+
+        assert report["synced"] == 70
+        # First two calls are the paginated list-fetch calls
+        first_call_kwargs = agent._call_fireflies_tool.call_args_list[0].args
+        second_call_kwargs = agent._call_fireflies_tool.call_args_list[1].args
+        assert first_call_kwargs[0] == "fireflies_get_transcripts"
+        assert first_call_kwargs[1]["skip"] == 0
+        assert first_call_kwargs[1]["limit"] == 50
+        assert second_call_kwargs[0] == "fireflies_get_transcripts"
+        assert second_call_kwargs[1]["skip"] == 50
+        assert second_call_kwargs[1]["limit"] == 20
+
+    @pytest.mark.asyncio
+    async def test_stops_on_short_page(self, agent):
+        """A page shorter than requested stops pagination early."""
+        short_page = "\n".join(f'  - id: "id{i}"' for i in range(5))
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[MagicMock(success=True, result=short_page)]
+            + [MagicMock(success=True, result="transcript text")] * 5
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts(limit=50)
+
+        assert report["synced"] == 5
+        # Only one list-fetch call (the per-transcript fetches follow after)
+        list_calls = [
+            c for c in agent._call_fireflies_tool.call_args_list
+            if c.args[0] == "fireflies_get_transcripts"
+        ]
+        assert len(list_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_partial_pagination_failure_keeps_prior_pages(self, agent):
+        """A page-fetch error stops pagination but keeps prior results."""
+        page1 = "\n".join(f'  - id: "id{i}"' for i in range(50))
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent._call_fireflies_tool = AsyncMock(
+            side_effect=[MagicMock(success=True, result=page1), Exception("page 2 failed")]
+            + [MagicMock(success=True, result="transcript text")] * 50
+        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent.obsidian_toolkit = AsyncMock()
+
+        report = await agent.sync_fireflies_transcripts(limit=100)
+
+        assert report["status"] == "ok"
+        assert report["synced"] == 50
+        assert any("page" in e.lower() for e in report["errors"])
+
+
+class TestIncludeSummary:
+    """Test opt-in native Fireflies summary retrieval (TASK-2349)."""
+
+    @pytest.mark.asyncio
+    async def test_default_off_no_summary_call(self, agent):
+        """include_summary omitted issues zero fireflies_get_summary calls."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+        ])
+
+        await agent.sync_fireflies_transcripts(limit=1)
+
+        called_tools = [
+            c.args[0] for c in agent._call_fireflies_tool.call_args_list
+        ]
+        assert "fireflies_get_summary" not in called_tools
+
+    @pytest.mark.asyncio
+    async def test_include_summary_appends_section(self, agent):
+        """A successful summary fetch adds the section + OKF marker."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+            MagicMock(success=True, result="native summary text"),
+        ])
+
+        await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
+
+        create_call = agent.obsidian_toolkit.create_note.call_args
+        assert FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING in create_call.kwargs["content"]
+        assert "native summary text" in create_call.kwargs["content"]
+        assert create_call.kwargs["frontmatter"].get("has_fireflies_summary") is True
+
+    @pytest.mark.asyncio
+    async def test_include_summary_soft_fails_on_error(self, agent):
+        """A failing summary call doesn't block note creation or sync count."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+            Exception("summary fetch failed"),
+        ])
+
+        report = await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
+
+        assert report["synced"] == 1
+        assert any("summary" in e.lower() for e in report["errors"])
+        create_call = agent.obsidian_toolkit.create_note.call_args
+        assert FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING not in create_call.kwargs["content"]
+        assert "has_fireflies_summary" not in create_call.kwargs["frontmatter"]
+
+    @pytest.mark.asyncio
+    async def test_include_summary_soft_fails_on_unsuccessful_result(self, agent):
+        """A non-successful (but non-raising) summary result also soft-fails."""
+        agent._ensure_fireflies_mcp = AsyncMock()
+        agent.obsidian_toolkit = AsyncMock()
+        agent._get_existing_meeting_titles = AsyncMock(return_value=set())
+        agent._call_fireflies_tool = AsyncMock(side_effect=[
+            MagicMock(success=True, result='  - id: "id1"'),
+            MagicMock(success=True, result="transcript text"),
+            MagicMock(success=False, result=""),
+        ])
+
+        report = await agent.sync_fireflies_transcripts(limit=1, include_summary=True)
+
+        assert report["synced"] == 1
+        assert any("summary" in e.lower() for e in report["errors"])
+
+    def test_append_fireflies_summary_section(self):
+        """_append_fireflies_summary_section() adds the heading verbatim."""
+        result = FirefliesObsidianAgent._append_fireflies_summary_section(
+            "Original transcript.", "Keywords: budget, timeline."
+        )
+        assert "Original transcript." in result
+        assert FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING in result
+        assert "Keywords: budget, timeline." in result

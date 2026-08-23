@@ -19,7 +19,10 @@ test suites can collect without requiring the newer navigator.
 """
 import sys
 import os
+import re
 import types
+
+import pytest
 
 # Worktree root — the directory that contains THIS file.
 _WORKTREE_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -245,3 +248,217 @@ for _mod_name in (
             _importlib.import_module(_mod_name)
         except ImportError:
             pass  # noqa: S110 — some deps may not be available in all envs
+
+
+# ---------------------------------------------------------------------------
+# Optional-dependency skipping (CI)
+#
+# The GitHub CI jobs run `uv sync --package <pkg>`, which installs a package's
+# BASE dependencies only — no extras, and no sibling workspace packages. A
+# large part of the suite imports modules that only arrive via an extra
+# (selenium, aioquic, aiogram, ...), so on a runner those modules fail to
+# import and pytest reports a collection ERROR for the whole file.
+#
+# Rather than let any ImportError pass silently — which would hide real
+# breakage and make a green run meaningless — we skip ONLY for the explicit
+# allowlist below, and print a summary of everything that was skipped.
+#
+# The finder is appended LAST to sys.meta_path, so it is consulted only after
+# every real finder has failed: reaching it means the module is genuinely not
+# installed. Anything not on this list still fails loudly.
+# ---------------------------------------------------------------------------
+OPTIONAL_DEPENDENCIES: frozenset[str] = frozenset({
+    # --- third-party, provided by an extra ---
+    "aiogram",              # ai-parrot[telegram]
+    "aioquic",              # MCP QUIC transport (NOT declared by any extra — see note)
+    "anthropic",            # ai-parrot[anthropic]
+    "claude_agent_sdk",     # ai-parrot[claude-agent]
+    "docx",                 # ai-parrot-loaders[pdf] (python-docx)
+    "fitz",                 # PyMuPDF
+    "markdownify",
+    "markitdown",
+    "microsoft_agents",     # ai-parrot[integrations]
+    "msgraph",              # office365 toolkit
+    "pptx",                 # python-pptx
+    "selenium",             # ai-parrot[agents]
+    "seleniumwire",
+    "sentence_transformers",
+    "rustworkx",
+    "xai_sdk",              # ai-parrot[xai]
+    # --- sibling workspace packages a single-package sync does not install ---
+    "parrot_formdesigner",
+})
+
+#: Dotted submodules whose PARENT is installed but whose own extra is not.
+OPTIONAL_SUBMODULES: frozenset[str] = frozenset({
+    "google.genai",
+    "mcp.client",
+    "parrot.integrations.oauth2",
+})
+
+_SKIPPED_OPTIONAL: dict[str, int] = {}
+
+_MISSING_RE = re.compile(r"No module named '([^']+)'")
+_CANNOT_IMPORT_RE = re.compile(r"cannot import name '([^']+)' from '([^']+)'")
+
+#: Distribution names that appear in hand-written "install X" ImportError
+#: messages but differ from the import name.
+_ALIASES: dict[str, str] = {
+    "xai-sdk": "xai_sdk",
+    "python-pptx": "pptx",
+    "python-docx": "docx",
+    "selenium-wire": "seleniumwire",
+    "sentence-transformers": "sentence_transformers",
+}
+
+
+def _is_optional(name: str) -> str | None:
+    """Return the canonical allowlisted module for ``name``, if it is one."""
+    name = _ALIASES.get(name, name)
+    if name in OPTIONAL_SUBMODULES or name.split(".")[0] in OPTIONAL_DEPENDENCIES:
+        return name
+    return None
+
+
+def _scan_message(msg: str) -> str | None:
+    """Find an allowlisted dependency named anywhere in an ImportError message.
+
+    Several modules raise a hand-written ImportError ("GrokClient requires the
+    'xai-sdk' package", "No PowerPoint processing backend available. Install
+    'markitdown' or 'python-pptx'") instead of letting ModuleNotFoundError
+    through, so matching only "No module named" misses them.
+
+    Restricted to the allowlist, so a genuine first-party breakage such as
+    "cannot import name 'Completeness' from 'parrot.bots.database.models'"
+    still fails loudly.
+    """
+    for token in re.findall(r"[A-Za-z_][A-Za-z0-9_.\-]*", msg):
+        found = _is_optional(token)
+        if found:
+            return found
+    return None
+
+
+def _missing_optional(exc: BaseException) -> str | None:
+    """Return the allowlisted module that made ``exc`` happen, if any.
+
+    Walks the whole ``__cause__``/``__context__`` chain, because pytest wraps
+    a test module's ImportError in a CollectError.
+    """
+    seen: set[int] = set()
+    stack: list[BaseException | None] = [exc]
+    while stack:
+        e = stack.pop()
+        if e is None or id(e) in seen:
+            continue
+        seen.add(id(e))
+        msg = str(e)
+
+        candidates: list[str] = []
+        if isinstance(e, ModuleNotFoundError) and e.name:
+            candidates.append(e.name)
+        candidates += _MISSING_RE.findall(msg)
+        candidates += [f"{pkg}.{sym}" for sym, pkg in _CANNOT_IMPORT_RE.findall(msg)]
+
+        for cand in candidates:
+            found = _is_optional(cand)
+            if found:
+                return found
+
+        if isinstance(e, ImportError):
+            found = _scan_message(msg)
+            if found:
+                return found
+
+        stack.extend((e.__cause__, e.__context__))
+    return None
+
+
+class _OptionalDependencyModule(pytest.Module):
+    """A test module that skips itself when an optional dependency is absent.
+
+    The check happens at *test-module import* time only. An earlier version
+    hooked ``sys.meta_path`` instead, which was wrong: it also fired inside
+    library code doing ``try: import x / except ImportError: <fallback>``,
+    turning a graceful degradation into a skipped file and silently costing
+    ~286 tests that had been passing.
+    """
+
+    def collect(self):  # noqa: D102
+        try:
+            return super().collect()
+        except Exception as exc:  # noqa: BLE001 — re-raised unless allowlisted
+            missing = _missing_optional(exc)
+            if missing is None:
+                raise
+            _SKIPPED_OPTIONAL[missing] = _SKIPPED_OPTIONAL.get(missing, 0) + 1
+            pytest.skip(
+                f"optional dependency {missing!r} is not installed",
+                allow_module_level=True,
+            )
+
+
+def pytest_pycollect_makemodule(module_path, parent):
+    """Route every test module through the optional-dependency-aware collector."""
+    return _OptionalDependencyModule.from_parent(parent, path=module_path)
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_call(item):
+    """Skip tests whose *body* imports a missing optional dependency.
+
+    Some tests import lazily inside the test function, so the failure lands
+    in the call phase rather than at collection or setup (57 `aiogram`, 14
+    `xai-sdk`, 11 `anthropic` in the core job). A test that cannot run
+    without the dependency is a skip, not a failure. Same allowlist.
+    """
+    outcome = yield
+    try:
+        outcome.get_result()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless allowlisted
+        missing = _missing_optional(exc)
+        if missing is None:
+            return
+        _SKIPPED_OPTIONAL[missing] = _SKIPPED_OPTIONAL.get(missing, 0) + 1
+        outcome.force_exception(
+            pytest.skip.Exception(
+                f"optional dependency {missing!r} is not installed",
+                _use_item_location=True,
+            )
+        )
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_setup(item):
+    """Skip tests whose *setup* trips over a missing optional dependency.
+
+    The collector above only sees failures at test-module import time. A
+    fixture that imports an optional module fails later, during setup, and
+    surfaces as an ERROR rather than a collection error — 86 of them in the
+    core job (`parrot.bots` -> `google.genai`, `claude_agent_sdk`,
+    `microsoft_agents`). Same allowlist, same guarantee: anything not on it
+    is re-raised untouched.
+    """
+    outcome = yield
+    try:
+        outcome.get_result()
+    except Exception as exc:  # noqa: BLE001 — re-raised unless allowlisted
+        missing = _missing_optional(exc)
+        if missing is None:
+            return
+        _SKIPPED_OPTIONAL[missing] = _SKIPPED_OPTIONAL.get(missing, 0) + 1
+        outcome.force_exception(
+            pytest.skip.Exception(
+                f"optional dependency {missing!r} is not installed",
+                _use_item_location=True,
+            )
+        )
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Make optional-dependency skips visible instead of silent."""
+    if not _SKIPPED_OPTIONAL:
+        return
+    terminalreporter.section("skipped optional dependencies")
+    for name, count in sorted(_SKIPPED_OPTIONAL.items(), key=lambda kv: -kv[1]):
+        terminalreporter.write_line(f"  {name}: {count} module(s) skipped")

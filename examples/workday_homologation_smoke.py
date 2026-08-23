@@ -102,7 +102,7 @@ def _print_plan(args: argparse.Namespace) -> None:
     print("  1. Resolve WorkdayConfig(env='sandbox') and print the resolved env/host.")
     print("  2. WorkdayService.start() and verify the SOAP endpoint host rewrite.")
     print(
-        "  3. WorkdayService.fetch('get_workers', "
+        "  3. WorkdayService.fetch('get_workers', "  # CodeQL[py/clear-text-logging-sensitive-data] — test plan output, employee_id is a test parameter
         f"employee_id={args.employee_id!r}) — a read."
     )
     print(

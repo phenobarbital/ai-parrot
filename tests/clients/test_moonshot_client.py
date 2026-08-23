@@ -99,6 +99,50 @@ async def _client_with_mock_sdk(**attrs):
     return client, captured
 
 
+def _make_mock_stream_chunks(pieces):
+    """Async-iterable of mock ``ChatCompletionChunk``-shaped objects, ending
+    with a final usage-only chunk carrying no choices."""
+
+    async def _gen():
+        for piece in pieces:
+            chunk = MagicMock()
+            chunk.choices = [MagicMock(delta=MagicMock(content=piece))]
+            chunk.usage = None
+            yield chunk
+        final = MagicMock()
+        final.choices = []
+        final.usage = MagicMock(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+        yield final
+
+    return _gen()
+
+
+async def _client_with_mock_stream_sdk(**attrs):
+    """Like ``_client_with_mock_sdk``, but ``chat.completions.create``
+    returns a fake streaming async-iterable when called with
+    ``stream=True`` — required now that ``ask_stream()`` routes through
+    ``_chat_completion`` (FEAT-438 TASK-2298/2300) instead of calling the
+    SDK directly."""
+    client = MoonshotClient(api_key="test-key-123")
+    for key, value in attrs.items():
+        setattr(client, key, value)
+    captured: dict = {}
+
+    async def fake_create(model, messages, **kwargs):
+        captured["model"] = model
+        captured["messages"] = messages
+        captured.update(kwargs)
+        if kwargs.get("stream"):
+            return _make_mock_stream_chunks(["chunk"])
+        return _make_mock_response()
+
+    mock_sdk = MagicMock()
+    mock_sdk.chat.completions.create = AsyncMock(side_effect=fake_create)
+    client.get_client = AsyncMock(return_value=mock_sdk)
+    await client._ensure_client()
+    return client, captured
+
+
 @pytest.fixture
 def env_key(monkeypatch):
     """Patch navconfig.config.get so MoonshotClient() picks up a fake key."""
@@ -362,7 +406,7 @@ class TestMoonshotAskThinkingPropagation:
         async def fake_ask(self, prompt, **kwargs):
             return dict(moonshot_mod._thinking_ctx.get())
 
-        with patch("parrot.clients.gpt.OpenAIClient.ask", new=fake_ask):
+        with patch("parrot.clients.openai_base.OpenAIBaseClient.ask", new=fake_ask):
             result = await client.ask("hi", reasoning_effort="max")
 
         assert result["reasoning_effort"] == "max"
@@ -374,7 +418,7 @@ class TestMoonshotAskThinkingPropagation:
         async def fake_ask_stream(self, prompt, **kwargs):
             yield dict(moonshot_mod._thinking_ctx.get())
 
-        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
+        with patch("parrot.clients.openai_base.OpenAIBaseClient.ask_stream", new=fake_ask_stream):
             chunks = [chunk async for chunk in client.ask_stream("hi", thinking=True)]
 
         assert chunks[0]["thinking"] is True
@@ -505,7 +549,7 @@ class TestMoonshotReasoningContentCapture:
                 },
             )
 
-        with patch("parrot.clients.gpt.OpenAIClient.ask", new=fake_ask):
+        with patch("parrot.clients.openai_base.OpenAIBaseClient.ask", new=fake_ask):
             result = await client.ask("hi")
 
         assert result.metadata["reasoning_content"] == "step by step"
@@ -525,7 +569,7 @@ class TestMoonshotReasoningContentCapture:
                 },
             )
 
-        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
+        with patch("parrot.clients.openai_base.OpenAIBaseClient.ask_stream", new=fake_ask_stream):
             chunks = [chunk async for chunk in client.ask_stream("hi")]
 
         final = chunks[-1]
@@ -538,83 +582,72 @@ class TestMoonshotReasoningContentCapture:
 # ---------------------------------------------------------------------------
 
 
-class TestMoonshotAskStreamKSeriesSafety:
-    """Regression tests for the ask_stream() K-series temperature safety net.
-
-    OpenAIClient.ask_stream()'s Chat-Completions branch calls
-    self.client.chat.completions.create() directly and never routes
-    through _chat_completion(), so K-series parameter stripping never runs
-    for streaming. MoonshotClient.ask_stream() neutralizes self.temperature
-    (and the explicit kwarg) for K-series models as a safety net.
+class TestMoonshotAskStreamFunnelCoverage:
+    """FEAT-438 TASK-2300: ask_stream()'s former K-series temperature
+    safety net is gone — ask_stream() now routes through _chat_completion
+    (the completion funnel, TASK-2298), so this module's own
+    _chat_completion override strips temperature (and the other fixed
+    sampling params) for K-series models end-to-end, with no dedicated
+    workaround code in ask_stream() itself anymore.
     """
 
     @pytest.mark.asyncio
-    async def test_ask_stream_neutralizes_temperature_for_k_series(self):
-        client = _make_moonshot_client(model=MoonshotModel.KIMI_K3.value)
-        captured: dict = {}
+    async def test_ask_stream_strips_temperature_for_k_series_via_funnel(self):
+        client, captured = await _client_with_mock_stream_sdk(
+            model=MoonshotModel.KIMI_K3.value
+        )
 
-        async def fake_ask_stream(self, prompt, **kwargs):
-            captured["temperature_during_call"] = self.temperature
-            captured["kwarg_temperature"] = kwargs.get("temperature", "MISSING")
-            yield "chunk"
+        chunks = [chunk async for chunk in client.ask_stream("hi") if isinstance(chunk, str)]
 
-        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
-            chunks = [chunk async for chunk in client.ask_stream("hi")]
-
-        assert captured["temperature_during_call"] is None
-        assert captured["kwarg_temperature"] is None
         assert chunks == ["chunk"]
-        # Restored after the call.
+        assert "temperature" not in captured
+        # self.temperature is never mutated anymore — no safety-net hack.
         assert client.temperature == 0
 
     @pytest.mark.asyncio
-    async def test_ask_stream_leaves_temperature_untouched_for_legacy_models(self):
-        client = _make_moonshot_client(model=MoonshotModel.MOONSHOT_V1_128K.value)
-        captured: dict = {}
+    async def test_ask_stream_leaves_temperature_for_legacy_models(self):
+        client, captured = await _client_with_mock_stream_sdk(
+            model=MoonshotModel.MOONSHOT_V1_128K.value
+        )
 
-        async def fake_ask_stream(self, prompt, **kwargs):
-            captured["temperature_during_call"] = self.temperature
-            yield "chunk"
+        [chunk async for chunk in client.ask_stream("hi") if isinstance(chunk, str)]
 
-        with patch("parrot.clients.gpt.OpenAIClient.ask_stream", new=fake_ask_stream):
-            [chunk async for chunk in client.ask_stream("hi")]
-
-        assert captured["temperature_during_call"] == 0
+        assert captured.get("temperature") == 0
 
 
 # ---------------------------------------------------------------------------
-# TestMoonshotInvokeGuard
+# TestMoonshotInvokeViaFunnel
 # ---------------------------------------------------------------------------
 
 
-class TestMoonshotInvokeGuard:
-    """Regression tests for the invoke() K-series guard.
-
-    OpenAIClient.invoke() always sends a fixed temperature with no
-    None-based omission path, so K-series models (which reject it) are
-    rejected locally with a clear ValueError instead of a doomed API call.
+class TestMoonshotInvokeViaFunnel:
+    """FEAT-438 TASK-2300: invoke()'s former K-series ValueError guard is
+    gone — invoke() is no longer overridden at all (inherited from
+    OpenAIBaseClient unchanged). It now routes through _chat_completion
+    (the completion funnel, TASK-2298), so K-series models work through
+    invoke() instead of being rejected: this module's own
+    _chat_completion override strips the fixed temperature invoke() sends.
     """
 
     @pytest.mark.asyncio
-    async def test_invoke_raises_for_k_series_model_explicit_kwarg(self):
-        client = _make_moonshot_client(model=MoonshotModel.KIMI_K2_6.value)
-        with pytest.raises(ValueError, match="K-series"):
-            await client.invoke("hi", model=MoonshotModel.KIMI_K3.value)
+    async def test_invoke_succeeds_for_k_series_model_via_funnel(self):
+        client, captured = await _client_with_mock_sdk()
+
+        result = await client.invoke("hi", model=MoonshotModel.KIMI_K3.value)
+
+        assert result is not None
+        assert "temperature" not in captured
 
     @pytest.mark.asyncio
-    async def test_invoke_raises_using_instance_default_model(self):
-        client = _make_moonshot_client(model=MoonshotModel.KIMI_K2_6.value)
-        with pytest.raises(ValueError, match="K-series"):
-            await client.invoke("hi")  # no explicit model -> falls back to self.model
+    async def test_invoke_leaves_temperature_for_legacy_model(self):
+        client, captured = await _client_with_mock_sdk()
+
+        await client.invoke("hi", model=MoonshotModel.MOONSHOT_V1_128K.value)
+
+        assert captured.get("temperature") == 0.0
 
     @pytest.mark.asyncio
-    async def test_invoke_delegates_for_legacy_model(self):
-        client = _make_moonshot_client(model=MoonshotModel.MOONSHOT_V1_128K.value)
-
-        async def fake_invoke(self, prompt, **kwargs):
-            return "invoked-ok"
-
-        with patch("parrot.clients.gpt.OpenAIClient.invoke", new=fake_invoke):
-            result = await client.invoke("hi", model=MoonshotModel.MOONSHOT_V1_128K.value)
-
-        assert result == "invoked-ok"
+    async def test_invoke_not_overridden_on_moonshot_client(self):
+        """invoke is inherited straight from OpenAIBaseClient — no
+        MoonshotClient-specific override exists anymore."""
+        assert "invoke" not in MoonshotClient.__dict__

@@ -39,7 +39,7 @@ from ..core.constraints import (
     PostDependency,
 )
 from ..core.resolution import find_field_by_uid, resolve_answer
-from ..core.schema import FormField, FormSchema
+from ..core.schema import FormField, FormSchema, walk_fields
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,29 @@ def _answer_for_ref(ref: str, form: FormSchema, answers: dict[str, Any]) -> Any:
     return resolve_answer(form, field_uid, answers)
 
 
+def _holds(raw: Any, expected: Any) -> bool:
+    """True when the multi-valued ``raw`` source holds ``expected``.
+
+    The source side of a CONTAINS is a collection — a store's group
+    membership, a multi-select answer. A scalar is treated as a
+    one-element collection so a single-group store still matches, and a
+    string is NOT walked character by character, which is the trap in
+    using ``in`` directly here.
+
+    Args:
+        raw: The value read from the condition's source.
+        expected: The single value the rule is looking for.
+
+    Returns:
+        Whether ``expected`` is present in ``raw``.
+    """
+    if raw is None:
+        return False
+    if isinstance(raw, (list, tuple, set)):
+        return expected in [_to_comparable(v) for v in raw]
+    return _to_comparable(raw) == expected
+
+
 def _eval_condition(
     condition: FieldCondition,
     answers: dict[str, Any],
@@ -205,6 +228,10 @@ def _eval_condition(
             if isinstance(expected, list):
                 return actual not in [_to_comparable(v) for v in expected]
             return actual != exp
+        case ConditionOperator.CONTAINS:
+            return _holds(raw, exp)
+        case ConditionOperator.NOT_CONTAINS:
+            return not _holds(raw, exp)
         case ConditionOperator.GT:
             try:
                 return float(actual) > float(exp)  # type: ignore[arg-type]
@@ -269,6 +296,44 @@ def _eval_logic(
         case _:
             logger.warning("Unknown logic gate: %s; defaulting to 'and'", logic)
             return all(results)
+
+
+def _eval_rule(
+    rule: DependencyRule,
+    answers: dict[str, Any],
+    form: FormSchema,
+    location_vars: dict[str, Any] | None = None,
+    visit_context: dict[str, Any] | None = None,
+) -> bool:
+    """Evaluate a whole rule, honouring ``groups`` when it carries them.
+
+    Groups are alternatives: each is satisfied only if ALL its conditions
+    hold, and the rule fires when ANY group is satisfied. A rule without
+    groups falls back to the flat ``conditions``/``logic`` pair, so every
+    existing rule keeps its exact behaviour.
+
+    An empty group list is treated as no groups at all rather than as
+    "nothing can satisfy this" — the same reading ``_eval_logic`` gives an
+    empty condition list.
+
+    Args:
+        rule: The dependency rule to evaluate.
+        answers: Current answer dict, keyed by field_id.
+        form: The form the rule belongs to.
+        location_vars: Org-graph location variables, keyed by name.
+        visit_context: Visit-level metadata, keyed by name.
+
+    Returns:
+        Whether the rule fires.
+    """
+    if rule.groups:
+        return any(
+            _eval_logic(g.conditions, "and", answers, form, location_vars, visit_context)
+            for g in rule.groups
+        )
+    return _eval_logic(
+        rule.conditions, rule.logic, answers, form, location_vars, visit_context
+    )
 
 
 def _apply_operation(
@@ -556,12 +621,66 @@ class RuleEvaluator:
                 location_vars, visit_context,
             )
 
+        # Section gating runs LAST and wins: a section the answers do not
+        # reveal hides everything inside it, whatever the fields' own rules
+        # or post-dependencies concluded. Without this, `FormSection`'s
+        # `depends_on` — populated by the designer and by the networkninja
+        # importer — was evaluated by nothing on the server, so a hidden
+        # section's required fields still blocked a submission the rep had
+        # completed correctly.
+        self._apply_section_visibility(
+            form, answers, visible, required, location_vars, visit_context
+        )
+
         return RuleResolution(
             visible=visible,
             required=required,
             computed=computed,
             cleared=cleared,
         )
+
+    def _apply_section_visibility(
+        self,
+        form: FormSchema,
+        answers: dict[str, Any],
+        visible: dict[str, bool],
+        required: dict[str, bool],
+        location_vars: dict[str, Any] | None = None,
+        visit_context: dict[str, Any] | None = None,
+    ) -> None:
+        """Hide every field of a section whose ``depends_on`` does not fire.
+
+        A field inside a hidden section is not merely invisible, it is also
+        not required — that pairing is the whole point: ``FormValidator``
+        reads ``required`` to decide what a submission must carry, and
+        demanding an answer to a question the form never displayed is how a
+        correctly-filled submission gets rejected.
+
+        Only hides. A section whose rule fires leaves its fields exactly as
+        the field-level passes left them, so this can never reveal something
+        a field rule hid.
+
+        Args:
+            form: The form being resolved.
+            answers: Current answer dict, keyed by ``field_id``.
+            visible: Mutable visibility dict to update.
+            required: Mutable required dict to update.
+            location_vars: Org-graph location variables, keyed by name.
+            visit_context: Visit-level metadata, keyed by name.
+        """
+        for section in form.sections:
+            rule = section.depends_on
+            if rule is None:
+                continue
+
+            fired = _eval_rule(rule, answers, form, location_vars, visit_context)
+            shown = fired if rule.effect != "hide" else not fired
+            if shown:
+                continue
+
+            for field in walk_fields(section.fields):
+                visible[field.field_id] = False
+                required[field.field_id] = False
 
     async def _apply_pre_dependency(
         self,
@@ -589,7 +708,7 @@ class RuleEvaluator:
         if rule is None:
             return
 
-        fired = _eval_logic(rule.conditions, rule.logic, answers, form, location_vars, visit_context)
+        fired = _eval_rule(rule, answers, form, location_vars, visit_context)
 
         # Apply visibility/required effect
         effect = rule.effect

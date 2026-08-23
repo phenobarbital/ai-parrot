@@ -19,7 +19,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
@@ -51,9 +51,7 @@ from parrot.tools.infographic_recipes.freeze import (
     freeze_session_envelope,
 )
 from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
-
-if TYPE_CHECKING:
-    from parrot.tools.infographic_sections import SectionDescriptor
+from parrot.tools.infographic_sections import SectionDescriptor
 
 #: Recipe tool method names (Module 6, FEAT-324) — excluded from tool
 #: generation when no recipe store is configured on this toolkit instance.

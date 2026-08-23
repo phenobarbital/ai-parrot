@@ -204,7 +204,7 @@ class TestHandleSlackJiraCallback:
         )
         body = response.text
         assert "Jane Doe" in body
-        assert "myco.atlassian.net" in body
+        assert "myco.atlassian.net" in body  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_error_param_returns_error_html(self, mock_token_set, slack_state_payload):

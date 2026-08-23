@@ -70,7 +70,9 @@ class FormPageHandler:
         # than importing api.tenant.declared_tenant() here, which would
         # widen the existing ui->api coupling (see TASK-2200's completion
         # note) beyond what this template-URL fix needs.
-        tenant = request.match_info.get("tenant", "")
+        # Sanitize tenant to prevent XSS — page_shell/index_page also
+        # escape internally, but escaping at the boundary is defence-in-depth.
+        tenant = escape(request.match_info.get("tenant", ""))
         return web.Response(
             text=page_shell(
                 "Create a Form",

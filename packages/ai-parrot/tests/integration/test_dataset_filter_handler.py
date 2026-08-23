@@ -114,15 +114,15 @@ class _TestHandler:
 
         try:
             result = await self._dm.apply_filters(filter_request, persist=persist)
-        except KeyError as exc:
+        except KeyError as exc:  # noqa: PERF203
             return web.Response(
-                text=_json.dumps({"error": str(exc)}),
+                text=_json.dumps({"error": f"Unknown filter key: {type(exc).__name__}"}),  # CodeQL[py/stack-trace-exposure]: test code — controlled message
                 status=422,
                 content_type="application/json",
             )
         except ValueError as exc:
             return web.Response(
-                text=_json.dumps({"error": str(exc)}),
+                text=_json.dumps({"error": f"Invalid filter value: {type(exc).__name__}"}),  # CodeQL[py/stack-trace-exposure]: test code — controlled message
                 status=422,
                 content_type="application/json",
             )

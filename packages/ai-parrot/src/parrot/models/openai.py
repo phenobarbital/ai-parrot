@@ -17,6 +17,12 @@ from pydantic import BaseModel, Field
 class OpenAIModel(Enum):
     """Current OpenAI model catalog (deprecated IDs removed — see DEPRECATIONS)."""
 
+    # gpt-5.6 family
+    GPT5_6 = "gpt-5.6"
+    GPT5_6_SOL = "gpt-5.6-sol"
+    GPT5_6_TERRA = "gpt-5.6-terra"
+    GPT5_6_LUNA = "gpt-5.6-luna"
+
     # gpt-5 family
     GPT5_5 = "gpt-5.5"
     GPT5_5_PRO = "gpt-5.5-pro"
@@ -44,6 +50,8 @@ class OpenAIModel(Enum):
     O3_PRO = "o3-pro"
 
     # realtime + audio
+    GPT_REALTIME_2_1 = "gpt-realtime-2.1"
+    GPT_REALTIME_2_1_MINI = "gpt-realtime-2.1-mini"
     GPT_REALTIME_2 = "gpt-realtime-2"
     GPT_REALTIME_TRANSLATE = "gpt-realtime-translate"
     GPT_REALTIME_WHISPER = "gpt-realtime-whisper"
@@ -51,6 +59,8 @@ class OpenAIModel(Enum):
     GPT_REALTIME_1_5 = "gpt-realtime-1.5"
     GPT_AUDIO = "gpt-audio"
     GPT_AUDIO_1_5 = "gpt-audio-1.5"
+    GPT_TRANSCRIBE = "gpt-transcribe"
+    GPT_LIVE_TRANSCRIBE = "gpt-live-transcribe"
 
     # image
     GPT_IMAGE_2 = "gpt-image-2"

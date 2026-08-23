@@ -25,9 +25,11 @@ public method calls through :meth:`ArangoDBWikiStore._ensure_init`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import quote
 
 from asyncdb import AsyncDB
 
@@ -53,6 +55,76 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
+#: Characters ArangoDB accepts in a ``_key`` besides letters and digits.
+#: (Reference: ArangoDB "Document Keys" — everything else, notably ``/``
+#: and ``~``, is rejected with ``[ERR 1221] illegal document key``;
+#: verified against ArangoDB 3.12.)
+_KEY_SAFE = "_-:.@()+,=;$!*'"
+
+#: ArangoDB's hard ``_key`` limit, in bytes (255 is rejected).
+_KEY_MAX_BYTES = 254
+
+#: Separator between a truncated key and its disambiguating digest. Must
+#: itself be a legal ``_key`` character and rare in real paths — ``~`` is
+#: NOT legal, ``$`` is.
+_KEY_DIGEST_SEP = "$"
+
+
+def document_key(identity: str) -> str:
+    """Derive a valid ArangoDB ``_key`` from a wiki identity string.
+
+    Wiki identities are path-shaped (``file:src/main.py``,
+    ``dir:packages/ai-parrot``) and ArangoDB rejects ``/`` — and every
+    other character outside :data:`_KEY_SAFE` — in a ``_key``. Keys are
+    therefore percent-encoded, which is reversible, collision-free, and
+    keeps them human-readable in the ArangoDB web UI. ``%`` is itself a
+    legal ``_key`` character, so the encoding needs no second escape.
+
+    Identities whose encoding would exceed :data:`_KEY_MAX_BYTES` are
+    truncated and suffixed with a SHA-1 digest of the *original*
+    identity, so long paths stay unique.
+
+    The raw identity is always stored in a regular field
+    (``concept_id`` / ``src`` / ``dst``), so nothing downstream has to
+    decode a key to recover it.
+
+    Args:
+        identity: Raw identity string (e.g. a page ``concept_id``).
+
+    Returns:
+        A string usable directly as an ArangoDB ``_key``.
+    """
+    safe = quote(identity, safe=_KEY_SAFE)
+    if len(safe.encode("utf-8")) <= _KEY_MAX_BYTES:
+        return safe
+    digest = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
+    # Trim on a byte budget that leaves room for the "$<digest>" suffix.
+    # A cut may land inside a percent escape ("...%2"); every character of
+    # an escape is individually legal in a key, and the digest is what
+    # guarantees uniqueness, so a partial escape is harmless.
+    budget = _KEY_MAX_BYTES - len(digest) - len(_KEY_DIGEST_SEP)
+    trimmed = safe.encode("utf-8")[:budget].decode("utf-8", "ignore")
+    return f"{trimmed}{_KEY_DIGEST_SEP}{digest}"
+
+
+def edge_key(src: str, dst: str, rel: str) -> str:
+    """Derive a valid ArangoDB ``_key`` for a typed edge.
+
+    Same contract as :func:`document_key`, applied to the composite
+    ``src__dst__rel`` edge identity (which is very likely to exceed the
+    key length limit, since it concatenates two page paths).
+
+    Args:
+        src: Source page ``concept_id``.
+        dst: Target page ``concept_id``.
+        rel: Edge relation (e.g. ``contains``, ``references``).
+
+    Returns:
+        A string usable directly as an ArangoDB ``_key``.
+    """
+    return document_key(f"{src}__{dst}__{rel}")
+
+
 class ArangoDBWikiStore(BaseWikiStore):
     """ArangoDB-backed wiki retrieval plane.
 
@@ -70,8 +142,11 @@ class ArangoDBWikiStore(BaseWikiStore):
             ``wiki_{wiki_name}``.
         wiki_name: Wiki name, used for the default database name and the
             ArangoSearch view name (``{wiki_name}_pages_view``).
-        text_analyzer: ArangoSearch text analyzer for the pages view
-            (e.g. ``"text_en"``, ``"text_es"``).
+        text_analyzer: ArangoSearch text analyzer(s) for the pages view.
+            Accepts one name (``"text_en"``) or a comma-separated list
+            (``"text_en,text_es"``) to index and search the same fields
+            under several language analyzers at once — see
+            :attr:`ArangoDBWikiStore.analyzers`.
 
     Example::
 
@@ -91,11 +166,14 @@ class ArangoDBWikiStore(BaseWikiStore):
         database: str = "",
         wiki_name: str = "",
         text_analyzer: str = "text_en",
+        *,
+        read_only: bool = False,
     ) -> None:
         self._params = arango_params
         self._wiki_name = wiki_name
         self._database = database or f"wiki_{wiki_name or 'codebase'}"
         self._text_analyzer = text_analyzer
+        self._read_only = read_only
         self._db: Optional[Any] = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
@@ -107,9 +185,62 @@ class ArangoDBWikiStore(BaseWikiStore):
         return self._database
 
     @property
+    def read_only(self) -> bool:
+        """Whether this store was opened strictly for reading."""
+        return self._read_only
+
+    def _assert_writable(self) -> None:
+        """Refuse a write on a store opened with ``read_only=True``.
+
+        Raises:
+            PermissionError: When the store is read-only.
+        """
+        if self._read_only:
+            raise PermissionError(
+                f"read-only wiki store: arangodb database {self._database!r}"
+            )
+
+    @property
     def _view_name(self) -> str:
         """Name of the ArangoSearch view backing :meth:`search_fts`."""
         return f"{self._wiki_name}_pages_view"
+
+    @property
+    def analyzers(self) -> list[str]:
+        """The ArangoSearch analyzers this store indexes and searches with.
+
+        ``text_analyzer`` may name a single analyzer (``"text_en"``) or a
+        comma-separated list (``"text_en,text_es"``). A list makes the
+        pages view index ``title``/``summary``/``body`` under every listed
+        analyzer, and makes :meth:`search_fts` match a query under each of
+        them — so a Spanish query finds Spanish text and an English query
+        finds English text, against one corpus.
+
+        Order is preserved and duplicates are dropped, so the view's link
+        definition is stable across restarts (which is what
+        :meth:`_create_pages_view` compares against to decide whether the
+        view needs updating).
+
+        Returns:
+            Analyzer names, at least one (falls back to ``text_en``).
+        """
+        seen: dict[str, None] = {}
+        for name in self._text_analyzer.split(","):
+            name = name.strip()
+            if name:
+                seen.setdefault(name, None)
+        return list(seen) or ["text_en"]
+
+    @property
+    def _view_ref(self) -> str:
+        """The view name quoted for interpolation into an AQL collection slot.
+
+        ``wiki_name`` comes from the repo/project name and routinely
+        contains dashes (``navigator-agent-server``). Unquoted, AQL parses
+        those as subtraction and the query fails with ``[ERR 1501] SEARCH
+        condition used on non-view``, so the name is always backtick-quoted.
+        """
+        return f"`{self._view_name}`"
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -122,11 +253,25 @@ class ArangoDBWikiStore(BaseWikiStore):
         ``asyncio.Lock`` plus an ``_initialized`` flag). The target
         database is created automatically by the driver's own
         ``connection()`` on first connect.
+
+        With ``read_only=True`` (a federated namespace, FEAT-450) this
+        **verifies instead of provisioning**: nothing is created, and a
+        database or page collection that does not exist raises
+        :class:`FileNotFoundError` so the caller can report the
+        namespace as unbuilt rather than silently standing up an empty
+        one on someone else's server.
+
+        Raises:
+            FileNotFoundError: ``read_only`` and the plane does not exist.
         """
         if self._initialized:
             return
         async with self._init_lock:
             if self._initialized:
+                return
+            if self._read_only:
+                await self._connect_existing()
+                self._initialized = True
                 return
             self._db = AsyncDB(
                 "arangodb", params={**self._params, "database": self._database}
@@ -146,8 +291,67 @@ class ArangoDBWikiStore(BaseWikiStore):
             await self._create_pages_view()
             self._initialized = True
 
+    async def _connect_existing(self) -> None:
+        """Connect to an already-built plane without creating anything.
+
+        Connecting straight to the target database would create it (the
+        driver's ``connection()`` provisions on demand), so existence is
+        checked from the ``_system`` database first.
+
+        Raises:
+            FileNotFoundError: The database or its pages collection is
+                absent — the plane was never built.
+        """
+        probe = AsyncDB(
+            "arangodb", params={**self._params, "database": "_system"}
+        )
+        await probe.connection()
+        try:
+            databases = await probe.list_databases()
+        except AttributeError:  # pragma: no cover - driver without the helper
+            databases = None
+        finally:
+            await probe.close()
+        if databases is not None and self._database not in set(databases):
+            raise FileNotFoundError(
+                f"ArangoDB database {self._database!r} does not exist"
+            )
+
+        self._db = AsyncDB(
+            "arangodb", params={**self._params, "database": self._database}
+        )
+        await self._db.connection()
+        if not await self._db.collection_exists(PAGES_COLLECTION):
+            raise FileNotFoundError(
+                f"ArangoDB database {self._database!r} has no"
+                f" {PAGES_COLLECTION} collection — the wiki was never built"
+            )
+
+    @property
+    def _view_properties(self) -> dict[str, Any]:
+        """Link definition the pages view should have.
+
+        Indexes ``title``/``summary``/``body`` under every analyzer in
+        :attr:`analyzers`, so one corpus is searchable through all of them.
+        """
+        return {
+            "links": {
+                PAGES_COLLECTION: {
+                    "analyzers": list(self.analyzers),
+                    "fields": {"title": {}, "summary": {}, "body": {}},
+                }
+            }
+        }
+
     async def _create_pages_view(self) -> None:
-        """Create the ArangoSearch pages view if it does not already exist.
+        """Create the ArangoSearch pages view, or update a stale one.
+
+        Also reconciles an EXISTING view whose analyzer set no longer
+        matches :attr:`analyzers` — otherwise adding a language to
+        ``text_analyzer`` would silently do nothing on any wiki that had
+        already been built, since the view is only ever created once.
+        ArangoSearch re-indexes the linked fields itself when a link
+        changes, so no re-ingest is needed.
 
         Drives the underlying ``arangoasync.database.Database`` directly
         (via ``self._db._connection``) instead of going through the
@@ -166,20 +370,46 @@ class ArangoDBWikiStore(BaseWikiStore):
         """
         connection = self._db._connection
         existing_views = await connection.views()
-        if any(v.get("name") == self._view_name for v in existing_views):
+        if not any(v.get("name") == self._view_name for v in existing_views):
+            await connection.create_view(
+                name=self._view_name,
+                view_type="arangosearch",
+                properties=self._view_properties,
+            )
             return
-        await connection.create_view(
-            name=self._view_name,
-            view_type="arangosearch",
-            properties={
-                "links": {
-                    PAGES_COLLECTION: {
-                        "analyzers": [self._text_analyzer],
-                        "fields": {"title": {}, "summary": {}, "body": {}},
-                    }
-                }
-            },
+
+        if await self._view_analyzers_match(connection):
+            return
+        self.logger.info(
+            "Updating ArangoSearch view %s to analyzers %s",
+            self._view_name,
+            self.analyzers,
         )
+        await connection.replace_view(self._view_name, self._view_properties)
+
+    async def _view_analyzers_match(self, connection: Any) -> bool:
+        """Whether the live view already indexes pages with :attr:`analyzers`.
+
+        Args:
+            connection: The underlying ``arangoasync`` database.
+
+        Returns:
+            ``True`` when the view's ``wiki_pages`` link lists exactly the
+            configured analyzers (order-insensitive). ``True`` as well when
+            the properties cannot be read — a failed probe should not send
+            every ``initialize()`` into a needless view rewrite.
+        """
+        try:
+            info = await connection.view_info(self._view_name)
+        except Exception as exc:  # noqa: BLE001 — probe only, see docstring
+            self.logger.warning(
+                "Could not read properties of view %s (%s); leaving it as is",
+                self._view_name,
+                exc,
+            )
+            return True
+        link = (info.get("links") or {}).get(PAGES_COLLECTION) or {}
+        return set(link.get("analyzers") or []) == set(self.analyzers)
 
     async def close(self) -> None:
         """Close the underlying ArangoDB connection."""
@@ -237,11 +467,12 @@ class ArangoDBWikiStore(BaseWikiStore):
         """
         if not pages:
             return 0
+        self._assert_writable()
         await self._ensure_init()
         now = _now_iso()
         docs = [
             {
-                "_key": p.concept_id,
+                "_key": document_key(p.concept_id),
                 "concept_id": p.concept_id,
                 "node_id": p.node_id,
                 "title": p.title,
@@ -284,6 +515,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         """
         if not edges:
             return 0
+        self._assert_writable()
         await self._ensure_init()
         docs = []
         for e in edges:
@@ -291,9 +523,9 @@ class ArangoDBWikiStore(BaseWikiStore):
             provenance = e[3] if len(e) > 3 else "extracted"
             docs.append(
                 {
-                    "_key": f"{src}__{dst}__{rel}",
-                    "_from": f"{PAGES_COLLECTION}/{src}",
-                    "_to": f"{PAGES_COLLECTION}/{dst}",
+                    "_key": edge_key(src, dst, rel),
+                    "_from": f"{PAGES_COLLECTION}/{document_key(src)}",
+                    "_to": f"{PAGES_COLLECTION}/{document_key(dst)}",
                     "src": src,
                     "dst": dst,
                     "rel": rel,
@@ -332,14 +564,21 @@ class ArangoDBWikiStore(BaseWikiStore):
         Returns:
             ``{"pages_deleted": N, "pages_written": M, "edges_written": K}``
         """
+        self._assert_writable()
         await self._ensure_init()
         edges = edges or []
         new_ids = {page.concept_id for page in pages}
-        old_ids = await self._query(
+        # Both projections are needed: the raw ``concept_id`` to match the
+        # edge collection's ``src``/``dst`` fields, and the ``_key`` to
+        # address documents in REMOVE (which resolves a bare string as a
+        # key, and keys are encoded — see document_key()).
+        old_rows = await self._query(
             "FOR doc IN @@collection FILTER doc.source_id == @source_id"
-            " RETURN doc.concept_id",
+            " RETURN {cid: doc.concept_id, key: doc._key}",
             {"@collection": PAGES_COLLECTION, "source_id": source_id},
         )
+        old_ids = [row["cid"] for row in old_rows]
+        old_keys = [row["key"] for row in old_rows]
 
         preserved: list[tuple[str, str, str]] = []
         if old_ids:
@@ -355,9 +594,9 @@ class ArangoDBWikiStore(BaseWikiStore):
                 if r["src"] not in old_set and r["dst"] in new_ids
             ]
             await self._execute(
-                "FOR cid IN @old_ids REMOVE cid IN @@collection"
+                "FOR key IN @old_keys REMOVE key IN @@collection"
                 " OPTIONS {ignoreErrors: true}",
-                {"old_ids": old_ids, "@collection": EMBEDDINGS_COLLECTION},
+                {"old_keys": old_keys, "@collection": EMBEDDINGS_COLLECTION},
             )
             await self._execute(
                 "FOR e IN @@collection FILTER e.src IN @old_ids OR e.dst IN @old_ids"
@@ -365,8 +604,8 @@ class ArangoDBWikiStore(BaseWikiStore):
                 {"old_ids": old_ids, "@collection": EDGES_COLLECTION},
             )
             await self._execute(
-                "FOR cid IN @old_ids REMOVE cid IN @@collection",
-                {"old_ids": old_ids, "@collection": PAGES_COLLECTION},
+                "FOR key IN @old_keys REMOVE key IN @@collection",
+                {"old_keys": old_keys, "@collection": PAGES_COLLECTION},
             )
 
         written = await self.upsert_pages(pages)
@@ -396,22 +635,25 @@ class ArangoDBWikiStore(BaseWikiStore):
         Returns:
             ``True`` when a page document was actually deleted.
         """
+        self._assert_writable()
         await self._ensure_init()
+        key = document_key(concept_id)
         deleted_rows = await self._query(
             "FOR doc IN @@collection FILTER doc._key == @key"
             " REMOVE doc IN @@collection RETURN OLD",
-            {"@collection": PAGES_COLLECTION, "key": concept_id},
+            {"@collection": PAGES_COLLECTION, "key": key},
         )
         if not deleted_rows:
             return False
         await self._execute(
             "REMOVE @key IN @@collection OPTIONS {ignoreErrors: true}",
-            {"key": concept_id, "@collection": EMBEDDINGS_COLLECTION},
+            {"key": key, "@collection": EMBEDDINGS_COLLECTION},
         )
+        # ``src``/``dst`` hold raw concept ids, not keys.
         await self._execute(
-            "FOR e IN @@collection FILTER e.src == @key OR e.dst == @key"
+            "FOR e IN @@collection FILTER e.src == @cid OR e.dst == @cid"
             " REMOVE e IN @@collection",
-            {"key": concept_id, "@collection": EDGES_COLLECTION},
+            {"cid": concept_id, "@collection": EDGES_COLLECTION},
         )
         return True
 
@@ -425,16 +667,18 @@ class ArangoDBWikiStore(BaseWikiStore):
             vector: Embedding as a list of floats.
             model: Identifier of the embedding model used.
         """
+        self._assert_writable()
         await self._ensure_init()
+        key = document_key(concept_id)
         doc = {
-            "_key": concept_id,
+            "_key": key,
             "concept_id": concept_id,
             "vector": list(vector),
             "model": model,
         }
         await self._execute(
             "UPSERT {_key: @key} INSERT @doc UPDATE @doc IN @@collection",
-            {"key": concept_id, "doc": doc, "@collection": EMBEDDINGS_COLLECTION},
+            {"key": key, "doc": doc, "@collection": EMBEDDINGS_COLLECTION},
         )
 
     # ------------------------------------------------------------------
@@ -474,12 +718,17 @@ class ArangoDBWikiStore(BaseWikiStore):
         projection = ", ".join(f"{f}: doc.{f}" for f in fields)
         aql = (
             "FOR doc IN @@collection "
-            "FILTER doc._key == @key OR doc.node_id == @key "
+            "FILTER doc._key == @key OR doc.node_id == @cid "
             "LIMIT 1 "
             f"RETURN {{{projection}}}"
         )
         rows = await self._query(
-            aql, {"@collection": PAGES_COLLECTION, "key": concept_id}
+            aql,
+            {
+                "@collection": PAGES_COLLECTION,
+                "key": document_key(concept_id),
+                "cid": concept_id,
+            },
         )
         return rows[0] if rows else None
 
@@ -526,6 +775,10 @@ class ArangoDBWikiStore(BaseWikiStore):
     ) -> list[dict[str, Any]]:
         """BM25 lexical search over title/summary/body via ArangoSearch.
 
+        Matches the query under every analyzer in :attr:`analyzers`, so a
+        store configured with ``"text_en,text_es"`` answers Spanish and
+        English queries against the same corpus.
+
         Args:
             query: Free-form natural-language query.
             category: Optional exact category pre-filter.
@@ -535,14 +788,25 @@ class ArangoDBWikiStore(BaseWikiStore):
             Stub dicts with a ``score`` key (BM25, higher is better).
         """
         await self._ensure_init()
-        search_expr = (
-            "ANALYZER(doc.title IN TOKENS(@query, @analyzer) OR"
-            " doc.summary IN TOKENS(@query, @analyzer) OR"
-            " doc.body IN TOKENS(@query, @analyzer), @analyzer)"
-        )
+        # One ANALYZER() clause per configured analyzer, OR-ed together: a
+        # term only matches under the analyzer that produced its tokens, so
+        # searching a bilingual corpus means asking each one. Analyzer names
+        # cannot be bind variables inside ANALYZER()/TOKENS(), hence the
+        # numbered bind vars built here (never the raw names interpolated).
+        bind_vars: dict[str, Any] = {"query": query, "limit": limit}
+        clauses = []
+        for index, analyzer in enumerate(self.analyzers):
+            key = f"analyzer{index}"
+            bind_vars[key] = analyzer
+            clauses.append(
+                f"ANALYZER(doc.title IN TOKENS(@query, @{key}) OR"
+                f" doc.summary IN TOKENS(@query, @{key}) OR"
+                f" doc.body IN TOKENS(@query, @{key}), @{key})"
+            )
+        search_expr = " OR ".join(clauses)
         filter_clause = "FILTER doc.category == @category" if category is not None else ""
         aql = (
-            f"FOR doc IN {self._view_name} "
+            f"FOR doc IN {self._view_ref} "
             f"SEARCH {search_expr} "
             f"{filter_clause} "
             "SORT BM25(doc) DESC LIMIT @limit "
@@ -551,11 +815,6 @@ class ArangoDBWikiStore(BaseWikiStore):
             " source_id: doc.source_id, token_count: doc.token_count,"
             " score: BM25(doc)}"
         )
-        bind_vars: dict[str, Any] = {
-            "query": query,
-            "analyzer": self._text_analyzer,
-            "limit": limit,
-        }
         if category is not None:
             bind_vars["category"] = category
         return await self._query(aql, bind_vars)

@@ -57,7 +57,7 @@ class AtlasSource(MongoSource):
                 creds["dsn"] = host
                 creds.pop("host", None)
                 creds.pop("port", None)
-            elif ".mongodb.net" in host:
+            elif host.rstrip(".").endswith(".mongodb.net"):  # validate hostname suffix
                 # Bare SRV hostname — convert to mongodb+srv:// DSN
                 username = creds.get("username", "")
                 password = creds.get("password", "")

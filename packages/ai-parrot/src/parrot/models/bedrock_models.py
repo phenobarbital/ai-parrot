@@ -13,21 +13,27 @@ Translation strategy (applied in order):
    passed an explicit *region_prefix* for one of these, and the id is not in
    :data:`REQUIRES_REGION_PREFIX`, the prefix is ignored and a warning is
    logged (never silently discarded).
-2. **Map**: public ID looked up in a static ``PUBLIC_TO_BEDROCK`` dict; the map
+2. **Repair**: an unprefixed Bedrock-shaped ID that is not usable as written
+   is resolved by lookup instead of passed through — the vendor namespace glued
+   onto a public ID (``anthropic.claude-haiku-4-5``) and a bare base ID for a
+   model with no in-region access (``anthropic.claude-opus-5``) both produce
+   ``The provided model identifier is invalid`` from the Converse API. Never
+   guesses a ``-vN:0`` suffix: an ID absent from the maps is passed through.
+3. **Map**: public ID looked up in a static ``PUBLIC_TO_BEDROCK`` dict; the map
    values are the Bedrock base IDs (``anthropic.<id>-vN:0`` form — except
    Claude Opus 5 / Fable 5, which carry no version suffix).
-3. **Region prefix (explicit)**: when *region_prefix* is provided (e.g.
+4. **Region prefix (explicit)**: when *region_prefix* is provided (e.g.
    ``"us"``), the prefix ``"<prefix>."`` is prepended to the mapped base ID to
    form a cross-region inference-profile ID. Applied unconditionally for any
    mapped model — the caller is trusted to know whether the model supports
    the requested prefix (unchanged from pre-FEAT-405 behaviour).
-4. **Region prefix (default)**: when *region_prefix* is NOT provided and the
+5. **Region prefix (default)**: when *region_prefix* is NOT provided and the
    public ID is present in :data:`REQUIRES_REGION_PREFIX` (an ALLOWLIST — see
    FEAT-405 [R6]), that model's declared default prefix is applied
    automatically. Models absent from the allowlist are NEVER auto-prefixed —
    this is the inversion that keeps ``NovaClient``'s ``region_prefix="us"``
    default from leaking onto prefix-less vendor models (e.g. MiniMax M2.5).
-5. **Unknown fallback**: IDs not in the map and not Bedrock-shaped are returned
+6. **Unknown fallback**: IDs not in the map and not Bedrock-shaped are returned
    unchanged and a warning is logged — no exception is raised.
 """
 from __future__ import annotations
@@ -44,7 +50,14 @@ _REGION_PREFIXES: tuple[str, ...] = ("us.", "eu.", "apac.", "au.", "global.")
 # These models have NO geo/global inference profiles — ids are used verbatim,
 # never prefixed. IDs containing one of these are treated as already
 # Bedrock-shaped (pass-through branch), same as ``anthropic.``/``amazon.``.
-_VENDOR_NAMESPACES: tuple[str, ...] = ("minimax.", "zai.", "moonshotai.")
+_VENDOR_NAMESPACES: tuple[str, ...] = (
+    "minimax.", "zai.", "moonshotai.", "qwen.",
+)
+
+# Vendor namespaces that DO publish geo inference profiles, so a bare
+# ``<vendor>.<id>`` may still need a region prefix (unlike _VENDOR_NAMESPACES
+# above). Recognised as Bedrock-shaped, then run through the repair step.
+_PREFIXABLE_NAMESPACES: tuple[str, ...] = ("anthropic.", "amazon.", "meta.")
 
 # Allowlist of public model IDs that support (or require) a cross-region
 # inference-profile prefix, mapped to their DEFAULT prefix when the caller
@@ -57,6 +70,9 @@ REQUIRES_REGION_PREFIX: dict[str, str] = {
     "claude-opus-5": "us",       # no in-region access in us-west-2/us-east-2
     "claude-fable-5": "global",  # geo IDs not published; global only
     "claude-haiku-4-5": "us",    # geo access only via "us."
+    # Meta Llama 4 Maverick has NO in-region access in any US region — the
+    # "us." geo inference profile is the only way to call it.
+    "llama4-maverick-17b-instruct": "us",
 }
 
 # Static map: public model ID → Bedrock base ID.
@@ -103,6 +119,18 @@ PUBLIC_TO_BEDROCK: dict[str, str] = {
     # ── Not yet available on Bedrock (will warn+passthrough) ──────────────
     # claude-opus-4-8, claude-opus-4-7 — Bedrock IDs TBD.
 
+    # ── Third-party models served on Bedrock ───────────────────────────────
+    # Meta Llama 4 (Converse/Invoke only — NOT served on bedrock-mantle).
+    "llama4-maverick-17b-instruct": "meta.llama4-maverick-17b-instruct-v1:0",
+    # Qwen3 Coder — in-region only, no geo/global profile. This is the
+    # bedrock-runtime id; the bedrock-mantle id is the suffix-less
+    # "qwen.qwen3-coder-480b-a35b-instruct", which passes through untouched.
+    "qwen3-coder-480b-a35b": "qwen.qwen3-coder-480b-a35b-v1:0",
+    # Z.AI GLM 5 — same id on both endpoints, never prefixed.
+    "glm-5": "zai.glm-5",
+    # Moonshot AI Kimi K2.5 — same id on both endpoints, never prefixed.
+    "kimi-k2.5": "moonshotai.kimi-k2.5",
+
     # ── Amazon Nova (multi-provider, FEAT-302) ─────────────────────────────
     "nova-sonic":   "amazon.nova-sonic-v1:0",
     "nova-pro":     "amazon.nova-pro-v1:0",
@@ -134,10 +162,9 @@ def _is_bedrock_id(model_id: str) -> bool:
     """
     if model_id.startswith("arn:"):
         return True
-    if "anthropic." in model_id:
-        return True
-    if "amazon." in model_id:
-        return True
+    for namespace in _PREFIXABLE_NAMESPACES:
+        if namespace in model_id:
+            return True
     for namespace in _VENDOR_NAMESPACES:
         if namespace in model_id:
             return True
@@ -145,6 +172,76 @@ def _is_bedrock_id(model_id: str) -> bool:
         if model_id.startswith(prefix):
             return True
     return False
+
+
+def _public_ids_for(bedrock_id: str) -> list[str]:
+    """Return the public IDs that map to *bedrock_id*.
+
+    Aliases share a Bedrock ID (e.g. ``claude-haiku-4-5`` and
+    ``claude-haiku-4-5-20251001``), so the allowlisted alias is returned
+    first — it is the one that carries the default region prefix.
+
+    Args:
+        bedrock_id: A Bedrock base ID to reverse-look-up.
+
+    Returns:
+        Matching public IDs, allowlisted ones first (possibly empty).
+    """
+    matches = [k for k, v in PUBLIC_TO_BEDROCK.items() if v == bedrock_id]
+    return sorted(matches, key=lambda k: k not in REQUIRES_REGION_PREFIX)
+
+
+def _repair_unprefixed_id(model_id: str, region_prefix: str | None) -> str | None:
+    """Resolve a Bedrock-shaped ID that is not actually usable as written.
+
+    Two spellings look Bedrock-shaped but are rejected by the Converse API
+    with ``The provided model identifier is invalid``:
+
+    * ``anthropic.<public-id>`` — the vendor namespace glued onto a public ID,
+      so the ``-vN:0`` suffix and region prefix are both missing (e.g.
+      ``anthropic.claude-haiku-4-5``).
+    * a bare base ID from :data:`PUBLIC_TO_BEDROCK` whose model is in
+      :data:`REQUIRES_REGION_PREFIX` and therefore has no in-region access
+      (e.g. ``anthropic.claude-opus-5``).
+
+    Both are repaired by lookup only — never by string-munging a version
+    suffix — so an ID this function cannot resolve from the maps is left
+    alone for the caller's pass-through branch.
+
+    Args:
+        model_id: A Bedrock-shaped ID carrying no region prefix.
+        region_prefix: Optional caller-supplied prefix, honoured only for
+            models in :data:`REQUIRES_REGION_PREFIX` (same rule as
+            :func:`translate` step 3).
+
+    Returns:
+        The repaired Bedrock ID, or ``None`` when there is nothing to repair.
+    """
+    # Vendor-namespaced models (minimax./zai./moonshotai.) have no inference
+    # profiles and are never in the map — nothing to repair.
+    if any(namespace in model_id for namespace in _VENDOR_NAMESPACES):
+        return None
+
+    # (a) vendor namespace glued onto a public ID -> re-run the map path.
+    for namespace in _PREFIXABLE_NAMESPACES:
+        if model_id.startswith(namespace):
+            candidate = model_id[len(namespace):]
+            if candidate in PUBLIC_TO_BEDROCK:
+                logger.debug(
+                    "bedrock_models: %r is a public ID under the %r namespace "
+                    "— resolving it through PUBLIC_TO_BEDROCK.",
+                    model_id,
+                    namespace,
+                )
+                return translate(candidate, region_prefix=region_prefix)
+
+    # (b) exact base ID whose model has no in-region access.
+    for public in _public_ids_for(model_id):
+        default_prefix = REQUIRES_REGION_PREFIX.get(public)
+        if default_prefix:
+            return f"{region_prefix or default_prefix}.{model_id}"
+
+    return None
 
 
 def translate(public_id: str, region_prefix: str | None = None) -> str:
@@ -195,6 +292,13 @@ def translate(public_id: str, region_prefix: str | None = None) -> str:
         already_resolved = public_id.startswith("arn:") or any(
             public_id.startswith(prefix) for prefix in _REGION_PREFIXES
         )
+        # An unprefixed Bedrock-shaped id may still be unusable: a public id
+        # glued to the vendor namespace, or a base id for a model with no
+        # in-region access. Repair those by lookup before passing through.
+        if not already_resolved:
+            repaired = _repair_unprefixed_id(public_id, region_prefix)
+            if repaired is not None:
+                return repaired
         if region_prefix and not already_resolved and public_id not in REQUIRES_REGION_PREFIX:
             logger.warning(
                 "bedrock_models.translate: region_prefix=%r requested for "

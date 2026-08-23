@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-449",
+  "started_at": "2026-08-23T00:10:07Z",
+  "updated_at": "2026-08-23T00:58:05Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/claude_legal-wiki-design.md",
+    "raw_path": "sdd/state/FEAT-449/source.md",
+    "fetched_at": "2026-08-23T00:10:07Z",
+    "summary_oneline": "Legal LLM Wiki on ai-parrot \u2014 Spanish/EU legislation + case law as ArangoDB knowledge graphs with temporal validity and CENDOJ-backed citation verification"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:10:07Z",
+      "completed_at": "2026-08-23T00:10:07Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:11:14Z",
+      "completed_at": "2026-08-23T00:11:14Z",
+      "duration_seconds": 0,
+      "queries_total": 30,
+      "approved_by_user": true,
+      "edited_by_user": true,
+      "plan_path": "sdd/state/FEAT-449/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:16:52Z",
+      "completed_at": "2026-08-23T00:23:05Z",
+      "duration_seconds": null,
+      "queries_executed": 30,
+      "queries_skipped": 0,
+      "depth_reached": 3,
+      "files_read": 26,
+      "grep_calls": 33,
+      "git_calls": 3,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:25:55Z",
+      "completed_at": "2026-08-23T00:43:14Z",
+      "duration_seconds": null,
+      "synthesis_path": "sdd/state/FEAT-449/synthesis.json",
+      "thinking_path": "sdd/state/FEAT-449/synthesis.thinking.md",
+      "overall_confidence": "medium",
+      "claims_total": 21,
+      "claims_high_conf": 16,
+      "claims_medium_conf": 5,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:57:17Z",
+      "completed_at": "2026-08-23T00:57:17Z",
+      "duration_seconds": null,
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:57:17Z",
+      "proposal_path": "sdd/proposals/legal-llm-wiki-spanish-eu-law.proposal.md",
+      "commit_sha": "dc1c847cb8f5936a433e65020538437076622439",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "All five unknowns resolved and v1 narrowed to a single self-contained deliverable (BOE norms graph, zero LLM); the architectural fork was closed by D1/D2.",
+      "completed_at": "2026-08-23T00:58:05Z"
+    }
+  },
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 26,
+    "grep_calls": 33,
+    "git_calls": 3,
+    "wall_seconds": 0
+  },
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Run /sdd-spec FEAT-449 scoped to Sprint 1 (BOE norms graph, zero LLM)"
+  },
+  "detected_mode": "enrichment",
+  "feature_slug": "legal-llm-wiki-spanish-eu-law"
+}

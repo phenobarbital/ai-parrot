@@ -425,4 +425,4 @@ class TestFormatHelpers:
         )
         result = IntentRouterMixin._format_non_ok_envelope(envelope)
         assert "google" in result
-        assert "https://auth.example.com" in result
+        assert "https://auth.example.com" in result  # lgtm[py/incomplete-url-substring-sanitization]

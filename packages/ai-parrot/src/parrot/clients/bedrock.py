@@ -32,7 +32,6 @@ See ``sdd/specs/bedrock-client-llm.spec.md`` and
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from pathlib import Path
@@ -51,6 +50,65 @@ from ..models.bedrock_models import translate as translate_bedrock_model
 from ..models.responses import AIMessage, AIMessageFactory, InvokeResult
 from ..models.outputs import StructuredOutputConfig
 from ..tools.manager import ToolFormat
+
+
+# Model families that REJECT sampling parameters (2026 generation). Bedrock
+# answers a request carrying ``temperature``/``topP``/``topK`` for one of these
+# with ``ValidationException: The model returned the following errors:
+# `temperature` is deprecated for this model``. Matched as substrings because
+# the resolved id carries a region prefix and may carry a ``-vN:0`` suffix
+# (e.g. ``us.anthropic.claude-opus-5``). Older families (Opus/Sonnet 4.6 and
+# down, Amazon Nova, third-party vendors) still accept sampling params.
+NO_SAMPLING_MODEL_FAMILIES: tuple[str, ...] = (
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+)
+
+
+def rejects_sampling_params(model_id: str) -> bool:
+    """Return True when *model_id* rejects sampling parameters.
+
+    Args:
+        model_id: A Bedrock model ID, already translated (it may carry a
+            region prefix, a version suffix, or be a full ARN).
+
+    Returns:
+        ``True`` when ``temperature``/``topP``/``topK`` must be omitted from
+        the request for this model.
+    """
+    return any(family in (model_id or "") for family in NO_SAMPLING_MODEL_FAMILIES)
+
+
+class _StaticBedrockTokenProvider:
+    """Serves a fixed Bedrock API key as a botocore auth token.
+
+    Registered as a session's ``token_provider`` component so
+    ``signature_version="bearer"`` resolves to the operator's configured
+    key instead of falling through to SigV4 credentials. Deliberately
+    minimal — botocore only requires ``load_token()``, and aiobotocore
+    awaits ``get_frozen_token()``, so the latter is a coroutine here
+    (botocore's own providers are sync; aiobotocore wraps them).
+
+    Args:
+        token: The Bedrock API key (bearer token, ``"ABSK..."``).
+    """
+
+    def __init__(self, token: str) -> None:
+        from botocore.tokens import FrozenAuthToken
+
+        self._frozen = FrozenAuthToken(token)
+
+    def load_token(self) -> _StaticBedrockTokenProvider:
+        """Return self — this provider is its own (already-loaded) token."""
+        return self
+
+    async def get_frozen_token(self) -> Any:
+        """Return the immutable token botocore's ``BearerAuth`` signs with."""
+        return self._frozen
 
 
 class BedrockConverseBase(AbstractClient):
@@ -247,10 +305,38 @@ class BedrockConverseBase(AbstractClient):
             if self._aws_session_token:
                 client_kwargs["aws_session_token"] = self._aws_session_token
         elif self._aws_bearer_token:
-            # botocore >= 1.36 reads bearer tokens from the environment only
-            # (``AWS_BEARER_TOKEN_<SIGNING_NAME>`` — no constructor kwarg
-            # exists); exporting it here is the only supported hand-off.
-            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = self._aws_bearer_token
+            # A configured Bedrock API key is AUTHORITATIVE: bind the token
+            # to this session explicitly and pin the auth scheme to
+            # ``bearer``, rather than exporting AWS_BEARER_TOKEN_BEDROCK and
+            # hoping botocore prefers it.
+            #
+            # The env-var hand-off (the previous approach) silently lost
+            # whenever SigV4 credentials were resolvable — and navconfig
+            # itself exports AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY from
+            # env/.env into os.environ, so botocore's credential chain
+            # found them first and signed as that IAM identity. Every call
+            # then failed with AccessDeniedException naming an identity the
+            # operator never intended to use for Bedrock, while the
+            # configured API key sat unused. It is also unsupported below
+            # botocore 1.36 (this project pins 1.35.x), where reading
+            # AWS_BEARER_TOKEN_* does not exist at all.
+            #
+            # ``signature_version="bearer"`` selects botocore's BearerAuth
+            # (auth.AUTH_TYPE_MAPS), which takes its token from the
+            # session's ``token_provider`` component — supported on both
+            # 1.35.x and later.
+            # ``_session`` is boto3/aioboto3's only handle on the underlying
+            # botocore session — there is no public accessor.
+            session._session.register_component(
+                "token_provider", _StaticBedrockTokenProvider(self._aws_bearer_token)
+            )
+            client_kwargs["config"] = client_kwargs["config"].merge(
+                BotoConfig(signature_version="bearer")
+            )
+            self.logger.debug(
+                "Bedrock auth: using the configured API key (bearer); "
+                "ambient SigV4 credentials, if any, are bypassed."
+            )
         # else: no static keys or bearer token resolved from parrot config —
         # fall through to botocore's own default credential chain (env vars,
         # AWS_BEARER_TOKEN_BEDROCK if already exported, shared credentials
@@ -410,6 +496,38 @@ class BedrockConverseBase(AbstractClient):
                 converted.append({"role": role, "content": blocks})
         return converted
 
+    def _inference_config(
+        self,
+        model_id: str,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Build the Converse ``inferenceConfig`` block for *model_id*.
+
+        ``temperature`` is omitted for the 2026-generation models that reject
+        sampling parameters (see :func:`rejects_sampling_params`) — sending it
+        fails the whole call with a ``ValidationException`` instead of being
+        ignored.
+
+        Args:
+            model_id: The already-translated Bedrock model ID.
+            max_tokens: Per-call output cap; falls back to ``self.max_tokens``
+                then 4096.
+            temperature: Per-call sampling temperature; falls back to
+                ``self.temperature``.
+
+        Returns:
+            The ``inferenceConfig`` dict for the Converse payload.
+        """
+        config: Dict[str, Any] = {
+            "maxTokens": max_tokens if max_tokens is not None else (self.max_tokens or 4096),
+        }
+        if not rejects_sampling_params(model_id):
+            config["temperature"] = (
+                temperature if temperature is not None else self.temperature
+            )
+        return config
+
     def _prepare_tools(self, filter_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Convert registered tools to Bedrock Converse ``toolSpec`` format.
 
@@ -556,9 +674,12 @@ class BedrockConverseBase(AbstractClient):
         body: Dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
-            "temperature": temperature,
             "messages": messages,
         }
+        # Same rejection as the Converse path — the 2026-generation models
+        # answer a request carrying ``temperature`` with a 400.
+        if not rejects_sampling_params(resolved_model):
+            body["temperature"] = temperature
         if system_prompt:
             body["system"] = system_prompt
 
@@ -693,10 +814,9 @@ class BedrockConverseBase(AbstractClient):
         payload: Dict[str, Any] = {
             "modelId": resolved_model,
             "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": max_tokens if max_tokens is not None else (self.max_tokens or 4096),
-                "temperature": temperature if temperature is not None else self.temperature,
-            },
+            "inferenceConfig": self._inference_config(
+                resolved_model, max_tokens, temperature
+            ),
         }
         if resolved_system_prompt:
             if prompt_cache:
@@ -1000,10 +1120,9 @@ class BedrockConverseBase(AbstractClient):
         payload: Dict[str, Any] = {
             "modelId": resolved_model,
             "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": max_tokens if max_tokens is not None else (self.max_tokens or 4096),
-                "temperature": temperature if temperature is not None else self.temperature,
-            },
+            "inferenceConfig": self._inference_config(
+                resolved_model, max_tokens, temperature
+            ),
         }
         if resolved_system_prompt:
             payload["system"] = [{"text": resolved_system_prompt}]
@@ -1131,10 +1250,7 @@ class BedrockConverseBase(AbstractClient):
         payload: Dict[str, Any] = {
             "modelId": resolved_model,
             "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": self.max_tokens or 4096,
-                "temperature": self.temperature,
-            },
+            "inferenceConfig": self._inference_config(resolved_model),
         }
         tool_specs = self._prepare_tools()
         if tool_specs:
@@ -1358,7 +1474,9 @@ class BedrockConverseBase(AbstractClient):
                 "modelId": resolved_model,
                 "messages": [{"role": "user", "content": [{"text": prompt}]}],
                 "system": [{"text": resolved_prompt}],
-                "inferenceConfig": {"maxTokens": max_tokens, "temperature": temperature},
+                "inferenceConfig": self._inference_config(
+                    resolved_model, max_tokens, temperature
+                ),
             }
 
             if use_tools:

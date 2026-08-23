@@ -623,6 +623,70 @@ def _build_git_toolkit() -> GitToolkit:
     )
 
 
+def _build_pageindex_toolkit(wiki_dir: Path) -> object | None:
+    """Build the ``PageIndexToolkit`` backing the wiki's authoring plane.
+
+    ``LLMWikiToolkit.create_page`` writes to two planes: the WikiStore
+    retrieval plane (always) and the PageIndex authoring plane (this
+    toolkit). Passing ``None`` for the latter made every ``create_page``
+    call raise ``AttributeError`` inside the toolkit's own best-effort
+    ``except``, logging ``'NoneType' object has no attribute
+    'insert_markdown'`` on every handed-off feature and falling back to a
+    fabricated ``page-<slug>`` id instead of a real PageIndex node id.
+
+    Mirrors the construction ``wikitoolkit ingest`` uses
+    (``knowledge/wiki/cli.py``): one LLM client from the ``WIKI_MODEL``
+    spec, wrapped in a :class:`PageIndexLLMAdapter`, over
+    ``<wiki_dir>/pageindex``.
+
+    Args:
+        wiki_dir: The wiki's storage directory (``project.storage_path``).
+
+    Returns:
+        A ready ``PageIndexToolkit``, or ``None`` when no ``WIKI_MODEL`` is
+        configured or construction fails — the caller then runs without an
+        authoring plane, which ``create_page`` degrades on cleanly.
+    """
+    try:
+        from navconfig import config as _nav
+
+        model_spec = _nav.get("WIKI_MODEL", fallback=None)
+    except Exception:  # noqa: BLE001 - navconfig optional; env is enough
+        model_spec = os.environ.get("WIKI_MODEL")
+
+    if not model_spec:
+        logger.warning(
+            "WIKI_MODEL is not configured — feature-handoff pages will be "
+            "written to the WikiStore retrieval plane only, not the "
+            "PageIndex authoring plane. Set WIKI_MODEL (format "
+            "'provider:model', e.g. 'google:gemini-3.1-flash-lite-preview') "
+            "to enable it."
+        )
+        return None
+
+    try:
+        from parrot.clients.factory import LLMFactory
+        from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+        from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+
+        _, model_id = LLMFactory.parse_llm_string(model_spec)
+        adapter = PageIndexLLMAdapter(LLMFactory.create(model_spec), model=model_id)
+        pageindex_dir = Path(wiki_dir) / "pageindex"
+        pageindex_dir.mkdir(parents=True, exist_ok=True)
+        toolkit = PageIndexToolkit(adapter, storage_dir=pageindex_dir)
+        logger.info(
+            "PageIndexToolkit ready (model=%s, storage=%s)",
+            model_spec, pageindex_dir,
+        )
+        return toolkit
+    except Exception as exc:  # noqa: BLE001 - authoring plane is best-effort
+        logger.warning(
+            "PageIndexToolkit unavailable (%s); feature-handoff pages will "
+            "skip the authoring plane.", exc,
+        )
+        return None
+
+
 def _build_wiki_toolkit() -> object | None:
     """Build the optional ``LLMWikiToolkit`` for feature-mode handoff.
 
@@ -644,10 +708,35 @@ def _build_wiki_toolkit() -> object | None:
         )
         return None
     try:
+        from pathlib import Path
+
+        from parrot.knowledge.wiki.models import WikiConfig
+        from parrot.knowledge.wiki.project import (
+            find_project_root,
+            load_project_config,
+        )
         from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
-        toolkit = LLMWikiToolkit()
-        logger.info("LLMWikiToolkit ready for feature-mode docs ingest")
+        root = find_project_root(Path.cwd())
+        project = load_project_config(root)          # reads .parrot/wiki.json
+        wiki_config = WikiConfig(
+            wiki_name=project.wiki_name,
+            storage_dir=project.storage_path(root),
+            storage_backend=project.backend,
+            # The GraphIndex mirror needs a real graphindex_toolkit; with
+            # None it would only warn on every ingest, so keep it off.
+            sync_graph=False,
+        )
+        pageindex_toolkit = _build_pageindex_toolkit(project.storage_path(root))
+        toolkit = LLMWikiToolkit(
+            pageindex_toolkit, None, None, wiki_config, agent_id="dev-loop"
+        )
+        logger.info(
+            "LLMWikiToolkit ready for feature-mode docs ingest "
+            "(wiki=%s, store=%s, pageindex=%s)",
+            project.wiki_name, project.storage_path(root),
+            "on" if pageindex_toolkit is not None else "off",
+        )
         return toolkit
     except Exception as exc:  # noqa: BLE001 - wiki ingest is best-effort
         logger.warning(
@@ -1253,7 +1342,11 @@ async def handle_bundle(request: web.Request) -> web.Response:
         )
 
     suffix = "report.md" if fmt == "md" else "bundle.json"
-    path = RUN_ARTIFACT_DIR / f"{run_id}.{suffix}"
+    path = (RUN_ARTIFACT_DIR / f"{run_id}.{suffix}").resolve()
+    # Security: verify resolved path stays within RUN_ARTIFACT_DIR
+    _artifact_base = RUN_ARTIFACT_DIR.resolve()
+    if not str(path).startswith(str(_artifact_base) + os.sep):
+        return web.json_response({"error": "invalid run_id"}, status=400)
     if not path.is_file():
         return web.json_response(
             {

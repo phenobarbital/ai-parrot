@@ -250,6 +250,72 @@ echo $?   # 0 on success, 1 on error
 
 ---
 
+## Claude Code sub-agent tool bridge (FEAT-434)
+
+When the served agent's LLM is `claude-agent:*` / `claude-code:*`
+(`ClaudeAgentClient`), every turn is delegated to a local Claude Code
+sub-agent. **The agent's own registered tools are exposed to that
+sub-agent automatically** — no separate configuration, no opt-in list —
+as an in-process `mcp__parrot__<tool>` MCP server. Tools keep their open
+connections, auth context, `working_memory` and toolkit lifecycle; every
+bridged call still goes through the exact same TOOL_CALL guardrails →
+`GrantGuard` → `ConfirmationGuard` → compression pipeline as a native
+tool call (see [`docs/tools.md`](tools.md) "Claude Agent Tool Bridge" for
+the full design).
+
+```yaml
+agent:
+  target: "parrot.agents.claude_code:make_agent"
+  kwargs:
+    llm: "claude-agent:claude-sonnet-4-6"
+    use_tools: true          # Agent's own tool-loop switch (see caveat below)
+    tools:
+      - "MathTool"            # registered normally; bridged automatically
+```
+
+See `examples/agents/claude_code_daemon.yaml` for a runnable example —
+`parrot ask claude-code "What is sqrt(144)?"` exercises the bridged
+`mcp__parrot__math_tool` tool end to end.
+
+**`use_tools` here is not the same switch as the bridge's own toggle.**
+`agent.kwargs.use_tools` (forwarded to `Agent.__init__`) controls whether
+*this agent* auto-registers its default tool set and runs its own
+agentic tool loop — it predates FEAT-434 and has nothing to do with the
+bridge directly. The bridge's actual, dedicated toggle is
+`ClaudeAgentRunOptions.expose_parrot_tools` (default `True`), which isn't
+wired through this daemon YAML's `agent.kwargs` shape today — set it when
+constructing `ClaudeAgentClient(run_options=...)` programmatically, or
+via the per-call `ask(..., use_tools=False)` override (see
+[`docs/tools.md`](tools.md)). In practice, setting `agent.kwargs.
+use_tools: false` here *also* suppresses bridging as a side effect (the
+agent's own per-question `use_tools` decision is threaded through to the
+client's `ask()`, whose `use_tools=False` disables the bridge for that
+call) — but that is a consequence of sharing the same call parameter, not
+the intended, direct opt-out.
+
+**Narrowing budget.** Claude Code loads every exposed MCP tool eagerly at
+session `init` — it performs no narrowing of its own (measured: 25
+exposed tools -> 25 listed at `init`). `ClaudeAgentRunOptions.
+max_exposed_tools` (default `15`) bounds what is handed over each turn,
+ranked against the turn's prompt via `ToolManager.rank_tools()`; anything
+dropped is logged (count + names), never silently truncated.
+
+**Confirming tools.** A tool requiring confirmation still parks the turn
+for a real human — never a self-granted switch the sub-agent could flip
+itself. See [`docs/hitl-confirmation.md`](hitl-confirmation.md) "Bridged
+tools (Claude Code sub-agents)" for the full HITL wiring.
+
+**Auth caveat (already shipped, worth repeating here):** the daemon
+drops `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` by default so the
+bundled `claude` CLI uses its stored claude.ai / Claude Code login
+instead of billing an API key — `sanitize_claude_environment()`
+(`parrot.agents.claude_code`). Verify in the daemon log:
+`apiKeySource: "none"` means the Claude Code login is in effect;
+`apiKeySource: "ANTHROPIC_API_KEY"` means an API key took over (unset it,
+or pass `force_cc_auth: false` explicitly if that's what you want).
+
+---
+
 ## MCP registration (external LLMs)
 
 `parrot mcp-serve <name|socket>` runs an MCP **stdio** proxy: an MCP
@@ -301,12 +367,21 @@ one conversation session.
 | `events.subscribe` / `events.unsubscribe` | — | `{subscribed: bool}` |
 | `daemon.status` | — | `{pid, uptime_s, version, scheduler: {available, running, jobs}, active_connections}` |
 | `daemon.shutdown` | — | ack, then graceful shutdown |
+| `hitl.respond` (FEAT-434) | `{interaction_id, response_type, value, respondent?}` | `{ok: true}` — a human's answer to a bridged confirming-tool request; see below |
 
 Streaming (`chat.send` with `stream=true`): the ack `{stream_id}` is
 followed by `chat.delta {stream_id, text}` ×N, then exactly one terminal
 `chat.complete {stream_id, response, usage}` or `chat.error {stream_id,
 error}`. Subscribed clients also receive `event.job_executed`,
 `event.job_error`, `event.shutdown`.
+
+**Bridged-HITL notifications (FEAT-434, TASK-2290):** plain-string
+`RpcNotification` method names — not listed in the wire-protocol
+constants (`protocol.py`), since the notification/dispatch surface
+already accepts any string. Every subscribed session receives:
+`hitl.request {interaction_id, question, interaction_type, recipient}`,
+`hitl.notify {recipient, message}`, `hitl.cancel {interaction_id,
+recipient}`. Answer a pending one with `hitl.respond` above.
 
 ### Error codes
 

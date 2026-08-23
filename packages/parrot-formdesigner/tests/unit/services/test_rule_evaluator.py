@@ -7,6 +7,7 @@ from parrot_formdesigner.core import (
     DependencyOperation,
     DependencyRule,
     FieldCondition,
+    LogicGroup,
     FieldType,
     FormField,
     FormSchema,
@@ -769,3 +770,250 @@ class TestSafeOnMissingValues:
         result = await evaluator.resolve(form, {"f1": "not-a-number"})
         assert isinstance(result, RuleResolution)
         assert result.visible["f2"] is False
+
+
+# ---------------------------------------------------------------------------
+# Section-level visibility
+# ---------------------------------------------------------------------------
+
+
+def _gated_form(section_rule: DependencyRule, *fields: FormField) -> FormSchema:
+    """Driver field in an open section, `fields` in a section behind a rule."""
+    form = FormSchema(
+        form_id="test",
+        title="Test",
+        sections=[
+            FormSection(section_id="open", fields=[_field("driver")]),
+            FormSection(section_id="gated", fields=list(fields),
+                        depends_on=section_rule),
+        ],
+    )
+    return resolve_rule_references(form)
+
+
+class TestSectionVisibility:
+    """`FormSection.depends_on` was populated by the designer and the
+    networkninja importer but evaluated by nothing on the server."""
+
+    async def test_unfired_section_hides_its_fields(self) -> None:
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            _field("inside", required=True),
+        )
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.visible["inside"] is False
+
+    async def test_unfired_section_also_clears_required(self) -> None:
+        """The pairing is the point: FormValidator reads `required`."""
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            _field("inside", required=True),
+        )
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.required["inside"] is False
+
+    async def test_fired_section_leaves_its_fields_alone(self) -> None:
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            _field("inside", required=True),
+        )
+
+        res = await RuleEvaluator().resolve(form, {"driver": "yes"})
+
+        assert res.visible["inside"] is True
+        assert res.required["inside"] is True
+
+    async def test_section_gate_does_not_unhide_what_a_field_rule_hid(self) -> None:
+        """Section gating only ever hides."""
+        inside = _field("inside", required=True, depends_on=DependencyRule(
+            conditions=[_cond("driver", value="never")], logic="and", effect="show",
+        ))
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="show"),
+            inside,
+        )
+
+        res = await RuleEvaluator().resolve(form, {"driver": "yes"})
+
+        assert res.visible["inside"] is False
+
+    async def test_hide_effect_on_a_section_is_honoured(self) -> None:
+        form = _gated_form(
+            DependencyRule(conditions=[_cond("driver")], logic="and", effect="hide"),
+            _field("inside", required=True),
+        )
+
+        assert (await RuleEvaluator().resolve(form, {"driver": "yes"})).visible["inside"] is False
+        assert (await RuleEvaluator().resolve(form, {})).visible["inside"] is True
+
+    async def test_section_without_a_rule_is_untouched(self) -> None:
+        form = _form(_field("plain", required=True))
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.visible["plain"] is True
+        assert res.required["plain"] is True
+
+
+# ---------------------------------------------------------------------------
+# Store context: CONTAINS + logic groups
+# ---------------------------------------------------------------------------
+
+
+def _ctx_cond(key: str, value: str, op: str = "contains") -> FieldCondition:
+    return FieldCondition(source="visit_context", key=key, operator=op, value=value)
+
+
+class TestContainsOperator:
+    """`IN` asks whether the answer is one of several values; `CONTAINS` asks
+    whether a multi-valued source holds one — the shape a store's group
+    membership takes."""
+
+    async def test_list_source_holding_the_value(self) -> None:
+        form = _form(_field("f", depends_on=DependencyRule(
+            conditions=[_ctx_cond("store_groups", "Ring of Fire")], effect="show")))
+
+        res = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": ["Best Buy", "Ring of Fire"]})
+
+        assert res.visible["f"] is True
+
+    async def test_list_source_without_the_value(self) -> None:
+        form = _form(_field("f", depends_on=DependencyRule(
+            conditions=[_ctx_cond("store_groups", "Ring of Fire")], effect="show")))
+
+        res = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": ["Best Buy"]})
+
+        assert res.visible["f"] is False
+
+    async def test_scalar_source_counts_as_a_one_element_collection(self) -> None:
+        """A store in exactly one group still matches."""
+        form = _form(_field("f", depends_on=DependencyRule(
+            conditions=[_ctx_cond("store_groups", "Ring of Fire")], effect="show")))
+
+        res = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": "Ring of Fire"})
+
+        assert res.visible["f"] is True
+
+    async def test_a_string_source_is_not_walked_character_by_character(self) -> None:
+        """The trap in using `in` directly: "Ring of Fire" contains "Fire"."""
+        form = _form(_field("f", depends_on=DependencyRule(
+            conditions=[_ctx_cond("store_groups", "Fire")], effect="show")))
+
+        res = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": "Ring of Fire"})
+
+        assert res.visible["f"] is False
+
+    async def test_missing_context_does_not_reveal(self) -> None:
+        form = _form(_field("f", depends_on=DependencyRule(
+            conditions=[_ctx_cond("store_groups", "Ring of Fire")], effect="show")))
+
+        res = await RuleEvaluator().resolve(form, {})
+
+        assert res.visible["f"] is False
+
+    async def test_not_contains_is_the_negation(self) -> None:
+        form = _form(_field("f", depends_on=DependencyRule(
+            conditions=[_ctx_cond("store_groups", "Ring of Fire", "not_contains")],
+            effect="show")))
+
+        yes = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": ["Best Buy"]})
+        no = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": ["Ring of Fire"]})
+
+        assert yes.visible["f"] is True
+        assert no.visible["f"] is False
+
+
+class TestLogicGroups:
+    """Groups are alternatives: AND inside, OR between. A flat list under a
+    single gate cannot express "in one of these stores AND one of these visit
+    types" — `and` demands all of them, `or` settles for one."""
+
+    def _gated(self) -> FormSchema:
+        rule = DependencyRule(conditions=[], effect="show", groups=[
+            LogicGroup(conditions=[
+                _ctx_cond("store_groups", "Ring of Fire"),
+                _cond("visit_type", "in", ["Brand Ambassador", "Assisted Sales"]),
+            ]),
+        ])
+        return _form(_field("visit_type"), _field("photo", depends_on=rule))
+
+    async def test_both_halves_satisfied(self) -> None:
+        res = await RuleEvaluator().resolve(
+            self._gated(), {"visit_type": "Brand Ambassador"},
+            visit_context={"store_groups": ["Ring of Fire"]})
+
+        assert res.visible["photo"] is True
+
+    async def test_right_store_wrong_visit_type(self) -> None:
+        res = await RuleEvaluator().resolve(
+            self._gated(), {"visit_type": "Time Off"},
+            visit_context={"store_groups": ["Ring of Fire"]})
+
+        assert res.visible["photo"] is False
+
+    async def test_right_visit_type_wrong_store(self) -> None:
+        res = await RuleEvaluator().resolve(
+            self._gated(), {"visit_type": "Brand Ambassador"},
+            visit_context={"store_groups": ["Best Buy"]})
+
+        assert res.visible["photo"] is False
+
+    async def test_a_second_group_is_an_alternative(self) -> None:
+        rule = DependencyRule(conditions=[], effect="show", groups=[
+            LogicGroup(conditions=[_ctx_cond("store_groups", "Ring of Fire")]),
+            LogicGroup(conditions=[_ctx_cond("store_groups", "Epson Test Store")]),
+        ])
+        form = _form(_field("f", depends_on=rule))
+
+        a = await RuleEvaluator().resolve(form, {}, visit_context={"store_groups": ["Ring of Fire"]})
+        b = await RuleEvaluator().resolve(form, {}, visit_context={"store_groups": ["Epson Test Store"]})
+        c = await RuleEvaluator().resolve(form, {}, visit_context={"store_groups": ["Costco"]})
+
+        assert a.visible["f"] is True
+        assert b.visible["f"] is True
+        assert c.visible["f"] is False
+
+    async def test_groups_replace_the_flat_list(self) -> None:
+        """A rule carrying groups must ignore `conditions`/`logic` entirely."""
+        rule = DependencyRule(
+            conditions=[_cond("driver", value="never")], logic="and", effect="show",
+            groups=[LogicGroup(conditions=[_ctx_cond("store_groups", "Ring of Fire")])])
+        form = _form(_field("driver"), _field("f", depends_on=rule))
+
+        res = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": ["Ring of Fire"]})
+
+        assert res.visible["f"] is True
+
+    async def test_an_empty_group_list_falls_back_to_the_flat_pair(self) -> None:
+        rule = DependencyRule(conditions=[_cond("driver")], logic="and",
+                              effect="show", groups=[])
+        form = _form(_field("driver"), _field("f", depends_on=rule))
+
+        assert (await RuleEvaluator().resolve(form, {"driver": "yes"})).visible["f"] is True
+        assert (await RuleEvaluator().resolve(form, {})).visible["f"] is False
+
+    async def test_section_rules_honour_groups_too(self) -> None:
+        rule = DependencyRule(conditions=[], effect="show", groups=[
+            LogicGroup(conditions=[_ctx_cond("store_groups", "Ring of Fire")])])
+        form = resolve_rule_references(FormSchema(
+            form_id="t", title="T",
+            sections=[FormSection(section_id="gated", fields=[_field("inside")],
+                                  depends_on=rule)]))
+
+        shown = await RuleEvaluator().resolve(
+            form, {}, visit_context={"store_groups": ["Ring of Fire"]})
+        hidden = await RuleEvaluator().resolve(form, {})
+
+        assert shown.visible["inside"] is True
+        assert hidden.visible["inside"] is False

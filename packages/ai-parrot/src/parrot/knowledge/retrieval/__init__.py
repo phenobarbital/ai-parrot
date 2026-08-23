@@ -1,0 +1,151 @@
+"""GraphIndex Retrieval Layer (L2) — FEAT-435.
+
+Turns a natural-language question into a bounded, attributable
+``ContextBundle`` over the existing structural code graph (L0), with an
+optional LLM-synthesized wiki cache (L1) in between.
+
+This package consumes ``parrot.knowledge.graphindex`` (L0) **read-only**
+(spec §1.2) and does not modify or refactor the shipped
+``GraphExpandedRetriever`` / ``GraphIndexOrigin`` (FEAT-217 / FEAT-379).
+
+See ``sdd/specs/graphindex-retriever.spec.md`` (FEAT-435) for the full
+design and invariants.
+
+The public surface here grows task by task; re-export new symbols as they
+land so downstream code can do ``from parrot.knowledge.retrieval import X``.
+"""
+
+from parrot.knowledge.retrieval.classifier import (
+    EscalationStep,
+    GraphStats,
+    QueryClass,
+    QueryClassifier,
+    RetrievalRoutingDecision,
+)
+from parrot.knowledge.retrieval.digest import DigestScope, derive_digest
+from parrot.knowledge.retrieval.escalation import (
+    EscalationMode,
+    SufficiencyCheck,
+    SufficiencyTrigger,
+    check_speculation_admission,
+    run_escalation_ladder,
+)
+from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
+from parrot.knowledge.retrieval.features import QueryFeatures, extract_features
+from parrot.knowledge.retrieval.lexicon import (
+    DEFAULT_LEXICON,
+    CompiledMarkerLexicon,
+    Interrogative,
+    MarkerLexicon,
+)
+from parrot.knowledge.retrieval.models import (
+    RESERVED_ORIGINS,
+    ContextBundle,
+    ContextUnit,
+    EdgeRef,
+    Evidence,
+    EvidenceOrigin,
+    NodeRef,
+    RetrievalBudget,
+    RetrievalRequest,
+)
+from parrot.knowledge.retrieval.pin import (
+    CoherenceReport,
+    WorkspacePin,
+    check_pin_coherence,
+    read_at_rev,
+    resolve_workspace,
+)
+from parrot.knowledge.retrieval.policies import (
+    DirectSymbolPolicy,
+    RetrievalPolicy,
+    RetrievalPolicyProtocol,
+    Seed,
+    Subgraph,
+    VectorSeedPolicy,
+)
+from parrot.knowledge.retrieval.sections import (
+    GOTCHA_TAGS,
+    RATIONALE_TAGS,
+    SectionKind,
+    SectionSelector,
+    selector_for,
+)
+from parrot.knowledge.retrieval.single_flight import SingleFlight
+from parrot.knowledge.retrieval.symbols import DerivedSymbolIndex
+from parrot.knowledge.retrieval.wiki_cache import (
+    GeneratorInfo,
+    ServingDecision,
+    SourceDigest,
+    WikiPage,
+    WikiSection,
+    compute_coherence_group,
+    compute_mixed_freshness,
+    compute_page_id,
+    invalidate_ancestors,
+    invalidate_page,
+    invalidate_section,
+    resolve_serving_decision,
+)
+
+__all__ = [
+    "DEFAULT_LEXICON",
+    "GOTCHA_TAGS",
+    "RATIONALE_TAGS",
+    "RESERVED_ORIGINS",
+    "CoherenceReport",
+    "CompiledMarkerLexicon",
+    "ContextBundle",
+    "ContextUnit",
+    "DerivedSymbolIndex",
+    "DigestScope",
+    "DirectSymbolPolicy",
+    "EdgeRef",
+    "EscalationMode",
+    "EscalationStep",
+    "Evidence",
+    "EvidenceOrigin",
+    "GeneratorInfo",
+    "GraphStats",
+    "IndexPinMismatchError",
+    "Interrogative",
+    "MarkerLexicon",
+    "NodeRef",
+    "QueryClass",
+    "QueryClassifier",
+    "QueryFeatures",
+    "RetrievalBudget",
+    "RetrievalPolicy",
+    "RetrievalPolicyProtocol",
+    "RetrievalRequest",
+    "RetrievalRoutingDecision",
+    "SectionKind",
+    "SectionSelector",
+    "Seed",
+    "ServingDecision",
+    "SingleFlight",
+    "SourceDigest",
+    "StalePinError",
+    "Subgraph",
+    "SufficiencyCheck",
+    "SufficiencyTrigger",
+    "VectorSeedPolicy",
+    "WikiPage",
+    "WikiSection",
+    "WorkspacePin",
+    "check_pin_coherence",
+    "check_speculation_admission",
+    "compute_coherence_group",
+    "compute_mixed_freshness",
+    "compute_page_id",
+    "derive_digest",
+    "extract_features",
+    "invalidate_ancestors",
+    "invalidate_page",
+    "invalidate_section",
+    "read_at_rev",
+    "resolve_serving_decision",
+    "resolve_workspace",
+    "run_escalation_ladder",
+    "selector_for",
+]

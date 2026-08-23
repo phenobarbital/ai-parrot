@@ -15,19 +15,20 @@ __all__ = (
     "BasicAgent",
     "BasicBot",
     "Chatbot",
+    "InfoAgent",
     "VoiceBot",
     "WebAgent",
     "WebSearchAgent",
 )
 
 
-# FEAT-416 (TASK-2151) exported VoiceBot eagerly, which pulled
-# `parrot.bots.voice` -> `parrot.clients.live` -> `from google import genai`
-# into EVERY importer of `parrot.bots` — making the optional `google-genai`
-# dependency a hard requirement of the agent REPL, agentd and every bot.
-# Kept in `__all__` (the public name is unchanged) but resolved lazily via
-# PEP 562 so only actual voice users pay for it.
-_LAZY_ATTRS = {"VoiceBot": ".voice"}
+# Lazy imports: heavy optional classes resolved on first access only.
+# - VoiceBot pulls parrot.clients.live -> google.genai (optional google-genai)
+# - InfoAgent pulls the heavy a2ui/infographic chain via its mixins
+_LAZY_ATTRS = {
+    "VoiceBot": ".voice",
+    "InfoAgent": ".info",
+}
 
 
 def __getattr__(name: str):
@@ -47,7 +48,9 @@ def __getattr__(name: str):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     from importlib import import_module
 
-    return getattr(import_module(module_name, __name__), name)
+    attr = getattr(import_module(module_name, __name__), name)
+    globals()[name] = attr  # cache to avoid repeated import
+    return attr
 
 
 def __dir__() -> list[str]:

@@ -27,27 +27,53 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import click
+from pydantic import ValidationError
 
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
+    qualify_id,
+    split_namespaced_id,
     truncate_to_tokens,
+)
+from parrot.knowledge.wiki.documents import (
+    DocumentAcquirer,
+    DocumentAcquisitionError,
+    resolve_sources,
+)
+from parrot.knowledge.wiki.federation import (
+    FederatedWikiStore,
+    NamespaceSkip,
+    open_namespace_store,
+    resolve_namespaces,
 )
 from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
+    WikiNamespaceConfig,
     WikiProjectConfig,
+    config_path,
     find_project_root,
+    global_registry_path,
+    load_global_registry,
     load_project_config,
+    merge_namespaces,
+    parrot_home,
+    resolve_entry_base,
+    save_global_registry,
     save_project_config,
+    validate_namespace_name,
     wiki_write_lock,
 )
 from parrot.knowledge.wiki.repo_scan import (
@@ -69,6 +95,9 @@ logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.INFO)
 logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.INFO)
 
+#: How long a `ns add`/`ns remove` waits for the global registry lock.
+REGISTRY_LOCK_WAIT_SECONDS = 5.0
+
 #: How long `upsert` waits for a contended store lock before skipping.
 #: Long enough to outlast a peer upsert (sub-second), short enough that
 #: a commit hook never stalls behind a multi-minute build.
@@ -80,9 +109,223 @@ UPSERT_LOCK_WAIT_SECONDS = 3.0
 # --------------------------------------------------------------------------
 
 #: Shared `--path` option — every command resolves the repo root the same way.
-path_option = click.option(
-    "--path", "path_", default=None, help="Repo root (default: auto-detect)."
+path_option = click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")
+
+
+#: Shared `--ns` option for the read commands (FEAT-450).
+ns_option = click.option(
+    "--ns",
+    "ns_opt",
+    default=None,
+    help=(
+        "Namespace to read: a name (or comma-separated names), 'all' "
+        "(default when namespaces are configured), or 'local'."
+    ),
 )
+
+
+def _declared_namespaces(
+    config: WikiProjectConfig,
+) -> dict[str, tuple[WikiNamespaceConfig, str]]:
+    """Merge the repo and global namespace registries (repo wins).
+
+    Args:
+        config: The repo's project config.
+
+    Returns:
+        ``name -> (config, origin)`` for every declared namespace.
+    """
+    try:
+        registry = load_global_registry()
+    except WikiConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return merge_namespaces(config.namespaces, registry.namespaces)
+
+
+def _selected_namespaces(ns_opt: str | None) -> set[str] | None:
+    """Namespace names a ``--ns`` selector asks to resolve.
+
+    Args:
+        ns_opt: The raw ``--ns`` value.
+
+    Returns:
+        ``None`` for a broadcast (every namespace), otherwise the named
+        subset — empty for ``--ns local``, which needs none opened.
+    """
+    if ns_opt is None or ns_opt == "all":
+        return None
+    return {
+        part.strip()
+        for part in ns_opt.split(",")
+        if part.strip() and part.strip() != "local"
+    }
+
+
+def _unknown_namespace(ns_opt: str, known: list[str]) -> click.ClickException:
+    """Build the error raised for a ``--ns`` name that is not declared."""
+    listing = ", ".join(sorted(known)) or "(none declared)"
+    return click.ClickException(
+        f"Unknown namespace {ns_opt!r}. Known: {listing} "
+        "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
+    )
+
+
+def _federate(
+    root: Path,
+    config: WikiProjectConfig,
+    local: BaseWikiStore,
+    ns_opt: str | None,
+) -> BaseWikiStore:
+    """Wrap the local plane in its federated namespaces, honouring ``--ns``.
+
+    Returns the local store untouched when no namespace is declared (or
+    when ``--ns local`` asked for exactly that), so a project without
+    namespaces behaves as it always has.
+
+    Args:
+        root: Repository root.
+        config: The repo's project config.
+        local: The already-opened local plane.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        The store the command should read from.
+
+    Raises:
+        click.ClickException: The selector names an undeclared namespace,
+            or one that could not be opened.
+    """
+    declared = _declared_namespaces(config)
+    only = _selected_namespaces(ns_opt)
+    if only is not None:
+        unknown = sorted(only - set(declared))
+        if unknown:
+            raise _unknown_namespace(", ".join(unknown), list(declared))
+        if not only:
+            # `--ns local` — nothing foreign to open.
+            return local
+    if not declared:
+        return local
+    handles, skipped = _run(resolve_namespaces(root, config, only=only))
+    federated = FederatedWikiStore(local, config.wiki_name, handles, skipped)
+    try:
+        return federated.scoped(ns_opt)
+    except KeyError as exc:
+        name = str(exc.args[0])
+        skip = next((s for s in skipped if s.name == name), None)
+        if skip is not None:
+            hint = f" Fix: {skip.hint}" if skip.hint else ""
+            raise click.ClickException(
+                f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}"
+            ) from exc
+        raise _unknown_namespace(name, list(declared)) from exc
+
+
+def _qualify_for_ns(page_id: str, ns_opt: str | None) -> str:
+    """Qualify a bare page id with the single namespace ``--ns`` selected.
+
+    Args:
+        page_id: The id as typed, qualified or not.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        ``<ns>::<page_id>`` when ``ns_opt`` names exactly one namespace
+        and the id is not already qualified; the id unchanged otherwise.
+    """
+    if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
+        return page_id
+    return qualify_id(ns_opt, page_id)
+
+
+def _write_id_for_ns(page_id: str, ns_opt: str | None) -> str:
+    """Strip the namespace prefix a write is already scoped to.
+
+    A write path holds the target namespace's own store, which knows
+    nothing about the ``ns::`` prefix. An id qualified with a DIFFERENT
+    namespace is a mistake worth reporting rather than silently writing
+    to the wrong plane.
+
+    Args:
+        page_id: Page id as typed.
+        ns_opt: The ``--ns`` selector of this write.
+
+    Returns:
+        The id as the target store knows it.
+
+    Raises:
+        click.ClickException: The id names another namespace.
+    """
+    namespace, local_id = split_namespaced_id(page_id)
+    if namespace is None:
+        return page_id
+    target = None if ns_opt in (None, "local") else ns_opt
+    if namespace == target:
+        return local_id
+    raise click.ClickException(
+        f"Page id {page_id!r} belongs to namespace {namespace!r} — "
+        f"pass `--ns {namespace}` to write there."
+    )
+
+
+def _scoped_namespace(
+    root: Path, config: WikiProjectConfig, ns_opt: str | None
+) -> tuple[str, WikiNamespaceConfig, Path | None] | None:
+    """The single namespace a ``--ns`` selector narrowed a read to.
+
+    Args:
+        root: Repository root.
+        config: The repo's project config.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        ``(name, config, storage_dir)`` when the selector names exactly
+        one namespace, else ``None`` (broadcast, ``local``, or a subset).
+    """
+    if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
+        return None
+    entry = _declared_namespaces(config).get(ns_opt)
+    if entry is None:
+        return None
+    cfg, origin = entry
+    storage_dir: Path | None = None
+    if cfg.kind != "database":
+        base = resolve_entry_base(origin, root)
+        target = Path(cfg.target).expanduser()
+        if not target.is_absolute():
+            target = base / target
+        if cfg.kind in ("path", "vault"):
+            try:
+                storage_dir = load_project_config(target).storage_path(target)
+            except WikiConfigError:
+                storage_dir = None
+        else:
+            storage_dir = target
+    return ns_opt, cfg, storage_dir
+
+
+def _collect_skips(store: BaseWikiStore) -> list[NamespaceSkip]:
+    """Namespaces this store could not serve (resolve-time and per-call)."""
+    seen: dict[str, NamespaceSkip] = {}
+    for skip in [
+        *(getattr(store, "skipped", None) or []),
+        *(getattr(store, "last_skipped", None) or []),
+    ]:
+        seen.setdefault(skip.name, skip)
+    return list(seen.values())
+
+
+def _echo_skips(store: BaseWikiStore, *, err: bool = False) -> None:
+    """Print one trailing note per skipped namespace (never an error).
+
+    Args:
+        store: The store the command read from.
+        err: Write to stderr (used when stdout carries JSON).
+    """
+    for skip in _collect_skips(store):
+        hint = f" — {skip.hint}" if skip.hint else ""
+        click.echo(
+            f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err
+        )
 
 def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
@@ -108,10 +351,7 @@ def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
 def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
     """Open the store, aborting when the wiki was never built."""
     if not config.is_built(root):
-        raise click.ClickException(
-            f"Wiki not built yet for {root}. "
-            "Run `wikitoolkit build` first."
-        )
+        raise click.ClickException(f"Wiki not built yet for {root}. " "Run `wikitoolkit build` first.")
     return _open_store(root, config)
 
 
@@ -130,9 +370,7 @@ def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
             text_analyzer=config.arango_text_analyzer,
         )
     storage.mkdir(parents=True, exist_ok=True)
-    return create_wiki_store(
-        storage, wiki_name=config.wiki_name, backend=config.backend
-    )
+    return create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
 
 
 def _open_sources(
@@ -150,14 +388,10 @@ def _open_sources(
     """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
-        return SourceCollectionManager(
-            storage / "sources", db_path=storage / "wiki.db"
-        )
+        return SourceCollectionManager(storage / "sources", db_path=storage / "wiki.db")
     if config.backend == "arangodb":
         arango_db = getattr(store, "_db", None)
-        return SourceCollectionManager(
-            storage / "sources", backend="arangodb", arango_db=arango_db
-        )
+        return SourceCollectionManager(storage / "sources", backend="arangodb", arango_db=arango_db)
     return SourceCollectionManager(storage / "sources", backend="json")
 
 
@@ -200,6 +434,7 @@ def _resolve_read_store(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None = None,
 ) -> BaseWikiStore:
     """Open a store for a read command (``query`` / ``page`` / ``related``).
 
@@ -219,6 +454,11 @@ def _resolve_read_store(
     config (ArangoDB is server-hosted — there is no local ``--store``
     directory to point at) and connects eagerly here, so an unreachable
     server fails with a clear message before any query is attempted.
+
+    Whichever branch resolves the *local* plane, its declared namespaces
+    are then federated on top (FEAT-450) and narrowed by ``ns_opt``.
+    ``--store`` is the one exception: it targets one specific pre-built
+    store, so it never federates.
     """
     if backend_opt == "arangodb":
         root, config = _resolve_project(path_)
@@ -227,10 +467,9 @@ def _resolve_read_store(
             _run(store.initialize())
         except Exception as exc:  # surfaced as a clear CLI error
             raise click.ClickException(
-                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
-                f"{exc}"
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
             ) from exc
-        return store
+        return _federate(root, config, store, ns_opt)
     store_override = store_opt
     if not store_override and not path_:
         # Only consult the env when neither an explicit store nor an
@@ -243,12 +482,16 @@ def _resolve_read_store(
             raise click.ClickException(f"No wiki store directory: {storage_dir}")
         if backend == "sqlite" and not (storage_dir / "wiki.db").exists():
             raise click.ClickException(
-                f"No wiki database at {storage_dir / 'wiki.db'}. Build it "
-                "first, or point --store at the right root."
+                f"No wiki database at {storage_dir / 'wiki.db'}. Build it " "first, or point --store at the right root."
+            )
+        if ns_opt not in (None, "local"):
+            raise click.ClickException(
+                "--store targets one pre-built store and never federates; "
+                "drop --store to read namespaces."
             )
         return create_wiki_store(storage_dir, backend=backend)
     root, config = _resolve_project(path_)
-    return _require_built(root, config)
+    return _federate(root, config, _require_built(root, config), ns_opt)
 
 
 #: Shared `--store`/`--backend` options for the read commands.
@@ -271,9 +514,7 @@ def _store_options(func: Any) -> Any:
     return func
 
 
-def _render_results_table(
-    rows: list[dict[str, Any]], question: str, show_body: bool
-) -> None:
+def _render_results_table(rows: list[dict[str, Any]], question: str, show_body: bool) -> None:
     """Pretty-print ranked results as a Rich table (+ optional body panel).
 
     Human-facing counterpart to the machine-first context pack — ported
@@ -361,9 +602,7 @@ async def _ingest_files(
         if source_id is None:
             entry = await asyncio.to_thread(sources.add_source, abs_path)
             source_id = entry.source_id
-        elif not force and not await asyncio.to_thread(
-            sources.is_stale, source_id
-        ):
+        elif not force and not await asyncio.to_thread(sources.is_stale, source_id):
             unchanged += 1
             continue
         fs.record.source_id = source_id
@@ -372,12 +611,8 @@ async def _ingest_files(
             bulk_records.append(fs.record)
             bulk_edges.extend(slice_edges)
         else:
-            await store.replace_source_slice(
-                source_id, [fs.record], slice_edges
-            )
-        await asyncio.to_thread(
-            sources.mark_ingested, source_id, [fs.record.concept_id]
-        )
+            await store.replace_source_slice(source_id, [fs.record], slice_edges)
+        await asyncio.to_thread(sources.mark_ingested, source_id, [fs.record.concept_id])
         written += 1
 
     if bulk_records:
@@ -392,34 +627,112 @@ async def _prune_removed(
     sources: SourceCollectionManager,
     root: Path,
     scan: Any,
+    *,
+    scope: str = "plane",
 ) -> int:
-    """Drop pages/sources no longer in scan scope (full builds only).
+    """Drop pages/sources no longer in scan scope.
 
     Covers deleted files as well as files that fell out of scope
     (newly ignored directories, changed suffix filters).
+
+    A plane is not always one corpus (FEAT-450, D4.4): a vault can be
+    ingested into the repo's plane. Two invariants keep the corpora from
+    deleting each other, and they hold in BOTH scopes:
+
+    * a source outside ``root`` is not this scan's to remove;
+    * a page whose source is still registered is not stale, whatever the
+      scan produced.
+
+    On top of that, ``scope`` decides how aggressive the leftover sweep
+    is:
+
+    - ``"plane"`` (``build``) — sweep every sourceless ``file:``/``dir:``
+      page the scan did not produce. The plane is this corpus plus
+      whatever other corpora registered sources, and only the former is
+      swept.
+    - ``"root"`` (``VaultIngestTool``) — sweep only the ``dir:`` pages
+      this run's removals could have emptied.
+
+    Args:
+        store: The plane being pruned.
+        sources: Source manifest for that plane.
+        root: Directory the scan covered.
+        scan: The fresh scan result.
+        scope: ``"plane"`` (default) or ``"root"``.
+
+    Returns:
+        Number of sources and pages removed.
     """
     expected_files = {fs.record.concept_id for fs in scan.files}
     expected_dirs = {r.concept_id for r in scan.dir_records}
     expected_uris = {
         str((root / fs.rel_path).resolve()) for fs in scan.files
     }
+    root_prefix = str(root.resolve()) + os.sep
     removed = 0
 
+    #: `dir:` ids that this run's removals could have emptied.
+    emptied_dirs: set[str] = set()
+    live_source_ids: set[str] = set()
+
     for entry in await asyncio.to_thread(sources.list_sources):
-        if entry.source_uri not in expected_uris:
-            await store.replace_source_slice(entry.source_id, [], [])
-            await asyncio.to_thread(sources.remove_source, entry.source_id)
-            removed += 1
+        if entry.source_uri in expected_uris:
+            live_source_ids.add(entry.source_id)
+            continue
+        if not entry.source_uri.startswith(root_prefix):
+            # Another corpus sharing this plane — not ours to prune.
+            live_source_ids.add(entry.source_id)
+            continue
+        for parent in PurePosixPath(
+            Path(entry.source_uri).relative_to(root.resolve()).as_posix()
+        ).parents:
+            emptied_dirs.add(f"dir:{parent if str(parent) != '.' else '.'}")
+        await store.replace_source_slice(entry.source_id, [], [])
+        await asyncio.to_thread(sources.remove_source, entry.source_id)
+        removed += 1
 
     stubs = await store.list_pages(limit=1_000_000)
-    for stub in stubs:
-        cid = str(stub.get("concept_id", ""))
-        if cid.startswith("file:") and cid not in expected_files:
-            if await store.delete_page(cid):
-                removed += 1
-        elif cid.startswith("dir:") and cid not in expected_dirs:
-            if await store.delete_page(cid):
-                removed += 1
+    surviving = {str(stub.get("concept_id", "")) for stub in stubs}
+
+    if scope == "plane":
+        # Sourceless leftovers of THIS corpus: a page still backed by a
+        # registered source belongs to someone (possibly another corpus)
+        # and is never swept here.
+        for stub in stubs:
+            cid = str(stub.get("concept_id", ""))
+            if stub.get("source_id") in live_source_ids:
+                continue
+            if cid.startswith("file:") and cid not in expected_files:
+                if await store.delete_page(cid):
+                    surviving.discard(cid)
+                    removed += 1
+        candidates = {
+            cid
+            for cid in surviving
+            if cid.startswith("dir:") and cid not in expected_dirs
+        }
+    else:
+        candidates = {
+            cid
+            for cid in surviving
+            if cid in emptied_dirs and cid not in expected_dirs
+        }
+
+    # Deepest first, against a survivor set that shrinks as we go, so a
+    # parent emptied by its own children going away is caught in ONE pass.
+    for cid in sorted(candidates, key=lambda c: c.count("/"), reverse=True):
+        prefix = cid[len("dir:") :]
+        if prefix in ("", "."):
+            continue
+        covered = f"{prefix}/"
+        if any(
+            other != cid and other.split(":", 1)[-1].startswith(covered)
+            for other in surviving
+        ):
+            continue
+        if await store.delete_page(cid):
+            surviving.discard(cid)
+            removed += 1
     return removed
 
 
@@ -484,10 +797,7 @@ async def _load_graphindex_nodes_edges(
     pages = await store.dump_pages()
     edges = await store.dump_edges()
 
-    kind_pages = [
-        p for p in pages
-        if p.get("category", "") in graph_kinds
-    ]
+    kind_pages = [p for p in pages if p.get("category", "") in graph_kinds]
     if not kind_pages:
         return [], []
 
@@ -496,25 +806,29 @@ async def _load_graphindex_nodes_edges(
     nodes: list[UniversalNode] = []
     for p in kind_pages:
         nk_name = _CATEGORY_TO_NODE_KIND.get(p.get("category", ""), "WIKI_PAGE")
-        nodes.append(UniversalNode(
-            node_id=p["concept_id"],
-            kind=NodeKind[nk_name],
-            title=p.get("title", ""),
-            source_uri=p.get("source_id", "") or p.get("concept_id", ""),
-            summary=p.get("summary"),
-            domain_tags={"category": p.get("category", "")},
-        ))
+        nodes.append(
+            UniversalNode(
+                node_id=p["concept_id"],
+                kind=NodeKind[nk_name],
+                title=p.get("title", ""),
+                source_uri=p.get("source_id", "") or p.get("concept_id", ""),
+                summary=p.get("summary"),
+                domain_tags={"category": p.get("category", "")},
+            )
+        )
 
     graph_edges: list[UniversalEdge] = []
     for e in edges:
         src, dst = e.get("src", ""), e.get("dst", "")
         if src in node_ids and dst in node_ids:
             ek_name = _REL_TO_EDGE_KIND.get(e.get("rel", ""), "REFERENCES")
-            graph_edges.append(UniversalEdge(
-                source_id=src,
-                target_id=dst,
-                kind=EdgeKind[ek_name],
-            ))
+            graph_edges.append(
+                UniversalEdge(
+                    source_id=src,
+                    target_id=dst,
+                    kind=EdgeKind[ek_name],
+                )
+            )
 
     return nodes, graph_edges
 
@@ -546,13 +860,17 @@ async def _export_graph_html(
     inter_community = None
     try:
         from parrot.knowledge.graphindex.communities import detect_communities
+
         communities = detect_communities(
-            graph=assembler.graph, nodes=nodes, write_back_to_nodes=True,
+            graph=assembler.graph,
+            nodes=nodes,
+            write_back_to_nodes=True,
         )
     except Exception as exc:  # noqa: BLE001
         _cli_logger.warning("community detection skipped: %s", exc)
     try:
         from parrot.knowledge.graphindex.analytics import compute_analytics
+
         analytics = compute_analytics(assembler.graph, nodes, graph_edges)
     except Exception as exc:  # noqa: BLE001
         _cli_logger.warning("analytics skipped: %s", exc)
@@ -565,8 +883,10 @@ async def _export_graph_html(
             from parrot.knowledge.graphindex.inter_community import (
                 compute_inter_community_graph,
             )
+
             inter_community = compute_inter_community_graph(
-                assembler.graph, communities,
+                assembler.graph,
+                communities,
             )
         except Exception as exc:  # noqa: BLE001
             _cli_logger.warning("inter-community relations skipped: %s", exc)
@@ -609,9 +929,7 @@ def _write_build_stats(
 
     stats: dict[str, Any] = {
         "wiki_name": wiki_name,
-        "generated_at": datetime.now(tz=UTC).strftime(
-            "%Y-%m-%dT%H:%M:%S+00:00"
-        ),
+        "generated_at": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
         "pages": store_stats.get("pages", 0),
         "edges": store_stats.get("edges", 0),
         "categories": store_stats.get("categories", {}),
@@ -620,7 +938,8 @@ def _write_build_stats(
         "languages": {name: s.mode for name, s in all_scanners().items()},
     }
     (output_dir / "wiki_stats.json").write_text(
-        json.dumps(stats, indent=2, ensure_ascii=False), encoding="utf-8",
+        json.dumps(stats, indent=2, ensure_ascii=False),
+        encoding="utf-8",
     )
 
     lines = [
@@ -642,13 +961,8 @@ def _write_build_stats(
             "— the human-browsable projection of every page. |"
         )
     if graph_stats and graph_stats.get("exported"):
-        lines.append(
-            "| `graph.html` | Interactive, offline knowledge-graph map "
-            "(open in a browser). |"
-        )
-        lines.append(
-            "| `graph.json` | Serialized graph (nodes, edges, communities). |"
-        )
+        lines.append("| `graph.html` | Interactive, offline knowledge-graph map " "(open in a browser). |")
+        lines.append("| `graph.json` | Serialized graph (nodes, edges, communities). |")
     lines.append("| `wiki_stats.json` | Full build report. |")
     lines += [
         "",
@@ -668,8 +982,7 @@ def _write_build_stats(
             f"- [`graph.html`](./graph.html) — {graph_stats['nodes']} nodes, "
             f"{graph_stats['edges']} edges"
             + (
-                f", {graph_stats.get('communities', 0)} communities "
-                f"(modularity {graph_stats.get('modularity')})"
+                f", {graph_stats.get('communities', 0)} communities " f"(modularity {graph_stats.get('modularity')})"
                 if graph_stats.get("communities")
                 else ""
             ),
@@ -679,7 +992,7 @@ def _write_build_stats(
         "## Querying",
         "",
         "```bash",
-        "wikitoolkit query \"your question\" --path .",
+        'wikitoolkit query "your question" --path .',
         "```",
         "",
         f"_Generated {stats['generated_at']}._",
@@ -695,7 +1008,8 @@ def _write_build_stats(
 
 @click.group(name="wiki")
 @click.option(
-    "-v", "--verbose",
+    "-v",
+    "--verbose",
     is_flag=True,
     default=False,
     help="Lower wiki loggers to DEBUG (shows per-record store/source messages).",
@@ -845,7 +1159,9 @@ def build(
             okf_report: dict[str, Any] | None = None
             if not no_export:
                 okf_report = await _export_okf(
-                    store, output_dir, config.wiki_name,
+                    store,
+                    output_dir,
+                    config.wiki_name,
                 )
                 # Exclude the export output from future scans.
                 try:
@@ -858,11 +1174,12 @@ def build(
 
             graph_stats: dict[str, Any] | None = None
             if not no_graph:
-                kinds = frozenset(
-                    k.strip() for k in graph_kinds.split(",") if k.strip()
-                )
+                kinds = frozenset(k.strip() for k in graph_kinds.split(",") if k.strip())
                 graph_stats = await _export_graph_html(
-                    store, output_dir, config.wiki_name, kinds,
+                    store,
+                    output_dir,
+                    config.wiki_name,
+                    kinds,
                 )
             counts["graph"] = graph_stats
 
@@ -873,8 +1190,7 @@ def build(
         except Exception as exc:  # surfaced as a clear CLI error
             if config.backend == "arangodb":
                 raise click.ClickException(
-                    f"Could not connect to ArangoDB for wiki "
-                    f"{config.wiki_name!r}: {exc}"
+                    f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
         save_project_config(root, config)
@@ -883,8 +1199,11 @@ def build(
 
         # Write wiki_stats.json + README.md.
         _write_build_stats(
-            output_dir, config.wiki_name, stats,
-            counts.get("okf"), counts.get("graph"),
+            output_dir,
+            config.wiki_name,
+            stats,
+            counts.get("okf"),
+            counts.get("graph"),
         )
 
         click.echo(
@@ -906,10 +1225,7 @@ def build(
             click.echo(f"OKF bundle: {okf['files_written']} files exported.")
         graph = counts.get("graph")
         if graph and graph.get("exported") and not quiet:
-            click.echo(
-                f"Graph: {graph['nodes']} nodes, {graph['edges']} edges "
-                f"→ {graph['html']}"
-            )
+            click.echo(f"Graph: {graph['nodes']} nodes, {graph['edges']} edges " f"→ {graph['html']}")
         if scan.skipped and not quiet:
             click.echo(f"Skipped {len(scan.skipped)} binary/oversized files.")
             if len(scan.skipped) <= 10:
@@ -931,9 +1247,18 @@ def _changed_files_from_git(root: Path) -> list[str]:
     try:
         proc = subprocess.run(
             [
-                "git", "-C", str(root), "diff-tree", "--no-commit-id",
-                "--name-only", "-z", "-r", "-m", "--first-parent",
-                "--root", "HEAD",
+                "git",
+                "-C",
+                str(root),
+                "diff-tree",
+                "--no-commit-id",
+                "--name-only",
+                "-z",
+                "-r",
+                "-m",
+                "--first-parent",
+                "--root",
+                "HEAD",
             ],
             capture_output=True,
             timeout=30,
@@ -978,9 +1303,7 @@ def upsert(
     root, config = _resolve_project(path_)
     # Wait out a peer upsert (sub-second) rather than dropping the
     # commit's files; give up quickly if a multi-minute build holds it.
-    with wiki_write_lock(
-        config.storage_path(root), timeout=UPSERT_LOCK_WAIT_SECONDS
-    ) as _acquired:
+    with wiki_write_lock(config.storage_path(root), timeout=UPSERT_LOCK_WAIT_SECONDS) as _acquired:
         if not _acquired:
             if not quiet:
                 click.echo(
@@ -1061,23 +1384,17 @@ def upsert(
         except Exception as exc:  # surfaced as a clear CLI error
             if config.backend == "arangodb":
                 raise click.ClickException(
-                    f"Could not connect to ArangoDB for wiki "
-                    f"{config.wiki_name!r}: {exc}"
+                    f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
         if not quiet:
-            click.echo(
-                f"Upserted {counts['written']} page(s), "
-                f"removed {counts['removed']}."
-            )
+            click.echo(f"Upserted {counts['written']} page(s), " f"removed {counts['removed']}.")
 
 
 @wiki.command()
 @click.argument("question")
 @path_option
-@click.option(
-    "--top-k", "-n", default=12, show_default=True, help="Max results to rank."
-)
+@click.option("--top-k", "-n", default=12, show_default=True, help="Max results to rank.")
 @click.option(
     "--budget",
     default=DEFAULT_BUDGET_TOKENS,
@@ -1086,6 +1403,7 @@ def upsert(
 )
 @click.option("--category", default=None, help="Filter by page category.")
 @_store_options
+@ns_option
 @click.option(
     "--table",
     "as_table",
@@ -1108,6 +1426,7 @@ def query(
     category: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_table: bool,
     show_body: bool,
     as_json: bool,
@@ -1120,9 +1439,12 @@ def query(
     with `wikitoolkit page <id>` to read a full page, or
     `wikitoolkit related <id>` to walk the graph.
     """
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
     rows = _run(store.search_fts(question, category=category, limit=top_k))
-    rows = _normalize_scores(rows)
+    if not isinstance(store, FederatedWikiStore):
+        # A federated store already normalised each namespace and applied
+        # its weight; a second global min-max here would undo that.
+        rows = _normalize_scores(rows)
 
     # Hydrate the top hit's body once, for --body across every renderer.
     if show_body and rows:
@@ -1132,25 +1454,26 @@ def query(
 
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
+        _echo_skips(store, err=True)
         return
     if not rows:
         click.echo(
             f"No wiki results for {question!r}. The wiki may be stale — "
             "try `wikitoolkit build`, or fall back to code search."
         )
+        _echo_skips(store)
         return
     if as_table:
         _render_results_table(rows, question, show_body=show_body)
+        _echo_skips(store)
         return
     packed = pack_results(rows, budget_tokens=budget)
     click.echo(f"# Wiki results for: {question}\n")
     click.echo(packed.text)
-    click.echo(
-        f"\n({packed.results_packed}/{packed.total_available} results, "
-        f"~{packed.tokens_used} tokens)"
-    )
+    click.echo(f"\n({packed.results_packed}/{packed.total_available} results, " f"~{packed.tokens_used} tokens)")
     if show_body and rows[0].get("body"):
         click.echo(f"\n## {rows[0].get('title')}\n{rows[0]['body']}")
+    _echo_skips(store)
     click.echo(
         "Next: `wikitoolkit page <id>` for a full page · "
         "`wikitoolkit related <id>` for linked pages."
@@ -1167,6 +1490,7 @@ def query(
     help="Truncate the body to roughly this many tokens.",
 )
 @_store_options
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def page(
     page_id: str,
@@ -1174,16 +1498,19 @@ def page(
     max_tokens: int | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_json: bool,
 ) -> None:
-    """Read one wiki page in full (progressive disclosure)."""
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    """Read one wiki page in full (progressive disclosure).
+
+    PAGE_ID may carry a namespace prefix (``other::file:a.py``); with
+    ``--ns <name>`` a bare id is resolved inside that namespace.
+    """
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
+    page_id = _qualify_for_ns(page_id, ns_opt)
     data = _run(store.get_page(page_id, include_body=True))
     if data is None:
-        raise click.ClickException(
-            f"Page {page_id!r} not found. "
-            f"Search first: wikitoolkit query \"...\""
-        )
+        raise click.ClickException(f"Page {page_id!r} not found. " f'Search first: wikitoolkit query "..."')
     if as_json:
         click.echo(json.dumps(data, indent=2, default=str))
         return
@@ -1211,6 +1538,7 @@ def page(
     show_default=True,
 )
 @_store_options
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def related(
     page_id: str,
@@ -1219,10 +1547,16 @@ def related(
     direction: str,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_json: bool,
 ) -> None:
-    """List pages linked to PAGE_ID by typed edges."""
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    """List pages linked to PAGE_ID by typed edges.
+
+    PAGE_ID may carry a namespace prefix (``other::dir:pkg``); with
+    ``--ns <name>`` a bare id is resolved inside that namespace.
+    """
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
+    page_id = _qualify_for_ns(page_id, ns_opt)
     rows = _run(store.neighbors(page_id, rel=rel, direction=direction))
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
@@ -1232,17 +1566,15 @@ def related(
         return
     for row in rows:
         arrow = "→" if row.get("direction") == "out" else "←"
-        click.echo(
-            f"{arrow} [{row.get('concept_id')}] "
-            f"({row.get('rel')}) {row.get('title', '')}"
-        )
+        click.echo(f"{arrow} [{row.get('concept_id')}] " f"({row.get('rel')}) {row.get('title', '')}")
 
 
 @wiki.command()
 @path_option
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
-def status(path_: str | None, as_json: bool) -> None:
-    """Show wiki plane statistics and source staleness."""
+def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
+    """Show wiki plane statistics, namespaces, and source staleness."""
     root, config = _resolve_project(path_)
     if not config.is_built(root):
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
@@ -1253,14 +1585,24 @@ def status(path_: str | None, as_json: bool) -> None:
             _run(store.initialize())
         except Exception as exc:  # surfaced as a clear CLI error
             raise click.ClickException(
-                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
-                f"{exc}"
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
             ) from exc
+    # Source staleness is a property of the LOCAL plane — the manager
+    # must see the real store, not the federation wrapping it.
     sources = _open_sources(root, config, store=store)
-    stats = _run(store.stats())
-    entries = sources.list_sources()
+    read_store = _federate(root, config, store, ns_opt)
+    stats = _run(read_store.stats())
+    namespaces = stats.pop("namespaces", None)
+    ns_skipped = stats.pop("skipped", None)
+    stats.pop("local", None)
+    # `--ns <name>` reports THAT plane's counters, so the header must
+    # name it too — otherwise a foreign page count sits under the local
+    # project's identity. Source staleness is a local-manifest concept
+    # and is simply absent for a namespace.
+    scoped_to = _scoped_namespace(root, config, ns_opt)
+    entries = [] if scoped_to else sources.list_sources()
     stale = [e.source_id for e in entries if sources.is_stale(e.source_id)]
-    payload = {
+    payload: dict[str, Any] = {
         "root": str(root),
         "wiki_name": config.wiki_name,
         "backend": config.backend,
@@ -1270,11 +1612,25 @@ def status(path_: str | None, as_json: bool) -> None:
         "stale_sources": len(stale),
         "languages": {name: s.mode for name, s in all_scanners().items()},
     }
+    if scoped_to is not None:
+        name, handle_cfg, storage_dir = scoped_to
+        payload["namespace"] = name
+        payload["wiki_name"] = name
+        payload["backend"] = handle_cfg.backend
+        payload["storage_dir"] = str(storage_dir) if storage_dir else None
+        payload["sources"] = None
+        payload["stale_sources"] = None
+    if namespaces is not None:
+        payload["namespaces"] = namespaces
+        payload["skipped"] = ns_skipped or []
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
-    click.echo(f"Wiki      : {config.wiki_name} ({config.backend})")
-    click.echo(f"Root      : {root}")
+    click.echo(f"Wiki      : {payload['wiki_name']} ({payload['backend']})")
+    if scoped_to is None:
+        click.echo(f"Root      : {root}")
+    else:
+        click.echo(f"Namespace : {scoped_to[0]} (of {root})")
     click.echo(f"Storage   : {payload['storage_dir']}")
     click.echo(
         f"Plane     : {stats.get('pages', 0)} pages, "
@@ -1283,9 +1639,372 @@ def status(path_: str | None, as_json: bool) -> None:
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
-    click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
+    if scoped_to is None:
+        click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
+    if namespaces:
+        click.echo("\nNamespaces:")
+        header = f"  {'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} {'pages':>7}  status"
+        click.echo(header)
+        for name in sorted(namespaces):
+            block = namespaces[name]
+            pages = block.get("pages")
+            click.echo(
+                f"  {name:<16} {block.get('kind', ''):<9} "
+                f"{block.get('backend', ''):<9} {block.get('origin', ''):<7} "
+                f"{'-' if pages is None else pages:>7}  {block.get('status', '')}"
+            )
+    for skip in ns_skipped or []:
+        hint = f" — {skip.get('hint')}" if skip.get("hint") else ""
+        click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+
+
+# --------------------------------------------------------------------------
+# Namespace registry (FEAT-450)
+# --------------------------------------------------------------------------
+
+
+def _namespace_source(
+    src_project: str | None,
+    src_store: str | None,
+    src_database: str | None,
+    src_vault: str | None,
+) -> None:
+    """Validate that exactly one namespace source flag was given.
+
+    Raises:
+        click.ClickException: When zero or several sources were given.
+    """
+    given = [
+        flag
+        for flag, value in (
+            ("--project", src_project),
+            ("--store", src_store),
+            ("--database", src_database),
+            ("--vault", src_vault),
+        )
+        if value
+    ]
+    if len(given) != 1:
+        raise click.ClickException(
+            "Give exactly one of --project / --store / --database / --vault "
+            f"(got: {', '.join(given) or 'none'})."
+        )
+
+
+@contextmanager
+def _global_registry_lock() -> Iterator[None]:
+    """Serialise read-modify-write cycles on ``PARROT_HOME/wikis.json``.
+
+    ``save_global_registry`` replaces the file atomically, which prevents
+    a torn write but not a lost update: two concurrent ``ns add --global``
+    calls would both read the original registry and the later
+    ``os.replace`` would drop the earlier entry. Reuse the wiki writer
+    lock, held across load + mutate + save.
+
+    Yields:
+        ``None``, with the lock held (advisory; a lock that cannot be
+        taken is logged and the write proceeds, matching
+        :func:`wiki_write_lock`).
+    """
+    home = parrot_home()
+    home.mkdir(parents=True, exist_ok=True)
+    with wiki_write_lock(home, timeout=REGISTRY_LOCK_WAIT_SECONDS) as acquired:
+        if not acquired:
+            _cli_logger.warning(
+                "Could not take the %s lock; writing anyway.", home
+            )
+        yield
+
+
+def _stored_namespace_path(
+    value: str | None, root: Path, is_global: bool
+) -> str | None:
+    """Normalise a user-typed namespace path into its stored form.
+
+    Args:
+        value: The raw ``--project`` / ``--store`` / ``--vault`` value.
+        root: Repository root (the base a repo entry is read back from).
+        is_global: Whether the entry goes to the per-user registry.
+
+    Returns:
+        ``None`` when ``value`` is falsy; an absolute path for a global
+        entry; a repo-root-relative path for a repo entry (so a checked-in
+        ``wiki.json`` stays portable across clones).
+    """
+    if not value:
+        return value
+    target = Path(value).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    target = Path(os.path.normpath(target))
+    if is_global:
+        return str(target)
+    return os.path.relpath(target, root.resolve())
+
+
+def _namespace_built(cfg: WikiNamespaceConfig, base_dir: Path) -> bool | None:
+    """Whether a declared namespace already has a plane on disk.
+
+    Args:
+        cfg: The namespace declaration.
+        base_dir: Directory its relative paths resolve against.
+
+    Returns:
+        ``True``/``False`` for on-disk kinds, ``None`` for ArangoDB
+        (server-hosted — there is no local artifact to probe).
+    """
+    if cfg.kind == "database":
+        return None
+    target = Path(cfg.target).expanduser()
+    if not target.is_absolute():
+        target = base_dir / target
+    if cfg.kind in ("path", "vault"):
+        try:
+            foreign = load_project_config(target)
+        except WikiConfigError:
+            return False
+        return foreign.is_built(target)
+    if cfg.backend == "memory":
+        return (target / "pages").exists()
+    return (target / "wiki.db").exists()
+
+
+@wiki.group(name="ns")
+def ns() -> None:
+    """Manage federated wiki namespaces (other wikis this one can read)."""
+
+
+@ns.command("list")
+@path_option
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def ns_list(path_: str | None, as_json: bool) -> None:
+    """List the namespaces visible from this project (repo + global)."""
+    root, config = _resolve_project(path_)
+    declared = _declared_namespaces(config)
+    rows = []
+    for name in sorted(declared):
+        cfg, origin = declared[name]
+        base_dir = resolve_entry_base(origin, root)
+        built = _namespace_built(cfg, base_dir)
+        rows.append(
+            {
+                "name": name,
+                "kind": cfg.kind,
+                "backend": cfg.backend,
+                "origin": origin,
+                "target": cfg.target,
+                "weight": cfg.weight,
+                "description": cfg.description,
+                "built": built,
+            }
+        )
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    if not rows:
+        click.echo(
+            "No namespaces declared. Add one with "
+            "`wikitoolkit ns add <name> --project <dir>`."
+        )
+        return
+    click.echo(
+        f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} "
+        f"{'built':<6} target"
+    )
+    for row in rows:
+        built = "n/a" if row["built"] is None else ("yes" if row["built"] else "no")
+        click.echo(
+            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} "
+            f"{row['origin']:<7} {built:<6} {row['target']}"
+        )
+        if row["description"]:
+            click.echo(f"{'':<16} {row['description']}")
+
+
+@ns.command("add")
+@click.argument("name")
+@path_option
+@click.option(
+    "--project",
+    "src_project",
+    default=None,
+    help="Root of another wiki project (kind: path).",
+)
+@click.option(
+    "--store",
+    "src_store",
+    default=None,
+    help="Pre-built store directory (kind: store).",
+)
+@click.option(
+    "--backend",
+    "backend_opt",
+    type=click.Choice(["sqlite", "memory"]),
+    default=None,
+    help="Backend of a --store directory (default: sqlite).",
+)
+@click.option(
+    "--database",
+    "src_database",
+    default=None,
+    help="ArangoDB database holding the plane (kind: database).",
+)
+@click.option(
+    "--credentials-env",
+    default="ARANGODB",
+    show_default=True,
+    help="Env var prefix for --database credentials.",
+)
+@click.option(
+    "--vault",
+    "src_vault",
+    default=None,
+    help="Obsidian vault root (kind: vault; requires .obsidian/).",
+)
+@click.option("--description", default="", help="What this namespace holds.")
+@click.option(
+    "--weight",
+    default=1.0,
+    show_default=True,
+    type=float,
+    help="Score multiplier when merging this namespace (0.0-1.0).",
+)
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Write to the per-user registry (PARROT_HOME/wikis.json) "
+    "instead of this repo's wiki.json.",
+)
+def ns_add(
+    name: str,
+    path_: str | None,
+    src_project: str | None,
+    src_store: str | None,
+    backend_opt: str | None,
+    src_database: str | None,
+    credentials_env: str,
+    src_vault: str | None,
+    description: str,
+    weight: float,
+    is_global: bool,
+) -> None:
+    """Register NAME as a namespace this wiki can read.
+
+    This is the only writer of namespace entries — neither ``build`` nor
+    any other command ever self-registers a wiki.
+    """
+    try:
+        validate_namespace_name(name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _namespace_source(src_project, src_store, src_database, src_vault)
+
+    root, config = _resolve_project(path_)
+    base_dir = parrot_home() if is_global else root
+
+    # A path typed at the shell is relative to the CALLER's cwd, but a
+    # stored entry is read back relative to its registry's directory
+    # (repo root / PARROT_HOME). Resolve it here so the two can never
+    # disagree: repo entries keep a portable repo-relative form
+    # (`../asyncdb`), global entries are stored absolute.
+    src_project = _stored_namespace_path(src_project, root, is_global)
+    src_store = _stored_namespace_path(src_store, root, is_global)
+    src_vault = _stored_namespace_path(src_vault, root, is_global)
+
+    if src_vault:
+        vault_dir = Path(src_vault).expanduser()
+        if not vault_dir.is_absolute():
+            vault_dir = base_dir / vault_dir
+        # Inline probe — importing vault_scan here would drag the
+        # Obsidian interfaces into every `ns add`.
+        if not (vault_dir / ".obsidian").is_dir():
+            raise click.ClickException(
+                f"{vault_dir} is not an Obsidian vault (no .obsidian/ "
+                "directory). Use --project for a plain wiki project."
+            )
+
+    try:
+        entry = WikiNamespaceConfig(
+            path=src_project,
+            store=src_store,
+            backend=backend_opt or "sqlite",
+            database=src_database,
+            credentials_env=credentials_env,
+            vault=src_vault,
+            description=description,
+            weight=weight,
+        )
+    except ValidationError as exc:
+        raise click.ClickException(f"Invalid namespace entry: {exc}") from exc
+
+    if is_global:
+        with _global_registry_lock():
+            registry = load_global_registry()
+            if name in registry.namespaces:
+                raise click.ClickException(
+                    f"Namespace {name!r} already exists in the global "
+                    f"registry ({global_registry_path()}). Remove it first."
+                )
+            registry.namespaces[name] = entry
+            written = save_global_registry(registry)
+    else:
+        if name in config.namespaces:
+            raise click.ClickException(
+                f"Namespace {name!r} already exists in {config_path(root)}. "
+                "Remove it first."
+            )
+        config.namespaces[name] = entry
+        written = save_project_config(root, config)
+        if name in load_global_registry().namespaces:
+            click.echo(
+                f"Note: this repo entry shadows the global namespace {name!r}."
+            )
+
+    click.echo(f"Added namespace {name!r} ({entry.kind}) → {written}")
+    built = _namespace_built(entry, base_dir)
+    if built is False:
+        target = Path(entry.target).expanduser()
+        if not target.is_absolute():
+            target = base_dir / target
+        flag = "--store" if entry.kind == "store" else "--path"
+        click.echo(
+            f"Namespace {name!r} has no plane yet — build it with "
+            f"`wikitoolkit build {flag} {target}`."
+        )
+
+
+@ns.command("remove")
+@click.argument("name")
+@path_option
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Remove from the per-user registry instead of this repo.",
+)
+def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
+    """Remove namespace NAME from this repo (or the global registry)."""
+    if is_global:
+        with _global_registry_lock():
+            registry = load_global_registry()
+            if name not in registry.namespaces:
+                raise click.ClickException(
+                    f"No namespace {name!r} in {global_registry_path()}."
+                )
+            del registry.namespaces[name]
+            written = save_global_registry(registry)
+    else:
+        root, config = _resolve_project(path_)
+        if name not in config.namespaces:
+            raise click.ClickException(
+                f"No namespace {name!r} in {config_path(root)}."
+            )
+        del config.namespaces[name]
+        written = save_project_config(root, config)
+    click.echo(f"Removed namespace {name!r} from {written}")
 
 
 @wiki.command()
@@ -1342,14 +2061,19 @@ def communities(
     assembler.add_nodes(nodes)
     assembler.add_edges(graph_edges)
     communities_result = detect_communities(
-        assembler.graph, nodes, write_back_to_nodes=False,
+        assembler.graph,
+        nodes,
+        write_back_to_nodes=False,
     )
 
     if not show_inter:
         if as_json:
-            click.echo(json.dumps(
-                communities_result.model_dump(mode="json"), indent=2,
-            ))
+            click.echo(
+                json.dumps(
+                    communities_result.model_dump(mode="json"),
+                    indent=2,
+                )
+            )
             return
         click.echo(
             f"# Communities ({len(communities_result.communities)}, "
@@ -1412,9 +2136,7 @@ def export(path_: str | None, output: str) -> None:
     out_dir = Path(output)
     if not out_dir.is_absolute():
         out_dir = root / out_dir
-    report = _run(
-        export_okf_bundle(store, out_dir, wiki_name=config.wiki_name)
-    )
+    report = _run(export_okf_bundle(store, out_dir, wiki_name=config.wiki_name))
     # Exclude the export output from future scans, or the next build
     # would ingest the wiki's own exported markdown back into itself.
     try:
@@ -1425,14 +2147,14 @@ def export(path_: str | None, output: str) -> None:
         config.exclude_dirs.append(export_rel)
         save_project_config(root, config)
     click.echo(
-        f"Exported {report.files_written} pages to {out_dir} "
-        f"(index: {'yes' if report.index_generated else 'no'})."
+        f"Exported {report.files_written} pages to {out_dir} " f"(index: {'yes' if report.index_generated else 'no'})."
     )
 
 
 # --------------------------------------------------------------------------
 # Authoring / persistent-memory commands ("save things in the brain")
 # --------------------------------------------------------------------------
+
 
 def _authoring_identity(by: str | None) -> str:
     """Resolve who is asserting a write.
@@ -1471,7 +2193,8 @@ def _resolve_write_store(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
-) -> tuple[BaseWikiStore, Path, Path | None, WikiProjectConfig | None]:
+    ns_opt: str | None = None,
+) -> tuple[BaseWikiStore, Path | None, Path | None, WikiProjectConfig | None]:
     """Open a store for an authoring command, creating the plane lazily.
 
     Same precedence as ``_resolve_read_store`` (``--store`` > ``--path``
@@ -1479,10 +2202,53 @@ def _resolve_write_store(
     that was never built is initialised on first write instead of
     aborting — remembering something must work from a blank slate.
 
+    A write targets exactly ONE plane (spec U2): with ``--ns <name>``
+    that namespace is opened read-write directly, bypassing the
+    federation entirely. ``--ns all`` is rejected — there is no such
+    thing as a broadcast write.
+
     Returns:
         ``(store, storage_dir, root, config)`` — ``root``/``config`` are
-        ``None`` for ``--store`` targets (no project context).
+        ``None`` for ``--store`` and ``--ns`` targets (no local project
+        context), and ``storage_dir`` is ``None`` for a server-hosted
+        namespace.
+
+    Raises:
+        click.ClickException: On ``--ns all``, several ``--ns`` names,
+            ``--store`` combined with ``--ns``, an undeclared namespace,
+            or a namespace that cannot be opened.
     """
+    if ns_opt not in (None, "local"):
+        if store_opt:
+            raise click.ClickException(
+                "--store and --ns target different planes; use one of them."
+            )
+        if ns_opt == "all" or "," in ns_opt:
+            raise click.ClickException(
+                "A write targets exactly one namespace — "
+                f"`--ns {ns_opt}` is not a write target."
+            )
+        root, config = _resolve_project(path_)
+        declared = _declared_namespaces(config)
+        entry = declared.get(ns_opt)
+        if entry is None:
+            raise _unknown_namespace(ns_opt, list(declared))
+        cfg, origin = entry
+        try:
+            store, storage_dir = _run(
+                open_namespace_store(
+                    ns_opt,
+                    cfg,
+                    base_dir=resolve_entry_base(origin, root),
+                    read_only=False,
+                )
+            )
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not open namespace {ns_opt!r} for writing: {exc}"
+            ) from exc
+        return store, storage_dir, None, None
+
     store_override = store_opt
     if not store_override and not path_:
         store_override = _env_setting("WIKI_STORE")
@@ -1565,9 +2331,7 @@ def _sync_memory_to_graph(
                 kind = EdgeKind(rel)
             except ValueError:
                 kind = EdgeKind.REFERENCES
-            edges.append(
-                UniversalEdge(source_id=page_id, target_id=target_id, kind=kind)
-            )
+            edges.append(UniversalEdge(source_id=page_id, target_id=target_id, kind=kind))
         receipt = _run(
             publisher.publish(
                 GraphUpdate(
@@ -1607,10 +2371,7 @@ def _extract_into_graph(
     """
     spec = _env_setting("WIKI_EXTRACT_LLM")
     if not spec:
-        click.echo(
-            "[extract skipped: set WIKI_EXTRACT_LLM (e.g."
-            " 'anthropic:claude-haiku-4-5') to enable]"
-        )
+        click.echo("[extract skipped: set WIKI_EXTRACT_LLM (e.g." " 'anthropic:claude-haiku-4-5') to enable]")
         return None
     try:
         from parrot.clients.factory import LLMFactory
@@ -1621,9 +2382,7 @@ def _extract_into_graph(
 
         client = LLMFactory.create(spec, model_args={"temperature": 0.0})
         ctx = make_stub_tenant_context(config.wiki_name)
-        publisher = GraphPublisher(
-            SQLitePersistence(config.graph_path(root)), ctx
-        )
+        publisher = GraphPublisher(SQLitePersistence(config.graph_path(root)), ctx)
         extractor = LLMGraphExtractor(client, publisher)
         result = _run(
             extractor.extract_and_publish(
@@ -1661,6 +2420,7 @@ def _extract_into_graph(
     help="Existing page id to link the memory to (repeatable).",
 )
 @click.option("--rel", default="references", help="Relation for --link edges.")
+@ns_option
 @click.option("--source", "source_uri", default=None, help="Citation URI.")
 @click.option("--by", default=None, help="Identity asserting this memory.")
 @click.option(
@@ -1682,6 +2442,7 @@ def remember(
     category: str,
     links: tuple[str, ...],
     rel: str,
+    ns_opt: str | None,
     source_uri: str | None,
     by: str | None,
     extract_: bool,
@@ -1698,7 +2459,7 @@ def remember(
     import hashlib
 
     store, storage_dir, root, config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
     asserted_by = _authoring_identity(by)
     run_id = _authoring_run_id()
@@ -1706,33 +2467,33 @@ def remember(
     resolved_title = (title or text.strip().splitlines()[0][:80]).strip()
     if not resolved_title:
         raise click.ClickException("Cannot remember empty text.")
-    page_id = "mem-" + hashlib.sha1(
-        f"{resolved_title}::{category}".encode()
-    ).hexdigest()[:12]
+    page_id = "mem-" + hashlib.sha1(f"{resolved_title}::{category}".encode()).hexdigest()[:12]
 
     from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
     existing = _run(store.get_page(page_id, include_body=False))
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
     _run(
-        store.upsert_pages([
-            WikiPageRecord(
-                concept_id=page_id,
-                node_id=page_id,
-                title=resolved_title,
-                category=category,
-                summary=text[:300],
-                body=body,
-                token_count=estimate_tokens(body),
-                origin="memory",
-                asserted_by=asserted_by,
-            )
-        ])
+        store.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id=page_id,
+                    node_id=page_id,
+                    title=resolved_title,
+                    category=category,
+                    summary=text[:300],
+                    body=body,
+                    token_count=estimate_tokens(body),
+                    origin="memory",
+                    asserted_by=asserted_by,
+                )
+            ]
+        )
     )
 
     linked: list[tuple[str, str]] = []
     skipped_links: list[str] = []
-    for target in links:
+    for target in (_write_id_for_ns(link, ns_opt) for link in links):
         page = _run(store.get_page(target, include_body=False))
         if page is None:
             skipped_links.append(target)
@@ -1742,27 +2503,38 @@ def remember(
 
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "REMEMBER",
-        f"page_id: {page_id}, title: {resolved_title!r}, "
-        f"category: {category}, by: {asserted_by}"
-        + (f", run: {run_id}" if run_id else ""),
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "REMEMBER",
+            f"page_id: {page_id}, title: {resolved_title!r}, "
+            f"category: {category}, by: {asserted_by}"
+            + (f", run: {run_id}" if run_id else ""),
+        )
 
     commit_id: str | None = None
     if root is not None and config is not None and config.sync_graph:
         commit_id = _sync_memory_to_graph(
-            root, config, store, page_id, resolved_title, text,
-            linked, asserted_by, run_id,
+            root,
+            config,
+            store,
+            page_id,
+            resolved_title,
+            text,
+            linked,
+            asserted_by,
+            run_id,
         )
 
     extraction: dict[str, Any] | None = None
     if extract_ and root is not None and config is not None:
         extraction = _extract_into_graph(
-            root, config, text,
+            root,
+            config,
+            text,
             source_uri or f"wiki://{config.wiki_name}/{page_id}",
-            asserted_by, run_id,
+            asserted_by,
+            run_id,
         )
 
     result = {
@@ -1781,10 +2553,7 @@ def remember(
     if as_json:
         click.echo(json.dumps(result, indent=2))
         return
-    click.echo(
-        f"{'Updated' if existing else 'Saved'} memory {page_id} "
-        f"({category}): {resolved_title!r}"
-    )
+    click.echo(f"{'Updated' if existing else 'Saved'} memory {page_id} " f"({category}): {resolved_title!r}")
     for target, rel_name in linked:
         click.echo(f"  linked → {target} ({rel_name})")
     for target in skipped_links:
@@ -1804,6 +2573,7 @@ def remember(
 @click.argument("text")
 @path_option
 @_store_options
+@ns_option
 @click.option("--by", default=None, help="Identity asserting this note.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def note(
@@ -1812,20 +2582,24 @@ def note(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     by: str | None,
     as_json: bool,
 ) -> None:
-    """Append an attributed note to an existing wiki page."""
+    """Append an attributed note to an existing wiki page.
+
+    With ``--ns <name>`` the note is written into that namespace's own
+    plane; PAGE_ID may be given qualified (``name::file:a.py``).
+    """
     from datetime import datetime
 
     store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
+    page_id = _write_id_for_ns(page_id, ns_opt)
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
-        raise click.ClickException(
-            f"Page {page_id!r} not found. Search first: wikitoolkit query \"...\""
-        )
+        raise click.ClickException(f'Page {page_id!r} not found. Search first: wikitoolkit query "..."')
     asserted_by = _authoring_identity(by)
     stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
     body = str(page.get("body") or "")
@@ -1834,28 +2608,31 @@ def note(
     from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
     _run(
-        store.upsert_pages([
-            WikiPageRecord(
-                concept_id=page["concept_id"],
-                node_id=page.get("node_id"),
-                title=page.get("title") or page["concept_id"],
-                category=page.get("category") or "concept",
-                summary=page.get("summary") or "",
-                body=body,
-                source_id=page.get("source_id"),
-                token_count=estimate_tokens(body),
-                origin=page.get("origin") or "ingest",
-                asserted_by=asserted_by,
-            )
-        ])
+        store.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id=page["concept_id"],
+                    node_id=page.get("node_id"),
+                    title=page.get("title") or page["concept_id"],
+                    category=page.get("category") or "concept",
+                    summary=page.get("summary") or "",
+                    body=body,
+                    source_id=page.get("source_id"),
+                    token_count=estimate_tokens(body),
+                    origin=page.get("origin") or "ingest",
+                    asserted_by=asserted_by,
+                )
+            ]
+        )
     )
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "NOTE",
-        f"page_id: {page['concept_id']}, by: {asserted_by}",
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "NOTE",
+            f"page_id: {page['concept_id']}, by: {asserted_by}",
+        )
     result = {"page_id": page["concept_id"], "status": "noted", "by": asserted_by}
     if as_json:
         click.echo(json.dumps(result, indent=2))
@@ -1869,6 +2646,7 @@ def note(
 @path_option
 @_store_options
 @click.option("--rel", default="references", help="Edge relation.")
+@ns_option
 @click.option("--by", default=None, help="Identity asserting this link.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def link(
@@ -1878,15 +2656,24 @@ def link(
     store_opt: str | None,
     backend_opt: str | None,
     rel: str,
+    ns_opt: str | None,
     by: str | None,
     as_json: bool,
 ) -> None:
-    """Connect two existing wiki pages with an asserted, typed edge."""
+    """Connect two existing wiki pages with an asserted, typed edge.
+
+    Both pages must live in the same plane — there are no
+    cross-namespace edges. With ``--ns <name>`` the edge is written into
+    that namespace; ids may be given qualified with that same name.
+    """
     store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
     pages = {}
-    for label, cid in (("src", src), ("dst", dst)):
+    for label, cid in (
+        ("src", _write_id_for_ns(src, ns_opt)),
+        ("dst", _write_id_for_ns(dst, ns_opt)),
+    ):
         page = _run(store.get_page(cid, include_body=False))
         if page is None:
             raise click.ClickException(f"{label} page {cid!r} not found.")
@@ -1896,11 +2683,12 @@ def link(
 
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "LINK",
-        f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "LINK",
+            f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
+        )
     result = {
         "src": pages["src"],
         "dst": pages["dst"],
@@ -1929,19 +2717,13 @@ def memories(
     as_json: bool,
 ) -> None:
     """List saved memories and agent-authored pages (newest first)."""
-    store, _storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
-    )
-    rows = _run(
-        store.list_pages(
-            category=category, limit=limit, origin=["memory", "authored"]
-        )
-    )
+    store, _storage_dir, _root, _config = _resolve_write_store(path_, store_opt, backend_opt)
+    rows = _run(store.list_pages(category=category, limit=limit, origin=["memory", "authored"]))
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
         return
     if not rows:
-        click.echo("No memories saved yet. Save one: wikitoolkit remember \"...\"")
+        click.echo('No memories saved yet. Save one: wikitoolkit remember "..."')
         return
     for row in rows:
         click.echo(
@@ -1964,9 +2746,7 @@ def audit(
     as_json: bool,
 ) -> None:
     """Show the wiki operation log and graph write commits (audit trail)."""
-    _store, storage_dir, root, config = _resolve_write_store(
-        path_, store_opt, backend_opt
-    )
+    _store, storage_dir, root, config = _resolve_write_store(path_, store_opt, backend_opt)
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
     log_text = WikiBookkeeper().read_log(storage_dir, last_n=limit)
@@ -2004,10 +2784,7 @@ def audit(
         click.echo("\n## Graph write commits")
         for c in graph_commits:
             reverted = " [REVERTED]" if c.get("reverted_at") else ""
-            click.echo(
-                f"{c['commit_id']}  {c['op']}  by {c['asserted_by']}"
-                f"  @ {c['committed_at']}{reverted}"
-            )
+            click.echo(f"{c['commit_id']}  {c['op']}  by {c['asserted_by']}" f"  @ {c['committed_at']}{reverted}")
 
 
 @wiki.command()
@@ -2058,9 +2835,7 @@ def ground(
         embedder = HashingGraphEmbedder()
         if nodes:
             await embedder.embed_nodes(nodes)
-        retriever = GraphExpandedRetriever(
-            graph=assembler.graph, nodes=nodes, embedder=embedder
-        )
+        retriever = GraphExpandedRetriever(graph=assembler.graph, nodes=nodes, embedder=embedder)
         result = await GroundingEvaluator(retriever).ground_claim(claim)
         return result.model_dump()
 
@@ -2090,29 +2865,6 @@ def ground(
 # --------------------------------------------------------------------------
 
 
-def _discover_documents(folder: Path) -> list[Path]:
-    """List regular files under ``folder`` for supervised triage.
-
-    Deliberately NOT the language-aware ``repo_scan`` scanner — that
-    scanner's deterministic, offline, no-LLM contract is load-bearing for
-    the git post-commit hook and is never touched by this feature (spec
-    §1 Non-Goals). This is a flat, deterministic walk suited to arbitrary
-    document corpora (meeting notes, summaries, etc), not source code.
-
-    Args:
-        folder: Root folder to scan.
-
-    Returns:
-        Sorted list of file paths; dotfiles and dot-directories are
-        skipped (e.g. ``.git/``, ``.parrot/``).
-    """
-    return sorted(
-        p
-        for p in folder.rglob("*")
-        if p.is_file() and not any(part.startswith(".") for part in p.parts)
-    )
-
-
 def _resolve_charter_path(root: Path, charter_opt: str | None) -> Path:
     """Resolve the charter YAML path: ``--charter``, else the project default.
 
@@ -2135,10 +2887,7 @@ def _resolve_charter_path(root: Path, charter_opt: str | None) -> Path:
     default_path = root / PARROT_DIR / "charter.yaml"
     if default_path.exists():
         return default_path
-    raise click.ClickException(
-        "No editorial charter found. Pass --charter <path>, or place one "
-        f"at {default_path}."
-    )
+    raise click.ClickException("No editorial charter found. Pass --charter <path>, or place one " f"at {default_path}.")
 
 
 def _resolve_model_id(cli_value: str | None, env_name: str) -> str:
@@ -2163,9 +2912,7 @@ def _resolve_model_id(cli_value: str | None, env_name: str) -> str:
     return value
 
 
-def _build_triage_adapters(
-    lightweight_model: str, model: str
-) -> tuple[Any, Any, str, bool]:
+def _build_triage_adapters(lightweight_model: str, model: str) -> tuple[Any, Any, str, bool]:
     """Construct the lightweight/heavy ``PageIndexLLMAdapter`` pair.
 
     A narrow, deliberately monkeypatchable seam: tests replace this
@@ -2192,18 +2939,14 @@ def _build_triage_adapters(
     light_provider, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
     heavy_provider, heavy_model_id = LLMFactory.parse_llm_string(model)
     light_client = LLMFactory.create(lightweight_model)
-    heavy_client = (
-        light_client if model == lightweight_model else LLMFactory.create(model)
-    )
+    heavy_client = light_client if model == lightweight_model else LLMFactory.create(model)
     light_adapter = PageIndexLLMAdapter(light_client, model=light_model_id)
     heavy_adapter = PageIndexLLMAdapter(heavy_client, model=heavy_model_id)
     same_provider = light_provider == heavy_provider
     return light_adapter, heavy_adapter, light_model_id, same_provider
 
 
-def _build_novelty_scorer(
-    root: Path, config: WikiProjectConfig, store: BaseWikiStore
-) -> Any:
+def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWikiStore) -> Any:
     """Construct a NoveltyScorer: grounding-backed when the graph DB
     exists (mirrors the ``ground`` command's wiring above), else a
     ``WikiCombinedSearch`` similarity-proxy fallback.
@@ -2254,17 +2997,22 @@ def _build_novelty_scorer(
         embedder = HashingGraphEmbedder()
         if nodes:
             await embedder.embed_nodes(nodes)
-        retriever = GraphExpandedRetriever(
-            graph=assembler.graph, nodes=nodes, embedder=embedder
-        )
+        retriever = GraphExpandedRetriever(graph=assembler.graph, nodes=nodes, embedder=embedder)
         return GroundingEvaluator(retriever)
 
     evaluator = _run(_build_evaluator())
     return NoveltyScorer(grounding_evaluator=evaluator)
 
 
-def _print_triage_summary(entries: list[Any]) -> None:
-    """Print a rich admit/archive/discard summary table."""
+def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) -> None:
+    """Print a rich admit/archive/discard summary table.
+
+    Args:
+        entries: Triaged manifest entries.
+        skipped: FEAT-451 — source URIs that could not be decoded/
+            extracted and were skipped before triage. Adds a "skipped"
+            row when non-empty.
+    """
     from rich.console import Console
     from rich.table import Table
 
@@ -2274,20 +3022,19 @@ def _print_triage_summary(entries: list[Any]) -> None:
     table.add_column("Count", justify="right", style="cyan")
     for action in ("admit", "archive", "discard"):
         table.add_row(action, str(counts.get(action, 0)))
+    if skipped:
+        table.add_row("skipped (undecodable)", str(len(skipped)))
     Console().print(table)
 
 
 @wiki.command()
-@click.argument(
-    "folder", type=click.Path(exists=True, file_okay=False, path_type=Path)
-)
+@click.argument("source")
 @path_option
 @click.option(
     "--charter",
     "charter_opt",
     default=None,
-    help="Path to the editorial charter YAML "
-    "(default: <repo>/.parrot/charter.yaml).",
+    help="Path to the editorial charter YAML " "(default: <repo>/.parrot/charter.yaml).",
 )
 @click.option(
     "--dry-run",
@@ -2318,8 +3065,7 @@ def _print_triage_summary(entries: list[Any]) -> None:
     "--extract",
     "extract_flag",
     is_flag=True,
-    help="EXPERIMENTAL: include extracted claims in the manifest. Off by"
-    " default — v1 admission is document-level.",
+    help="EXPERIMENTAL: include extracted claims in the manifest. Off by" " default — v1 admission is document-level.",
 )
 @click.option(
     "--lightweight-model",
@@ -2331,8 +3077,7 @@ def _print_triage_summary(entries: list[Any]) -> None:
     "--model",
     "model_opt",
     default=None,
-    help="Stage-2 escalation / page-generation model ('provider:model')."
-    " Falls back to $WIKI_MODEL.",
+    help="Stage-2 escalation / page-generation model ('provider:model')." " Falls back to $WIKI_MODEL.",
 )
 @click.option(
     "--audit-rate",
@@ -2348,8 +3093,22 @@ def _print_triage_summary(entries: list[Any]) -> None:
     type=click.Path(path_type=Path),
     help="Manifest output path (default: <storage_dir>/ingest-manifest.jsonl).",
 )
+@click.option(
+    "--recursive/--no-recursive",
+    "recursive",
+    default=True,
+    show_default=True,
+    help="When SOURCE is a directory, walk it recursively.",
+)
+@click.option(
+    "--fetch-timeout",
+    "fetch_timeout",
+    default=30.0,
+    show_default=True,
+    help="Timeout (seconds) for a URL SOURCE fetch.",
+)
 def ingest(
-    folder: Path,
+    source: str,
     path_: str | None,
     charter_opt: str | None,
     dry_run: bool,
@@ -2361,14 +3120,24 @@ def ingest(
     model_opt: str | None,
     audit_rate: float,
     manifest_opt: Path | None,
+    recursive: bool,
+    fetch_timeout: float,
 ) -> None:
     """Supervised (charter-driven) ingestion of a document corpus.
 
     Unlike ``build`` (deterministic, offline, no-LLM), ``ingest`` triages
-    each document in FOLDER against an editorial charter before it
+    each document in SOURCE against an editorial charter before it
     becomes a wiki page: free heuristics reject duplicates/oversized
     files, a lightweight model scores the rest, and only gray-zone
     documents escalate to a heavier model. Exactly one mode is required.
+
+    SOURCE accepts a directory (recursive walk by default — see
+    ``--recursive``/``--no-recursive``), a single document path, or an
+    ``http(s)://`` URL. PDF, DOCX, PPTX, XLSX, HTML, and EPUB are
+    extracted through the optional ``ai-parrot-loaders`` package;
+    plain-text/Markdown formats need no extra dependency. A document
+    that cannot be decoded is skipped, counted, and reported — never
+    triaged, and never charged an LLM call.
 
     \b
     --dry-run      Triage everything, write a manifest, ingest nothing.
@@ -2393,25 +3162,13 @@ def ingest(
     )
     from parrot.knowledge.wiki.triage import IngestTriageRouter
 
-    modes_selected = sum(
-        [dry_run, review_opt is not None, interactive_flag, auto_flag]
-    )
+    modes_selected = sum([dry_run, review_opt is not None, interactive_flag, auto_flag])
     if modes_selected == 0:
-        raise click.UsageError(
-            "Pick exactly one mode: --dry-run, --review, --interactive, or --auto."
-        )
+        raise click.UsageError("Pick exactly one mode: --dry-run, --review, --interactive, or --auto.")
     if modes_selected > 1:
-        raise click.UsageError(
-            "--dry-run / --review / --interactive / --auto are mutually exclusive."
-        )
+        raise click.UsageError("--dry-run / --review / --interactive / --auto are mutually exclusive.")
     mode = (
-        "dry-run"
-        if dry_run
-        else "review"
-        if review_opt is not None
-        else "interactive"
-        if interactive_flag
-        else "auto"
+        "dry-run" if dry_run else "review" if review_opt is not None else "interactive" if interactive_flag else "auto"
     )
 
     root, config = _resolve_project(path_)
@@ -2428,13 +3185,19 @@ def ingest(
         )
         bookkeeper.log_operation(wiki_dir, "TRIAGE", details)
 
-    lightweight_model = _resolve_model_id(
-        lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL"
-    )
+    def _report_skipped(skipped: list[str]) -> None:
+        """Echo the skip count; list the paths too under -v/--verbose."""
+        if not skipped:
+            return
+        click.echo(f"Skipped {len(skipped)} undecodable document(s).")
+        verbose = click.get_current_context().find_root().params.get("verbose")
+        if verbose:
+            for uri in skipped:
+                click.echo(f"  skipped: {uri}")
+
+    lightweight_model = _resolve_model_id(lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL")
     model = _resolve_model_id(model_opt, "WIKI_MODEL")
-    light_adapter, heavy_adapter, light_model_id, same_provider = (
-        _build_triage_adapters(lightweight_model, model)
-    )
+    light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
     pageindex_dir = wiki_dir / "pageindex"
     pageindex_dir.mkdir(parents=True, exist_ok=True)
     # PageIndexToolkit builds its OWN internal lightweight adapter as
@@ -2469,21 +3232,43 @@ def ingest(
         sync_graph=config.sync_graph,
     )
 
-    async def _triage_all(paths: list[Path], router: Any) -> list[Any]:
+    async def _triage_all(
+        refs: list[Any], router: Any, acquirer: DocumentAcquirer
+    ) -> tuple[list[Any], dict[str, Any], list[str]]:
+        """Acquire + triage every resolved source.
+
+        A document that cannot be decoded/extracted is skipped (logged,
+        counted) rather than triaged as mojibake — never charged an LLM
+        call (spec §1). The acquired document is kept alongside its
+        triage entry (keyed by the SAME ``str(Path(...))`` identity
+        ``router.triage`` uses for ``source_uri``) so ``--interactive``/
+        ``--auto`` can pass it into ``orch.ingest(acquired=...)`` and
+        avoid a second extraction pass.
+        """
         entries = []
-        for doc_path in paths:
-            content = await asyncio.to_thread(
-                doc_path.read_text, encoding="utf-8", errors="ignore"
-            )
-            entry = await router.triage(doc_path, content)
+        acquired_by_uri: dict[str, Any] = {}
+        skipped: list[str] = []
+        for ref in refs:
+            try:
+                acquired = await acquirer.acquire(ref)
+            except DocumentAcquisitionError as exc:
+                _cli_logger.warning("Skipping %s: %s", ref.uri, exc)
+                skipped.append(ref.uri)
+                continue
+            doc_path = Path(ref.uri)
+            entry = await router.triage(doc_path, acquired.text)
             if not extract_flag:
                 entry.claims = []
             entries.append(entry)
+            acquired_by_uri[str(doc_path)] = acquired
             await asyncio.to_thread(_log_triage, entry)
-        return entries
+        return entries, acquired_by_uri, skipped
 
     async def _apply_all(
-        entries: list[Any], wiki_config: WikiConfig, charter_version: str | None
+        entries: list[Any],
+        wiki_config: WikiConfig,
+        charter_version: str | None,
+        acquired_by_uri: dict[str, Any] | None = None,
     ) -> None:
         for entry in entries:
             if entry.decision is None:
@@ -2493,6 +3278,7 @@ def ingest(
                 wiki_config,
                 triage=entry,
                 charter_version=charter_version,
+                acquired=(acquired_by_uri or {}).get(entry.source_uri),
             )
 
     # ---- --review: apply pre-computed decisions, no re-triage ----------
@@ -2531,9 +3317,7 @@ def ingest(
     charter_path = _resolve_charter_path(root, charter_opt)
     charter = load_charter(charter_path)
     novelty_scorer = _build_novelty_scorer(root, config, store)
-    router = IngestTriageRouter(
-        charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter
-    )
+    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
     wiki_config = WikiConfig(
         wiki_name=config.wiki_name,
         storage_dir=wiki_dir,
@@ -2541,8 +3325,9 @@ def ingest(
         sync_graph=config.sync_graph,
         storage_backend=config.backend,
     )
-    paths = _discover_documents(folder)
-    entries = _run(_triage_all(paths, router))
+    refs = resolve_sources(source, recursive=recursive)
+    acquirer = DocumentAcquirer(fetch_timeout=fetch_timeout)
+    entries, acquired_by_uri, skipped = _run(_triage_all(refs, router, acquirer))
 
     if mode == "dry-run":
         header = ManifestRunHeader(
@@ -2554,8 +3339,9 @@ def ingest(
             created_at=datetime.now(UTC).isoformat(),
         )
         ManifestWriter(manifest_path).write(header, entries)
-        click.echo(f"Triaged {len(entries)} document(s). Manifest: {manifest_path}")
-        _print_triage_summary(entries)
+        click.echo(f"Triaged {len(entries)} document(s), skipped {len(skipped)}." f" Manifest: {manifest_path}")
+        _print_triage_summary(entries, skipped)
+        _report_skipped(skipped)
         return
 
     if mode == "interactive":
@@ -2572,9 +3358,7 @@ def ingest(
                 f"novelty={entry.scores.novelty:.2f} "
                 f"durability={entry.scores.durability:.2f}"
             )
-            click.echo(
-                f"  composite: {entry.composite:.4f}  proposed: {entry.proposed_action}"
-            )
+            click.echo(f"  composite: {entry.composite:.4f}  proposed: {entry.proposed_action}")
             choice = questionary.select(
                 "Decision:",
                 choices=["admit", "archive", "discard"],
@@ -2601,10 +3385,11 @@ def ingest(
             created_at=datetime.now(UTC).isoformat(),
         )
         ManifestWriter(manifest_path).write(header, entries)
-        _run(_apply_all(entries, wiki_config, charter.version))
+        _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
         click.echo(
-            f"Applied {len(entries)} interactive decision(s). Manifest: {manifest_path}"
+            f"Applied {len(entries)} interactive decision(s)," f" skipped {len(skipped)}. Manifest: {manifest_path}"
         )
+        _report_skipped(skipped)
         return
 
     # ---- --auto ----------------------------------------------------------
@@ -2629,17 +3414,18 @@ def ingest(
         created_at=datetime.now(UTC).isoformat(),
     )
     ManifestWriter(manifest_path).write(header, entries)
-    _run(_apply_all(entries, wiki_config, charter.version))
+    _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
     audited = [e for e in entries if e.audit_sample]
     click.echo(
-        f"Applied {len(entries)} auto decision(s). Audit sample: "
-        f"{len(audited)} flagged for human review ({audit_rate:.0%} of batch)."
-        f" Manifest: {manifest_path}"
+        f"Applied {len(entries)} auto decision(s), skipped {len(skipped)}."
+        f" Audit sample: {len(audited)} flagged for human review"
+        f" ({audit_rate:.0%} of batch). Manifest: {manifest_path}"
     )
     click.echo(
         "agreement_rate(): computable once the audit sample's `decision` "
         f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
     )
+    _report_skipped(skipped)
 
 
 @wiki.command(name="claude-hook", hidden=True)

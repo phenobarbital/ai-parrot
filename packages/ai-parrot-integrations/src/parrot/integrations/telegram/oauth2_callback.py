@@ -51,16 +51,21 @@ _SUCCESS_HTML_TEMPLATE = """\
   </style>
 </head>
 <body>
-  <div class="container">
+  <!-- Auth data passed via HTML-escaped data attribute, parsed in JS -->
+  <div id="auth-data" class="container"
+       data-provider="{provider_attr}"
+       data-code="{code_attr}"
+       data-state="{state_attr}">
     <div class="spinner"></div>
     <p>Authentication complete. Returning to Telegram...</p>
   </div>
   <script>
     try {{
-      const data = {{
-        provider: {provider_json},
-        code: {code_json},
-        state: {state_json}
+      var el = document.getElementById('auth-data');
+      var data = {{
+        provider: el.getAttribute('data-provider'),
+        code: el.getAttribute('data-code'),
+        state: el.getAttribute('data-state')
       }};
       if (window.Telegram && Telegram.WebApp) {{
         Telegram.WebApp.sendData(JSON.stringify(data));
@@ -177,10 +182,12 @@ async def oauth2_callback_handler(request: web.Request) -> web.Response:
         state[:8] if len(state) > 8 else state,
     )
 
+    # Sanitize user-provided values via html.escape for safe embedding
+    # in HTML data-attributes (prevents XSS).
     html = _SUCCESS_HTML_TEMPLATE.format(
-        provider_json=_json_escape(provider),
-        code_json=_json_escape(code),
-        state_json=_json_escape(state),
+        provider_attr=html_mod.escape(provider, quote=True),
+        code_attr=html_mod.escape(code, quote=True),
+        state_attr=html_mod.escape(state, quote=True),
     )
     return web.Response(text=html, content_type="text/html", status=200)
 

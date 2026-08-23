@@ -13,26 +13,103 @@ from __future__ import annotations
 import importlib
 import inspect
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from parrot.auth.permission import PermissionContext, build_principal_context
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
     "AgentServiceConfig",
     "AgentTargetConfig",
     "AgentTargetError",
     "SchedulerConfig",
+    "ServiceIdentityConfig",
     "default_socket_path",
+    "expand_env_vars",
     "resolve_agent",
 ]
+
+#: Environment variables provisioning the fallback service identity
+#: (FEAT-434 — used when a UDS peer's credentials cannot be resolved).
+_ENV_SERVICE_IDENTITY_DISPLAY_NAME = "AGENTD_SERVICE_IDENTITY_DISPLAY_NAME"
+_ENV_SERVICE_IDENTITY_USER_ID = "AGENTD_SERVICE_IDENTITY_USER_ID"
+_ENV_SERVICE_IDENTITY_TENANT_ID = "AGENTD_SERVICE_IDENTITY_TENANT_ID"
+_ENV_SERVICE_IDENTITY_ROLES = "AGENTD_SERVICE_IDENTITY_ROLES"
 
 #: Default NDJSON line-size limit (bytes) for the UDS server (spec §2).
 _DEFAULT_MAX_LINE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 #: Characters not allowed in a service `name` (it becomes a filename).
 _NAME_INVALID_CHARS = frozenset("/\\")
+
+#: Regex for ``${VAR}`` and ``${VAR:-default}`` interpolation.
+_ENV_VAR_PATTERN = re.compile(
+    r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?::[-](?P<default>[^}]*))?\}"
+)
+
+#: Bare env-var name: uppercase letters, digits, underscores, 2+ chars.
+_BARE_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,}$")
+
+
+def _expand_env_string(value: str) -> str:
+    """Expand environment variables inside a single string value.
+
+    Supports two syntaxes (applied in order):
+
+    1. **Interpolation** — ``${VAR}`` or ``${VAR:-default}``.  Works for
+       full-value *and* partial substitution
+       (``"https://${HOST}:${PORT}/api"``).  When no default is given and
+       the variable is unset, the ``${VAR}`` token is left as-is so
+       Pydantic validation surfaces a readable error.
+    2. **Bare-name fallback** — when the *entire* string (after step 1)
+       matches ``^[A-Z][A-Z0-9_]+$`` and that name exists in
+       ``os.environ``, the value is replaced wholesale.  This lets users
+       write ``vault_path: OBSIDIAN_VAULT_PATH`` as a shorthand.
+    """
+    def _replacer(match: re.Match) -> str:
+        name = match.group("name")
+        default = match.group("default")
+        env_val = os.environ.get(name)
+        if env_val is not None:
+            return env_val
+        if default is not None:
+            return default
+        # Leave the token as-is so the caller gets a clear error.
+        return match.group(0)
+
+    expanded = _ENV_VAR_PATTERN.sub(_replacer, value)
+
+    # Bare-name fallback: only when the whole string is an env-var name.
+    if _BARE_ENV_NAME.match(expanded):
+        env_val = os.environ.get(expanded)
+        if env_val is not None:
+            return env_val
+
+    return expanded
+
+
+def expand_env_vars(obj: Any) -> Any:
+    """Recursively expand environment variables in a parsed YAML tree.
+
+    Walks dicts, lists, and string leaves.  Non-string scalars (int, float,
+    bool, None) are returned unchanged.
+
+    Args:
+        obj: The parsed YAML data (typically a ``dict``).
+
+    Returns:
+        A new structure with environment variables expanded.
+    """
+    if isinstance(obj, dict):
+        return {k: expand_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [expand_env_vars(item) for item in obj]
+    if isinstance(obj, str):
+        return _expand_env_string(obj)
+    return obj
 
 
 class SchedulerConfig(BaseModel):
@@ -48,6 +125,98 @@ class SchedulerConfig(BaseModel):
     enabled: bool = True
     dsn: str | None = None
     redis: bool = False
+
+
+class ServiceIdentityConfig(BaseModel):
+    """Fallback caller identity for UDS connections whose peer credentials
+    cannot be resolved (FEAT-434 — Claude Agent Tool Bridge, spec §3 Module 4).
+
+    Provisioning (environment variables):
+        ``AGENTD_SERVICE_IDENTITY_DISPLAY_NAME`` — human-readable label
+            (default ``"parrot agent server"``).
+        ``AGENTD_SERVICE_IDENTITY_USER_ID``      — principal id used for
+            confirmation-window keying and PBAC (default ``"1001"``).
+        ``AGENTD_SERVICE_IDENTITY_TENANT_ID``    — tenant/org id (default
+            ``"default"``).
+        ``AGENTD_SERVICE_IDENTITY_ROLES``        — optional comma-separated
+            role claims (default: none).
+
+    Attributes:
+        display_name: Human-readable label for logs/audit trails.
+        user_id: Principal identifier for the resolved `PermissionContext`.
+        tenant_id: Tenant/org identifier.
+        roles: Role claims for policy evaluation.
+
+    Note:
+        ``window_seconds`` is intentionally NOT a field here — it is a fixed
+        `0` (see the `window_seconds` property below) and is never
+        configurable via environment, YAML, or constructor kwargs. This
+        identity's `owner_id` is shared by construction (every unresolvable
+        peer collapses onto it), so a non-zero confirmation window would let
+        one human's approval clear a later destructive call made for
+        somebody else.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = "parrot agent server"
+    user_id: str = "1001"
+    tenant_id: str = "default"
+    roles: frozenset[str] = Field(default_factory=frozenset)
+
+    @property
+    def window_seconds(self) -> int:
+        """Always `0` — this identity never holds a confirmation window.
+
+        Decoupled from `ConfirmationConfig.window_seconds` on purpose: a
+        deployment may raise the guard's *default* window for regular
+        callers, but that must never apply to the shared service identity.
+        """
+        return 0
+
+    @classmethod
+    def from_env(cls) -> ServiceIdentityConfig:
+        """Build the service identity from environment config, with defaults.
+
+        Returns:
+            A :class:`ServiceIdentityConfig`. Always succeeds — every field
+            has a default, so a deployment need not provision anything to
+            get a usable (if generic) fallback identity.
+        """
+        roles_raw = os.environ.get(_ENV_SERVICE_IDENTITY_ROLES, "")
+        roles = frozenset(r.strip() for r in roles_raw.split(",") if r.strip())
+        kwargs: dict[str, Any] = {"roles": roles}
+        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_DISPLAY_NAME)):
+            kwargs["display_name"] = value
+        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_USER_ID)):
+            kwargs["user_id"] = value
+        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_TENANT_ID)):
+            kwargs["tenant_id"] = value
+        return cls(**kwargs)
+
+    def to_permission_context(self, channel: str = "agentd") -> PermissionContext:
+        """Resolve this identity into a `PermissionContext`.
+
+        The returned context's `extra["window_seconds"]` is always `0`,
+        regardless of any deployment-configured `ConfirmationConfig`
+        default — the anchor downstream HITL wiring (bridged confirming
+        tools) must consult to pin this identity's confirmation window.
+
+        Args:
+            channel: Originating channel propagated to the context.
+
+        Returns:
+            A `PermissionContext` wrapping a `UserSession` for this identity.
+        """
+        ctx = build_principal_context(
+            self.user_id,
+            channel=channel,
+            tenant_id=self.tenant_id,
+            roles=self.roles or None,
+        )
+        ctx.extra["window_seconds"] = self.window_seconds
+        ctx.extra["display_name"] = self.display_name
+        return ctx
 
 
 class AgentTargetConfig(BaseModel):
@@ -74,6 +243,16 @@ class AgentServiceConfig(BaseModel):
         socket: Explicit UDS path. `None` means `default_socket_path(name)`
             is used at daemon start time.
         scheduler: Headless scheduler bootstrap options.
+        expose_as_tools: Which allowlisted methods also become LLM tools, so
+            the agent can call them mid-conversation instead of only
+            answering RPC. `None` (the default) derives a tool for every
+            name in `exposed_methods`; an explicit list narrows it (use it
+            to keep slow or destructive methods RPC-only); `[]` disables
+            derivation entirely. A tool the agent already registers itself
+            always wins over a derived one. Composes with FEAT-434: the
+            derived tools land in the agent's `ToolManager`, so a
+            `claude-agent` LLM reaches them through the bridge as
+            `mcp__parrot__<method>` like any other registered tool.
         exposed_methods: Allowlist of agent method names exposed via the
             `agent.invoke` RPC method; when non-empty it is also a hard
             requirement for the MCP `invoke_method` tool to be registered
@@ -91,6 +270,7 @@ class AgentServiceConfig(BaseModel):
     socket: Path | None = None
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     exposed_methods: list[str] = Field(default_factory=list)
+    expose_as_tools: list[str] | None = None
     log_level: str = "INFO"
     max_line_bytes: int = _DEFAULT_MAX_LINE_BYTES
     shutdown_grace: float = 30.0
@@ -110,6 +290,17 @@ class AgentServiceConfig(BaseModel):
     def from_yaml(cls, path: str | Path) -> AgentServiceConfig:
         """Load an `AgentServiceConfig` from a YAML file.
 
+        String values support environment-variable expansion:
+
+        - ``${VAR}`` — replaced by ``os.environ["VAR"]``; left as-is
+          when unset (Pydantic validation will surface the error).
+        - ``${VAR:-default}`` — replaced by the env value, falling back
+          to *default* when unset.
+        - Partial interpolation: ``"https://${HOST}:${PORT}/api"``
+        - Bare-name shorthand: a value like ``OBSIDIAN_VAULT_PATH``
+          (all-caps, no ``${}``) is replaced when a matching env var
+          exists.
+
         Args:
             path: Path to the YAML config file.
 
@@ -117,7 +308,8 @@ class AgentServiceConfig(BaseModel):
             The parsed and validated config.
         """
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        return cls.model_validate(raw)
+        expanded = expand_env_vars(raw)
+        return cls.model_validate(expanded)
 
     @classmethod
     def from_target(

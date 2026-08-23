@@ -26,7 +26,23 @@ import pytest
 # Resolve source root relative to this test file location
 # ---------------------------------------------------------------------------
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SRC_ROOT = _PROJECT_ROOT / "packages" / "ai-parrot" / "src"
+def _parrot_source(relative: str) -> Path:
+    """Locate a ``parrot.*`` source file across the uv workspace packages.
+
+    Modules migrate between distributions — ``parrot.handlers`` and
+    ``parrot.manager`` now ship from ai-parrot-server, not from core — so
+    resolve by finding the file instead of hardcoding a package name.
+    """
+    for _pkg in sorted((_PROJECT_ROOT / "packages").iterdir()):
+        _candidate = _pkg / "src" / relative
+        if _candidate.is_file():
+            return _candidate
+    raise FileNotFoundError(
+        f"{{relative!r}} not found under any packages/*/src in the workspace"
+    )
+
+
+_SRC_ROOT = _parrot_source("parrot/handlers/agent.py").parents[2]
 _POLICIES_ROOT = _PROJECT_ROOT / "policies"
 
 # ---------------------------------------------------------------------------
@@ -125,10 +141,10 @@ class TestPBACResolver:
         """PBACPermissionResolver.can_execute returns False when no matching policy."""
         from navigator_auth.abac.policies.evaluator import PolicyEvaluator
         from navigator_auth.abac.policies.abstract import PolicyEffect
-        evaluator = PolicyEvaluator(
-            default_effect=PolicyEffect.DENY,
-            cache_ttl_seconds=30,
-        )
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator(cache_ttl_seconds=30)
         # No policies loaded — default deny
         from parrot.auth.resolver import PBACPermissionResolver
         from parrot.auth.permission import UserSession, PermissionContext
@@ -314,7 +330,10 @@ class TestPolicyResolution:
         f = tmp_path / "conflict.yaml"
         f.write_text(yaml.dump(policy_data))
 
-        evaluator = PolicyEvaluator(default_effect=PolicyEffect.DENY)
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator()
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 
@@ -358,7 +377,10 @@ class TestPolicyResolution:
         f = tmp_path / "priority.yaml"
         f.write_text(yaml.dump(policy_data))
 
-        evaluator = PolicyEvaluator(default_effect=PolicyEffect.DENY)
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator()
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 
@@ -402,7 +424,10 @@ class TestPolicyResolution:
         f = tmp_path / "enforcing.yaml"
         f.write_text(yaml.dump(policy_data))
 
-        evaluator = PolicyEvaluator(default_effect=PolicyEffect.DENY)
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator()
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 
@@ -437,7 +462,10 @@ class TestPolicyResolution:
         f = tmp_path / "nomatch.yaml"
         f.write_text(yaml.dump(policy_data))
 
-        evaluator = PolicyEvaluator(default_effect=PolicyEffect.DENY)
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator()
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 
@@ -472,7 +500,10 @@ class TestPolicyResolution:
         f = tmp_path / "wildcard.yaml"
         f.write_text(yaml.dump(policy_data))
 
-        evaluator = PolicyEvaluator(default_effect=PolicyEffect.DENY)
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator()
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 
@@ -504,7 +535,10 @@ class TestPolicyResolution:
         f = tmp_path / "pattern.yaml"
         f.write_text(yaml.dump(policy_data))
 
-        evaluator = PolicyEvaluator(default_effect=PolicyEffect.DENY)
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator()
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 
@@ -565,10 +599,10 @@ class TestCacheBehavior:
         f.write_text(yaml.dump(policy_data))
 
         # Create evaluator with very short TTL (1 second)
-        evaluator = PolicyEvaluator(
-            default_effect=PolicyEffect.DENY,
-            cache_ttl_seconds=1,
-        )
+        # navigator_auth dropped the `default_effect` constructor arg; the
+        # default now comes from the ABAC_DEFAULT_EFFECT setting, which is
+        # 'deny' — the same behaviour these assertions were written against.
+        evaluator = PolicyEvaluator(cache_ttl_seconds=1)
         policies = PolicyLoader.load_from_directory(tmp_path)
         evaluator.load_policies(policies)
 

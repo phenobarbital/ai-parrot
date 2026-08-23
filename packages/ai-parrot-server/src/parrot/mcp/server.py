@@ -21,7 +21,9 @@ from parrot.mcp.transports.stdio import StdioMCPServer
 from parrot.mcp.transports.http import HttpMCPServer
 from parrot.mcp.transports.sse import SseMCPServer
 from parrot.mcp.transports.unix import UnixMCPServer
-from parrot.mcp.transports.quic import QuicMCPServer
+# QUIC lives behind the optional `ai-parrot-server[mcp]` extra (aioquic);
+# resolved lazily so a bare install can still use the other transports.
+from parrot.mcp._quic import quic_attr
 
 # Suppress noisy loggers
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
@@ -45,7 +47,8 @@ class MCPServer:
         elif config.transport == "unix":
             self.server = UnixMCPServer(config)
         elif config.transport == "quic":
-            self.server = QuicMCPServer(config)
+            quic_server_cls = quic_attr("QuicMCPServer")
+            self.server = quic_server_cls(config)
         else:
             raise ValueError(
                 f"Unsupported transport: {config.transport}"
@@ -219,6 +222,13 @@ async def main():
         print("\nShutting down...")
     finally:
         await server.stop()
+
+
+def __getattr__(name: str):
+    """Lazily re-export ``QuicMCPServer`` for backwards compatibility (PEP 562)."""
+    if name == "QuicMCPServer":
+        return quic_attr(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 if __name__ == "__main__":

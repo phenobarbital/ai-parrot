@@ -193,7 +193,8 @@ class DatasetFilterHandler:
         try:
             dm = await self._get_dataset_manager()
         except (KeyError, NotImplementedError) as exc:
-            return await self._json_response({"error": str(exc)}, status=404)
+            self.logger.warning("DatasetFilterHandler: manager not found: %s", exc)
+            return await self._json_response({"error": "Dataset manager not found for agent"}, status=404)
 
         # Use match_info to distinguish routes — the router populates "name"
         # only for the /values/{name} route, so this is unambiguous even when
@@ -234,7 +235,8 @@ class DatasetFilterHandler:
         try:
             values = await dm.get_filter_values(filter_name)
         except KeyError as exc:
-            return await self._json_response({"error": str(exc)}, status=404)
+            self.logger.warning("DatasetFilterHandler: filter '%s' not found: %s", filter_name, exc)
+            return await self._json_response({"error": f"Filter '{filter_name}' not found"}, status=404)
         except Exception as exc:
             self.logger.error(
                 "DatasetFilterHandler: get_filter_values('%s') failed: %s",
@@ -281,14 +283,17 @@ class DatasetFilterHandler:
         try:
             dm = await self._get_dataset_manager()
         except (KeyError, NotImplementedError) as exc:
-            return await self._json_response({"error": str(exc)}, status=404)
+            self.logger.warning("DatasetFilterHandler: manager not found: %s", exc)
+            return await self._json_response({"error": "Dataset manager not found for agent"}, status=404)
 
         try:
             result = await dm.apply_filters(filter_request, persist=persist)
         except KeyError as exc:
-            return await self._json_response({"error": str(exc)}, status=422)
+            self.logger.warning("DatasetFilterHandler: unknown filter key: %s", exc)
+            return await self._json_response({"error": "Unknown filter key"}, status=422)
         except ValueError as exc:
-            return await self._json_response({"error": str(exc)}, status=422)
+            self.logger.warning("DatasetFilterHandler: invalid filter value: %s", exc)
+            return await self._json_response({"error": "Invalid filter value"}, status=422)
         except Exception as exc:
             self.logger.error(
                 "DatasetFilterHandler: apply_filters failed: %s", exc

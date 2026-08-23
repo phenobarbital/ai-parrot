@@ -1,8 +1,8 @@
 # /sdd-codereview — Code Review a Completed SDD Task
 
 Reads the task file from `sdd/tasks/completed/`, loads every referenced file, applies the
-`code-reviewer` rule, and runs an adversarial Codex cross-check before producing a
-structured review report.
+`code-reviewer` rule, and runs an adversarial cross-check (agy or codex) before
+producing a structured review report.
 
 ## Usage
 ```
@@ -62,21 +62,53 @@ Evaluate the implementation across these dimensions:
 - Are edge cases and failure modes tested?
 - Test quality: meaningful assertions vs. trivial checks?
 
-### 4. Run Adversarial Codex Cross-Check
+### 4. Run Adversarial Cross-Check
 
-Use the OpenAI `codex` CLI as an independent second-opinion reviewer.
+Use an external CLI agent as an independent second-opinion reviewer. **Prefer
+`agy` (Google Gemini)** when available; fall back to `codex` (OpenAI)
+otherwise.
 
 Rules:
-- Never feed Codex your reasoning, draft review, justification, or preferred
-  conclusion. Give it only the requirement/task context, the diff or commit, and
-  the neutral review question.
-- Run Codex in the background. Each call is a full agent session and may take
-  30 seconds to 2 minutes; do not call it per edit or from hooks.
-- Treat Codex output as advisory. For each substantive Codex finding, decide:
+- Never feed the reviewer your reasoning, draft review, justification, or
+  preferred conclusion. Give it only the requirement/task context, the diff or
+  commit, and the neutral review question.
+- Run the reviewer in the background. Each call is a full agent session and may
+  take 30 seconds to 2 minutes; do not call it per edit or from hooks.
+- Treat reviewer output as advisory. For each substantive finding, decide:
   `CONFIRM` (adopt), `REJECT` (with reason), or `ESCALATE`.
-- Never silently concede to Codex and never silently drop a finding.
+- Never silently concede to the reviewer and never silently drop a finding.
 
-Recommended commands:
+Detection:
+```bash
+if command -v agy &>/dev/null; then REVIEWER="agy"
+elif command -v codex &>/dev/null; then REVIEWER="codex"
+fi
+```
+
+agy commands (preferred):
+```bash
+# If reviewing current uncommitted work
+agy --sandbox --print "Review the uncommitted changes (run git diff). \
+  Focus on correctness, security, async patterns, and project conventions. \
+  Output findings with file:line references."
+
+# If reviewing a task branch against the integration branch
+agy --sandbox --print "Review changes between current branch and dev \
+  (run git diff dev...HEAD). List findings with file:line references."
+
+# If reviewing a specific task commit
+agy --sandbox --print "Review commit <sha> (run git show <sha>). \
+  List findings with file:line references."
+
+# If a design opinion or cross-check is needed
+agy --sandbox --print "<neutral brief with task, acceptance criteria, \
+  changed files, and question>" > artifacts/reviews/<task>-review.txt
+
+# Follow-up in the same agy session
+agy --continue --print "<neutral follow-up question>"
+```
+
+codex commands (fallback):
 ```bash
 # If reviewing current uncommitted work
 codex exec review --uncommitted
@@ -90,16 +122,14 @@ codex exec review --commit <sha>
 # If a design opinion or cross-check is needed
 codex exec --sandbox read-only -o artifacts/reviews/<task>-codex.txt \
   "<neutral brief with task, acceptance criteria, changed files, and question>"
-```
 
-For follow-ups, continue the same Codex session:
-```bash
+# Follow-up in the same Codex session
 codex exec resume --last "<neutral follow-up question>"
 ```
 
 For a parallel perspective, invoke one Claude review agent and one background
-`codex exec` with the same neutral brief, then synthesize agreements and
-disagreements in the final report.
+reviewer session (agy or codex) with the same neutral brief, then synthesize
+agreements and disagreements in the final report.
 
 ### 5. Produce the Review Report
 Output a structured markdown report:
@@ -135,7 +165,7 @@ Output a structured markdown report:
 ## Adversarial Cross-Check
 | Finding | Disposition | Reason |
 |---------|-------------|--------|
-| <Codex or Claude subagent finding> | CONFIRM / REJECT / ESCALATE | <why> |
+| <Reviewer or Claude subagent finding> | CONFIRM / REJECT / ESCALATE | <why> |
 
 ## Positive Highlights
 - <what was done well>

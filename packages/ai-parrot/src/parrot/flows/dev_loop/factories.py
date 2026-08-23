@@ -224,6 +224,7 @@ def build_dev_loop_node_factories(
             PlannerNode(
                 dispatcher=dispatcher,
                 development_pool_max=development_pool_max,
+                graph_memory=graph_memory,
                 name=nd.id,
             ),
             deps,
@@ -244,6 +245,7 @@ def build_dev_loop_node_factories(
                 jira_toolkit=jira_toolkit,
                 git_toolkit=git_toolkit,
                 wiki_toolkit=wiki_toolkit,
+                graph_memory=graph_memory,
                 name=nd.id,
             ),
             deps,

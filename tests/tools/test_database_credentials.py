@@ -321,7 +321,7 @@ class TestAtlasSourceCredentials:
             result = await src.get_default_credentials()
         assert "dsn" in result
         assert result["dsn"].startswith("mongodb+srv://")
-        assert "cluster0.abc.mongodb.net" in result["dsn"]
+        assert "cluster0.abc.mongodb.net" in result["dsn"]  # lgtm[py/incomplete-url-substring-sanitization]
         assert "host" not in result
 
     @pytest.mark.asyncio

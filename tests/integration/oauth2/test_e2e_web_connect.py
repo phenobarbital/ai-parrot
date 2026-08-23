@@ -49,7 +49,7 @@ class TestE2EWebConnectJiraHappyPath:
             )
 
         assert isinstance(result, ConnectInitResponse)
-        assert "auth.atlassian.com" in result.auth_url
+        assert "auth.atlassian.com" in result.auth_url  # lgtm[py/incomplete-url-substring-sanitization]
         assert result.state == "test-nonce-123"
         assert "read:jira-work" in result.scopes
 

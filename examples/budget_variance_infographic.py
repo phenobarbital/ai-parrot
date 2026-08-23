@@ -139,22 +139,14 @@ async def main() -> None:
     # --- Replay WITHOUT a narrator: facts, no prose (criterion G-E) --------
     # --- Replay WITH a narrator: same numbers, plus figure-guarded prose ---
     #
-    # KNOWN LIMITATION against a REAL Postgres-backed dataset specifically
-    # (discovered by actually running this example; TASK-2196 fixed the
-    # related `publish_recipe` bogus-DataSourceSpec bug for chained
-    # narrative_facts inputs — verified: this recipe's saved `data_sources`
-    # now correctly contains only `snapshots`). The remaining blocker is a
-    # deliberate SAFETY GUARDRAIL, not a bug: `troc.finance_projection` is
-    # registered as a `TableSource`, which REQUIRES an explicit SQL
-    # statement (never `SELECT *` on a large table) — but `publish_recipe`'s
-    # generic SectionDescriptor path has no field for attaching one. Using
-    # an in-memory dataset (as TASK-2196's integration tests do) sidesteps
-    # this entirely; a live-Postgres publish/replay would need a
-    # descriptor-level way to declare `DataSourceSpec.sql` — tracked as a
-    # follow-up, not fixed here. Replay therefore currently fails at the
-    # fetch stage for this live-DB example; it demonstrates as much of the
-    # flow as is functionally possible today and reports the rest honestly
-    # rather than crashing.
+    # Both replays hit the REAL Postgres table. `troc.finance_projection` is
+    # registered as a `TableSource`, which rejects any fetch without explicit
+    # SQL (and any bare `SELECT *`) — so `FinanceReporter.report_descriptor()`
+    # declares `dataset_sql` for the `snapshots` alias, which
+    # `publish_recipe` threads into `DataSourceSpec.sql` and `RecipeRunner`
+    # passes to `DatasetManager.fetch_dataset`. That closes the last gap
+    # against a live DB: publish -> dry_run -> replay now runs end to end
+    # without weakening the data-plane guardrail.
     for label, runner in (
         ("no narrator", RecipeRunner(recipe_store, agent._dataset_manager)),
         ("narrated", RecipeRunner(recipe_store, agent._dataset_manager, narrator=agent)),

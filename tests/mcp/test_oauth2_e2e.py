@@ -19,6 +19,14 @@ from parrot.mcp.oauth2_state import (
     is_pending,
 )
 
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot.mcp.oauth2_storage  # noqa: F401
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -74,6 +82,7 @@ async def mock_oauth2_server(aiohttp_server):
         """Simulate authorization endpoint — redirect with code."""
         redirect_uri = request.query.get("redirect_uri", "")
         state = request.query.get("state", "")
+        # CodeQL[py/url-redirection]: mock OAuth server in test — redirect_uri is test-controlled
         raise web.HTTPFound(f"{redirect_uri}?code=mock-auth-code&state={state}")
 
     async def token(request: web.Request) -> web.Response:

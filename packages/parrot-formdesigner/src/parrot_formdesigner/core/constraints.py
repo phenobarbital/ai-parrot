@@ -138,6 +138,12 @@ class ConditionOperator(str, Enum):
     LTE = "lte"
     IN = "in"
     NOT_IN = "not_in"
+    # CONTAINS is IN read the other way round. IN asks "is the answer one of
+    # these values"; CONTAINS asks "does this multi-valued source hold that
+    # value" — the shape a store's group membership takes, where the context
+    # supplies the list and the rule names the one entry it needs.
+    CONTAINS = "contains"
+    NOT_CONTAINS = "not_contains"
     IS_EMPTY = "is_empty"
     IS_NOT_EMPTY = "is_not_empty"
 
@@ -175,10 +181,36 @@ class FieldCondition(BaseModel):
     key: str | None = None
 
 
+class LogicGroup(BaseModel):
+    """One alternative inside a :class:`DependencyRule`.
+
+    Conditions inside a group are AND'd; the groups themselves are OR'd
+    against each other. That nesting is what a flat ``conditions`` list
+    cannot express — "the store is in one of these groups AND the visit is
+    one of these types" needs two groups, not thirteen conditions under a
+    single gate, where ``and`` demands all thirteen and ``or`` settles for
+    one.
+
+    The shape matches the frontend's ``LogicGroup`` (navigator-svelte
+    ``formbuilder/types/schema.ts``), which has evaluated groups since
+    before the server could express them.
+
+    Attributes:
+        conditions: Conditions that must ALL hold for this group to match.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    conditions: list["FieldCondition"]
+
+
 class DependencyRule(BaseModel):
     """Rule controlling conditional visibility/behavior of a field or section.
 
     Attributes:
+        groups: Alternatives, each AND'd internally and OR'd against the
+            others. When present it REPLACES ``conditions``/``logic`` — the
+            flat pair stays for every rule that does not need nesting.
         conditions: List of field conditions that must be evaluated.
         logic: How conditions are combined. One of:
             - ``"and"``: all conditions must be true (default; backward-compatible).
@@ -193,6 +225,7 @@ class DependencyRule(BaseModel):
     # model_config intentionally omits extra="forbid" for forward-compatible
     # unknown keys — existing forms with unrecognised rule keys must round-trip unchanged.
 
+    groups: list[LogicGroup] | None = None
     conditions: list[FieldCondition]
     logic: Literal["and", "or", "xor", "not"] = "and"
     effect: Literal["show", "hide", "require", "disable"] = "show"

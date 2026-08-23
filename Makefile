@@ -6,7 +6,8 @@
 		generate-registry check-registry build-codec-rs build-navrules-rs build-rust \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic docker-tool-worker docker-integrations docker-dev
+		install-supertonic docker-tool-worker docker-integrations docker-dev \
+		apply-commcenter-ddl
 
 # Python version to use
 PYTHON_VERSION := 3.12
@@ -425,6 +426,27 @@ generate-registry:
 # Check if TOOL_REGISTRY is up to date (for CI)
 check-registry:
 	uv run python scripts/generate_tool_registry.py --check
+
+# Apply CommCenter DDL (FEAT-445 TASK-2317) — creates
+# navigator.notification_templates and navigator.notification_batch_recipients.
+# Both .sql files are idempotent (IF NOT EXISTS / CREATE OR REPLACE / DROP
+# TRIGGER IF EXISTS throughout), so running this target more than once is
+# safe. DSN resolution order: DATABASE_URL -> NAVIGATOR_DSN -> PG_URL.
+#   make apply-commcenter-ddl DATABASE_URL=postgres://user:pass@host:5432/db
+COMMCENTER_DSN := $(or $(DATABASE_URL),$(NAVIGATOR_DSN),$(PG_URL))
+COMMCENTER_DDL_DIR := packages/ai-parrot-server/src/parrot/handlers/models
+
+apply-commcenter-ddl:
+	@if [ -z "$(COMMCENTER_DSN)" ]; then \
+		echo "Error: set DATABASE_URL, NAVIGATOR_DSN, or PG_URL to a Postgres DSN."; \
+		exit 1; \
+	fi
+	@echo "Applying CommCenter DDL (navigator schema) ..."
+	psql "$(COMMCENTER_DSN)" -v ON_ERROR_STOP=1 -c "SET search_path TO navigator;" \
+		-f $(COMMCENTER_DDL_DIR)/notification_templates_creation.sql
+	psql "$(COMMCENTER_DSN)" -v ON_ERROR_STOP=1 -c "SET search_path TO navigator;" \
+		-f $(COMMCENTER_DDL_DIR)/notification_batches_creation.sql
+	@echo "CommCenter DDL applied successfully (safe to re-run — idempotent)."
 
 # Update all dependencies
 update:

@@ -195,8 +195,8 @@ class AgentKnowledgeHandler(BaseView):
                 await response.write(str(chunk).encode("utf-8"))
                 await response.drain()
         except Exception as exc:  # pragma: no cover - defensive
-            self.logger.error("Error during ask_stream: %s", exc)
-            await response.write(f"\n[error] {exc}".encode("utf-8"))
+            self.logger.exception("Error during ask_stream: %s", exc)
+            await response.write(b"\n[error] Internal server error")
         finally:
             await response.write_eof()
         return response

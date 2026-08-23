@@ -49,6 +49,9 @@ dependencies = [
     "tenacity>=8.2",
     "typing-extensions>=4.14.1,<5",
     "pydantic==2.12.5",
+    # Required for pydantic.EmailStr (FEAT-441: FirefliesFilters.organizers/
+    # .participants email validation).
+    "email-validator>=2.0",
     "PyYAML>=6.0.2",
     "python-frontmatter>=1.1.0",
     # Obsidian-flavored markdown parsing (wikilinks/embeds/tags) for the
@@ -106,7 +109,10 @@ dependencies = [
     # NotificationMixin unconditionally, and parrot/notifications/__init__.py
     # does `from notify import Notify` at module level, so `parrot.bots` cannot
     # be imported without it. Use `ai-parrot[notify-all]` for the backends.
-    "async-notify>=1.4.2",
+    # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) to keep this base pin at
+    # or above ai-parrot-server[comm-center]'s own floor — see that extra's
+    # comment for why CommCenter requires >=1.6.0.
+    "async-notify>=1.6.0",
     "ddgs>=9.5.2",
     # State machine / workflow (core)
     "python-statemachine==2.5.0",
@@ -147,8 +153,12 @@ wikitoolkit = "parrot.knowledge.wiki.cli:main"
 # ---------------------------------------------------------------------------
 
 # All notification backends (msgraph, twilio, o365, etc.)
+# Floor raised to >=1.6.0 (FEAT-445 TASK-2318, code-review follow-up) — this
+# extra requests the same async-notify[all] distribution the CommCenter
+# runtime version guard protects; left at >=1.4.2 in the original pass,
+# which the acceptance criterion ("all relevant extras") did not cover.
 notify-all = [
-    "async-notify[all]>=1.4.2",
+    "async-notify[all]>=1.6.0",
 ]
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
@@ -359,7 +369,7 @@ agents-lite = [
 
 mcp = [
     "google-genai>=2.18.1",
-    "openai==2.41.0",
+    "openai==3.3.1",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
@@ -446,8 +456,15 @@ claude-agent = [
     "claude-agent-sdk>=0.1.68",
 ]
 
+codex-agent = [
+    "openai-codex>=0.1.0",
+    "mcp>=1.28.1,<2",
+    "starlette>=0.37",
+    "uvicorn>=0.30",
+]
+
 openai = [
-    "openai==2.41.0",
+    "openai==3.3.1",
     "tiktoken==0.9.0"
 ]
 
@@ -468,7 +485,7 @@ zai = [
 
 llms = [
     "google-genai>=2.18.1",
-    "openai==2.41.0",
+    "openai==3.3.1",
     "groq==0.33.0",
     # FIX-2: include both direct-API and Bedrock SDK so that `llms` covers all
     # Anthropic transports; bedrock pulls anthropic[aiohttp,aws] (boto3 stack).
@@ -480,7 +497,9 @@ llms = [
 
 integrations = [
     "querysource>=4.1.11",
-    "async-notify[all]>=1.5.2",
+    # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) — see ai-parrot[agents]'s
+    # base async-notify pin and ai-parrot-server[comm-center]'s comment.
+    "async-notify[all]>=1.6.0",
     # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
@@ -507,6 +526,34 @@ security = [
     # load GGUF models via llama.cpp, but we only use the deBERTa detector
     # (torch/transformers). See abstract.py PromptInjectionDetector("deberta").
     "pytector==0.2.0",
+    # ONNX Runtime backend for the model-backed guardrails (prompt-injection
+    # classifier today; the NLI groundedness tier later). Runtime only: it
+    # loads a pre-exported graph, it never produces one (see the `dev` extra
+    # for the exporter). The transformers tokenizer it needs already arrives
+    # with pytector.
+    #
+    # Why: measured 2026-08-20 on `protectai/deberta-v3-base-prompt-injection`
+    # (what pytector's "deberta" alias resolves to), ONNX fp32 runs the SAME
+    # weights at 32.96 ms p50 against torch's 118.99 ms — 3.6x faster with
+    # ZERO flipped verdicts (max|delta| = 0.000). Evidence:
+    # `benchmarks/injection_guardrail_latency/results/report.md`.
+    #
+    # Gotcha for whoever wires this up: ORT sizes its intra-op thread pool to
+    # every physical core PER SESSION. Uncapped, "off-loop" inference still
+    # pegs the machine and starves the event loop — set
+    # `intra_op_num_threads` / `inter_op_num_threads` on the SessionOptions.
+    # Prior art: `voice/tts/supertonic_inference.py:462-472`.
+    "onnxruntime>=1.16",
+    # FEAT-439: declared explicitly — the ONNX engine-resolution path
+    # (offline cache probing via `try_to_load_from_cache`) and
+    # `warmup_injection_model()`'s `snapshot_download` both call into this
+    # directly. It arrived transitive-only via transformers/pytector until
+    # now. Bound `<1.0` to stay compatible with the `audio` extra's
+    # whisperx 3.8.5, which pins `huggingface-hub<1.0.0` (pyproject:~391);
+    # `>=0.24` is comfortably below the installed 0.36.2 and well past the
+    # release that added `allow_patterns`/`local_files_only` support to
+    # `snapshot_download`/`try_to_load_from_cache`.
+    "huggingface_hub>=0.24,<1.0",
 ]
 
 xai = [
@@ -597,6 +644,17 @@ dev = [
     # totality, arbitration, expiry). The spec's contract claimed this was
     # "already used in repo tests" — verified absent in-tree; added here.
     "hypothesis>=6.100",
+    # ONNX export + quantization toolchain for
+    # `benchmarks/injection_guardrail_latency/export.py`. Build-time only —
+    # deliberately NOT in `security`, so a production install does not carry
+    # the optimum/onnx toolchain merely to load a graph someone else produced.
+    #
+    # WARNING: dynamic int8 quantization is NOT safe for DeBERTa-v3 — measured
+    # 39/96 verdicts flipped and 0% recall, because its disentangled attention
+    # leaves most attention MatMuls unquantizable. Any quantized graph must
+    # pass the numerical-parity gate in that harness before it ships.
+    "onnx>=1.22",
+    "optimum[onnxruntime]>=2.0",
 ]
 
 # Remote tool executors (parrot.tools.executors). Pulls the optional
@@ -616,13 +674,20 @@ visualizations = [
     "ai-parrot-visualizations[all]",
 ]
 
+# Optional Rust acceleration (columnar codec for tool-result compression).
+# Pre-built wheels published to PyPI; building from source requires Rust toolchain.
+# Use: pip install ai-parrot[rust]
+rust = [
+    "parrot_codec>=0.1.0",
+]
+
 # Convenience groups
 # Note: embeddings/milvus/chroma/arango extras moved to ai-parrot-embeddings in FEAT-201.
 # ai-parrot-embeddings[all] covers all moved backends.
 # Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
 # Note: scheduler extra and server layer moved to ai-parrot-server in FEAT-203.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations]",
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations,rust]",
     "ai-parrot-embeddings[all]",
     "ai-parrot-integrations[all]",
     "ai-parrot-server[all]",
@@ -722,6 +787,9 @@ features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "real_llm: mark a test as requiring a live LLM provider",
+]
 
 [tool.cibuildwheel]
 build = "cp3{11,12,13,14}-manylinux_x86_64"

@@ -33,7 +33,7 @@ class TestBuildCSPHeaders:
             url = "https://cdn.example/echarts.min.js"
 
         hdrs = build_csp_headers(js_bundles=[_FakeBundle()])
-        assert "https://cdn.example" in hdrs["Content-Security-Policy"]
+        assert "https://cdn.example" in hdrs["Content-Security-Policy"]  # lgtm[py/incomplete-url-substring-sanitization]
 
     def test_inline_bundle_not_added_to_script_src(self):
         """Inline bundles should NOT add any origin to script-src."""

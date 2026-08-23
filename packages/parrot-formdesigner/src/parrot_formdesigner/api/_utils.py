@@ -59,7 +59,13 @@ def _loc_to_str(value: object) -> str | None:
 
 
 def _bump_version(version: str) -> str:
-    """Increment the minor component of a version string.
+    """Increment the minor (or last) component of a version string.
+
+    FEAT-433 TASK-2267: delegates to the single bump grammar in
+    ``services.form_version._bump`` (``bump="minor"``, the only mode this
+    call site ever used) — see that function's docstring for the full
+    grammar. Kept as a thin wrapper so the 21 forms call sites that import
+    ``_bump_version`` from here are untouched.
 
     Examples:
         ``"1.0"`` → ``"1.1"``
@@ -73,9 +79,6 @@ def _bump_version(version: str) -> str:
     Returns:
         Version string with the last numeric component incremented by 1.
     """
-    parts = version.split(".")
-    if len(parts) >= 2:
-        parts[-1] = str(int(parts[-1]) + 1)
-    else:
-        parts.append("1")
-    return ".".join(parts)
+    from ..services.form_version import _bump
+
+    return _bump(version, bump="minor")

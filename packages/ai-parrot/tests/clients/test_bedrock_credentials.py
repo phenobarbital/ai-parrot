@@ -111,12 +111,44 @@ class TestBearerTokenResolution:
         assert c._aws_bearer_token is None
 
     @pytest.mark.asyncio
-    async def test_get_client_exports_bearer_token_env_var(self, monkeypatch):
-        import os
+    async def test_get_client_pins_bearer_auth_scheme(self, monkeypatch):
+        """A configured API key pins ``signature_version="bearer"``.
 
+        Regression: this used to export ``AWS_BEARER_TOKEN_BEDROCK`` and
+        rely on botocore preferring it. botocore 1.35.x (this project's
+        pin) has no AWS_BEARER_TOKEN support at all, so the export was
+        inert and every call fell through to SigV4 — signing as whatever
+        ambient IAM identity the credential chain found (navconfig itself
+        exports AWS_ACCESS_KEY_ID from env/.env), then failing with
+        AccessDeniedException while the API key sat unused.
+        """
         monkeypatch.setattr("parrot.clients.bedrock.AWS_CREDENTIALS", {})
-        monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        # Ambient SigV4 credentials present — the bearer key must still win.
+        monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA-AMBIENT")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret")
+
         c = BedrockConverseClient(aws_bearer_token="ABSK-EXPORTED")
-        await c.get_client()
-        assert os.environ["AWS_BEARER_TOKEN_BEDROCK"] == "ABSK-EXPORTED"
-        del os.environ["AWS_BEARER_TOKEN_BEDROCK"]
+        client = await c.get_client()
+
+        assert client.meta.config.signature_version == "bearer"
+
+    @pytest.mark.asyncio
+    async def test_get_client_uses_sigv4_for_static_keys(self, monkeypatch):
+        """A static keypair still signs with SigV4, not bearer."""
+        monkeypatch.setattr("parrot.clients.bedrock.AWS_CREDENTIALS", {})
+        c = BedrockConverseClient(
+            aws_access_key="AKIA-EXPLICIT", aws_secret_key="explicit-secret"
+        )
+        client = await c.get_client()
+
+        assert client.meta.config.signature_version != "bearer"
+
+    @pytest.mark.asyncio
+    async def test_static_token_provider_serves_the_configured_key(self):
+        """The provider hands botocore's BearerAuth the configured token."""
+        from parrot.clients.bedrock import _StaticBedrockTokenProvider
+
+        provider = _StaticBedrockTokenProvider("ABSK-TOKEN")
+        frozen = await provider.load_token().get_frozen_token()
+
+        assert frozen.token == "ABSK-TOKEN"

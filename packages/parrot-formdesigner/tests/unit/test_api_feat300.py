@@ -24,14 +24,76 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+from parrot_formdesigner.api._utils import _bump_version
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
-from parrot_formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.services.form_version import FormVersionService
+from parrot_formdesigner.services.registry import FormRegistry, FormStorage
 from parrot_formdesigner.tools.services.networkninja import (
     ImportDiffEntry,
     ImportDiffReport,
 )
+
+
+class _FakeFormStorage(FormStorage):
+    """Minimal dict-backed FormStorage double (FEAT-433 TASK-2264).
+
+    Just enough of the ``FormStorage`` ABC to prove ``_get_version_service``
+    wires a real backend through and that a published snapshot survives
+    discarding and rebuilding the service — not a full storage double
+    (see ``InMemoryStorage`` in ``test_feat300_review_fixes.py`` for that).
+    """
+
+    def __init__(self) -> None:
+        self._rows: dict[tuple[str | None, str], dict[str, FormSchema]] = {}
+
+    async def save(self, form: FormSchema, style=None, *, tenant=None) -> str:
+        # Mirrors PostgresFormStorage's DB-assigned created_at (FEAT-433):
+        # a fresh FormSchema has created_at=None until storage stamps it —
+        # list_versions()'s draft fallback (_published_at_from_row) needs a
+        # real timestamp, same as it would get from a live Postgres row.
+        snapshot = form.model_copy(
+            deep=True,
+            update={"created_at": form.created_at or datetime.now(timezone.utc)},
+        )
+        versions = self._rows.setdefault((tenant, str(form.form_uid)), {})
+        versions[form.version] = snapshot
+        return form.form_id
+
+    async def load(self, form_uid, version=None, *, tenant=None):
+        versions = self._rows.get((tenant, str(form_uid)), {})
+        if not versions:
+            return None
+        if version is not None:
+            snap = versions.get(version)
+            return snap.model_copy(deep=True) if snap else None
+        return list(versions.values())[-1].model_copy(deep=True)
+
+    async def delete(self, form_uid, *, tenant=None) -> bool:
+        return self._rows.pop((tenant, str(form_uid)), None) is not None
+
+    async def list_forms(self, *, tenant=None):
+        return [
+            {"form_uid": fuid, "version": list(v.keys())[-1], "tenant": t}
+            for (t, fuid), v in self._rows.items()
+            if t == tenant
+        ]
+
+    async def list_versions(self, form_uid, *, tenant=None) -> list[dict]:
+        """FEAT-433 Module 2 — projected-row shape, mirrors PostgresFormStorage."""
+        versions = self._rows.get((tenant, str(form_uid)), {})
+        return [
+            {
+                "version": version,
+                "created_at": snap.created_at,
+                "updated_at": snap.created_at,
+                "form_id": snap.form_id,
+                "published_version": snap.published_version,
+                "published_at": (snap.meta or {}).get("published_at"),
+            }
+            for version, snap in versions.items()
+        ]
 
 # Well-formed UUIDs that are never registered — used for "unknown form"
 # tests, distinct from any auto-generated form.form_uid.
@@ -108,6 +170,26 @@ def _make_request(
     return req
 
 
+def _tenant_request(*, tenant: str = "t1", **kwargs) -> MagicMock:
+    """``_make_request()``, patched with the FEAT-421 ``request["tenant"]``.
+
+    ``_make_request()`` predates FEAT-421 and only stubs the legacy
+    session-derived ``programs`` list; ``FormAPIHandler._get_tenant()`` now
+    resolves via ``declared_tenant(request)``, which reads
+    ``request.get("tenant")`` — set by the real ``@requires_tenant``
+    decorator in production, which these mocked-request unit tests bypass
+    entirely. Without this patch, a ``MagicMock(spec=web.Request)``'s
+    inherited ``.get()`` returns a fresh (truthy) ``MagicMock`` for any key,
+    so every handler call silently resolves to a nonsense tenant instead of
+    ``"t1"``. Scoped to the FEAT-433 tests that need a real round-trip
+    through the registry — not applied to the shared ``_make_request()``
+    used by pre-existing tests elsewhere in this file (out of scope).
+    """
+    req = _make_request(tenant=tenant, **kwargs)
+    req.get = lambda key, default=None: tenant if key == "tenant" else default
+    return req
+
+
 def _make_handler(
     registry: FormRegistry | None = None,
     *,
@@ -128,6 +210,49 @@ def _make_handler(
         registry.default_tenant = tenant
         registry.register = AsyncMock()
     return FormAPIHandler(registry=registry)
+
+
+# ---------------------------------------------------------------------------
+# _get_version_service — storage wiring (FEAT-433 Module 1 / TASK-2264)
+# ---------------------------------------------------------------------------
+
+
+class TestVersionServiceStorageWiring:
+    """`_get_version_service()` must pass the registry's storage through."""
+
+    async def test_version_service_receives_storage(self):
+        """A registry with a backend yields a service whose _storage is set."""
+        storage = _FakeFormStorage()
+        registry = FormRegistry(storage=storage)
+        handler = _make_handler(registry)
+
+        svc = handler._get_version_service()
+
+        assert svc._storage is storage
+
+    async def test_version_service_none_storage_still_works(self):
+        """A registry with NO backend still yields a usable (in-memory) service."""
+        registry = FormRegistry()
+        handler = _make_handler(registry)
+
+        svc = handler._get_version_service()
+
+        assert svc._storage is None
+
+    async def test_publish_persists_across_service_instances(self):
+        """A published snapshot survives discarding and rebuilding the service."""
+        storage = _FakeFormStorage()
+        registry = FormRegistry(storage=storage)
+        form = _make_form()
+        await registry.register(form, tenant="t1")
+
+        svc = FormVersionService(registry, storage=storage)
+        tag = await svc.publish(form.form_uid, tenant="t1")
+        del svc
+
+        rebuilt = FormVersionService(registry, storage=storage)
+        loaded = await rebuilt.get_published(form.form_uid, version=tag, tenant="t1")
+        assert loaded is not None
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +440,7 @@ class TestListVersions:
         assert "published_at" in v
         assert "is_current" in v
         assert "published_by" in v
+        assert "is_published" in v  # FEAT-433 D1/D3
 
     async def test_list_versions_404_unknown_form(self):
         """Listing versions for an unknown form → 404."""
@@ -338,6 +464,71 @@ class TestListVersions:
         assert resp.status == 200
         body = json.loads(resp.body)
         assert body["versions"] == []
+
+    async def test_list_versions_labels_draft_and_published_rows(self):
+        """FEAT-433 D1/D3: every stored row is listed — editor-saved drafts
+        AND published rows — each correctly labelled is_published.
+
+        FEAT-433 Q5 (promote in place): publish() stamps the CURRENT live
+        version published — it does not bump. A NEW draft only appears
+        after an editor save (``_bump_version``)."""
+        storage = _FakeFormStorage()
+        registry = FormRegistry(storage=storage)
+        form = _make_form()
+        await registry.register(form, persist=True, tenant="t1")  # 1.0 draft
+
+        handler = _make_handler(registry)
+        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
+
+        live = await registry.get(form.form_uid, tenant="t1")
+        edited = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
+        await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.1 draft
+
+        req = _tenant_request(method="GET", form_uid=form.form_uid)
+        resp = await handler.list_versions(req)
+
+        assert resp.status == 200
+        body = json.loads(resp.body)
+        by_version = {v["version"]: v for v in body["versions"]}
+
+        assert by_version["1.0"]["is_published"] is True
+        assert by_version["1.1"]["is_published"] is False
+
+    async def test_list_versions_is_current_and_is_published_can_diverge(self):
+        """FEAT-433 §1.1 item 4: is_current and is_published are independent
+        — an OLDER published row is no longer "current" once a later
+        publish moves the pin forward (`is_current` keeps its existing
+        `form.published_version or form.version` rule, unchanged).
+
+        FEAT-433 Q5 (promote in place): each publish stamps whatever
+        version is currently live — an editor save must bump the version
+        first for the second publish to land on a different tag."""
+        storage = _FakeFormStorage()
+        registry = FormRegistry(storage=storage)
+        form = _make_form()
+        await registry.register(form, persist=True, tenant="t1")  # 1.0 draft
+
+        handler = _make_handler(registry)
+        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.0
+
+        live = await registry.get(form.form_uid, tenant="t1")
+        edited = live.model_copy(deep=True, update={"version": _bump_version(live.version)})
+        await registry.register(edited, persist=True, overwrite=True, tenant="t1")  # 1.1 draft
+
+        await handler.publish_form(_tenant_request(method="POST", form_uid=form.form_uid))  # promotes 1.1
+
+        req = _tenant_request(method="GET", form_uid=form.form_uid)
+        resp = await handler.list_versions(req)
+        body = json.loads(resp.body)
+        by_version = {v["version"]: v for v in body["versions"]}
+
+        # 1.0 is still labelled published — but no longer the current one.
+        assert by_version["1.0"]["is_published"] is True
+        assert by_version["1.0"]["is_current"] is False
+
+        # 1.1 is both the newest publish AND the current one.
+        assert by_version["1.1"]["is_published"] is True
+        assert by_version["1.1"]["is_current"] is True
 
 
 # ---------------------------------------------------------------------------

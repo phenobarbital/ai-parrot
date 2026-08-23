@@ -25,7 +25,7 @@ async def example_usage():
     # Execute some Python code
     print("Executing basic math:")
     result1 = await repl_tool.execute(code="2 + 2")
-    print(f"Result: {result1}")
+    print(f"Result: {result1}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output, not sensitive
     print()
 
     # Execute pandas code
@@ -37,14 +37,14 @@ execution_results['sample_df'] = df
 df.head()
 """
     result2 = await repl_tool.execute(code=pandas_code, debug=True)
-    print(f"Result: {result2}")
+    print(f"Result: {result2}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output
     print()
 
     # Check execution results
     print("Checking execution results:")
     check_code = "list(execution_results.keys())"
     result3 = await repl_tool.execute(code=check_code)
-    print(f"Stored results: {result3}")
+    print(f"Stored results: {result3}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output
 
     # Save execution results
     print("\nSaving execution results:")
@@ -72,7 +72,7 @@ print("Data stored successfully!")
 """
 
     result = await repl_tool.execute(code=code)
-    print(f"Result: {result}")
+    print(f"Result: {result}")  # CodeQL[py/clear-text-logging-sensitive-data] — example demo output
 
 
 if __name__ == "__main__":

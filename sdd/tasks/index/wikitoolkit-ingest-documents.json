@@ -1,0 +1,181 @@
+{
+  "feature": "wikitoolkit-ingest-documents",
+  "feature_id": "FEAT-451",
+  "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-23T00:00:00Z",
+  "completed_at": "2026-08-23T08:35:24+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2351",
+      "slug": "documents-models-and-resolve-sources",
+      "title": "wiki/documents.py foundations — models + resolve_sources()",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Root of the dependency graph — every other task imports these models. Nothing can start before it.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:02:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2351-documents-models-and-resolve-sources.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2352",
+      "slug": "frontmatter-render-and-split",
+      "title": "Frontmatter engine — render_frontmatter() + split_frontmatter()",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2351"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the same file as TASK-2351/2353/2354 (documents.py). Sequential to avoid conflicts.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:03:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2352-frontmatter-render-and-split.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2353",
+      "slug": "document-acquirer-local",
+      "title": "DocumentAcquirer — loader-backed local acquisition",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2351",
+        "TASK-2352"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file as 2351/2352/2354; also consumes split_frontmatter() from 2352.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:12:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2353-document-acquirer-local.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2354",
+      "slug": "document-acquirer-url",
+      "title": "DocumentAcquirer — URL acquisition over aiohttp",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2353"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Completes the is_url branch 2353 stubs, in the same class and file.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:18:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2354-document-acquirer-url.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2355",
+      "slug": "source-manifest-metadata-persistence",
+      "title": "Persist document metadata on SourceManifestEntry (sqlite + Arango)",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2351"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only models.py and sources.py — shares NO file with TASK-2352/2353/2354 (documents.py). Can run in a separate worktree concurrently with the acquirer chain once 2351 lands. The spec chooses per-spec isolation, so it will normally run sequentially anyway; this flag records that it CAN be split if the feature needs to be parallelized.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:23:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2355-source-manifest-metadata-persistence.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2356",
+      "slug": "orchestrator-frontmatter-wiring",
+      "title": "Orchestrator wiring — acquirer, metadata persistence, page frontmatter",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2352",
+        "TASK-2353",
+        "TASK-2355"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Join point — needs the acquirer, the frontmatter renderer, and the persistence writer to all exist.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:35:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2356-orchestrator-frontmatter-wiring.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2357",
+      "slug": "cli-source-argument-wiring",
+      "title": "CLI wiring — widen SOURCE, acquire via DocumentAcquirer, report skips",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2354",
+        "TASK-2356"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hot file (cli.py, 2694 lines). Must be last of the implementation tasks so the diff stays a single focused rebase target.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T01:44:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2357-cli-source-argument-wiring.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2358",
+      "slug": "integration-tests-and-docs",
+      "title": "End-to-end integration tests + documentation",
+      "feature_id": "FEAT-451",
+      "feature": "wikitoolkit-ingest-documents",
+      "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2357"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises the whole pipeline end to end; requires every implementation task to be complete.",
+      "assigned_to": null,
+      "started_at": "2026-08-23T01:00:46+00:00",
+      "completed_at": "2026-08-23T02:02:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2358-integration-tests-and-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

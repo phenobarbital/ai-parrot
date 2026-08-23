@@ -197,8 +197,9 @@ def _make_fireflies_tool() -> Any:
             # The resolved API key is injected by the broker seam in kwargs.
             # A real implementation would use it to call the Fireflies GraphQL API.
             api_key: str = (kwargs.get("_credential") or "")[:6] or "demo"
-            logger.info(
-                "FirefliesTool._execute: query=%r api_key_prefix=%s", query[:40], api_key
+            api_key_safe = api_key[:4] + "..." if len(api_key) > 4 else "***"
+            logger.info(  # CodeQL[py/clear-text-logging-sensitive-data] — only prefix logged
+                "FirefliesTool._execute: query=%r api_key_prefix=%s", query[:40], api_key_safe
             )
             return (
                 f"[DEMO — Fireflies stub] Searched for: {query!r}. "

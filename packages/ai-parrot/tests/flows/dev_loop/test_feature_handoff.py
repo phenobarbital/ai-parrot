@@ -182,7 +182,7 @@ async def test_wiki_ingest_success(ctx, monkeypatch):
 
 
 async def test_graph_memory_absent_noop(ctx, monkeypatch):
-    """DevLoopGraphMemory does not exist (FEAT-377/B not merged) -> no-op."""
+    """No facade injected (the default) -> strict no-op."""
     monkeypatch.setattr(FeatureHandoffNode, "_run_git", _ok_git)
     _patch_gh_available(monkeypatch, True)
 
@@ -329,3 +329,36 @@ async def test_decision_recorded_action(ctx, monkeypatch):
     artifact = host.state.docs_artifacts[0]
     assert artifact.docs_path == result["docs_path"]
     assert artifact.pr_url == result["pr_url"]
+
+
+async def test_graph_memory_publishes_run_outcome(ctx, monkeypatch):
+    """An injected facade receives the real publish_run_outcome contract.
+
+    Regression: the node used to construct ``DevLoopGraphMemory()`` and
+    call ``publish_run_outcome(feat_id=..., pr_url=...)`` — both wrong
+    (keyword-only ctor; the real signature is
+    ``(run_id, report, outcome, summary)``), so every feature-mode run
+    logged a warning and wrote nothing to the graph.
+    """
+    monkeypatch.setattr(FeatureHandoffNode, "_run_git", _ok_git)
+    _patch_gh_available(monkeypatch, True)
+
+    async def _fake_gh_create(self, branch, title, body):
+        return "https://github.com/x/y/pull/7"
+
+    monkeypatch.setattr(FeatureHandoffNode, "_create_pr_with_gh", _fake_gh_create)
+
+    graph_memory = MagicMock()
+    graph_memory.publish_run_outcome = AsyncMock(return_value=None)
+
+    node = _node(graph_memory=graph_memory)
+    result = await node.execute(ctx)
+
+    assert result["status"] == "ready_to_deploy"
+    graph_memory.publish_run_outcome.assert_awaited_once()
+    args, _ = graph_memory.publish_run_outcome.call_args
+    run_id, report, outcome, summary = args
+    assert run_id == "r1"
+    assert report is ctx["qa_report"]
+    assert outcome == "succeeded"
+    assert "FEAT-999" in summary and "pull/7" in summary

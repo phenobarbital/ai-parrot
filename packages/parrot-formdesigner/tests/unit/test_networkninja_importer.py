@@ -936,3 +936,399 @@ async def test_reimport_reregisters_without_slug_conflict(networkninja_formula_r
         await registry.register(schema, persist=False, tenant="troc")
 
     assert await registry.list_form_ids(tenant="troc") == ["db-form-999-1"]
+
+
+# ---------------------------------------------------------------------------
+# Section-level conditional logic (block_logic_groups)
+# ---------------------------------------------------------------------------
+
+
+def _gated_row(*, logic_key: str = "block_logic_groups") -> dict:
+    """Row whose second block is gated on the answer to the first block.
+
+    Mirrors the real shape of ``db-form-10-69`` (Epson Visit Form): one
+    driver select up front, and the rest of the form gated on its value.
+    """
+    return {
+        "formid": 10,
+        "orgid": 69,
+        "form_name": "Gated Form",
+        "description": None,
+        "question_blocks": [
+            {
+                "block_id": 18,
+                "block_type": "simple",
+                "block_logic_groups": [],
+                "questions": [
+                    {
+                        "question_id": 566,
+                        "question_column_name": "9050",
+                        "question_description": "Please select the type of visit.",
+                        "question_logic_groups": [],
+                        "validations": [],
+                    }
+                ],
+            },
+            {
+                "block_id": 168,
+                "block_type": "simple",
+                logic_key: [
+                    {
+                        "logic_group_id": 3210,
+                        "conditions": [
+                            {
+                                "condition_id": 3414,
+                                "condition_logic": "EQUALS",
+                                "condition_option_id": 4784,
+                                "condition_comparison_value": "Lunch & Learn",
+                                "condition_question_reference_id": 566,
+                            }
+                        ],
+                    }
+                ],
+                "questions": [
+                    {
+                        "question_id": 700,
+                        "question_column_name": "9100",
+                        "question_description": "How many attended?",
+                        "question_logic_groups": [],
+                        "validations": [],
+                    }
+                ],
+            },
+        ],
+        "metadata": [
+            {
+                "column_id": 1,
+                "column_name": "9050",
+                "data_type": "FIELD_SELECT",
+                "description": "Visit type",
+                "options": [
+                    {"option_id": "4784", "option_value": "Lunch & Learn",
+                     "column_name": 9050, "is_active": True},
+                ],
+            },
+            {
+                "column_id": 2,
+                "column_name": "9100",
+                "data_type": "FIELD_INTEGER",
+                "description": "How many attended?",
+                "options": [],
+            },
+        ],
+    }
+
+
+def test_block_logic_groups_become_section_depends_on():
+    """A gated block must import as a section with a visibility rule.
+
+    Regression for the Epson Visit Form (``db-form-10-69``): dropping
+    ``block_logic_groups`` made 277 of 292 fields — 234 of them required —
+    render unconditionally, which left the form impossible to submit.
+    """
+    schema = _svc().to_form_schema(_gated_row())
+
+    driver, gated = schema.sections
+    assert driver.depends_on is None
+    assert gated.depends_on is not None
+    assert gated.depends_on.effect == "show"
+
+    (condition,) = gated.depends_on.conditions
+    assert condition.field_id == "field_9050"
+    assert condition.operator == "eq"
+    # FEAT-325 re-indexing: human text → the metadata option_id, so the
+    # condition shares the value-space of the driver's FieldOption values.
+    assert condition.value == "4784"
+
+
+def test_section_logic_reads_the_legacy_key_too():
+    """``question_block_logic_groups`` is the legacy spelling of the key."""
+    schema = _svc().to_form_schema(_gated_row(logic_key="question_block_logic_groups"))
+
+    assert schema.sections[1].depends_on is not None
+
+
+def test_ungated_block_gets_no_section_rule():
+    """A block with no logic must not acquire a rule out of nowhere."""
+    row = _gated_row()
+    row["question_blocks"][1]["block_logic_groups"] = []
+
+    schema = _svc().to_form_schema(row)
+
+    assert all(section.depends_on is None for section in schema.sections)
+
+
+# ---------------------------------------------------------------------------
+# Numeric validations → FieldConstraints
+# ---------------------------------------------------------------------------
+
+
+def _validated_row(data_type: str, validations: list[dict]) -> dict:
+    row = _make_row(data_type, col_name="9023")
+    row["question_blocks"][0]["questions"][0]["validations"] = validations
+    return row
+
+
+def test_lte_value_becomes_an_inclusive_max():
+    """``lteValue`` maps straight onto ``max_value``."""
+    schema = _svc().to_form_schema(
+        _validated_row("FIELD_MONEY", [
+            {"validation_type": "lteValue", "validation_comparison_value": "5000"},
+        ])
+    )
+
+    field = next(schema.iter_all_fields())
+    assert field.constraints is not None
+    assert field.constraints.max_value == 5000
+
+
+def test_lt_value_on_an_integer_becomes_max_minus_one():
+    """Over the integers, "< 10" and "<= 9" are the same bound."""
+    schema = _svc().to_form_schema(
+        _validated_row("FIELD_INTEGER", [
+            {"validation_type": "responseRequired"},
+            {"validation_type": "ltValue", "validation_comparison_value": "10"},
+        ])
+    )
+
+    field = next(schema.iter_all_fields())
+    assert field.required is True
+    assert field.constraints is not None
+    assert field.constraints.max_value == 9
+
+
+def test_exclusive_bound_on_a_float_is_reported_not_widened():
+    """An inexpressible bound must be flagged, never silently relaxed."""
+    svc = _svc()
+    _, report = svc.import_with_report(
+        _validated_row("FIELD_FLOAT2", [
+            {"validation_type": "ltValue", "validation_comparison_value": "10"},
+        ])
+    )
+
+    (entry,) = report.fields
+    assert entry.status == "requiere_intervencion"
+    assert "ltValue" in entry.note
+
+
+def test_unmapped_validation_is_not_reported_as_clean():
+    """The diff report must not claim fidelity it did not achieve."""
+    svc = _svc()
+    _, report = svc.import_with_report(
+        _validated_row("FIELD_TEXT", [
+            {"validation_type": "someFutureRule", "validation_comparison_value": "x"},
+        ])
+    )
+
+    (entry,) = report.fields
+    assert entry.status == "requiere_intervencion"
+    assert "someFutureRule" in entry.note
+
+
+def test_tightest_bound_wins():
+    """Several bounds on one field collapse to the most restrictive."""
+    schema = _svc().to_form_schema(
+        _validated_row("FIELD_INTEGER", [
+            {"validation_type": "lteValue", "validation_comparison_value": "50"},
+            {"validation_type": "ltValue", "validation_comparison_value": "10"},
+        ])
+    )
+
+    assert next(schema.iter_all_fields()).constraints.max_value == 9
+
+
+# ---------------------------------------------------------------------------
+# Columns repeated across blocks
+# ---------------------------------------------------------------------------
+
+
+def test_column_repeated_across_blocks_does_not_abort_the_import():
+    """A column in two blocks must not kill the whole form.
+
+    Regression for ``db-form-10-69``, where columns 8984/8985/8986 are help
+    notes repeated as a header in blocks 27 and 28. FormSchema rejects
+    duplicate field_ids, so the import died with a ValidationError that the
+    API surfaced as an opaque HTTP 500.
+    """
+    row = _gated_row()
+    # Repeat the driver question in the second block.
+    row["question_blocks"][1]["questions"].append(
+        dict(row["question_blocks"][0]["questions"][0])
+    )
+
+    schema, report = _svc().import_with_report(row)
+
+    field_ids = [f.field_id for f in schema.iter_all_fields()]
+    assert field_ids == ["field_9050", "field_9100"]
+    assert len(field_ids) == len(set(field_ids))
+
+    dropped = [e for e in report.fields if "repeated in block" in e.note]
+    assert len(dropped) == 1
+    assert dropped[0].column_name == "9050"
+    assert dropped[0].status == "requiere_intervencion"
+
+
+def test_first_occurrence_of_a_repeated_column_is_the_one_kept():
+    """The earlier block owns the column; the later one loses it."""
+    row = _gated_row()
+    row["question_blocks"][1]["questions"].insert(
+        0, dict(row["question_blocks"][0]["questions"][0])
+    )
+
+    schema = _svc().to_form_schema(row)
+
+    first, second = schema.sections
+    assert [f.field_id for f in first.iter_fields()] == ["field_9050"]
+    assert [f.field_id for f in second.iter_fields()] == ["field_9100"]
+
+
+def test_alternative_logic_groups_gate_on_or_not_and():
+    """Groups are alternatives; ANDing them yields a rule that never fires.
+
+    Every multi-group rule on ``db-form-10-69`` tests one single-select
+    column against a different value per group. Under ``logic="and"``
+    (``all(results)``) such a rule is unsatisfiable, so the element stays
+    hidden no matter what the user answers.
+    """
+    row = _gated_row()
+    row["question_blocks"][1]["block_logic_groups"].append({
+        "logic_group_id": 3211,
+        "conditions": [{
+            "condition_id": 3415,
+            "condition_logic": "EQUALS",
+            "condition_option_id": 4782,
+            "condition_comparison_value": "Brand Ambassador",
+            "condition_question_reference_id": 566,
+        }],
+    })
+    row["metadata"][0]["options"].append(
+        {"option_id": "4782", "option_value": "Brand Ambassador",
+         "column_name": 9050, "is_active": True}
+    )
+
+    rule = _svc().to_form_schema(row).sections[1].depends_on
+
+    assert rule.logic == "or"
+    assert {c.value for c in rule.conditions} == {"4782", "4784"}
+
+
+@pytest.mark.asyncio
+async def test_alternative_groups_actually_fire_in_the_evaluator():
+    """End-to-end: a multi-group rule must fire for ANY of its alternatives.
+
+    Exercised on a FIELD rule because ``RuleEvaluator`` only walks
+    ``FormField.depends_on`` — it does not read ``FormSection.depends_on``
+    (see the note in the audit). This is the enforced path, and under the
+    old AND gate it could never fire.
+    """
+    from parrot_formdesigner.services.rule_evaluator import RuleEvaluator
+
+    row = _gated_row()
+    # Move the rule from the block onto the question itself.
+    row["question_blocks"][1]["questions"][0]["question_logic_groups"] = [
+        row["question_blocks"][1]["block_logic_groups"][0],
+        {
+            "logic_group_id": 3211,
+            "conditions": [{
+                "condition_id": 3415,
+                "condition_logic": "EQUALS",
+                "condition_option_id": 4782,
+                "condition_comparison_value": "Brand Ambassador",
+                "condition_question_reference_id": 566,
+            }],
+        },
+    ]
+    row["question_blocks"][1]["block_logic_groups"] = []
+    row["metadata"][0]["options"].append(
+        {"option_id": "4782", "option_value": "Brand Ambassador",
+         "column_name": 9050, "is_active": True}
+    )
+
+    schema = _svc().to_form_schema(row)
+    assert schema.sections[1].fields[0].depends_on.logic == "or"
+
+    evaluator = RuleEvaluator()
+    unanswered = await evaluator.resolve(schema, {})
+    lunch = await evaluator.resolve(schema, {"field_9050": "4784"})
+    ambassador = await evaluator.resolve(schema, {"field_9050": "4782"})
+
+    assert unanswered.visible["field_9100"] is False
+    # Either alternative alone must reveal the field.
+    assert lunch.visible["field_9100"] is True
+    assert ambassador.visible["field_9100"] is True
+
+
+def test_multi_field_groups_keep_conjunction():
+    """Groups naming DIFFERENT fields are prerequisites, and stay AND.
+
+    Three rules in the 91-form corpus have this shape (e.g. formid 102
+    orgid 74). Flattening them to OR would widen what the form reveals.
+    """
+    row = _gated_row()
+    row["question_blocks"][1]["questions"].append({
+        "question_id": 800,
+        "question_column_name": "9200",
+        "question_description": "Region",
+        "question_logic_groups": [],
+        "validations": [],
+    })
+    row["metadata"].append({
+        "column_id": 3, "column_name": "9200", "data_type": "FIELD_TEXT",
+        "description": "Region", "options": [],
+    })
+    row["question_blocks"][1]["block_logic_groups"].append({
+        "logic_group_id": 3212,
+        "conditions": [{
+            "condition_id": 3416,
+            "condition_logic": "EQUALS",
+            "condition_option_id": None,
+            "condition_comparison_value": "West",
+            "condition_question_reference_id": 800,
+        }],
+    })
+
+    rule = _svc().to_form_schema(row).sections[1].depends_on
+
+    assert rule.logic == "and"
+    assert {c.field_id for c in rule.conditions} == {"field_9050", "field_9200"}
+
+
+def test_fractional_exclusive_bound_uses_a_ceiling():
+    """"< 10.5" on an integer must allow 10, not cap at 9.5."""
+    schema = _svc().to_form_schema(
+        _validated_row("FIELD_INTEGER", [
+            {"validation_type": "ltValue", "validation_comparison_value": "10.5"},
+        ])
+    )
+
+    assert next(schema.iter_all_fields()).constraints.max_value == 10
+
+
+def test_negative_fractional_exclusive_bound():
+    """"< -3.5" on an integer must cap at -4."""
+    schema = _svc().to_form_schema(
+        _validated_row("FIELD_INTEGER", [
+            {"validation_type": "ltValue", "validation_comparison_value": "-3.5"},
+        ])
+    )
+
+    assert next(schema.iter_all_fields()).constraints.max_value == -4
+
+
+def test_rule_pointing_at_an_unbuilt_field_does_not_abort_the_import():
+    """An unmapped data_type must cost one question, not the whole form.
+
+    ``question_id_index`` resolves through active metadata, which includes
+    columns no field was built for. ``resolve_rule_references`` raises on a
+    dangling reference, so without pruning the import dies outright.
+    """
+    row = _gated_row()
+    # Driver becomes a type the mapping table does not know.
+    row["metadata"][0]["data_type"] = "FIELD_SOMETHING_NEW"
+
+    schema = _svc().to_form_schema(row)
+
+    assert [f.field_id for f in schema.iter_all_fields()] == ["field_9100"]
+    # The gated section survives, unconditional, rather than the import dying.
+    assert schema.sections[0].section_id == "section_168"
+    assert schema.sections[0].depends_on is None

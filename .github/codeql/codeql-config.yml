@@ -1,0 +1,10 @@
+name: "AI-Parrot CodeQL Configuration"
+
+# Exclude paths that are not production code —
+# examples, tests, scripts, and dev-only servers.
+paths-ignore:
+  - "examples/**"
+  - "scripts/**"
+  - "**/tests/**"
+  - "tests/**"
+  - "examples/dev_loop/**"

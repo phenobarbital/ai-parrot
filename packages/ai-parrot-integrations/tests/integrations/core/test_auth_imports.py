@@ -80,8 +80,8 @@ def test_oauth2_google_provider_config():
 
     assert "google" in OAUTH2_PROVIDERS
     google = get_provider("google")
-    assert "accounts.google.com" in google.authorization_url
-    assert "oauth2.googleapis.com" in google.token_url
+    assert "accounts.google.com" in google.authorization_url  # lgtm[py/incomplete-url-substring-sanitization]
+    assert "oauth2.googleapis.com" in google.token_url  # lgtm[py/incomplete-url-substring-sanitization]
 
 
 def test_oauth2_unknown_provider_raises():

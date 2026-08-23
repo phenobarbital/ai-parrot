@@ -134,7 +134,7 @@ class TestOAuth2FullFlow:
         # Extract the authorize URL from the keyboard button
         button = reply_markup.keyboard[0][0]
         url = button.web_app.url
-        assert "accounts.google.com" in url
+        assert "accounts.google.com" in url  # lgtm[py/incomplete-url-substring-sanitization]
         assert "code_challenge" in url
         assert "state=" in url
 
@@ -210,7 +210,7 @@ class TestBasicAuthUnchanged:
         button = reply_markup.keyboard[0][0]
         assert "Sign in to Navigator" in button.text
         assert "auth_url=" in button.web_app.url
-        assert "nav.example.com" in button.web_app.url
+        assert "nav.example.com" in button.web_app.url  # lgtm[py/incomplete-url-substring-sanitization]
 
         # Step 2: WebApp callback with Navigator data
         session = TelegramUserSession(telegram_id=12345)

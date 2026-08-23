@@ -14,7 +14,7 @@ Sequence (per spec §3 Module 2):
 1. Read ``shared["feature_brief"]`` (a :class:`FeatureBrief`, placed by the
    classifier — TASK-1925).
 2. Best-effort graph context via ``DevLoopGraphMemory.build_research_context()``
-   — degrades to empty context when FEAT-377/B is not available.
+   — degrades to empty context when no facade was injected (the default).
 3. Dispatch ``sdd-planner``; parse the final JSON into :class:`PlannerOutput`.
 4. Jira: pass ``FeatureBrief.jira_issue_key`` straight through — this node
    NEVER creates, transitions, or comments on a Jira ticket.
@@ -36,6 +36,7 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
 from parrot.flows.dev_loop.models import (
     ClaudeCodeDispatchProfile,
     DevAgentPoolConfig,
@@ -74,6 +75,9 @@ class PlannerNode(DevLoopNode):
             every node in the flow.
         development_pool_max: Hard cap on the derived dev-agent pool size
             when sizing from the task-graph wave width (FEAT-323 parity).
+        graph_memory: Optional :class:`DevLoopGraphMemory` used to inject
+            best-effort graph context into the ``sdd-planner`` dispatch.
+            ``None`` (the default) disables the seam entirely.
         name: Node id, default ``"planner"``.
     """
 
@@ -82,11 +86,17 @@ class PlannerNode(DevLoopNode):
         *,
         dispatcher: ClaudeCodeDispatcher,
         development_pool_max: int = 4,
+        graph_memory: Optional[DevLoopGraphMemory] = None,
         name: str = "planner",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_pool_max", development_pool_max)
+        # FEAT-377 TASK-1915 (G2 seam 2): opt-in graph-memory context
+        # injection, built once by the caller via
+        # ``DevLoopGraphMemory.from_config()``. None (default) is a strict
+        # no-op — same contract as ResearchNode/QANode/DevLoopCloseNode.
+        object.__setattr__(self, "_graph_memory", graph_memory)
 
     # ------------------------------------------------------------------
     # Execute
@@ -185,41 +195,49 @@ class PlannerNode(DevLoopNode):
     # Internal — graph context (FEAT-377/B, optional)
     # ------------------------------------------------------------------
 
-    async def _build_graph_context(self, document_path: str) -> str:
-        """Best-effort graph context via ``DevLoopGraphMemory`` (FEAT-377/B).
+    @staticmethod
+    def _document_query(document_path: str) -> str:
+        """Derive a retrieval query from an SDD document path.
 
-        FEAT-377 (``DevLoopGraphMemory.build_research_context()``) had not
-        merged to ``dev`` as of this task (2026-07-27) — the import itself
-        is the primary degradation guard, per this task's Codebase
-        Contract. Once FEAT-377 lands, revisit this call against its
-        actual landed signature.
+        :class:`FeatureBrief` carries no ``summary`` to retrieve on (unlike
+        :class:`WorkBrief`), so the document's slug is the query: e.g.
+        ``sdd/proposals/devloop-enhancement.brainstorm.md`` ->
+        ``"devloop enhancement"``.
+
+        Args:
+            document_path: The ``FeatureBrief.document_path``.
+
+        Returns:
+            A whitespace-separated query string (possibly empty).
+        """
+        stem = Path(document_path).stem  # drops the trailing '.md'
+        # Drop a phase suffix ('.brainstorm' / '.proposal' / '.spec').
+        slug = stem.rsplit(".", 1)[0] if "." in stem else stem
+        return slug.replace("-", " ").replace("_", " ").strip()
+
+    async def _build_graph_context(self, document_path: str) -> str:
+        """Best-effort graph context via ``DevLoopGraphMemory`` (FEAT-377 G2).
+
+        Mirrors ``ResearchNode``'s seam: the facade is injected (built once
+        by the caller via ``DevLoopGraphMemory.from_config()``), never
+        constructed here — ``DevLoopGraphMemory.__init__`` is keyword-only
+        and its docstring mandates ``from_config``.
 
         Args:
             document_path: The ``FeatureBrief.document_path`` to build
                 context around.
 
         Returns:
-            The graph context string, or ``""`` when unavailable/degraded.
+            The graph context string, or ``""`` when the facade is
+            disabled or found nothing.
         """
-        try:
-            from parrot.flows.dev_loop.graph_memory import (  # type: ignore[import-not-found]
-                DevLoopGraphMemory,
-            )
-        except ImportError:
-            self.logger.debug(
-                "DevLoopGraphMemory not available (FEAT-377/B not yet "
-                "merged); proceeding with empty graph context."
-            )
+        if self._graph_memory is None:
             return ""
-        try:
-            memory = DevLoopGraphMemory()
-            context = await memory.build_research_context(document_path)
-            return context or ""
-        except Exception as exc:  # noqa: BLE001 - graph context is best-effort
-            self.logger.debug(
-                "DevLoopGraphMemory.build_research_context degraded: %s", exc
-            )
+        query = self._document_query(document_path)
+        if not query:
             return ""
+        context = await self._graph_memory.build_research_context(query)
+        return context or ""
 
     # ------------------------------------------------------------------
     # Internal — dev-agent pool sizing (FEAT-323 parity)

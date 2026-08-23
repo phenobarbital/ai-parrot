@@ -227,7 +227,10 @@ class TestArangoDBWikiStore:
     async def test_replace_source_slice(self, store, mock_db):
         mock_db.query = AsyncMock(
             side_effect=[
-                (["old1"], None),  # old_ids for source
+                # Existing pages for the source: both the raw concept_id (to
+                # match the edge collection's src/dst fields) and the _key (to
+                # address documents in REMOVE, since keys are encoded).
+                ([{"cid": "old1", "key": "old1"}], None),
                 (
                     [{"src": "other", "dst": "old1", "rel": "references"}],
                     None,
@@ -321,7 +324,10 @@ class TestArangoDBWikiStore:
         assert "BM25" in aql
         bind_vars = mock_db.query.call_args.kwargs["bind_vars"]
         assert bind_vars["query"] == "neural networks"
-        assert bind_vars["analyzer"] == "text_en"
+        # One numbered bind var per configured analyzer: analyzer names cannot
+        # be bind variables *inside* ANALYZER()/TOKENS(), so search_fts emits
+        # one clause per analyzer rather than a single `@analyzer`.
+        assert bind_vars["analyzer0"] == "text_en"
 
     @pytest.mark.asyncio
     async def test_search_fts_category_filter(self, store, mock_db):
@@ -426,3 +432,75 @@ class TestArangoDBWikiStore:
     async def test_missing_bodies(self, store, mock_db):
         mock_db.query = AsyncMock(return_value=(["stub-1"], None))
         assert await store.missing_bodies() == ["stub-1"]
+
+
+class TestReadOnlyMode:
+    """H1 — a read-only ArangoDB store never provisions and never writes."""
+
+    def test_read_only_flag(self):
+        store = ArangoDBWikiStore(arango_params={}, database="wiki_x")
+        assert store.read_only is False
+        ro = ArangoDBWikiStore(
+            arango_params={}, database="wiki_x", read_only=True
+        )
+        assert ro.read_only is True
+
+    @pytest.mark.asyncio
+    async def test_writes_are_refused_before_connecting(self):
+        """The guard runs before ``_ensure_init`` — no server involved."""
+        ro = ArangoDBWikiStore(
+            arango_params={}, database="wiki_x", read_only=True
+        )
+        with pytest.raises(PermissionError):
+            await ro.upsert_pages([WikiPageRecord(concept_id="a", title="a")])
+        with pytest.raises(PermissionError):
+            await ro.add_edges([("a", "b", "references")])
+        with pytest.raises(PermissionError):
+            await ro.replace_source_slice(
+                "s", [WikiPageRecord(concept_id="a", title="a")]
+            )
+        with pytest.raises(PermissionError):
+            await ro.delete_page("a")
+        with pytest.raises(PermissionError):
+            await ro.upsert_embedding("a", [0.1])
+
+    @pytest.mark.asyncio
+    async def test_read_only_initialize_verifies_instead_of_creating(
+        self, monkeypatch
+    ):
+        """A missing database is FileNotFoundError, not a new database."""
+        import parrot.knowledge.wiki.arango_store as module
+
+        created: list[str] = []
+
+        class _FakeDB:
+            def __init__(self, _driver, params):
+                self.database = params["database"]
+
+            async def connection(self):
+                if self.database != "_system":
+                    created.append(self.database)
+
+            async def list_databases(self):
+                return ["_system", "wiki_present"]
+
+            async def close(self):
+                return None
+
+            async def collection_exists(self, _name):
+                return True
+
+        monkeypatch.setattr(module, "AsyncDB", _FakeDB)
+
+        missing = module.ArangoDBWikiStore(
+            arango_params={}, database="wiki_absent", read_only=True
+        )
+        with pytest.raises(FileNotFoundError):
+            await missing.initialize()
+        assert created == []
+
+        present = module.ArangoDBWikiStore(
+            arango_params={}, database="wiki_present", read_only=True
+        )
+        await present.initialize()
+        assert created == ["wiki_present"]

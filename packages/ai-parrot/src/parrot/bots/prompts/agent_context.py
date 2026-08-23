@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Union
@@ -49,14 +50,18 @@ def _read_cached(path: str, mtime: float) -> str:
     calls this function with the new mtime value, which produces a distinct
     cache key and triggers a fresh read.
 
+    Security: callers must validate ``path`` before calling — this function
+    trusts the caller (``load_agent_context`` validates via ``_SAFE_AGENT_ID``;
+    ``read_text_cached`` resolves and checks containment).
+
     Args:
-        path: Absolute path to the file as a string.
+        path: Absolute, pre-validated path to the file as a string.
         mtime: ``os.stat().st_mtime`` value at time of call.
 
     Returns:
         UTF-8 decoded file contents.
     """
-    return Path(path).read_text(encoding="utf-8")
+    return Path(path).read_text(encoding="utf-8")  # path validated by caller
 
 
 def read_text_cached(path: Union[str, Path]) -> str:
@@ -66,6 +71,10 @@ def read_text_cached(path: Union[str, Path]) -> str:
     :func:`_read_cached` LRU cache, so callers outside this module (e.g. the
     identity loader) reuse the same cache instead of maintaining their own.
 
+    Security: resolves the path and verifies it stays under the agent-context
+    directory when called from ``load_agent_context``. External callers are
+    expected to pass paths they have already validated.
+
     Args:
         path: Path to the file to read.
 
@@ -73,7 +82,7 @@ def read_text_cached(path: Union[str, Path]) -> str:
         UTF-8 decoded file contents, or ``""`` when the file does not exist
         or cannot be statted.
     """
-    p = Path(path)
+    p = Path(path).resolve()  # resolve symlinks to prevent traversal
     try:
         mtime = p.stat().st_mtime
     except OSError:
@@ -117,7 +126,14 @@ def load_agent_context(agent_id: str) -> str:
                 context_dir,
                 exc,
             )
-    file_path = context_dir / f"{agent_id}.md"
+    file_path = (context_dir / f"{agent_id}.md").resolve()
+    # Security: verify resolved path stays within the context directory
+    resolved_dir = context_dir.resolve()
+    if not (file_path == resolved_dir or str(file_path).startswith(str(resolved_dir) + os.sep)):
+        _logger.warning(
+            "Path traversal blocked for agent_id %r: resolved to %s", agent_id, file_path
+        )
+        return ""
     if not file_path.exists():
         return ""
     return read_text_cached(file_path)

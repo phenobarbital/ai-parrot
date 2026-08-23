@@ -17,13 +17,18 @@ import asyncio
 import contextlib
 import logging
 import os
+import pwd
+import socket
+import struct
 import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from parrot.auth.permission import PermissionContext, build_principal_context
 from pydantic import ValidationError
 
+from .config import ServiceIdentityConfig
 from .protocol import (
     DEFAULT_MAX_LINE_BYTES,
     INTERNAL_ERROR,
@@ -49,6 +54,39 @@ __all__ = [
     "RpcHandlerError",
     "Session",
 ]
+
+#: `struct` format for `SO_PEERCRED`'s `(pid, uid, gid)` triple on Linux.
+_PEERCRED_FORMAT = "3i"
+
+
+def _read_peercred(sock: socket.socket) -> tuple[int, int, int]:
+    """Blocking `SO_PEERCRED` read — always run via `asyncio.to_thread()`.
+
+    Args:
+        sock: The connection's underlying socket.
+
+    Returns:
+        The peer's `(pid, uid, gid)`.
+    """
+    raw = sock.getsockopt(
+        socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize(_PEERCRED_FORMAT)
+    )
+    return struct.unpack(_PEERCRED_FORMAT, raw)
+
+
+def _uid_to_username(uid: int) -> str:
+    """Blocking NSS uid -> username lookup — always run via `asyncio.to_thread()`.
+
+    Args:
+        uid: The OS user id to resolve.
+
+    Returns:
+        The resolved username.
+
+    Raises:
+        KeyError: If `uid` has no `pwd` entry.
+    """
+    return pwd.getpwuid(uid).pw_name
 
 
 class DaemonAlreadyRunning(Exception):
@@ -88,6 +126,12 @@ class Session:
             this session.
         tasks: In-flight handler tasks for this session (tracked so they
             can be cancelled on disconnect).
+        permission_context: The caller's resolved `PermissionContext`
+            (FEAT-434) — the OS user of the UDS peer, or the configured
+            service identity when peer credentials are unavailable. `None`
+            until `JsonRpcUnixServer._handle_connection` resolves it.
+        identity_source: How `permission_context` was resolved — one of
+            `"peercred"` or `"service_identity"` — for logging/audit.
     """
 
     def __init__(self, session_id: str, writer: asyncio.StreamWriter) -> None:
@@ -97,6 +141,8 @@ class Session:
         self.stream_ids: set[str] = set()
         self.tasks: set[asyncio.Task] = set()
         self._lock = asyncio.Lock()
+        self.permission_context: PermissionContext | None = None
+        self.identity_source: str | None = None
 
     async def send(self, message: RpcResponse | RpcNotification) -> None:
         """Serialize and write one message, serialized under this session's lock.
@@ -175,6 +221,8 @@ class JsonRpcUnixServer:
             (the same `dict` object is retained, not copied).
         max_line_bytes: NDJSON line-size limit passed to `read_message()`.
         event_broker: Shared `EventBroker` for this server instance.
+        service_identity: Fallback caller identity (FEAT-434) used when a
+            UDS peer's credentials cannot be resolved via `SO_PEERCRED`.
     """
 
     def __init__(
@@ -183,11 +231,13 @@ class JsonRpcUnixServer:
         dispatch: dict[str, Handler],
         *,
         max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+        service_identity: ServiceIdentityConfig | None = None,
     ) -> None:
         self.socket_path = Path(socket_path)
         self.dispatch = dispatch
         self.max_line_bytes = max_line_bytes
         self.event_broker = EventBroker()
+        self.service_identity = service_identity or ServiceIdentityConfig.from_env()
         self.logger = logging.getLogger(__name__)
         self._server: asyncio.Server | None = None
         self._sessions: dict[str, Session] = {}
@@ -211,8 +261,14 @@ class JsonRpcUnixServer:
         # looser permissions before the chmod() below lands.
         previous_umask = os.umask(0o177)
         try:
+            # Same 64 KiB StreamReader default as on the client side (see
+            # AgentDaemonClient.connect): without an explicit `limit` a
+            # request larger than that is unreadable no matter what
+            # `max_line_bytes` allows.
             self._server = await asyncio.start_unix_server(
-                self._handle_connection, path=str(self.socket_path)
+                self._handle_connection,
+                path=str(self.socket_path),
+                limit=self.max_line_bytes,
             )
         finally:
             os.umask(previous_umask)
@@ -264,13 +320,61 @@ class JsonRpcUnixServer:
             await writer.wait_closed()
         return True
 
+    async def _resolve_identity(
+        self, writer: asyncio.StreamWriter
+    ) -> tuple[PermissionContext, str]:
+        """Resolve the connecting peer's identity (FEAT-434).
+
+        Reads `SO_PEERCRED` off the connection's underlying socket to get
+        the peer's `(pid, uid, gid)`, then resolves the uid to an OS
+        username via `pwd`. Falls back to the configured service identity
+        when peer credentials are unavailable — non-UDS transport
+        (`AttributeError`/`OSError`), non-Linux (`AttributeError` on
+        `socket.SO_PEERCRED`), or an unresolvable uid (`KeyError`). The
+        literal `"anonymous"` never appears on this path.
+
+        Both syscalls are dispatched via `asyncio.to_thread()` — `pwd`
+        lookups are typically instant against local NSS, but a deployment
+        resolving `passwd` through a remote backend (LDAP/SSSD) must not
+        stall the accept loop for every other connecting session while
+        one lookup is in flight.
+
+        Args:
+            writer: The connection's `asyncio.StreamWriter`.
+
+        Returns:
+            A `(permission_context, identity_source)` tuple, where
+            `identity_source` is `"peercred"` or `"service_identity"`.
+        """
+        try:
+            sock = writer.get_extra_info("socket")
+            if sock is None:
+                raise OSError("no underlying socket available on this transport")
+            _pid, uid, _gid = await asyncio.to_thread(_read_peercred, sock)
+            username = await asyncio.to_thread(_uid_to_username, uid)
+            return build_principal_context(username, channel="agentd"), "peercred"
+        except (AttributeError, OSError, KeyError) as exc:
+            self.logger.debug(
+                "Peer credentials unavailable (%s); falling back to service identity.",
+                exc,
+            )
+            return self.service_identity.to_permission_context(), "service_identity"
+
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         """Per-connection accept-loop callback for `start_unix_server`."""
         session = Session(session_id=str(uuid.uuid4()), writer=writer)
+        session.permission_context, session.identity_source = (
+            await self._resolve_identity(writer)
+        )
         self._sessions[session.session_id] = session
-        self.logger.debug("Session %s connected", session.session_id)
+        self.logger.info(
+            "Session %s connected: identity resolved via %s (user_id=%s)",
+            session.session_id,
+            session.identity_source,
+            session.permission_context.user_id,
+        )
 
         try:
             while True:
@@ -352,9 +456,38 @@ class JsonRpcUnixServer:
                     id=request.id,
                     error=RpcError(code=INTERNAL_ERROR, message=str(exc)),
                 )
+            except asyncio.CancelledError:
+                # CancelledError derives from BaseException, so the clause
+                # above never sees it: the handler dies and the client gets a
+                # bare disconnect with no response. Report it, then let the
+                # cancellation keep unwinding.
+                self.logger.warning(
+                    "Handler for %r was cancelled before producing a result",
+                    request.method,
+                )
+                with contextlib.suppress(Exception):
+                    await session.send(
+                        RpcResponse(
+                            id=request.id,
+                            error=RpcError(
+                                code=INTERNAL_ERROR,
+                                message=f"{request.method} was cancelled",
+                            ),
+                        )
+                    )
+                raise
 
-        with contextlib.suppress(Exception):
+        try:
             await session.send(response)
+        except Exception:  # noqa: BLE001 - a failed send must not kill the server
+            # This is the ONLY path that delivers an answer, so swallowing a
+            # failure here reads to the client as "connection closed by
+            # daemon" with no clue why. Log it and keep serving.
+            self.logger.exception(
+                "Could not send the response for %r to session %s",
+                request.method,
+                session.session_id,
+            )
 
     async def _disconnect(self, session: Session) -> None:
         """Tear down a session: cancel tasks, unsubscribe, close the writer."""

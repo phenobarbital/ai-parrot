@@ -248,3 +248,71 @@ def test_resolve_answer_reads_by_field_id(form_with_rules: FormSchema):
 
 def test_resolve_answer_unknown_field_returns_none(form_with_rules: FormSchema):
     assert resolve_answer(form_with_rules, uuid.uuid4(), {"a": "hello"}) is None
+
+
+def test_conditions_inside_logic_groups_are_resolved_too():
+    """A grouped condition is a condition: unresolved it can never fire.
+
+    `_eval_condition` reads the answer through `field_uid`, so a group whose
+    conditions kept `field_uid=None` silently never matches — the same class
+    of defect that made every imported networkninja rule inert.
+    """
+    from parrot_formdesigner.core.constraints import LogicGroup
+
+    driver = FormField(field_id="driver", field_type=FieldType.TEXT, label="driver")
+    gated = FormField(
+        field_id="gated", field_type=FieldType.TEXT, label="gated",
+        depends_on=DependencyRule(conditions=[], effect="show", groups=[
+            LogicGroup(conditions=[
+                FieldCondition(field_id="driver", operator="eq", value="yes"),
+            ]),
+        ]),
+    )
+    form = FormSchema(form_id="t", title="T",
+                      sections=[FormSection(section_id="s", fields=[driver, gated])])
+
+    resolve_rule_references(form)
+
+    cond = gated.depends_on.groups[0].conditions[0]
+    assert cond.field_uid == driver.field_uid
+
+
+def test_section_rule_groups_are_resolved_too():
+    """Same for a section's rule — sections resolve alongside fields."""
+    from parrot_formdesigner.core.constraints import LogicGroup
+
+    driver = FormField(field_id="driver", field_type=FieldType.TEXT, label="driver")
+    form = FormSchema(form_id="t", title="T", sections=[
+        FormSection(section_id="open", fields=[driver]),
+        FormSection(
+            section_id="gated",
+            fields=[FormField(field_id="inside", field_type=FieldType.TEXT, label="inside")],
+            depends_on=DependencyRule(conditions=[], effect="show", groups=[
+                LogicGroup(conditions=[
+                    FieldCondition(field_id="driver", operator="eq", value="yes"),
+                ]),
+            ]),
+        ),
+    ])
+
+    resolve_rule_references(form)
+
+    assert form.sections[1].depends_on.groups[0].conditions[0].field_uid == driver.field_uid
+
+
+def test_a_context_condition_in_a_group_needs_no_field_reference():
+    """`visit_context` conditions are key-based; resolution must skip them."""
+    from parrot_formdesigner.core.constraints import LogicGroup
+
+    form = FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[
+        FormField(field_id="f", field_type=FieldType.TEXT, label="f",
+                  depends_on=DependencyRule(conditions=[], effect="show", groups=[
+                      LogicGroup(conditions=[FieldCondition(
+                          source="visit_context", key="store_groups",
+                          operator="contains", value="Ring of Fire")]),
+                  ])),
+    ])])
+
+    resolve_rule_references(form)   # must not raise
+
+    assert form.sections[0].fields[0].depends_on.groups[0].conditions[0].field_uid is None

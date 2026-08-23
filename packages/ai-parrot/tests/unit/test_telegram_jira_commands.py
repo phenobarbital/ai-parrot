@@ -46,7 +46,7 @@ class TestConnectJiraHandler:
         markup = call_kwargs["reply_markup"]
         assert isinstance(markup, InlineKeyboardMarkup)
         button = markup.inline_keyboard[0][0]
-        assert button.url.startswith("https://auth.atlassian.com")
+        assert button.url.startswith("https://auth.atlassian.com")  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_already_connected_message(self) -> None:
@@ -119,7 +119,7 @@ class TestJiraStatusHandler:
 
         text = message.reply.await_args.args[0]
         assert "Jesus Garcia" in text
-        assert "acme.atlassian.net" in text
+        assert "acme.atlassian.net" in text  # lgtm[py/incomplete-url-substring-sanitization]
 
     @pytest.mark.asyncio
     async def test_not_connected_suggests_connect(self) -> None:

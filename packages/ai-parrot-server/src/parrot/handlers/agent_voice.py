@@ -260,7 +260,7 @@ class AgentVoiceTalk(AgentTalk):
         except (ValueError, FileNotFoundError, RuntimeError) as exc:
             self.logger.warning("AgentVoiceTalk: transcription failed: %s", exc)
             raise web.HTTPBadRequest(
-                text=json.dumps({"error": f"Could not transcribe audio: {exc}"}),
+                text=json.dumps({"error": "Could not transcribe audio. Check server logs for details."}),
                 content_type="application/json",
             ) from exc
         finally:

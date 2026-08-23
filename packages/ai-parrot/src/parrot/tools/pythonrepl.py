@@ -4,6 +4,7 @@ PythonREPLTool migrated to use AbstractTool framework.
 
 from typing import Optional, Dict, Any, List, Union
 import ast
+import os
 import types
 import re
 import sys
@@ -293,9 +294,15 @@ class PythonREPLTool(AbstractTool):
 
     def _setup_environment(self) -> None:
         """Set up the Python environment with libraries and tools."""
+        # Security: verify output_dir stays within static_dir to prevent
+        # path-traversal (defense-in-depth; also validated by AbstractTool.__init__).
+        resolved = self.output_dir.resolve()
+        base = self.static_dir.resolve()
+        if not (resolved == base or str(resolved).startswith(str(base) + os.sep)):
+            raise ValueError(f"output_dir escapes static_dir: {self.output_dir}")
         # Ensure output directory exists
-        if not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+        if not resolved.exists():
+            resolved.mkdir(parents=True, exist_ok=True)
 
         # Core lib (numexpr) lives in [project.dependencies], so a plain
         # import is fine — failure here means the install is broken.
