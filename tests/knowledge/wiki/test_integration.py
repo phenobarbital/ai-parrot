@@ -771,9 +771,7 @@ class TestFeat451DocumentIngestEndToEnd:
             "# Body\n\nUNIQUE_BODY_MARKER durable decision content.",
             encoding="utf-8",
         )
-        acquired = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(src), suffix=".md")
-        )
+        acquired = await DocumentAcquirer().acquire(DocumentRef(uri=str(src), suffix=".md"))
         # split_frontmatter/DocumentAcquirer stripping is already proven at
         # the unit level (test_documents.py); this test proves it end to
         # end through the real triage call.
@@ -790,22 +788,13 @@ class TestFeat451DocumentIngestEndToEnd:
         )
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         await router.triage(src, acquired.text)
 
         assert adapter.calls == 1
-        assert any(
-            "UNIQUE_BODY_MARKER" in prompt for prompt in adapter.received_prompts
-        )
-        assert not any(
-            "title: Contrato Marco 2026" in prompt
-            for prompt in adapter.received_prompts
-        )
+        assert any("UNIQUE_BODY_MARKER" in prompt for prompt in adapter.received_prompts)
+        assert not any("title: Contrato Marco 2026" in prompt for prompt in adapter.received_prompts)
 
     @pytest.mark.asyncio
     async def test_ingest_pdf_end_to_end(self, tmp_path: Path, sample_pdf: Path) -> None:

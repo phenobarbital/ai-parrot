@@ -89,9 +89,7 @@ _DESTINATION_TO_SOURCES_COLUMN: dict[str, str] = {
 }
 
 
-def _provenance_from(
-    triage: ManifestDocEntry | None, charter_version: str | None
-) -> TriageProvenance | None:
+def _provenance_from(triage: ManifestDocEntry | None, charter_version: str | None) -> TriageProvenance | None:
     """Build a FEAT-451 :class:`TriageProvenance` from a triage decision.
 
     Args:
@@ -356,7 +354,8 @@ class WikiIngestOrchestrator:
                 ):
                     return self._error_report(source_id, source_uri, t0, str(exc))
                 self.logger.debug(
-                    "add_source could not stat %s (%s) — deferring" " registration to record_decision (triage-driven URL).",
+                    "add_source could not stat %s (%s) — deferring"
+                    " registration to record_decision (triage-driven URL).",
                     source_uri,
                     exc,
                 )
