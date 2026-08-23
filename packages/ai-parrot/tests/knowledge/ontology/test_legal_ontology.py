@@ -1,7 +1,8 @@
-"""Merge and shape tests for the legal ontology domain layer (TASK-2370)."""
+"""Merge and shape tests for the legal ontology domain layer (TASK-2370, TASK-2371)."""
 import pytest
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.parser import OntologyParser
+from parrot.knowledge.ontology.validators import validate_aql
 
 
 @pytest.fixture
@@ -34,3 +35,27 @@ class TestLegalOntology:
         assert merged.entities["Norma"].source == "boe"
         assert merged.entities["Articulo"].source == "boe"
         assert not merged.entities["Materia"].source  # static taxonomy — must be skipped
+
+
+class TestArticleInForcePattern:
+    def test_pattern_present(self, merged):
+        assert "article_in_force" in merged.traversal_patterns
+
+    def test_binds_declared(self, merged):
+        tpl = merged.traversal_patterns["article_in_force"].query_template
+        assert "@as_of" in tpl
+        assert "@articulo_key" in tpl
+        assert "@@articulo" in tpl
+
+    @pytest.mark.asyncio
+    async def test_passes_aql_validation(self, merged):
+        tpl = merged.traversal_patterns["article_in_force"].query_template
+        await validate_aql(tpl)  # must not raise
+
+    def test_is_read_only(self, merged):
+        tpl = merged.traversal_patterns["article_in_force"].query_template.upper()
+        for kw in ("INSERT", "UPDATE", "REMOVE", "REPLACE", "UPSERT"):
+            assert kw not in tpl
+
+    def test_post_action_none(self, merged):
+        assert merged.traversal_patterns["article_in_force"].post_action == "none"
