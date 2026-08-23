@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-450",
+  "feature_slug": "wiki-namespaces",
+  "started_at": "2026-08-23T00:17:13Z",
+  "updated_at": "2026-08-23T00:26:20Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-450/source.md",
+    "fetched_at": "2026-08-23T00:17:13Z",
+    "summary_oneline": "Namespaces for wikitoolkit \u2014 federate N wiki stores behind ns::id with explicit + broadcast routing"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:17:13Z",
+      "completed_at": "2026-08-23T00:17:13Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:24:32Z",
+      "completed_at": "2026-08-23T00:24:32Z",
+      "duration_seconds": 0,
+      "queries_total": 28,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-450/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:24:32Z",
+      "completed_at": "2026-08-23T00:24:32Z",
+      "duration_seconds": 240,
+      "queries_executed": 28,
+      "queries_skipped": 0,
+      "depth_reached": 0,
+      "files_read": 18,
+      "grep_calls": 9,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:24:32Z",
+      "completed_at": "2026-08-23T00:24:32Z",
+      "duration_seconds": 0,
+      "synthesis_path": "sdd/state/FEAT-450/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 14,
+      "claims_high_conf": 11,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "skipped",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "questions_total": 3,
+      "questions_answered": 0,
+      "skipped_reason": "autonomous run; U1-U3 carry recommended defaults and are recorded as unresolved in the proposal for the spec phase"
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-08-23T00:26:20Z",
+      "completed_at": "2026-08-23T00:26:20Z",
+      "duration_seconds": 0,
+      "proposal_path": "sdd/proposals/wiki-namespaces.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization high-confidence; three design decisions fixed by the user; unknowns have safe defaults."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 18,
+    "grep_calls": 9,
+    "git_calls": 1,
+    "wall_seconds": 240
+  },
+  "detected_mode": "enrichment",
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Run /sdd-spec FEAT-450 (commit_sha is the commit that introduced this file; it cannot reference itself)."
+  }
+}
