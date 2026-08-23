@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
 
 from .advanced_actions import exec_conditional, exec_loop
 from .drivers.abstract import AbstractDriver
@@ -29,8 +30,17 @@ from .models import (
     ScrapingStep,
 )
 from .plan import ScrapingPlan
+from .session_actions import (
+    exec_authenticate,
+    exec_await_browser_event,
+    exec_await_human,
+    exec_await_keypress,
+    exec_get_cookies,
+    exec_set_cookies,
+    exec_upload_file,
+    exec_wait_for_download,
+)
 from .toolkit_models import DriverConfig
-from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
 
 logger = logging.getLogger(__name__)
 
@@ -295,19 +305,29 @@ async def _dispatch_step(
             return await _dispatch_step(d, s, u, t, step_extracted)
 
         return await exec_conditional(driver, action, _dispatch, base_url, timeout)
-    elif action_type in (
-        "get_cookies", "set_cookies", "authenticate",
-        "await_human", "await_keypress", "await_browser_event",
-        "upload_file", "wait_for_download",
-    ):
-        # These advanced actions require the full WebScrapingTool context.
-        # Log a warning and return True to not block the pipeline.
-        logger.warning(
-            "Action '%s' requires the full WebScrapingTool; "
-            "skipping in standalone executor.",
-            action_type,
-        )
-        return True
+    elif action_type == "authenticate":
+        # Recursive closure: forwards custom_steps (oauth/custom methods)
+        # back through this same dispatcher, exactly like loop/conditional.
+        async def _dispatch(d, s, u, t, _caller_se):
+            # Ignore the callee-supplied accumulator on purpose: we forward the
+            # enclosing ``step_extracted`` so nested extracts share one dict.
+            return await _dispatch_step(d, s, u, t, step_extracted)
+
+        return await exec_authenticate(driver, action, _dispatch, timeout=timeout)
+    elif action_type == "get_cookies":
+        return await _action_get_cookies(driver, action, step, step_extracted)
+    elif action_type == "set_cookies":
+        return await exec_set_cookies(driver, action)
+    elif action_type == "await_human":
+        return await exec_await_human(driver, action)
+    elif action_type == "await_keypress":
+        return await exec_await_keypress(driver, action)
+    elif action_type == "await_browser_event":
+        return await exec_await_browser_event(driver, action)
+    elif action_type == "upload_file":
+        return await exec_upload_file(driver, action)
+    elif action_type == "wait_for_download":
+        return await exec_wait_for_download(driver, action)
     else:
         logger.warning("Unknown action type: %s", action_type)
         return False
@@ -560,6 +580,29 @@ async def _action_get_text(driver: AbstractDriver, action: Any) -> bool:
 
 async def _action_get_html(driver: AbstractDriver, action: Any) -> bool:
     """No-op: HTML is captured via get_page_source() at plan completion."""
+    return True
+
+
+async def _action_get_cookies(
+    driver: AbstractDriver,
+    action: Any,
+    step: ScrapingStep,
+    step_extracted: Dict[str, Any],
+) -> bool:
+    """Run a ``get_cookies`` step, storing the result in ``step_extracted``.
+
+    Mirrors :func:`_action_extract`'s key-naming convention (``extract_name``/
+    ``name``/step description) so downstream consumers of ``extracted_data``
+    find cookies the same way they find any other per-step extraction.
+    """
+    result = await exec_get_cookies(driver, action)
+    key = (
+        getattr(action, "extract_name", "")
+        or getattr(action, "name", "")
+        or step.description
+        or "cookies"
+    )
+    step_extracted[key] = result.get("cookies", [])
     return True
 
 

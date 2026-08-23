@@ -3,10 +3,8 @@ WebScrapingTool for AI-Parrot
 Combines Selenium/Playwright automation with LLM-directed scraping
 """
 from pathlib import Path
-import sys
 import warnings
 from typing import Dict, List, Any, Optional, Union, Literal
-import select
 import time
 import asyncio
 import logging
@@ -40,6 +38,16 @@ from .advanced_actions import (
     exec_conditional,
     exec_loop,
     substitute_template_vars,
+)
+from .session_actions import (
+    exec_authenticate,
+    exec_await_browser_event,
+    exec_await_human,
+    exec_await_keypress,
+    exec_get_cookies,
+    exec_set_cookies,
+    exec_upload_file,
+    exec_wait_for_download,
 )
 from .driver import SeleniumSetup
 from .driver_factory import DriverFactory
@@ -1805,655 +1813,86 @@ If no selectors are provided and full_page is False, the tool will still return 
                     self.logger.warning(f"Element not found for scrolling: {action.selector}")
 
     async def _get_cookies(self, action: GetCookies) -> Dict[str, Any]:
-        """Handle GetCookies action"""
-        if self.driver_type == 'selenium':
-            loop = asyncio.get_running_loop()
-            cookies = await loop.run_in_executor(None, self.driver.get_cookies)
-        else:  # Playwright
-            cookies = await self.page.context.cookies()
+        """Handle GetCookies action — delegates to session_actions (FEAT-453).
 
-        # Filter by names if specified
-        if action.names:
-            cookies = [c for c in cookies if c.get('name') in action.names]
-
-        # Filter by domain if specified
-        if action.domain:
-            cookies = [c for c in cookies if action.domain in c.get('domain', '')]
-
-        self.logger.info(f"Retrieved {len(cookies)} cookies")
-        return {"cookies": cookies}
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path.
+        """
+        return await exec_get_cookies(self._abstract_driver, action)
 
     async def _set_cookies(self, action: SetCookies) -> bool:
-        """Handle SetCookies action"""
-        if self.driver_type == 'selenium':
-            loop = asyncio.get_running_loop()
-            for cookie in action.cookies:
-                await loop.run_in_executor(
-                    None,
-                    lambda c=cookie: self.driver.add_cookie(c)
-                )
-        else:  # Playwright
-            await self.page.context.add_cookies(action.cookies)
+        """Handle SetCookies action — delegates to session_actions (FEAT-453).
 
-        self.logger.info(f"Set {len(action.cookies)} cookies")
-        return True
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path.
+        """
+        return await exec_set_cookies(self._abstract_driver, action)
 
-    async def _handle_authentication(self, action: Authenticate):
-        """Handle authentication flows"""
-        if action.method == 'bearer':
-            if not action.token:
-                self.logger.error("Bearer token authentication requires a 'token' value.")
-                return False
-            # Construct the header from the provided format and token
-            header_value = action.header_value_format.format(action.token)
-            headers = {action.header_name: header_value}
-            if self.driver_type == 'selenium':
-                # For Selenium, we use the Chrome DevTools Protocol (CDP) to set headers.
-                # This requires a Chromium-based browser (Chrome, Edge).
-                if not hasattr(self.driver, 'execute_cdp_cmd'):
-                    self.logger.error(
-                        "Bearer token injection for Selenium is only supported on Chromium-based browsers."
-                    )
-                    return False
-                self.logger.info(f"Setting extra HTTP headers for Selenium session: {list(headers.keys())}")
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(
-                    None,
-                    lambda: self.driver.execute_cdp_cmd(
-                        'Network.setExtraHTTPHeaders', {'headers': headers}
-                    )
-                )
+    async def _handle_authentication(self, action: Authenticate) -> bool:
+        """Handle authentication flows — delegates to session_actions (FEAT-453).
 
-            elif self.driver_type == 'playwright' and PLAYWRIGHT_AVAILABLE:
-                # Playwright has a direct and simple method for this.
-                self.logger.info(f"Setting extra HTTP headers for Playwright session: {list(headers.keys())}")
-                await self.page.set_extra_http_headers(headers)
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path. Supersedes the previous
+        Selenium/Playwright-specific "bearer" header-injection branch, which
+        was unreachable dead code: ``Authenticate.method`` is a
+        ``Literal["form", "basic", "oauth", "custom"]`` that has never
+        permitted ``"bearer"`` — Pydantic validation rejects it at
+        construction time before this method could ever be called with it.
+        """
+        async def _dispatch(driver, step, url, timeout, step_extracted):
+            return await self._execute_step(step, url)
 
-            else:
-                self.logger.error(f"Bearer token authentication is not implemented for driver type: {self.driver_type}")
-                return False
-
-            self.logger.info("Bearer token authentication configured. All subsequent requests will include the specified header.")
-            return True
-
-        # action form (only programmed until now)
-        username = action.username
-        password = action.password
-        username_selector = action.username_selector or '#username'
-        password_selector = action.password_selector or '#password'
-        submit_selector = action.submit_selector or 'input[type="submit"], button[type="submit"]'
-
-        if not username or not password:
-            self.logger.error(
-                "Authentication requires username and password"
-            )
-            return
-
-        try:
-            # Fill username
-            await self._fill_element(username_selector, username, press_enter=action.enter_on_username)
-            await asyncio.sleep(0.5)
-
-            # Fill password
-            await self._fill_element(password_selector, password)
-            await asyncio.sleep(0.5)
-
-            # Submit form
-            await self._click_element(submit_selector)
-
-            # Wait for navigation/login completion
-            await asyncio.sleep(2)
-
-            self.logger.info("Authentication completed")
-
-        except Exception as e:
-            self.logger.error(f"Authentication failed: {str(e)}")
-            raise
+        return await exec_authenticate(self._abstract_driver, action, _dispatch)
 
     async def _await_browser_event(self, action: AwaitBrowserEvent) -> bool:
+        """Handle AwaitBrowserEvent action — delegates to session_actions (FEAT-453).
+
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path.
         """
-        Pause automation until a user triggers a browser-side event.
+        return await exec_await_browser_event(self._abstract_driver, action)
 
-        Config (put in step.wait_condition or step.target as dict):
-        - key_combo: one of ["ctrl_enter", "cmd_enter", "alt_shift_s"]  (default: "ctrl_enter")
-        - show_overlay_button: bool (default False) → injects a floating "Resume" button
-        - local_storage_key: str (default "__scrapeResume")
-        - predicate_js: str (optional) → JS snippet returning boolean; if true, resume
-        - custom_event_name: str (optional) → window.dispatchEvent(new Event(name)) resumes
+    async def _await_human(self, action: AwaitHuman) -> bool:
+        """Handle AwaitHuman action — delegates to session_actions (FEAT-453).
 
-        Any of these will resume:
-        1) Pressing the configured key combo in the page
-        2) Clicking the optional overlay "Resume" button
-        3) Dispatching the custom event:  window.dispatchEvent(new Event('scrape-resume'))
-        4) Setting localStorage[local_storage_key] = "1"
-        5) predicate_js() evaluates to true
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path. No ``HumanChannel`` is
+        wired at this legacy call site, so ``condition_type="manual"`` fails
+        closed here exactly as it does everywhere else without one.
         """
-        cfg = action.wait_condition or action.target or {}
-        if isinstance(cfg, str):
-            cfg = {"key_combo": cfg}
+        return await exec_await_human(self._abstract_driver, action)
 
-        key_combo = (cfg.get("key_combo") or "ctrl_enter").lower()
-        show_overlay = bool(cfg.get("show_overlay_button", False))
-        ls_key = cfg.get("local_storage_key", "__scrapeResume")
-        predicate_js = cfg.get("predicate_js")  # e.g., "return !!document.querySelector('.dashboard');"
-        custom_event = cfg.get("custom_event_name", "scrape-resume")
-        timeout = int(action.timeout or 300)
+    async def _await_keypress(self, action: AwaitKeyPress) -> bool:
+        """Handle AwaitKeyPress action — delegates to session_actions (FEAT-453).
 
-        # Inject listener with green button and auto-removal
-        inject_script = f"""
-(function() {{
-if (window.__scrapeSignal && window.__scrapeSignal._bound) return 0;
-window.__scrapeSignal = window.__scrapeSignal || {{ ready:false, _bound:false }};
-function signal() {{
-    try {{ localStorage.setItem('{ls_key}', '1'); }} catch(e) {{}}
-    window.__scrapeSignal.ready = true;
-    // Remove the button when clicked
-    var btn = document.getElementById('__scrapeResumeBtn');
-    if (btn) {{ btn.remove(); }}
-}}
-
-// Key combos
-window.addEventListener('keydown', function(e) {{
-    try {{
-    var k = '{key_combo}';
-    if (k === 'ctrl_enter' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
-    else if (k === 'cmd_enter' && e.metaKey && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
-    else if (k === 'alt_shift_s' && e.altKey && e.shiftKey && (e.key.toLowerCase() === 's')) {{ e.preventDefault(); signal(); }}
-    }} catch(_e) {{}}
-}}, true);
-
-// Custom DOM event
-try {{
-    window.addEventListener('{custom_event}', function() {{ signal(); }}, false);
-}} catch(_e) {{}}
-
-// Optional overlay button with green background
-if ({'true' if show_overlay else 'false'}) {{
-    try {{
-    if (!document.getElementById('__scrapeResumeBtn')) {{
-        var btn = document.createElement('button');
-        btn.id = '__scrapeResumeBtn';
-        btn.textContent = 'Resume scraping';
-        Object.assign(btn.style, {{
-        position: 'fixed',
-        right: '16px',
-        bottom: '16px',
-        zIndex: 2147483647,
-        padding: '10px 14px',
-        fontSize: '14px',
-        borderRadius: '8px',
-        border: 'none',
-        cursor: 'pointer',
-        background: '#10b981',
-        color: '#fff',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-        }});
-        btn.addEventListener('click', function(e) {{ e.preventDefault(); signal(); }});
-        document.body.appendChild(btn);
-    }}
-    }} catch(_e) {{}}
-}}
-
-window.__scrapeSignal._bound = true;
-return 1;
-}})();
-"""
-
-        def _inject_and_check_ready():
-            # Return True if already signaled
-            try:
-                if self.driver_type == 'selenium':
-                    # inject
-                    try:
-                        self.driver.execute_script(inject_script)
-                    except Exception:
-                        pass
-                    # check any of the resume signals
-                    if predicate_js:
-                        try:
-                            ok = self.driver.execute_script(predicate_js)
-                            if bool(ok):
-                                return True
-                        except Exception:
-                            pass
-                    try:
-                        # localStorage flag
-                        val = self.driver.execute_script(f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}")
-                        if val == "1":
-                            return True
-                    except Exception:
-                        pass
-                    try:
-                        # in-memory flag
-                        ready = self.driver.execute_script("return !!(window.__scrapeSignal && window.__scrapeSignal.ready);")
-                        if bool(ready):
-                            return True
-                    except Exception:
-                        pass
-                    return False
-                else:
-                    # Playwright branch (optional): basic injection + predicate check
-                    try:
-                        self.page.evaluate(inject_script)
-                    except Exception:
-                        pass
-                    if predicate_js:
-                        try:
-                            ok = self.page.evaluate(predicate_js)
-                            if bool(ok):
-                                return True
-                        except Exception:
-                            pass
-                    try:
-                        val = self.page.evaluate(f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}")
-                        if val == "1":
-                            return True
-                    except Exception:
-                        pass
-                    try:
-                        ready = self.page.evaluate("() => !!(window.__scrapeSignal && window.__scrapeSignal.ready)")
-                        if bool(ready):
-                            return True
-                    except Exception:
-                        pass
-                    return False
-            except Exception:
-                return False
-
-        loop = asyncio.get_running_loop()
-        self.logger.info(
-            "🛑 Awaiting browser event: press the configured key combo in the page, click the floating button, dispatch the custom event, or set the localStorage flag to resume."
-        )
-
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if await loop.run_in_executor(None, _inject_and_check_ready):
-                # Clear the LS flag so future waits don't auto-trigger
-                try:
-                    if self.driver_type == 'selenium':
-                        self.driver.execute_script(f"try{{localStorage.removeItem('{ls_key}')}}catch(e){{}}")
-                        self.driver.execute_script("if(window.__scrapeSignal){window.__scrapeSignal.ready=false}")
-                    else:
-                        self.page.evaluate(f"() => {{ try{{localStorage.removeItem('{ls_key}')}}catch(e){{}}; if(window.__scrapeSignal) window.__scrapeSignal.ready=false; }}")
-                except Exception:
-                    pass
-                self.logger.info("✅ Browser event received. Resuming automation.")
-                return
-            await asyncio.sleep(0.3)
-
-        raise TimeoutError("await_browser_event timed out.")
-
-    async def _await_human(self, action: AwaitHuman):
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path.
         """
-        Let a human drive the already-open browser, then resume when a condition is met.
-        'wait_condition' or 'target' may contain:
-        - selector: CSS selector to appear (presence)
-        - url_contains: substring expected in current URL
-        - title_contains: substring expected in document.title
-        """
-        timeout = int(action.timeout or 300)
-        selector = None
-        url_contains = None
-        title_contains = None
-
-        if action.condition_type == 'selector':
-            selector = action.target
-        elif action.condition_type == 'url_contains':
-            selector = None
-            url_contains = action.target
-        elif action.condition_type == 'title_contains':
-            selector = None
-            title_contains = action.target
-        else:
-            # Default: expect a dict in target or wait_condition
-            cond = action.wait_condition or action.target or {}
-            if isinstance(cond, str):
-                cond = {"selector": cond}
-            selector = cond.get("selector")
-            if not selector:
-                self.logger.error("await_human requires at least one condition (selector, url_contains, title_contains)")
-                return
-
-        loop = asyncio.get_running_loop()
-
-        def _check_sync() -> bool:
-            try:
-                if self.driver_type == 'selenium':
-                    cur_url = self.driver.current_url
-                    cur_title = self.driver.title
-                    if url_contains and (url_contains not in cur_url):
-                        return False
-                    if title_contains and (title_contains not in cur_title):
-                        return False
-                    if selector:
-                        try:
-                            count = self.driver.execute_script(
-                                "return document.querySelectorAll(arguments[0]).length;", selector
-                            )
-                            if int(count) <= 0:
-                                return False
-                        except Exception:
-                            return False
-                    return True
-                else:
-                    cur_url = self.page.url
-                    if url_contains and (url_contains not in cur_url):
-                        return False
-                    if selector:
-                        try:
-                            # tiny, non-blocking check
-                            el = self.page.query_selector(selector)
-                            if not el:
-                                return False
-                        except Exception:
-                            return False
-                    return True
-            except Exception:
-                return False
-
-        self.logger.info(
-            f"🛑 {action.message} in the browser window..."
-        )
-        self.logger.info(
-            "ℹ️  I’ll resume automatically when the expected page/element is present."
-        )
-
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            ok = await loop.run_in_executor(None, _check_sync)
-            if ok:
-                self.logger.info(
-                    "✅ Human step condition satisfied. Resuming automation."
-                )
-                return
-            await asyncio.sleep(0.5)
-
-        raise TimeoutError(
-            "await_human timed out waiting for the specified condition."
-        )
-
-    async def _await_keypress(self, action: AwaitKeyPress):
-        """
-        Pause until the operator presses ENTER in the console.
-        Useful when there is no reliable selector to wait on.
-        """
-        timeout = int(action.timeout or 300)
-        prompt = action.message or "Press ENTER to continue..."
-        expected_key = action.key
-
-        self.logger.info(f"🛑 {prompt}")
-        start = time.monotonic()
-
-        loop = asyncio.get_running_loop()
-        while time.monotonic() - start < timeout:
-            ready, _, _ = await loop.run_in_executor(
-                None, lambda: select.select([sys.stdin], [], [], 0.5)
-            )
-            if ready:
-                try:
-                    keypress = sys.stdin.readline().strip()
-                    if expected_key is None or keypress == expected_key:
-                        self.logger.info("✅ Continuing after keypress.")
-                        return
-                except Exception:
-                    pass
-        raise TimeoutError("await_keypress timed out.")
+        return await exec_await_keypress(self._abstract_driver, action)
 
     async def _wait_for_download(self, action: WaitForDownload) -> bool:
+        """Handle WaitForDownload action — delegates to session_actions (FEAT-453).
+
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path.
         """
-        Wait for a file download to complete.
-
-        Args:
-            action: WaitForDownload action with download monitoring options
-
-        Returns:
-            bool: True if download detected successfully
-        """
-        try:
-            # Determine download directory
-            if action.download_path:
-                download_dir = Path(action.download_path)
-            else:
-                # Try to get default download directory from browser
-                if self.driver_type == 'selenium':
-                    # Check Chrome prefs for download directory
-                    try:
-                        prefs = self.driver.execute_cdp_cmd(
-                            'Page.getDownloadInfo', {}
-                        )
-                        download_dir = Path(prefs.get('behavior', {}).get('downloadPath', '.'))
-                    except:
-                        # Fallback to common default locations
-                        download_dir = Path.home() / 'Downloads'
-                else:  # Playwright
-                    # Playwright typically uses its own download handling
-                    download_dir = Path.cwd() / 'downloads'
-
-            if not download_dir.exists():
-                download_dir.mkdir(parents=True, exist_ok=True)
-
-            self.logger.info(f"Monitoring for downloads in: {download_dir}")
-
-            # Get initial files in directory
-            initial_files = set(download_dir.glob('*'))
-
-            # Wait for new file to appear
-            timeout = action.timeout
-            start_time = time.time()
-            downloaded_file = None
-
-            while time.time() - start_time < timeout:
-                current_files = set(download_dir.glob('*'))
-                new_files = current_files - initial_files
-
-                # Filter by pattern if specified
-                if action.filename_pattern:
-                    matching_files = [
-                        f for f in new_files
-                        if f.match(action.filename_pattern)
-                    ]
-                else:
-                    matching_files = list(new_files)
-
-                # Check if any new files are complete (not .tmp, .crdownload, .part, etc.)
-                for file_path in matching_files:
-                    # Skip temporary download files
-                    if any(ext in file_path.suffix.lower() for ext in ['.tmp', '.crdownload', '.part', '.download']):
-                        continue
-
-                    # Check if file is still being written (size changing)
-                    try:
-                        size1 = file_path.stat().st_size
-                        await asyncio.sleep(0.5)
-                        size2 = file_path.stat().st_size
-
-                        if size1 == size2 and size1 > 0:
-                            # File size stable and non-zero - download complete
-                            downloaded_file = file_path
-                            break
-                    except:
-                        continue
-
-                if downloaded_file:
-                    break
-
-                await asyncio.sleep(1)
-
-            if not downloaded_file:
-                self.logger.error(
-                    f"Download not detected within {timeout} seconds"
-                )
-                return False
-
-            self.logger.info(f"Download complete: {downloaded_file.name}")
-
-            # Move file if requested
-            if action.move_to:
-                move_to_path = Path(action.move_to)
-                if move_to_path.is_dir():
-                    final_path = move_to_path / downloaded_file.name
-                else:
-                    final_path = move_to_path
-
-                final_path.parent.mkdir(parents=True, exist_ok=True)
-                downloaded_file.rename(final_path)
-                self.logger.info(f"Moved download to: {final_path}")
-                downloaded_file = final_path
-
-            # Store download info in results
-            current_url = await self._get_current_url()
-            result = ScrapingResult(
-                url=current_url,
-                content="",
-                bs_soup=BeautifulSoup("", 'html.parser'),
-                extracted_data={
-                    "downloaded_file": str(downloaded_file),
-                    "file_name": downloaded_file.name,
-                    "file_size": downloaded_file.stat().st_size
-                },
-                metadata={
-                    "download_path": str(download_dir),
-                    "filename_pattern": action.filename_pattern,
-                    "moved_to": action.move_to
-                },
-                timestamp=str(time.time()),
-                success=True
-            )
-            self.results.append(result)
-
-            # Delete file if requested
-            if action.delete_after:
-                downloaded_file.unlink()
-                self.logger.info(f"Deleted file: {downloaded_file.name}")
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"WaitForDownload action failed: {str(e)}")
-            return False
-
+        return await exec_wait_for_download(self._abstract_driver, action)
 
     async def _upload_file(self, action: UploadFile) -> bool:
+        """Handle UploadFile action — delegates to session_actions (FEAT-453).
+
+        Thin wrapper retained for backward compatibility. The implementation
+        now lives in the shared ``session_actions`` module so the executor
+        and this legacy tool share one code path.
         """
-        Upload a file to a file input element.
-
-        Args:
-            action: UploadFile action with file path and selector
-
-        Returns:
-            bool: True if upload successful
-        """
-        try:
-            # Determine file paths
-            if action.multiple_files and action.file_paths:
-                file_paths = [Path(fp).resolve() for fp in action.file_paths]
-            else:
-                file_paths = [Path(action.file_path).resolve()]
-
-            # Verify files exist
-            for file_path in file_paths:
-                if not file_path.exists():
-                    self.logger.error(f"File not found: {file_path}")
-                    return False
-
-            self.logger.info(f"Uploading {len(file_paths)} file(s)")
-
-            if self.driver_type == 'selenium':
-                loop = asyncio.get_running_loop()
-
-                def upload_sync():
-                    # Find the file input element
-                    file_input = WebDriverWait(
-                        self.driver,
-                        action.timeout or self.default_timeout
-                    ).until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, action.selector)
-                        )
-                    )
-
-                    # Send file paths to input
-                    if len(file_paths) == 1:
-                        file_input.send_keys(str(file_paths[0]))
-                    else:
-                        # Multiple files - join with newline
-                        file_input.send_keys('\n'.join(str(fp) for fp in file_paths))
-
-                    self.logger.info("File(s) uploaded successfully")
-
-                    # Wait for post-upload element if specified
-                    if action.wait_after_upload:
-                        try:
-                            WebDriverWait(
-                                self.driver,
-                                action.wait_timeout
-                            ).until(
-                                EC.presence_of_element_located(
-                                    (By.CSS_SELECTOR, action.wait_after_upload)
-                                )
-                            )
-                            self.logger.info(
-                                f"Post-upload element found: {action.wait_after_upload}"
-                            )
-                        except Exception as e:
-                            self.logger.warning(
-                                f"Post-upload wait timed out: {action.wait_after_upload}"
-                            )
-
-                await loop.run_in_executor(None, upload_sync)
-
-            else:  # Playwright
-                # For Playwright, set the files directly
-                if len(file_paths) == 1:
-                    await self.page.set_input_files(action.selector, str(file_paths[0]))
-                else:
-                    await self.page.set_input_files(
-                        action.selector,
-                        [str(fp) for fp in file_paths]
-                    )
-
-                self.logger.info("File(s) uploaded successfully")
-
-                # Wait for post-upload element if specified
-                if action.wait_after_upload:
-                    try:
-                        await self.page.wait_for_selector(
-                            action.wait_after_upload,
-                            timeout=action.wait_timeout * 1000
-                        )
-                        self.logger.info(
-                            f"Post-upload element found: {action.wait_after_upload}"
-                        )
-                    except Exception:
-                        self.logger.warning(
-                            f"Post-upload wait timed out: {action.wait_after_upload}"
-                        )
-
-            # Store upload info in results
-            current_url = await self._get_current_url()
-            result = ScrapingResult(
-                url=current_url,
-                content="",
-                bs_soup=BeautifulSoup("", 'html.parser'),
-                extracted_data={
-                    "uploaded_files": [fp.name for fp in file_paths],
-                    "file_count": len(file_paths)
-                },
-                metadata={
-                    "selector": action.selector,
-                    "file_paths": [str(fp) for fp in file_paths],
-                    "multiple_files": action.multiple_files
-                },
-                timestamp=str(time.time()),
-                success=True
-            )
-            self.results.append(result)
-
-            return True
-
-        except Exception as e:
-            self.logger.error(f"UploadFile action failed: {str(e)}")
-            return False
+        return await exec_upload_file(self._abstract_driver, action)
 
     async def _exec_conditional(
         self,
