@@ -89,7 +89,9 @@ _DESTINATION_TO_SOURCES_COLUMN: dict[str, str] = {
 }
 
 
-def _provenance_from(triage: Optional[ManifestDocEntry], charter_version: Optional[str]) -> Optional[TriageProvenance]:
+def _provenance_from(
+    triage: ManifestDocEntry | None, charter_version: str | None
+) -> TriageProvenance | None:
     """Build a FEAT-451 :class:`TriageProvenance` from a triage decision.
 
     Args:
@@ -202,7 +204,7 @@ class WikiIngestOrchestrator:
         *,
         triage: Optional[ManifestDocEntry] = None,
         charter_version: Optional[str] = None,
-        acquired: Optional[AcquiredDocument] = None,
+        acquired: AcquiredDocument | None = None,
     ) -> IngestReport:
         """Run the full ingest pipeline for a single source file.
 
@@ -336,18 +338,25 @@ class WikiIngestOrchestrator:
             except (FileNotFoundError, OSError) as exc:
                 # File does not exist; generate a deterministic placeholder ID.
                 source_id = f"src-{uuid.uuid5(uuid.NAMESPACE_URL, source_uri).hex[:12]}"
-                if triage is None:
-                    return self._error_report(source_id, source_uri, t0, str(exc))
-                # FEAT-451 bug fix (revealed by TASK-2358's test_ingest_url):
-                # add_source() calls path.stat() (sources.py), which always
-                # raises for a URL source_path — there is no local file to
-                # stat. On the supervised (triage-driven) path, defer full
+                # FEAT-451 bug fix (revealed by TASK-2358's test_ingest_url,
+                # narrowed after code review): add_source() calls
+                # path.stat() (sources.py), which always raises for a URL
+                # source_path — there is no local file to stat. Defer full
                 # registration to record_decision() (Step 5), which already
                 # tolerates a source_path that does not exist on disk (its
                 # own docstring: "a rejected document may never have been
-                # registered ... at all") — keep going instead of erroring.
+                # registered ... at all") — but ONLY for a genuine URL
+                # source. A missing *local* file (e.g. deleted between
+                # triage and apply) must still error here, exactly as
+                # before this feature — never silently swallowed just
+                # because a triage decision happens to be present.
+                if triage is None or urlparse(source_uri).scheme not in (
+                    "http",
+                    "https",
+                ):
+                    return self._error_report(source_id, source_uri, t0, str(exc))
                 self.logger.debug(
-                    "add_source could not stat %s (%s) — deferring" " registration to record_decision (triage-driven).",
+                    "add_source could not stat %s (%s) — deferring" " registration to record_decision (triage-driven URL).",
                     source_uri,
                     exc,
                 )

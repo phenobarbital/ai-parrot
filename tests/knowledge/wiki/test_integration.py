@@ -750,6 +750,64 @@ class TestFeat451DocumentIngestEndToEnd:
     """
 
     @pytest.mark.asyncio
+    async def test_md_frontmatter_stripped_before_triage(self, tmp_path: Path) -> None:
+        """A .md source's leading YAML frontmatter is parsed into
+        DocumentMetadata and STRIPPED from the text handed to
+        IngestTriageRouter.triage() — asserted directly against the stub
+        adapter's received prompt, not inferred from any other behavior
+        (spec §5, the acceptance criterion this test exists to cover)."""
+        from parrot.knowledge.wiki.charter import (
+            CalibrationPolicy,
+            Charter,
+            CharterScope,
+            Thresholds,
+        )
+        from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
+        from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+        src = tmp_path / "with_frontmatter.md"
+        src.write_text(
+            "---\ntitle: Contrato Marco 2026\nauthor: Legal Dept\n---\n"
+            "# Body\n\nUNIQUE_BODY_MARKER durable decision content.",
+            encoding="utf-8",
+        )
+        acquired = await DocumentAcquirer().acquire(
+            DocumentRef(uri=str(src), suffix=".md")
+        )
+        # split_frontmatter/DocumentAcquirer stripping is already proven at
+        # the unit level (test_documents.py); this test proves it end to
+        # end through the real triage call.
+        assert acquired.metadata.title == "Contrato Marco 2026"
+        assert "title: Contrato Marco 2026" not in acquired.text
+        assert "UNIQUE_BODY_MARKER" in acquired.text
+
+        charter = Charter(
+            version="1",
+            scope=CharterScope(include=[], exclude=[]),
+            weights={"density": 0.4, "novelty": 0.35, "durability": 0.25},
+            thresholds=Thresholds(admit=0.75, reject=0.35),
+            calibration=CalibrationPolicy(),
+        )
+        adapter = _FakeTriageAdapter()
+        novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
+        sources = SourceCollectionManager(
+            tmp_path / "sources", db_path=tmp_path / "wiki.db"
+        )
+        router = IngestTriageRouter(
+            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
+        )
+        await router.triage(src, acquired.text)
+
+        assert adapter.calls == 1
+        assert any(
+            "UNIQUE_BODY_MARKER" in prompt for prompt in adapter.received_prompts
+        )
+        assert not any(
+            "title: Contrato Marco 2026" in prompt
+            for prompt in adapter.received_prompts
+        )
+
+    @pytest.mark.asyncio
     async def test_ingest_pdf_end_to_end(self, tmp_path: Path, sample_pdf: Path) -> None:
         """PDF -> --auto-equivalent admit -> a page exists, its body starts
         with ``---``, the block parses via ``yaml.safe_load`` and carries
