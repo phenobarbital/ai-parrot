@@ -20,17 +20,105 @@ from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_
 from parrot.tools.abstract import AbstractTool, ToolResult
 
 
+def _scoped_store(store: BaseWikiStore, namespace: str | None) -> BaseWikiStore:
+    """Narrow a (possibly federated) store to one namespace selector.
+
+    A plain store has no namespaces, so the selector is a no-op there —
+    that keeps every existing caller (and the ``AsyncMock`` stores the
+    tool tests use) working untouched.
+
+    Args:
+        store: The store the tool holds.
+        namespace: The ``namespace`` tool argument.
+
+    Returns:
+        The store to read from.
+
+    Raises:
+        KeyError: When a federated store does not serve ``namespace``.
+    """
+    if not namespace:
+        return store
+    from parrot.knowledge.wiki.federation import FederatedWikiStore
+
+    if not isinstance(store, FederatedWikiStore):
+        return store
+    return store.scoped(namespace)
+
+
+def _reject_foreign_id(store: BaseWikiStore, page_id: str) -> str | None:
+    """Explain why a write cannot target ``page_id``, or ``None`` if it can.
+
+    Writes through these tools always land on the local plane; a
+    namespaced page belongs to somebody else's wiki, which is reachable
+    only through the CLI's explicit ``--ns`` write path (FEAT-450, U2).
+    Detecting that up front keeps the tools returning structured errors
+    instead of letting the store's ``ValueError`` escape mid-write.
+
+    Args:
+        store: The store the tool holds.
+        page_id: The page id supplied by the caller.
+
+    Returns:
+        An error message, or ``None`` when the id is local.
+    """
+    from parrot.knowledge.wiki.context import split_namespaced_id
+
+    namespace, _local = split_namespaced_id(page_id)
+    if namespace is None:
+        return None
+    if namespace not in getattr(store, "namespaces", {}):
+        return f"Unknown namespace {namespace!r} in page id {page_id!r}."
+    return (
+        f"Page {page_id!r} belongs to namespace {namespace!r}, which is "
+        "read-only here. Writes to a namespace go through the CLI: "
+        f"`wikitoolkit <command> --ns {namespace}`."
+    )
+
+
+def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
+    """Message for a ``namespace`` argument the store does not serve."""
+    known = ", ".join(sorted(getattr(store, "namespaces", {}))) or "(none)"
+    return (
+        f"Unknown namespace {namespace!r}. Known: {known} "
+        "(plus 'all', 'local')."
+    )
+
+
+#: Shared description of the optional ``namespace`` argument (FEAT-450).
+_NAMESPACE_DESC = (
+    "Federated namespace to read: a namespace name, 'all' to broadcast, "
+    "'local' for this repo's own wiki. Omit for the default routing "
+    "(broadcast when namespaces are configured)."
+)
+
+
 class WikiQueryInput(BaseModel):
     question: str = Field(..., description="Search question for the knowledge graph")
     budget_tokens: int = Field(default=DEFAULT_BUDGET_TOKENS, description="Token budget for results")
+    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
 class WikiPageInput(BaseModel):
-    page_id: str = Field(..., description="Page ID from wiki_query results")
+    page_id: str = Field(
+        ...,
+        description=(
+            "Page ID from wiki_query results; may carry a namespace "
+            "prefix (ns::file:a.py)"
+        ),
+    )
+    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
 class WikiRelatedInput(BaseModel):
-    page_id: str = Field(..., description="Page ID to find related pages for")
+    page_id: str = Field(
+        ...,
+        description=(
+            "Page ID to find related pages for; may carry a namespace "
+            "prefix (ns::dir:pkg)"
+        ),
+    )
+    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
 class WikiRememberInput(BaseModel):
@@ -73,7 +161,10 @@ class WikiQueryTool(AbstractTool):
     description = (
         "Search the codebase knowledge graph for files, modules, symbols, "
         "or concepts. Returns ranked page stubs with IDs for drill-down. "
-        "Use BEFORE grep/find/Read on large repos."
+        "Use BEFORE grep/find/Read on large repos. When federated "
+        "namespaces are configured this searches all of them and foreign "
+        "page IDs come back prefixed (ns::file:a.py); pass `namespace` to "
+        "search just one."
     )
     args_schema = WikiQueryInput
 
@@ -81,8 +172,17 @@ class WikiQueryTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, question: str, budget_tokens: int = DEFAULT_BUDGET_TOKENS) -> str:
-        results = await self._store.search_fts(question)
+    async def _execute(
+        self,
+        question: str,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+        namespace: str | None = None,
+    ) -> str:
+        try:
+            store = _scoped_store(self._store, namespace)
+        except KeyError:
+            return _unknown_namespace_error(self._store, str(namespace))
+        results = await store.search_fts(question)
         packed = pack_results(results, budget_tokens=budget_tokens)
         return packed.text
 
@@ -94,7 +194,8 @@ class WikiPageTool(AbstractTool):
     name = "wiki_page"
     description = (
         "Read a full wiki page by ID — file summaries, API outlines, "
-        "content. Use IDs returned by wiki_query."
+        "content. Use IDs returned by wiki_query, including namespaced "
+        "ones (ns::file:a.py)."
     )
     args_schema = WikiPageInput
 
@@ -102,8 +203,17 @@ class WikiPageTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, page_id: str) -> ToolResult:
-        page = await self._store.get_page(page_id, include_body=True)
+    async def _execute(
+        self, page_id: str, namespace: str | None = None
+    ) -> ToolResult:
+        try:
+            store = _scoped_store(self._store, namespace)
+        except KeyError:
+            return ToolResult(
+                success=False, status="error", result=None,
+                error=_unknown_namespace_error(self._store, str(namespace)),
+            )
+        page = await store.get_page(page_id, include_body=True)
         if page is None:
             return ToolResult(
                 success=False, status="error", result=None,
@@ -119,7 +229,8 @@ class WikiRelatedTool(AbstractTool):
     name = "wiki_related"
     description = (
         "Follow typed edges (contains, references) from a wiki page to "
-        "discover connected files and modules."
+        "discover connected files and modules. Accepts namespaced page "
+        "IDs (ns::dir:pkg) and returns neighbours from the same plane."
     )
     args_schema = WikiRelatedInput
 
@@ -127,8 +238,17 @@ class WikiRelatedTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, page_id: str) -> ToolResult:
-        neighbors = await self._store.neighbors(page_id)
+    async def _execute(
+        self, page_id: str, namespace: str | None = None
+    ) -> ToolResult:
+        try:
+            store = _scoped_store(self._store, namespace)
+        except KeyError:
+            return ToolResult(
+                success=False, status="error", result=None,
+                error=_unknown_namespace_error(self._store, str(namespace)),
+            )
+        neighbors = await store.neighbors(page_id)
         # Wrapped under a key (not a bare list) so the adapter's JSON
         # encoding path (dict → json.dumps) applies to this result too.
         return ToolResult(result={"neighbors": neighbors})
@@ -158,6 +278,16 @@ class WikiRememberTool(AbstractTool):
         link_page_id: str | None = None,
         rel: str | None = "references",
     ) -> ToolResult:
+        # Validate the link target BEFORE the first write: a namespaced
+        # id would otherwise fail at add_edges, leaving the memory page
+        # written and the call reported as an error.
+        if link_page_id:
+            refusal = _reject_foreign_id(self._store, link_page_id)
+            if refusal:
+                return ToolResult(
+                    success=False, status="error", result=None, error=refusal
+                )
+
         # Deterministic id from title+category (mirrors cli.py:remember —
         # re-remembering the same thing updates rather than duplicates).
         resolved_title = (title or fact.strip().splitlines()[0][:80]).strip()
@@ -231,6 +361,13 @@ class WikiNoteTool(AbstractTool):
             return ToolResult(
                 success=False, status="error", result=None,
                 error=f"Page not found: {page_id}",
+            )
+        # A federated read returns the page with its id QUALIFIED; writing
+        # that straight back would be a write into a foreign namespace.
+        refusal = _reject_foreign_id(self._store, str(page["concept_id"]))
+        if refusal:
+            return ToolResult(
+                success=False, status="error", result=None, error=refusal
             )
 
         stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
@@ -364,7 +501,12 @@ class VaultIngestTool(AbstractTool):
             )
             await self._store.upsert_pages(scan.dir_records)
             await self._store.add_edges(scan.dir_edges)
-            removed = await _prune_removed(self._store, sources, vault, scan)
+            # scope="root": this plane may also hold the repo's own
+            # codebase pages — prune only what lives under the vault
+            # (FEAT-450, D4.4).
+            removed = await _prune_removed(
+                self._store, sources, vault, scan, scope="root"
+            )
             store_stats = await self._store.stats()
 
         try:

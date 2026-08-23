@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2363, TASK-2364, TASK-2365, TASK-2366, TASK-2367
@@ -165,8 +165,8 @@ def test_query_json_rows_carry_namespace(runner, repo, tmp_path): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: documentation/parrot-wiki-cli.md gains a full 'Namespaces (multi-wiki federation)' section (ids, four kinds, both registries, ns command reference, --ns reads and writes, precedence, skips, the vault kind, MCP/toolkit, and the v2 follow-up list) plus 7 troubleshooting rows; docs/wiki-claude-code.md gains an ns:: / namespace note and the ns command row; CLAUDE.md's wiki section notes qualified ids. New tests/knowledge/wiki/test_namespaces_e2e.py: 9 end-to-end tests (vault namespace end to end, rebuild never ingests .parrot, unbuilt hint + skip, precedence with namespaces, --store never federates, JSON row shape, MCP injection, global registry lifecycle, and a read-only guarantee asserting a foreign plane's mtime/size and sidecar set are unchanged after query/page/related/status). Full suite: tests/knowledge/wiki 933 passed / 7 skipped / 1 pre-existing failure (test_claude_code fresh_install); packages/ai-parrot/tests/knowledge/wiki 86 passed / 2 pre-existing failures (test_installer_mcp) — all three fail identically on the base commit.
 
 **Deviations from spec**: none

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2359, TASK-2360, TASK-2361
@@ -231,8 +231,8 @@ async def test_resolve_unbuilt(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: federation.py: NamespaceSkip, NamespaceHandle, open_namespace_store (path/vault/store/database kinds), resolve_namespaces (merge + classify unbuilt/unreachable/invalid), FederatedWikiStore (fan-out reads with per-namespace min-max + weight + qualification + dedup, prefix routing for get_page/neighbors, local-only writes with ValueError on a foreign id, stats with namespaces/skipped blocks, scoped() selectors). Lazy exports added to the wiki package. 32 new tests.
 
-**Deviations from spec**: none
+**Deviations from spec**: Added an _EmptyStore stand-in so scoped('a,b') (a namespace subset that excludes 'local') has no local plane to leak rows from; scoped(name) is a FederatedWikiStore with qualify_local=True so its rows keep the ns:: prefix. open_namespace_store returns (store, storage_dir) rather than just the store — the CLI write path and the handle both need the directory.

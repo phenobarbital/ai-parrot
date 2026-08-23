@@ -27,27 +27,48 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 import click
+from pydantic import ValidationError
 
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
+    qualify_id,
+    split_namespaced_id,
     truncate_to_tokens,
+)
+from parrot.knowledge.wiki.federation import (
+    FederatedWikiStore,
+    NamespaceSkip,
+    open_namespace_store,
+    resolve_namespaces,
 )
 from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
+    WikiNamespaceConfig,
     WikiProjectConfig,
+    config_path,
     find_project_root,
+    global_registry_path,
+    load_global_registry,
     load_project_config,
+    merge_namespaces,
+    parrot_home,
+    resolve_entry_base,
+    save_global_registry,
     save_project_config,
+    validate_namespace_name,
     wiki_write_lock,
 )
 from parrot.knowledge.wiki.repo_scan import (
@@ -69,6 +90,9 @@ logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.INFO)
 logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.INFO)
 
+#: How long a `ns add`/`ns remove` waits for the global registry lock.
+REGISTRY_LOCK_WAIT_SECONDS = 5.0
+
 #: How long `upsert` waits for a contended store lock before skipping.
 #: Long enough to outlast a peer upsert (sub-second), short enough that
 #: a commit hook never stalls behind a multi-minute build.
@@ -83,6 +107,221 @@ UPSERT_LOCK_WAIT_SECONDS = 3.0
 path_option = click.option(
     "--path", "path_", default=None, help="Repo root (default: auto-detect)."
 )
+
+#: Shared `--ns` option for the read commands (FEAT-450).
+ns_option = click.option(
+    "--ns",
+    "ns_opt",
+    default=None,
+    help=(
+        "Namespace to read: a name (or comma-separated names), 'all' "
+        "(default when namespaces are configured), or 'local'."
+    ),
+)
+
+
+def _declared_namespaces(
+    config: WikiProjectConfig,
+) -> dict[str, tuple[WikiNamespaceConfig, str]]:
+    """Merge the repo and global namespace registries (repo wins).
+
+    Args:
+        config: The repo's project config.
+
+    Returns:
+        ``name -> (config, origin)`` for every declared namespace.
+    """
+    try:
+        registry = load_global_registry()
+    except WikiConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return merge_namespaces(config.namespaces, registry.namespaces)
+
+
+def _selected_namespaces(ns_opt: str | None) -> set[str] | None:
+    """Namespace names a ``--ns`` selector asks to resolve.
+
+    Args:
+        ns_opt: The raw ``--ns`` value.
+
+    Returns:
+        ``None`` for a broadcast (every namespace), otherwise the named
+        subset — empty for ``--ns local``, which needs none opened.
+    """
+    if ns_opt is None or ns_opt == "all":
+        return None
+    return {
+        part.strip()
+        for part in ns_opt.split(",")
+        if part.strip() and part.strip() != "local"
+    }
+
+
+def _unknown_namespace(ns_opt: str, known: list[str]) -> click.ClickException:
+    """Build the error raised for a ``--ns`` name that is not declared."""
+    listing = ", ".join(sorted(known)) or "(none declared)"
+    return click.ClickException(
+        f"Unknown namespace {ns_opt!r}. Known: {listing} "
+        "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
+    )
+
+
+def _federate(
+    root: Path,
+    config: WikiProjectConfig,
+    local: BaseWikiStore,
+    ns_opt: str | None,
+) -> BaseWikiStore:
+    """Wrap the local plane in its federated namespaces, honouring ``--ns``.
+
+    Returns the local store untouched when no namespace is declared (or
+    when ``--ns local`` asked for exactly that), so a project without
+    namespaces behaves as it always has.
+
+    Args:
+        root: Repository root.
+        config: The repo's project config.
+        local: The already-opened local plane.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        The store the command should read from.
+
+    Raises:
+        click.ClickException: The selector names an undeclared namespace,
+            or one that could not be opened.
+    """
+    declared = _declared_namespaces(config)
+    only = _selected_namespaces(ns_opt)
+    if only is not None:
+        unknown = sorted(only - set(declared))
+        if unknown:
+            raise _unknown_namespace(", ".join(unknown), list(declared))
+        if not only:
+            # `--ns local` — nothing foreign to open.
+            return local
+    if not declared:
+        return local
+    handles, skipped = _run(resolve_namespaces(root, config, only=only))
+    federated = FederatedWikiStore(local, config.wiki_name, handles, skipped)
+    try:
+        return federated.scoped(ns_opt)
+    except KeyError as exc:
+        name = str(exc.args[0])
+        skip = next((s for s in skipped if s.name == name), None)
+        if skip is not None:
+            hint = f" Fix: {skip.hint}" if skip.hint else ""
+            raise click.ClickException(
+                f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}"
+            ) from exc
+        raise _unknown_namespace(name, list(declared)) from exc
+
+
+def _qualify_for_ns(page_id: str, ns_opt: str | None) -> str:
+    """Qualify a bare page id with the single namespace ``--ns`` selected.
+
+    Args:
+        page_id: The id as typed, qualified or not.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        ``<ns>::<page_id>`` when ``ns_opt`` names exactly one namespace
+        and the id is not already qualified; the id unchanged otherwise.
+    """
+    if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
+        return page_id
+    return qualify_id(ns_opt, page_id)
+
+
+def _write_id_for_ns(page_id: str, ns_opt: str | None) -> str:
+    """Strip the namespace prefix a write is already scoped to.
+
+    A write path holds the target namespace's own store, which knows
+    nothing about the ``ns::`` prefix. An id qualified with a DIFFERENT
+    namespace is a mistake worth reporting rather than silently writing
+    to the wrong plane.
+
+    Args:
+        page_id: Page id as typed.
+        ns_opt: The ``--ns`` selector of this write.
+
+    Returns:
+        The id as the target store knows it.
+
+    Raises:
+        click.ClickException: The id names another namespace.
+    """
+    namespace, local_id = split_namespaced_id(page_id)
+    if namespace is None:
+        return page_id
+    target = None if ns_opt in (None, "local") else ns_opt
+    if namespace == target:
+        return local_id
+    raise click.ClickException(
+        f"Page id {page_id!r} belongs to namespace {namespace!r} — "
+        f"pass `--ns {namespace}` to write there."
+    )
+
+
+def _scoped_namespace(
+    root: Path, config: WikiProjectConfig, ns_opt: str | None
+) -> tuple[str, WikiNamespaceConfig, Path | None] | None:
+    """The single namespace a ``--ns`` selector narrowed a read to.
+
+    Args:
+        root: Repository root.
+        config: The repo's project config.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        ``(name, config, storage_dir)`` when the selector names exactly
+        one namespace, else ``None`` (broadcast, ``local``, or a subset).
+    """
+    if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
+        return None
+    entry = _declared_namespaces(config).get(ns_opt)
+    if entry is None:
+        return None
+    cfg, origin = entry
+    storage_dir: Path | None = None
+    if cfg.kind != "database":
+        base = resolve_entry_base(origin, root)
+        target = Path(cfg.target).expanduser()
+        if not target.is_absolute():
+            target = base / target
+        if cfg.kind in ("path", "vault"):
+            try:
+                storage_dir = load_project_config(target).storage_path(target)
+            except WikiConfigError:
+                storage_dir = None
+        else:
+            storage_dir = target
+    return ns_opt, cfg, storage_dir
+
+
+def _collect_skips(store: BaseWikiStore) -> list[NamespaceSkip]:
+    """Namespaces this store could not serve (resolve-time and per-call)."""
+    seen: dict[str, NamespaceSkip] = {}
+    for skip in [
+        *(getattr(store, "skipped", None) or []),
+        *(getattr(store, "last_skipped", None) or []),
+    ]:
+        seen.setdefault(skip.name, skip)
+    return list(seen.values())
+
+
+def _echo_skips(store: BaseWikiStore, *, err: bool = False) -> None:
+    """Print one trailing note per skipped namespace (never an error).
+
+    Args:
+        store: The store the command read from.
+        err: Write to stderr (used when stdout carries JSON).
+    """
+    for skip in _collect_skips(store):
+        hint = f" — {skip.hint}" if skip.hint else ""
+        click.echo(
+            f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err
+        )
 
 def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
@@ -200,6 +439,7 @@ def _resolve_read_store(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None = None,
 ) -> BaseWikiStore:
     """Open a store for a read command (``query`` / ``page`` / ``related``).
 
@@ -219,6 +459,11 @@ def _resolve_read_store(
     config (ArangoDB is server-hosted — there is no local ``--store``
     directory to point at) and connects eagerly here, so an unreachable
     server fails with a clear message before any query is attempted.
+
+    Whichever branch resolves the *local* plane, its declared namespaces
+    are then federated on top (FEAT-450) and narrowed by ``ns_opt``.
+    ``--store`` is the one exception: it targets one specific pre-built
+    store, so it never federates.
     """
     if backend_opt == "arangodb":
         root, config = _resolve_project(path_)
@@ -230,7 +475,7 @@ def _resolve_read_store(
                 f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
                 f"{exc}"
             ) from exc
-        return store
+        return _federate(root, config, store, ns_opt)
     store_override = store_opt
     if not store_override and not path_:
         # Only consult the env when neither an explicit store nor an
@@ -246,9 +491,14 @@ def _resolve_read_store(
                 f"No wiki database at {storage_dir / 'wiki.db'}. Build it "
                 "first, or point --store at the right root."
             )
+        if ns_opt not in (None, "local"):
+            raise click.ClickException(
+                "--store targets one pre-built store and never federates; "
+                "drop --store to read namespaces."
+            )
         return create_wiki_store(storage_dir, backend=backend)
     root, config = _resolve_project(path_)
-    return _require_built(root, config)
+    return _federate(root, config, _require_built(root, config), ns_opt)
 
 
 #: Shared `--store`/`--backend` options for the read commands.
@@ -392,34 +642,112 @@ async def _prune_removed(
     sources: SourceCollectionManager,
     root: Path,
     scan: Any,
+    *,
+    scope: str = "plane",
 ) -> int:
-    """Drop pages/sources no longer in scan scope (full builds only).
+    """Drop pages/sources no longer in scan scope.
 
     Covers deleted files as well as files that fell out of scope
     (newly ignored directories, changed suffix filters).
+
+    A plane is not always one corpus (FEAT-450, D4.4): a vault can be
+    ingested into the repo's plane. Two invariants keep the corpora from
+    deleting each other, and they hold in BOTH scopes:
+
+    * a source outside ``root`` is not this scan's to remove;
+    * a page whose source is still registered is not stale, whatever the
+      scan produced.
+
+    On top of that, ``scope`` decides how aggressive the leftover sweep
+    is:
+
+    - ``"plane"`` (``build``) — sweep every sourceless ``file:``/``dir:``
+      page the scan did not produce. The plane is this corpus plus
+      whatever other corpora registered sources, and only the former is
+      swept.
+    - ``"root"`` (``VaultIngestTool``) — sweep only the ``dir:`` pages
+      this run's removals could have emptied.
+
+    Args:
+        store: The plane being pruned.
+        sources: Source manifest for that plane.
+        root: Directory the scan covered.
+        scan: The fresh scan result.
+        scope: ``"plane"`` (default) or ``"root"``.
+
+    Returns:
+        Number of sources and pages removed.
     """
     expected_files = {fs.record.concept_id for fs in scan.files}
     expected_dirs = {r.concept_id for r in scan.dir_records}
     expected_uris = {
         str((root / fs.rel_path).resolve()) for fs in scan.files
     }
+    root_prefix = str(root.resolve()) + os.sep
     removed = 0
 
+    #: `dir:` ids that this run's removals could have emptied.
+    emptied_dirs: set[str] = set()
+    live_source_ids: set[str] = set()
+
     for entry in await asyncio.to_thread(sources.list_sources):
-        if entry.source_uri not in expected_uris:
-            await store.replace_source_slice(entry.source_id, [], [])
-            await asyncio.to_thread(sources.remove_source, entry.source_id)
-            removed += 1
+        if entry.source_uri in expected_uris:
+            live_source_ids.add(entry.source_id)
+            continue
+        if not entry.source_uri.startswith(root_prefix):
+            # Another corpus sharing this plane — not ours to prune.
+            live_source_ids.add(entry.source_id)
+            continue
+        for parent in PurePosixPath(
+            Path(entry.source_uri).relative_to(root.resolve()).as_posix()
+        ).parents:
+            emptied_dirs.add(f"dir:{parent if str(parent) != '.' else '.'}")
+        await store.replace_source_slice(entry.source_id, [], [])
+        await asyncio.to_thread(sources.remove_source, entry.source_id)
+        removed += 1
 
     stubs = await store.list_pages(limit=1_000_000)
-    for stub in stubs:
-        cid = str(stub.get("concept_id", ""))
-        if cid.startswith("file:") and cid not in expected_files:
-            if await store.delete_page(cid):
-                removed += 1
-        elif cid.startswith("dir:") and cid not in expected_dirs:
-            if await store.delete_page(cid):
-                removed += 1
+    surviving = {str(stub.get("concept_id", "")) for stub in stubs}
+
+    if scope == "plane":
+        # Sourceless leftovers of THIS corpus: a page still backed by a
+        # registered source belongs to someone (possibly another corpus)
+        # and is never swept here.
+        for stub in stubs:
+            cid = str(stub.get("concept_id", ""))
+            if stub.get("source_id") in live_source_ids:
+                continue
+            if cid.startswith("file:") and cid not in expected_files:
+                if await store.delete_page(cid):
+                    surviving.discard(cid)
+                    removed += 1
+        candidates = {
+            cid
+            for cid in surviving
+            if cid.startswith("dir:") and cid not in expected_dirs
+        }
+    else:
+        candidates = {
+            cid
+            for cid in surviving
+            if cid in emptied_dirs and cid not in expected_dirs
+        }
+
+    # Deepest first, against a survivor set that shrinks as we go, so a
+    # parent emptied by its own children going away is caught in ONE pass.
+    for cid in sorted(candidates, key=lambda c: c.count("/"), reverse=True):
+        prefix = cid[len("dir:") :]
+        if prefix in ("", "."):
+            continue
+        covered = f"{prefix}/"
+        if any(
+            other != cid and other.split(":", 1)[-1].startswith(covered)
+            for other in surviving
+        ):
+            continue
+        if await store.delete_page(cid):
+            surviving.discard(cid)
+            removed += 1
     return removed
 
 
@@ -1086,6 +1414,7 @@ def upsert(
 )
 @click.option("--category", default=None, help="Filter by page category.")
 @_store_options
+@ns_option
 @click.option(
     "--table",
     "as_table",
@@ -1108,6 +1437,7 @@ def query(
     category: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_table: bool,
     show_body: bool,
     as_json: bool,
@@ -1120,9 +1450,12 @@ def query(
     with `wikitoolkit page <id>` to read a full page, or
     `wikitoolkit related <id>` to walk the graph.
     """
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
     rows = _run(store.search_fts(question, category=category, limit=top_k))
-    rows = _normalize_scores(rows)
+    if not isinstance(store, FederatedWikiStore):
+        # A federated store already normalised each namespace and applied
+        # its weight; a second global min-max here would undo that.
+        rows = _normalize_scores(rows)
 
     # Hydrate the top hit's body once, for --body across every renderer.
     if show_body and rows:
@@ -1132,15 +1465,18 @@ def query(
 
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
+        _echo_skips(store, err=True)
         return
     if not rows:
         click.echo(
             f"No wiki results for {question!r}. The wiki may be stale — "
             "try `wikitoolkit build`, or fall back to code search."
         )
+        _echo_skips(store)
         return
     if as_table:
         _render_results_table(rows, question, show_body=show_body)
+        _echo_skips(store)
         return
     packed = pack_results(rows, budget_tokens=budget)
     click.echo(f"# Wiki results for: {question}\n")
@@ -1151,6 +1487,7 @@ def query(
     )
     if show_body and rows[0].get("body"):
         click.echo(f"\n## {rows[0].get('title')}\n{rows[0]['body']}")
+    _echo_skips(store)
     click.echo(
         "Next: `wikitoolkit page <id>` for a full page · "
         "`wikitoolkit related <id>` for linked pages."
@@ -1167,6 +1504,7 @@ def query(
     help="Truncate the body to roughly this many tokens.",
 )
 @_store_options
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def page(
     page_id: str,
@@ -1174,10 +1512,16 @@ def page(
     max_tokens: int | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_json: bool,
 ) -> None:
-    """Read one wiki page in full (progressive disclosure)."""
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    """Read one wiki page in full (progressive disclosure).
+
+    PAGE_ID may carry a namespace prefix (``other::file:a.py``); with
+    ``--ns <name>`` a bare id is resolved inside that namespace.
+    """
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
+    page_id = _qualify_for_ns(page_id, ns_opt)
     data = _run(store.get_page(page_id, include_body=True))
     if data is None:
         raise click.ClickException(
@@ -1211,6 +1555,7 @@ def page(
     show_default=True,
 )
 @_store_options
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def related(
     page_id: str,
@@ -1219,10 +1564,16 @@ def related(
     direction: str,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     as_json: bool,
 ) -> None:
-    """List pages linked to PAGE_ID by typed edges."""
-    store = _resolve_read_store(path_, store_opt, backend_opt)
+    """List pages linked to PAGE_ID by typed edges.
+
+    PAGE_ID may carry a namespace prefix (``other::dir:pkg``); with
+    ``--ns <name>`` a bare id is resolved inside that namespace.
+    """
+    store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
+    page_id = _qualify_for_ns(page_id, ns_opt)
     rows = _run(store.neighbors(page_id, rel=rel, direction=direction))
     if as_json:
         click.echo(json.dumps(rows, indent=2, default=str))
@@ -1240,9 +1591,10 @@ def related(
 
 @wiki.command()
 @path_option
+@ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
-def status(path_: str | None, as_json: bool) -> None:
-    """Show wiki plane statistics and source staleness."""
+def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
+    """Show wiki plane statistics, namespaces, and source staleness."""
     root, config = _resolve_project(path_)
     if not config.is_built(root):
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
@@ -1256,11 +1608,22 @@ def status(path_: str | None, as_json: bool) -> None:
                 f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: "
                 f"{exc}"
             ) from exc
+    # Source staleness is a property of the LOCAL plane — the manager
+    # must see the real store, not the federation wrapping it.
     sources = _open_sources(root, config, store=store)
-    stats = _run(store.stats())
-    entries = sources.list_sources()
+    read_store = _federate(root, config, store, ns_opt)
+    stats = _run(read_store.stats())
+    namespaces = stats.pop("namespaces", None)
+    ns_skipped = stats.pop("skipped", None)
+    stats.pop("local", None)
+    # `--ns <name>` reports THAT plane's counters, so the header must
+    # name it too — otherwise a foreign page count sits under the local
+    # project's identity. Source staleness is a local-manifest concept
+    # and is simply absent for a namespace.
+    scoped_to = _scoped_namespace(root, config, ns_opt)
+    entries = [] if scoped_to else sources.list_sources()
     stale = [e.source_id for e in entries if sources.is_stale(e.source_id)]
-    payload = {
+    payload: dict[str, Any] = {
         "root": str(root),
         "wiki_name": config.wiki_name,
         "backend": config.backend,
@@ -1270,11 +1633,25 @@ def status(path_: str | None, as_json: bool) -> None:
         "stale_sources": len(stale),
         "languages": {name: s.mode for name, s in all_scanners().items()},
     }
+    if scoped_to is not None:
+        name, handle_cfg, storage_dir = scoped_to
+        payload["namespace"] = name
+        payload["wiki_name"] = name
+        payload["backend"] = handle_cfg.backend
+        payload["storage_dir"] = str(storage_dir) if storage_dir else None
+        payload["sources"] = None
+        payload["stale_sources"] = None
+    if namespaces is not None:
+        payload["namespaces"] = namespaces
+        payload["skipped"] = ns_skipped or []
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
-    click.echo(f"Wiki      : {config.wiki_name} ({config.backend})")
-    click.echo(f"Root      : {root}")
+    click.echo(f"Wiki      : {payload['wiki_name']} ({payload['backend']})")
+    if scoped_to is None:
+        click.echo(f"Root      : {root}")
+    else:
+        click.echo(f"Namespace : {scoped_to[0]} (of {root})")
     click.echo(f"Storage   : {payload['storage_dir']}")
     click.echo(
         f"Plane     : {stats.get('pages', 0)} pages, "
@@ -1283,9 +1660,372 @@ def status(path_: str | None, as_json: bool) -> None:
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
-    click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
+    if scoped_to is None:
+        click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
+    if namespaces:
+        click.echo("\nNamespaces:")
+        header = f"  {'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} {'pages':>7}  status"
+        click.echo(header)
+        for name in sorted(namespaces):
+            block = namespaces[name]
+            pages = block.get("pages")
+            click.echo(
+                f"  {name:<16} {block.get('kind', ''):<9} "
+                f"{block.get('backend', ''):<9} {block.get('origin', ''):<7} "
+                f"{'-' if pages is None else pages:>7}  {block.get('status', '')}"
+            )
+    for skip in ns_skipped or []:
+        hint = f" — {skip.get('hint')}" if skip.get("hint") else ""
+        click.echo(f"  {skip['name']:<16} {skip['reason']}{hint}")
     if stale:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
+
+
+# --------------------------------------------------------------------------
+# Namespace registry (FEAT-450)
+# --------------------------------------------------------------------------
+
+
+def _namespace_source(
+    src_project: str | None,
+    src_store: str | None,
+    src_database: str | None,
+    src_vault: str | None,
+) -> None:
+    """Validate that exactly one namespace source flag was given.
+
+    Raises:
+        click.ClickException: When zero or several sources were given.
+    """
+    given = [
+        flag
+        for flag, value in (
+            ("--project", src_project),
+            ("--store", src_store),
+            ("--database", src_database),
+            ("--vault", src_vault),
+        )
+        if value
+    ]
+    if len(given) != 1:
+        raise click.ClickException(
+            "Give exactly one of --project / --store / --database / --vault "
+            f"(got: {', '.join(given) or 'none'})."
+        )
+
+
+@contextmanager
+def _global_registry_lock() -> Iterator[None]:
+    """Serialise read-modify-write cycles on ``PARROT_HOME/wikis.json``.
+
+    ``save_global_registry`` replaces the file atomically, which prevents
+    a torn write but not a lost update: two concurrent ``ns add --global``
+    calls would both read the original registry and the later
+    ``os.replace`` would drop the earlier entry. Reuse the wiki writer
+    lock, held across load + mutate + save.
+
+    Yields:
+        ``None``, with the lock held (advisory; a lock that cannot be
+        taken is logged and the write proceeds, matching
+        :func:`wiki_write_lock`).
+    """
+    home = parrot_home()
+    home.mkdir(parents=True, exist_ok=True)
+    with wiki_write_lock(home, timeout=REGISTRY_LOCK_WAIT_SECONDS) as acquired:
+        if not acquired:
+            _cli_logger.warning(
+                "Could not take the %s lock; writing anyway.", home
+            )
+        yield
+
+
+def _stored_namespace_path(
+    value: str | None, root: Path, is_global: bool
+) -> str | None:
+    """Normalise a user-typed namespace path into its stored form.
+
+    Args:
+        value: The raw ``--project`` / ``--store`` / ``--vault`` value.
+        root: Repository root (the base a repo entry is read back from).
+        is_global: Whether the entry goes to the per-user registry.
+
+    Returns:
+        ``None`` when ``value`` is falsy; an absolute path for a global
+        entry; a repo-root-relative path for a repo entry (so a checked-in
+        ``wiki.json`` stays portable across clones).
+    """
+    if not value:
+        return value
+    target = Path(value).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    target = Path(os.path.normpath(target))
+    if is_global:
+        return str(target)
+    return os.path.relpath(target, root.resolve())
+
+
+def _namespace_built(cfg: WikiNamespaceConfig, base_dir: Path) -> bool | None:
+    """Whether a declared namespace already has a plane on disk.
+
+    Args:
+        cfg: The namespace declaration.
+        base_dir: Directory its relative paths resolve against.
+
+    Returns:
+        ``True``/``False`` for on-disk kinds, ``None`` for ArangoDB
+        (server-hosted — there is no local artifact to probe).
+    """
+    if cfg.kind == "database":
+        return None
+    target = Path(cfg.target).expanduser()
+    if not target.is_absolute():
+        target = base_dir / target
+    if cfg.kind in ("path", "vault"):
+        try:
+            foreign = load_project_config(target)
+        except WikiConfigError:
+            return False
+        return foreign.is_built(target)
+    if cfg.backend == "memory":
+        return (target / "pages").exists()
+    return (target / "wiki.db").exists()
+
+
+@wiki.group(name="ns")
+def ns() -> None:
+    """Manage federated wiki namespaces (other wikis this one can read)."""
+
+
+@ns.command("list")
+@path_option
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def ns_list(path_: str | None, as_json: bool) -> None:
+    """List the namespaces visible from this project (repo + global)."""
+    root, config = _resolve_project(path_)
+    declared = _declared_namespaces(config)
+    rows = []
+    for name in sorted(declared):
+        cfg, origin = declared[name]
+        base_dir = resolve_entry_base(origin, root)
+        built = _namespace_built(cfg, base_dir)
+        rows.append(
+            {
+                "name": name,
+                "kind": cfg.kind,
+                "backend": cfg.backend,
+                "origin": origin,
+                "target": cfg.target,
+                "weight": cfg.weight,
+                "description": cfg.description,
+                "built": built,
+            }
+        )
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    if not rows:
+        click.echo(
+            "No namespaces declared. Add one with "
+            "`wikitoolkit ns add <name> --project <dir>`."
+        )
+        return
+    click.echo(
+        f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} "
+        f"{'built':<6} target"
+    )
+    for row in rows:
+        built = "n/a" if row["built"] is None else ("yes" if row["built"] else "no")
+        click.echo(
+            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} "
+            f"{row['origin']:<7} {built:<6} {row['target']}"
+        )
+        if row["description"]:
+            click.echo(f"{'':<16} {row['description']}")
+
+
+@ns.command("add")
+@click.argument("name")
+@path_option
+@click.option(
+    "--project",
+    "src_project",
+    default=None,
+    help="Root of another wiki project (kind: path).",
+)
+@click.option(
+    "--store",
+    "src_store",
+    default=None,
+    help="Pre-built store directory (kind: store).",
+)
+@click.option(
+    "--backend",
+    "backend_opt",
+    type=click.Choice(["sqlite", "memory"]),
+    default=None,
+    help="Backend of a --store directory (default: sqlite).",
+)
+@click.option(
+    "--database",
+    "src_database",
+    default=None,
+    help="ArangoDB database holding the plane (kind: database).",
+)
+@click.option(
+    "--credentials-env",
+    default="ARANGODB",
+    show_default=True,
+    help="Env var prefix for --database credentials.",
+)
+@click.option(
+    "--vault",
+    "src_vault",
+    default=None,
+    help="Obsidian vault root (kind: vault; requires .obsidian/).",
+)
+@click.option("--description", default="", help="What this namespace holds.")
+@click.option(
+    "--weight",
+    default=1.0,
+    show_default=True,
+    type=float,
+    help="Score multiplier when merging this namespace (0.0-1.0).",
+)
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Write to the per-user registry (PARROT_HOME/wikis.json) "
+    "instead of this repo's wiki.json.",
+)
+def ns_add(
+    name: str,
+    path_: str | None,
+    src_project: str | None,
+    src_store: str | None,
+    backend_opt: str | None,
+    src_database: str | None,
+    credentials_env: str,
+    src_vault: str | None,
+    description: str,
+    weight: float,
+    is_global: bool,
+) -> None:
+    """Register NAME as a namespace this wiki can read.
+
+    This is the only writer of namespace entries — neither ``build`` nor
+    any other command ever self-registers a wiki.
+    """
+    try:
+        validate_namespace_name(name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _namespace_source(src_project, src_store, src_database, src_vault)
+
+    root, config = _resolve_project(path_)
+    base_dir = parrot_home() if is_global else root
+
+    # A path typed at the shell is relative to the CALLER's cwd, but a
+    # stored entry is read back relative to its registry's directory
+    # (repo root / PARROT_HOME). Resolve it here so the two can never
+    # disagree: repo entries keep a portable repo-relative form
+    # (`../asyncdb`), global entries are stored absolute.
+    src_project = _stored_namespace_path(src_project, root, is_global)
+    src_store = _stored_namespace_path(src_store, root, is_global)
+    src_vault = _stored_namespace_path(src_vault, root, is_global)
+
+    if src_vault:
+        vault_dir = Path(src_vault).expanduser()
+        if not vault_dir.is_absolute():
+            vault_dir = base_dir / vault_dir
+        # Inline probe — importing vault_scan here would drag the
+        # Obsidian interfaces into every `ns add`.
+        if not (vault_dir / ".obsidian").is_dir():
+            raise click.ClickException(
+                f"{vault_dir} is not an Obsidian vault (no .obsidian/ "
+                "directory). Use --project for a plain wiki project."
+            )
+
+    try:
+        entry = WikiNamespaceConfig(
+            path=src_project,
+            store=src_store,
+            backend=backend_opt or "sqlite",
+            database=src_database,
+            credentials_env=credentials_env,
+            vault=src_vault,
+            description=description,
+            weight=weight,
+        )
+    except ValidationError as exc:
+        raise click.ClickException(f"Invalid namespace entry: {exc}") from exc
+
+    if is_global:
+        with _global_registry_lock():
+            registry = load_global_registry()
+            if name in registry.namespaces:
+                raise click.ClickException(
+                    f"Namespace {name!r} already exists in the global "
+                    f"registry ({global_registry_path()}). Remove it first."
+                )
+            registry.namespaces[name] = entry
+            written = save_global_registry(registry)
+    else:
+        if name in config.namespaces:
+            raise click.ClickException(
+                f"Namespace {name!r} already exists in {config_path(root)}. "
+                "Remove it first."
+            )
+        config.namespaces[name] = entry
+        written = save_project_config(root, config)
+        if name in load_global_registry().namespaces:
+            click.echo(
+                f"Note: this repo entry shadows the global namespace {name!r}."
+            )
+
+    click.echo(f"Added namespace {name!r} ({entry.kind}) → {written}")
+    built = _namespace_built(entry, base_dir)
+    if built is False:
+        target = Path(entry.target).expanduser()
+        if not target.is_absolute():
+            target = base_dir / target
+        flag = "--store" if entry.kind == "store" else "--path"
+        click.echo(
+            f"Namespace {name!r} has no plane yet — build it with "
+            f"`wikitoolkit build {flag} {target}`."
+        )
+
+
+@ns.command("remove")
+@click.argument("name")
+@path_option
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Remove from the per-user registry instead of this repo.",
+)
+def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
+    """Remove namespace NAME from this repo (or the global registry)."""
+    if is_global:
+        with _global_registry_lock():
+            registry = load_global_registry()
+            if name not in registry.namespaces:
+                raise click.ClickException(
+                    f"No namespace {name!r} in {global_registry_path()}."
+                )
+            del registry.namespaces[name]
+            written = save_global_registry(registry)
+    else:
+        root, config = _resolve_project(path_)
+        if name not in config.namespaces:
+            raise click.ClickException(
+                f"No namespace {name!r} in {config_path(root)}."
+            )
+        del config.namespaces[name]
+        written = save_project_config(root, config)
+    click.echo(f"Removed namespace {name!r} from {written}")
 
 
 @wiki.command()
@@ -1471,7 +2211,8 @@ def _resolve_write_store(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
-) -> tuple[BaseWikiStore, Path, Path | None, WikiProjectConfig | None]:
+    ns_opt: str | None = None,
+) -> tuple[BaseWikiStore, Path | None, Path | None, WikiProjectConfig | None]:
     """Open a store for an authoring command, creating the plane lazily.
 
     Same precedence as ``_resolve_read_store`` (``--store`` > ``--path``
@@ -1479,10 +2220,53 @@ def _resolve_write_store(
     that was never built is initialised on first write instead of
     aborting — remembering something must work from a blank slate.
 
+    A write targets exactly ONE plane (spec U2): with ``--ns <name>``
+    that namespace is opened read-write directly, bypassing the
+    federation entirely. ``--ns all`` is rejected — there is no such
+    thing as a broadcast write.
+
     Returns:
         ``(store, storage_dir, root, config)`` — ``root``/``config`` are
-        ``None`` for ``--store`` targets (no project context).
+        ``None`` for ``--store`` and ``--ns`` targets (no local project
+        context), and ``storage_dir`` is ``None`` for a server-hosted
+        namespace.
+
+    Raises:
+        click.ClickException: On ``--ns all``, several ``--ns`` names,
+            ``--store`` combined with ``--ns``, an undeclared namespace,
+            or a namespace that cannot be opened.
     """
+    if ns_opt not in (None, "local"):
+        if store_opt:
+            raise click.ClickException(
+                "--store and --ns target different planes; use one of them."
+            )
+        if ns_opt == "all" or "," in ns_opt:
+            raise click.ClickException(
+                "A write targets exactly one namespace — "
+                f"`--ns {ns_opt}` is not a write target."
+            )
+        root, config = _resolve_project(path_)
+        declared = _declared_namespaces(config)
+        entry = declared.get(ns_opt)
+        if entry is None:
+            raise _unknown_namespace(ns_opt, list(declared))
+        cfg, origin = entry
+        try:
+            store, storage_dir = _run(
+                open_namespace_store(
+                    ns_opt,
+                    cfg,
+                    base_dir=resolve_entry_base(origin, root),
+                    read_only=False,
+                )
+            )
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not open namespace {ns_opt!r} for writing: {exc}"
+            ) from exc
+        return store, storage_dir, None, None
+
     store_override = store_opt
     if not store_override and not path_:
         store_override = _env_setting("WIKI_STORE")
@@ -1661,6 +2445,7 @@ def _extract_into_graph(
     help="Existing page id to link the memory to (repeatable).",
 )
 @click.option("--rel", default="references", help="Relation for --link edges.")
+@ns_option
 @click.option("--source", "source_uri", default=None, help="Citation URI.")
 @click.option("--by", default=None, help="Identity asserting this memory.")
 @click.option(
@@ -1682,6 +2467,7 @@ def remember(
     category: str,
     links: tuple[str, ...],
     rel: str,
+    ns_opt: str | None,
     source_uri: str | None,
     by: str | None,
     extract_: bool,
@@ -1698,7 +2484,7 @@ def remember(
     import hashlib
 
     store, storage_dir, root, config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
     asserted_by = _authoring_identity(by)
     run_id = _authoring_run_id()
@@ -1732,7 +2518,7 @@ def remember(
 
     linked: list[tuple[str, str]] = []
     skipped_links: list[str] = []
-    for target in links:
+    for target in (_write_id_for_ns(link, ns_opt) for link in links):
         page = _run(store.get_page(target, include_body=False))
         if page is None:
             skipped_links.append(target)
@@ -1742,13 +2528,14 @@ def remember(
 
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "REMEMBER",
-        f"page_id: {page_id}, title: {resolved_title!r}, "
-        f"category: {category}, by: {asserted_by}"
-        + (f", run: {run_id}" if run_id else ""),
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "REMEMBER",
+            f"page_id: {page_id}, title: {resolved_title!r}, "
+            f"category: {category}, by: {asserted_by}"
+            + (f", run: {run_id}" if run_id else ""),
+        )
 
     commit_id: str | None = None
     if root is not None and config is not None and config.sync_graph:
@@ -1804,6 +2591,7 @@ def remember(
 @click.argument("text")
 @path_option
 @_store_options
+@ns_option
 @click.option("--by", default=None, help="Identity asserting this note.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def note(
@@ -1812,15 +2600,21 @@ def note(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     by: str | None,
     as_json: bool,
 ) -> None:
-    """Append an attributed note to an existing wiki page."""
+    """Append an attributed note to an existing wiki page.
+
+    With ``--ns <name>`` the note is written into that namespace's own
+    plane; PAGE_ID may be given qualified (``name::file:a.py``).
+    """
     from datetime import datetime
 
     store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
+    page_id = _write_id_for_ns(page_id, ns_opt)
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
         raise click.ClickException(
@@ -1851,11 +2645,12 @@ def note(
     )
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "NOTE",
-        f"page_id: {page['concept_id']}, by: {asserted_by}",
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "NOTE",
+            f"page_id: {page['concept_id']}, by: {asserted_by}",
+        )
     result = {"page_id": page["concept_id"], "status": "noted", "by": asserted_by}
     if as_json:
         click.echo(json.dumps(result, indent=2))
@@ -1869,6 +2664,7 @@ def note(
 @path_option
 @_store_options
 @click.option("--rel", default="references", help="Edge relation.")
+@ns_option
 @click.option("--by", default=None, help="Identity asserting this link.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def link(
@@ -1878,15 +2674,24 @@ def link(
     store_opt: str | None,
     backend_opt: str | None,
     rel: str,
+    ns_opt: str | None,
     by: str | None,
     as_json: bool,
 ) -> None:
-    """Connect two existing wiki pages with an asserted, typed edge."""
+    """Connect two existing wiki pages with an asserted, typed edge.
+
+    Both pages must live in the same plane — there are no
+    cross-namespace edges. With ``--ns <name>`` the edge is written into
+    that namespace; ids may be given qualified with that same name.
+    """
     store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
     pages = {}
-    for label, cid in (("src", src), ("dst", dst)):
+    for label, cid in (
+        ("src", _write_id_for_ns(src, ns_opt)),
+        ("dst", _write_id_for_ns(dst, ns_opt)),
+    ):
         page = _run(store.get_page(cid, include_body=False))
         if page is None:
             raise click.ClickException(f"{label} page {cid!r} not found.")
@@ -1896,11 +2701,12 @@ def link(
 
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "LINK",
-        f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "LINK",
+            f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
+        )
     result = {
         "src": pages["src"],
         "dst": pages["dst"],

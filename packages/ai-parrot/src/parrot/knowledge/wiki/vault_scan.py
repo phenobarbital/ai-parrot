@@ -47,8 +47,15 @@ from .store import WikiPageRecord, estimate_tokens
 logger = logging.getLogger(__name__)
 
 #: Directories never scanned inside a vault.
+#:
+#: ``.parrot`` holds the vault's OWN wiki plane (``wiki.db``,
+#: ``index.md``, ``log.md``): scanning it would ingest the bookkeeping
+#: of the previous ingest as vault notes, and each run would grow the
+#: plane from its own output. ``repo_scan.DEFAULT_EXCLUDE_DIRS`` already
+#: prunes it by bare name for code repos; this mirrors that (FEAT-450,
+#: D4.2).
 VAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
-    {".obsidian", ".trash", ".git", ".hg", ".svn"}
+    {".obsidian", ".trash", ".git", ".hg", ".svn", ".parrot"}
 )
 
 

@@ -3,9 +3,12 @@
 import pytest
 
 from parrot.knowledge.wiki.context import (
+    NS_SEPARATOR,
     PackedContext,
     first_sentence,
     pack_results,
+    qualify_id,
+    split_namespaced_id,
     stub_line,
     truncate_to_tokens,
 )
@@ -192,3 +195,75 @@ class TestToolkitProgressiveDisclosure:
         result = await wiki_toolkit.expand("test-wiki", "m1", rel="references")
         assert result["total_available"] == 1
         assert "[rel-1]" in result["context"]
+
+
+class TestNamespacedIds:
+    """FEAT-450 — ``ns::id`` helpers and ns-aware stub rendering."""
+
+    @pytest.mark.parametrize(
+        "page_id,expected",
+        [
+            ("asyncdb::file:a/b.py", ("asyncdb", "file:a/b.py")),
+            (
+                "file:docs/summaries/mod:parrot.skills.md",
+                (None, "file:docs/summaries/mod:parrot.skills.md"),
+            ),
+            ("legal:civil::concept:x", ("legal:civil", "concept:x")),
+            ("::file:x", (None, "::file:x")),
+            ("asyncdb::", (None, "asyncdb::")),
+            ("file:x", (None, "file:x")),
+            # ``::`` inside a local path is not a namespace prefix.
+            ("file:a::b.py", (None, "file:a::b.py")),
+        ],
+    )
+    def test_split_namespaced_id(self, page_id, expected):
+        assert split_namespaced_id(page_id) == expected
+
+    def test_qualify_id(self):
+        assert qualify_id("ns", "file:x") == "ns" + NS_SEPARATOR + "file:x"
+        assert qualify_id(None, "file:x") == "file:x"
+        assert qualify_id("", "file:x") == "file:x"
+
+    def test_qualify_id_is_idempotent(self):
+        once = qualify_id("ns", "file:x")
+        assert qualify_id("ns", once) == once
+
+    def test_qualify_and_split_roundtrip(self):
+        assert split_namespaced_id(qualify_id("legal:civil", "concept:x")) == (
+            "legal:civil",
+            "concept:x",
+        )
+
+    def test_stub_elides_title_for_qualified_id(self):
+        packed = pack_results(
+            [
+                {
+                    "concept_id": "asyncdb::file:README.md",
+                    "title": "README.md",
+                    "summary": "Readme.",
+                }
+            ]
+        )
+        assert packed.text.count("README.md") == 1
+        assert "[asyncdb::file:README.md]" in packed.text
+
+    def test_stub_keeps_distinct_title_for_qualified_id(self):
+        packed = pack_results(
+            [
+                {
+                    "concept_id": "asyncdb::file:store.py",
+                    "title": "Connection pool",
+                    "summary": "Pools connections.",
+                }
+            ]
+        )
+        assert "Connection pool" in packed.text
+
+    def test_local_and_foreign_same_id_are_distinct_stubs(self):
+        packed = pack_results(
+            [
+                {"concept_id": "file:README.md", "summary": "Local."},
+                {"concept_id": "other::file:README.md", "summary": "Foreign."},
+            ]
+        )
+        assert packed.results_packed == 2

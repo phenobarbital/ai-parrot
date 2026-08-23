@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -179,8 +179,8 @@ def test_vault_scan_excludes_parrot(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: vault_scan.VAULT_EXCLUDE_DIRS gains '.parrot' (a vault's own plane is no longer re-ingested as notes). cli._prune_removed takes scope='plane'|'root': 'root' only prunes sources under root, drops file: pages through those sources' slices, and deletes a dir: page only when nothing under it survives. VaultIngestTool passes scope='root'; build keeps the default. 6 new tests in test_prune_scope.py.
 
 **Deviations from spec**: none

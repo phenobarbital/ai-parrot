@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -183,8 +183,8 @@ async def test_read_only_creates_no_sidecars_or_migration(tmp_path):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: SQLiteWikiStore(read_only=True): no mkdir, FileNotFoundError on an unbuilt plane, _connect() bypasses the write-first probe/replay/_migrate, all six write methods raise PermissionError via _assert_writable (no-op hook on BaseWikiStore so rebuild_from_tree is covered too), read_only property. 8 new tests.
 
-**Deviations from spec**: none
+**Deviations from spec**: Added _sidecars_quiescent() + _connect_immutable(): in explicit read-only mode a quiescent plane is opened immutable=1 FIRST, because the ladder's mode=ro rung creates -shm/-wal sidecars when the directory is writable, which the AC forbids. A live sidecar still takes the existing mode=ro ladder. _log_read_only_once() is silenced for an intentional read-only open.

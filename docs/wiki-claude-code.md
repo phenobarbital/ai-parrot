@@ -49,11 +49,29 @@ unchanged files are skipped and deleted files are pruned.
 | `wikitoolkit upsert [paths...] [--changed]` | Incrementally re-ingest files (used by the git hook). |
 | `wikitoolkit status` | Plane statistics + source staleness. |
 | `wikitoolkit export -o docs/wiki` | Export a human-readable markdown wiki (OKF bundle + index). |
+| `wikitoolkit ns list\|add\|remove` | Manage federated namespaces — other wikis this one can read (FEAT-450). |
 
 The repo config lives at `.parrot/wiki.json`
 (`parrot.knowledge.wiki.project.WikiProjectConfig`): wiki name,
-backend, include/exclude filters, body caps, and the Claude hook
-settings.
+backend, include/exclude filters, body caps, the Claude hook
+settings, and any federated `namespaces`.
+
+### Namespaces
+
+When namespaces are registered, `query` searches all of them by default
+and foreign page ids come back **prefixed** — `asyncdb::file:pool.py`,
+`notes::file:Retro.md`. Local ids stay bare. Pass a qualified id
+verbatim to `page` / `related`; narrow any read with
+`--ns <name>|all|local`.
+
+The MCP tools mirror this: `wiki_query`, `wiki_page` and `wiki_related`
+take an optional `namespace` argument, and `wiki_status` reports
+`namespaces` and `skipped`. `wikitoolkit mcp` resolves the project's
+namespaces at startup, so an assistant gets them with no extra
+configuration. Foreign planes are always opened read-only.
+
+See [the CLI guide](../documentation/parrot-wiki-cli.md#namespaces-multi-wiki-federation)
+for the registries, the four namespace kinds, and write routing.
 
 ## `parrot claude install`
 
