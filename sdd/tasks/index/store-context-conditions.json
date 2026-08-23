@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-21T22:05:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-23T23:51:47+00:00",
   "tasks": [
     {
       "id": "TASK-2312",
@@ -72,21 +72,21 @@
       "feature_id": "FEAT-440",
       "slug": "importer-emits-store-groups",
       "title": "The networkninja importer emits store-group conditions",
-      "status": "in-progress",
+      "status": "done",
       "effort": "M",
       "priority": "high",
       "depends_on": [
         "TASK-2312",
         "TASK-2313"
       ],
-      "file": "sdd/tasks/active/TASK-2315-importer-emits-store-groups.md",
+      "file": "sdd/tasks/completed/TASK-2315-importer-emits-store-groups.md",
       "spec": "sdd/specs/store-context-conditions.spec.md",
       "assigned_to": null,
       "parallel": true,
       "parallelism_notes": "Only touches tools/services/networkninja.py; independent of TASK-2316.",
       "started_at": "2026-08-23T23:01:11+00:00",
-      "completed_at": null,
-      "verification": null
+      "completed_at": "2026-08-23T23:12:20+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-2316",
@@ -94,20 +94,20 @@
       "feature_id": "FEAT-440",
       "slug": "http-context-passthrough",
       "title": "Accept and propagate the store context through the HTTP surface",
-      "status": "in-progress",
+      "status": "done",
       "effort": "M",
       "priority": "high",
       "depends_on": [
         "TASK-2313"
       ],
-      "file": "sdd/tasks/active/TASK-2316-http-context-passthrough.md",
+      "file": "sdd/tasks/completed/TASK-2316-http-context-passthrough.md",
       "spec": "sdd/specs/store-context-conditions.spec.md",
       "assigned_to": null,
       "parallel": true,
       "parallelism_notes": "Only touches api/handlers.py; independent of TASK-2315. Its key/value contract is agreed with the fieldsync half first.",
       "started_at": "2026-08-23T23:01:11+00:00",
-      "completed_at": null,
-      "verification": null
+      "completed_at": "2026-08-23T23:21:40+00:00",
+      "verification": "verified"
     }
   ]
 }
