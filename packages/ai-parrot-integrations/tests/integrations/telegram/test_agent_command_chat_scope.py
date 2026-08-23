@@ -6,6 +6,7 @@ Verifies that the inner ``agent_cmd_handler`` built by
 the response parsing/sending, for all three ``parse_mode`` variants, and that
 the contextvar is reset both on normal return and on exception.
 """
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
