@@ -320,10 +320,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: `_load_source` now returns a full `AcquiredDocument` (not `str`)
+— it is a fully private method with its sole call site inside `ingest()`
+(verified via repo-wide grep before changing it), so this is a
+zero-external-impact change; delegates to a fresh `DocumentAcquirer()`
+built from a `DocumentRef` constructed from the local path. `ingest()`
+gained `acquired: Optional[AcquiredDocument] = None`; Step 2 now reuses
+it when given, else calls `_load_source`, with `DocumentAcquisitionError`
+explicitly re-raised (not swallowed into an `IngestReport(status="error")`)
+via a dedicated `except DocumentAcquisitionError: raise` before the
+generic `except Exception` handler. Frontmatter (`render_frontmatter`
+composed with a new module-level `_provenance_from()` helper) is computed
+once per source, gated entirely on `triage is not None` — the legacy
+`build`/`upsert` path emits none at all, not even descriptive-only
+metadata, matching the acceptance criteria's literal "no frontmatter is
+emitted" wording. `_build_page_records` prefixes it in BOTH construction
+branches (resolved-node and the `node is None` fallback, which previously
+had no `body` field at all — frontmatter becomes its entire body when
+present) before `estimate_tokens` runs. `record_document_metadata` is
+called on the admit/archive `record_decision` branch only (discard never
+reaches it — verified against `_record_discard`, left untouched).
+`ManifestDocEntry.composite` (not `.composite_score`) mapped correctly.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Caught and fixed a scope-boundary mistake mid-task: my first `ruff check
+--fix` pass applied `pyupgrade` (UP045, `Optional[X]` → `X | None`)
+across the ENTIRE file, not just my new lines — rewriting ~15 pre-existing
+signatures unrelated to this task. Reverted `ingest.py` via `git checkout`
+and reapplied only my intended edits by hand, keeping `Optional[X]`
+throughout to match this (not-yet-pyupgraded) file's existing convention.
+Verified via `git stash`/mypy-diff that my final diff introduces zero new
+mypy errors and only the same 4 pre-existing mypy errors (shifted line
+numbers) that were already present on `dev` before this task. `ruff
+check` on `ingest.py` is clean except the same 15 pre-existing UP045
+findings (now 19 with my 4 new `Optional[X]` usages, which follow the
+file's existing style, not the newer FEAT-451 modules' `X | None` style)
+plus one pre-existing S112 in `_load_body` (untouched) — none introduced
+by this diff. `test_ingest.py`'s only remaining ruff finding is the same
+pre-existing B017 (`pytest.raises(Exception)` in `test_negative_pages_
+rejected`) present on `dev` before this task. All 38 tests pass (16 new,
+in `TestFrontmatterWiring` + a new `no_parrot_loaders` fixture); the
+pre-existing `test_build_unaffected` regression guard in
+`test_integration.py` still passes.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none functionally. One interpretive judgment
+call, documented for the record: the scope text said `_load_source`
+should "return the acquired text" — I read this as describing content
+*quality* (real extracted text, not mojibake) rather than a literal
+`str` return-type mandate, since `ingest()` needs both text AND metadata
+from a single acquisition pass (the whole point of the `acquired=`
+parameter is to avoid a second extraction), and `_load_source` has no
+external callers to break.

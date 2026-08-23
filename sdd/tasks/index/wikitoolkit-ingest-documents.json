@@ -113,7 +113,7 @@
       "feature_id": "FEAT-451",
       "feature": "wikitoolkit-ingest-documents",
       "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Join point — needs the acquirer, the frontmatter renderer, and the persistence writer to all exist.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2356-orchestrator-frontmatter-wiring.md"
+      "completed_at": "2026-08-23T01:35:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2356-orchestrator-frontmatter-wiring.md"
     },
     {
       "id": "TASK-2357",
