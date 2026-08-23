@@ -251,11 +251,154 @@ class TestBOEIntegration:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Built `FakeGraphStore` (conftest.py) — an in-memory
+`OntologyGraphStore` double implementing `initialize_tenant`,
+`get_all_nodes`, `upsert_nodes` (inserted/updated/unchanged counting),
+`soft_delete_nodes`, `create_edges`, and `execute_traversal` (simulating
+the `article_in_force` AQL's version selection). No live ArangoDB, no
+network anywhere in the suite; the BOE fetch is mocked at the `aiohttp`
+boundary via the same project convention used in TASK-2373's tests.
+`legal_tenant_ctx` resolves via `TenantOntologyManager(ontology_dir=
+OntologyParser.get_defaults_dir())` rather than the deployment-configured
+`ONTOLOGY_DIR`, so the fixture is deterministic regardless of environment
+config. 12 new tests pass; the full `tests/legal/` suite is 50/50.
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Norm/article used for the amendment-chain test**:
+Codebase Contract note: the referenced `test_ontology_integration.py` /
+`test_tenant_pipeline_integration.py` / `test_ontology_refresh.py` do not
+exist anywhere in this worktree (stale contract entries — no such DB
+integration-test convention currently exists in the repo to follow). Built
+`FakeGraphStore` from first principles against `graph_store.py`'s actual
+method contracts instead.
 
-**Deviations from spec**: none | describe if any
+**Norm/article used for the amendment-chain test**: `Artículo 50` of Ley
+40/2015, de 1 de octubre, de Régimen Jurídico del Sector Público
+(`BOE-A-2015-10566:50`). Spec §8's open question ("which norm/article
+backs this test — owner: Jesus Lara") was **unresolved and there was no
+synchronous channel to reach the owner during this autonomous run**.
+Resolved pragmatically by reusing the real, hand-verifiable 3-version
+chain (2015 original → Real Decreto-ley 36/2020 → Ley 22/2021) that was
+independently fetched live from the real BOE datos abiertos API during
+TASK-2372's own Codebase Contract research and already checked into
+`fixtures/boe_consolidated_sample.xml` verbatim — TASK-2372's Completion
+Note explicitly flagged it as "useful raw material for TASK-2376's
+end-to-end amendment-chain test." The wording fragments asserted in
+`EXPECTED` are quoted directly from that checked-in, API-sourced fixture
+text (not derived from the parser's output), so the test is not circular.
+**This substitutes for, but does not equal, a human sign-off** — flagging
+for the spec owner to confirm or override.
+
+**Architectural findings surfaced (not fixed — outside this task's file
+list, core framework / prior-task files):**
+1. **`OntologyRefreshPipeline._refresh_entity` never calls
+   `graph_store.upsert_nodes` when nothing changed** (Python-level diff
+   pre-filtering in `_compute_diff` means a fully-unchanged run has
+   `diff.to_add == [] and diff.to_update == []`, and `upsert_nodes` is
+   only called `if diff.to_add or diff.to_update`). So on a genuinely
+   unchanged second run, `RefreshReport.entity_results` stays **empty**
+   for that entity, not populated with `UpsertResult(inserted=0,
+   unchanged=N)`. The task's own literal Test Specification
+   (`for result in second.entity_results.values(): assert
+   result.unchanged > 0`) would pass **vacuously** (empty loop) against
+   this real architecture. `test_second_run_is_incremental` asserts what
+   the architecture actually produces (`inserted == 0` when present) AND
+   additionally asserts directly against the fake store that total node
+   counts do not grow between runs — a meaningful, non-vacuous
+   incrementality guarantee.
+2. **`OntologyGraphStore.upsert_nodes`'s real AQL does not appear to
+   explicitly copy `key_field`'s value into ArangoDB's own `_key`**
+   (`UPSERT { @key_field: doc[@key_field] } INSERT MERGE(doc, {...})` —
+   the `INSERT`/`UPDATE` clauses never set `_key` from `doc[key_field]`,
+   so ArangoDB would auto-generate `_key` on insert). This means
+   TASK-2371's `article_in_force` AQL (`FILTER a._key == @articulo_key`)
+   may not match anything against a **real** ArangoDB deployment, even
+   though it is exactly what spec §2's stated design intent describes
+   ("`articulo._key` is `{norma}:{art}`"). `FakeGraphStore` deliberately
+   models the **documented intent** (keys by `key_field`'s value) rather
+   than this possible gap, so it does not mask the finding — it is
+   recorded here for a human/future task to confirm and, if real, fix in
+   `graph_store.py` (core framework, outside FEAT-449's scope).
+3. **`BOEDataSource`'s per-instance parse cache (TASK-2373) does not
+   achieve cross-entity caching in the real pipeline**, because
+   `DataSourceFactory.get()` constructs a fresh `BOEDataSource` instance
+   on every call, and `_refresh_entity` calls
+   `datasource_factory.get(...)` once per entity (Norma, then Articulo).
+   So BOE norms are fetched twice per refresh cycle in practice, not
+   once. A minor inefficiency, not a correctness bug; confirmed via this
+   task's aiohttp mock accepting repeated calls.
+4. **`modifica`/`deroga` edges parsed by TASK-2372 (`ParsedNorm.relations`)
+   have no code path into `graph_store.create_edges`** — `BOEDataSource
+   .extract()` only ever returns norma/articulo node records
+   (`ExtractedRecord.data`); the parser's `relations` list is not
+   surfaced anywhere the pipeline's generic `RelationDiscovery` field-match
+   mechanism could consume it (and `modifica`/`deroga` deliberately
+   declare zero discovery rules in `legal.ontology.yaml`, per TASK-2370's
+   completion note). This test suite therefore only verifies node
+   ingestion (Norma + Articulo) and temporal resolution end-to-end — edge
+   ingestion for `modifica`/`deroga` provenance is **not exercised or
+   proven to work**, and would need a follow-up task to bridge
+   `ParsedNorm.relations` into `graph_store.create_edges` explicitly.
+
+**Deviations from spec**: none in the code delivered; the norm/article
+choice for the amendment-chain test is an autonomous resolution of an
+explicitly unresolved open question, flagged above for owner
+confirmation.
+
+**Follow-up (post-review fixes, same feature branch)**: findings #2 and
+#4 above were fixed after the adversarial code review confirmed them
+independently:
+- #2 (`OntologyGraphStore.upsert_nodes` not copying `key_field` into
+  `_key`): fixed in `graph_store.py` — INSERT now explicitly sets
+  `_key: doc[@key_field]` (both the batch AQL and the per-node fallback
+  path). Core framework file, in scope for this fix per explicit
+  instruction since the gap was self-discovered during this feature's
+  own implementation and blocks `article_in_force` against a real
+  ArangoDB deployment.
+- #4 (`modifica`/`deroga` edges never reaching `create_edges`): bridged
+  via a new `BOEDataSource.extract_relations()` method and a new
+  `parrot_tools.legal.boe.sync._sync_provenance_edges()` helper, wired
+  into `sync_boe()` after the node sync completes. New tests added:
+  `TestBOEDataSource::test_extract_relations_*` (test_boe_datasource.py)
+  and `TestProvenanceEdgeSync` (test_boe_integration.py).
+
+Also fixed as part of the same follow-up: `article_key()` (ids.py) now
+collapses whitespace in article designators (e.g. `"5 bis"` ->
+`"5_bis"`) since ArangoDB's `_key` grammar forbids spaces — a latent bug
+only reachable once finding #2 above was fixed and `_key` actually took
+on the article's composite key value. Also added a defensive `LIMIT 1`
+to `article_in_force`'s AQL.
+
+Findings #1 (empty `entity_results` on a true no-op refresh) and #3
+(`BOEDataSource`'s per-instance cache not crossing `DataSourceFactory`
+instances) were left as documented, intentional/non-correctness
+architecture notes — both would require changing shared core files
+(`OntologyRefreshPipeline`/`DataSourceFactory`) used by every ontology
+domain, for behavior that is either by-design (#1) or a minor
+inefficiency, not a bug (#3).
+
+**Still outstanding, requires the spec owner (Jesus Lara)**: the
+amendment-chain norm/article choice (Artículo 50, Ley 40/2015) still
+needs explicit sign-off — see the norm/article note above. Unchanged by
+this follow-up.
+
+**Second follow-up (independent `codex exec review` of the first
+follow-up commit)**: an adversarial review of the fixes above surfaced
+two more P2 correctness gaps, both fixed in a second commit:
+- `article_key()`'s whitespace-only sanitisation was insufficient —
+  designators with accented Latin letters or other non-ASCII/punctuation
+  (e.g. `"único"`, `"Disposición adicional primera"`) still produced an
+  invalid ArangoDB `_key` byte even after the first follow-up. Replaced
+  with `_sanitize_key_component()`: NFKD transliteration to ASCII, then
+  collapsing any run of characters outside ArangoDB's `_key` grammar to
+  a single `_`.
+- `BOEDataSource.extract_relations()` silently dropped `ParsedNorm.errors`
+  (unlike `extract()`, which surfaces them) — a fetch/parse failure for
+  the relation-fetch pass would look like "no modifica/deroga edges"
+  instead of a reported failure. `extract_relations()` now returns
+  `(relations, errors)`; `sync._sync_provenance_edges()` and `sync_boe()`
+  propagate those errors into `RefreshReport.errors`.
+
+71 legal tests + 67 core ontology tests pass after this second follow-up;
+ruff clean.

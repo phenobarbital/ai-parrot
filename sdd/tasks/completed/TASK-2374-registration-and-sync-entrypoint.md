@@ -248,10 +248,40 @@ class TestBOERegistration:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: `DataSourceFactory.register_api_source("boe", BOEDataSource)` runs
+at import time in `boe/__init__.py`, which now also exports `BOEDataSource`
+and `sync_boe`. `sync_boe(tenant_id, since=None)` constructs the pipeline
+collaborators with zero-arg constructors (`TenantOntologyManager()`,
+`OntologyGraphStore()`, `RelationDiscovery()`, `OntologyCache()`,
+`DataSourceFactory()`), `vector_store=None`, and calls
+`pipeline.run(tenant_id, domain="legal")`. The scheduler wiring recipe is
+documented in the docstring using prose (`parrot.scheduler` as a dotted
+reference) rather than a literal `from parrot.scheduler import ...`
+statement, because the task's own Test Specification greps the module
+source text for that exact substring — a literal import-statement example
+in the docstring (as shown in the task's "Pattern to Follow") would have
+tripped its own `test_no_scheduler_dependency` check. 5 unit tests pass
+(`pytest -c pytest.ini packages/ai-parrot-tools/tests/legal/test_boe_registration.py -v`),
+plus the full `tests/legal/` suite (29/29) still passes together.
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Known integration gap surfaced (not fixed here, out of this task's file
+list):** per the task's own instruction to "confirm against TASK-2373's
+filter handling," `since` is threaded into `source_configs={"boe":
+{"since": since}}` as instructed, but `OntologyRefreshPipeline._refresh_entity`
+only ever calls `source.extract(fields=property_names)` — it never
+forwards `filters` — and `BOEDataSource._parse_since` (TASK-2373) only
+reads `since` from `extract()`'s `filters` argument, not from
+`self.config`. So today, `since` threaded via `source_configs` sits inert
+through a real `sync_boe()` → `pipeline.run()` call; the `since` filter is
+only reachable when a caller invokes `BOEDataSource.extract(filters=...)`
+directly (as TASK-2373's own unit tests do). Functionally, `sync_boe`
+still does everything ITS acceptance criteria require (async, returns
+`RefreshReport`, passes `domain="legal"`, threads `since` into
+`source_configs` exactly as instructed) — this gap only matters for
+end-to-end incremental-sync behavior, which is TASK-2376's concern. Noting
+it here so it isn't silently lost.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -57,6 +57,22 @@ _PDF_FALLBACK_NEW_TYPES = frozenset({
     FieldType.REST,
     # FEAT-300 — formula fields (evaluator is FEAT-301)
     FieldType.FORMULA,
+    # FEAT-448 (TASK-2337) — none of the twelve absorbed types is natively
+    # fillable as an AcroForm widget (no color/emoji/tree/signature/upload
+    # field kinds exist in the PDF form spec); all twelve render as
+    # placeholder textfields, same posture as SIGNATURE/REST above.
+    FieldType.SEARCH,
+    FieldType.MASKED,
+    FieldType.COLOR_PICKER,
+    FieldType.EMOJI,
+    FieldType.CRON,
+    FieldType.TREE_SELECT,
+    FieldType.SIGNATURE_PAD,
+    FieldType.CREDIT_CARD,
+    FieldType.IMAGE_DROPZONE,
+    FieldType.MULTI_UPLOAD,
+    FieldType.AI_CAPTURE,
+    FieldType.PLACE,
 })
 
 

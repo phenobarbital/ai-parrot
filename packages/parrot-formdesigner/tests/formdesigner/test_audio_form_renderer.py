@@ -277,6 +277,11 @@ class TestClassifyVoiceMode:
             FieldType.TIME,
             FieldType.TAGS,
             FieldType.PASSWORD,
+            # FEAT-448 (TASK-2337) — plain scalar strings, same posture as
+            # TEXT/PHONE above.
+            FieldType.MASKED,
+            FieldType.EMOJI,
+            FieldType.CRON,
         ],
     )
     def test_voice_types(self, ft: FieldType) -> None:
@@ -295,6 +300,10 @@ class TestClassifyVoiceMode:
             FieldType.LIKERT,
             FieldType.NPS,
             FieldType.COLOR,
+            # FEAT-448 (TASK-2337) — SEARCH is an option-based pick like
+            # DYNAMIC_SELECT; COLOR_PICKER is the same posture as COLOR.
+            FieldType.SEARCH,
+            FieldType.COLOR_PICKER,
         ],
     )
     def test_prompt_select_types(self, ft: FieldType) -> None:
@@ -314,6 +323,15 @@ class TestClassifyVoiceMode:
             FieldType.TRANSFER_LIST,
             FieldType.AVAILABILITY,
             FieldType.ARRAY,
+            # FEAT-448 (TASK-2337) — structurally complex or security-
+            # sensitive types with no sensible spoken/typed answer.
+            FieldType.PLACE,
+            FieldType.TREE_SELECT,
+            FieldType.SIGNATURE_PAD,
+            FieldType.CREDIT_CARD,
+            FieldType.IMAGE_DROPZONE,
+            FieldType.MULTI_UPLOAD,
+            FieldType.AI_CAPTURE,
         ],
     )
     def test_visual_fallback_types(self, ft: FieldType) -> None:

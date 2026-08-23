@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-23T01:13:51Z",
-  "completed_at": null,
+  "completed_at": "2026-08-23T01:50:53+00:00",
   "tasks": [
     {
       "id": "TASK-2369",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "No dependencies and shares no files with TASK-2370, so it COULD run in a separate worktree. Spec §Worktree Strategy selects per-spec isolation: all tasks run sequentially in one worktree. Kept sequential deliberately.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2369-legal-id-utilities.md"
+      "completed_at": "2026-08-23T01:19:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2369-legal-id-utilities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2370",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "File-independent from TASK-2369 (YAML config vs Python module), so it COULD run in parallel. Spec §Worktree Strategy selects per-spec isolation: all tasks run sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2370-legal-ontology-entities.md"
+      "completed_at": "2026-08-23T01:24:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2370-legal-ontology-entities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2371",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Modifies the same legal.ontology.yaml as TASK-2370 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2371-article-in-force-traversal.md"
+      "completed_at": "2026-08-23T01:25:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2371-article-in-force-traversal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2372",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Imports parrot_tools.legal.ids from TASK-2369 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2372-boe-consolidated-parser.md"
+      "completed_at": "2026-08-23T01:34:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2372-boe-consolidated-parser.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2373",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +104,9 @@
       "parallelism_notes": "Imports parse_consolidated from TASK-2372 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2373-boe-datasource.md"
+      "completed_at": "2026-08-23T01:39:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2373-boe-datasource.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2374",
@@ -110,7 +115,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -120,8 +125,9 @@
       "parallelism_notes": "Imports BOEDataSource from TASK-2373 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2374-registration-and-sync-entrypoint.md"
+      "completed_at": "2026-08-23T01:42:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2374-registration-and-sync-entrypoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2375",
@@ -130,7 +136,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +146,9 @@
       "parallelism_notes": "Reads the traversal pattern authored in TASK-2371 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2375-temporal-resolution-helper.md"
+      "completed_at": "2026-08-23T01:43:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2375-temporal-resolution-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2376",
@@ -150,7 +157,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -161,8 +168,9 @@
       "parallelism_notes": "Joins both chains (ingestion and resolution); requires everything upstream complete.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2376-integration-tests-amendment-chain.md"
+      "completed_at": "2026-08-23T01:50:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2376-integration-tests-amendment-chain.md",
+      "verification": "verified"
     }
   ]
 }

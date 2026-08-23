@@ -231,10 +231,16 @@ class TestArticleInForcePattern:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Added the `article_in_force` `traversal_patterns:` entry to
+`legal.ontology.yaml` — AQL selects from the embedded `versions[]` array
+(no graph traversal), binds `@as_of`/`@articulo_key`/`@@articulo`, encodes
+`valid_from` inclusive / `valid_to` exclusive in both the FILTER clauses and
+the pattern description, `post_action: none`. Added 5 tests
+(`TestArticleInForcePattern`) asserting presence, bind vars, `validate_aql`
+passes, no mutation keywords, and `post_action == "none"`. All 10 tests in
+the file pass (`pytest -c pytest.ini packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py -v`).
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
