@@ -36,6 +36,7 @@ from parrot.knowledge.wiki.models import (
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
     WikiPageRecord,
     create_wiki_store,
     estimate_tokens,
@@ -79,6 +80,7 @@ class LLMWikiToolkit(AbstractToolkit):
         okf_toolkit: Any,
         config: WikiConfig,
         agent_id: str = "agent",
+        store: Optional[BaseWikiStore] = None,
         **kwargs: Any,
     ) -> None:
         """Initialise the LLMWikiToolkit with composed dependencies.
@@ -90,6 +92,13 @@ class LLMWikiToolkit(AbstractToolkit):
             config: :class:`WikiConfig` for this wiki instance.
             agent_id: Identity stamped (as ``agent:<id>``) onto pages the
                 agent authors via ``create_page`` / ``remember``.
+            store: Pre-built retrieval plane to use instead of building
+                one from ``config``. Pass a
+                :class:`~parrot.knowledge.wiki.federation.FederatedWikiStore`
+                to give the toolkit access to federated namespaces
+                (FEAT-450): ``list_wikis`` then enumerates them and the
+                read methods dispatch on ``wiki_name``. Source tracking
+                and every write stay on the local plane.
             **kwargs: Forwarded to :class:`AbstractToolkit`.
         """
         super().__init__(**kwargs)
@@ -103,7 +112,11 @@ class LLMWikiToolkit(AbstractToolkit):
         # retrieval backend — SQLite (storage_dir/wiki.db), the
         # in-memory + OKF-bundle-directory backend, or a server-hosted
         # ArangoDB backend, per config.
-        if config.storage_backend == "arangodb":
+        if store is not None:
+            # An injected plane (typically federated) replaces the
+            # config-driven construction entirely.
+            self._store = store
+        elif config.storage_backend == "arangodb":
             # Bypass the factory: ArangoDB connection params come from
             # ARANGODB_* env vars (never from WikiConfig, which carries
             # no arango-specific fields), resolved the same way
@@ -126,12 +139,15 @@ class LLMWikiToolkit(AbstractToolkit):
                 wiki_name=config.wiki_name,
                 backend=config.storage_backend,
             )
+        # Source tracking is a LOCAL concern — a federated store's
+        # namespaces bring their own manifests, which this toolkit never
+        # writes. Keep keying it on the config, as before.
         sources_dir = config.storage_dir / "sources"
         if config.storage_backend == "sqlite":
             self._sources = SourceCollectionManager(
                 sources_dir, db_path=config.storage_dir / "wiki.db"
             )
-        elif config.storage_backend == "arangodb":
+        elif config.storage_backend == "arangodb" and store is None:
             # arango_store (not arango_db): __init__ is synchronous and
             # cannot await self._store.initialize() itself — the manager
             # lazily initializes it (idempotent) on first actual use.
@@ -157,7 +173,57 @@ class LLMWikiToolkit(AbstractToolkit):
             store=self._store,
             sync_graph=config.sync_graph,
         )
+        #: Per-namespace search facades, built lazily by :meth:`_search_for`.
+        self._ns_search: dict[str, WikiCombinedSearch] = {}
         self.logger: logging.Logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Namespace dispatch (FEAT-450)
+    # ------------------------------------------------------------------
+
+    @property
+    def _federated(self) -> Any:
+        """The injected store when it is federated, else ``None``."""
+        from parrot.knowledge.wiki.federation import FederatedWikiStore
+
+        return self._store if isinstance(self._store, FederatedWikiStore) else None
+
+    def _is_namespace(self, wiki_name: str) -> bool:
+        """Whether ``wiki_name`` addresses a federated namespace."""
+        federated = self._federated
+        if federated is None:
+            return False
+        return wiki_name in federated.namespaces or wiki_name in ("all", "local")
+
+    def _store_for(self, wiki_name: str) -> BaseWikiStore:
+        """Return the store serving ``wiki_name``.
+
+        Args:
+            wiki_name: The toolkit's own wiki, or a federated namespace
+                name / ``"all"`` / ``"local"``.
+
+        Returns:
+            The local (or scoped federated) store.
+        """
+        federated = self._federated
+        if federated is None or not self._is_namespace(wiki_name):
+            return self._store
+        return federated.scoped(wiki_name)
+
+    def _search_for(self, wiki_name: str) -> WikiCombinedSearch:
+        """Return the search facade for ``wiki_name`` (cached per namespace)."""
+        if not self._is_namespace(wiki_name):
+            return self._search
+        cached = self._ns_search.get(wiki_name)
+        if cached is None:
+            cached = WikiCombinedSearch(
+                self._pi,
+                self._gi,
+                self._config.search_weights,
+                store=self._store_for(wiki_name),
+            )
+            self._ns_search[wiki_name] = cached
+        return cached
 
     # ------------------------------------------------------------------
     # Core Operations (Karpathy's 3)
@@ -497,23 +563,61 @@ class LLMWikiToolkit(AbstractToolkit):
         }
 
     async def list_wikis(self) -> list[dict[str, Any]]:
-        """List all wikis accessible via this toolkit.
+        """List every wiki this toolkit can read.
 
-        Currently returns metadata for the single configured wiki instance.
-        Multi-wiki support can be added in a future iteration.
+        Always the local wiki; when a federated store was injected
+        (FEAT-450), one entry per resolved namespace follows, plus one
+        per namespace that could not be opened (``status`` says why).
 
         Returns:
-            List of wiki info dicts, each with keys: wiki_name, storage_dir,
-            source_count.
+            List of wiki info dicts. The local entry carries
+            ``wiki_name``, ``storage_dir`` and ``source_count``;
+            namespace entries add ``kind``, ``origin``, ``read_only``
+            and ``status``.
         """
         sources = await asyncio.to_thread(self._sources.list_sources)
-        return [
+        wikis: list[dict[str, Any]] = [
             {
                 "wiki_name": self._config.wiki_name,
                 "storage_dir": str(self._config.storage_dir),
                 "source_count": len(sources),
+                "origin": "local",
+                "read_only": False,
+                "status": "ok",
             }
         ]
+        federated = self._federated
+        if federated is None:
+            return wikis
+        for name in sorted(federated.namespaces):
+            handle = federated.namespaces[name]
+            wikis.append(
+                {
+                    "wiki_name": name,
+                    "storage_dir": (
+                        str(handle.storage_dir) if handle.storage_dir else None
+                    ),
+                    "kind": handle.kind,
+                    "backend": handle.backend,
+                    "origin": handle.origin,
+                    "read_only": handle.read_only,
+                    "description": handle.config.description,
+                    "status": "ok",
+                }
+            )
+        for skip in federated.skipped:
+            wikis.append(
+                {
+                    "wiki_name": skip.name,
+                    "storage_dir": None,
+                    "origin": "namespace",
+                    "read_only": True,
+                    "status": skip.reason,
+                    "detail": skip.detail,
+                    "hint": skip.hint,
+                }
+            )
+        return wikis
 
     async def get_wiki_info(
         self,
@@ -587,12 +691,13 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             List of page stub dicts (no bodies — use ``read_page``).
         """
+        store = self._store_for(wiki_name)
         try:
             if search:
-                return await self._store.search_fts(
+                return await store.search_fts(
                     search, category=category, limit=20
                 )
-            return await self._store.list_pages(category=category, limit=20)
+            return await store.list_pages(category=category, limit=20)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("browse_pages failed: %s", exc)
             return []
@@ -621,7 +726,7 @@ class LLMWikiToolkit(AbstractToolkit):
             token_count, truncated, source_id.  Returns
             ``{"error": "not_found"}`` when the page does not exist.
         """
-        page = await self._store.get_page(page_id)
+        page = await self._store_for(wiki_name).get_page(page_id)
         if page is None:
             return {"error": "not_found", "page_id": page_id}
         content, truncated = truncate_to_tokens(
@@ -1004,7 +1109,7 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             List of :class:`WikiSearchResult` dicts sorted by score (desc).
         """
-        results = await self._search.search(
+        results = await self._search_for(wiki_name).search(
             query, mode=mode, top_k=15, tree_name=wiki_name
         )
         return [r.model_dump() for r in results]
@@ -1033,7 +1138,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: context (packed text), stubs, tokens_used,
             results_packed, total_available, truncated.
         """
-        results = await self._search.search(
+        results = await self._search_for(wiki_name).search(
             query, mode=mode, top_k=25, tree_name=wiki_name
         )
         packed = pack_results(results, budget_tokens=budget_tokens)
@@ -1066,7 +1171,9 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: page_id, context, stubs, tokens_used,
             total_available, truncated.
         """
-        neighbours = await self._store.neighbors(page_id, rel=rel)
+        neighbours = await self._store_for(wiki_name).neighbors(
+            page_id, rel=rel
+        )
         packed = pack_results(neighbours, budget_tokens=budget_tokens)
         return {
             "page_id": page_id,
@@ -1093,7 +1200,9 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             List of neighbour node dicts from GraphIndexToolkit.
         """
-        return await self._search.find_related(page_id, depth=depth)
+        return await self._search_for(wiki_name).find_related(
+            page_id, depth=depth
+        )
 
     # ------------------------------------------------------------------
     # OKF export boundary
@@ -1205,10 +1314,14 @@ class LLMWikiToolkit(AbstractToolkit):
     def _config_for(self, wiki_name: str) -> WikiConfig:
         """Return the effective config for the requested wiki name.
 
-        Validates that ``wiki_name`` matches the toolkit's configured wiki.
-        Multi-wiki support would dispatch to different configs here; for now
-        a mismatch is an explicit programming error rather than a silent
-        data-routing bug.
+        Validates that ``wiki_name`` names either the toolkit's configured
+        wiki or one of the federated namespaces its injected store serves
+        (FEAT-450). Anything else is an explicit programming error rather
+        than a silent data-routing bug.
+
+        The config object is per-toolkit, so a namespace resolves to the
+        SAME config — namespace dispatch is a *store* concern, handled by
+        :meth:`_store_for` / :meth:`_search_for`.
 
         Args:
             wiki_name: Wiki name to look up.
@@ -1219,10 +1332,20 @@ class LLMWikiToolkit(AbstractToolkit):
         Raises:
             ValueError: When ``wiki_name`` does not match the configured wiki.
         """
-        if wiki_name != self._config.wiki_name:
+        if wiki_name != self._config.wiki_name and not self._is_namespace(
+            wiki_name
+        ):
+            known = ""
+            federated = self._federated
+            if federated is not None and federated.namespaces:
+                known = (
+                    " Federated namespaces: "
+                    + ", ".join(sorted(federated.namespaces))
+                    + "."
+                )
             raise ValueError(
                 f"Wiki '{wiki_name}' is not managed by this toolkit "
-                f"(configured for '{self._config.wiki_name}'). "
+                f"(configured for '{self._config.wiki_name}').{known} "
                 "Construct a separate LLMWikiToolkit for each wiki instance."
             )
         return self._config

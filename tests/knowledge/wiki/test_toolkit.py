@@ -271,3 +271,173 @@ class TestLLMWikiToolkitBookkeeping:
         result = await wiki_toolkit.list_wikis()
         assert len(result) >= 1
         assert result[0]["wiki_name"] == "test-wiki"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-450 — federated store injection
+# ---------------------------------------------------------------------------
+
+
+class TestFederatedInjection:
+    """An injected (federated) store gives the toolkit namespaces."""
+
+    @pytest.fixture
+    async def federated_toolkit(
+        self, tmp_path: Path, mock_pi, mock_gi, mock_okf
+    ) -> LLMWikiToolkit:
+        """A toolkit over a local plane plus one read-only namespace."""
+        from parrot.knowledge.wiki.federation import (
+            FederatedWikiStore,
+            NamespaceHandle,
+            NamespaceSkip,
+        )
+        from parrot.knowledge.wiki.project import WikiNamespaceConfig
+        from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
+
+        local_dir = tmp_path / "local"
+        local = SQLiteWikiStore(local_dir / "wiki.db", wiki_name="test-wiki")
+        await local.upsert_pages([
+            WikiPageRecord(
+                concept_id="file:local.py", title="local",
+                summary="alpha local", body="alpha local",
+            )
+        ])
+        other_dir = tmp_path / "other"
+        writable = SQLiteWikiStore(other_dir / "wiki.db", wiki_name="other")
+        await writable.upsert_pages([
+            WikiPageRecord(
+                concept_id="file:other.py", title="other",
+                summary="alpha other", body="alpha other",
+            )
+        ])
+        await writable.add_edges([("file:other.py", "file:local.py", "references")])
+        other = SQLiteWikiStore(other_dir / "wiki.db", read_only=True)
+
+        federated = FederatedWikiStore(
+            local=local,
+            local_name="test-wiki",
+            handles=[
+                NamespaceHandle(
+                    name="other",
+                    store=other,
+                    config=WikiNamespaceConfig(
+                        store=str(other_dir), description="sibling lib"
+                    ),
+                    origin="repo",
+                    storage_dir=other_dir,
+                )
+            ],
+            skipped=[
+                NamespaceSkip(
+                    name="ghost", reason="unbuilt", detail="no plane",
+                    hint="wikitoolkit build --path /ghost",
+                )
+            ],
+        )
+        config = WikiConfig(wiki_name="test-wiki", storage_dir=local_dir)
+        return LLMWikiToolkit(
+            mock_pi, mock_gi, mock_okf, config, store=federated
+        )
+
+    @pytest.mark.asyncio
+    async def test_injected_store_is_used(
+        self, tmp_path: Path, mock_pi, mock_gi, mock_okf
+    ):
+        """The config-driven store construction is bypassed entirely."""
+        from unittest.mock import patch
+
+        import parrot.knowledge.wiki.toolkit as toolkit_module
+        from parrot.knowledge.wiki.store import SQLiteWikiStore
+
+        injected = SQLiteWikiStore(tmp_path / "plane" / "wiki.db")
+        config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path)
+        with patch.object(toolkit_module, "create_wiki_store") as factory:
+            toolkit = LLMWikiToolkit(
+                mock_pi, mock_gi, mock_okf, config, store=injected
+            )
+        factory.assert_not_called()
+        assert toolkit._store is injected
+
+    @pytest.mark.asyncio
+    async def test_plain_toolkit_has_no_namespaces(self, wiki_toolkit):
+        assert wiki_toolkit._federated is None
+        assert wiki_toolkit._is_namespace("other") is False
+        assert wiki_toolkit._store_for("anything") is wiki_toolkit._store
+
+    @pytest.mark.asyncio
+    async def test_list_wikis_enumerates_namespaces(self, federated_toolkit):
+        wikis = {w["wiki_name"]: w for w in await federated_toolkit.list_wikis()}
+        assert set(wikis) == {"test-wiki", "other", "ghost"}
+        assert wikis["test-wiki"]["origin"] == "local"
+        assert wikis["test-wiki"]["read_only"] is False
+        assert wikis["other"]["kind"] == "store"
+        assert wikis["other"]["read_only"] is True
+        assert wikis["other"]["description"] == "sibling lib"
+        assert wikis["ghost"]["status"] == "unbuilt"
+        assert "wikitoolkit build" in wikis["ghost"]["hint"]
+
+    @pytest.mark.asyncio
+    async def test_browse_pages_scopes_to_namespace(self, federated_toolkit):
+        rows = await federated_toolkit.browse_pages("other")
+        ids = {row["concept_id"] for row in rows}
+        assert ids == {"other::file:other.py"}
+
+        local_rows = await federated_toolkit.browse_pages("test-wiki")
+        local_ids = {row["concept_id"] for row in local_rows}
+        assert "file:local.py" in local_ids
+        assert "other::file:other.py" in local_ids  # broadcast by default
+
+    @pytest.mark.asyncio
+    async def test_read_page_routes_to_namespace(self, federated_toolkit):
+        page = await federated_toolkit.read_page("other", "other::file:other.py")
+        assert page["page_id"] == "other::file:other.py"
+        assert "alpha other" in page["content"]
+
+    @pytest.mark.asyncio
+    async def test_expand_routes_to_namespace(self, federated_toolkit):
+        result = await federated_toolkit.expand("other", "other::file:other.py")
+        assert "other::file:local.py" in result["context"]
+
+    @pytest.mark.asyncio
+    async def test_search_scopes_to_namespace(self, federated_toolkit):
+        results = await federated_toolkit.search("other", "alpha", mode="lexical")
+        ids = {r["node_id"] for r in results}
+        assert ids
+        assert all(i.startswith("other::") for i in ids)
+
+    @pytest.mark.asyncio
+    async def test_search_facade_is_cached_per_namespace(
+        self, federated_toolkit
+    ):
+        first = federated_toolkit._search_for("other")
+        assert federated_toolkit._search_for("other") is first
+        assert federated_toolkit._search_for("test-wiki") is (
+            federated_toolkit._search
+        )
+
+    @pytest.mark.asyncio
+    async def test_config_for_accepts_namespaces(self, federated_toolkit):
+        assert federated_toolkit._config_for("other") is federated_toolkit._config
+        assert federated_toolkit._config_for("all") is federated_toolkit._config
+        assert federated_toolkit._config_for("local") is federated_toolkit._config
+
+    @pytest.mark.asyncio
+    async def test_config_for_still_rejects_unknown(self, federated_toolkit):
+        with pytest.raises(ValueError, match="not managed by this toolkit"):
+            federated_toolkit._config_for("nope")
+
+    @pytest.mark.asyncio
+    async def test_writes_stay_local(self, federated_toolkit):
+        await federated_toolkit._store.upsert_pages([])
+        page = await federated_toolkit.create_page(
+            "test-wiki", "A memory", "Body text."
+        )
+        assert page.get("page_id")
+        stored = await federated_toolkit._store.local.get_page(page["page_id"])
+        assert stored is not None
+        assert (
+            await federated_toolkit._store.namespaces["other"].store.get_page(
+                page["page_id"]
+            )
+            is None
+        )
