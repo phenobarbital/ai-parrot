@@ -1,6 +1,5 @@
 """Unit tests for BOE identifier utilities (TASK-2369)."""
 import pytest
-
 from parrot_tools.legal.ids import article_key, is_valid_boe_id, normalize_boe_id
 
 

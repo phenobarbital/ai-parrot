@@ -55,8 +55,13 @@ class BOEDataSource(ExtractDataSource):
     def __init__(self, name: str, config: dict[str, Any] | None = None) -> None:
         super().__init__(name, config)
         # Caches the parsed norm per BOE id for the lifetime of this
-        # instance, so the pipeline's two extract() calls (one for Norma,
-        # one for Articulo) do not fetch each norm twice.
+        # instance. NOTE: OntologyRefreshPipeline's real call path
+        # (DataSourceFactory.get() -> a fresh instance per call) does NOT
+        # benefit from this across the pipeline's two extract() calls (one
+        # per entity) since each call gets a new instance — see TASK-2376's
+        # Completion Note. This cache still helps any caller that holds a
+        # single BOEDataSource instance across multiple extract() calls
+        # (e.g. direct/manual use, or a future factory-level cache).
         self._cache: dict[str, ParsedNorm] = {}
 
     async def extract(
@@ -74,7 +79,14 @@ class BOEDataSource(ExtractDataSource):
                 to restrict extraction to norms published on/after that
                 date (an incremental-sync approximation based on
                 ``fecha_publicacion``, the only date TASK-2372's parser
-                surfaces on the norma record).
+                surfaces on the norma record). Falls back to
+                ``self.config["since"]`` when ``filters`` does not
+                specify one — ``OntologyRefreshPipeline._refresh_entity``
+                calls ``extract(fields=...)`` without ever forwarding
+                ``filters``, so ``sync_boe(since=...)`` (TASK-2374) can
+                only reach this restriction via the constructor config
+                (``source_configs={"boe": {"since": since}}``), not via
+                the ``filters`` kwarg.
 
         Returns:
             ExtractionResult with the norma and/or articulo records for
@@ -138,21 +150,33 @@ class BOEDataSource(ExtractDataSource):
         return "both"
 
     def _parse_since(self, filters: dict[str, Any] | None) -> date | None:
-        """Parse the optional ``since`` filter into a ``date``.
+        """Parse the optional ``since`` restriction into a ``date``.
+
+        Checks ``filters["since"]`` first, then falls back to
+        ``self.config["since"]`` — see ``extract()``'s docstring for why
+        the config fallback is needed for ``sync_boe(since=...)`` to have
+        any effect through the real pipeline call path.
 
         Args:
             filters: The filters dict passed to ``extract()``.
 
         Returns:
-            The parsed ``since`` date, or None if not provided.
+            The parsed ``since`` date, or None if not provided by either
+            source.
 
         Raises:
             TypeError: If ``since`` is provided but not a ``date`` or an
                 ISO-format ``str``.
         """
-        if not filters or "since" not in filters:
+        if filters and "since" in filters:
+            raw = filters["since"]
+        elif "since" in self.config:
+            raw = self.config["since"]
+        else:
             return None
-        raw = filters["since"]
+
+        if raw is None:
+            return None
         if isinstance(raw, date):
             return raw
         if isinstance(raw, str):

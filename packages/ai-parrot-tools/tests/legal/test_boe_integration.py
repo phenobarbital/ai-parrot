@@ -105,14 +105,20 @@ class TestBOEIntegration:
         added/updated, so upsert_nodes is never invoked and
         entity_results stays empty for that entity -- that IS "inserted
         == 0, unchanged > 0" for this architecture (see Completion Note).
-        We additionally assert directly against the fake store that node
-        counts did not grow, the meaningful, non-vacuous incrementality
-        guarantee.
+
+        We additionally snapshot the fake store's full document content
+        (not just counts) before/after the second run and assert it is
+        byte-for-byte identical. A pure count comparison could not
+        distinguish "correctly no-op" from "incorrectly replaced existing
+        docs without net growth"; a full-content comparison can, and is
+        the strongest check available without call-count instrumentation
+        on upsert_nodes itself.
         """
         first = await run_sync(fake_store, boe_corpus)
         assert first.errors == []
-        counts_before = {
-            name: len(docs) for name, docs in fake_store._collections.items()
+        snapshot_before = {
+            name: {key: dict(doc) for key, doc in docs.items()}
+            for name, docs in fake_store._collections.items()
         }
 
         second = await run_sync(fake_store, boe_corpus)
@@ -120,10 +126,11 @@ class TestBOEIntegration:
         for result in second.entity_results.values():
             assert result.inserted == 0
 
-        counts_after = {
-            name: len(docs) for name, docs in fake_store._collections.items()
+        snapshot_after = {
+            name: {key: dict(doc) for key, doc in docs.items()}
+            for name, docs in fake_store._collections.items()
         }
-        assert counts_after == counts_before
+        assert snapshot_after == snapshot_before
 
     async def test_traversal_passes_aql_validation(self, legal_tenant_ctx):
         tpl = legal_tenant_ctx.ontology.traversal_patterns["article_in_force"].query_template
