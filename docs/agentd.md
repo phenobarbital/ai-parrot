@@ -177,6 +177,19 @@ environment=PYTHONUNBUFFERED="1"
 
 ## Scheduler modes
 
+Scheduler support is **optional** and lazily imported. Install it with:
+
+```bash
+pip install 'ai-parrot-integrations[agentd-scheduler]'   # -> ai-parrot-server[scheduler]
+```
+
+Without it the daemon still starts, logs one warning naming the module that
+failed to import, and `schedules.*` RPCs return `SCHEDULER_UNAVAILABLE`
+(1003). Note `ai-parrot-integrations[agentd]` is an intentionally EMPTY
+marker extra (everything `agentd` imports is already a core `ai-parrot`
+dependency) — it can only fix a missing *distribution*, never an
+ImportError raised from inside an installed `agentd`.
+
 `AgentSchedulerManager` boots **headless** — no aiohttp import anywhere in
 the daemon's process path — via `start_headless(dsn=..., use_redis=...)`.
 Decorator-registered schedules (`@schedule(...)` on your agent's methods)
