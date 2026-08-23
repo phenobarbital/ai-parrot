@@ -1722,3 +1722,98 @@ async def test_store_group_alternatives_evaluate_correctly():
         visit_context={"store_groups": ["Epson Test Store"]},
     )
     assert other_group.visible["field_9100"] is True
+
+
+def test_store_group_collapses_same_field_alternatives_into_in():
+    """Regression: a same-field answer alternative must not be ANDed with itself.
+
+    Code-review finding (post-TASK-2315): when the source expresses "visit
+    type == Brand Ambassador OR visit type == Assisted Sales" as TWO
+    logic_groups on the SAME field — the spec's own majority real shape
+    (§1: 23 of 26 dual-axis elements need this AND-of-ORs) — naively
+    copying both EQ conditions into every store-group LogicGroup ANDs them
+    together. A LogicGroup only ANDs; unlike the flat path, it has no
+    top-level "or" to fall back on, so `field_9050 == "4784" AND field_9050
+    == "4782"` is unsatisfiable for a single-valued field — the rule could
+    never fire for ANY store or answer. The fix collapses same-field EQ
+    alternates into one IN condition (spec §2's own worked example shape)
+    before folding them into each store-group alternative.
+    """
+    row = _gated_row()
+    # A second logic_group on the SAME field (566 / field_9050) — an
+    # alternative answer, not an independent prerequisite.
+    row["question_blocks"][1]["block_logic_groups"].append({
+        "logic_group_id": 3211,
+        "conditions": [{
+            "condition_id": 3415,
+            "condition_logic": "EQUALS",
+            "condition_option_id": 4782,
+            "condition_comparison_value": "Brand Ambassador",
+            "condition_question_reference_id": 566,
+        }],
+    })
+    row["metadata"][0]["options"].append(
+        {"option_id": "4782", "option_value": "Brand Ambassador",
+         "column_name": 9050, "is_active": True}
+    )
+    row["question_blocks"][1]["store_groups"] = ["Ring of Fire", "Epson Test Store"]
+
+    rule = _svc().to_form_schema(row).sections[1].depends_on
+
+    assert rule.groups is not None and len(rule.groups) == 2
+    for group in rule.groups:
+        assert len(group.conditions) == 2
+        _store_cond, answer_cond = group.conditions
+        assert answer_cond.field_id == "field_9050"
+        assert answer_cond.operator == "in"
+        assert set(answer_cond.value) == {"4784", "4782"}
+
+
+@pytest.mark.asyncio
+async def test_store_group_alternatives_evaluate_for_either_answer_value():
+    """End-to-end companion to the collapse regression above.
+
+    EITHER alternative answer value must reveal the field at a matching
+    store — this is exactly what "AND ANDed EQs" made impossible before
+    the fix.
+    """
+    from parrot_formdesigner.services.rule_evaluator import _eval_rule
+
+    row = _gated_row()
+    row["question_blocks"][1]["block_logic_groups"].append({
+        "logic_group_id": 3211,
+        "conditions": [{
+            "condition_id": 3415,
+            "condition_logic": "EQUALS",
+            "condition_option_id": 4782,
+            "condition_comparison_value": "Brand Ambassador",
+            "condition_question_reference_id": 566,
+        }],
+    })
+    row["metadata"][0]["options"].append(
+        {"option_id": "4782", "option_value": "Brand Ambassador",
+         "column_name": 9050, "is_active": True}
+    )
+    row["question_blocks"][1]["store_groups"] = ["Ring of Fire"]
+
+    schema = _svc().to_form_schema(row)
+
+    # Exercised on the SECTION rule directly — RuleEvaluator.resolve() only
+    # walks FormField.depends_on, not FormSection.depends_on (see the
+    # multi-group precedent test above), so _eval_rule is called directly
+    # here rather than moving the gate onto a field.
+    rule = schema.sections[1].depends_on
+    for answer in ("4784", "4782"):
+        fired = _eval_rule(
+            rule, {"field_9050": answer}, schema,
+            visit_context={"store_groups": ["Ring of Fire"]},
+        )
+        assert fired is True, f"answer={answer!r} should fire at a matching store"
+
+    # Wrong store, either answer -> does not fire.
+    for answer in ("4784", "4782"):
+        fired = _eval_rule(
+            rule, {"field_9050": answer}, schema,
+            visit_context={"store_groups": ["Best Buy"]},
+        )
+        assert fired is False, f"answer={answer!r} must not fire at a non-matching store"

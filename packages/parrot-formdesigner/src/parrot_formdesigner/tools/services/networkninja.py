@@ -1368,8 +1368,21 @@ class NetworkninjaFormService(AbstractFormService):
         # condition already collected above (e.g. a visit-type EQUALS) joins
         # EVERY store-group alternative, since it must hold regardless of
         # which group matched.
+        #
+        # A LogicGroup only ANDs its conditions — unlike the flat path just
+        # below, there is no top-level "or" available inside a group. When
+        # the source expresses "visit type == Brand Ambassador OR visit type
+        # == Assisted Sales" as two logic_groups on the SAME field (the
+        # majority real shape per spec §1 — 23 of 26 dual-axis elements need
+        # exactly this), ANDing both EQ conditions verbatim into every
+        # store-group alternative is unsatisfiable (one select carries one
+        # answer). `_collapse_same_field_alternatives` folds them into a
+        # single IN condition first — the exact shape spec §2's worked
+        # example uses — so the alternation survives inside one AND'd group.
         if store_groups:
-            return self._map_store_group_rule(store_groups, all_conditions)
+            return self._map_store_group_rule(
+                store_groups, self._collapse_same_field_alternatives(all_conditions)
+            )
 
         if not all_conditions:
             return None
@@ -1405,6 +1418,57 @@ class NetworkninjaFormService(AbstractFormService):
             logic=top_logic,
             effect="show",
         )
+
+    @staticmethod
+    def _collapse_same_field_alternatives(
+        conditions: list[FieldCondition],
+    ) -> list[FieldCondition]:
+        """Collapse same-field EQ alternates into one IN condition each.
+
+        Only used ahead of the store-group path (see the note above its call
+        site) — the flat path below handles the same "alternatives on one
+        field" case differently, by choosing a top-level ``logic="or"``
+        instead, since a flat rule has that option and a ``LogicGroup``
+        doesn't.
+
+        Conditions on different fields (genuine multi-field prerequisites,
+        3 of 91 source forms per the flat path's own sweep) are left
+        untouched and still AND together, same as the flat path.
+
+        Args:
+            conditions: Conditions collected from this element's
+                logic_groups (each ``source="field"``, ``operator=EQ`` —
+                see the loop above this method's call site).
+
+        Returns:
+            ``conditions`` with same-``field_id`` runs collapsed into one
+            ``FieldCondition(operator=IN, value=[...])`` each, in
+            first-seen field order. A field with only one condition is
+            returned unchanged (still ``EQ``).
+        """
+        by_field: dict[str, list[FieldCondition]] = {}
+        order: list[str] = []
+        for c in conditions:
+            key = c.field_id or ""
+            if key not in by_field:
+                by_field[key] = []
+                order.append(key)
+            by_field[key].append(c)
+
+        collapsed: list[FieldCondition] = []
+        for key in order:
+            group = by_field[key]
+            if len(group) == 1:
+                collapsed.append(group[0])
+            else:
+                collapsed.append(
+                    FieldCondition(
+                        field_id=key,
+                        operator=ConditionOperator.IN,
+                        value=[c.value for c in group],
+                    )
+                )
+        return collapsed
 
     @staticmethod
     def _map_store_group_rule(
