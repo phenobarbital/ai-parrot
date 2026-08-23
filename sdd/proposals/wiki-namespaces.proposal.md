@@ -159,15 +159,19 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
   `asyncio.gather`, prefix ids `ns::`, merge via per-namespace min-max + dedup (`_merge_groups`
   shape). `get_page` / `neighbors` route by prefix (unprefixed → local) and re-prefix neighbour ids.
   Writes (`upsert_pages`, `add_edges`, `replace_source_slice`, `delete_page`, `upsert_embedding`)
-  delegate to the local namespace only. `stats` returns `{"namespaces": {name: stats}}`. A
+  go to exactly one namespace: the local one by default, or the single namespace selected by an
+  explicit `--ns <name>` / `namespace` argument (U2) — that store is opened read-write for the
+  call; `--ns all` is never a write target. `stats` returns `{"namespaces": {name: stats}}`. A
   namespace that is unbuilt/unreachable is skipped with a note, never fails the whole call
   (FEAT-379 degradation pattern).
 - **`project.py` — `WikiNamespaceConfig`** (`path` | `store`+`backend` | arangodb `database`,
   optional `description`), `WikiProjectConfig.namespaces: dict[str, WikiNamespaceConfig]`,
   `load_global_registry()` for `~/.parrot/wikis.json`, and `merge_namespaces(repo, global)`
   (repo wins). Resolution into opened stores lives in cli/mcp (keeps project.py light).
-- **`cli.py`** — `--ns <name|all>` on `query` / `page` / `related` / `status`; new group
-  `wikitoolkit ns list|add|remove [--global]`.
+- **`cli.py`** — `--ns <name|all>` on `query` / `page` / `related` / `status`; `--ns <name>`
+  (single namespace only) on `remember` / `note` / `link` (U2); new group
+  `wikitoolkit ns list|add|remove [--global]` — `ns add` is the **only** way a namespace enters
+  either registry (U1).
 - **`tools.py`** — optional `namespace` field on `WikiQueryInput` / `WikiPageInput` /
   `WikiRelatedInput`; `wiki_status` lists namespaces. MCP inherits via the injected store.
 - **Docs** — "Namespaces" section in `documentation/parrot-wiki-cli.md` (next to the existing
@@ -182,7 +186,11 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
   a `FederatedWikiStore` (local + configured); `--ns <name>` narrows to one store, `--ns all` is
   the broadcast. *Evidence*: F002
 - **`store.py`::`SQLiteWikiStore.__init__` / `_connect`** — `read_only: bool = False`; when set,
-  skip `mkdir`/schema replay/`_migrate` and use `_connect_readonly` directly. *Evidence*: F004
+  skip `mkdir`/schema replay/`_migrate` and use `_connect_readonly` directly. Foreign namespaces
+  are opened with `read_only=True` for reads; an authoring command with `--ns <name>` re-opens
+  that one namespace read-write (U2). *Evidence*: F004
+- **`cli.py`::`_resolve_write_store`** — accept `--ns <name>`; resolve that single namespace
+  (repo map, then global registry) and open it read-write; reject `all`. *Evidence*: F002
 - **`context.py`::`_ID_PREFIX_RE`** — strip an optional leading `<ns>::` before the kind prefix so
   stub title elision keeps working. *Evidence*: F010
 - **`mcp_server.py`::`create_wiki_mcp_server`** — open namespaces (read-only) and inject the
@@ -204,7 +212,7 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
 - **v2 follow-ups (documented, not built)**: automatic intent routing over namespace
   `description`s (candidate: `IntentRouterMixin`, `parrot/bots/mixins/intent_router.py:123` —
   agent layer, not the dependency-light CLI path); RRF instead of min-max; cross-namespace edges;
-  federated writes.
+  broadcast/multi-target writes (v1 writes target exactly one namespace).
 
 ### Patterns to Follow
 
@@ -262,30 +270,33 @@ Distribution: **11** high, **3** medium, **0** low.
 - [x] **Routing strategy for v1?** — *Resolved*: explicit `--ns <name>` + broadcast `--ns all`;
   intent router deferred to v2 as a documented follow-up. *Resolves*: C4, C9
 
-### Unresolved (defer to spec — each has a recommended default)
+- [x] **U1 — How do entries reach `~/.parrot/wikis.json`?** — *Resolved (user, 2026-08-23)*:
+  **only via `wikitoolkit ns add`** (with `--global` for the user registry). `build` never
+  self-registers. *Resolves*: C12
+- [x] **U2 — Are `remember/note/link --ns <foreign>` writes allowed in v1?** — *Resolved (user,
+  2026-08-23)*: **yes — required in v1.** An explicit `--ns <name>` on an authoring command opens
+  *that single* namespace read-write and writes there; without `--ns` writes go to the local
+  namespace. Reads of foreign namespaces stay read-only; broadcast (`--ns all`) is never a write
+  target. *Resolves*: C3
+- [x] **U3 — In broadcast output, is the local namespace unprefixed?** — *Resolved (user,
+  2026-08-23)*: **yes.** Local ids stay `file:x` / `dir:x`; only foreign ids carry `ns::`.
+  *Resolves*: C11
 
-- [ ] **U1 — How do entries reach `~/.parrot/wikis.json`?** — *Owner*: Jesus
-  *Blocks*: C12 · *Plausible answers*: a) manual only via `wikitoolkit ns add --global`
-  **(recommended v1)** · b) `build` self-registers under its `wiki_name` · c) both with
-  `build --no-register`
-- [ ] **U2 — Are `remember/note/link --ns <foreign>` writes allowed in v1?** — *Owner*: Jesus
-  *Blocks*: C3 · *Plausible answers*: a) refuse — writes always local, foreign stores opened
-  read-only **(recommended)** · b) allow with explicit `--ns`, opening that one store read-write
-- [ ] **U3 — In broadcast output, is the local namespace unprefixed?** — *Owner*: Jesus
-  *Blocks*: C11 · *Plausible answers*: a) local unprefixed, foreign `ns::` — keeps CLAUDE.md/hook
-  examples valid **(recommended)** · b) uniform prefix for all when ≥1 namespace configured
+### Unresolved (defer to spec / implementation)
+
+- None.
 
 ---
 
 ## 6. Recommended Next Step
 
 **`/sdd-spec FEAT-450`** — *Rationale*: localization and reuse points are high-confidence, the
-three architectural decisions are fixed, and U1–U3 have safe defaults the spec can adopt unless
-overridden. No fork remains to brainstorm.
+three architectural decisions are fixed, and U1–U3 are resolved by the user. No open question
+remains; no fork to brainstorm.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-450`** — only if U2 (federated writes) should be reopened as a v1 goal.
+- **`/sdd-brainstorm FEAT-450`** — not needed; all design choices are closed.
 - **Manual review** — not needed; research was not truncated.
 
 ---
@@ -307,8 +318,9 @@ overridden. No fork remains to brainstorm.
 **Mode determination**: `auto` → `enrichment` (additive verbs: register, route, federate).
 
 **Gate note**: the Phase-1 plan gate was not shown interactively — the user pre-approved the
-research direction and fixed the three design decisions in the preceding conversation; the
-synthesis summary is presented with this proposal for validation (`status: review`).
+research direction and fixed the three design decisions in the preceding conversation. Phase-5
+Q&A: U1–U3 answered by the user on 2026-08-23 (3/3). `status: review` pending an explicit
+"accept".
 
 ---
 

@@ -3,7 +3,7 @@
   "feat_id": "FEAT-450",
   "feature_slug": "wiki-namespaces",
   "started_at": "2026-08-23T00:17:13Z",
-  "updated_at": "2026-08-23T00:26:20Z",
+  "updated_at": "2026-08-23T00:30:08Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -63,13 +63,13 @@
       "lint_iterations": 0
     },
     "qa": {
-      "status": "skipped",
-      "started_at": null,
-      "completed_at": null,
-      "duration_seconds": null,
+      "status": "completed",
+      "started_at": "2026-08-23T00:30:08Z",
+      "completed_at": "2026-08-23T00:30:08Z",
+      "duration_seconds": 0,
       "questions_total": 3,
-      "questions_answered": 0,
-      "skipped_reason": "autonomous run; U1-U3 carry recommended defaults and are recorded as unresolved in the proposal for the spec phase"
+      "questions_answered": 3,
+      "skipped_reason": null
     },
     "output": {
       "status": "completed",
@@ -79,7 +79,7 @@
       "proposal_path": "sdd/proposals/wiki-namespaces.proposal.md",
       "commit_sha": null,
       "next_command_recommended": "sdd-spec",
-      "next_command_rationale": "Localization high-confidence; three design decisions fixed by the user; unknowns have safe defaults."
+      "next_command_rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user \u2014 no open question remains."
     }
   },
   "budget": {
@@ -99,6 +99,6 @@
   "detected_mode": "enrichment",
   "resume_hint": {
     "next_phase": "done",
-    "next_action": "Run /sdd-spec FEAT-450 (commit_sha is the commit that introduced this file; it cannot reference itself)."
+    "next_action": "Run /sdd-spec FEAT-450; all unknowns resolved."
   }
 }

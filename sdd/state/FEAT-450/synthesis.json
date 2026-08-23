@@ -247,6 +247,14 @@
         ]
       },
       {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "symbol": "_resolve_write_store",
+        "change": "accept --ns <name>; resolve that single namespace (repo map, then global registry) and open it read-write; reject 'all'",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
         "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
         "symbol": "SQLiteWikiStore.__init__/_connect",
         "change": "add read_only: bool flag routing straight to _connect_readonly and skipping mkdir/_migrate",
@@ -301,7 +309,7 @@
       "SQLite schema, ArangoDB/InMemory backends' internals",
       "MultiStoreSearchToolkit (FEAT-379) and FEAT-449 GraphIndex namespaces",
       "Automatic/LLM intent routing (IntentRouterMixin) \u2014 v2 follow-up",
-      "Cross-namespace edges and federated writes \u2014 v2 follow-up",
+      "Cross-namespace edges and broadcast/multi-target writes \u2014 v2 follow-up (v1 writes target exactly one namespace)",
       "RRF ranking \u2014 v2 follow-up"
     ],
     "patterns": [
@@ -526,7 +534,9 @@
         "build self-registers under its wiki_name, `ns add` for non-repo brains",
         "both, with `build --no-register` opt-out"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "only via `wikitoolkit ns add` (--global for the user registry); build never self-registers",
+      "resolved_at": "2026-08-23T00:30:08Z"
     },
     {
       "id": "U2",
@@ -538,7 +548,9 @@
         "refuse in v1 \u2014 writes always local; foreign stores opened read-only (recommended)",
         "allow with an explicit --ns, opening that single store read-write"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "yes, required in v1: an explicit --ns <name> on remember/note/link opens that single namespace read-write; default writes go local; --ns all is never a write target; reads of foreign namespaces stay read-only",
+      "resolved_at": "2026-08-23T00:30:08Z"
     },
     {
       "id": "U3",
@@ -550,12 +562,14 @@
         "local unprefixed, foreign prefixed \u2014 keeps existing CLAUDE.md/hook examples valid (recommended)",
         "uniform prefix for all when \u22651 namespace is configured"
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "yes: local namespace ids stay unprefixed (file:x); only foreign ids carry ns::",
+      "resolved_at": "2026-08-23T00:30:08Z"
     }
   ],
   "recommended_next_command": {
     "command": "sdd-spec",
-    "rationale": "Localization and reuse points are high-confidence, the three architectural decisions are already fixed by the user, and the remaining unknowns have safe defaults \u2014 no fork left to brainstorm."
+    "rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user \u2014 no open question remains."
   },
   "overall_confidence": "high",
   "meta": {
