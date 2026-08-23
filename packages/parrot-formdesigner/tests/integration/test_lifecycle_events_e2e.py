@@ -88,9 +88,7 @@ def _make_request_get(form_uid: str) -> MagicMock:
     req.__getitem__ = MagicMock(side_effect=KeyError)
     # FEAT-421: declared_tenant() reads request.get("tenant") — the value
     # @requires_tenant would have stashed.
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     session = MagicMock()
     session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
@@ -116,9 +114,7 @@ def _make_request_post(
     req.json = AsyncMock(return_value=body or {})
     # FEAT-421: declared_tenant() reads request.get("tenant") — the value
     # @requires_tenant would have stashed.
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     session = MagicMock()
     session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
     req.session = session
@@ -206,9 +202,7 @@ class TestFullLifecycle:
         assert r2.status == 200
 
         # 3. POST /forms/{id}/data (success path)
-        r3 = await handler.submit_data(
-            _make_request_post(form.form_uid, body={"name": "Alice"})
-        )
+        r3 = await handler.submit_data(_make_request_post(form.form_uid, body={"name": "Alice"}))
         assert r3.status == 200
 
         assert "onBeforeOpen" in invocations
@@ -254,9 +248,7 @@ class TestBackwardCompat:
         """Forms without events in submit_data return 200 (backward-compat)."""
         form = _make_form("compat_form", events=None)
         handler = _make_handler(form=form, valid=True)
-        resp = await handler.submit_data(
-            _make_request_post(form.form_uid, body={"name": "Alice"})
-        )
+        resp = await handler.submit_data(_make_request_post(form.form_uid, body={"name": "Alice"}))
 
         assert resp.status == 200
         body = json.loads(resp.body)
@@ -343,9 +335,7 @@ class TestAbortNotRoutedThroughOnError:
             ),
         )
         handler = _make_handler(form=form, valid=True)
-        resp = await handler.submit_data(
-            _make_request_post(form.form_uid, body={})
-        )
+        resp = await handler.submit_data(_make_request_post(form.form_uid, body={}))
 
         assert resp.status == 409
         assert on_error_calls == []
@@ -376,9 +366,7 @@ class TestOnErrorOnValidationFailure:
             ),
         )
         handler = _make_handler(form=form, valid=False)
-        resp = await handler.submit_data(
-            _make_request_post(form.form_uid, body={})
-        )
+        resp = await handler.submit_data(_make_request_post(form.form_uid, body={}))
 
         assert resp.status == 422
         assert on_error_calls  # onError was invoked
@@ -392,9 +380,7 @@ class TestOnErrorOnValidationFailure:
 class TestRemoteEventCSRFRoundTrip:
     """Issue token via get_form, use it in remote_event."""
 
-    async def _make_get_request_with_session(
-        self, form_uid: str, session_id: str = "sess_e2e"
-    ) -> MagicMock:
+    async def _make_get_request_with_session(self, form_uid: str, session_id: str = "sess_e2e") -> MagicMock:
         req = MagicMock(spec=web.Request)
         req.match_info = {"form_uid": str(form_uid)}
         req.method = "GET"
@@ -402,9 +388,7 @@ class TestRemoteEventCSRFRoundTrip:
         req.query = {}
         session_data = {"id": session_id, "programs": [_TEST_TENANT]}
         session = MagicMock()
-        session.get = MagicMock(
-            side_effect=lambda k, default=None: session_data.get(k, default)
-        )
+        session.get = MagicMock(side_effect=lambda k, default=None: session_data.get(k, default))
         req.__contains__ = MagicMock(side_effect=lambda k: k == "session")
         req.__getitem__ = MagicMock(return_value=session)
         req.__setitem__ = MagicMock()
@@ -416,9 +400,7 @@ class TestRemoteEventCSRFRoundTrip:
         req.session = {"session": {"programs": [_TEST_TENANT]}}
         # FEAT-421: declared_tenant() reads request.get("tenant") — the
         # value @requires_tenant would have stashed.
-        req.get = MagicMock(
-            side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-        )
+        req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
         return req
 
     async def test_token_issued_by_get_form_validates_remote_event(self) -> None:
@@ -455,17 +437,13 @@ class TestRemoteEventCSRFRoundTrip:
         remote_req.headers = headers
         session_data = {"id": "sess_e2e", "programs": [_TEST_TENANT]}
         session = MagicMock()
-        session.get = MagicMock(
-            side_effect=lambda k, default=None: session_data.get(k, default)
-        )
+        session.get = MagicMock(side_effect=lambda k, default=None: session_data.get(k, default))
         remote_req.__contains__ = MagicMock(side_effect=lambda k: k == "session")
         remote_req.__getitem__ = MagicMock(return_value=session)
         remote_req.__setitem__ = MagicMock()
         # FEAT-421: declared_tenant() reads request.get("tenant") — the
         # value @requires_tenant would have stashed.
-        remote_req.get = MagicMock(
-            side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-        )
+        remote_req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
         remote_req.json = AsyncMock(return_value={"payload": {"name": "test"}})
 
         remote_resp = await handler.remote_event(remote_req)

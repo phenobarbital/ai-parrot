@@ -84,9 +84,7 @@ def _make_request(
     req.json = AsyncMock(return_value=body or {})
     # FEAT-421: declared_tenant() reads request.get("tenant") — the value
     # @requires_tenant would have stashed.
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     # Session for tenant resolution
     session = MagicMock()
     session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
