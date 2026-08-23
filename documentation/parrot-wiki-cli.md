@@ -614,6 +614,48 @@ vault (Dropbox / iCloud / Obsidian Sync) carries the plane along — register th
 vault with `--store` pointing elsewhere if that is unwanted; and `.parrot/` is
 excluded from vault scans, so the plane is never ingested as notes.
 
+### Recipe: `FirefliesWikiAgent`'s audio-notes plane (FEAT-452)
+
+`agents/fireflies_wiki.py`'s `AudioNoteCaptureToolkit` (Telegram `/note` and
+capture-intent routing) writes each captured voice/text note to a **separate**
+`notes` `LLMWikiToolkit` plane — its own `wiki_name`/`storage_dir`, distinct
+from the `meetings` plane the same agent also owns. That plane is written and
+ingested immediately at capture time (`ingest_source`, not `create_page`, so
+a later incremental pass never double-authors the page), but it is a bare
+storage root, not a wiki *project* with its own `.parrot/`. Without a
+namespace registration it is invisible to `wikitoolkit query` / the MCP tools
+— this is the **`store`** kind, registered once per deployment:
+
+```bash
+# Defaults (override via AUDIO_NOTES_WIKI_NAME / AUDIO_NOTES_WIKI_STORAGE_DIR
+# if the deployment set non-default values — the namespace name and --store
+# path below MUST match whatever the agent is actually configured with):
+wikitoolkit ns add notes \
+  --store "${AUDIO_NOTES_WIKI_STORAGE_DIR:-$HOME/.parrot/wikis/notes}" \
+  --backend sqlite \
+  --description "FEAT-452 audio-notes capture plane (personal voice/text notes)"
+
+# Verify:
+wikitoolkit ns list --json      # expect: notes | kind=store | built=true
+
+# Reach it:
+wikitoolkit query --ns notes "<phrase from a captured note>"
+wikitoolkit query "<phrase from a captured note>"   # default --ns all broadcast also reaches it
+```
+
+**A fresh deployment must run the `ns add` command once** (it is a local,
+gitignored `.parrot/wiki.json` / `~/.parrot/wikis.json` entry — see
+"Where they are declared" above — never committed and never auto-registered
+by agent code; `FirefliesWikiAgent.configure()` only builds/bootstraps the
+plane's own storage via `create_wiki()`, it does not touch either registry).
+Re-run it after moving `AUDIO_NOTES_WIKI_STORAGE_DIR` or renaming
+`AUDIO_NOTES_WIKI_NAME`.
+
+The `meetings` plane (`FIREFLIES_WIKI_STORAGE_DIR`) is intentionally **not**
+registered as a namespace by this recipe — it stays reachable only as
+whatever `wikitoolkit`'s own local/`--store` plane happens to be for that
+deployment, unaffected by the `notes` registration.
+
 A vault can also be ingested **into a repo's own plane** (the `vault_ingest`
 tool). Two corpora then share one plane, and neither prunes the other: a source
 registered outside the directory being scanned is never removed, and a page

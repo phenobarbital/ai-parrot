@@ -250,8 +250,72 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added a defensive `try/except ImportError` guard around
+`telegram_command`/`get_current_telegram_chat_id` (module-level fallback
+no-op decorator + `None`-returning accessor) so the agent still boots
+without `ai-parrot-integrations` installed — mirrors `_build_wiki_toolkit`'s
+optional-dependency posture. Added `_note_mode: Dict[str, bool]` and
+`_capture_toolkit: Optional[AudioNoteCaptureToolkit]` (captured from
+`configure()`) to `__init__`. `arm_note_mode` is `@telegram_command("note",
+...)`-decorated, public, reads `get_current_telegram_chat_id()`, arms by
+**string** chat id, and replies with a clear message (no raise, no arming a
+`None` key) when the chat cannot be resolved. Overrode `ask(self, question,
+*args, **kwargs)`: when the current chat is armed, clears the flag
+*before* running the capture (so a failing capture never leaves the chat
+stuck armed) and calls `capture_audio_note` directly via
+`self._capture_toolkit` — bypassing LLM tool-selection entirely, per spec.
+Otherwise forwards `*args, **kwargs` unchanged to `super().ask(...)` — no
+hardcoded parameter names, so this doesn't depend on (or risk drifting
+from) `BasicAgent.ask()`'s full ~20-parameter signature, and ordinary Q&A
+is byte-identical to before (G7). Also folded a short capture-intent
+nudge into `instructions` (`kwargs.setdefault("instructions", ...)` →
+`self.goal` via `BasicAgent.__init__`, alongside the existing
+`llm`-pinning `setdefault`) as the "system prompt" extension the scope
+asked for — supplementary to the primary, already-verified guidance
+mechanism: `capture_audio_note`'s own tool docstring (TASK-2380), which is
+what actually drives LLM tool-selection.
 
-**Deviations from spec**: none | describe if any
+Added `TestNoteMode` (10 tests: arm + string-key, no-chat-scope handling,
+consume-on-next-message + capture, mode-cleared-on-capture-failure,
+per-chat isolation, unarmed passthrough via a located-by-MRO parent `ask`
+mock, no-note-on-plain-question, `discover_telegram_commands` finds
+`/note`, module boots either way re: Telegram availability). Full suite:
+`pytest tests/test_fireflies_wiki_agent.py -v` → 58 passed. `ruff check
+agents/fireflies_wiki.py` / test file: no findings beyond the file's
+pre-existing baseline categories (verified against `dev`'s copy and the
+TASK-2380 commit — same categories, same lines, only shifted). Committed
+with `git add -f agents/fireflies_wiki.py`.
+
+**Post-hoc addendum (adversarial code review, same day)**: the reviewer
+flagged (IMPORTANT) that the `/note`-armed branch of `ask()` bypasses
+`BasicAgent.ask()`'s input guardrail pipeline (prompt-injection detection),
+tracing/OTEL spans, and conversation-memory recording — a real trade-off
+that was implicit rather than documented. Addressed by adding an explicit
+"Deliberate trade-off" paragraph to `ask()`'s docstring
+(`agents/fireflies_wiki.py`) spelling out exactly what does and doesn't run
+for the armed path, and confirming the non-armed path is an unconditional,
+guardrail-preserving passthrough. Accepted as-is (not re-architected) given
+the single-operator, non-conversational nature of a capture action; no
+test changes needed since behavior is unchanged, only documented.
+`pytest tests/test_fireflies_wiki_agent.py` re-run after the docstring
+edit → 58 passed.
+
+**Deviations from spec**: (1) The scope's "extend the agent's system
+prompt" is implemented via the verified `instructions` constructor kwarg
+(`BasicAgent.__init__` → `self.goal`) rather than mutating
+`system_prompt_template`/`PromptBuilder` internals directly — those looked
+more deeply coupled to a composable-prompt subsystem
+(`PromptBuilder.agent()`) not covered by this task's Codebase Contract,
+and a wrong guess there risked silently breaking prompt composition for
+every existing FirefliesWikiAgent behavior. `instructions` is a
+documented, narrow extension point verified by direct source read
+(`packages/ai-parrot/src/parrot/bots/agent.py:69-95`) precisely for this
+kind of free-text agent guidance, and is additive-only (`kwargs.setdefault`
+— a caller-supplied `instructions` still wins). (2) `ask()`'s exact
+upstream signature (`packages/ai-parrot/src/parrot/bots/base.py:946`,
+~20 parameters) is not in this task's Codebase Contract; verified it by
+direct source read, then deliberately avoided replicating any of it —
+`*args, **kwargs` passthrough is the safe choice precisely because this
+task did not anchor that signature.

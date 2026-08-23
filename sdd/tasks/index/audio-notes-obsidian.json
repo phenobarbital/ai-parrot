@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-23T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-23T09:04:39+00:00",
   "tasks": [
     {
       "id": "TASK-2377",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Only task outside agents/fireflies_wiki.py — lives in ai-parrot-integrations. Shares no files with any other task, so it can run in its own worktree. Must complete before TASK-2381.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2377-telegram-agent-command-chat-scope.md"
+      "completed_at": "2026-08-23T02:17:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2377-telegram-agent-command-chat-scope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2378",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Edits agents/fireflies_wiki.py, shared with TASK-2379/2380/2381 — sequential to avoid conflicts. Logically independent though: no depends_on, so it may be taken first.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2378-scope-nightly-vault-ingest-to-meetings.md"
+      "completed_at": "2026-08-23T02:17:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2378-scope-nightly-vault-ingest-to-meetings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2379",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +60,9 @@
       "parallelism_notes": "Edits agents/fireflies_wiki.py — sequential with the other agent-file tasks. Foundation for 2380 and 2382.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2379-notes-wiki-plane.md"
+      "completed_at": "2026-08-23T02:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2379-notes-wiki-plane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2380",
@@ -68,7 +71,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -78,8 +81,9 @@
       "parallelism_notes": "Needs the notes plane from TASK-2379 and edits the same file. Strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2380-note-structuring-and-capture-toolkit.md"
+      "completed_at": "2026-08-23T02:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2380-note-structuring-and-capture-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2381",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -99,8 +103,9 @@
       "parallelism_notes": "Cross-package dependency: needs the chat scope from TASK-2377 (without it get_current_telegram_chat_id() returns None and per-chat mode cannot work) and the capture tool from TASK-2380.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2381-note-mode-and-intent-routing.md"
+      "completed_at": "2026-08-23T02:34:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2381-note-mode-and-intent-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2382",
@@ -109,7 +114,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -118,9 +123,10 @@
       "parallel": false,
       "parallelism_notes": "HARD BLOCKER: FEAT-450 (wiki-namespaces) must be merged first. Documentation + operator step only, no production code expected.",
       "assigned_to": null,
-      "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2382-register-notes-wiki-namespace.md"
+      "started_at": "2026-08-23T08:40:42+00:00",
+      "completed_at": "2026-08-23T08:40:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2382-register-notes-wiki-namespace.md",
+      "verification": "verified"
     }
   ]
 }
