@@ -1,6 +1,6 @@
 ---
 id: FEAT-450
-title: Namespaces for wikitoolkit — federate N wiki stores behind ns::id with explicit + broadcast routing
+title: Namespaces for wikitoolkit — federate N wiki stores (repos, Obsidian vaults, brains) behind ns::id with explicit + broadcast routing
 slug: wiki-namespaces
 type: feature
 mode: enrichment
@@ -16,6 +16,11 @@ base_branch: dev
 research_state: sdd/state/FEAT-450/
 created: 2026-08-23
 updated: 2026-08-23
+deltas:
+  - id: 1
+    date: 2026-08-23
+    summary: "`obsidian` namespace kind — a vault registers as `{vault: <path>}`, plane inside the vault, `_prune_removed` scoping fixed in-feature"
+    evidence: F017
 ---
 
 # FEAT-450 — Namespaces for wikitoolkit (multi-wiki federation)
@@ -52,6 +57,17 @@ The original request, preserved verbatim (full text at `sdd/state/FEAT-450/sourc
    global user registry `~/.parrot/wikis.json`; repo entries override global ones on clash.
 3. **v1 routing = explicit + broadcast** (`--ns <name>` / `--ns all`), per-namespace min-max +
    merge/dedup. Automatic intent/LLM routing is a **v2 follow-up**, documented, not built.
+4. **`obsidian` is a namespace kind** — *Delta 1, 2026-08-23, after synthesis*. A vault registers
+   as `{"vault": "<path>"}`; its plane lives **inside the vault** (`<vault>/.parrot/wiki/wiki.db`)
+   and is built by the existing vault-aware `wikitoolkit build --path <vault>`. Registration is
+   `ns add --vault` only (consistent with U1); `vault_dir` is not auto-promoted. The
+   `_prune_removed` blast radius is fixed **inside this feature**. Full rationale and the four
+   sub-decisions (D4.1-D4.4): `sdd/state/FEAT-450/source.md` § "Delta 1".
+
+> **Delta 1 in one line**: "query my Obsidian vault too" is not an ingestion problem — the vault
+> scanner already exists and already emits this feature's exact plane shape (F017); it is the
+> routing problem this proposal already solves. The only alternative (repo scan + vault in one
+> plane) is unsafe today and stays out of scope.
 
 **Initial signals** (extracted, not interpreted):
 - Verbs: register, route, broadcast, federate → additive capability (enrichment)
@@ -76,7 +92,13 @@ bound to *one* injected store (`tools.py:399-428`, `mcp_server.py:66-146`); and 
 open path for foreign SQLite planes (today `_connect` migrates on open, `store.py:565`). No
 competing design exists: the `KnowledgeRouter` cited by FEAT-449 is not in source, and
 `MultiStoreSearchToolkit` (FEAT-379) federates *kinds* of stores for agents, not wiki planes for
-`wikitoolkit`. Recommendation: go straight to `/sdd-spec`.
+`wikitoolkit`. **Delta 1** adds a fourth namespace kind at no architectural cost: `vault_scan.py`
+already turns an Obsidian vault into the identical `RepoScan` shape (same `file:`/`dir:` ids,
+`references`/`embeds`/`tagged` edges, `category="document"`/`"tag"`, zero LLM) and
+`wikitoolkit build` already auto-detects `.obsidian/`, so a vault namespace is config +
+registration only — plus two bounded fixes the shared-store path makes unavoidable
+(`_prune_removed` scoping, `.parrot` exclusion inside a vault). Recommendation: go straight to
+`/sdd-spec`.
 
 ---
 
@@ -105,6 +127,12 @@ Paths below are relative to `packages/ai-parrot/src/parrot/knowledge/wiki/` unle
 | 13 | `toolkit.py` | `LLMWikiToolkit._config_for`, `list_wikis` | 1205-1228, 499-516 | explicit multi-wiki dispatch placeholder ("future iteration") | F006 |
 | 14 | `arango_store.py` | `ArangoDBWikiStore.__init__` | 160-175 | `database or f"wiki_{wiki_name}"` — per-database isolation = arangodb namespace | F015 |
 | 15 | `claude_code/hook.py` | `build_nudge` | 175-215 | unaffected consumer of `WikiProjectConfig` | F013 |
+| 16 | `vault_scan.py` | `scan_vault`, `is_obsidian_vault`, `VAULT_EXCLUDE_DIRS` | 50, 55, 111 | vault → `RepoScan` (same ids/edges as `repo_scan`); the `vault` namespace needs no new scanner | F017 |
+| 17 | `cli.py` | `build` (`--vault/--no-vault`) | 759-815, 842 | auto-detects `.obsidian/`; `build --path <vault>` already builds a vault plane | F017 |
+| 18 | `tools.py` | `VaultIngestInput`, `VaultIngestTool` | 49, 288, 360-368 | shared-store vault ingest — calls `_prune_removed` on the project's own store | F017 |
+| 19 | `cli.py` | `_prune_removed` | 390-423 | global page/source prune; must become scan-root/namespace scoped (D4.4) | F017, F010 |
+| 20 | `project.py` | `vault_dir`, `resolve_vault_dir` | 177-186, 245-285 | existing vault pointer for the MCP `ObsidianToolkit` — kept, *not* promoted to a namespace (D4.3) | F017 |
+| 21 | `bookkeeper.py` | `WikiBookkeeper.LOG_FILENAME`, `log_operation` | 45, 201 | writes `index.md`/`log.md` into the storage dir → self-ingestion if the plane sits in the vault | F017 |
 
 ### 2.2 Constraints Discovered
 
@@ -135,6 +163,17 @@ Paths below are relative to `packages/ai-parrot/src/parrot/knowledge/wiki/` unle
   `:`. *Evidence*: F001
 - **Low conflict risk.** 25 commits in 45 days on the package; none touch resolution, ids or
   merge helpers (`b5893f4e4` touched `cli.py` — rebase only). *Evidence*: F014
+- **[Δ1] One plane per corpus is forced, not preferred.** `_prune_removed` (cli.py:390-423) deletes
+  every `file:`/`dir:` page and every source URI outside the current scan, store-wide;
+  `VaultIngestTool` calls it against the project's own store (tools.py:367). Repo pages + vault
+  notes in one plane therefore annihilate each other on alternating builds, on top of the F010 id
+  collision (`file:README.md` in both). *Implication*: the vault gets its own plane behind a
+  namespace, and `_prune_removed` gains a scope argument (D4.4). *Evidence*: F017, F010
+- **[Δ1] A vault-hosted plane self-ingests.** `scan_vault` rglobs `*.md` filtering only
+  `VAULT_EXCLUDE_DIRS` (vault_scan.py:50) — no exclude argument, no `config.exclude_dirs` — while
+  `WikiBookkeeper` writes `index.md`/`log.md` into the storage dir (bookkeeper.py:45, 201).
+  *Implication*: D4.2 requires `.parrot` in `VAULT_EXCLUDE_DIRS` (or `scan_vault` honouring
+  `config.exclude_dirs`). *Evidence*: F017
 
 ### 2.3 Recent History (Relevant)
 
@@ -176,9 +215,19 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
   `WikiRelatedInput`; `wiki_status` lists namespaces. MCP inherits via the injected store.
 - **Docs** — "Namespaces" section in `documentation/parrot-wiki-cli.md` (next to the existing
   `--store` section, lines 424-451) and a note in `docs/wiki-claude-code.md`.
+- **[Δ1] `vault` namespace kind** — `WikiNamespaceConfig.vault: str | None` (mutually exclusive
+  with `path` / `store` / `database`), resolving to `<vault>/.parrot/wiki` on the sqlite backend,
+  opened read-only for reads like any foreign namespace. Registered by
+  `wikitoolkit ns add <name> --vault <path> [--global]`; detection at registration time is a cheap
+  `(<path>/.obsidian).is_dir()` probe, **not** a `scan_vault` import (`project.py` must stay
+  dependency-light — F009). An unbuilt vault plane is skipped with the standard note plus a
+  `wikitoolkit build --path <vault>` hint. No new build path: the vault is a wiki project.
 - **Tests** — `tests/knowledge/wiki/test_federation.py` (two temp sqlite stores: id round-trip,
   merge ordering, write routing, read-only guarantee, skip-on-missing) and `--ns` cases in
-  `test_cli.py` following the existing `--store` harness (197-245).
+  `test_cli.py` following the existing `--store` harness (197-245). **[Δ1]** a temp vault
+  (`.obsidian/` + two linked notes) registered as a namespace and queried end-to-end; a regression
+  test that `_prune_removed` scoped to one root leaves another root's pages intact; a test that a
+  plane at `<vault>/.parrot/wiki` is not re-ingested on rebuild.
 
 ### What Changes
 
@@ -199,6 +248,14 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
   *Evidence*: F007
 - **`cli.py`::`status`** — per-namespace block (plane stats; staleness where a
   `SourceCollectionManager` can be opened for a sqlite namespace). *Evidence*: F011
+- **[Δ1] `cli.py`::`_prune_removed`** — take the scan scope explicitly (scan root / namespace) and
+  delete only pages and sources belonging to it, so no ingest can wipe another corpus. Callers:
+  `build` (cli.py:842) and `VaultIngestTool` (tools.py:367). *Evidence*: F017
+- **[Δ1] `vault_scan.py`::`VAULT_EXCLUDE_DIRS`** — add `.parrot` (or honour
+  `config.exclude_dirs`), so a vault-hosted plane's `index.md`/`log.md` are not scanned back in.
+  *Evidence*: F017
+- **[Δ1] `project.py`::`WikiNamespaceConfig`** — the `vault` kind and its resolution rule
+  (`<vault>/.parrot/wiki`, sqlite). *Evidence*: F017, F009
 - **`toolkit.py`::`LLMWikiToolkit._config_for` / `list_wikis`** — *optional*: accept an injected
   federated store and enumerate namespaces; otherwise untouched. *Evidence*: F006
 
@@ -209,6 +266,13 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
 - `claude_code/hook.py` — single-root nudge, no store access.
 - SQLite schema; ArangoDB / InMemory backend internals.
 - `MultiStoreSearchToolkit` (FEAT-379) and FEAT-449 GraphIndex namespaces.
+- **[Δ1] `vault_dir` semantics** — unchanged: it keeps pointing the MCP server at the vault whose
+  `ObsidianToolkit` note-CRUD tools get registered (`mcp_server.py:111-146`). It is *not*
+  auto-promoted to a namespace (D4.3, consistent with U1: `ns add` is the only registration path).
+- **[Δ1] Obsidian write-back** — turning `remember` / `note` output into vault notes via
+  `ObsidianToolkit`, and cross-namespace edges between a vault note and a code page: v2.
+- **[Δ1] FEAT-392** (`llmwiki-obsidian-plugin`, vault → PageIndex/GraphIndex) — a different plane;
+  untouched by this feature.
 - **v2 follow-ups (documented, not built)**: automatic intent routing over namespace
   `description`s (candidate: `IntentRouterMixin`, `parrot/bots/mixins/intent_router.py:123` —
   agent layer, not the dependency-light CLI path); RRF instead of min-max; cross-namespace edges;
@@ -232,6 +296,15 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
   `_ID_PREFIX_RE` update; local namespace stays unprefixed (see U3). *Evidence*: F010
 - **Heavy imports leaking into the hook path** via the registry loader. *Mitigation*: loader is
   stdlib + pydantic; stores are opened only in cli/mcp. *Evidence*: F009, F013
+- **[Δ1] `.parrot/` inside a synced vault** — Dropbox / iCloud / Obsidian Sync will carry
+  `wiki.db` (and its WAL) between machines, which can corrupt a SQLite file mid-write.
+  *Mitigation*: document it; the plane is derived and rebuildable (`build --path <vault>`), and
+  users who sync can exclude `.parrot/` or register the vault with an explicit `store` instead.
+  *Evidence*: F017 (accepted cost of D4.2)
+- **[Δ1] Prune scoping regression** — `_prune_removed` is the mechanism that keeps a plane in sync
+  with its source tree; a wrong scope silently stops pruning deletions. *Mitigation*: the
+  two-root regression test above, plus an assertion that a normal single-root `build` still prunes.
+  *Evidence*: F017
 - **Unreachable ArangoDB namespace** stalling a broadcast. *Mitigation*: eager `initialize()` with
   timeout (as the `--backend arangodb` path does) and skip-with-note. *Evidence*: F002, F015
 
@@ -255,8 +328,12 @@ FEAT-449 (Legal LLM Wiki) is at `phase: plan_drafted`, untracked — no code lan
 | C12 | Per-namespace staleness needs one `SourceCollectionManager` per sqlite namespace | F011, F002 | medium | status code read; shape inferred |
 | C13 | Recent commits do not conflict with the touched areas | F014 | high | 45-day git log |
 | C14 | The hook is unaffected if `project.py` stays dependency-light | F009, F013 | high | hook only calls `is_built` / `storage_path` |
+| C15 | [Δ1] `scan_vault` emits the same `RepoScan` shape/ids as `repo_scan`, so a vault plane needs no new scanner or build path | F017 | high | module docstring + `build --vault` branch read |
+| C16 | [Δ1] `_prune_removed` is store-wide and `VaultIngestTool` calls it on the project's own store — repo + vault in one plane destroys both | F017 | high | both bodies read (cli.py:390-423, tools.py:367) |
+| C17 | [Δ1] A plane at `<vault>/.parrot/wiki` self-ingests unless `.parrot` is excluded | F017 | high | `VAULT_EXCLUDE_DIRS` (50) + bookkeeper `log.md` path (201) read |
+| C18 | [Δ1] Registering a vault needs only an `.obsidian/` probe in `project.py`, keeping the hook path dependency-light | F017, F009 | medium | `is_obsidian_vault` is a one-line `is_dir()` check, but its module imports `parrot.interfaces.obsidian` — the probe must be inlined, not imported |
 
-Distribution: **11** high, **3** medium, **0** low.
+Distribution: **14** high, **4** medium, **0** low.
 
 ---
 
@@ -281,6 +358,19 @@ Distribution: **11** high, **3** medium, **0** low.
 - [x] **U3 — In broadcast output, is the local namespace unprefixed?** — *Resolved (user,
   2026-08-23)*: **yes.** Local ids stay `file:x` / `dir:x`; only foreign ids carry `ns::`.
   *Resolves*: C11
+
+### Resolved (delta 1 — user decisions, 2026-08-23)
+
+- [x] **D4.1 — Is Obsidian a namespace kind or a second corpus in the local plane?** — *Resolved*:
+  a namespace kind (`{"vault": "<path>"}`), routed like every other namespace. *Resolves*: C15, C16
+- [x] **D4.2 — Where does a vault namespace's plane live?** — *Resolved*: **inside the vault**,
+  `<vault>/.parrot/wiki/wiki.db`, built by the existing `wikitoolkit build --path <vault>`; the
+  vault becomes a self-contained wiki project shared by every repo that registers it. Accepted
+  cost: a `.parrot/` directory inside a possibly-synced vault. *Resolves*: C15, C17
+- [x] **D4.3 — Does `vault_dir` auto-register as a namespace?** — *Resolved*: no. `ns add --vault`
+  only (consistent with U1); `vault_dir` keeps its MCP `ObsidianToolkit` job. *Resolves*: C18
+- [x] **D4.4 — Where does the `_prune_removed` blast-radius fix belong?** — *Resolved*: **inside
+  FEAT-450**, since v1 already namespace-scopes writes. Not deferred to a hotfix. *Resolves*: C16
 
 ### Unresolved (defer to spec / implementation)
 
@@ -308,7 +398,7 @@ remains; no fork to brainstorm.
 | State checkpoints | `sdd/state/FEAT-450/state.json` |
 | Source (raw) | `sdd/state/FEAT-450/source.md` |
 | Research plan | `sdd/state/FEAT-450/research_plan.json` (28 queries) |
-| Findings (digests) | `sdd/state/FEAT-450/findings/F001-*.md` … `F016-*.md` |
+| Findings (digests) | `sdd/state/FEAT-450/findings/F001-*.md` … `F016-*.md`, `F017-*.md` (delta 1) |
 | Synthesis (JSON) | `sdd/state/FEAT-450/synthesis.json` |
 
 **Budget consumed** (profile `default`):
@@ -316,6 +406,11 @@ remains; no fork to brainstorm.
 - Truncated: **no**
 
 **Mode determination**: `auto` → `enrichment` (additive verbs: register, route, federate).
+
+**Delta 1 (2026-08-23)**: added after synthesis, on the user's request, before approval — an
+`obsidian` namespace kind. Grounded in one new finding (`F017`, 6 files read, 1 grep) verified
+against source in the same session; no re-run of the research phase. Budget line below covers the
+original run only.
 
 **Gate note**: the Phase-1 plan gate was not shown interactively — the user pre-approved the
 research direction and fixed the three design decisions in the preceding conversation. Phase-5
