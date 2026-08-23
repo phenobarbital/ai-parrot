@@ -53,6 +53,7 @@ _FORMAT_MAP: dict[str, FieldType] = {
     "remote_response": FieldType.REMOTE_RESPONSE,
     "availability": FieldType.AVAILABILITY,
     "location": FieldType.LOCATION,
+    "place": FieldType.PLACE,
     "tags": FieldType.TAGS,
     "nps": FieldType.NPS,
     "likert": FieldType.LIKERT,
@@ -335,6 +336,24 @@ class JsonSchemaExtractor:
         """
         # Format takes priority (e.g., "string" + "email" format → EMAIL)
         fmt = prop.get("format", "").lower()
+        # FEAT-448 codex F1 — `x-field-type` FIRST, before any heuristic.
+        # The renderer already stamps every property with it
+        # (`renderers/jsonschema.py`), and nothing read it, so a schema could
+        # be emitted and not read back: `search` returned as TEXT,
+        # `tree_select` as ARRAY, `credit_card` as GROUP. Adding one
+        # `_FORMAT_MAP` entry per new type would have fixed today's twelve and
+        # been forgotten by the thirteenth; honouring the marker fixes every
+        # type at once, including the ones nobody has invented yet.
+        declared = prop.get("x-field-type")
+        if isinstance(declared, str):
+            try:
+                return FieldType(declared)
+            except ValueError:
+                logger.warning(
+                    "x-field-type '%s' is not a known FieldType; falling back "
+                    "to format/type inference", declared,
+                )
+
         if fmt and fmt in _FORMAT_MAP:
             return _FORMAT_MAP[fmt]
 
