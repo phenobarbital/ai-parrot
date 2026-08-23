@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-23T00:00:00Z",
-  "completed_at": "2026-08-23T02:02:43+00:00",
+  "completed_at": "2026-08-23T08:35:24+00:00",
   "tasks": [
     {
       "id": "TASK-2351",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:02:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2351-documents-models-and-resolve-sources.md"
+      "file": "sdd/tasks/completed/TASK-2351-documents-models-and-resolve-sources.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2352",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:03:52+00:00",
-      "file": "sdd/tasks/completed/TASK-2352-frontmatter-render-and-split.md"
+      "file": "sdd/tasks/completed/TASK-2352-frontmatter-render-and-split.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2353",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:12:23+00:00",
-      "file": "sdd/tasks/completed/TASK-2353-document-acquirer-local.md"
+      "file": "sdd/tasks/completed/TASK-2353-document-acquirer-local.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2354",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:18:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2354-document-acquirer-url.md"
+      "file": "sdd/tasks/completed/TASK-2354-document-acquirer-url.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2355",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:23:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2355-source-manifest-metadata-persistence.md"
+      "file": "sdd/tasks/completed/TASK-2355-source-manifest-metadata-persistence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2356",
@@ -126,7 +131,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:35:52+00:00",
-      "file": "sdd/tasks/completed/TASK-2356-orchestrator-frontmatter-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2356-orchestrator-frontmatter-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2357",
@@ -147,7 +153,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T01:44:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2357-cli-source-argument-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2357-cli-source-argument-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2358",
@@ -167,7 +174,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
       "completed_at": "2026-08-23T02:02:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2358-integration-tests-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-2358-integration-tests-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
