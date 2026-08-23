@@ -16,20 +16,38 @@ function here returns ``False`` (never ``True``) on a failure path.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+import select
+import sys
+import time
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from .drivers.abstract import AbstractDriver
 from .models import (
     Authenticate,
+    AwaitBrowserEvent,
+    AwaitHuman,
+    AwaitKeyPress,
     GetCookies,
     ScrapingStep,
     SetCookies,
 )
 
+if TYPE_CHECKING:
+    # Soft dependency (Decision D2): parrot.human.channels.base.HumanChannel
+    # lives in core ai-parrot, but is only imported for typing so a
+    # core-only install of parrot_tools never pays for it at runtime.
+    from parrot.human.channels.base import HumanChannel
+
 logger = logging.getLogger(__name__)
+
+# Recipient label used for HITL notifications/interactions raised from a
+# mid-plan await_human step. The caller supplies *which* HumanChannel
+# instance to use; this module does not resolve routing beyond that.
+_DEFAULT_HUMAN_RECIPIENT = "operator"
 
 # Callback used to dispatch a single step back to the caller's executor.
 # Signature mirrors advanced_actions.DispatchStepFn / executor._dispatch_step.
@@ -310,4 +328,330 @@ async def exec_set_cookies(driver: AbstractDriver, action: SetCookies) -> bool:
         return True
     except Exception:
         logger.exception("Failed to set cookies in the browser")
+        return False
+
+
+# ── Human-in-the-loop waits ─────────────────────────────────────────
+#
+# Decision D2: the human approving a plan is typically watching Telegram,
+# not the browser. A DOM-only wait is therefore not sufficient — when a
+# HumanChannel is injected, these functions notify it so the pause actually
+# reaches a person, and condition_type="manual" (which has no DOM condition
+# to poll) *requires* a channel, failing closed without one rather than
+# blocking for the full timeout.
+
+async def exec_await_human(
+    driver: AbstractDriver,
+    action: AwaitHuman,
+    *,
+    channel: Optional[HumanChannel] = None,
+) -> bool:
+    """Execute an :class:`AwaitHuman` action.
+
+    Args:
+        driver: Browser driver implementing :class:`AbstractDriver`.
+        action: The :class:`AwaitHuman` model — one of four
+            ``condition_type`` values (``selector``, ``url_contains``,
+            ``title_contains``, ``manual``).
+        channel: Optional injected :class:`HumanChannel` (parrot.human —
+            not a bespoke notifier, Decision D2). DOM-based condition types
+            notify it when supplied; ``condition_type="manual"`` requires it.
+
+    Returns:
+        ``True`` once the condition is satisfied (or a manual confirmation
+        is received); ``False`` on timeout, missing condition, or a
+        ``manual`` wait with no channel (fails closed immediately).
+    """
+    timeout = int(action.timeout or 300)
+
+    if action.condition_type == "manual":
+        return await _await_human_manual(action, channel, timeout)
+
+    target = action.target
+    if not target:
+        logger.error(
+            "await_human requires at least one condition "
+            "(selector, url_contains, title_contains)"
+        )
+        return False
+
+    if channel is not None:
+        try:
+            await channel.send_notification(
+                _DEFAULT_HUMAN_RECIPIENT,
+                f"{action.message} (waiting on {action.condition_type}={target!r})",
+            )
+        except Exception:
+            logger.warning(
+                "Failed to notify human channel about a pending await_human step",
+                exc_info=True,
+            )
+
+    logger.info(
+        "%s in the browser window (condition_type=%s)", action.message, action.condition_type
+    )
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if await _check_human_condition(driver, action.condition_type, target):
+            logger.info("Human step condition satisfied; resuming automation")
+            return True
+        await asyncio.sleep(0.5)
+
+    logger.warning("await_human timed out waiting for condition_type=%s", action.condition_type)
+    return False
+
+
+async def _check_human_condition(
+    driver: AbstractDriver, condition_type: str, target: str
+) -> bool:
+    """Evaluate one of the DOM-based await_human conditions."""
+    try:
+        if condition_type == "selector":
+            count = await driver.execute_script(
+                "return document.querySelectorAll(arguments[0]).length;", target
+            )
+            return bool(count) and int(count) > 0
+        if condition_type == "url_contains":
+            return target in driver.current_url
+        if condition_type == "title_contains":
+            title = await driver.evaluate("document.title")
+            return target in (title or "")
+    except Exception:
+        # Debug-only: this runs on every poll iteration, so logging at a
+        # higher level would spam a multi-minute wait's log output.
+        logger.debug("await_human condition check raised", exc_info=True)
+        return False
+    return False
+
+
+async def _await_human_manual(
+    action: AwaitHuman,
+    channel: Optional[HumanChannel],
+    timeout: int,
+) -> bool:
+    """Handle ``condition_type="manual"`` — requires an injected channel.
+
+    There is no DOM condition to poll for a manual step, so this fails
+    closed immediately when no channel is supplied (Decision D2) rather than
+    blocking for the full timeout. With a channel, a confirmation request is
+    sent and this waits (bounded by *timeout*) for any response delivered
+    through :meth:`HumanChannel.register_response_handler`.
+    """
+    if channel is None:
+        logger.error(
+            "await_human condition_type='manual' requires a HumanChannel; "
+            "failing closed rather than blocking for %ds", timeout,
+        )
+        return False
+
+    # Local import: parrot.human.models is core (not the integrations
+    # satellite), but this keeps the cost lazy and scoped to the one
+    # condition_type that actually needs it.
+    from parrot.human.models import HumanInteraction
+
+    resume_event = asyncio.Event()
+
+    async def _on_response(_response: Any) -> None:
+        resume_event.set()
+
+    try:
+        await channel.register_response_handler(_on_response)
+        interaction = HumanInteraction(question=action.message, timeout=float(timeout))
+        delivered = await channel.send_interaction(interaction, _DEFAULT_HUMAN_RECIPIENT)
+    except Exception:
+        logger.exception("Failed to request manual human confirmation")
+        return False
+
+    if not delivered:
+        logger.warning("Manual await_human interaction was not delivered to any recipient")
+        return False
+
+    try:
+        await asyncio.wait_for(resume_event.wait(), timeout=timeout)
+    except TimeoutError:
+        logger.warning("Manual await_human step timed out waiting for a human response")
+        return False
+
+    logger.info("Manual await_human step resumed after a human response")
+    return True
+
+
+# ── Console keypress wait ────────────────────────────────────────────
+
+async def exec_await_keypress(driver: AbstractDriver, action: AwaitKeyPress) -> bool:
+    """Execute an :class:`AwaitKeyPress` action.
+
+    Pauses until the operator presses a key in the console (stdin). Useful
+    when there is no reliable selector to wait on. ``driver`` is accepted
+    (unused) for signature parity with the other ``exec_*`` functions.
+
+    Args:
+        driver: Browser driver implementing :class:`AbstractDriver` (unused).
+        action: The :class:`AwaitKeyPress` model — ``expected_key`` (``None``
+            means any key), ``message``, and ``timeout`` (default 300s).
+
+    Returns:
+        ``True`` once the expected key (or any key, if unset) is pressed;
+        ``False`` on timeout.
+    """
+    timeout = int(action.timeout or 300)
+    prompt = action.message or "Press any key to continue..."
+    expected_key = action.expected_key
+
+    logger.info(prompt)
+    start = time.monotonic()
+    loop = asyncio.get_running_loop()
+
+    while time.monotonic() - start < timeout:
+        ready, _, _ = await loop.run_in_executor(
+            None, lambda: select.select([sys.stdin], [], [], 0.5)
+        )
+        if ready:
+            try:
+                keypress = sys.stdin.readline().strip()
+            except Exception:
+                logger.debug("Failed reading a keypress from stdin", exc_info=True)
+                continue
+            if expected_key is None or keypress == expected_key:
+                logger.info("Continuing after keypress")
+                return True
+
+    logger.warning("await_keypress timed out after %ds", timeout)
+    return False
+
+
+# ── Browser-side resume event ────────────────────────────────────────
+
+_BROWSER_EVENT_JS = """
+(function() {{
+if (window.__scrapeSignal && window.__scrapeSignal._bound) return 0;
+window.__scrapeSignal = window.__scrapeSignal || {{ ready:false, _bound:false }};
+function signal() {{
+    try {{ localStorage.setItem('{ls_key}', '1'); }} catch(e) {{}}
+    window.__scrapeSignal.ready = true;
+    var btn = document.getElementById('__scrapeResumeBtn');
+    if (btn) {{ btn.remove(); }}
+}}
+window.addEventListener('keydown', function(e) {{
+    try {{
+    var k = '{key_combo}';
+    if (k === 'ctrl_enter' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
+    else if (k === 'cmd_enter' && e.metaKey && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
+    else if (k === 'alt_shift_s' && e.altKey && e.shiftKey && (e.key.toLowerCase() === 's')) {{ e.preventDefault(); signal(); }}
+    }} catch(_e) {{}}
+}}, true);
+try {{
+    window.addEventListener('{custom_event}', function() {{ signal(); }}, false);
+}} catch(_e) {{}}
+if ({overlay_flag}) {{
+    try {{
+    if (!document.getElementById('__scrapeResumeBtn')) {{
+        var btn = document.createElement('button');
+        btn.id = '__scrapeResumeBtn';
+        btn.textContent = 'Resume scraping';
+        Object.assign(btn.style, {{
+        position: 'fixed', right: '16px', bottom: '16px', zIndex: 2147483647,
+        padding: '10px 14px', fontSize: '14px', borderRadius: '8px', border: 'none',
+        cursor: 'pointer', background: '#10b981', color: '#fff',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+        }});
+        btn.addEventListener('click', function(e) {{ e.preventDefault(); signal(); }});
+        document.body.appendChild(btn);
+    }}
+    }} catch(_e) {{}}
+}}
+window.__scrapeSignal._bound = true;
+return 1;
+}})();
+"""
+
+
+async def exec_await_browser_event(driver: AbstractDriver, action: AwaitBrowserEvent) -> bool:
+    """Execute an :class:`AwaitBrowserEvent` action.
+
+    Pauses automation until a user triggers a browser-side event: pressing
+    a configured key combo, clicking an optional floating "Resume" button,
+    dispatching a custom DOM event, or setting a localStorage flag —
+    whichever is configured via ``action.wait_condition``/``action.target``.
+
+    Args:
+        driver: Browser driver implementing :class:`AbstractDriver`.
+        action: The :class:`AwaitBrowserEvent` model.
+
+    Returns:
+        ``True`` once the event is received; ``False`` on timeout.
+    """
+    cfg: Dict[str, Any] = {}
+    if isinstance(action.wait_condition, dict) and action.wait_condition:
+        cfg = action.wait_condition
+    elif isinstance(action.target, dict):
+        cfg = action.target
+    elif isinstance(action.target, str):
+        cfg = {"key_combo": action.target}
+
+    key_combo = str(cfg.get("key_combo") or "ctrl_enter").lower()
+    show_overlay = bool(cfg.get("show_overlay_button", False))
+    ls_key = cfg.get("local_storage_key", "__scrapeResume")
+    predicate_js = cfg.get("predicate_js")
+    custom_event = cfg.get("custom_event_name", "scrape-resume")
+    timeout = int(action.timeout or 300)
+
+    inject_script = _BROWSER_EVENT_JS.format(
+        ls_key=ls_key,
+        key_combo=key_combo,
+        custom_event=custom_event,
+        overlay_flag="true" if show_overlay else "false",
+    )
+
+    try:
+        await driver.execute_script(inject_script)
+    except Exception:
+        logger.debug("Failed injecting the await_browser_event listener script", exc_info=True)
+
+    logger.info(
+        "Awaiting browser event: key combo, floating button, custom event, "
+        "or localStorage flag will resume."
+    )
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if await _check_browser_event_ready(driver, predicate_js, ls_key):
+            try:
+                await driver.execute_script(
+                    f"try{{localStorage.removeItem('{ls_key}')}}catch(e){{}}; "
+                    "if(window.__scrapeSignal){window.__scrapeSignal.ready=false}"
+                )
+            except Exception:
+                logger.debug("Failed clearing the browser-event signal", exc_info=True)
+            logger.info("Browser event received; resuming automation")
+            return True
+        await asyncio.sleep(0.3)
+
+    logger.warning("await_browser_event timed out after %ds", timeout)
+    return False
+
+
+async def _check_browser_event_ready(
+    driver: AbstractDriver, predicate_js: Optional[str], ls_key: str
+) -> bool:
+    """Check whether any of the browser-event resume signals has fired."""
+    try:
+        if predicate_js:
+            ok = await driver.execute_script(predicate_js)
+            if ok:
+                return True
+        val = await driver.execute_script(
+            f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}"
+        )
+        if val == "1":
+            return True
+        ready = await driver.execute_script(
+            "return !!(window.__scrapeSignal && window.__scrapeSignal.ready);"
+        )
+        return bool(ready)
+    except Exception:
+        # Debug-only: this runs on every poll iteration, so logging at a
+        # higher level would spam a multi-minute wait's log output.
+        logger.debug("await_browser_event readiness check raised", exc_info=True)
         return False
