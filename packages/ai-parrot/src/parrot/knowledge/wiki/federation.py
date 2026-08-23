@@ -27,7 +27,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+import sqlite3
+from contextvars import ContextVar
+from dataclasses import dataclass
+from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Literal
 
@@ -119,6 +122,61 @@ class NamespaceHandle:
 # ---------------------------------------------------------------------------
 
 
+class StalePlaneError(RuntimeError):
+    """A foreign plane predates the current schema and needs a rebuild.
+
+    Read-only mode deliberately never migrates a foreign plane, so a
+    plane missing post-schema columns would otherwise fail every query
+    with a raw ``no such column`` error. Detecting it at open time turns
+    that into an actionable skip.
+    """
+
+
+async def _assert_plane_readable(store: BaseWikiStore) -> None:
+    """Reject a foreign SQLite plane whose schema predates this code.
+
+    Read-only mode deliberately never migrates a foreign plane, so a
+    plane missing post-schema columns would fail every query with a raw
+    ``no such column`` error surfaced as an opaque "unreachable" skip.
+    Detect it once, at open time, and say what to do about it.
+
+    The probe runs through the store's OWN connection ladder rather than
+    a second raw connection, so it inherits the no-sidecar guarantee and
+    cannot leak a handle onto the foreign plane.
+
+    Args:
+        store: A freshly opened namespace store.
+
+    Raises:
+        StalePlaneError: A migration column is missing, or the plane
+            cannot be inspected.
+    """
+    from parrot.knowledge.wiki.store import _MIGRATION_COLUMNS, SQLiteWikiStore
+
+    if not isinstance(store, SQLiteWikiStore) or not store.read_only:
+        return
+    try:
+        # Private, but this is the only way to reuse the immutable /
+        # mode=ro ladder the read-only guarantee depends on.
+        async with store._connect() as conn:
+            for table, columns in _MIGRATION_COLUMNS.items():
+                async with conn.execute(f"PRAGMA table_info({table})") as cur:
+                    present = {row["name"] for row in await cur.fetchall()}
+                if not present:
+                    continue
+                missing = sorted({name for name, _ in columns} - present)
+                if missing:
+                    raise StalePlaneError(
+                        f"plane at {store.db_path} predates the current "
+                        f"schema (missing {table}."
+                        f"{', '.join(missing)})"
+                    )
+    except sqlite3.Error as exc:
+        raise StalePlaneError(
+            f"plane at {store.db_path} could not be inspected: {exc}"
+        ) from exc
+
+
 def _resolve_dir(value: str, base_dir: Path) -> Path:
     """Expand ``value`` and resolve it against ``base_dir`` when relative."""
     candidate = Path(value).expanduser()
@@ -175,18 +233,18 @@ async def _open_project_plane(
             wiki_name=foreign.wiki_name,
             text_analyzer=foreign.arango_text_analyzer,
             timeout=arango_timeout,
+            read_only=read_only,
         )
         return store, None
     storage_dir = foreign.storage_path(project_root)
-    return (
-        _open_local_plane(
-            storage_dir,
-            wiki_name=foreign.wiki_name,
-            backend=foreign.backend,
-            read_only=read_only,
-        ),
+    store = _open_local_plane(
         storage_dir,
+        wiki_name=foreign.wiki_name,
+        backend=foreign.backend,
+        read_only=read_only,
     )
+    await _assert_plane_readable(store)
+    return store, storage_dir
 
 
 def _open_local_plane(
@@ -232,21 +290,38 @@ async def _open_arango(
     wiki_name: str,
     text_analyzer: str,
     timeout: float,
+    read_only: bool,
 ) -> BaseWikiStore:
-    """Open and eagerly connect an ArangoDB plane under a timeout.
+    """Probe an ArangoDB plane under a timeout, then hand it back closed.
+
+    Two things this must NOT do (FEAT-450 review):
+
+    * **Provision.** ``initialize()`` creates the database, its five
+      collections and the search view. For a foreign namespace that
+      turns a typo'd ``database:`` into a brand-new empty database on
+      someone else's server, and makes "unbuilt" unreportable. With
+      ``read_only=True`` the store verifies instead of creating.
+    * **Keep the probe connection.** Namespace resolution runs on a
+      throwaway loop (``asyncio.run`` in the CLI, a worker thread in the
+      MCP server); an aiohttp session opened there is dead by the time
+      a read arrives on the serving loop. The connection is closed after
+      the probe, and ``_ensure_init`` re-opens it lazily on whatever
+      loop actually uses the store.
 
     Args:
         arango_params: Connection params from :func:`resolve_arango_params`.
         database: Database name holding the plane.
         wiki_name: Wiki name (used when ``database`` is empty).
         text_analyzer: ArangoSearch analyzer for FTS.
-        timeout: Seconds allowed for ``initialize()``.
+        timeout: Seconds allowed for the probe.
+        read_only: Verify the plane instead of provisioning it.
 
     Returns:
-        The connected store.
+        The (disconnected) store, proven reachable.
 
     Raises:
-        TimeoutError: When the server does not answer in time.
+        TimeoutError: The server did not answer in time.
+        FileNotFoundError: ``read_only`` and the plane does not exist.
     """
     from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
 
@@ -255,8 +330,10 @@ async def _open_arango(
         database=database,
         wiki_name=wiki_name,
         text_analyzer=text_analyzer,
+        read_only=read_only,
     )
     await asyncio.wait_for(store.initialize(), timeout=timeout)
+    await store.close()
     return store
 
 
@@ -307,15 +384,14 @@ async def open_namespace_store(
                 "entry, not a `store` directory"
             )
         storage_dir = _resolve_dir(cfg.store or "", base_dir)
-        return (
-            _open_local_plane(
-                storage_dir,
-                wiki_name=name,
-                backend=cfg.backend,
-                read_only=read_only,
-            ),
+        store = _open_local_plane(
             storage_dir,
+            wiki_name=name,
+            backend=cfg.backend,
+            read_only=read_only,
         )
+        await _assert_plane_readable(store)
+        return store, storage_dir
     # kind == "database"
     store = await _open_arango(
         arango_params=resolve_arango_params(_arango_config_for(cfg)),
@@ -323,6 +399,7 @@ async def open_namespace_store(
         wiki_name=name,
         text_analyzer="text_en",
         timeout=arango_timeout,
+        read_only=read_only,
     )
     return store, None
 
@@ -338,8 +415,18 @@ def _skip_for(name: str, cfg: WikiNamespaceConfig, exc: BaseException) -> Namesp
         return NamespaceSkip(
             name=name, reason="unbuilt", detail=str(exc), hint=hint
         )
-    if isinstance(exc, (ValueError, TypeError)):
-        return NamespaceSkip(name=name, reason="invalid", detail=str(exc))
+    if isinstance(exc, (StalePlaneError, ValueError, TypeError)):
+        hint = ""
+        if isinstance(exc, StalePlaneError) and cfg.kind in (
+            "path",
+            "vault",
+            "store",
+        ):
+            flag = "--store" if cfg.kind == "store" else "--path"
+            hint = f"wikitoolkit build {flag} {cfg.target} --force"
+        return NamespaceSkip(
+            name=name, reason="invalid", detail=str(exc), hint=hint
+        )
     return NamespaceSkip(name=name, reason="unreachable", detail=str(exc))
 
 
@@ -410,7 +497,10 @@ async def resolve_namespaces(
                     config=cfg,
                     origin=origin,  # type: ignore[arg-type]
                     storage_dir=storage_dir,
-                    read_only=read_only,
+                    # Report what the store actually enforces, not what
+                    # was asked for — a backend without a read-only mode
+                    # must not be advertised as protected.
+                    read_only=bool(getattr(store, "read_only", False)),
                 )
             )
     return handles, skipped
@@ -479,11 +569,11 @@ def _row_id(row: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _CallSkips:
-    """Per-call degradation notes, reset by each fan-out."""
-
-    items: list[NamespaceSkip] = field(default_factory=list)
+#: Degradation notes for the read currently in flight. A ``ContextVar``
+#: rather than instance state: one federated store is shared by every MCP
+#: tool call, and asyncio gives each Task its own context copy, so
+#: concurrent reads cannot clobber each other's notes (FEAT-450 review).
+_CALL_SKIPS: ContextVar[list[NamespaceSkip]] = ContextVar("wiki_call_skips")
 
 
 class FederatedWikiStore(BaseWikiStore):
@@ -530,8 +620,16 @@ class FederatedWikiStore(BaseWikiStore):
         }
         self.skipped: list[NamespaceSkip] = list(skipped or [])
         self._qualify_local = qualify_local
-        self.last_skipped: list[NamespaceSkip] = []
         self.logger = logging.getLogger(__name__)
+
+    @property
+    def last_skipped(self) -> list[NamespaceSkip]:
+        """Namespaces that failed during THIS task's most recent read.
+
+        Task-local (see :data:`_CALL_SKIPS`), so two concurrent reads on
+        a shared store each see only their own notes.
+        """
+        return list(_CALL_SKIPS.get([]))
 
     # -- introspection --------------------------------------------------
 
@@ -619,7 +717,8 @@ class FederatedWikiStore(BaseWikiStore):
             ``(namespace, weight, rows)`` triples; a namespace that
             raised is omitted and recorded in :attr:`last_skipped`.
         """
-        self.last_skipped = []
+        skips: list[NamespaceSkip] = []
+        _CALL_SKIPS.set(skips)
         handles = list(self.namespaces.values())
         tasks = [getattr(self._local, call)(*args, **kwargs)]
         tasks += [getattr(handle.store, call)(*args, **kwargs) for handle in handles]
@@ -629,7 +728,7 @@ class FederatedWikiStore(BaseWikiStore):
         local_rows = outcomes[0]
         if isinstance(local_rows, BaseException):
             self.logger.warning("Local plane failed on %s: %s", call, local_rows)
-            self.last_skipped.append(
+            skips.append(
                 NamespaceSkip(
                     name=self.local_name,
                     reason="unreachable",
@@ -644,7 +743,7 @@ class FederatedWikiStore(BaseWikiStore):
                 self.logger.warning(
                     "Namespace %s failed on %s: %s", handle.name, call, outcome
                 )
-                self.last_skipped.append(
+                skips.append(
                     NamespaceSkip(
                         name=handle.name,
                         reason="unreachable",
@@ -672,22 +771,48 @@ class FederatedWikiStore(BaseWikiStore):
         Returns:
             The merged rows, highest score first.
         """
+        prepared_groups: list[list[dict[str, Any]]] = []
         merged: dict[str, dict[str, Any]] = {}
         for namespace, weight, rows in groups:
             prepared = [_qualify_row(row, namespace) for row in rows]
             if rank:
                 _weighted(normalize_scores(prepared), weight)
+            kept: list[dict[str, Any]] = []
             for row in prepared:
                 key = _row_id(row)
                 current = merged.get(key)
-                if current is None or rank and float(row.get("score") or 0.0) > float(
+                if current is None:
+                    merged[key] = row
+                    kept.append(row)
+                elif rank and float(row.get("score") or 0.0) > float(
                     current.get("score") or 0.0
                 ):
                     merged[key] = row
-        out = list(merged.values())
+            prepared_groups.append(kept)
+
         if rank:
-            out.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
-        return out[:limit]
+            # Scores are normalised and comparable — rank across every
+            # namespace and let the best rows win the budget.
+            ranked = sorted(
+                merged.values(),
+                key=lambda row: float(row.get("score") or 0.0),
+                reverse=True,
+            )
+            return ranked[:limit]
+
+        # Unranked (``list_pages``): there is nothing to rank on, so
+        # concatenating would spend the whole limit on the local plane and
+        # hide every namespace behind a busy repo. Take one row from each
+        # group in turn instead, so all of them are represented.
+        out: list[dict[str, Any]] = []
+        for row_set in zip_longest(*prepared_groups):
+            for row in row_set:
+                if row is None or merged.get(_row_id(row)) is not row:
+                    continue
+                out.append(row)
+                if len(out) >= limit:
+                    return out
+        return out
 
     def _route(self, page_id: str) -> tuple[NamespaceHandle | None, str, bool]:
         """Resolve a possibly qualified id to its store.
@@ -860,18 +985,53 @@ class FederatedWikiStore(BaseWikiStore):
             f"write to namespace {namespace!r} requires --ns {namespace}"
         )
 
+    def _strip_page(self, page: WikiPageRecord) -> WikiPageRecord:
+        """Validate a page's ids and return it with the prefix removed.
+
+        The backing plane must never see a ``ns::`` prefix, so a record
+        addressed at this store's own namespace is rewritten to the bare
+        ids before it is handed down.
+
+        Args:
+            page: The record to write.
+
+        Returns:
+            ``page`` unchanged when it carries no prefix, else a copy
+            with ``concept_id`` / ``node_id`` stripped.
+
+        Raises:
+            ValueError: The record names a different namespace.
+        """
+        concept_id = self._assert_local(page.concept_id)
+        node_id = (
+            self._assert_local(page.node_id) if page.node_id else page.node_id
+        )
+        if concept_id == page.concept_id and node_id == page.node_id:
+            return page
+        return page.model_copy(
+            update={"concept_id": concept_id, "node_id": node_id}
+        )
+
+    def _strip_edge(self, edge: tuple) -> tuple:
+        """Validate an edge's endpoints and strip this namespace's prefix."""
+        stripped = (
+            self._assert_local(str(edge[0])),
+            self._assert_local(str(edge[1])),
+            *edge[2:],
+        )
+        return stripped
+
     async def upsert_pages(self, pages: list[WikiPageRecord]) -> int:
         """Write pages into the local plane."""
-        for page in pages:
-            self._assert_local(page.concept_id)
-        return await self._local.upsert_pages(pages)
+        return await self._local.upsert_pages(
+            [self._strip_page(page) for page in pages]
+        )
 
     async def add_edges(self, edges: list[tuple]) -> int:
         """Write edges into the local plane (no cross-namespace edges)."""
-        for edge in edges:
-            self._assert_local(str(edge[0]))
-            self._assert_local(str(edge[1]))
-        return await self._local.add_edges(edges)
+        return await self._local.add_edges(
+            [self._strip_edge(edge) for edge in edges]
+        )
 
     async def replace_source_slice(
         self,
@@ -880,9 +1040,11 @@ class FederatedWikiStore(BaseWikiStore):
         edges: list[tuple[str, str, str]] | None = None,
     ) -> dict[str, Any]:
         """Replace one source's slice of the local plane."""
-        for page in pages:
-            self._assert_local(page.concept_id)
-        return await self._local.replace_source_slice(source_id, pages, edges)
+        return await self._local.replace_source_slice(
+            source_id,
+            [self._strip_page(page) for page in pages],
+            [self._strip_edge(edge) for edge in edges] if edges else edges,
+        )
 
     async def delete_page(self, concept_id: str) -> bool:
         """Delete a page from the local plane."""

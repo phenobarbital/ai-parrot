@@ -596,9 +596,18 @@ class SQLiteWikiStore(BaseWikiStore):
                 yielded = False
                 try:
                     async with self._connect_immutable() as conn:
-                        yielded = True
-                        yield conn
-                    return
+                        # Re-check AFTER the open: ``immutable=1`` promises
+                        # SQLite the file cannot change, so a writer that
+                        # started between the probe and the open would make
+                        # this connection read torn data. Narrow that window
+                        # by confirming the plane is still quiescent before
+                        # handing the connection out; if it is not, fall
+                        # through to the locking ``mode=ro`` ladder, which
+                        # sees the writer's commits correctly.
+                        if self._sidecars_quiescent():
+                            yielded = True
+                            yield conn
+                            return
                 except sqlite3.OperationalError:
                     if yielded:
                         raise

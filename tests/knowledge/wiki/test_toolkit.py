@@ -441,3 +441,133 @@ class TestFederatedInjection:
             )
             is None
         )
+
+
+class TestToolkitReviewRegressions:
+    """M1/M2/M3 — regressions from the FEAT-450 code review."""
+
+    @pytest.fixture
+    async def federated_toolkit(self, tmp_path, mock_pi, mock_gi, mock_okf):
+        from parrot.knowledge.wiki.federation import (
+            FederatedWikiStore,
+            NamespaceHandle,
+        )
+        from parrot.knowledge.wiki.project import WikiNamespaceConfig
+        from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
+
+        local_dir = tmp_path / "local"
+        local = SQLiteWikiStore(local_dir / "wiki.db", wiki_name="test-wiki")
+        await local.upsert_pages([
+            WikiPageRecord(
+                concept_id="file:l.py", title="l",
+                summary="alpha local", body="alpha local",
+            )
+        ])
+        other_dir = tmp_path / "other"
+        writable = SQLiteWikiStore(other_dir / "wiki.db", wiki_name="other")
+        await writable.upsert_pages([
+            WikiPageRecord(
+                concept_id=f"file:o{i}.py", title=f"o{i}",
+                summary="alpha other", body="alpha other " * (i + 1),
+            )
+            for i in range(3)
+        ])
+        other = SQLiteWikiStore(other_dir / "wiki.db", read_only=True)
+        fed = FederatedWikiStore(
+            local=local,
+            local_name="test-wiki",
+            handles=[
+                NamespaceHandle(
+                    name="other",
+                    store=other,
+                    config=WikiNamespaceConfig(
+                        store=str(other_dir), weight=0.25
+                    ),
+                    origin="repo",
+                    storage_dir=other_dir,
+                )
+            ],
+        )
+        config = WikiConfig(wiki_name="test-wiki", storage_dir=local_dir)
+        return LLMWikiToolkit(
+            mock_pi, mock_gi, mock_okf, config, store=fed
+        )
+
+    @pytest.mark.asyncio
+    async def test_ingest_into_a_namespace_is_refused(
+        self, federated_toolkit, tmp_path
+    ):
+        """M1 — a namespace-addressed write must not land on the local plane."""
+        source = tmp_path / "note.md"
+        source.write_text("# Note\n\nbody\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Cannot write to wiki 'other'"):
+            await federated_toolkit.ingest_source("other", str(source))
+
+    @pytest.mark.asyncio
+    async def test_write_error_points_at_the_cli(self, federated_toolkit):
+        with pytest.raises(ValueError, match=r"--ns other"):
+            await federated_toolkit.create_page("other", "T", "body")
+
+    @pytest.mark.asyncio
+    async def test_local_writes_still_work(self, federated_toolkit):
+        page = await federated_toolkit.create_page("test-wiki", "T", "body")
+        assert page.get("page_id")
+
+    @pytest.mark.asyncio
+    async def test_reads_still_accept_namespace_names(self, federated_toolkit):
+        rows = await federated_toolkit.browse_pages("other")
+        assert rows
+        assert all(r["concept_id"].startswith("other::") for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_search_preserves_namespace_weights(self, federated_toolkit):
+        """M3 — a second global min-max would erase the 0.25 weight."""
+        results = await federated_toolkit.search(
+            "test-wiki", "alpha", mode="lexical"
+        )
+        assert results
+        by_ns = {
+            r["node_id"]: r["score"]
+            for r in results
+        }
+        local_best = max(
+            score for nid, score in by_ns.items() if not nid.startswith("other::")
+        )
+        foreign_best = max(
+            score for nid, score in by_ns.items() if nid.startswith("other::")
+        )
+        assert local_best == pytest.approx(1.0)
+        # Weighted down, not re-stretched back to 1.0.
+        assert foreign_best == pytest.approx(0.25)
+
+    def test_arango_config_with_injected_store_keeps_arango_sources(
+        self, tmp_path, mock_pi, mock_gi, mock_okf, monkeypatch
+    ):
+        """M2 — injecting a store must not downgrade the source manifest."""
+        from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+        from parrot.knowledge.wiki.federation import FederatedWikiStore
+
+        local = ArangoDBWikiStore(arango_params={}, database="wiki_x")
+        fed = FederatedWikiStore(local, "x")
+        toolkit = LLMWikiToolkit(
+            mock_pi, mock_gi, mock_okf,
+            WikiConfig(
+                wiki_name="x",
+                storage_dir=tmp_path / "x",
+                storage_backend="arangodb",
+            ),
+            store=fed,
+        )
+        assert toolkit._sources.backend == "arangodb"
+
+    def test_sqlite_config_with_injected_store_is_unchanged(
+        self, tmp_path, mock_pi, mock_gi, mock_okf
+    ):
+        from parrot.knowledge.wiki.store import SQLiteWikiStore
+
+        toolkit = LLMWikiToolkit(
+            mock_pi, mock_gi, mock_okf,
+            WikiConfig(wiki_name="x", storage_dir=tmp_path / "x"),
+            store=SQLiteWikiStore(tmp_path / "x" / "wiki.db"),
+        )
+        assert toolkit._sources.backend == "sqlite"

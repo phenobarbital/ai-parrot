@@ -5,7 +5,9 @@ repositories — real SQLite plane, no git dependency (``--no-git``),
 no LLM.
 """
 
+import asyncio
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from click.testing import CliRunner
 
 from parrot.knowledge.wiki import cli as cli_module
 from parrot.knowledge.wiki.cli import _changed_files_from_git, wiki
+from parrot.knowledge.wiki.store import create_wiki_store
 from parrot.knowledge.wiki.project import (
     config_path,
     load_project_config,
@@ -1166,9 +1169,12 @@ class TestNamespaceRegistry:
         assert rows["brain"]["origin"] == "global"
         assert rows["brain"]["built"] is False
 
-        # The repo config keeps its other settings.
+        # The repo config keeps its other settings, and the entry is
+        # stored relative to the repo root so a clone still resolves it.
         config = load_project_config(repo)
-        assert config.namespaces["other"].path == str(other)
+        stored = config.namespaces["other"].path
+        assert not Path(stored).is_absolute()
+        assert (repo / stored).resolve() == other.resolve()
         assert config.wiki_name
 
         removed = runner.invoke(
@@ -1397,3 +1403,177 @@ class TestNamespaceWrites:
         )
         assert result.exit_code != 0
         assert "pass `--ns other`" in result.output
+
+
+@pytest.mark.usefixtures("isolated_home")
+class TestNamespaceReviewRegressions:
+    """Regressions from the FEAT-450 code review (F3, F4, F6, L2)."""
+
+    def test_ns_add_resolves_a_relative_project_path(
+        self, runner, repo, tmp_path
+    ):
+        """F3 — a typed relative path must resolve to what the user meant."""
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
+            rel = os.path.relpath(other, cwd)
+            added = runner.invoke(
+                wiki, ["ns", "add", "sib", "--project", rel, "--path", str(repo)]
+            )
+        assert added.exit_code == 0, added.output
+        stored = load_project_config(repo).namespaces["sib"].path
+        assert (repo / stored).resolve() == other.resolve()
+
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--json"]
+        )
+        assert result.exit_code == 0, result.output
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert any(i.startswith("sib::") for i in ids)
+
+    def test_ns_add_global_stores_an_absolute_path(
+        self, runner, repo, tmp_path, isolated_home
+    ):
+        """F3 — a global entry is read back relative to PARROT_HOME."""
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
+            rel = os.path.relpath(other, cwd)
+            added = runner.invoke(
+                wiki,
+                [
+                    "ns", "add", "glob", "--project", rel,
+                    "--global", "--path", str(repo),
+                ],
+            )
+        assert added.exit_code == 0, added.output
+        stored = json.loads(
+            (isolated_home / "wikis.json").read_text(encoding="utf-8")
+        )["namespaces"]["glob"]["path"]
+        assert Path(stored).is_absolute()
+        assert Path(stored).resolve() == other.resolve()
+
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--json"]
+        )
+        ids = {row["concept_id"] for row in json.loads(result.output)}
+        assert any(i.startswith("glob::") for i in ids)
+
+    def test_status_ns_reports_that_namespace(self, runner, repo, tmp_path):
+        """F4 — the header must describe the plane the counters came from."""
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+
+        scoped = json.loads(
+            runner.invoke(
+                wiki,
+                ["status", "--path", str(repo), "--ns", "other", "--json"],
+            ).output
+        )
+        local = json.loads(
+            runner.invoke(
+                wiki,
+                ["status", "--path", str(repo), "--ns", "local", "--json"],
+            ).output
+        )
+        assert scoped["namespace"] == "other"
+        assert scoped["wiki_name"] == "other"
+        assert Path(scoped["storage_dir"]).resolve() == (
+            load_project_config(other).storage_path(other).resolve()
+        )
+        # Source staleness is a local-manifest concept — absent, not faked.
+        assert scoped["sources"] is None
+        assert scoped["stale_sources"] is None
+        # ...and it is genuinely the other plane's numbers.
+        assert scoped["stats"]["pages"] == local["stats"]["pages"]
+        assert "namespace" not in local
+
+    def test_status_ns_text_output_names_the_namespace(
+        self, runner, repo, tmp_path
+    ):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+        result = runner.invoke(
+            wiki, ["status", "--path", str(repo), "--ns", "other"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "Namespace : other" in result.output
+        assert "Sources   :" not in result.output
+
+    def test_concurrent_global_ns_add_keeps_both(
+        self, runner, repo, tmp_path, isolated_home
+    ):
+        """F6 — the registry read-modify-write is serialised."""
+        import threading
+
+        _second_repo(tmp_path, runner)
+        results: list[int] = []
+        barrier = threading.Barrier(2)
+
+        def add(name: str) -> None:
+            target = tmp_path / name
+            target.mkdir(exist_ok=True)
+            barrier.wait()
+            results.append(
+                CliRunner()
+                .invoke(
+                    wiki,
+                    [
+                        "ns", "add", name, "--store", str(target),
+                        "--global", "--path", str(repo),
+                    ],
+                )
+                .exit_code
+            )
+
+        threads = [
+            threading.Thread(target=add, args=(n,)) for n in ("aa", "bb")
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert results == [0, 0]
+        registry = json.loads(
+            (isolated_home / "wikis.json").read_text(encoding="utf-8")
+        )
+        assert set(registry["namespaces"]) == {"aa", "bb"}
+
+    def test_build_keeps_pages_of_another_corpus(self, runner, repo, tmp_path):
+        """L2 — a repo build must not wipe a vault ingested into its plane."""
+        from parrot.knowledge.wiki.cli import _ingest_files, _open_sources
+        from parrot.knowledge.wiki.vault_scan import scan_vault
+
+        _build(runner, repo)
+        vault = tmp_path / "vault"
+        (vault / ".obsidian").mkdir(parents=True)
+        (vault / "Note.md").write_text("# Note\n\nzebra\n", encoding="utf-8")
+
+        config = load_project_config(repo)
+        store = create_wiki_store(
+            config.storage_path(repo), wiki_name=config.wiki_name
+        )
+        sources = _open_sources(repo, config, store=store)
+        scan, _stats = scan_vault(vault)
+        asyncio.run(_ingest_files(store, sources, vault, scan, force=True))
+        assert asyncio.run(store.get_page("file:Note.md")) is not None
+
+        _build(runner, repo)
+
+        assert asyncio.run(store.get_page("file:Note.md")) is not None
+        assert asyncio.run(store.get_page("file:pkg/store.py")) is not None
+
+    def test_build_still_prunes_its_own_deleted_files(self, runner, repo):
+        """...while build's own pruning is unchanged."""
+        _build(runner, repo)
+        config = load_project_config(repo)
+        store = create_wiki_store(
+            config.storage_path(repo), wiki_name=config.wiki_name
+        )
+        assert asyncio.run(store.get_page("file:pkg/util.py")) is not None
+        (repo / "pkg" / "util.py").unlink()
+        _build(runner, repo)
+        assert asyncio.run(store.get_page("file:pkg/util.py")) is None

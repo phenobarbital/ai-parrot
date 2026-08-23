@@ -686,3 +686,34 @@ class TestExplicitReadOnlyMode:
         store = SQLiteWikiStore(tmp_path / "new" / "wiki.db")
         assert store.read_only is False
         assert (tmp_path / "new").is_dir()
+
+
+class TestReadOnlyConcurrencySafety:
+    """E1 — ``immutable=1`` is only used while the plane really is quiescent."""
+
+    @pytest.mark.asyncio
+    async def test_live_wal_takes_the_locking_ladder(self, tmp_path: Path):
+        """A writer's committed data must be visible, not snapshotted away."""
+        writer = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await writer.upsert_pages([_page("p1", body="first content")])
+
+        db = tmp_path / "wiki.db"
+        # Simulate a live writer: a non-empty -wal beside the plane.
+        wal = db.with_name(db.name + "-wal")
+        wal.write_bytes(b"\x00" * 64)
+        try:
+            store = SQLiteWikiStore(db, read_only=True)
+            assert store._sidecars_quiescent() is False
+            page = await store.get_page("p1")
+            assert page is not None and "first" in page["body"]
+        finally:
+            wal.unlink(missing_ok=True)
+
+    def test_sidecars_quiescent_fails_closed(self, tmp_path: Path):
+        db = tmp_path / "wiki.db"
+        db.write_bytes(b"")
+        store = SQLiteWikiStore(db, read_only=True)
+        assert store._sidecars_quiescent() is True
+        journal = db.with_name(db.name + "-journal")
+        journal.write_bytes(b"\x01")
+        assert store._sidecars_quiescent() is False

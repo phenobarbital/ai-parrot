@@ -46,6 +46,36 @@ def _scoped_store(store: BaseWikiStore, namespace: str | None) -> BaseWikiStore:
     return store.scoped(namespace)
 
 
+def _reject_foreign_id(store: BaseWikiStore, page_id: str) -> str | None:
+    """Explain why a write cannot target ``page_id``, or ``None`` if it can.
+
+    Writes through these tools always land on the local plane; a
+    namespaced page belongs to somebody else's wiki, which is reachable
+    only through the CLI's explicit ``--ns`` write path (FEAT-450, U2).
+    Detecting that up front keeps the tools returning structured errors
+    instead of letting the store's ``ValueError`` escape mid-write.
+
+    Args:
+        store: The store the tool holds.
+        page_id: The page id supplied by the caller.
+
+    Returns:
+        An error message, or ``None`` when the id is local.
+    """
+    from parrot.knowledge.wiki.context import split_namespaced_id
+
+    namespace, _local = split_namespaced_id(page_id)
+    if namespace is None:
+        return None
+    if namespace not in getattr(store, "namespaces", {}):
+        return f"Unknown namespace {namespace!r} in page id {page_id!r}."
+    return (
+        f"Page {page_id!r} belongs to namespace {namespace!r}, which is "
+        "read-only here. Writes to a namespace go through the CLI: "
+        f"`wikitoolkit <command> --ns {namespace}`."
+    )
+
+
 def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
     """Message for a ``namespace`` argument the store does not serve."""
     known = ", ".join(sorted(getattr(store, "namespaces", {}))) or "(none)"
@@ -248,6 +278,16 @@ class WikiRememberTool(AbstractTool):
         link_page_id: str | None = None,
         rel: str | None = "references",
     ) -> ToolResult:
+        # Validate the link target BEFORE the first write: a namespaced
+        # id would otherwise fail at add_edges, leaving the memory page
+        # written and the call reported as an error.
+        if link_page_id:
+            refusal = _reject_foreign_id(self._store, link_page_id)
+            if refusal:
+                return ToolResult(
+                    success=False, status="error", result=None, error=refusal
+                )
+
         # Deterministic id from title+category (mirrors cli.py:remember —
         # re-remembering the same thing updates rather than duplicates).
         resolved_title = (title or fact.strip().splitlines()[0][:80]).strip()
@@ -321,6 +361,13 @@ class WikiNoteTool(AbstractTool):
             return ToolResult(
                 success=False, status="error", result=None,
                 error=f"Page not found: {page_id}",
+            )
+        # A federated read returns the page with its id QUALIFIED; writing
+        # that straight back would be a write into a foreign namespace.
+        refusal = _reject_foreign_id(self._store, str(page["concept_id"]))
+        if refusal:
+            return ToolResult(
+                success=False, status="error", result=None, error=refusal
             )
 
         stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")

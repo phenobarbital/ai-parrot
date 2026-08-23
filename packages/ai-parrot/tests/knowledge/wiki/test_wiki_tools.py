@@ -323,3 +323,82 @@ class TestNamespaceArgument:
         for model in (WikiQueryInput, WikiPageInput, WikiRelatedInput):
             assert "namespace" in model.model_fields
             assert model.model_fields["namespace"].default is None
+
+
+class TestForeignPageWrites:
+    """M4 — writes to a namespaced page fail cleanly, never mid-write."""
+
+    @pytest.fixture
+    async def federated(self, tmp_path):
+        from parrot.knowledge.wiki.federation import (
+            FederatedWikiStore,
+            NamespaceHandle,
+        )
+        from parrot.knowledge.wiki.project import WikiNamespaceConfig
+        from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
+
+        local = SQLiteWikiStore(tmp_path / "local" / "wiki.db")
+        await local.upsert_pages(
+            [WikiPageRecord(concept_id="file:a.py", title="a", body="local")]
+        )
+        writable = SQLiteWikiStore(tmp_path / "other" / "wiki.db")
+        await writable.upsert_pages(
+            [WikiPageRecord(concept_id="file:b.py", title="b", body="other")]
+        )
+        other = SQLiteWikiStore(tmp_path / "other" / "wiki.db", read_only=True)
+        return FederatedWikiStore(
+            local=local,
+            local_name="local",
+            handles=[
+                NamespaceHandle(
+                    name="other",
+                    store=other,
+                    config=WikiNamespaceConfig(store=str(tmp_path / "other")),
+                    origin="repo",
+                    storage_dir=tmp_path / "other",
+                )
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_note_on_a_foreign_page_returns_a_tool_error(
+        self, federated, tmp_path
+    ):
+        result = await WikiNoteTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(page_id="other::file:b.py", text="hi")
+        assert result.success is False
+        assert "other" in result.error
+        assert "--ns other" in result.error
+
+    @pytest.mark.asyncio
+    async def test_note_on_a_local_page_still_works(self, federated, tmp_path):
+        result = await WikiNoteTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(page_id="file:a.py", text="hi")
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_remember_with_a_foreign_link_writes_nothing(
+        self, federated, tmp_path
+    ):
+        result = await WikiRememberTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(
+            fact="zebra fact", title="ZZZ", link_page_id="other::file:b.py"
+        )
+        assert result.success is False
+        assert "--ns other" in result.error
+        # Nothing was written — the validation happens before the upsert.
+        pages = await federated.local.list_pages(limit=50)
+        assert not [p for p in pages if str(p["concept_id"]).startswith("mem-")]
+
+    @pytest.mark.asyncio
+    async def test_remember_with_a_local_link_still_works(
+        self, federated, tmp_path
+    ):
+        result = await WikiRememberTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(fact="ok fact", title="OK", link_page_id="file:a.py")
+        assert result.success is True
+        assert result.result["linked"] is True

@@ -503,9 +503,12 @@ Two registries, merged on every read, **repo entries winning** on a name clash:
 }
 ```
 
-Relative paths resolve against the repo root for repo entries and against
-`PARROT_HOME` for global ones. **`ns add` is the only writer of either file** —
-`build` never registers a wiki behind your back.
+`ns add` resolves whatever path you type against your **current directory**,
+then stores it in the form the registry reads back: relative to the repo root
+for a repo entry (so `../asyncdb` keeps working in every clone) and absolute for
+a global one. **`ns add` is the only writer of either file** — `build` never
+registers a wiki behind your back, and concurrent `ns add --global` calls are
+serialised so neither loses the other's entry.
 
 Names match `^[A-Za-z0-9][A-Za-z0-9_.:-]*$`, may contain a single `:` (so
 `legal:civil` can mirror a GraphIndex namespace), never `::`, and can be neither
@@ -544,9 +547,16 @@ namespace's weight before merging, so a five-page plane cannot outrank a
 five-hundred-page one just because BM25 is corpus-relative. Every JSON row
 carries a `namespace` key (`null` for local).
 
-An unknown name exits non-zero and lists the known ones. Foreign planes are
-opened strictly **read-only**: a read never migrates them, and never even
-creates a `-wal`/`-shm` sidecar next to them.
+An unknown name exits non-zero and lists the known ones. `status --ns <name>`
+reports **that namespace's** counters and identity, not the local project's.
+
+Foreign planes are opened strictly **read-only**, on every backend: a SQLite
+namespace is never migrated and leaves no `-wal`/`-shm` sidecar behind, and an
+ArangoDB namespace is *verified* rather than provisioned — pointing `--database`
+at a name that does not exist reports the namespace as `unbuilt` instead of
+quietly creating an empty database on the server. A plane written by an older
+version of the wiki is reported as `invalid` with the `build --force` command
+that would refresh it, rather than failing every query.
 
 ### Writing: `--ns` on `remember` / `note` / `link`
 
@@ -562,6 +572,10 @@ parrot wiki link file:a.py file:b.py --rel references --ns asyncdb
 `--ns all` is rejected — there is no broadcast write. A page id qualified with a
 *different* namespace than the one selected is rejected too, so a note can never
 land in the wrong plane. There are no cross-namespace edges.
+
+The MCP tools have no `--ns`, so `wiki_remember` / `wiki_note` always write to
+the local plane; handed a namespaced page id they return a tool error naming the
+CLI command to use, and write nothing.
 
 ### Precedence and skips
 
@@ -599,6 +613,12 @@ Two consequences worth knowing: `.parrot/` lives inside the vault, so a synced
 vault (Dropbox / iCloud / Obsidian Sync) carries the plane along — register the
 vault with `--store` pointing elsewhere if that is unwanted; and `.parrot/` is
 excluded from vault scans, so the plane is never ingested as notes.
+
+A vault can also be ingested **into a repo's own plane** (the `vault_ingest`
+tool). Two corpora then share one plane, and neither prunes the other: a source
+registered outside the directory being scanned is never removed, and a page
+still backed by a live source is never swept — so `build` and `vault_ingest` can
+alternate without deleting each other's pages.
 
 ### MCP and agent tools
 

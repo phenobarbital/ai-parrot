@@ -44,6 +44,13 @@ from parrot.knowledge.wiki.store import (
 from parrot.tools.toolkit import AbstractToolkit
 
 
+def _is_federated(store: Any) -> bool:
+    """Whether ``store`` is a :class:`FederatedWikiStore` (lazy import)."""
+    from parrot.knowledge.wiki.federation import FederatedWikiStore
+
+    return isinstance(store, FederatedWikiStore)
+
+
 class LLMWikiToolkit(AbstractToolkit):
     """Orchestrates PageIndex + GraphIndex + OKF into a persistent LLM wiki.
 
@@ -147,13 +154,23 @@ class LLMWikiToolkit(AbstractToolkit):
             self._sources = SourceCollectionManager(
                 sources_dir, db_path=config.storage_dir / "wiki.db"
             )
-        elif config.storage_backend == "arangodb" and store is None:
+        elif config.storage_backend == "arangodb":
             # arango_store (not arango_db): __init__ is synchronous and
             # cannot await self._store.initialize() itself — the manager
             # lazily initializes it (idempotent) on first actual use.
-            self._sources = SourceCollectionManager(
-                sources_dir, backend="arangodb", arango_store=self._store
-            )
+            # With an injected federated store, the manifest still lives
+            # in the LOCAL plane's SOURCES collection — reach through to
+            # it rather than silently degrading to a JSON manifest that
+            # would report every source as missing.
+            arango_local = self._local_arango_store()
+            if arango_local is None:
+                self._sources = SourceCollectionManager(
+                    sources_dir, backend="json"
+                )
+            else:
+                self._sources = SourceCollectionManager(
+                    sources_dir, backend="arangodb", arango_store=arango_local
+                )
         else:
             self._sources = SourceCollectionManager(
                 sources_dir, backend="json"
@@ -164,6 +181,9 @@ class LLMWikiToolkit(AbstractToolkit):
             graphindex_toolkit,
             config.search_weights,
             store=self._store,
+            # A federated store ranks and weights across namespaces
+            # itself; re-normalising here would erase those weights.
+            normalize_store_rows=not _is_federated(self._store),
         )
         self._ingest_orch = WikiIngestOrchestrator(
             pageindex_toolkit,
@@ -181,12 +201,24 @@ class LLMWikiToolkit(AbstractToolkit):
     # Namespace dispatch (FEAT-450)
     # ------------------------------------------------------------------
 
+    def _local_arango_store(self) -> Any:
+        """The ArangoDB store backing the LOCAL plane, if there is one.
+
+        Unwraps a federated store to its local plane so source tracking
+        keeps using the real ``SOURCES`` collection.
+
+        Returns:
+            The :class:`ArangoDBWikiStore`, or ``None``.
+        """
+        from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+
+        candidate = getattr(self._store, "local", self._store)
+        return candidate if isinstance(candidate, ArangoDBWikiStore) else None
+
     @property
     def _federated(self) -> Any:
         """The injected store when it is federated, else ``None``."""
-        from parrot.knowledge.wiki.federation import FederatedWikiStore
-
-        return self._store if isinstance(self._store, FederatedWikiStore) else None
+        return self._store if _is_federated(self._store) else None
 
     def _is_namespace(self, wiki_name: str) -> bool:
         """Whether ``wiki_name`` addresses a federated namespace."""
@@ -221,6 +253,7 @@ class LLMWikiToolkit(AbstractToolkit):
                 self._gi,
                 self._config.search_weights,
                 store=self._store_for(wiki_name),
+                normalize_store_rows=False,
             )
             self._ns_search[wiki_name] = cached
         return cached
@@ -253,7 +286,7 @@ class LLMWikiToolkit(AbstractToolkit):
         self.logger.info(
             "Ingesting source into wiki '%s': %s", wiki_name, source_path
         )
-        effective_config = self._config_for(wiki_name)
+        effective_config = self._local_config_for(wiki_name)
         report: IngestReport = await self._ingest_orch.ingest(
             source_path, effective_config
         )
@@ -295,7 +328,7 @@ class LLMWikiToolkit(AbstractToolkit):
         self.logger.info(
             "Ingesting Obsidian vault into wiki '%s': %s", wiki_name, vault_path
         )
-        effective_config = self._config_for(wiki_name)
+        effective_config = self._local_config_for(wiki_name)
         loader = ObsidianVaultLoader(vault_path)
         if incremental:
             raw_report = await loader.incremental_update(
@@ -839,7 +872,7 @@ class LLMWikiToolkit(AbstractToolkit):
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
-            self._config_for(wiki_name).storage_dir,
+            self._local_config_for(wiki_name).storage_dir,
             "CREATE_PAGE",
             f"title: {title!r}, category: {category}",
         )
@@ -902,7 +935,7 @@ class LLMWikiToolkit(AbstractToolkit):
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
-            self._config_for(wiki_name).storage_dir,
+            self._local_config_for(wiki_name).storage_dir,
             "UPDATE_PAGE",
             f"page_id: {page_id}, reason: {reason!r}",
         )
@@ -962,7 +995,7 @@ class LLMWikiToolkit(AbstractToolkit):
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
-            self._config_for(wiki_name).storage_dir,
+            self._local_config_for(wiki_name).storage_dir,
             "REMEMBER",
             f"page_id: {page_id}, title: {title!r}, category: {category}",
         )
@@ -1016,7 +1049,7 @@ class LLMWikiToolkit(AbstractToolkit):
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
-            self._config_for(wiki_name).storage_dir,
+            self._local_config_for(wiki_name).storage_dir,
             "DELETE_PAGE",
             f"page_id: {page['concept_id']}",
         )
@@ -1287,7 +1320,7 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             Dict with keys: status, wiki_name, index_length.
         """
-        storage_dir = self._config_for(wiki_name).storage_dir
+        storage_dir = self._local_config_for(wiki_name).storage_dir
         sources = await asyncio.to_thread(self._sources.list_sources)
         content = await asyncio.to_thread(
             self._bookkeeper.rebuild_index,
@@ -1310,6 +1343,37 @@ class LLMWikiToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _local_config_for(self, wiki_name: str) -> WikiConfig:
+        """Config for a WRITE, which may only ever target the local wiki.
+
+        :meth:`_config_for` accepts federated namespace names because the
+        read helpers dispatch on them. Writes do not dispatch — they all
+        land on the local plane — so accepting a namespace name here
+        would silently ingest another wiki's content into this one
+        (FEAT-450 review).
+
+        Args:
+            wiki_name: Wiki name supplied by the caller.
+
+        Returns:
+            The configured :class:`WikiConfig`.
+
+        Raises:
+            ValueError: ``wiki_name`` is not the local wiki.
+        """
+        if wiki_name != self._config.wiki_name:
+            hint = ""
+            if self._is_namespace(wiki_name):
+                hint = (
+                    f" {wiki_name!r} is a read-only federated namespace; "
+                    f"write to it with `wikitoolkit <command> --ns {wiki_name}`."
+                )
+            raise ValueError(
+                f"Cannot write to wiki '{wiki_name}' through this toolkit "
+                f"(configured for '{self._config.wiki_name}').{hint}"
+            )
+        return self._config
 
     def _config_for(self, wiki_name: str) -> WikiConfig:
         """Return the effective config for the requested wiki name.

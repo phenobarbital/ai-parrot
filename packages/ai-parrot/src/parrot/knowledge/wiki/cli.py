@@ -30,6 +30,8 @@ import logging
 import os
 import subprocess
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -87,6 +89,9 @@ logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 # normal operation.  Default to INFO; --verbose restores DEBUG.
 logging.getLogger("parrot.knowledge.wiki.store").setLevel(logging.INFO)
 logging.getLogger("parrot.knowledge.wiki.sources").setLevel(logging.INFO)
+
+#: How long a `ns add`/`ns remove` waits for the global registry lock.
+REGISTRY_LOCK_WAIT_SECONDS = 5.0
 
 #: How long `upsert` waits for a contended store lock before skipping.
 #: Long enough to outlast a peer upsert (sub-second), short enough that
@@ -256,6 +261,42 @@ def _write_id_for_ns(page_id: str, ns_opt: str | None) -> str:
         f"Page id {page_id!r} belongs to namespace {namespace!r} — "
         f"pass `--ns {namespace}` to write there."
     )
+
+
+def _scoped_namespace(
+    root: Path, config: WikiProjectConfig, ns_opt: str | None
+) -> tuple[str, WikiNamespaceConfig, Path | None] | None:
+    """The single namespace a ``--ns`` selector narrowed a read to.
+
+    Args:
+        root: Repository root.
+        config: The repo's project config.
+        ns_opt: The ``--ns`` selector.
+
+    Returns:
+        ``(name, config, storage_dir)`` when the selector names exactly
+        one namespace, else ``None`` (broadcast, ``local``, or a subset).
+    """
+    if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
+        return None
+    entry = _declared_namespaces(config).get(ns_opt)
+    if entry is None:
+        return None
+    cfg, origin = entry
+    storage_dir: Path | None = None
+    if cfg.kind != "database":
+        base = resolve_entry_base(origin, root)
+        target = Path(cfg.target).expanduser()
+        if not target.is_absolute():
+            target = base / target
+        if cfg.kind in ("path", "vault"):
+            try:
+                storage_dir = load_project_config(target).storage_path(target)
+            except WikiConfigError:
+                storage_dir = None
+        else:
+            storage_dir = target
+    return ns_opt, cfg, storage_dir
 
 
 def _collect_skips(store: BaseWikiStore) -> list[NamespaceSkip]:
@@ -609,18 +650,23 @@ async def _prune_removed(
     Covers deleted files as well as files that fell out of scope
     (newly ignored directories, changed suffix filters).
 
-    Two scopes, because a plane is not always one corpus (FEAT-450,
-    D4.4):
+    A plane is not always one corpus (FEAT-450, D4.4): a vault can be
+    ingested into the repo's plane. Two invariants keep the corpora from
+    deleting each other, and they hold in BOTH scopes:
 
-    - ``"plane"`` — the whole plane IS this scan's corpus, so anything
-      the scan did not produce is stale. This is what ``build`` does.
-    - ``"root"`` — the scan covers only ``root``, and the plane may hold
-      other corpora (a vault ingested into a repo's plane, say). Only
-      sources living under ``root`` are eligible, ``file:`` pages go
-      only through those sources' slices, and a ``dir:`` page is removed
-      only when nothing under it survives. Without this, ingesting a
-      vault into a repo plane deletes every codebase page, and the next
-      ``build`` deletes the notes straight back.
+    * a source outside ``root`` is not this scan's to remove;
+    * a page whose source is still registered is not stale, whatever the
+      scan produced.
+
+    On top of that, ``scope`` decides how aggressive the leftover sweep
+    is:
+
+    - ``"plane"`` (``build``) — sweep every sourceless ``file:``/``dir:``
+      page the scan did not produce. The plane is this corpus plus
+      whatever other corpora registered sources, and only the former is
+      swept.
+    - ``"root"`` (``VaultIngestTool``) — sweep only the ``dir:`` pages
+      this run's removals could have emptied.
 
     Args:
         store: The plane being pruned.
@@ -640,45 +686,68 @@ async def _prune_removed(
     root_prefix = str(root.resolve()) + os.sep
     removed = 0
 
+    #: `dir:` ids that this run's removals could have emptied.
+    emptied_dirs: set[str] = set()
+    live_source_ids: set[str] = set()
+
     for entry in await asyncio.to_thread(sources.list_sources):
         if entry.source_uri in expected_uris:
+            live_source_ids.add(entry.source_id)
             continue
-        if scope == "root" and not entry.source_uri.startswith(root_prefix):
+        if not entry.source_uri.startswith(root_prefix):
             # Another corpus sharing this plane — not ours to prune.
+            live_source_ids.add(entry.source_id)
             continue
+        for parent in PurePosixPath(
+            Path(entry.source_uri).relative_to(root.resolve()).as_posix()
+        ).parents:
+            emptied_dirs.add(f"dir:{parent if str(parent) != '.' else '.'}")
         await store.replace_source_slice(entry.source_id, [], [])
         await asyncio.to_thread(sources.remove_source, entry.source_id)
         removed += 1
 
     stubs = await store.list_pages(limit=1_000_000)
-    if scope == "root":
-        # The source slices above already removed this root's stale
-        # `file:` pages; only empty `dir:` pages of this root are left.
-        surviving = {str(stub.get("concept_id", "")) for stub in stubs}
-        for cid in sorted(surviving):
-            if not cid.startswith("dir:") or cid in expected_dirs:
-                continue
-            prefix = cid[len("dir:") :]
-            if prefix in ("", "."):
-                continue
-            covered = f"{prefix}/"
-            if any(
-                other != cid and other.split(":", 1)[-1].startswith(covered)
-                for other in surviving
-            ):
-                continue
-            if await store.delete_page(cid):
-                removed += 1
-        return removed
+    surviving = {str(stub.get("concept_id", "")) for stub in stubs}
 
-    for stub in stubs:
-        cid = str(stub.get("concept_id", ""))
-        if cid.startswith("file:") and cid not in expected_files:
-            if await store.delete_page(cid):
-                removed += 1
-        elif cid.startswith("dir:") and cid not in expected_dirs:
-            if await store.delete_page(cid):
-                removed += 1
+    if scope == "plane":
+        # Sourceless leftovers of THIS corpus: a page still backed by a
+        # registered source belongs to someone (possibly another corpus)
+        # and is never swept here.
+        for stub in stubs:
+            cid = str(stub.get("concept_id", ""))
+            if stub.get("source_id") in live_source_ids:
+                continue
+            if cid.startswith("file:") and cid not in expected_files:
+                if await store.delete_page(cid):
+                    surviving.discard(cid)
+                    removed += 1
+        candidates = {
+            cid
+            for cid in surviving
+            if cid.startswith("dir:") and cid not in expected_dirs
+        }
+    else:
+        candidates = {
+            cid
+            for cid in surviving
+            if cid in emptied_dirs and cid not in expected_dirs
+        }
+
+    # Deepest first, against a survivor set that shrinks as we go, so a
+    # parent emptied by its own children going away is caught in ONE pass.
+    for cid in sorted(candidates, key=lambda c: c.count("/"), reverse=True):
+        prefix = cid[len("dir:") :]
+        if prefix in ("", "."):
+            continue
+        covered = f"{prefix}/"
+        if any(
+            other != cid and other.split(":", 1)[-1].startswith(covered)
+            for other in surviving
+        ):
+            continue
+        if await store.delete_page(cid):
+            surviving.discard(cid)
+            removed += 1
     return removed
 
 
@@ -1547,9 +1616,14 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     namespaces = stats.pop("namespaces", None)
     ns_skipped = stats.pop("skipped", None)
     stats.pop("local", None)
-    entries = sources.list_sources()
+    # `--ns <name>` reports THAT plane's counters, so the header must
+    # name it too — otherwise a foreign page count sits under the local
+    # project's identity. Source staleness is a local-manifest concept
+    # and is simply absent for a namespace.
+    scoped_to = _scoped_namespace(root, config, ns_opt)
+    entries = [] if scoped_to else sources.list_sources()
     stale = [e.source_id for e in entries if sources.is_stale(e.source_id)]
-    payload = {
+    payload: dict[str, Any] = {
         "root": str(root),
         "wiki_name": config.wiki_name,
         "backend": config.backend,
@@ -1559,14 +1633,25 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         "stale_sources": len(stale),
         "languages": {name: s.mode for name, s in all_scanners().items()},
     }
+    if scoped_to is not None:
+        name, handle_cfg, storage_dir = scoped_to
+        payload["namespace"] = name
+        payload["wiki_name"] = name
+        payload["backend"] = handle_cfg.backend
+        payload["storage_dir"] = str(storage_dir) if storage_dir else None
+        payload["sources"] = None
+        payload["stale_sources"] = None
     if namespaces is not None:
         payload["namespaces"] = namespaces
         payload["skipped"] = ns_skipped or []
     if as_json:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
-    click.echo(f"Wiki      : {config.wiki_name} ({config.backend})")
-    click.echo(f"Root      : {root}")
+    click.echo(f"Wiki      : {payload['wiki_name']} ({payload['backend']})")
+    if scoped_to is None:
+        click.echo(f"Root      : {root}")
+    else:
+        click.echo(f"Namespace : {scoped_to[0]} (of {root})")
     click.echo(f"Storage   : {payload['storage_dir']}")
     click.echo(
         f"Plane     : {stats.get('pages', 0)} pages, "
@@ -1575,7 +1660,8 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     )
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
-    click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
+    if scoped_to is None:
+        click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if namespaces:
         click.echo("\nNamespaces:")
         header = f"  {'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} {'pages':>7}  status"
@@ -1626,6 +1712,57 @@ def _namespace_source(
             "Give exactly one of --project / --store / --database / --vault "
             f"(got: {', '.join(given) or 'none'})."
         )
+
+
+@contextmanager
+def _global_registry_lock() -> Iterator[None]:
+    """Serialise read-modify-write cycles on ``PARROT_HOME/wikis.json``.
+
+    ``save_global_registry`` replaces the file atomically, which prevents
+    a torn write but not a lost update: two concurrent ``ns add --global``
+    calls would both read the original registry and the later
+    ``os.replace`` would drop the earlier entry. Reuse the wiki writer
+    lock, held across load + mutate + save.
+
+    Yields:
+        ``None``, with the lock held (advisory; a lock that cannot be
+        taken is logged and the write proceeds, matching
+        :func:`wiki_write_lock`).
+    """
+    home = parrot_home()
+    home.mkdir(parents=True, exist_ok=True)
+    with wiki_write_lock(home, timeout=REGISTRY_LOCK_WAIT_SECONDS) as acquired:
+        if not acquired:
+            _cli_logger.warning(
+                "Could not take the %s lock; writing anyway.", home
+            )
+        yield
+
+
+def _stored_namespace_path(
+    value: str | None, root: Path, is_global: bool
+) -> str | None:
+    """Normalise a user-typed namespace path into its stored form.
+
+    Args:
+        value: The raw ``--project`` / ``--store`` / ``--vault`` value.
+        root: Repository root (the base a repo entry is read back from).
+        is_global: Whether the entry goes to the per-user registry.
+
+    Returns:
+        ``None`` when ``value`` is falsy; an absolute path for a global
+        entry; a repo-root-relative path for a repo entry (so a checked-in
+        ``wiki.json`` stays portable across clones).
+    """
+    if not value:
+        return value
+    target = Path(value).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    target = Path(os.path.normpath(target))
+    if is_global:
+        return str(target)
+    return os.path.relpath(target, root.resolve())
 
 
 def _namespace_built(cfg: WikiNamespaceConfig, base_dir: Path) -> bool | None:
@@ -1789,6 +1926,15 @@ def ns_add(
     root, config = _resolve_project(path_)
     base_dir = parrot_home() if is_global else root
 
+    # A path typed at the shell is relative to the CALLER's cwd, but a
+    # stored entry is read back relative to its registry's directory
+    # (repo root / PARROT_HOME). Resolve it here so the two can never
+    # disagree: repo entries keep a portable repo-relative form
+    # (`../asyncdb`), global entries are stored absolute.
+    src_project = _stored_namespace_path(src_project, root, is_global)
+    src_store = _stored_namespace_path(src_store, root, is_global)
+    src_vault = _stored_namespace_path(src_vault, root, is_global)
+
     if src_vault:
         vault_dir = Path(src_vault).expanduser()
         if not vault_dir.is_absolute():
@@ -1816,14 +1962,15 @@ def ns_add(
         raise click.ClickException(f"Invalid namespace entry: {exc}") from exc
 
     if is_global:
-        registry = load_global_registry()
-        if name in registry.namespaces:
-            raise click.ClickException(
-                f"Namespace {name!r} already exists in the global registry "
-                f"({global_registry_path()}). Remove it first."
-            )
-        registry.namespaces[name] = entry
-        written = save_global_registry(registry)
+        with _global_registry_lock():
+            registry = load_global_registry()
+            if name in registry.namespaces:
+                raise click.ClickException(
+                    f"Namespace {name!r} already exists in the global "
+                    f"registry ({global_registry_path()}). Remove it first."
+                )
+            registry.namespaces[name] = entry
+            written = save_global_registry(registry)
     else:
         if name in config.namespaces:
             raise click.ClickException(
@@ -1862,13 +2009,14 @@ def ns_add(
 def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
     """Remove namespace NAME from this repo (or the global registry)."""
     if is_global:
-        registry = load_global_registry()
-        if name not in registry.namespaces:
-            raise click.ClickException(
-                f"No namespace {name!r} in {global_registry_path()}."
-            )
-        del registry.namespaces[name]
-        written = save_global_registry(registry)
+        with _global_registry_lock():
+            registry = load_global_registry()
+            if name not in registry.namespaces:
+                raise click.ClickException(
+                    f"No namespace {name!r} in {global_registry_path()}."
+                )
+            del registry.namespaces[name]
+            written = save_global_registry(registry)
     else:
         root, config = _resolve_project(path_)
         if name not in config.namespaces:

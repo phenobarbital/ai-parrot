@@ -8,7 +8,9 @@ so the developer's real ``~/.parrot/wikis.json`` is never touched.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -264,6 +266,16 @@ class TestReadOnlyGuarantee:
             ["ns", "add", "notes", "--vault", str(vault), "--path", str(repo)],
         )
         plane = vault / ".parrot" / "wiki" / "wiki.db"
+        # Quiesce the plane first. `build`'s aiosqlite connection closes on
+        # a worker thread, and that close checkpoints the WAL into the main
+        # file — snapshotting before it lands would race a change this test
+        # has nothing to do with. A checkpointed plane is also exactly the
+        # state the no-sidecar guarantee is specified for.
+        with contextlib.closing(sqlite3.connect(str(plane))) as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        for suffix in ("-wal", "-shm"):
+            plane.with_name(plane.name + suffix).unlink(missing_ok=True)
+
         before = (plane.stat().st_mtime_ns, plane.stat().st_size)
         sidecars_before = sorted(
             p.name for p in plane.parent.iterdir() if p.name.startswith("wiki.db")
@@ -281,4 +293,4 @@ class TestReadOnlyGuarantee:
         assert (plane.stat().st_mtime_ns, plane.stat().st_size) == before
         assert sorted(
             p.name for p in plane.parent.iterdir() if p.name.startswith("wiki.db")
-        ) == sidecars_before
+        ) == sidecars_before == ["wiki.db"]
