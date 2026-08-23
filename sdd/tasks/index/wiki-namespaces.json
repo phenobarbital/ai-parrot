@@ -131,7 +131,7 @@
       "feature_id": "FEAT-450",
       "feature": "wiki-namespaces",
       "spec": "sdd/specs/wiki-namespaces.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -139,10 +139,10 @@
       ],
       "parallel": true,
       "parallelism_notes": "Touches tools.py/mcp_server.py only \u2014 can run in a separate worktree in parallel with 2363/2364 (no cli.py edits). NOTE: 2366 also edits tools.py (VaultIngestTool, line ~367) \u2014 merge-level conflict risk only, disjoint hunks.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2365-tools-and-mcp-namespace-injection.md"
+      "assigned_to": "claude-code (main session)",
+      "started_at": "2026-08-23T01:51:06Z",
+      "completed_at": "2026-08-23T01:51:06Z",
+      "file": "sdd/tasks/completed/TASK-2365-tools-and-mcp-namespace-injection.md"
     },
     {
       "id": "TASK-2366",

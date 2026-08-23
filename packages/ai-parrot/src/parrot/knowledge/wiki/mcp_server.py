@@ -13,8 +13,9 @@ import contextlib
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
@@ -62,6 +63,29 @@ def _ensure_stderr_logging() -> None:
     root_logger.setLevel(logging.WARNING)
 
 
+def _run_sync(coro: Any) -> Any:
+    """Run a coroutine from this sync factory, loop or no loop.
+
+    ``main()`` calls the factory before starting the JSON-RPC loop, so
+    :func:`asyncio.run` is the normal path. Embedders (and the tests)
+    may build a server from inside a running loop, where ``asyncio.run``
+    would raise — there the coroutine runs on its own loop in a worker
+    thread.
+
+    Args:
+        coro: The coroutine to run to completion.
+
+    Returns:
+        Whatever the coroutine returned.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     """Build a `StdioMCPServer` with the six wiki tools registered.
 
@@ -105,7 +129,29 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         store = create_wiki_store(
             storage, wiki_name=config.wiki_name, backend=config.backend
         )
-    tools = create_wiki_tools(store, root=root, config=config)
+    # Federated namespaces (FEAT-450): the read tools inherit them
+    # through the store they already hold. Resolution runs under the same
+    # stdout-redirect discipline as every other import here — opening a
+    # namespace can pull in navconfig/asyncdb, which print to stdout.
+    read_store = store
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.knowledge.wiki.federation import (
+            FederatedWikiStore,
+            resolve_namespaces,
+        )
+
+        try:
+            handles, skipped = _run_sync(resolve_namespaces(root, config))
+        except Exception as exc:  # noqa: BLE001 — namespaces are optional
+            logging.getLogger(__name__).warning(
+                "Could not resolve wiki namespaces: %s", exc
+            )
+            handles, skipped = [], []
+    if handles or skipped:
+        read_store = FederatedWikiStore(
+            store, config.wiki_name, handles, skipped
+        )
+    tools = create_wiki_tools(read_store, root=root, config=config)
 
     # Obsidian vault exposure: when the project has a vault (explicit
     # `vault_dir` in wiki.json, or the root itself is a vault), register
@@ -117,6 +163,9 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # routing_meta["requires_confirmation"], which MCPToolAdapter turns
     # into a required `confirm` argument (soft HITL guard over stdio).
     description = "Codebase knowledge graph — query, explore, and remember"
+    if handles:
+        names = ", ".join(sorted(h.name for h in handles))
+        description += f" — federating {len(handles)} namespace(s): {names}"
     vault_tools = []
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.project import resolve_vault_dir

@@ -20,17 +20,75 @@ from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_
 from parrot.tools.abstract import AbstractTool, ToolResult
 
 
+def _scoped_store(store: BaseWikiStore, namespace: str | None) -> BaseWikiStore:
+    """Narrow a (possibly federated) store to one namespace selector.
+
+    A plain store has no namespaces, so the selector is a no-op there —
+    that keeps every existing caller (and the ``AsyncMock`` stores the
+    tool tests use) working untouched.
+
+    Args:
+        store: The store the tool holds.
+        namespace: The ``namespace`` tool argument.
+
+    Returns:
+        The store to read from.
+
+    Raises:
+        KeyError: When a federated store does not serve ``namespace``.
+    """
+    if not namespace:
+        return store
+    from parrot.knowledge.wiki.federation import FederatedWikiStore
+
+    if not isinstance(store, FederatedWikiStore):
+        return store
+    return store.scoped(namespace)
+
+
+def _unknown_namespace_error(store: BaseWikiStore, namespace: str) -> str:
+    """Message for a ``namespace`` argument the store does not serve."""
+    known = ", ".join(sorted(getattr(store, "namespaces", {}))) or "(none)"
+    return (
+        f"Unknown namespace {namespace!r}. Known: {known} "
+        "(plus 'all', 'local')."
+    )
+
+
+#: Shared description of the optional ``namespace`` argument (FEAT-450).
+_NAMESPACE_DESC = (
+    "Federated namespace to read: a namespace name, 'all' to broadcast, "
+    "'local' for this repo's own wiki. Omit for the default routing "
+    "(broadcast when namespaces are configured)."
+)
+
+
 class WikiQueryInput(BaseModel):
     question: str = Field(..., description="Search question for the knowledge graph")
     budget_tokens: int = Field(default=DEFAULT_BUDGET_TOKENS, description="Token budget for results")
+    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
 class WikiPageInput(BaseModel):
-    page_id: str = Field(..., description="Page ID from wiki_query results")
+    page_id: str = Field(
+        ...,
+        description=(
+            "Page ID from wiki_query results; may carry a namespace "
+            "prefix (ns::file:a.py)"
+        ),
+    )
+    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
 class WikiRelatedInput(BaseModel):
-    page_id: str = Field(..., description="Page ID to find related pages for")
+    page_id: str = Field(
+        ...,
+        description=(
+            "Page ID to find related pages for; may carry a namespace "
+            "prefix (ns::dir:pkg)"
+        ),
+    )
+    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
 
 
 class WikiRememberInput(BaseModel):
@@ -73,7 +131,10 @@ class WikiQueryTool(AbstractTool):
     description = (
         "Search the codebase knowledge graph for files, modules, symbols, "
         "or concepts. Returns ranked page stubs with IDs for drill-down. "
-        "Use BEFORE grep/find/Read on large repos."
+        "Use BEFORE grep/find/Read on large repos. When federated "
+        "namespaces are configured this searches all of them and foreign "
+        "page IDs come back prefixed (ns::file:a.py); pass `namespace` to "
+        "search just one."
     )
     args_schema = WikiQueryInput
 
@@ -81,8 +142,17 @@ class WikiQueryTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, question: str, budget_tokens: int = DEFAULT_BUDGET_TOKENS) -> str:
-        results = await self._store.search_fts(question)
+    async def _execute(
+        self,
+        question: str,
+        budget_tokens: int = DEFAULT_BUDGET_TOKENS,
+        namespace: str | None = None,
+    ) -> str:
+        try:
+            store = _scoped_store(self._store, namespace)
+        except KeyError:
+            return _unknown_namespace_error(self._store, str(namespace))
+        results = await store.search_fts(question)
         packed = pack_results(results, budget_tokens=budget_tokens)
         return packed.text
 
@@ -94,7 +164,8 @@ class WikiPageTool(AbstractTool):
     name = "wiki_page"
     description = (
         "Read a full wiki page by ID — file summaries, API outlines, "
-        "content. Use IDs returned by wiki_query."
+        "content. Use IDs returned by wiki_query, including namespaced "
+        "ones (ns::file:a.py)."
     )
     args_schema = WikiPageInput
 
@@ -102,8 +173,17 @@ class WikiPageTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, page_id: str) -> ToolResult:
-        page = await self._store.get_page(page_id, include_body=True)
+    async def _execute(
+        self, page_id: str, namespace: str | None = None
+    ) -> ToolResult:
+        try:
+            store = _scoped_store(self._store, namespace)
+        except KeyError:
+            return ToolResult(
+                success=False, status="error", result=None,
+                error=_unknown_namespace_error(self._store, str(namespace)),
+            )
+        page = await store.get_page(page_id, include_body=True)
         if page is None:
             return ToolResult(
                 success=False, status="error", result=None,
@@ -119,7 +199,8 @@ class WikiRelatedTool(AbstractTool):
     name = "wiki_related"
     description = (
         "Follow typed edges (contains, references) from a wiki page to "
-        "discover connected files and modules."
+        "discover connected files and modules. Accepts namespaced page "
+        "IDs (ns::dir:pkg) and returns neighbours from the same plane."
     )
     args_schema = WikiRelatedInput
 
@@ -127,8 +208,17 @@ class WikiRelatedTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._store = store
 
-    async def _execute(self, page_id: str) -> ToolResult:
-        neighbors = await self._store.neighbors(page_id)
+    async def _execute(
+        self, page_id: str, namespace: str | None = None
+    ) -> ToolResult:
+        try:
+            store = _scoped_store(self._store, namespace)
+        except KeyError:
+            return ToolResult(
+                success=False, status="error", result=None,
+                error=_unknown_namespace_error(self._store, str(namespace)),
+            )
+        neighbors = await store.neighbors(page_id)
         # Wrapped under a key (not a bare list) so the adapter's JSON
         # encoding path (dict → json.dumps) applies to this result too.
         return ToolResult(result={"neighbors": neighbors})

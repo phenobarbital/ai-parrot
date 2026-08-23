@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-450 — Namespaces for `wikitoolkit` (multi-wiki federation)
 **Spec**: `sdd/specs/wiki-namespaces.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2362
@@ -182,8 +182,8 @@ def test_server_injects_federated_store(tmp_path, monkeypatch):
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Code (main session)
+**Date**: 2026-08-23
+**Notes**: tools.py: optional 'namespace' on WikiQueryInput/WikiPageInput/WikiRelatedInput, _scoped_store()/_unknown_namespace_error() helpers (isinstance-guarded so a plain AsyncMock store is untouched), tool descriptions mention ns:: ids. mcp_server.py: resolve_namespaces + FederatedWikiStore injected into create_wiki_tools under the existing stdout-redirect discipline; VaultIngestTool still gets the LOCAL store; the server description names the federated namespaces. 12 tool tests + 6 new MCP tests.
 
-**Deviations from spec**: none
+**Deviations from spec**: Added _run_sync() in mcp_server.py: the factory is sync and asyncio.run() explodes when an embedder (or an async test) builds a server from inside a running loop, so the resolution falls back to a one-shot worker thread. A namespace resolution failure is logged and degrades to no namespaces rather than killing server startup.
