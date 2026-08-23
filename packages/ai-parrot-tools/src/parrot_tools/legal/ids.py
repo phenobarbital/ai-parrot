@@ -9,6 +9,7 @@ Identifiers are canonical keys, not text: every node ``_key`` derives from
 a stable public identifier. ``norma._key`` is the BOE id (e.g.
 ``BOE-A-2015-10566``) and ``articulo._key`` is ``{norma}:{art}``.
 """
+
 import re
 
 _BOE_ID_RE = re.compile(r"^BOE-[A-Z]-\d{4}-\d+$")

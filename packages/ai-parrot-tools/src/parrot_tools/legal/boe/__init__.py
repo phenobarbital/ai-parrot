@@ -9,6 +9,7 @@ Importing this package registers ``"boe"`` with ``DataSourceFactory`` at
 import time, so ``OntologyRefreshPipeline`` can resolve it without any
 factory modification.
 """
+
 from parrot_loaders.extractors.factory import DataSourceFactory
 
 from .datasource import BOEDataSource

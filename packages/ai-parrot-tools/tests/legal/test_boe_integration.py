@@ -16,6 +16,7 @@ provenance and the resolution of spec Section 8's open question (no
 synchronous access to the human owner was available; the already-verified
 real BOE chain from TASK-2372 was reused rather than fabricating new data).
 """
+
 from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -119,8 +120,7 @@ class TestBOEIntegration:
         first = await run_sync(fake_store, boe_corpus)
         assert first.errors == []
         snapshot_before = {
-            name: {key: dict(doc) for key, doc in docs.items()}
-            for name, docs in fake_store._collections.items()
+            name: {key: dict(doc) for key, doc in docs.items()} for name, docs in fake_store._collections.items()
         }
 
         second = await run_sync(fake_store, boe_corpus)
@@ -129,8 +129,7 @@ class TestBOEIntegration:
             assert result.inserted == 0
 
         snapshot_after = {
-            name: {key: dict(doc) for key, doc in docs.items()}
-            for name, docs in fake_store._collections.items()
+            name: {key: dict(doc) for key, doc in docs.items()} for name, docs in fake_store._collections.items()
         }
         assert snapshot_after == snapshot_before
 
@@ -139,9 +138,7 @@ class TestBOEIntegration:
         await validate_aql(tpl)
 
     @pytest.mark.parametrize("as_of,fragment", sorted(EXPECTED.items()))
-    async def test_amendment_chain_end_to_end(
-        self, fake_store, boe_corpus, legal_tenant_ctx, as_of, fragment
-    ):
+    async def test_amendment_chain_end_to_end(self, fake_store, boe_corpus, legal_tenant_ctx, as_of, fragment):
         await run_sync(fake_store, boe_corpus)
         version = await article_in_force(fake_store, legal_tenant_ctx, NORM_KEY, as_of)
         assert version is not None
@@ -152,35 +149,25 @@ class TestBOEIntegration:
         await run_sync(fake_store, boe_corpus)
 
         # as_of == valid_from of v0 (2016-10-02) selects v0 (inclusive lower bound).
-        v0 = await article_in_force(
-            fake_store, legal_tenant_ctx, NORM_KEY, date(2016, 10, 2)
-        )
+        v0 = await article_in_force(fake_store, legal_tenant_ctx, NORM_KEY, date(2016, 10, 2))
         assert v0 is not None
         assert v0.n == 0
 
         # as_of == valid_to of v0 == valid_from of v1 (2021-01-01) selects the
         # NEXT version, v1 (exclusive upper bound).
-        v1 = await article_in_force(
-            fake_store, legal_tenant_ctx, NORM_KEY, date(2021, 1, 1)
-        )
+        v1 = await article_in_force(fake_store, legal_tenant_ctx, NORM_KEY, date(2021, 1, 1))
         assert v1 is not None
         assert v1.n == 1
 
         # as_of == valid_to of v1 == valid_from of v2 (2022-01-01) selects v2.
-        v2 = await article_in_force(
-            fake_store, legal_tenant_ctx, NORM_KEY, date(2022, 1, 1)
-        )
+        v2 = await article_in_force(fake_store, legal_tenant_ctx, NORM_KEY, date(2022, 1, 1))
         assert v2 is not None
         assert v2.n == 2
         assert v2.valid_to is None  # currently in force
 
-    async def test_before_entry_into_force_returns_none(
-        self, fake_store, boe_corpus, legal_tenant_ctx
-    ):
+    async def test_before_entry_into_force_returns_none(self, fake_store, boe_corpus, legal_tenant_ctx):
         await run_sync(fake_store, boe_corpus)
-        result = await article_in_force(
-            fake_store, legal_tenant_ctx, NORM_KEY, date(1900, 1, 1)
-        )
+        result = await article_in_force(fake_store, legal_tenant_ctx, NORM_KEY, date(1900, 1, 1))
         assert result is None
 
     def test_no_llm_calls_structural(self):
@@ -221,9 +208,7 @@ class TestProvenanceEdgeSync:
     this task's Completion Note finding #4 and its follow-up fix commit.
     """
 
-    async def test_creates_modifica_and_deroga_edges(
-        self, fake_store, boe_corpus, legal_tenant_ctx
-    ):
+    async def test_creates_modifica_and_deroga_edges(self, fake_store, boe_corpus, legal_tenant_ctx):
         await run_sync(fake_store, boe_corpus)  # nodes must exist first
 
         boe_source = BOEDataSource(name="boe", config={"boe_ids": [BOE_FIXTURE_ID]})
@@ -238,14 +223,10 @@ class TestProvenanceEdgeSync:
 
         modifica_edges = fake_store._collections["__edges__modifica"]
         assert any(
-            frm == "norma/BOE-A-2020-17340" and to == "articulo/BOE-A-2015-10566:50"
-            for (frm, to) in modifica_edges
+            frm == "norma/BOE-A-2020-17340" and to == "articulo/BOE-A-2015-10566:50" for (frm, to) in modifica_edges
         )
         deroga_edges = fake_store._collections["__edges__deroga"]
-        assert any(
-            frm == "norma/BOE-A-2015-10566" and to == "norma/BOE-A-2014-9467"
-            for (frm, to) in deroga_edges
-        )
+        assert any(frm == "norma/BOE-A-2015-10566" and to == "norma/BOE-A-2014-9467" for (frm, to) in deroga_edges)
 
     async def test_no_boe_ids_creates_no_edges(self, fake_store, legal_tenant_ctx):
         boe_source = BOEDataSource(name="boe", config={})

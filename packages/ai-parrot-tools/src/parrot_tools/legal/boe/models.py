@@ -4,6 +4,7 @@ Defines the ``ArticleVersion`` shape (spec §2 Data Models,
 ``sdd/specs/legal-norms-graph-boe.spec.md``) and the ``ParsedNorm``
 container returned by ``parse_consolidated``.
 """
+
 from __future__ import annotations
 
 from datetime import date

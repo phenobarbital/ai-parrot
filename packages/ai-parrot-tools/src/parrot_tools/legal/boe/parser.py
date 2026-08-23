@@ -50,6 +50,7 @@ segmentation finding this docstring's structure is based on:
 Tolerant: on parse failure, the error is collected in ``ParsedNorm.errors``
 — never a silently empty record.
 """
+
 from __future__ import annotations
 
 import logging
@@ -103,11 +104,7 @@ def parse_consolidated(xml: str | bytes) -> ParsedNorm:
     texto_el = data_el.find("texto") if data_el is not None else None
 
     if data_el is None or metadatos_el is None or texto_el is None:
-        return ParsedNorm(
-            errors=[
-                "Malformed BOE consolidated document: missing <data>/<metadatos> or <texto>"
-            ]
-        )
+        return ParsedNorm(errors=["Malformed BOE consolidated document: missing <data>/<metadatos> or <texto>"])
 
     raw_boe_id = (metadatos_el.findtext("identificador") or "").strip()
     try:
@@ -222,9 +219,7 @@ def _parse_bloque(bloque_el: ET.Element, norma_boe_id: str) -> dict:
     for idx, version_el in enumerate(version_els):
         valid_from = _parse_fecha(version_el.get("fecha_vigencia"))
         if valid_from is None:
-            raise _BloqueParseError(
-                f"Bloque '{numero}' version {idx} is missing fecha_vigencia"
-            )
+            raise _BloqueParseError(f"Bloque '{numero}' version {idx} is missing fecha_vigencia")
 
         if idx == 0:
             kind = "redaccion"

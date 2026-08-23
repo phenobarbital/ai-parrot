@@ -10,6 +10,7 @@ No live ArangoDB and no network access anywhere in this suite:
   TASK-2372 fixture (``fixtures/boe_consolidated_sample.xml``) — parsing
   runs entirely off that fixture, never the network.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -81,9 +82,7 @@ class FakeGraphStore:
     async def initialize_tenant(self, ctx: TenantContext) -> None:
         return None
 
-    async def get_all_nodes(
-        self, ctx: TenantContext, collection: str
-    ) -> list[dict[str, Any]]:
+    async def get_all_nodes(self, ctx: TenantContext, collection: str) -> list[dict[str, Any]]:
         docs = self._collections.get(collection, {})
         return [dict(d) for d in docs.values() if d.get("_active", True)]
 
@@ -109,11 +108,7 @@ class FakeGraphStore:
             if existing is None:
                 inserted += 1
             else:
-                changed = any(
-                    existing.get(field) != doc.get(field)
-                    for field in doc
-                    if not field.startswith("_")
-                )
+                changed = any(existing.get(field) != doc.get(field) for field in doc if not field.startswith("_"))
                 if changed:
                     updated += 1
                 else:
@@ -123,17 +118,13 @@ class FakeGraphStore:
         self.upsert_calls.append((collection, len(nodes)))
         return UpsertResult(inserted=inserted, updated=updated, unchanged=unchanged)
 
-    async def soft_delete_nodes(
-        self, ctx: TenantContext, collection: str, keys: list[str]
-    ) -> None:
+    async def soft_delete_nodes(self, ctx: TenantContext, collection: str, keys: list[str]) -> None:
         store = self._collections.get(collection, {})
         for key in keys:
             if key in store:
                 store[key]["_active"] = False
 
-    async def create_edges(
-        self, ctx: TenantContext, edge_collection: str, edges: list[dict[str, Any]]
-    ) -> int:
+    async def create_edges(self, ctx: TenantContext, edge_collection: str, edges: list[dict[str, Any]]) -> int:
         store = self._collections.setdefault(f"__edges__{edge_collection}", {})
         for edge in edges:
             store[(edge.get("_from"), edge.get("_to"))] = edge

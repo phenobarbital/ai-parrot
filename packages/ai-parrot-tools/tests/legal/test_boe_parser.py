@@ -1,4 +1,5 @@
 """Unit tests for the BOE consolidated XML parser (TASK-2372)."""
+
 from itertools import pairwise
 from pathlib import Path
 
@@ -55,18 +56,9 @@ class TestBOEParser:
 
     def test_modifica_relations_extracted(self, parsed):
         modifica = [r for r in parsed.relations if r["type"] == "modifica"]
-        assert any(
-            r["from"] == "BOE-A-2020-17340" and r["to"] == "BOE-A-2015-10566:50"
-            for r in modifica
-        )
-        assert any(
-            r["from"] == "BOE-A-2021-21653" and r["to"] == "BOE-A-2015-10566:50"
-            for r in modifica
-        )
+        assert any(r["from"] == "BOE-A-2020-17340" and r["to"] == "BOE-A-2015-10566:50" for r in modifica)
+        assert any(r["from"] == "BOE-A-2021-21653" and r["to"] == "BOE-A-2015-10566:50" for r in modifica)
 
     def test_deroga_relations_extracted(self, parsed):
         deroga = [r for r in parsed.relations if r["type"] == "deroga"]
-        assert any(
-            r["from"] == "BOE-A-2015-10566" and r["to"] == "BOE-A-2014-9467"
-            for r in deroga
-        )
+        assert any(r["from"] == "BOE-A-2015-10566" and r["to"] == "BOE-A-2014-9467" for r in deroga)

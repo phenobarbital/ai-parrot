@@ -4,6 +4,7 @@ Provides tenant-isolated graph operations: database/collection initialization,
 AQL traversals, node upsert, and edge creation. Uses ``asyncdb.AsyncDB``
 for all database operations, consistent with ``parrot.stores.arango``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -101,17 +102,21 @@ class OntologyGraphStore:
                     await db.create_collection(entity.collection)
                     logger.info(
                         "Created vertex collection '%s' for entity '%s'",
-                        entity.collection, name,
+                        entity.collection,
+                        name,
                     )
                 # Create index on key_field
                 if entity.key_field:
                     await self._ensure_index(
-                        db, entity.collection, entity.key_field,
+                        db,
+                        entity.collection,
+                        entity.key_field,
                     )
             except Exception as e:
                 logger.warning(
                     "Failed to create collection '%s': %s",
-                    entity.collection, e,
+                    entity.collection,
+                    e,
                 )
 
         # Create edge collections
@@ -120,25 +125,30 @@ class OntologyGraphStore:
             try:
                 if not await db.collection_exists(rel.edge_collection):
                     await db.create_collection(
-                        rel.edge_collection, edge=True,
+                        rel.edge_collection,
+                        edge=True,
                     )
                     logger.info(
                         "Created edge collection '%s' for relation '%s'",
-                        rel.edge_collection, rel_name,
+                        rel.edge_collection,
+                        rel_name,
                     )
                 # Build edge definition for named graph
                 from_entity = ctx.ontology.entities.get(rel.from_entity)
                 to_entity = ctx.ontology.entities.get(rel.to_entity)
                 if from_entity and to_entity:
-                    edge_definitions.append({
-                        "edge_collection": rel.edge_collection,
-                        "from_vertex_collections": [from_entity.collection],
-                        "to_vertex_collections": [to_entity.collection],
-                    })
+                    edge_definitions.append(
+                        {
+                            "edge_collection": rel.edge_collection,
+                            "from_vertex_collections": [from_entity.collection],
+                            "to_vertex_collections": [to_entity.collection],
+                        }
+                    )
             except Exception as e:
                 logger.warning(
                     "Failed to create edge collection '%s': %s",
-                    rel.edge_collection, e,
+                    rel.edge_collection,
+                    e,
                 )
 
         # Create named graph
@@ -150,10 +160,10 @@ class OntologyGraphStore:
                     graph_name,
                     edge_definitions=edge_definitions,
                     orphan_collections=[
-                        c for c in vertex_collections
+                        c
+                        for c in vertex_collections
                         if not any(
-                            c in ed["from_vertex_collections"] + ed["to_vertex_collections"]
-                            for ed in edge_definitions
+                            c in ed["from_vertex_collections"] + ed["to_vertex_collections"] for ed in edge_definitions
                         )
                     ],
                 )
@@ -161,9 +171,7 @@ class OntologyGraphStore:
         except Exception as e:
             logger.warning("Failed to create graph '%s': %s", graph_name, e)
 
-    async def _ensure_index(
-        self, db: Any, collection: str, field: str
-    ) -> None:
+    async def _ensure_index(self, db: Any, collection: str, field: str) -> None:
         """Create a persistent index on a field if not already present.
 
         Args:
@@ -308,10 +316,16 @@ class OntologyGraphStore:
 
         logger.info(
             "Upserted %d nodes into '%s': %d inserted, %d updated, %d unchanged",
-            len(nodes), collection, inserted, updated, unchanged,
+            len(nodes),
+            collection,
+            inserted,
+            updated,
+            unchanged,
         )
         return UpsertResult(
-            inserted=inserted, updated=updated, unchanged=unchanged,
+            inserted=inserted,
+            updated=updated,
+            unchanged=unchanged,
         )
 
     async def create_edges(
@@ -359,7 +373,8 @@ class OntologyGraphStore:
         except Exception as e:
             logger.error(
                 "Batch edge creation failed for '%s': %s",
-                edge_collection, e,
+                edge_collection,
+                e,
             )
             # Fallback: individual inserts
             for edge in edges:
@@ -384,7 +399,9 @@ class OntologyGraphStore:
 
         logger.info(
             "Created %d edges in '%s' (of %d attempted)",
-            created, edge_collection, len(edges),
+            created,
+            edge_collection,
+            len(edges),
         )
         return created
 
@@ -411,7 +428,9 @@ class OntologyGraphStore:
             return list(result) if result else []
         except Exception as e:
             logger.error(
-                "Failed to get nodes from '%s': %s", collection, e,
+                "Failed to get nodes from '%s': %s",
+                collection,
+                e,
             )
             return []
 
@@ -448,11 +467,15 @@ class OntologyGraphStore:
                 },
             )
             logger.info(
-                "Soft-deleted %d nodes in '%s'", len(keys), collection,
+                "Soft-deleted %d nodes in '%s'",
+                len(keys),
+                collection,
             )
         except Exception as e:
             logger.error(
-                "Soft delete failed for '%s': %s", collection, e,
+                "Soft delete failed for '%s': %s",
+                collection,
+                e,
             )
 
     # ------------------------------------------------------------------
@@ -624,9 +647,7 @@ class OntologyGraphStore:
         aql = "FOR doc IN @@collection\n" + "\n".join(clauses)
         if sort_desc is not None:
             if not sort_desc.replace("_", "").isalnum():
-                raise ValueError(
-                    f"query_documents: invalid sort field {sort_desc!r}"
-                )
+                raise ValueError(f"query_documents: invalid sort field {sort_desc!r}")
             aql += f"\nSORT doc.{sort_desc} DESC"
         if limit is not None:
             aql += f"\nLIMIT {int(limit)}"

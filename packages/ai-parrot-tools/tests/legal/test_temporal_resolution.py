@@ -4,6 +4,7 @@ Boundary behaviour (inclusive valid_from / exclusive valid_to) is asserted
 end-to-end against a real graph in TASK-2376; here it is asserted at the
 binding level against a stubbed execute_traversal — no live ArangoDB.
 """
+
 import inspect
 from datetime import date
 
@@ -29,10 +30,12 @@ class FakeStore:
 @pytest.fixture
 def legal_ctx() -> TenantContext:
     defaults = OntologyParser.get_defaults_dir()
-    merged = OntologyMerger().merge([
-        defaults / "base.ontology.yaml",
-        defaults / "domains" / "legal.ontology.yaml",
-    ])
+    merged = OntologyMerger().merge(
+        [
+            defaults / "base.ontology.yaml",
+            defaults / "domains" / "legal.ontology.yaml",
+        ]
+    )
     return TenantContext(
         tenant_id="test_legal",
         arango_db="test_legal_db",
@@ -83,9 +86,7 @@ class TestTemporalResolution:
         """Given a 3-version article, each of 3 dates selects the correct wording."""
         row = _version_row(1, "2020-01-01", "2021-01-01", text="v1 wording")
         store = FakeStore([row])
-        result = await article_in_force(
-            store, legal_ctx, "BOE-A-2015-10566:50", date(2020, 6, 1)
-        )
+        result = await article_in_force(store, legal_ctx, "BOE-A-2015-10566:50", date(2020, 6, 1))
         assert result is not None
         assert result.n == 1
         assert result.text == "v1 wording"
@@ -94,9 +95,7 @@ class TestTemporalResolution:
         """as_of == valid_from selects that version (inclusive lower bound)."""
         row = _version_row(1, "2021-01-01", "2022-01-01")
         store = FakeStore([row])
-        result = await article_in_force(
-            store, legal_ctx, "BOE-A-2015-10566:50", date(2021, 1, 1)
-        )
+        result = await article_in_force(store, legal_ctx, "BOE-A-2015-10566:50", date(2021, 1, 1))
         assert result is not None
         assert result.n == 1
         assert result.valid_from == date(2021, 1, 1)
@@ -112,9 +111,7 @@ class TestTemporalResolution:
         """
         next_version_row = _version_row(2, "2022-01-01", None, text="v2 wording")
         store = FakeStore([next_version_row])
-        result = await article_in_force(
-            store, legal_ctx, "BOE-A-2015-10566:50", date(2022, 1, 1)
-        )
+        result = await article_in_force(store, legal_ctx, "BOE-A-2015-10566:50", date(2022, 1, 1))
         assert result is not None
         assert result.n == 2
         assert result.valid_from == date(2022, 1, 1)
@@ -122,9 +119,7 @@ class TestTemporalResolution:
     async def test_currently_in_force_has_null_valid_to(self, legal_ctx):
         row = _version_row(2, "2022-01-01", None, text="v2 wording")
         store = FakeStore([row])
-        result = await article_in_force(
-            store, legal_ctx, "BOE-A-2015-10566:50", date(2026, 1, 1)
-        )
+        result = await article_in_force(store, legal_ctx, "BOE-A-2015-10566:50", date(2026, 1, 1))
         assert result is not None
         assert result.valid_to is None
 

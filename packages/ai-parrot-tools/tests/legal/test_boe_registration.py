@@ -1,4 +1,5 @@
 """Registration + resolution tests for the BOE datasource (TASK-2374)."""
+
 import inspect
 from datetime import UTC, datetime
 
@@ -51,9 +52,7 @@ class TestBOERegistration:
                     started_at=datetime.now(UTC),
                 )
 
-        monkeypatch.setattr(
-            "parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline
-        )
+        monkeypatch.setattr("parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline)
 
         report = await sync_boe("legal_civil")
 
@@ -81,12 +80,8 @@ class TestBOERegistration:
         def _boom(*args, **kwargs):
             raise RuntimeError("boom")
 
-        monkeypatch.setattr(
-            "parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline
-        )
-        monkeypatch.setattr(
-            "parrot_tools.legal.boe.sync.TenantOntologyManager.resolve", _boom
-        )
+        monkeypatch.setattr("parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline)
+        monkeypatch.setattr("parrot_tools.legal.boe.sync.TenantOntologyManager.resolve", _boom)
 
         report = await sync_boe("legal_civil")
 

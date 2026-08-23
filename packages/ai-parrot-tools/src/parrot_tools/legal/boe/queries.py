@@ -8,6 +8,7 @@ does not re-implement version selection in Python — that would duplicate
 the pattern and violate spec goal G4 (declarative-first temporal
 resolution).
 """
+
 from __future__ import annotations
 
 from datetime import date

@@ -6,6 +6,7 @@ import — the deploying agent decides whether to wire this to
 ``@schedule`` (ai-parrot-server) or an external cron; see ``sync_boe``'s
 docstring for the wiring recipe.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -133,16 +134,19 @@ async def _sync_provenance_edges(
         to_entity = ctx.ontology.entities.get(rel_def.to_entity)
         if from_entity is None or to_entity is None:
             continue
-        edges_by_type.setdefault(rel_type, []).append({
-            "_from": f"{from_entity.collection}/{relation['from']}",
-            "_to": f"{to_entity.collection}/{relation['to']}",
-        })
+        edges_by_type.setdefault(rel_type, []).append(
+            {
+                "_from": f"{from_entity.collection}/{relation['from']}",
+                "_to": f"{to_entity.collection}/{relation['to']}",
+            }
+        )
 
     stats: dict[str, DiscoveryStats] = {}
     for rel_type, edges in edges_by_type.items():
         rel_def = ctx.ontology.relations[rel_type]
         created = await graph_store.create_edges(ctx, rel_def.edge_collection, edges)
         stats[rel_type] = DiscoveryStats(
-            total_source=len(edges), edges_created=created,
+            total_source=len(edges),
+            edges_created=created,
         )
     return stats

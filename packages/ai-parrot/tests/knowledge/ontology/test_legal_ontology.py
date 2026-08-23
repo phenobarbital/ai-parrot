@@ -1,4 +1,5 @@
 """Merge and shape tests for the legal ontology domain layer (TASK-2370, TASK-2371)."""
+
 import pytest
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.parser import OntologyParser
@@ -8,10 +9,12 @@ from parrot.knowledge.ontology.validators import validate_aql
 @pytest.fixture
 def merged():
     defaults = OntologyParser.get_defaults_dir()
-    return OntologyMerger().merge([
-        defaults / "base.ontology.yaml",
-        defaults / "domains" / "legal.ontology.yaml",
-    ])
+    return OntologyMerger().merge(
+        [
+            defaults / "base.ontology.yaml",
+            defaults / "domains" / "legal.ontology.yaml",
+        ]
+    )
 
 
 class TestLegalOntology:

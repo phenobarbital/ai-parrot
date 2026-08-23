@@ -10,6 +10,7 @@ BOE arrives as structured records (parsed by
 ``ExtractDataSource`` and never touches ``GraphIndexBuilder`` or
 ``UniversalNode``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,9 +26,7 @@ from .parser import parse_consolidated
 # Both entities declared in legal.ontology.yaml source from "boe"; their
 # property sets are disjoint by design, so the requested `fields` tell us
 # which entity is being refreshed for a given extract() call.
-_NORMA_FIELDS = frozenset(
-    {"boe_id", "titulo", "rango", "fecha_disposicion", "fecha_publicacion", "materia_id"}
-)
+_NORMA_FIELDS = frozenset({"boe_id", "titulo", "rango", "fecha_disposicion", "fecha_publicacion", "materia_id"})
 _ARTICULO_FIELDS = frozenset({"articulo_key", "norma_ref", "numero", "versions"})
 
 

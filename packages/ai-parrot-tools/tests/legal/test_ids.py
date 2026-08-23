@@ -1,4 +1,5 @@
 """Unit tests for BOE identifier utilities (TASK-2369)."""
+
 import pytest
 from parrot_tools.legal.ids import article_key, is_valid_boe_id, normalize_boe_id
 
@@ -27,7 +28,4 @@ class TestBOEIds:
         assert article_key("BOE-A-2015-10566", "5 bis") == "BOE-A-2015-10566:5_bis"
 
     def test_article_key_collapses_and_trims_whitespace(self):
-        assert (
-            article_key("BOE-A-2015-10566", "  10   ter ")
-            == "BOE-A-2015-10566:10_ter"
-        )
+        assert article_key("BOE-A-2015-10566", "  10   ter ") == "BOE-A-2015-10566:10_ter"
