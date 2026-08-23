@@ -109,7 +109,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -118,9 +118,10 @@
       "parallel": false,
       "parallelism_notes": "HARD BLOCKER: FEAT-450 (wiki-namespaces) must be merged first. Documentation + operator step only, no production code expected.",
       "assigned_to": null,
-      "started_at": "2026-08-23T02:06:07+00:00",
+      "started_at": null,
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2382-register-notes-wiki-namespace.md"
+      "file": "sdd/tasks/active/TASK-2382-register-notes-wiki-namespace.md",
+      "blocked_reason": "HARD BLOCKER: FEAT-450 (wiki-namespaces) not yet merged to dev (verified 2026-08-23: git merge-base --is-ancestor feat-450-wiki-namespaces origin/dev fails). Per this task file own instructions, sdd-worker stopped and did not implement it. Re-run once FEAT-450 is merged."
     }
   ]
 }
