@@ -8,7 +8,6 @@ Supports:
 - Group commands (/ask)
 - Channel posts (optional)
 """
-
 from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Callable
 from pathlib import Path
 import asyncio
@@ -172,7 +171,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         discovered = self._callback_registry.discover_from_agent(self.agent)
         if discovered:
             self.logger.info(
-                f"Discovered {discovered} callback handler(s): " f"{', '.join(self._callback_registry.prefixes)}"
+                f"Discovered {discovered} callback handler(s): "
+                f"{', '.join(self._callback_registry.prefixes)}"
             )
         # Give the agent a back-reference to the wrapper (for proactive messaging)
         if hasattr(self.agent, "set_wrapper"):
@@ -252,7 +252,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # ─── Operator Commands (FEAT-210) — before generic text handler ───
         # Must be registered here, before the generic message handler so that
         # Command("x") filters catch these commands before the text handler does.
-        if getattr(self.config, "enable_operator_commands", True):
+        if getattr(self.config, 'enable_operator_commands', True):
             self._register_operator_commands()
 
         # ─── Group/Channel Handlers (must be before generic text handler) ───
@@ -275,7 +275,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Channel post handlers (if enabled)
         if self.config.enable_channel_posts:
-            self.router.channel_post.register(self.handle_channel_mention, BotMentionedFilter())
+            self.router.channel_post.register(
+                self.handle_channel_mention, BotMentionedFilter()
+            )
 
         # ─── Private Chat Handlers ───
 
@@ -317,7 +319,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # ─── NEW: Callback Query Handler ───
         if self._callback_registry:
             self.router.callback_query.register(self._handle_callback_query)
-            self.logger.info(f"Registered callback_query handler for prefixes: " f"{self._callback_registry.prefixes}")
+            self.logger.info(
+                f"Registered callback_query handler for prefixes: "
+                f"{self._callback_registry.prefixes}"
+            )
 
     def _register_custom_command(self, cmd_name: str, method_name: str) -> None:
         """Register a custom command that calls an agent method."""
@@ -330,11 +335,16 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
     def _add_platform_commands(self, entries: list[tuple[str, str]]) -> None:
         """Record wrapper-registered commands for menus and /commands."""
-        existing = {self._sanitize_command_name(command) for command, _description in self._platform_commands}
+        existing = {
+            self._sanitize_command_name(command)
+            for command, _description in self._platform_commands
+        }
         for command, description in entries:
             normalized = self._sanitize_command_name(command)
             if normalized is None:
-                self.logger.warning("Skipping platform command with invalid name %r", command)
+                self.logger.warning(
+                    "Skipping platform command with invalid name %r", command
+                )
                 continue
             if normalized in existing:
                 continue
@@ -349,7 +359,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         was not passed to the wrapper, or the key is absent, the commands are
         simply not registered — legacy deployments are unaffected.
         """
-        oauth_manager = self.app.get("jira_oauth_manager") if self.app is not None else None
+        oauth_manager = (
+            self.app.get("jira_oauth_manager") if self.app is not None else None
+        )
         if oauth_manager is None:
             return
         from .jira_commands import register_jira_commands
@@ -363,11 +375,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             if session is not None:
                 session.clear_jira_auth()
                 self.logger.info(
-                    "Cleared in-memory Jira identity for tg:%s after " "/disconnect_jira",
+                    "Cleared in-memory Jira identity for tg:%s after "
+                    "/disconnect_jira",
                     telegram_id,
                 )
 
-        register_jira_commands(self.router, oauth_manager, session_clearer=_clear_jira_session)
+        register_jira_commands(
+            self.router, oauth_manager, session_clearer=_clear_jira_session
+        )
         self._add_platform_commands(
             [
                 ("connect_jira", "Connect Jira account"),
@@ -376,7 +391,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             ]
         )
         self.logger.info(
-            "Registered Jira OAuth commands: /connect_jira, " "/disconnect_jira, /jira_status",
+            "Registered Jira OAuth commands: /connect_jira, "
+            "/disconnect_jira, /jira_status",
         )
 
         # Expose a stamper so the OAuth callback route can surface the
@@ -444,7 +460,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             ]
         )
         self.logger.info(
-            "Registered Office365 commands: /connect_office365, " "/disconnect_office365, /office365_status",
+            "Registered Office365 commands: /connect_office365, "
+            "/disconnect_office365, /office365_status",
         )
 
     def _register_mcp_commands(self) -> None:
@@ -477,7 +494,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             ]
         )
         self.logger.info(
-            "Registered MCP commands: /add_mcp, /list_mcp, /remove_mcp " "(vault-backed credentials)",
+            "Registered MCP commands: /add_mcp, /list_mcp, /remove_mcp "
+            "(vault-backed credentials)",
         )
 
     def _get_user_tool_manager(self, session: TelegramUserSession) -> Optional[Any]:
@@ -531,7 +549,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             if action.provider == "jira":
                 if jira_oauth is None:
                     self.logger.warning(
-                        "post_auth_actions includes 'jira' but " "app['jira_oauth_manager'] is not set; skipping."
+                        "post_auth_actions includes 'jira' but "
+                        "app['jira_oauth_manager'] is not set; skipping."
                     )
                     continue
                 if db_pool is None or redis_client is None:
@@ -573,7 +592,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     def _is_combined_payload(self, data: Dict[str, Any]) -> bool:
         """Return True if ``data`` contains any configured secondary auth key."""
         actions = getattr(self.config, "post_auth_actions", None) or []
-        return any(action.provider in data and isinstance(data.get(action.provider), dict) for action in actions)
+        return any(
+            action.provider in data and isinstance(data.get(action.provider), dict)
+            for action in actions
+        )
 
     async def _build_next_auth_url(
         self,
@@ -610,7 +632,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     # FEAT-109: Auth strategy selection (extracted from __init__)
     # ------------------------------------------------------------------
 
-    def _build_auth_strategy(self, config: "TelegramAgentConfig") -> Optional[AbstractAuthStrategy]:
+    def _build_auth_strategy(
+        self, config: "TelegramAgentConfig"
+    ) -> Optional[AbstractAuthStrategy]:
         """Build and return the appropriate auth strategy for this agent.
 
         Routes based on the normalized ``config.auth_methods`` list:
@@ -659,7 +683,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         if not strategies:
             self.logger.warning(
-                "Agent '%s': auth_methods listed but no valid strategy built; " "authentication disabled.",
+                "Agent '%s': auth_methods listed but no valid strategy built; "
+                "authentication disabled.",
                 getattr(config, "name", "?"),
             )
             return None
@@ -673,7 +698,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             login_page_url=getattr(config, "login_page_url", None) or "",
         )
 
-    def _build_single_strategy(self, method: str, config: "TelegramAgentConfig") -> Optional[AbstractAuthStrategy]:
+    def _build_single_strategy(
+        self, method: str, config: "TelegramAgentConfig"
+    ) -> Optional[AbstractAuthStrategy]:
         """Build a single-method auth strategy instance.
 
         Args:
@@ -705,7 +732,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return OAuth2AuthStrategy(config)
 
         self.logger.warning(
-            "Agent '%s': auth_method '%s' listed but required config missing; " "skipping.",
+            "Agent '%s': auth_method '%s' listed but required config missing; "
+            "skipping.",
             getattr(config, "name", "?"),
             method,
         )
@@ -735,27 +763,39 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         if _parse_mode == "keyword":
                             kwargs = self._parse_kwargs(raw_args)
                             result = (
-                                await _method(**kwargs) if asyncio.iscoroutinefunction(_method) else _method(**kwargs)
+                                await _method(**kwargs)
+                                if asyncio.iscoroutinefunction(_method)
+                                else _method(**kwargs)
                             )
                         elif _parse_mode == "positional":
                             args = raw_args.split() if raw_args else []
-                            result = await _method(*args) if asyncio.iscoroutinefunction(_method) else _method(*args)
+                            result = (
+                                await _method(*args)
+                                if asyncio.iscoroutinefunction(_method)
+                                else _method(*args)
+                            )
                         else:  # raw
                             result = (
-                                await _method(raw_args) if asyncio.iscoroutinefunction(_method) else _method(raw_args)
+                                await _method(raw_args)
+                                if asyncio.iscoroutinefunction(_method)
+                                else _method(raw_args)
                             )
                         typing_task.cancel()
                         parsed = self._parse_response(result)
                         await self._send_parsed_response(message, parsed)
                 except Exception as e:
                     typing_task.cancel()
-                    self.logger.error(f"Error in agent command /{cmd_name}: {e}", exc_info=True)
+                    self.logger.error(
+                        f"Error in agent command /{cmd_name}: {e}", exc_info=True
+                    )
                     await message.answer(f"❌ Error: {str(e)[:200]}")
                 finally:
                     typing_task.cancel()
 
             self.router.message.register(agent_cmd_handler, Command(cmd_name))
-            self.logger.info(f"Registered agent command /{cmd_name} -> {cmd_info['method_name']}()")
+            self.logger.info(
+                f"Registered agent command /{cmd_name} -> {cmd_info['method_name']}()"
+            )
 
     # Telegram Bot API constraints for BotCommand entries.
     # A single invalid entry makes the whole `setMyCommands` call 400, which
@@ -794,7 +834,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             text = fallback
         return text[: cls._CMD_DESC_MAX]
 
-    def _make_bot_command(self, command: Any, description: Any, *, fallback_desc: str) -> Optional[BotCommand]:
+    def _make_bot_command(
+        self, command: Any, description: Any, *, fallback_desc: str
+    ) -> Optional[BotCommand]:
         """Build a validated ``BotCommand`` or return ``None`` with a warning.
 
         Returning ``None`` for a single bad entry lets the caller skip it
@@ -802,7 +844,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         """
         name = self._sanitize_command_name(command)
         if name is None:
-            self.logger.warning("Dropping Telegram command with invalid name %r", command)
+            self.logger.warning(
+                "Dropping Telegram command with invalid name %r", command
+            )
             return None
         if not self._CMD_NAME_RE.match(name):
             self.logger.warning(
@@ -835,7 +879,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             ("call", "Call an agent method (legacy)"),
         ]
         # Authentication commands (when enabled)
-        auth_strategy = getattr(self, "_auth_strategy", None) or getattr(self, "_auth_client", None)
+        auth_strategy = getattr(self, "_auth_strategy", None) or getattr(
+            self, "_auth_client", None
+        )
         if self.config.enable_login and auth_strategy:
             methods = getattr(self.config, "auth_methods", [])
             if len(methods) > 1:
@@ -860,14 +906,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             raw_entries.append(
                 (
                     cmd_info.get("command", ""),
-                    cmd_info.get("description", "") or f"Calls {cmd_info.get('method_name', 'agent method')}()",
+                    cmd_info.get("description", "")
+                    or f"Calls {cmd_info.get('method_name', 'agent method')}()",
                 )
             )
 
         commands: list[BotCommand] = []
         seen: set[str] = set()
         for raw_name, raw_desc in raw_entries:
-            fallback = f"/{raw_name}" if isinstance(raw_name, str) and raw_name else "Command"
+            fallback = (
+                f"/{raw_name}" if isinstance(raw_name, str) and raw_name else "Command"
+            )
             bc = self._make_bot_command(raw_name, raw_desc, fallback_desc=fallback)
             if bc is None:
                 continue
@@ -935,7 +984,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             registered = bot_commands
         except Exception:
             self.logger.warning(
-                "Batch set_my_commands failed (%d commands: %s). " "Falling back to per-command registration.",
+                "Batch set_my_commands failed (%d commands: %s). "
+                "Falling back to per-command registration.",
                 len(bot_commands),
                 cmd_names,
                 exc_info=True,
@@ -1015,9 +1065,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             True only when operator commands are enabled AND chat_id is in
             the configured operator_chat_ids allowlist.
         """
-        if not getattr(self.config, "enable_operator_commands", True):
+        if not getattr(self.config, 'enable_operator_commands', True):
             return False
-        operator_ids = getattr(self.config, "operator_chat_ids", None)
+        operator_ids = getattr(self.config, 'operator_chat_ids', None)
         if not operator_ids:
             return False
         return chat_id in operator_ids
@@ -1073,13 +1123,18 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if session.jira_email:
             jira_parts.append(f"<email>{session.jira_email}</email>")
         if session.jira_display_name:
-            jira_parts.append(f"<display_name>{session.jira_display_name}</display_name>")
+            jira_parts.append(
+                f"<display_name>{session.jira_display_name}</display_name>"
+            )
 
         if not parts and not jira_parts:
             return question
         identity = "".join(parts)
         jira_block = f'<jira>{"".join(jira_parts)}</jira>' if jira_parts else ""
-        return f"{question}\n\n" f'<user_context source="telegram">{identity}{jira_block}</user_context>'
+        return (
+            f"{question}\n\n"
+            f'<user_context source="telegram">{identity}{jira_block}</user_context>'
+        )
 
     # ─── FEAT-120: Message ID cache helpers ──────────────────────────────
 
@@ -1359,7 +1414,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 pass
             except Exception:  # noqa: BLE001
                 self.logger.exception(
-                    "post_login hook raised for user %s; continuing with " "best-effort isolation.",
+                    "post_login hook raised for user %s; continuing with "
+                    "best-effort isolation.",
                     session.user_id,
                 )
 
@@ -1373,7 +1429,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 try:
                     from .mcp_commands import rehydrate_user_mcp_servers
 
-                    count = await rehydrate_user_mcp_servers(user_tm, f"tg:{session.telegram_id}")
+                    count = await rehydrate_user_mcp_servers(
+                        user_tm, f"tg:{session.telegram_id}"
+                    )
                     if count:
                         self.logger.info(
                             "Rehydrated %d MCP server(s) for tg:%s",
@@ -1432,7 +1490,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         agent, user_tm = await self._resolve_agent_for_request(session, message=message)
         chat_id = message.chat.id if message is not None else None
-        permission_context = self._build_permission_context(session, chat_id=chat_id, bot_id=self._bot_id)
+        permission_context = self._build_permission_context(
+            session, chat_id=chat_id, bot_id=self._bot_id
+        )
         enriched = self._enrich_question(question, session)
 
         timeout = self.config.agent_timeout
@@ -1552,10 +1612,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         from parrot.integrations.a2ui_resume import ChannelDeepLinkResume
 
         service = DeepLinkService(redis)
-        self._deeplink_resume = ChannelDeepLinkResume(service, channel="telegram", logger=self.logger)
+        self._deeplink_resume = ChannelDeepLinkResume(
+            service, channel="telegram", logger=self.logger
+        )
         return self._deeplink_resume
 
-    async def _handle_deeplink_resume(self, message: Message, token: str) -> bool:
+    async def _handle_deeplink_resume(
+        self, message: Message, token: str
+    ) -> bool:
         """Consume an A2UI deep-link token and inject the action into the original session.
 
         Returns True if the deep link was handled (success or error), False if the
@@ -1565,7 +1629,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         resume_helper = self._get_deeplink_resume()
         if resume_helper is None:
             self.logger.warning(
-                "A2UI deep-link token received but Redis is unavailable; " "falling back to normal /start."
+                "A2UI deep-link token received but Redis is unavailable; "
+                "falling back to normal /start."
             )
             return False
 
@@ -1576,7 +1641,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             async def inject(*, session_id, user_id, agent_id, query):
                 session.session_id = session_id
-                return await self._invoke_agent(session, query, memory=memory, message=message)
+                return await self._invoke_agent(
+                    session, query, memory=memory, message=message
+                )
 
             outcome = await resume_helper.resume(token, inject=inject)
             typing_task.cancel()
@@ -1589,7 +1656,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         except Exception as exc:
             typing_task.cancel()
             self.logger.error("A2UI deep-link resume failed: %s", exc, exc_info=True)
-            await message.answer("Something went wrong resuming your action. Please try again.")
+            await message.answer(
+                "Something went wrong resuming your action. Please try again."
+            )
         return True
 
     async def handle_start(self, message: Message) -> None:
@@ -1670,7 +1739,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 help_text += f"/{cmd_info['command']} - {cmd_info['description']}\n"
 
         # Operator commands — visible only to operators (FEAT-210)
-        if getattr(self.config, "enable_operator_commands", True) and self._is_operator(chat_id):
+        if getattr(self.config, 'enable_operator_commands', True) and self._is_operator(chat_id):
             help_text += (
                 "\n*Operator Commands:*\n"
                 "/health - Heartbeat liveness\n"
@@ -1713,7 +1782,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         parts = text.split(maxsplit=2)  # ["/call", "method", "args..."]
 
         if len(parts) < 2:
-            await message.answer("Usage: /call <method_name> [arguments]\n\n" "Example: /call custom_report Q4 2024")
+            await message.answer(
+                "Usage: /call <method_name> [arguments]\n\n"
+                "Example: /call custom_report Q4 2024"
+            )
             return
 
         method_name = parts[1]
@@ -1729,7 +1801,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         agent_name = getattr(self.agent, "name", self.config.name)
-        agent_desc = getattr(self.agent, "description", "") or "No description available."
+        agent_desc = (
+            getattr(self.agent, "description", "") or "No description available."
+        )
         agent_id = getattr(self.agent, "agent_id", "") or ""
         model = getattr(self.agent, "model", "") or ""
 
@@ -1846,7 +1920,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         tool = self.agent.tool_manager.get_tool(tool_name)
         if not tool:
             await message.answer(
-                f"❌ Tool `{tool_name}` not found.\n" f"Use /tool without arguments to see available tools."
+                f"❌ Tool `{tool_name}` not found.\n"
+                f"Use /tool without arguments to see available tools."
             )
             return
 
@@ -1866,7 +1941,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 )
             typing_task.cancel()
             parsed = self._parse_response(response)
-            await self._send_parsed_response(message, parsed, prefix=f"🔧 *{tool_name}* result:\n\n")
+            await self._send_parsed_response(
+                message, parsed, prefix=f"🔧 *{tool_name}* result:\n\n"
+            )
         except Exception as e:
             typing_task.cancel()
             self.logger.error("Error calling tool %s: %s", tool_name, e, exc_info=True)
@@ -1997,7 +2074,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 try:
                     listed = await registry.list_skills()
                     match = next(
-                        (s for s in listed if s.get("name", "").lower() == skill_name.lower()),
+                        (
+                            s for s in listed
+                            if s.get("name", "").lower() == skill_name.lower()
+                        ),
                         None,
                     )
                     if match:
@@ -2007,14 +2087,19 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         if skill_def is None and db_skill_body is None:
             await message.answer(
-                f"❌ Skill `{skill_name}` not found.\n" f"Use /skill without arguments to see available skills."
+                f"❌ Skill `{skill_name}` not found.\n"
+                f"Use /skill without arguments to see available skills."
             )
             return
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
-            self.logger.info("Chat %s: Invoking skill %s(%s)", chat_id, skill_name, args_text)
-            question = args_text or (f"Apply the '{skill_name}' skill.")
+            self.logger.info(
+                "Chat %s: Invoking skill %s(%s)", chat_id, skill_name, args_text
+            )
+            question = args_text or (
+                f"Apply the '{skill_name}' skill."
+            )
             with telegram_chat_scope(chat_id):
                 if skill_def is not None:
                     # Activate the file skill so its body is injected as a
@@ -2026,18 +2111,27 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     )
                 else:
                     # DB-backed skill: prepend the skill body as instruction.
-                    framed = f"Follow these skill instructions:\n\n{db_skill_body}\n\n" f"User request: {question}"
+                    framed = (
+                        f"Follow these skill instructions:\n\n{db_skill_body}\n\n"
+                        f"User request: {question}"
+                    )
                     response = await self.agent.ask(
                         framed,
                         output_mode=OutputMode.TELEGRAM,
                     )
             typing_task.cancel()
             parsed = self._parse_response(response)
-            await self._send_parsed_response(message, parsed, prefix=f"🧠 *{skill_name}* skill:\n\n")
+            await self._send_parsed_response(
+                message, parsed, prefix=f"🧠 *{skill_name}* skill:\n\n"
+            )
         except Exception as e:
             typing_task.cancel()
-            self.logger.error("Error invoking skill %s: %s", skill_name, e, exc_info=True)
-            await message.answer(f"❌ Error invoking skill `{skill_name}`: {str(e)[:200]}")
+            self.logger.error(
+                "Error invoking skill %s: %s", skill_name, e, exc_info=True
+            )
+            await message.answer(
+                f"❌ Error invoking skill `{skill_name}`: {str(e)[:200]}"
+            )
         finally:
             typing_task.cancel()
 
@@ -2090,7 +2184,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             typing_task.cancel()
             parsed = self._parse_response(result)
-            await self._send_parsed_response(message, parsed, prefix=f"✅ *{method_name}* result:\n\n")
+            await self._send_parsed_response(
+                message, parsed, prefix=f"✅ *{method_name}* result:\n\n"
+            )
         except Exception as e:
             typing_task.cancel()
             self.logger.error("Error in /function %s: %s", method_name, e, exc_info=True)
@@ -2114,7 +2210,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         if not question:
             await message.answer(
-                "Usage: /question <your question>\n\n" "Sends your question directly to the LLM (no tool usage)."
+                "Usage: /question <your question>\n\n"
+                "Sends your question directly to the LLM (no tool usage)."
             )
             return
 
@@ -2174,7 +2271,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Previously gated on isinstance(BasicAuthStrategy); now uses the
         # declarative capability flag introduced by TASK-777.
         kwargs: Dict[str, Any] = {}
-        if getattr(self._auth_strategy, "supports_post_auth_chain", False) and len(self._post_auth_registry) > 0:
+        if (
+            getattr(self._auth_strategy, "supports_post_auth_chain", False)
+            and len(self._post_auth_registry) > 0
+        ):
             session = self._get_user_session(message)
             next_url, required = await self._build_next_auth_url(session)
             if next_url:
@@ -2182,7 +2282,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 kwargs["next_auth_required"] = required
 
         try:
-            keyboard = await self._auth_strategy.build_login_keyboard(self.config, state, **kwargs)
+            keyboard = await self._auth_strategy.build_login_keyboard(
+                self.config, state, **kwargs
+            )
         except ValueError as exc:
             await message.answer(f"❌ Login configuration error: {exc}")
             return
@@ -2192,18 +2294,26 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # so that composite deployments get an appropriate message.
         methods = getattr(self.config, "auth_methods", [])
         if len(methods) > 1:
-            prompt_text = "🔐 *Sign In*\n\n" "Tap the button below and choose how you'd like to authenticate."
+            prompt_text = (
+                "🔐 *Sign In*\n\n"
+                "Tap the button below and choose how you'd like to authenticate."
+            )
         elif "azure" in methods:
             prompt_text = (
-                "\U0001f510 *Azure SSO*\n\n" "Tap the button below to sign in with your organization's Azure account."
+                "\U0001f510 *Azure SSO*\n\n"
+                "Tap the button below to sign in with your organization's Azure account."
             )
         elif "oauth2" in methods:
             provider = getattr(self.config, "oauth2_provider", "oauth2") or "oauth2"
             provider = provider.capitalize()
-            prompt_text = f"🔐 *{provider} Authentication*\n\n" f"Tap the button below to sign in with {provider}."
+            prompt_text = (
+                f"🔐 *{provider} Authentication*\n\n"
+                f"Tap the button below to sign in with {provider}."
+            )
         else:
             prompt_text = (
-                "🔐 *Navigator Authentication*\n\n" "Tap the button below to sign in with your Navigator credentials."
+                "🔐 *Navigator Authentication*\n\n"
+                "Tap the button below to sign in with your Navigator credentials."
             )
 
         await message.answer(prompt_text, reply_markup=keyboard, parse_mode="Markdown")
@@ -2223,7 +2333,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         old_name = session.display_name
         session.clear_auth()
         await message.answer(
-            f"👋 Logged out. Was authenticated as *{old_name}*.\n" "Your Telegram ID will be used for identification.",
+            f"👋 Logged out. Was authenticated as *{old_name}*.\n"
+            "Your Telegram ID will be used for identification.",
             parse_mode="Markdown",
         )
 
@@ -2255,7 +2366,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # handle_callback; the combined-auth path was designed for single-
         # method BasicAuth and cannot correctly reconstruct basic_data when
         # a composite is active (it strips auth_method before delegating).
-        if self._is_combined_payload(data) and not isinstance(self._auth_strategy, CompositeAuthStrategy):
+        if self._is_combined_payload(data) and not isinstance(
+            self._auth_strategy, CompositeAuthStrategy
+        ):
             await self._handle_combined_auth(message, data, session)
             return
 
@@ -2300,7 +2413,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             message; BasicAuth session persists.
         """
         basic_data = data.get("basic_auth") or {
-            k: v for k, v in data.items() if k not in {action.provider for action in self.config.post_auth_actions}
+            k: v
+            for k, v in data.items()
+            if k not in {action.provider for action in self.config.post_auth_actions}
         }
         basic_ok = await self._auth_strategy.handle_callback(basic_data, session)
         if not basic_ok:
@@ -2347,7 +2462,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             session.clear_auth()
             providers_str = ", ".join(failures_required)
             await message.answer(
-                "❌ Login requires authorization for " f"*{providers_str}*. Please try again with /login.",
+                "❌ Login requires authorization for "
+                f"*{providers_str}*. Please try again with /login.",
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
@@ -2367,7 +2483,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         # Full success.
-        linked = ", ".join(action.provider for action in self.config.post_auth_actions if action.provider in data)
+        linked = ", ".join(
+            action.provider
+            for action in self.config.post_auth_actions
+            if action.provider in data
+        )
         await message.answer(
             f"✅ Authenticated as *{session.display_name}*.\n" f"🔗 Connected: {linked}.",
             parse_mode="Markdown",
@@ -2375,7 +2495,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         )
         await self._initialize_user_context(session, message=message)
 
-    async def _execute_agent_method(self, message: Message, method_name: str, args_text: str) -> None:
+    async def _execute_agent_method(
+        self, message: Message, method_name: str, args_text: str
+    ) -> None:
         """Execute an agent method and send the result."""
         chat_id = message.chat.id
 
@@ -2415,7 +2537,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # Format and send result using parsed response
             parsed = self._parse_response(result)
-            await self._send_parsed_response(message, parsed, prefix=f"✅ *{method_name}* result:\n\n")
+            await self._send_parsed_response(
+                message, parsed, prefix=f"✅ *{method_name}* result:\n\n"
+            )
 
         except Exception as e:
             typing_task.cancel()
@@ -2429,11 +2553,15 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         try:
             while True:
                 try:
-                    await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                    await self.bot.send_chat_action(
+                        chat_id=chat_id, action=ChatAction.TYPING
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    self.logger.warning("Typing indicator failed for chat %s: %s", chat_id, exc)
+                    self.logger.warning(
+                        "Typing indicator failed for chat %s: %s", chat_id, exc
+                    )
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
@@ -2506,7 +2634,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     await self._state_manager.clear_suspended_state(
                         integration_id="telegram",
                         chat_id=str(chat_id),
-                        user_id=str(message.from_user.id) if message.from_user else "unknown",
+                        user_id=str(message.from_user.id)
+                        if message.from_user
+                        else "unknown",
                     )
 
                 parsed = self._parse_response(result.result)
@@ -2515,7 +2645,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 return
 
             # Call the agent
-            self.logger.info(f"Chat {chat_id} (user {session.user_id}): " f"Processing message: {user_text[:50]}...")
+            self.logger.info(
+                f"Chat {chat_id} (user {session.user_id}): "
+                f"Processing message: {user_text[:50]}..."
+            )
 
             # FEAT-120: cache user message ID for reply context lookup
             self._cache_message_id(chat_id, message.message_id, user_text)
@@ -2561,9 +2694,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 # Agent requested human input — send prompt and suspend
                 typing_task.cancel()
                 prompt_text = str(e)
-                self.logger.info(f"Chat {chat_id}: Agent requested handoff. Prompt: {prompt_text[:80]}...")
+                self.logger.info(
+                    f"Chat {chat_id}: Agent requested handoff. Prompt: {prompt_text[:80]}..."
+                )
                 await message.answer(prompt_text)
-                user_id_str = str(message.from_user.id) if message.from_user else "unknown"
+                user_id_str = (
+                    str(message.from_user.id) if message.from_user else "unknown"
+                )
                 await self._state_manager.set_suspended_state(
                     integration_id="telegram",
                     chat_id=str(chat_id),
@@ -2579,11 +2716,15 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 )
                 typing_task.cancel()
                 await message.answer(
-                    "⏱️ Your request is taking too long. " "Please try again or simplify the question."
+                    "⏱️ Your request is taking too long. "
+                    "Please try again or simplify the question."
                 )
             else:
                 self.logger.error("Error processing message: %s", e, exc_info=True)
-                await message.answer("❌ Sorry, I encountered an error processing your request. " "Please try again.")
+                await message.answer(
+                    "❌ Sorry, I encountered an error processing your request. "
+                    "Please try again."
+                )
         finally:
             # Ensure typing indicator is stopped
             typing_task.cancel()
@@ -2623,7 +2764,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         """
         await self._process_group_query(message, is_channel=True)
 
-    async def _process_group_query(self, message: Message, is_channel: bool = False) -> None:
+    async def _process_group_query(
+        self, message: Message, is_channel: bool = False
+    ) -> None:
         """
         Process a group/channel query and send the response.
 
@@ -2646,7 +2789,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if not query:
             if is_channel:
                 return  # Silent skip for empty channel mentions
-            await message.reply("You mentioned me but didn't ask anything! " "Try: @me your question here")
+            await message.reply(
+                "You mentioned me but didn't ask anything! "
+                "Try: @me your question here"
+            )
             return
 
         # Start typing indicator
@@ -2681,13 +2827,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     agent_registry=getattr(self.agent, "registry", None),
                 )
 
-                result = await orchestrator.resume_agent(session_id=session_id, user_input=query, state=suspended_state)
+                result = await orchestrator.resume_agent(
+                    session_id=session_id, user_input=query, state=suspended_state
+                )
 
                 if result.success:
                     await self._state_manager.clear_suspended_state(
                         integration_id="telegram",
                         chat_id=str(chat_id),
-                        user_id=str(message.from_user.id) if message.from_user else "unknown",
+                        user_id=str(message.from_user.id)
+                        if message.from_user
+                        else "unknown",
                     )
 
                 parsed = self._parse_response(result.result)
@@ -2695,7 +2845,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 await self._send_parsed_response(message, parsed)
                 return
 
-            self.logger.info(f"Chat {chat_id} (user {session.user_id}): " f"Processing group query: {query[:50]}...")
+            self.logger.info(
+                f"Chat {chat_id} (user {session.user_id}): "
+                f"Processing group query: {query[:50]}..."
+            )
 
             # Call the agent
             with telegram_chat_scope(chat_id):
@@ -2722,9 +2875,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             if isinstance(e, HumanInteractionInterrupt):
                 typing_task.cancel()
                 prompt_text = str(e)
-                self.logger.info(f"Chat {chat_id}: Agent requested handoff in group. Prompt: {prompt_text[:80]}...")
+                self.logger.info(
+                    f"Chat {chat_id}: Agent requested handoff in group. Prompt: {prompt_text[:80]}..."
+                )
                 await message.reply(prompt_text)
-                user_id_str = str(message.from_user.id) if message.from_user else "unknown"
+                user_id_str = (
+                    str(message.from_user.id) if message.from_user else "unknown"
+                )
                 await self._state_manager.set_suspended_state(
                     integration_id="telegram",
                     chat_id=str(chat_id),
@@ -2735,11 +2892,15 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             else:
                 typing_task.cancel()
                 self.logger.error("Error processing group query: %s", e, exc_info=True)
-                await message.reply("❌ Sorry, I encountered an error processing your request.")
+                await message.reply(
+                    "❌ Sorry, I encountered an error processing your request."
+                )
         finally:
             typing_task.cancel()
 
-    async def _send_group_response(self, message: Message, parsed: ParsedResponse) -> None:
+    async def _send_group_response(
+        self, message: Message, parsed: ParsedResponse
+    ) -> None:
         """
         Send response to a group message.
 
@@ -2752,7 +2913,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             # Send as regular message
             await self._send_parsed_response(message, parsed)
 
-    async def _send_parsed_response_reply(self, message: Message, parsed: ParsedResponse, prefix: str = "") -> None:
+    async def _send_parsed_response_reply(
+        self, message: Message, parsed: ParsedResponse, prefix: str = ""
+    ) -> None:
         """Send parsed response as a reply to the original message."""
         # Build the text response
         text_parts = []
@@ -2774,7 +2937,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if parsed.has_code:
             lang = parsed.code_language or ""
             if self.config.use_html:
-                code_block = f'<pre><code class="language-{lang}">\n{parsed.code}\n</code></pre>'
+                code_block = (
+                    f'<pre><code class="language-{lang}">\n{parsed.code}\n</code></pre>'
+                )
             else:
                 code_block = f"```{lang}\n{parsed.code}\n```"
             text_parts.append(code_block)
@@ -2834,7 +2999,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 await self._send_safe_message(message, chunk, parse_mode=parse_mode)
             await asyncio.sleep(0.3)  # Rate limiting
 
-    async def _send_safe_reply(self, message: Message, text: str, parse_mode: Optional[str] = None) -> None:
+    async def _send_safe_reply(
+        self, message: Message, text: str, parse_mode: Optional[str] = None
+    ) -> None:
         """Send a reply with retry logic for markdown errors."""
 
         async def _reply(txt, mode):
@@ -2859,7 +3026,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         await self._try_send_message(_answer, text, parse_mode)
         return sent
 
-    async def _try_send_message(self, send_func: Callable, text: str, parse_mode: Optional[str] = None) -> None:
+    async def _try_send_message(
+        self, send_func: Callable, text: str, parse_mode: Optional[str] = None
+    ) -> None:
         """
         Attempt to send a message with error handling and plaintext fallback.
 
@@ -2882,7 +3051,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 # Strip all markup and deliver as plain text.
                 plain = self._strip_markdown(safe_text)
                 self.logger.info(
-                    f"Telegram parse error (mode={parse_mode}), " f"falling back to plain text. Error: {e}"
+                    f"Telegram parse error (mode={parse_mode}), "
+                    f"falling back to plain text. Error: {e}"
                 )
                 try:
                     await send_func(plain, None)
@@ -2912,8 +3082,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     image_path = chart.path
 
                     # SVG not supported by Telegram - convert to PNG
-                    if chart.format.lower() == "svg" or image_path.suffix.lower() == ".svg":
-                        self.logger.info(f"Converting SVG chart to PNG: {chart.path.name}")
+                    if (
+                        chart.format.lower() == "svg"
+                        or image_path.suffix.lower() == ".svg"
+                    ):
+                        self.logger.info(
+                            f"Converting SVG chart to PNG: {chart.path.name}"
+                        )
                         image_path = await self._convert_svg_to_png(chart.path)
 
                     caption = f"📊 {chart.title}"
@@ -2971,7 +3146,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         caption=media_path.name[:200],
                     )
                 else:
-                    await self.bot.send_document(chat_id=chat_id, document=FSInputFile(media_path))
+                    await self.bot.send_document(
+                        chat_id=chat_id, document=FSInputFile(media_path)
+                    )
                 await asyncio.sleep(0.3)
             except Exception as e:
                 self.logger.error("Failed to send media %s: %s", media_path, e)
@@ -3002,7 +3179,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             # Download photo to a persistent temp file
             file = await self.bot.get_file(photo.file_id)
             tg_ext = Path(file.file_path).suffix if file.file_path else ".jpg"
-            tmp = tempfile.NamedTemporaryFile(suffix=tg_ext, prefix="tg_photo_", delete=False)
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=tg_ext, prefix="tg_photo_", delete=False
+            )
             await self.bot.download_file(file.file_path, tmp)
             tmp.close()
             tmp_path = Path(tmp.name)
@@ -3089,7 +3268,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return
 
         document = message.document
-        caption = message.caption or f"Process this document: {document.file_name or 'unnamed'}"
+        caption = (
+            message.caption
+            or f"Process this document: {document.file_name or 'unnamed'}"
+        )
 
         # Size validation — skip when file_size is None (unknown, attempt download)
         max_bytes = self.config.max_document_size_mb * 1024 * 1024
@@ -3113,7 +3295,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             else:
                 ext = ".bin"
 
-            tmp = tempfile.NamedTemporaryFile(suffix=ext, prefix="tg_doc_", delete=False)
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=ext, prefix="tg_doc_", delete=False
+            )
             await self.bot.download_file(file.file_path, tmp)
             tmp.close()
             tmp_path = Path(tmp.name)
@@ -3236,7 +3420,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             7. Delete temp file in finally block
         """
         chat_id = message.chat.id
-        content_type = "voice" if message.voice else "audio" if message.audio else "unknown"
+        content_type = (
+            "voice" if message.voice else "audio" if message.audio else "unknown"
+        )
         self.logger.info(
             "Chat %d: Received %s message (handle_voice entered)",
             chat_id,
@@ -3244,7 +3430,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         )
 
         if not self._is_authorized(chat_id):
-            self.logger.warning("Chat %d: Voice message rejected — not authorized", chat_id)
+            self.logger.warning(
+                "Chat %d: Voice message rejected — not authorized", chat_id
+            )
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
@@ -3258,7 +3446,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Skip if voice is not configured
         if not self.config.voice_enabled:
             self.logger.info(
-                "Chat %d: Voice message ignored — voice_config not enabled " "(voice_config=%s)",
+                "Chat %d: Voice message ignored — voice_config not enabled "
+                "(voice_config=%s)",
                 chat_id,
                 self.config.voice_config,
             )
@@ -3307,7 +3496,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Duration pre-check (avoids large downloads for over-limit audio)
         if duration > voice_config.max_audio_duration_seconds:
             await message.answer(
-                f"⏱ Audio too long ({duration}s). " f"Maximum is {voice_config.max_audio_duration_seconds}s."
+                f"⏱ Audio too long ({duration}s). "
+                f"Maximum is {voice_config.max_audio_duration_seconds}s."
             )
             return
 
@@ -3324,14 +3514,18 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             # Download audio from Telegram CDN to a temp file
             self.logger.debug("Chat %d: Calling bot.get_file(%s)", chat_id, file_id)
             file = await self.bot.get_file(file_id)
-            self.logger.debug("Chat %d: Got file — file_path=%s", chat_id, file.file_path)
+            self.logger.debug(
+                "Chat %d: Got file — file_path=%s", chat_id, file.file_path
+            )
             if file.file_path:
                 # Use the actual extension from the Telegram file path when available
                 tg_ext = Path(file.file_path).suffix
                 if tg_ext:
                     suffix = tg_ext
 
-            tmp = tempfile.NamedTemporaryFile(suffix=suffix, prefix="tg_voice_", delete=False)
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=suffix, prefix="tg_voice_", delete=False
+            )
             await self.bot.download_file(file.file_path, tmp)
             tmp.close()
             tmp_path = Path(tmp.name)
@@ -3350,7 +3544,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 voice_config.language,
             )
             transcriber = self._get_transcriber()
-            result = await transcriber.transcribe_file(tmp_path, language=voice_config.language)
+            result = await transcriber.transcribe_file(
+                tmp_path, language=voice_config.language
+            )
             self.logger.info(
                 "Chat %d: Transcription complete — text='%s' (lang=%s, %.1fs, %dms)",
                 chat_id,
@@ -3364,7 +3560,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             if not result.text.strip():
                 await message.answer(
-                    "❓ Sorry, I couldn't understand the audio. " "Please try again or send a text message."
+                    "❓ Sorry, I couldn't understand the audio. "
+                    "Please try again or send a text message."
                 )
                 return
 
@@ -3405,7 +3602,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             # FEAT-213: TTS voice reply — synthesize and send as voice note
             # when the input was a voice message and TTS is enabled.
-            if self.config.tts_enabled and self.config.reply_in_kind and parsed.text and parsed.text.strip():
+            if (
+                self.config.tts_enabled
+                and self.config.reply_in_kind
+                and parsed.text
+                and parsed.text.strip()
+            ):
                 try:
                     import io
                     from aiogram.types import BufferedInputFile
@@ -3422,7 +3624,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         )
                     else:
                         # FIX-2: Show RECORD_VOICE indicator while synthesizing.
-                        await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+                        await self.bot.send_chat_action(
+                            chat_id=chat_id, action=ChatAction.RECORD_VOICE
+                        )
 
                         synth = await self._get_synthesizer()
                         # FIX-4: forward language from config
@@ -3446,14 +3650,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                             seg.export(buf, format="ogg", codec="libopus")
                             return buf.getvalue()
 
-                        ogg_bytes = await asyncio.to_thread(_convert_pcm_to_ogg, tts_result.audio)
+                        ogg_bytes = await asyncio.to_thread(
+                            _convert_pcm_to_ogg, tts_result.audio
+                        )
 
                         await self.bot.send_voice(
                             chat_id,
                             BufferedInputFile(ogg_bytes, filename="reply.ogg"),
                         )
                         self.logger.info(
-                            "Chat %d: Sent voice reply (%d bytes OGG/Opus, " "source mime=%s)",
+                            "Chat %d: Sent voice reply (%d bytes OGG/Opus, "
+                            "source mime=%s)",
                             chat_id,
                             len(ogg_bytes),
                             tts_result.mime_format,
@@ -3489,7 +3696,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 exc,
                 exc_info=True,
             )
-            await message.answer("❌ Sorry, I couldn't process that voice message. Please try again.")
+            await message.answer(
+                "❌ Sorry, I couldn't process that voice message. Please try again."
+            )
         finally:
             typing_task.cancel()
             # Always clean up the temp file
@@ -3497,7 +3706,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 try:
                     tmp_path.unlink()
                 except OSError as exc:
-                    self.logger.debug("Could not delete temp file %s: %s", tmp_path, exc)
+                    self.logger.debug(
+                        "Could not delete temp file %s: %s", tmp_path, exc
+                    )
 
     def _parse_response(self, response: Any) -> ParsedResponse:
         """Parse agent response into structured content."""
@@ -3584,7 +3795,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 self.logger.warning("wand failed: %s", e)
 
             raise ImportError(
-                "No SVG conversion backend available. " "Install one of: cairosvg, svglib, or wand (imagemagick)"
+                "No SVG conversion backend available. "
+                "Install one of: cairosvg, svglib, or wand (imagemagick)"
             )
 
         try:
@@ -3631,7 +3843,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if parsed.has_code:
             lang = parsed.code_language or ""
             if self.config.use_html:
-                code_block = f'<pre><code class="language-{lang}">\n{parsed.code}\n</code></pre>'
+                code_block = (
+                    f'<pre><code class="language-{lang}">\n{parsed.code}\n</code></pre>'
+                )
             else:
                 code_block = f"```{lang}\n{parsed.code}\n```"
             text_parts.append(code_block)
@@ -3650,7 +3864,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         parse_mode = "HTML" if self.config.use_html else "Markdown"
 
         if full_text.strip():
-            first_sent = await self._send_long_message(message, full_text, parse_mode=parse_mode)
+            first_sent = await self._send_long_message(
+                message, full_text, parse_mode=parse_mode
+            )
 
         # Send charts
         if hasattr(parsed, "charts") and parsed.charts:
@@ -3659,8 +3875,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     image_path = chart.path
 
                     # SVG not supported by Telegram - convert to PNG
-                    if chart.format.lower() == "svg" or image_path.suffix.lower() == ".svg":
-                        self.logger.info(f"Converting SVG chart to PNG: {chart.path.name}")
+                    if (
+                        chart.format.lower() == "svg"
+                        or image_path.suffix.lower() == ".svg"
+                    ):
+                        self.logger.info(
+                            f"Converting SVG chart to PNG: {chart.path.name}"
+                        )
                         image_path = await self._convert_svg_to_png(chart.path)
 
                     # Send chart with title as caption
@@ -3723,7 +3944,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         caption=media_path.name[:200],
                     )
                 else:
-                    await self.bot.send_document(chat_id=chat_id, document=FSInputFile(media_path))
+                    await self.bot.send_document(
+                        chat_id=chat_id, document=FSInputFile(media_path)
+                    )
                 await asyncio.sleep(0.3)  # Rate limiting
             except Exception as e:
                 self.logger.error("Failed to send media %s: %s", media_path, e)
@@ -3806,7 +4029,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         try:
             # Convert markdown to HTML with basic extras
-            html = markdown2.markdown(text, extras=["strike", "tables", "fenced-code-blocks", "code-friendly"])
+            html = markdown2.markdown(
+                text, extras=["strike", "tables", "fenced-code-blocks", "code-friendly"]
+            )
 
             # Clean up HTML for Telegram
 
@@ -3918,7 +4143,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         match = self._callback_registry.match(data)
         if not match:
             self.logger.warning(
-                f"Unhandled callback_data: {data!r} " f"(known prefixes: {self._callback_registry.prefixes})"
+                f"Unhandled callback_data: {data!r} "
+                f"(known prefixes: {self._callback_registry.prefixes})"
             )
             await callback_query.answer("⚠️ Unknown action")
             return
@@ -3932,7 +4158,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             payload=payload,
             chat_id=(callback_query.message.chat.id if callback_query.message else 0),
             user_id=user.id if user else 0,
-            message_id=(callback_query.message.message_id if callback_query.message else 0),
+            message_id=(
+                callback_query.message.message_id if callback_query.message else 0
+            ),
             username=user.username if user else None,
             first_name=user.first_name if user else None,
             raw_query=callback_query,
@@ -4058,7 +4286,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             if isinstance(keyboard, dict) and "inline_keyboard" in keyboard:
                 markup = InlineKeyboardMarkup(
                     inline_keyboard=[
-                        [InlineKeyboardButton(**btn) for btn in row] for row in keyboard["inline_keyboard"]
+                        [InlineKeyboardButton(**btn) for btn in row]
+                        for row in keyboard["inline_keyboard"]
                     ]
                 )
             else:
@@ -4072,5 +4301,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             )
             return msg.message_id
         except Exception as e:
-            self.logger.error(f"Failed to send interactive message to chat {chat_id}: {e}")
+            self.logger.error(
+                f"Failed to send interactive message to chat {chat_id}: {e}"
+            )
             return None
