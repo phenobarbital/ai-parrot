@@ -483,6 +483,17 @@ class Authenticate(BrowserAction):
     method: Literal["form", "basic", "oauth", "custom"] = Field(default="form", description="Authentication method")
     username: Optional[str] = Field(default=None, description="Username/email")
     password: Optional[str] = Field(default=None, description="Password")
+    credential_provider: Optional[str] = Field(
+        default=None,
+        description=(
+            "Provider identifier resolved through a CredentialBroker "
+            "(e.g. 'hooba') instead of reading the literal username/password "
+            "fields. When set, credential resolution is broker-only — a "
+            "missing resolver, a resolver failure, or a broker miss all "
+            "fail the step closed rather than falling back to the literal "
+            "fields (FEAT-453 Module 4, Goal G3: no credentials in plan JSON)."
+        ),
+    )
     username_selector: str = Field(default="#username", description="CSS selector for username field")
     enter_on_username: bool = Field(
         default=False,
@@ -833,6 +844,35 @@ def create_action(action_type: str, **kwargs) -> BrowserAction:
         )
 
     return action_class(**kwargs)
+
+
+def lint_literal_credentials(steps: List[Dict[str, Any]]) -> List[str]:
+    """Flag any ``authenticate`` step in *steps* carrying a literal password.
+
+    A plans-directory lint (FEAT-453 Module 4, Goal G3): credentials must
+    never enter plan JSON — the external, private plans directory (Module 6)
+    is a file the engine merely reads, so a literal password there is a
+    secret at rest. Intended to be run over every plan file in that
+    directory before it is loaded.
+
+    Args:
+        steps: Raw step dicts, as stored in ``ScrapingPlan.steps`` (untyped
+            at rest — this lint does not require ``validate_steps()``).
+
+    Returns:
+        One warning message per offending step (step index named, never the
+        credential value itself). An empty list means the plan is clean.
+    """
+    warnings: List[str] = []
+    for idx, raw_step in enumerate(steps):
+        if not isinstance(raw_step, dict) or raw_step.get("action") != "authenticate":
+            continue
+        if raw_step.get("password"):
+            warnings.append(
+                f"step {idx}: Authenticate carries a literal 'password' — "
+                "use credential_provider (CredentialBroker) instead"
+            )
+    return warnings
 
 
 @dataclass

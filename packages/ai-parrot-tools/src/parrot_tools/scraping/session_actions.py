@@ -99,9 +99,21 @@ async def exec_authenticate(
         dispatch_step_fn: Callback used to dispatch ``custom_steps`` (required
             for ``method in ("oauth", "custom")``).
         credential_resolver: Optional async callable resolving credentials
-            (e.g. via a broker) instead of reading ``action.username``/
-            ``action.password`` literally. When it returns a non-``None``
-            tuple, those values take precedence over the literal fields.
+            (e.g. via a ``CredentialBroker``) instead of reading
+            ``action.username``/``action.password`` literally.
+
+            When ``action.credential_provider`` is set (TASK-2389, Decision
+            G3 — "no credentials in plan JSON"), *only* the resolver is
+            consulted: a missing resolver, a resolver exception, a ``None``
+            result (broker miss), or an incomplete credential all fail the
+            step closed — the literal fields are **never** read in this
+            case, even as a fallback.
+
+            When ``action.credential_provider`` is unset, *credential_resolver*
+            is an optional soft override (pre-TASK-2389 behaviour, kept for
+            back-compat): a non-``None`` result overrides the literal fields
+            field-by-field; a ``None`` result or no resolver at all falls
+            back to the literal fields.
         timeout: Timeout (seconds) applied to navigation/wait steps.
 
     Returns:
@@ -121,10 +133,40 @@ async def exec_authenticate(
                 "credentials; failing the authenticate step closed"
             )
             return False
-        if resolved is not None:
+
+        if action.credential_provider:
+            # Broker-backed resolution — literal fields must NEVER be used,
+            # not even as a fallback (TASK-2389, Goal G3).
+            if resolved is None:
+                logger.error(
+                    "Credential broker resolution failed for provider=%r; "
+                    "failing closed rather than falling back to literal "
+                    "fields",
+                    action.credential_provider,
+                )
+                return False
+            resolved_username, resolved_password = resolved
+            if not resolved_username or not resolved_password:
+                logger.error(
+                    "Credential broker returned an incomplete credential "
+                    "for provider=%r; failing closed",
+                    action.credential_provider,
+                )
+                return False
+            username, password = resolved_username, resolved_password
+        elif resolved is not None:
+            # No provider configured — soft override path (pre-TASK-2389
+            # behaviour): only overrides the fields the resolver supplied.
             resolved_username, resolved_password = resolved
             username = resolved_username if resolved_username is not None else username
             password = resolved_password if resolved_password is not None else password
+    elif action.credential_provider:
+        logger.error(
+            "Authenticate.credential_provider=%r requires a credential_resolver; "
+            "failing closed (never falling back to literal fields)",
+            action.credential_provider,
+        )
+        return False
 
     try:
         if action.method == "form":
