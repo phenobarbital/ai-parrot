@@ -110,7 +110,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -120,8 +120,8 @@
       "parallelism_notes": "Imports BOEDataSource from TASK-2373 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2374-registration-and-sync-entrypoint.md"
+      "completed_at": "2026-08-23T01:42:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2374-registration-and-sync-entrypoint.md"
     },
     {
       "id": "TASK-2375",
