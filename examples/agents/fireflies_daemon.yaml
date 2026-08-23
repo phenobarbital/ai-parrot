@@ -28,6 +28,9 @@ agent:
     vault_path: "${OBSIDIAN_VAULT_PATH:-~/vaults/notes}"   # env var with fallback
     meetings_folder: "meetings"
     # fireflies_token: FIREFLIES_API_KEY  # bare-name shorthand also works
+    # default_filters:                    # FEAT-441: standing scope applied to every scheduled sync
+    #   mine: true                        # e.g. only sync meetings you organized/attended
+    #   # channel_id: "<fireflies-channel-id>"
 
 # Expose sync + summarize so parrot attach /invoke and MCP invoke_method
 # can call them.  Remove a method from this list to block external access.

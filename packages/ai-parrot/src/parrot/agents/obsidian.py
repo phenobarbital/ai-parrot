@@ -8,19 +8,21 @@ under the 'meetings' folder. Supports two operations:
 
 The sync operation is safe to schedule every 8 hours via /schedule.
 """
+import logging
 import os
 import re
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-import logging
+from typing import Any, Dict, List, Literal, Optional
+
 from navconfig import config
+from pydantic import BaseModel, EmailStr, Field
+
 from parrot.bots.agent import BasicAgent
-from parrot.tools.obsidian import ObsidianToolkit
-from parrot.models.responses import AIMessage
 from parrot.interfaces.obsidian.okf import project_okf_block
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
-
+from parrot.models.responses import AIMessage
+from parrot.tools.obsidian import ObsidianToolkit
 
 #: Leading markdown/ordered list markers the LLM may already have written
 #: ("- ", "* ", "1. ", "2) ") — stripped so
@@ -43,6 +45,107 @@ def _strip_list_marker(line: str) -> str:
 
 
 logger = logging.getLogger(__name__)
+
+
+class FirefliesFilters(BaseModel):
+    """Structured, validated filters over the ``fireflies_get_transcripts``
+    MCP tool.
+
+    Field names are snake_case; :func:`_filters_to_tool_args` maps them to
+    the tool's camelCase parameter names before the call. See
+    ``sdd/specs/fireflies-mcp-improvements.spec.md`` §2 (Data Models).
+    """
+
+    from_date: Optional[str] = None
+    """ISO-8601 date string (e.g. ``"2023-01-01"``) → tool's ``fromDate``."""
+
+    to_date: Optional[str] = None
+    """ISO-8601 date string → tool's ``toDate``."""
+
+    keyword: Optional[str] = Field(default=None, max_length=255)
+    """Keyword to search for in meeting content."""
+
+    scope: Literal["title", "sentences", "all"] = "all"
+    """Keyword-search scope."""
+
+    organizers: List[EmailStr] = Field(default_factory=list)
+    """Organizer email addresses to filter by."""
+
+    participants: List[EmailStr] = Field(default_factory=list)
+    """Participant email addresses to filter by."""
+
+    mine: Optional[bool] = None
+    """Only include meetings owned by the authenticated user."""
+
+    channel_id: Optional[str] = None
+    """Raw Fireflies channel/folder ID → tool's ``channelId``. No
+    name-to-ID resolution is performed (out of scope)."""
+
+
+def _filters_to_tool_args(filters: "FirefliesFilters") -> Dict[str, Any]:
+    """Map a :class:`FirefliesFilters` instance to ``fireflies_get_transcripts``
+    tool arguments.
+
+    Converts snake_case field names to the tool's camelCase parameter names
+    and omits any field left at its unset/default value, so the resulting
+    dict only carries filters the caller actually specified.
+
+    Args:
+        filters: The filters to convert.
+
+    Returns:
+        A dict suitable for merging into the ``fireflies_get_transcripts``
+        tool-call arguments.
+    """
+    args: Dict[str, Any] = {}
+    if filters.from_date is not None:
+        args["fromDate"] = filters.from_date
+    if filters.to_date is not None:
+        args["toDate"] = filters.to_date
+    if filters.keyword is not None:
+        args["keyword"] = filters.keyword
+    if filters.scope != "all":
+        args["scope"] = filters.scope
+    if filters.organizers:
+        args["organizers"] = [str(email) for email in filters.organizers]
+    if filters.participants:
+        args["participants"] = [str(email) for email in filters.participants]
+    if filters.mine is not None:
+        args["mine"] = filters.mine
+    if filters.channel_id is not None:
+        args["channelId"] = filters.channel_id
+    return args
+
+
+def _merge_filters(
+    default: Optional["FirefliesFilters"],
+    call: Optional["FirefliesFilters"],
+) -> Optional["FirefliesFilters"]:
+    """Merge agent-level default filters with a per-call override.
+
+    Per-call fields win wherever the caller explicitly set them; the
+    agent's ``default_filters`` fills in any field the call left at its
+    model-default (unset) value. Field-by-field, never whole-object — see
+    ``sdd/specs/fireflies-mcp-improvements.spec.md`` §7 Known Risks.
+
+    Args:
+        default: The agent's standing ``default_filters`` (may be ``None``).
+        call: The per-call ``filters`` argument (may be ``None``).
+
+    Returns:
+        The merged filters, or ``None`` if both inputs are ``None``.
+    """
+    if default is None and call is None:
+        return None
+    if default is None:
+        return call
+    if call is None:
+        return default
+
+    merged = default.model_dump()
+    call_explicit = call.model_dump(exclude_defaults=True)
+    merged.update(call_explicit)
+    return FirefliesFilters(**merged)
 
 
 class FirefliesObsidianAgent(BasicAgent):
@@ -73,12 +176,19 @@ class FirefliesObsidianAgent(BasicAgent):
     #: used to detect notes that were already summarized.
     ANALYSIS_HEADING: str = "## Analysis"
 
+    #: Heading written by :meth:`_append_fireflies_summary_section` when
+    #: ``include_summary=True``. Kept distinct from :attr:`ANALYSIS_HEADING`
+    #: — this is Fireflies' own native summary (unparsed, verbatim), never
+    #: the agent's LLM-derived analysis.
+    FIREFLIES_SUMMARY_HEADING: str = "## Fireflies Summary"
+
     def __init__(
         self,
         name: str = "FirefliesObsidianSync",
         vault_path: Optional[str | Path] = None,
         fireflies_token: Optional[str] = None,
         meetings_folder: str = "meetings",
+        default_filters: Optional["FirefliesFilters"] = None,
         **kwargs,
     ):
         """Initialize the Fireflies→Obsidian sync agent.
@@ -88,6 +198,10 @@ class FirefliesObsidianAgent(BasicAgent):
             vault_path: Path to Obsidian vault (e.g. ~/vaults/notes)
             fireflies_token: Fireflies.ai API token (if None, will prompt)
             meetings_folder: Subfolder in vault to store meetings (default: 'meetings')
+            default_filters: Standing :class:`FirefliesFilters` scope applied
+                to every :meth:`sync_fireflies_transcripts` call (e.g. for a
+                scheduled daemon). Per-call ``filters`` override this
+                field-by-field — see :func:`_merge_filters`.
             **kwargs: Forwarded to Agent.__init__()
         """
         super().__init__(name=name, **kwargs)
@@ -100,6 +214,7 @@ class FirefliesObsidianAgent(BasicAgent):
             self.vault_path = Path(env_vault) if env_vault else Path.home() / "vaults" / "notes"
         self.fireflies_token = fireflies_token
         self.meetings_folder = meetings_folder
+        self.default_filters = default_filters
 
         # Initialize Obsidian toolkit
         self.obsidian_toolkit = ObsidianToolkit(
@@ -173,14 +288,44 @@ class FirefliesObsidianAgent(BasicAgent):
         self,
         limit: int = 10,
         skip_existing: bool = True,
+        filters: Optional["FirefliesFilters"] = None,
+        include_summary: bool = False,
     ) -> Dict[str, Any]:
         """Fetch latest Fireflies transcripts and save to Obsidian.
 
         **Deterministic**: No LLM involved, safe to schedule every 8 hours.
 
+        ``limit`` is the **total** number of transcripts desired across all
+        pages, not a page size — the underlying ``fireflies_get_transcripts``
+        tool caps a single call at 50, so any ``limit > 50`` is satisfied by
+        multiple internal calls (``skip=0,50,100,…``) until either ``limit``
+        is reached or the API returns a short/exhausted page.
+
+        **No pagination ceiling is enforced.** A broad or unfiltered
+        ``limit``/``filters`` combination against a large Fireflies account
+        can issue many sequential tool calls in one invocation — this is an
+        accepted, explicit design choice (see
+        ``sdd/specs/fireflies-mcp-improvements.spec.md`` §7 Known Risks), not
+        a bug. Scope ``filters``/``limit`` accordingly for large accounts.
+
         Args:
-            limit: Max transcripts to fetch (default: 10)
+            limit: Max transcripts to fetch, total across all pages (default: 10)
             skip_existing: Skip transcripts already in vault (default: True)
+            filters: Optional :class:`FirefliesFilters` to scope which
+                meetings are fetched (date range, keyword/scope,
+                organizer/participant emails, mine-only, channel). Merged
+                with ``self.default_filters`` — per-call fields here win over
+                the agent's default on the same field (see
+                :func:`_merge_filters`).
+            include_summary: When ``True``, additionally fetch Fireflies'
+                native per-meeting summary (``fireflies_get_summary``) and
+                append it verbatim as a :attr:`FIREFLIES_SUMMARY_HEADING`
+                section (no field-level parsing). Default ``False`` — zero
+                extra API calls unless explicitly requested. A failed
+                summary fetch soft-fails: the note is still created from
+                the transcript alone and still counts under
+                ``report["synced"]``; the failure is recorded in
+                ``report["errors"]``.
 
         Returns:
             Dict with:
@@ -204,24 +349,48 @@ class FirefliesObsidianAgent(BasicAgent):
         try:
             await self._ensure_fireflies_mcp()
 
-            # List transcripts via Fireflies MCP tool
-            self.logger.info(f"Fetching latest {limit} Fireflies transcripts...")
-
-            # Call Fireflies get_transcripts tool
-            tool_result = await self._call_fireflies_tool(
-                "fireflies_get_transcripts",
-                {"limit": limit}
+            effective_filters = _merge_filters(self.default_filters, filters)
+            filter_args = (
+                _filters_to_tool_args(effective_filters) if effective_filters else {}
             )
 
-            # Extract transcripts from ToolResult
-            # The result.result field contains formatted text with transcript metadata
-            if not tool_result or not tool_result.success:
-                self.logger.info("No transcripts found or API error")
-                return report
+            # Fetch transcripts, paginating transparently past the tool's
+            # 50-per-call cap until `limit` is reached or the API is
+            # exhausted. `limit` means "total across all pages."
+            self.logger.info(f"Fetching latest {limit} Fireflies transcripts...")
+            transcripts: List[Dict[str, Any]] = []
+            skip = 0
+            while len(transcripts) < limit:
+                page_limit = min(50, limit - len(transcripts))
+                if page_limit <= 0:
+                    break
+                try:
+                    tool_result = await self._call_fireflies_tool(
+                        "fireflies_get_transcripts",
+                        {**filter_args, "limit": page_limit, "skip": skip},
+                    )
+                except Exception as e:
+                    report["errors"].append(
+                        f"Page fetch failed (skip={skip}): {e}"
+                    )
+                    self.logger.error(
+                        f"Fireflies page fetch failed (skip={skip}): {e}"
+                    )
+                    break
 
-            # Parse the result text to extract individual transcripts
-            self.logger.debug(f"Fireflies API response: {tool_result.result[:200]}...")
-            transcripts = self._parse_fireflies_response(tool_result.result)
+                if not tool_result or not tool_result.success:
+                    self.logger.info("No transcripts found or API error")
+                    break
+
+                self.logger.debug(
+                    f"Fireflies API response: {tool_result.result[:200]}..."
+                )
+                page = self._parse_fireflies_response(tool_result.result)
+                transcripts.extend(page)
+                if len(page) < page_limit:
+                    break  # API exhausted — fewer results than requested
+                skip += page_limit
+
             if not transcripts:
                 self.logger.info("No transcripts found")
                 return report
@@ -258,6 +427,36 @@ class FirefliesObsidianAgent(BasicAgent):
                         else str(transcript_result)
                     )
 
+                    # Optionally fetch Fireflies' native summary. Additive
+                    # to the transcript above, never a replacement — a
+                    # failure here is soft: the note is still created from
+                    # the transcript alone.
+                    has_summary = False
+                    if include_summary:
+                        try:
+                            summary_result = await self._call_fireflies_tool(
+                                "fireflies_get_summary",
+                                {"transcriptId": transcript_id}
+                            )
+                            if summary_result and getattr(summary_result, "success", False):
+                                summary_text = (
+                                    summary_result.result
+                                    if hasattr(summary_result, "result")
+                                    else str(summary_result)
+                                )
+                                transcript_text = self._append_fireflies_summary_section(
+                                    transcript_text, summary_text
+                                )
+                                has_summary = True
+                            else:
+                                report["errors"].append(
+                                    f"Fireflies summary unavailable for {transcript_id}"
+                                )
+                        except Exception as e:
+                            error_msg = f"Failed to fetch Fireflies summary for {transcript_id}: {e}"
+                            self.logger.error(error_msg)
+                            report["errors"].append(error_msg)
+
                     # Save to Obsidian
                     metadata = {
                         "fireflies_id": transcript_id,
@@ -279,6 +478,8 @@ class FirefliesObsidianAgent(BasicAgent):
 
                     # Merge OKF metadata with basic Fireflies metadata
                     merged_metadata = {**metadata, **okf_metadata}
+                    if has_summary:
+                        merged_metadata["has_fireflies_summary"] = True
 
                     await self.obsidian_toolkit.create_note(
                         path=f"{self.meetings_folder}/{note_title}.md",
@@ -865,3 +1066,30 @@ Be concise and actionable."""
 """
 
         return transcript + analysis
+
+    @staticmethod
+    def _append_fireflies_summary_section(transcript: str, summary_text: str) -> str:
+        """Append Fireflies' native summary as a distinct, unparsed section.
+
+        Kept separate from :meth:`_append_analysis_section`'s
+        :attr:`ANALYSIS_HEADING` block — this is Fireflies' own computed
+        summary (verbatim, no field-level parsing), not the agent's
+        LLM-derived analysis. See
+        ``sdd/specs/fireflies-mcp-improvements.spec.md`` §2/§7 for why this
+        response is never parsed into discrete fields.
+
+        Args:
+            transcript: The note content built so far (transcript text).
+            summary_text: Raw ``fireflies_get_summary`` response text.
+
+        Returns:
+            ``transcript`` with the Fireflies Summary section appended.
+        """
+        return f"""{transcript}
+
+---
+
+{FirefliesObsidianAgent.FIREFLIES_SUMMARY_HEADING}
+
+{summary_text}
+"""
