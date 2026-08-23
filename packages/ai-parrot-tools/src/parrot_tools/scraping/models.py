@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any, Union, Literal, Annotated
 from abc import ABC
 import time
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 from bs4 import BeautifulSoup
 
 
@@ -716,11 +716,25 @@ ActionList = Annotated[
     Field(discriminator='action')
 ]
 
+# Public alias (FEAT-453 Module 3, G2) — the SAME discriminated union used
+# above for Loop/Conditional's nested ``actions``, exposed under a clearer
+# public name for ScrapingPlan.validate_steps(). Deliberately not a second,
+# duplicate Union member list: a new BrowserAction subclass only needs to be
+# added to ActionList once, and both call sites stay in sync automatically.
+BrowserActionUnion = ActionList
+
 
 # Update Forward References (required for Loop containing BrowserAction)
 Authenticate.model_rebuild()
 Loop.model_rebuild()
 Conditional.model_rebuild()
+
+#: Reusable TypeAdapter for validating a raw step dict against
+#: BrowserActionUnion without constructing an intermediate model. Built
+#: after the model_rebuild() calls above so the forward-ref-bearing members
+#: (Authenticate.custom_steps, Loop.actions, Conditional.actions_if_*) have
+#: a fully resolved schema before the adapter is constructed.
+BrowserActionTypeAdapter: TypeAdapter[Any] = TypeAdapter(BrowserActionUnion)
 
 # Map action types to classes
 ACTION_MAP = {
