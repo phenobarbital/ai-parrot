@@ -16,6 +16,7 @@ base_branch: dev
 research_state: sdd/state/FEAT-453/
 created: 2026-08-23
 updated: 2026-08-23
+revision: 2 — FEAT-452 merged (PR #1209) after Q&A; F009/C11 revised, C15 added
 ---
 
 # FEAT-453 — Hooba browser-automation agent
@@ -24,6 +25,14 @@ updated: 2026-08-23
 > **Confidence**: medium
 > **Source**: `inline`
 > **Audit**: [`sdd/state/FEAT-453/`](../state/FEAT-453/)
+
+> **Revision 2 — 2026-08-23T10:02Z.** FEAT-452 `audio-notes-obsidian` merged to
+> `dev` (PR #1209) minutes after the Q&A closed. Finding F009 is revised, claim
+> C11 is restated as a merged dependency, new finding F011 and claim C15 record
+> the concrete reuse contract, and one integration risk is retired. The premise
+> behind the U4 answer ("wiki layer last, to avoid a parallel design") has
+> dissolved; the single-feature decision stands. Overall confidence is unchanged
+> at `medium` — C13 and C14 are what bound it.
 
 ---
 
@@ -125,7 +134,10 @@ stand up a gestoría wiki plane sequenced after FEAT-452.
 | 22 | `packages/ai-parrot-loaders/src/parrot_loaders/excel.py` | `ExcelLoader` | — | bank-statement ingestion, per-sheet and per-row document modes | F008 |
 | 23 | `packages/ai-parrot/src/parrot/auth/broker.py` | `CredentialBroker`, `_VaultStaticKeyResolver` | 51-326 | where Hooba credentials should come from | F010 |
 | 24 | `packages/ai-parrot/src/parrot/security/audit_ledger.py` | audit ledger | — | signed append-only record of credential use — evidence trail for automated filings | F010 |
-| 25 | `sdd/tasks/index/audio-notes-obsidian.json` | FEAT-452 task index | 1-40 | in-flight feature building the same domain-plane + vault-mirror + Telegram-scoping pattern | F009 |
+| 25 | `sdd/tasks/index/audio-notes-obsidian.json` | FEAT-452 task index | 1-40 | **merged** feature (PR #1209, all 6 tasks done) delivering the domain-plane + vault-mirror + Telegram-scoping pattern | F009 |
+| 26 | `sdd/tasks/completed/TASK-2379-notes-wiki-plane.md` | Module 2 — separate wiki plane | 14-50 | the reuse recipe: a second plane needs its own `LLMWikiToolkit` instance, not a parameter | F011 |
+| 27 | `sdd/tasks/completed/TASK-2382-register-notes-wiki-namespace.md` | Module 6 — namespace registration | 14-52 | `wikitoolkit ns add` (kind `store`/`sqlite`) is what makes a plane queryable; operator step, not agent code | F011 |
+| 28 | `sdd/specs/wiki-namespaces.spec.md` | FEAT-450 wiki namespaces | — | the merged federation layer TASK-2382 consumed | F009 |
 
 ### 2.2 Constraints Discovered
 
@@ -163,9 +175,18 @@ stand up a gestoría wiki plane sequenced after FEAT-452.
   config dict nothing consumes. *Implication*: calendar event tooling is
   net-new and self-contained. *Evidence*: F008
 
-- **FEAT-452 owns the domain-plane + vault-mirror pattern and is in flight.**
-  All six tasks are `in-progress` on `dev`. *Implication*: FEAT-453's wiki layer
-  must consume that mechanism, not race it. *Evidence*: F009, F006
+- **FEAT-452 has merged — its domain-plane pattern is a dependency to consume,
+  not a race.** PR #1209 landed all six tasks on `dev`; `notes` is registered as
+  a `store`-kind namespace pointing at `../../.parrot/wikis/notes`. The reuse
+  contract is: a **separate `LLMWikiToolkit` instance** (a parameter change
+  raises `ValueError` at `wiki/toolkit.py:1205` — its docstring says "Construct a
+  separate LLMWikiToolkit for each wiki instance"), an idempotent `create_wiki()`
+  bootstrap wired into `configure()`, then a one-off operator
+  `wikitoolkit ns add` of kind `store`/`sqlite`. *Implication*: the collision
+  risk that motivated sequencing the wiki layer last is gone; and namespace
+  registration belongs in the runbook as an acceptance criterion, because
+  TASK-2382 explicitly excludes auto-registering from agent code. An unregistered
+  plane is *written but unqueryable*. *Evidence*: F009, F011, F006
 
 - **Channel authorization is a financial control here.**
   `WhatsAppAgentWrapper._is_authorized(wa_id)` and `telegram/auth.py` gate who
@@ -208,8 +229,10 @@ themselves are stable, not in flux. *Evidence*: F003, F007
   through `FlowExecutor`.
 - **Google Calendar event tools** — `create_event` / `list_events` /
   `update_event` on the existing `GoogleClient` OAuth foundation.
-- **A `gestoria` wiki plane + Obsidian folder mirror**, built on FEAT-452's
-  namespace registration mechanism — *sequenced last* (see U4).
+- **A `gestoria` wiki plane + Obsidian folder mirror**, instantiating FEAT-452's
+  now-merged recipe: a dedicated `_build_gestoria_wiki_toolkit()` with its own
+  storage root, PageIndex plane and `tenant_id`, an idempotent `create_wiki()` in
+  `configure()`, and a one-off operator `wikitoolkit ns add --kind store`.
 - **A scheduler callback** for the Spanish tax calendar (modelo 303/130/390 and
   similar), driving both the calendar events and Telegram reminders.
 - **An `ExecutionPlan`** for iterative bank-Excel expense ingestion, triggered
@@ -238,8 +261,10 @@ themselves are stable, not in flux. *Evidence*: F003, F007
 - Building a WikiToolkit or ObsidianToolkit — both exist and are complete (C6).
 - Building WhatsApp or Telegram transport — both ship (C7).
 - Building scheduling machinery — only a new callback is needed (C8).
-- Re-implementing the domain wiki plane / vault mirror that FEAT-452 is
-  landing (C11).
+- Re-implementing the domain wiki plane / vault mirror — FEAT-452 **merged** it;
+  FEAT-453 instantiates the recipe for `gestoria` (C11, C15).
+- Injecting a `FederatedWikiStore` into `LLMWikiToolkit`, or auto-registering the
+  namespace from agent code — both explicit FEAT-452 non-goals (C15).
 - Concurrent fan-out over one authenticated Hooba session — FEAT-222 deferred
   debt (C3).
 - The Meta Cloud API WhatsApp path (`WhatsAppAgentWrapper`) — the personal-number
@@ -257,6 +282,11 @@ themselves are stable, not in flux. *Evidence*: F003, F007
   browser session, as `ObsidianToolkit` does for the vault. *Evidence*: F006
 - **`run_id` + `plan_status`/`plan_artifacts` polling** for long operations, so a
   chat turn is not held open during an expense import. *Evidence*: F005, F007
+- **FEAT-452 domain-plane recipe** — a dedicated `_build_<x>_wiki_toolkit()`
+  near-copy pointed at its own storage root with its own PageIndex plane and
+  `tenant_id`, idempotent `create_wiki()` in `configure()`, best-effort failure
+  leaving the handle `None`, then operator-side `wikitoolkit ns add`.
+  *Evidence*: F011
 
 ### Integration Risks
 
@@ -271,8 +301,10 @@ themselves are stable, not in flux. *Evidence*: F003, F007
 - **Hooba adds MFA/CAPTCHA later** → fall back to `ChromeConfig.user_data_dir`
   persistent profile plus `await_human` on session expiry. U1 confirms no MFA
   today, but this is a third-party site that can change. *Evidence*: F004, F010
-- **FEAT-453 and FEAT-452 produce two incompatible domain-plane designs** →
-  sequence the wiki layer last, after FEAT-452 merges (U4). *Evidence*: F009
+- **The `gestoria` plane is built but never registered as a namespace**, silently
+  accumulating accounting knowledge nobody can query → `wikitoolkit ns add` is an
+  operator runbook step *and* an explicit acceptance criterion. This is precisely
+  the failure TASK-2382 was written to prevent. *Evidence*: F011
 - **Scope is 3-4 deliverables under one FEAT-ID** → accepted as one feature per
   U4, mitigated by task ordering rather than by splitting.
 
@@ -292,12 +324,13 @@ themselves are stable, not in flux. *Evidence*: F003, F007
 | C8 | APScheduler-based scheduling with a `BaseSchedulerCallback` extension point exists, but only in `ai-parrot-server` | F008 | high | file locations plus callback class list |
 | C9 | Google Calendar has declared OAuth scopes and a service-config accessor but no event tools; O365 has real calendar tooling | F008 | high | `get_calendar_client` returns a config dict with no consumer, vs `o365/events.py` |
 | C10 | A `CredentialBroker` with vault resolvers, toolkit-facing credential abstractions and a KMS-signed invocation ledger already exists | F010 | high | direct read of `auth/broker.py`, `security/vault_utils.py`, `security/audit_ledger.py` |
-| C11 | FEAT-452 is concurrently building a domain-scoped wiki plane, namespace registration, folder-scoped vault ingest and `telegram_chat_scope` | F009 | high | all six tasks read `in-progress` in the per-spec index; `notes` namespace already registered |
+| C11 | FEAT-452 has **merged** to `dev` (PR #1209, all 6 tasks done), delivering the domain-scoped wiki plane, FEAT-450 namespace registration, folder-scoped vault ingest and `telegram_chat_scope` | F009, F011 | high | index reads `completed_at: 2026-08-23T09:04:39Z`; `wikitoolkit ns list` shows `notes` registered and built |
+| C15 | A second wiki plane requires a separate `LLMWikiToolkit` instance plus a one-off operator `wikitoolkit ns add` — `_config_for()` raises `ValueError` if `wiki_name` mismatches, and an unregistered plane is written but unqueryable | F011 | high | stated verbatim in merged TASK-2379/TASK-2382, incl. the `wiki/toolkit.py:1205` ValueError and its docstring |
 | C12 | `ScrapingPlan.steps` is untyped at rest, so a malformed plan fails mid-execution rather than at load | F001 | medium | field type directly observed; the mid-execution consequence is inferred, not observed |
 | C13 | Net-new work is materially narrower than the source assumes — stub closure, load-time plan validation, a Hooba domain toolkit, calendar tools, a gestoría wiki plane | F001, F002, F003, F006, F007, F008, F009 | medium | each component's existence is high-confidence, but "nothing else is missing" is an inference over the union of findings |
 | C14 | Unattended browser automation against Hooba is feasible: the operator confirms `app.hooba.com` has no MFA or CAPTCHA on login | — | medium | resolved by operator answer to U1, not by codebase evidence; an unverified external assertion about a third-party site that can change |
 
-Distribution: **11** high, **3** medium, **0** low.
+Distribution: **12** high, **3** medium, **0** low.
 
 > Overall confidence is held at `medium` — not averaged up — because the two
 > claims that most shape the plan (C13 scope completeness, C14 external
@@ -328,6 +361,11 @@ Distribution: **11** high, **3** medium, **0** low.
 - [x] **U4 — ¿Dividir FEAT-453 y esperar a FEAT-452?** — *Resolved*: Una feature,
   capa wiki al final. Todo bajo FEAT-453, secuenciando el plano wiki como última
   tarea, tras el merge de FEAT-452.
+  *Nota post-respuesta (2026-08-23T10:02Z)*: FEAT-452 hizo merge a `dev`
+  (PR #1209) justo después de responder. La premisa que motivaba "al final" —
+  evitar dos diseños paralelos de plano de dominio — ya no aplica; la capa wiki
+  puede ordenarse por sus propias dependencias. **La decisión de mantenerlo como
+  UNA feature se conserva.**
   *Resolves claims*: C11, C13
 
 - [x] **U5 — ¿Nivel de autonomía para escrituras con efecto legal?** —
@@ -378,7 +416,7 @@ lands after FEAT-452 merges.
 | State checkpoints | `sdd/state/FEAT-453/state.json` |
 | Source (raw) | `sdd/state/FEAT-453/source.md` |
 | Research plan | `sdd/state/FEAT-453/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-453/findings/F001-*.md` … `F010-*.md` |
+| Findings (digests) | `sdd/state/FEAT-453/findings/F001-*.md` … `F011-*.md` (F009 revised in place; F011 added in revision 2) |
 | Synthesis (JSON) | `sdd/state/FEAT-453/synthesis.json` |
 
 **Budget consumed** (profile: `loose`):
@@ -388,7 +426,12 @@ lands after FEAT-452 merges.
 - Git calls: 2 / 20
 - Wall time: ~620s / 900s
 - Truncated: **no**
-- Synthesis lint: **passed**, 0 corrective iterations
+- Synthesis lint: **passed**, 0 corrective iterations (re-linted after revision 2: **passed**)
+
+**Revision 2 delta** (2026-08-23T10:02Z, post `git pull --no-rebase origin dev`):
+FEAT-452 merged via PR #1209. F009 revised in place, F011 added (2 files read,
+1 git call, 2 wiki calls). Claim C11 restated, C15 added, one integration risk
+retired and one added. Overall confidence unchanged at `medium`.
 
 **Mode determination**: `auto` → resolved to `enrichment` (source is additive;
 the only negation targets an external system). Note the enrichment carries an

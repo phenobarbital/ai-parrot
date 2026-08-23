@@ -307,12 +307,12 @@
       ]
     },
     {
-      "title": "FEAT-452 owns the domain-plane + vault-mirror pattern and is in flight",
-      "detail": "All six FEAT-452 tasks are in-progress on dev, building a separate notes wiki plane, registering it as a queryable namespace, scoping nightly vault ingest to a folder, and adding telegram_chat_scope.",
-      "implication": "FEAT-453's wiki layer must consume that mechanism, not race it. Two incompatible domain-plane designs in one repo is the failure mode to avoid.",
+      "title": "FEAT-452 has merged \u2014 its domain-plane pattern is a dependency to consume, not a race",
+      "detail": "PR #1209 landed all six FEAT-452 tasks on dev; `notes` is registered as a store-kind namespace pointing at ../../.parrot/wikis/notes. The reuse contract is: separate LLMWikiToolkit instance (a parameter change raises ValueError at wiki/toolkit.py:1205), idempotent create_wiki() bootstrap wired into configure(), then a one-off operator `wikitoolkit ns add` of kind store/sqlite.",
+      "implication": "The collision risk that motivated sequencing the wiki layer last is gone. FEAT-453's gestoria plane follows a merged, exercised recipe, and namespace registration belongs in the runbook as an acceptance criterion because TASK-2382 explicitly excludes auto-registering from agent code.",
       "evidence": [
         "F009",
-        "F006"
+        "F011"
       ]
     },
     {
@@ -384,8 +384,9 @@
       "Building a WikiToolkit or ObsidianToolkit \u2014 both exist and are complete (C6)",
       "Building WhatsApp or Telegram transport \u2014 both ship, WhatsApp with two transports (C7)",
       "Building scheduling machinery \u2014 only a new callback is needed (C8)",
-      "Re-implementing the domain wiki plane / vault mirror pattern that FEAT-452 is landing (C11)",
-      "Concurrent fan-out over one authenticated Hooba session \u2014 FEAT-222 deferred debt (C3)"
+      "Concurrent fan-out over one authenticated Hooba session \u2014 FEAT-222 deferred debt (C3)",
+      "Re-implementing the domain wiki plane / vault mirror \u2014 FEAT-452 merged it; FEAT-453 instantiates the recipe for `gestoria` (C11, C15)",
+      "Injecting a FederatedWikiStore into LLMWikiToolkit, or auto-registering the namespace from agent code \u2014 both explicit FEAT-452 non-goals (C15)"
     ],
     "patterns_to_follow": [
       {
@@ -413,6 +414,12 @@
         "evidence": [
           "F005",
           "F007"
+        ]
+      },
+      {
+        "pattern": "FEAT-452 domain-plane recipe: a dedicated _build_<x>_wiki_toolkit() near-copy pointed at its own storage root with its own PageIndex plane and tenant_id, idempotent create_wiki() in configure(), best-effort failure leaving the handle None, then operator-side `wikitoolkit ns add` of kind store/sqlite",
+        "evidence": [
+          "F011"
         ]
       }
     ],
@@ -442,19 +449,19 @@
         ]
       },
       {
-        "risk": "FEAT-453 and FEAT-452 produce two incompatible domain-plane designs",
-        "mitigation": "Sequence the wiki layer of FEAT-453 after FEAT-452 merges and reuse its namespace registration",
-        "evidence": [
-          "F009"
-        ]
-      },
-      {
         "risk": "Scope is 3-4 features under one FEAT-ID",
         "mitigation": "Split: browser layer, conversational agent, wiki/Obsidian brain, calendar+reminders",
         "evidence": [
           "F002",
           "F008",
           "F009"
+        ]
+      },
+      {
+        "risk": "The gestoria plane is built but never registered as a namespace, silently accumulating accounting knowledge nobody can query",
+        "mitigation": "`wikitoolkit ns add` for the gestoria plane is an operator runbook step and an explicit acceptance criterion; TASK-2382 excludes auto-registration from agent code",
+        "evidence": [
+          "F011"
         ]
       }
     ]
@@ -553,12 +560,13 @@
     },
     {
       "id": "C11",
-      "claim": "FEAT-452 is concurrently building a domain-scoped wiki plane, namespace registration, folder-scoped vault ingest and telegram_chat_scope \u2014 the same pattern FEAT-453 needs",
+      "claim": "FEAT-452 has MERGED to dev (PR #1209, all 6 tasks done), delivering the domain-scoped wiki plane, FEAT-450 namespace registration, folder-scoped vault ingest and telegram_chat_scope that FEAT-453 needs",
       "evidence": [
-        "F009"
+        "F009",
+        "F011"
       ],
       "confidence": "high",
-      "reasoning": "all six tasks read as in-progress in the per-spec index; notes namespace already registered per wikitoolkit status"
+      "reasoning": "task index reads completed_at 2026-08-23T09:04:39Z with all six tasks done; wikitoolkit ns list shows the notes namespace registered and built"
     },
     {
       "id": "C12",
@@ -590,6 +598,15 @@
       "evidence": [],
       "confidence": "medium",
       "reasoning": "resolved by operator answer to U1, not by codebase evidence; medium because it is an unverified external assertion about a third-party site that can change"
+    },
+    {
+      "id": "C15",
+      "claim": "A second wiki plane requires a separate LLMWikiToolkit instance plus a one-off operator `wikitoolkit ns add` registration \u2014 LLMWikiToolkit._config_for() raises ValueError if wiki_name does not match the instance's own wiki, and an unregistered plane is written but unqueryable",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "stated verbatim in the merged TASK-2379 and TASK-2382 artifacts, including the wiki/toolkit.py:1205 ValueError and the docstring directing one toolkit per wiki"
     }
   ],
   "unknowns": [
@@ -647,8 +664,9 @@
         "Keep as one feature but sequence the wiki layer last",
         "One feature, accept the risk of a parallel domain-plane design"
       ],
-      "user_answer": "Una feature, capa wiki al final. Todo bajo FEAT-453, secuenciando el plano wiki como \u00faltima tarea, tras el merge de FEAT-452.",
-      "resolved": true
+      "user_answer": "Una feature, capa wiki al final. Todo bajo FEAT-453, secuenciando el plano wiki como \u00faltima tarea, tras el merge de FEAT-452. \u2014 NOTA post-respuesta (2026-08-23T10:02Z): FEAT-452 hizo merge a dev (PR #1209) justo despu\u00e9s de responder. La premisa que motivaba 'al final' (evitar dos dise\u00f1os en paralelo) ya no aplica; la capa wiki puede ordenarse por sus propias dependencias. La decisi\u00f3n de mantenerlo como UNA feature se conserva.",
+      "resolved": true,
+      "post_answer_note": "blocking premise dissolved by the FEAT-452 merge; the single-feature decision stands, the last-position ordering is now optional"
     },
     {
       "id": "U5",
@@ -666,7 +684,7 @@
     }
   ],
   "overall_confidence": "medium",
-  "overall_confidence_reasoning": "Localization and component-existence claims are uniformly high-confidence and directly read from source. Confidence is held at medium by three things, none of which more research on this repo would fix: the scope claim C13 is an inference over a union of findings rather than a verified inventory; the decisive feasibility question C14 is external to the codebase; and the feature as stated spans three or four deliverables, so any single-spec scope statement is provisional until U4 is answered.",
+  "overall_confidence_reasoning": "Localization and component-existence claims are uniformly high-confidence and directly read from source. Confidence is held at medium by three things, none of which more research on this repo would fix: the scope claim C13 is an inference over a union of findings rather than a verified inventory; the decisive feasibility question C14 is external to the codebase; and the feature as stated spans three or four deliverables, so any single-spec scope statement is provisional until U4 is answered. Revised 2026-08-23T10:02Z: the FEAT-452 merge upgraded C11 to a merged dependency and added C15 (the concrete reuse contract), removing one integration risk. Overall confidence stays medium \u2014 C13 and C14 are unchanged and are what bound it.",
   "recommended_next_command": {
     "command": "sdd-spec",
     "rationale": "The highest-value slice \u2014 closing the eight stubbed actions, validating plans at load, and building the Hooba domain toolkit on TemplatePlan/ScrapingFlow \u2014 is high-confidence, precisely localized, and blocking everything else. Spec that first under FEAT-453 and give the conversational agent, the gestoria wiki plane and the calendar/reminder work their own FEAT-IDs."
