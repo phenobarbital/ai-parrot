@@ -106,9 +106,7 @@ class TestBOERegistration:
         async def _fake_sync_provenance_edges(ctx, graph_store, boe_source):
             return {}, ["relation fetch for BOE-A-2020-17340 failed: boom"]
 
-        monkeypatch.setattr(
-            "parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline
-        )
+        monkeypatch.setattr("parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline)
         monkeypatch.setattr(
             "parrot_tools.legal.boe.sync.TenantOntologyManager.resolve",
             lambda self, tenant_id, domain=None: object(),

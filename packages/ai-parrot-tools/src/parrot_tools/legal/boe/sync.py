@@ -91,7 +91,9 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
         ctx = tenant_manager.resolve(tenant_id, domain="legal")
         boe_source = datasource_factory.get("boe", source_configs["boe"])
         relation_stats, relation_errors = await _sync_provenance_edges(
-            ctx, graph_store, boe_source,
+            ctx,
+            graph_store,
+            boe_source,
         )
         report.discovery_results.update(relation_stats)
         report.errors.extend(relation_errors)

@@ -86,9 +86,7 @@ def _sanitize_key_component(value: str) -> str:
         Falls back to ``"_"`` if ``value`` sanitises to nothing (e.g. an
         empty string or a string of only disallowed characters).
     """
-    ascii_only = (
-        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    )
+    ascii_only = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
     safe = _KEY_UNSAFE_RE.sub("_", ascii_only).strip("_")
     return safe or "_"
 
