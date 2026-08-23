@@ -14,14 +14,14 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Creates session_actions.py, which TASK-2385/2386 then extend. Must land first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2384-session-actions-scaffold-auth-cookies.md"
     },
@@ -32,16 +32,16 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-2384"
       ],
       "parallel": false,
-      "parallelism_notes": "Extends session_actions.py created by TASK-2384 \u2014 same file, must be sequential.",
+      "parallelism_notes": "Extends session_actions.py created by TASK-2384 — same file, must be sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2385-session-actions-waits-humanchannel.md"
     },
@@ -52,16 +52,16 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-2384"
       ],
       "parallel": false,
-      "parallelism_notes": "Extends session_actions.py created by TASK-2384 \u2014 same file as TASK-2385, keep sequential.",
+      "parallelism_notes": "Extends session_actions.py created by TASK-2384 — same file as TASK-2385, keep sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2386-session-actions-file-transfer.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": false,
       "parallelism_notes": "Rewires executor.py and tool.py; depends on all three session_actions slices.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2387-dispatch-stub-closure-and-legacy-delegation.md"
     },
@@ -94,25 +94,25 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches only plan.py + a new union in models.py; no overlap with session_actions.py, so it can run in a parallel worktree alongside TASK-2384/2385/2386. Must merge before TASK-2389, which also edits models.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2388-browseraction-union-and-plan-validation.md"
     },
     {
       "id": "TASK-2389",
       "slug": "broker-backed-authenticate",
-      "title": "Broker-backed Authenticate \u2014 no credentials in plan JSON",
+      "title": "Broker-backed Authenticate — no credentials in plan JSON",
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -120,9 +120,9 @@
         "TASK-2388"
       ],
       "parallel": false,
-      "parallelism_notes": "Edits models.py (like TASK-2388) and session_actions.py (like TASK-2384) \u2014 sequential after both.",
+      "parallelism_notes": "Edits models.py (like TASK-2388) and session_actions.py (like TASK-2384) — sequential after both.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2389-broker-backed-authenticate.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -144,7 +144,7 @@
       "parallel": false,
       "parallelism_notes": "The engine; depends on a corrected dispatcher, plan validation and broker auth.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2390-business-automation-toolkit-core.md"
     },
@@ -155,7 +155,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -164,7 +164,7 @@
       "parallel": false,
       "parallelism_notes": "Extends the business_automation package created by TASK-2390.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2391-external-plans-directory-store.md"
     },
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,7 +185,7 @@
       "parallel": false,
       "parallelism_notes": "Builds on the toolkit and the plans store.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2392-bank-excel-expense-ingestion.md"
     },
@@ -196,14 +196,14 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Touches only parrot_tools/google/ and interfaces/google.py \u2014 zero file overlap with every other task in this feature. The one genuinely parallelizable worktree candidate (spec Worktree Strategy).",
+      "parallelism_notes": "Touches only parrot_tools/google/ and interfaces/google.py — zero file overlap with every other task in this feature. The one genuinely parallelizable worktree candidate (spec Worktree Strategy).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2393-google-calendar-tools.md"
     },
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": false,
       "parallelism_notes": "Reminders write calendar events, so this follows TASK-2393.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2394-inprocess-scheduler-and-tax-reminders.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -244,7 +244,7 @@
       "parallel": false,
       "parallelism_notes": "Needs both the operation registry and the scheduler.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2395-smokecheck-mechanism.md"
     },
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -264,7 +264,7 @@
       "parallel": false,
       "parallelism_notes": "Consumes the operation registry to decide what to record.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2396-gestoria-wiki-plane-obsidian-mirror.md"
     },
@@ -275,7 +275,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -284,7 +284,7 @@
       "parallel": false,
       "parallelism_notes": "Needs OperationKind to know whether SUBMIT operations are exposed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2397-whatsapp-allowlist-failclosed.md"
     }
