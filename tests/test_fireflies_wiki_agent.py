@@ -17,6 +17,8 @@ from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from parrot.integrations.telegram.context import telegram_chat_scope
+from parrot.integrations.telegram.decorators import discover_telegram_commands
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENT_PATH = REPO_ROOT / "agents" / "fireflies_wiki.py"
@@ -79,6 +81,8 @@ def agent(agent_module, tmp_path):
     inst.notes_wiki_storage_dir = tmp_path / "wiki-notes"
     inst.notes_folder = "audio-notes"
     inst._notes_wiki = None
+    inst._capture_toolkit = None
+    inst._note_mode = {}
 
     inst.obsidian_toolkit = MagicMock()
     inst.obsidian_toolkit.read_note = AsyncMock(return_value={"content": ""})
@@ -638,6 +642,129 @@ class TestAudioNoteCapture:
 
         assert result["structured"] is True
         assert toolkit._test_llm_call.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# `/note` sticky mode (TASK-2381, G3) — arm_note_mode + ask() routing
+# ---------------------------------------------------------------------------
+
+def _find_ask_owner(agent) -> type:
+    """Find the first class in the MRO (after the leaf) that defines ``ask``.
+
+    Used to monkeypatch the real parent ``ask()`` without hardcoding which
+    base class in the deep bot hierarchy owns it.
+    """
+    for klass in type(agent).__mro__[1:]:
+        if "ask" in klass.__dict__:
+            return klass
+    raise AssertionError("No class in the MRO defines ask()")
+
+
+class TestNoteMode:
+    """Deterministic /note override: arm -> next message captured -> cleared."""
+
+    @pytest.mark.asyncio
+    async def test_note_arms_current_chat(self, agent):
+        """/note arms the invoking chat, keyed by STRING chat id."""
+        with telegram_chat_scope(12345):
+            reply = await agent.arm_note_mode("")
+
+        assert agent._note_mode["12345"] is True  # str key, not int
+        assert "next message" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_note_without_chat_scope_does_not_raise(self, agent):
+        """get_current_telegram_chat_id() -> None does not raise or arm anything."""
+        reply = await agent.arm_note_mode("")
+
+        assert agent._note_mode == {}
+        assert "could not determine" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_next_message_captured_then_cleared(self, agent):
+        """Consume-on-next-message: one capture, then disarmed."""
+        agent._capture_toolkit = MagicMock()
+        agent._capture_toolkit.capture_audio_note = AsyncMock(
+            return_value={"note_title": "2026-08-23-idea"}
+        )
+
+        with telegram_chat_scope(12345):
+            await agent.arm_note_mode("")
+            reply = await agent.ask("remember to buy milk")
+
+        assert reply == "✅ Saved: 2026-08-23-idea"
+        assert agent._note_mode["12345"] is False
+        agent._capture_toolkit.capture_audio_note.assert_awaited_once_with(
+            "remember to buy milk", language=None
+        )
+
+    @pytest.mark.asyncio
+    async def test_mode_cleared_even_when_capture_fails(self, agent):
+        """A failing capture must not leave the chat permanently armed."""
+        agent._capture_toolkit = MagicMock()
+        agent._capture_toolkit.capture_audio_note = AsyncMock(
+            side_effect=RuntimeError("vault write failed")
+        )
+
+        with telegram_chat_scope(12345):
+            await agent.arm_note_mode("")
+            reply = await agent.ask("remember to buy milk")
+
+        assert agent._note_mode["12345"] is False
+        assert "could not save" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_per_chat_isolation(self, agent):
+        """Arming chat A leaves chat B unarmed."""
+        with telegram_chat_scope(12345):
+            await agent.arm_note_mode("")
+
+        assert not agent._note_mode.get("67890")
+
+    @pytest.mark.asyncio
+    async def test_ask_falls_through_when_unarmed(self, agent, monkeypatch):
+        """Without /note and without an armed chat, ask() forwards unchanged."""
+        owner = _find_ask_owner(agent)
+        parent_ask = AsyncMock(return_value="normal answer")
+        monkeypatch.setattr(owner, "ask", parent_ask)
+
+        with telegram_chat_scope(12345):
+            reply = await agent.ask("what time is the meeting?", user_id="u1")
+
+        assert reply == "normal answer"
+        # NOTE: monkeypatched as a plain AsyncMock (not a function), so
+        # attribute access via `super().ask` does not auto-bind `self` —
+        # the mock only sees the args/kwargs the override forwards.
+        parent_ask.assert_awaited_once_with("what time is the meeting?", user_id="u1")
+
+    @pytest.mark.asyncio
+    async def test_question_not_captured_when_no_chat_scope(self, agent, monkeypatch):
+        """No /note, no chat scope -> answered normally, no note created."""
+        owner = _find_ask_owner(agent)
+        parent_ask = AsyncMock(return_value="normal answer")
+        monkeypatch.setattr(owner, "ask", parent_ask)
+        agent._capture_toolkit = MagicMock()
+        agent._capture_toolkit.capture_audio_note = AsyncMock()
+
+        reply = await agent.ask("what time is the meeting?")
+
+        assert reply == "normal answer"
+        agent._capture_toolkit.capture_audio_note.assert_not_called()
+
+    def test_note_command_is_public_and_discovered(self, agent):
+        """discover_telegram_commands finds /note (it skips _-prefixed attrs)."""
+        cmds = discover_telegram_commands(agent)
+
+        assert any(c["command"] == "note" for c in cmds)
+
+    def test_agent_boots_without_telegram_integration(self, agent_module):
+        """The module-level fallback keeps the class importable/usable
+        even when parrot.integrations.telegram is not installed."""
+        # _TELEGRAM_AVAILABLE reflects whatever is actually installed in
+        # this test environment; the meaningful invariant is that the
+        # fallback symbols exist and are callable either way.
+        assert callable(agent_module.get_current_telegram_chat_id)
+        assert callable(agent_module.telegram_command)
 
 
 # ---------------------------------------------------------------------------

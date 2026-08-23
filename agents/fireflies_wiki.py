@@ -47,6 +47,38 @@ from parrot.tools.obsidian import ObsidianToolkit
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Optional dependency: ai-parrot-integrations (Telegram)
+#
+# FEAT-452, Module 4. ``ai-parrot-integrations`` is a separate distribution
+# from the core this agent otherwise depends on — imported defensively (same
+# posture as ``_build_wiki_toolkit``'s optional planes) so the agent still
+# boots when the Telegram integration is not installed. ``/note`` and the
+# per-chat sticky mode are simply unavailable in that case.
+# ---------------------------------------------------------------------------
+try:
+    from parrot.integrations.telegram.context import get_current_telegram_chat_id
+    from parrot.integrations.telegram.decorators import telegram_command
+
+    _TELEGRAM_AVAILABLE = True
+except ImportError:
+    _TELEGRAM_AVAILABLE = False
+
+    def telegram_command(
+        command: str, description: str = "", parse_mode: str = "keyword"
+    ) -> Callable[..., Callable]:
+        """No-op fallback decorator when ``parrot.integrations.telegram`` is
+        not installed — preserves the decorated method unchanged."""
+
+        def _decorator(fn: Callable) -> Callable:
+            return fn
+
+        return _decorator
+
+    def get_current_telegram_chat_id() -> Optional[str]:
+        """Fallback used when the Telegram integration is not installed."""
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -168,6 +200,19 @@ _AUDIO_NOTES_WIKI_STORAGE_DIR: str = config.get(
     fallback=str(Path.home() / ".parrot" / "wikis" / "notes"),
 )
 _AUDIO_NOTES_FOLDER: str = config.get("AUDIO_NOTES_FOLDER", fallback="audio-notes")
+
+#: FEAT-452, Module 4 — best-effort system-prompt guidance nudging the LLM
+#: toward ``capture_audio_note`` on capture intent (the tool's own docstring
+#: is the primary, verified guidance mechanism for tool-selection; this is
+#: supplementary). Folded into ``instructions`` -> ``self.goal`` — the
+#: sanctioned free-text extension point on ``BasicAgent.__init__``.
+_AUDIO_NOTE_TOOL_GUIDANCE: str = (
+    "When the user is recording something to REMEMBER — a note, idea, "
+    "decision, reminder or follow-up ('note to self...', 'remember "
+    "that...', 'idea:...') rather than asking a question, call the "
+    "capture_audio_note tool instead of answering. This applies whether "
+    "the message arrived as a transcribed voice note or as typed text."
+)
 
 #: Run bounds.
 _SYNC_LIMIT: int = _int_env("FIREFLIES_WIKI_SYNC_LIMIT", 20)
@@ -660,6 +705,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 defaults to Claude Haiku 4.5 when the caller does not pin one.
         """
         kwargs.setdefault("llm", _LLM)
+        kwargs.setdefault("instructions", _AUDIO_NOTE_TOOL_GUIDANCE)
         super().__init__(name=name, **kwargs)
 
         self.wiki_name: str = wiki_name or _WIKI_NAME
@@ -693,6 +739,18 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         #: cannot serve both planes.
         self._notes_wiki: Optional[Any] = None
 
+        #: Set in :meth:`configure`. Kept so :meth:`ask` can force a capture
+        #: directly (bypassing LLM tool-selection) when ``/note`` has armed
+        #: the current chat.
+        self._capture_toolkit: Optional[AudioNoteCaptureToolkit] = None
+
+        #: `/note` sticky mode (FEAT-452, Module 4) — chat id (``str``) ->
+        #: armed. Consume-on-next-message: cleared after exactly one
+        #: message, whether or not the forced capture succeeds.
+        #: ``get_current_telegram_chat_id()`` returns a ``str`` (or
+        #: ``None``) — NEVER key this by ``int``.
+        self._note_mode: Dict[str, bool] = {}
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -720,11 +778,99 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             notes_folder=self.notes_folder,
             wiki_name=self.notes_wiki_name,
         )
+        self._capture_toolkit = capture_toolkit
         self._initialize_tools([capture_toolkit])
         self.logger.info(
             "Registered AudioNoteCaptureToolkit tools: %s",
             [t.name for t in capture_toolkit.get_tools()],
         )
+
+    # ------------------------------------------------------------------
+    # `/note` sticky mode (FEAT-452, Module 4)
+    # ------------------------------------------------------------------
+
+    @telegram_command("note", description="Capture the next message as a note")
+    async def arm_note_mode(self, _args: str = "") -> str:
+        """Arm capture for the next message sent in this chat.
+
+        Deterministic override for when LLM intent detection misfires:
+        the very next message in this chat — voice or typed — is captured
+        with no intent guessing, and the mode clears immediately after
+        (consume-on-next-message), whether or not that capture succeeds.
+
+        Requires the invoking chat to be resolvable via
+        ``get_current_telegram_chat_id()`` (wired by the ``telegram_chat_scope``
+        wrapper around agent commands — FEAT-452 Module 1). Outside a scoped
+        Telegram command (or when the Telegram integration is not
+        installed) this replies with a clear message instead of raising or
+        arming a ``None`` key.
+
+        Args:
+            _args: Unused — ``/note`` takes no arguments.
+
+        Returns:
+            A short confirmation, or an explanation when the chat cannot
+            be resolved.
+        """
+        chat_id = get_current_telegram_chat_id()
+        if chat_id is None:
+            return (
+                "⚠️ Could not determine the current chat — /note is "
+                "unavailable here."
+            )
+        self._note_mode[chat_id] = True
+        return "📝 Noted — your next message will be saved as a note."
+
+    async def ask(self, question: str, *args: Any, **kwargs: Any) -> Any:
+        """Force a capture when ``/note`` has armed the current chat.
+
+        Consume-on-next-message: the flag is cleared BEFORE the capture
+        runs, so a failing capture can never leave the chat permanently
+        armed. Otherwise falls through to the normal LLM ReAct loop with
+        ``args``/``kwargs`` forwarded unchanged — ordinary Q&A and
+        LLM-driven capture intent (guided by ``capture_audio_note``'s own
+        docstring and the agent's ``instructions``) are byte-identical to
+        before this method existed (G7).
+
+        Args:
+            question: The user's message text (transcribed voice or typed).
+            *args: Forwarded to the parent ``ask()`` unchanged.
+            **kwargs: Forwarded to the parent ``ask()`` unchanged.
+
+        Returns:
+            A short confirmation string when a forced capture ran,
+            otherwise whatever the parent ``ask()`` returns.
+        """
+        chat_id = get_current_telegram_chat_id()
+        if chat_id is not None and self._note_mode.get(chat_id):
+            self._note_mode[chat_id] = False
+            return await self._force_capture(question)
+        return await super().ask(question, *args, **kwargs)
+
+    async def _force_capture(self, transcript: str) -> str:
+        """Directly invoke ``capture_audio_note``, bypassing LLM tool-selection.
+
+        Args:
+            transcript: The raw note text (transcribed voice or typed).
+                ``language`` is not propagated this far up the call chain,
+                so it is passed as ``None`` — the structuring prompt
+                already handles ``language=None`` by detecting the
+                language from the text itself.
+
+        Returns:
+            A one-line confirmation, or a warning message on failure —
+            never raises into :meth:`ask`.
+        """
+        if self._capture_toolkit is None:
+            return "⚠️ Capture is unavailable right now."
+        try:
+            result = await self._capture_toolkit.capture_audio_note(
+                transcript, language=None
+            )
+        except Exception as exc:  # noqa: BLE001 — armed capture must not raise into ask()
+            self.logger.warning("Forced capture failed: %s", exc)
+            return f"⚠️ Could not save note: {exc}"
+        return f"✅ Saved: {result['note_title']}"
 
     async def _build_wiki_toolkit(self) -> Optional[Any]:
         """Construct the ``LLMWikiToolkit`` backing meeting ingestion.
