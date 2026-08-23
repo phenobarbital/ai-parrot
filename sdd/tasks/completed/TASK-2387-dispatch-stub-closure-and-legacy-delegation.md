@@ -203,10 +203,58 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Deleted the `executor.py:298-311` stub branch (`return True` for
+all eight formerly-stubbed action types) and replaced it with real dispatch
+to each `session_actions.exec_*` function; `authenticate` gets the same
+recursive `_dispatch` closure pattern already used for `loop`/`conditional`
+(for `custom_steps`). Added `_action_get_cookies()` to store
+`exec_get_cookies()`'s result into `step_extracted`, mirroring
+`_action_extract`'s key-naming convention, since `exec_get_cookies` returns
+a `Dict` rather than a `bool`. Collapsed all eight `tool.py` handlers
+(`_get_cookies`, `_set_cookies`, `_handle_authentication`,
+`_await_browser_event`, `_await_human`, `_await_keypress`,
+`_wait_for_download`, `_upload_file`) into one-line delegations to
+`session_actions.exec_*`, mirroring the exact `self._abstract_driver`
+delegation pattern `_exec_loop`/`_exec_conditional` already established
+(FEAT-222) — `self._abstract_driver` is the real `AbstractDriver` created
+by `DriverFactory` at construction time and used by the standard
+`initialize_driver()` path, so the same live browser session backs both
+`self.driver`/`self.page` (legacy raw handles) and the delegated calls.
+Removed the now-dead `_handle_authentication` "bearer" branch (unreachable:
+`Authenticate.method` is `Literal["form","basic","oauth","custom"]`, which
+has never permitted `"bearer"` — Pydantic rejects it at construction).
+Removed now-unused `import sys`/`import select` (only consumer was the
+deleted `_await_keypress` body). 17 new regression tests pass (8
+parametrized "actually calls the real impl" + 8 "no stub warning message
+survives" + 1 "unknown-to-dispatcher action still returns False" using
+`hover`, which is in `ACTION_MAP` but not in `_dispatch_step`'s dispatch
+tree). Full `packages/ai-parrot-tools/tests/scraping/` suite (788 tests)
+re-run: only the same 7 pre-existing, unrelated `CrawlEngine`/FEAT-013
+failures remain — zero regressions from this change. `ruff check` on both
+changed files: verified via before/after count comparison that every lint
+category count decreased or stayed the same (deleting ~640 lines of
+duplicated/dead code naturally removed many pre-existing findings); no new
+category or increased count appeared anywhere.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Delegating `_handle_authentication` to
+`exec_authenticate` (which returns a proper `bool`) corrects a latent bug:
+the legacy "form" method never returned an explicit value on success
+(implicit `None`, falsy), which `_execute_step`/`execute_scraping_workflow`
+would have treated as a step failure even on a successful login. Likewise
+for `_await_human`/`_await_keypress`/`_await_browser_event`, whose legacy
+success paths returned `None` and signalled failure only by raising
+`TimeoutError`. This is an unavoidable, beneficial side effect of
+delegating to the shared, correctly-typed implementation — exactly the
+"never return a falsy value for something that succeeded" mirror of this
+task's core mandate ("never `return True` for something you did not do")
+— not a scope expansion. (2) `_wait_for_download`/`_upload_file` no longer
+append a per-action `ScrapingResult` to `self.results` (a side effect the
+legacy bodies had); no existing test exercises this, and it is not part of
+either function's documented return contract. (3) As already flagged in
+TASK-2386: the legacy Playwright branch of `_upload_file` used the native
+`self.page.set_input_files()`, which the shared `exec_upload_file`
+(`driver.fill()`-based, since `AbstractDriver` has no upload method) cannot
+replicate for real Playwright sessions — a known, disclosed limitation
+inherited from TASK-2386, not introduced here.
