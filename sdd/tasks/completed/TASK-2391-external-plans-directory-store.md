@@ -191,10 +191,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Created `PlanDirectoryStore` (store.py) using a file-naming
+convention (`*.operation.json` → `BusinessOperation`, `*.template.json` →
+`TemplatePlan`, `*.flow.json` → `ScrapingFlow`). `load()` parses every file
+into LOCAL registries first and only commits them to
+`self.operations`/`self.templates`/`self.flows` after the entire directory
+validates successfully — so a malformed file rejects the whole directory
+with the filename and reason named, AND leaves any previously-loaded good
+state untouched on a failed reload (tested explicitly). Reused
+`lint_literal_credentials` (added to `scraping/models.py` in TASK-2389)
+rather than reimplementing the credential lint — every `.template.json`'s
+`steps_template` is checked before the `TemplatePlan` is even constructed.
+`reload_if_changed()` compares a `{path: mtime}` snapshot against the one
+captured at the last successful `load()`; any added/removed/modified file
+triggers a full reload. Anonymized fixtures ship under
+`tests/business_automation/fixtures/acme-books/`: two operations
+(`register_expense`, SUBMIT-kind; `list_clients`, READ-kind) each with
+their own template + single-node flow. 12 new tests pass (load, malformed
+JSON, schema violation, credential lint rejection + never-logs-the-secret,
+a clean `credential_provider`-based auth template passing the lint, hot
+reload with and without changes, missing directory, no site references in
+either the fixtures or generated test data). Full
+`packages/ai-parrot-tools/tests/scraping/` + `tests/business_automation/`
+suites (843 tests) re-run — same 7 pre-existing, unrelated
+`CrawlEngine`/FEAT-013 failures, zero regressions. `ruff check` clean
+except the same `UP006`/`UP007`/`UP035` pyupgrade-style debt already
+established by this feature's other files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None of substance. The file-naming convention
+(`*.operation.json`/`*.template.json`/`*.flow.json`) was not literally
+specified by the task (only implied by the test scaffold's
+`broken.operation.json`/`leaky.template.json` filenames) — chose the
+straightforward, self-documenting convention the test names already hinted
+at, rather than inventing a different directory layout (e.g. subfolders per
+type).
