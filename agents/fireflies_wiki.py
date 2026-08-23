@@ -26,6 +26,7 @@ NOTE: This file lives in ``agents/``, which is gitignored. Commit with
 
 See ``docs/superpowers/specs/2026-08-23-fireflies-wiki-agent-design.md``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -64,9 +65,7 @@ try:
 except ImportError:
     _TELEGRAM_AVAILABLE = False
 
-    def telegram_command(
-        command: str, description: str = "", parse_mode: str = "keyword"
-    ) -> Callable[..., Callable]:
+    def telegram_command(command: str, description: str = "", parse_mode: str = "keyword") -> Callable[..., Callable]:
         """No-op fallback decorator when ``parrot.integrations.telegram`` is
         not installed — preserves the decorated method unchanged."""
 
@@ -88,6 +87,7 @@ except ImportError:
 # Same constraint that makes agents/security_advisor.py use _ADVISORY_HOUR.
 # ---------------------------------------------------------------------------
 
+
 def _int_env(key: str, default: int) -> int:
     """Read an integer setting, falling back when unset or unparseable.
 
@@ -104,9 +104,7 @@ def _int_env(key: str, default: int) -> int:
     try:
         return int(str(raw).strip())
     except (TypeError, ValueError):
-        logger.warning(
-            "%s=%r is not an integer — falling back to %s", key, raw, default
-        )
+        logger.warning("%s=%r is not an integer — falling back to %s", key, raw, default)
         return default
 
 
@@ -160,10 +158,9 @@ def _schedule_tzinfo() -> timezone | ZoneInfo:
     try:
         return ZoneInfo(_TZ)
     except (ZoneInfoNotFoundError, ValueError, KeyError):
-        logger.warning(
-            "FIREFLIES_WIKI_TZ=%r is not a known timezone — using UTC.", _TZ
-        )
+        logger.warning("FIREFLIES_WIKI_TZ=%r is not a known timezone — using UTC.", _TZ)
         return timezone.utc
+
 
 #: Daily sync (Fireflies → Obsidian → wiki).
 _SYNC_HOUR: int = _int_env("FIREFLIES_WIKI_SYNC_HOUR", 7)
@@ -225,6 +222,7 @@ _WEEKLY_WINDOW_DAYS: int = _int_env("FIREFLIES_WIKI_WEEKLY_WINDOW_DAYS", 7)
 # Audio-notes capture (FEAT-452, Module 3)
 # ---------------------------------------------------------------------------
 
+
 class AudioNoteStructure(BaseModel):
     """LLM-structured form of a raw voice/text transcript.
 
@@ -233,13 +231,9 @@ class AudioNoteStructure(BaseModel):
     """
 
     title: str = Field(..., description="English title, used for the slug")
-    tags: List[str] = Field(
-        default_factory=list, description="English OKF/frontmatter tags"
-    )
+    tags: List[str] = Field(default_factory=list, description="English OKF/frontmatter tags")
     summary: str = Field(..., description="Summary, source language")
-    key_points: List[str] = Field(
-        default_factory=list, description="Key points, source language"
-    )
+    key_points: List[str] = Field(default_factory=list, description="Key points, source language")
     action_items: List[str] = Field(
         default_factory=list,
         description="Action items, source language; may be empty",
@@ -252,12 +246,8 @@ class AudioNoteResult(BaseModel):
     note_title: str = Field(..., description="'YYYY-MM-DD-slug'")
     vault_path: str = Field(..., description="'audio-notes/YYYY-MM-DD-slug.md'")
     wiki_ingested: bool
-    wiki_reason: Optional[str] = Field(
-        default=None, description="Populated when wiki_ingested is False"
-    )
-    structured: bool = Field(
-        ..., description="False when the verbatim fallback path was used"
-    )
+    wiki_reason: Optional[str] = Field(default=None, description="Populated when wiki_ingested is False")
+    structured: bool = Field(..., description="False when the verbatim fallback path was used")
 
 
 def _build_note_structuring_prompt(transcript: str, language: Optional[str]) -> str:
@@ -355,32 +345,21 @@ def _parse_note_structure_response(response_text: str) -> AudioNoteStructure:
         if not stripped:
             continue
         if stripped.startswith("Title"):
-            title = stripped[len("Title"):].strip()
+            title = stripped[len("Title") :].strip()
         elif stripped.startswith("Tags"):
-            raw_tags = stripped[len("Tags"):].strip()
+            raw_tags = stripped[len("Tags") :].strip()
             tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
         elif stripped.startswith("Summary"):
-            summary = stripped[len("Summary"):].strip()
+            summary = stripped[len("Summary") :].strip()
         elif stripped.startswith("Key Points"):
-            lines = stripped[len("Key Points"):].strip().split("\n")
-            key_points = [
-                _strip_bullet(line)
-                for line in lines
-                if line.strip().startswith(("-", "*"))
-            ]
+            lines = stripped[len("Key Points") :].strip().split("\n")
+            key_points = [_strip_bullet(line) for line in lines if line.strip().startswith(("-", "*"))]
         elif stripped.startswith("Action Items"):
-            lines = stripped[len("Action Items"):].strip().split("\n")
-            action_items = [
-                _strip_bullet(line)
-                for line in lines
-                if line.strip().startswith(("-", "*"))
-            ]
+            lines = stripped[len("Action Items") :].strip().split("\n")
+            action_items = [_strip_bullet(line) for line in lines if line.strip().startswith(("-", "*"))]
 
     if not title or not summary:
-        raise ValueError(
-            "Note structuring response is missing the required Title/Summary "
-            "sections."
-        )
+        raise ValueError("Note structuring response is missing the required Title/Summary " "sections.")
 
     return AudioNoteStructure(
         title=title,
@@ -391,9 +370,7 @@ def _parse_note_structure_response(response_text: str) -> AudioNoteStructure:
     )
 
 
-def _build_note_okf_frontmatter(
-    title: str, tags: List[str], date_str: str, summary: str
-) -> Dict[str, Any]:
+def _build_note_okf_frontmatter(title: str, tags: List[str], date_str: str, summary: str) -> Dict[str, Any]:
     """Build OKF frontmatter for an audio note.
 
     Mirrors the ``{"okf": {...}}`` shape
@@ -503,9 +480,7 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
         """
         structure, structured = await self._structure_transcript(transcript, language)
         note_title, vault_rel_path = await self._write_note(transcript, structure)
-        wiki_ingested, wiki_reason = await self._ingest_into_wiki(
-            note_title, vault_rel_path
-        )
+        wiki_ingested, wiki_reason = await self._ingest_into_wiki(note_title, vault_rel_path)
 
         result = AudioNoteResult(
             note_title=note_title,
@@ -516,9 +491,7 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
         )
         return result.model_dump()
 
-    async def _structure_transcript(
-        self, transcript: str, language: Optional[str]
-    ) -> tuple[AudioNoteStructure, bool]:
+    async def _structure_transcript(self, transcript: str, language: Optional[str]) -> tuple[AudioNoteStructure, bool]:
         """Structure the transcript via one LLM call, or fall back verbatim.
 
         Args:
@@ -535,9 +508,7 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
             response_text = await self._llm_call(prompt)
             return _parse_note_structure_response(response_text), True
         except Exception as exc:  # noqa: BLE001 — structuring is best-effort
-            self.logger.warning(
-                "Note structuring failed (%s); writing a verbatim note.", exc
-            )
+            self.logger.warning("Note structuring failed (%s); writing a verbatim note.", exc)
             fallback_title = transcript.strip().split("\n")[0][:60] or "audio-note"
             return (
                 AudioNoteStructure(
@@ -550,9 +521,7 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
                 False,
             )
 
-    async def _write_note(
-        self, transcript: str, structure: AudioNoteStructure
-    ) -> tuple[str, str]:
+    async def _write_note(self, transcript: str, structure: AudioNoteStructure) -> tuple[str, str]:
         """Write the structured note to the vault, retrying on slug collision.
 
         The vault write is the durable step: any failure OTHER than a
@@ -573,9 +542,7 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
         date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         base_title = FirefliesObsidianAgent._make_note_title(date_str, structure.title)
         body = self._render_note_body(structure, transcript)
-        frontmatter = _build_note_okf_frontmatter(
-            structure.title, structure.tags, date_str, structure.summary
-        )
+        frontmatter = _build_note_okf_frontmatter(structure.title, structure.tags, date_str, structure.summary)
         frontmatter["tags"] = structure.tags
 
         note_title = base_title
@@ -619,9 +586,7 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
         lines.append(transcript)
         return "\n".join(lines)
 
-    async def _ingest_into_wiki(
-        self, note_title: str, vault_rel_path: str
-    ) -> tuple[bool, Optional[str]]:
+    async def _ingest_into_wiki(self, note_title: str, vault_rel_path: str) -> tuple[bool, Optional[str]]:
         """Best-effort ingest of the freshly-written note into the notes wiki.
 
         Uses ``ingest_source`` (never ``create_page``) so the note is
@@ -709,18 +674,12 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         super().__init__(name=name, **kwargs)
 
         self.wiki_name: str = wiki_name or _WIKI_NAME
-        self.wiki_storage_dir: Path = Path(
-            wiki_storage_dir or _WIKI_STORAGE_DIR
-        ).expanduser()
+        self.wiki_storage_dir: Path = Path(wiki_storage_dir or _WIKI_STORAGE_DIR).expanduser()
         self.daily_recipients: List[str] = (
-            daily_recipients
-            if daily_recipients is not None
-            else _list_env("FIREFLIES_WIKI_DAILY_RECIPIENTS")
+            daily_recipients if daily_recipients is not None else _list_env("FIREFLIES_WIKI_DAILY_RECIPIENTS")
         )
         self.weekly_recipients: List[str] = (
-            weekly_recipients
-            if weekly_recipients is not None
-            else _list_env("FIREFLIES_WIKI_WEEKLY_RECIPIENTS")
+            weekly_recipients if weekly_recipients is not None else _list_env("FIREFLIES_WIKI_WEEKLY_RECIPIENTS")
         )
 
         #: Set in :meth:`configure`; ``None`` when the wiki plane is unavailable.
@@ -728,9 +687,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
         # --- Audio-notes wiki plane (FEAT-452) --------------------------
         self.notes_wiki_name: str = notes_wiki_name or _AUDIO_NOTES_WIKI_NAME
-        self.notes_wiki_storage_dir: Path = Path(
-            notes_wiki_storage_dir or _AUDIO_NOTES_WIKI_STORAGE_DIR
-        ).expanduser()
+        self.notes_wiki_storage_dir: Path = Path(notes_wiki_storage_dir or _AUDIO_NOTES_WIKI_STORAGE_DIR).expanduser()
         self.notes_folder: str = notes_folder or _AUDIO_NOTES_FOLDER
 
         #: Set in :meth:`configure`; ``None`` when the notes plane is
@@ -814,10 +771,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         """
         chat_id = get_current_telegram_chat_id()
         if chat_id is None:
-            return (
-                "⚠️ Could not determine the current chat — /note is "
-                "unavailable here."
-            )
+            return "⚠️ Could not determine the current chat — /note is " "unavailable here."
         self._note_mode[chat_id] = True
         return "📝 Noted — your next message will be saved as a note."
 
@@ -876,9 +830,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         if self._capture_toolkit is None:
             return "⚠️ Capture is unavailable right now."
         try:
-            result = await self._capture_toolkit.capture_audio_note(
-                transcript, language=None
-            )
+            result = await self._capture_toolkit.capture_audio_note(transcript, language=None)
         except Exception as exc:  # noqa: BLE001 — armed capture must not raise into ask()
             self.logger.warning("Forced capture failed: %s", exc)
             return f"⚠️ Could not save note: {exc}"
@@ -933,8 +885,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             return toolkit
         except Exception as exc:  # noqa: BLE001 — wiki ingest is best-effort
             self.logger.warning(
-                "LLMWikiToolkit unavailable (%s); meetings will sync to "
-                "Obsidian only.",
+                "LLMWikiToolkit unavailable (%s); meetings will sync to " "Obsidian only.",
                 exc,
             )
             return None
@@ -960,16 +911,13 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
             _, model_id = LLMFactory.parse_llm_string(model_spec)
-            adapter = PageIndexLLMAdapter(
-                LLMFactory.create(model_spec), model=model_id
-            )
+            adapter = PageIndexLLMAdapter(LLMFactory.create(model_spec), model=model_id)
             pageindex_dir = storage / "pageindex"
             pageindex_dir.mkdir(parents=True, exist_ok=True)
             return PageIndexToolkit(adapter, storage_dir=pageindex_dir)
         except Exception as exc:  # noqa: BLE001 — authoring plane is optional
             self.logger.warning(
-                "PageIndexToolkit unavailable (%s); wiki pages will be written "
-                "to the retrieval plane only.",
+                "PageIndexToolkit unavailable (%s); wiki pages will be written " "to the retrieval plane only.",
                 exc,
             )
             return None
@@ -1029,8 +977,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 await toolkit.create_wiki(self.notes_wiki_name)
             except Exception as exc:  # noqa: BLE001 — bootstrap must not null the toolkit
                 self.logger.warning(
-                    "create_wiki(%s) failed (%s); continuing with the "
-                    "existing layout.",
+                    "create_wiki(%s) failed (%s); continuing with the " "existing layout.",
                     self.notes_wiki_name,
                     exc,
                 )
@@ -1044,8 +991,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             return toolkit
         except Exception as exc:  # noqa: BLE001 — notes plane is best-effort
             self.logger.warning(
-                "Notes LLMWikiToolkit unavailable (%s); audio-note captures "
-                "will be written to Obsidian only.",
+                "Notes LLMWikiToolkit unavailable (%s); audio-note captures " "will be written to Obsidian only.",
                 exc,
             )
             return None
@@ -1108,11 +1054,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             # --- Step 2: per-meeting LLM analysis ---------------------------
             report["analysis"] = await self.summarize_pending_transcripts(
                 granularity="standard",
-                limit=(
-                    analysis_limit
-                    if analysis_limit is not None
-                    else _ANALYSIS_LIMIT
-                ),
+                limit=(analysis_limit if analysis_limit is not None else _ANALYSIS_LIMIT),
             )
 
             # --- Step 3: Obsidian → GraphIndex LLM Wiki ---------------------
@@ -1136,9 +1078,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             success, the toolkit's phase ``report``.
         """
         if self._wiki is None:
-            self.logger.warning(
-                "Wiki plane unavailable — skipping ingest for this run."
-            )
+            self.logger.warning("Wiki plane unavailable — skipping ingest for this run.")
             return {"ingested": False, "reason": "wiki toolkit unavailable"}
 
         # G6 — scope the nightly ingest to the meetings subfolder only, so
@@ -1242,9 +1182,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         window = days if days is not None else _WEEKLY_WINDOW_DAYS
         return await self._run_digest(
             window_days=window,
-            recipients=(
-                recipients if recipients is not None else self.weekly_recipients
-            ),
+            recipients=(recipients if recipients is not None else self.weekly_recipients),
             subject_prefix="Weekly Meeting Insights",
             prompt_builder=self._build_weekly_insights_prompt,
             job="weekly insights",
@@ -1298,9 +1236,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
             if not recipients:
                 outcome["reason"] = "no recipients configured"
-                self.logger.warning(
-                    "No recipients configured for %s — nothing sent.", job
-                )
+                self.logger.warning("No recipients configured for %s — nothing sent.", job)
                 return outcome
 
             body = await self._ask_llm(prompt_builder(analyses))
@@ -1321,9 +1257,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
         return outcome
 
-    async def _notes_in_window(
-        self, days: int, now: Optional[datetime] = None
-    ) -> List[str]:
+    async def _notes_in_window(self, days: int, now: Optional[datetime] = None) -> List[str]:
         """List meeting-note titles whose date prefix falls inside a window.
 
         Note titles are ``YYYY-MM-DD-slug`` (see
@@ -1401,9 +1335,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             return str(response.message)
         return str(response)
 
-    async def _email(
-        self, subject: str, body: str, recipients: List[str]
-    ) -> bool:
+    async def _email(self, subject: str, body: str, recipients: List[str]) -> bool:
         """Send one email; returns a success flag.
 
         ``send_notification`` swallows provider errors and reports them as
@@ -1431,9 +1363,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
         status = (result or {}).get("status")
         if status != "success":
-            self.logger.error(
-                "Could not send %r: %s", subject, (result or {}).get("error", result)
-            )
+            self.logger.error("Could not send %r: %s", subject, (result or {}).get("error", result))
             return False
         return True
 
@@ -1451,9 +1381,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         Returns:
             One ``### <note>`` section per meeting.
         """
-        return "\n\n".join(
-            f"### {entry['note']}\n{entry['analysis']}" for entry in analyses
-        )
+        return "\n\n".join(f"### {entry['note']}\n{entry['analysis']}" for entry in analyses)
 
     @classmethod
     def _build_daily_digest_prompt(cls, analyses: List[Dict[str, str]]) -> str:
