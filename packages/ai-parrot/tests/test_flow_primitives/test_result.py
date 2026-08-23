@@ -416,3 +416,60 @@ class TestBuildNodeMetadataEnvelope:
             node_id="n1", agent=UnconfiguredAgent(), response=None, output=None,
             execution_time=0.0, status="completed",
         ).client is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-447 / TASK-2327 — envelope-aware FlowResult.node_results
+# ---------------------------------------------------------------------------
+
+
+class TestNodeResultsEnvelope:
+    """``node_results`` must yield scalars for BOTH executors' shapes."""
+
+    def test_node_results_unwraps_envelope(self, agent_response_with_usage):
+        """A FlowResult whose responses hold AgentNode envelopes yields scalars."""
+        result = FlowResult(
+            output="x",
+            responses={
+                "n1": {
+                    "response": agent_response_with_usage,
+                    "output": "answer-1",
+                    "execution_time": 0.1,
+                    "prompt": "q",
+                },
+                "n2": {
+                    "response": agent_response_with_usage,
+                    "output": {"structured": True},
+                    "execution_time": 0.2,
+                    "prompt": "q2",
+                },
+            },
+        )
+        assert result.node_results == {"n1": "answer-1", "n2": {"structured": True}}
+        # The alias inherits the fix.
+        assert result.agent_results == {"n1": "answer-1", "n2": {"structured": True}}
+        # No value is an envelope dict (spec AC8).
+        assert not any(
+            isinstance(v, dict) and "response" in v
+            for v in result.node_results.values()
+        )
+        # Read-only projection: `responses` is untouched.
+        assert result.responses["n1"]["prompt"] == "q"
+
+    def test_node_results_crew_shape_unchanged(self, agent_response_with_usage):
+        """AgentResponse responses still unwrap via .output; None stays None."""
+        result = FlowResult(
+            output="x",
+            responses={
+                "a1": agent_response_with_usage,
+                "a2": None,
+                "a3": "plain",
+                # A dict WITHOUT an "output" key is not an envelope.
+                "a4": {"other": 1},
+            },
+        )
+        assert result.node_results["a1"] == agent_response_with_usage.output
+        assert result.node_results["a2"] is None
+        assert result.node_results["a3"] == "plain"
+        assert result.node_results["a4"] == {"other": 1}
+        assert result.agent_results == result.node_results

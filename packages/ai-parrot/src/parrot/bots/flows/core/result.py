@@ -366,7 +366,26 @@ class FlowResult:
     """
 
     output: Any
-    """Final output from the workflow."""
+    """Final output from the workflow.
+
+    **Shape contract (normative, FEAT-447 G4).** ``output`` is deliberately
+    polymorphic, and its shape is decided by how many *leaf* nodes the run
+    actually executed (see ``AgentsFlow._aggregate_result``):
+
+    * **Exactly one executed leaf** -> the leaf's own **scalar** output (the
+      node's answer, already unwrapped from its envelope). This is the common
+      case: a linear or converging graph, and every ``AgentCrew`` run.
+    * **A fan-out (two or more executed leaves)** -> a
+      ``dict[node_id, Any]`` mapping each leaf's node_id to its scalar output.
+    * **No executed leaf** (empty or fully-failed run) -> ``None``.
+
+    Consumers that must not branch on shape should read
+    :attr:`node_results` instead, which is *always* a
+    ``dict[node_id, scalar]`` for every node, not just the leaves.
+
+    This polymorphism is intentional and pinned by tests; it is not a bug to
+    "fix", and there is no plural ``outputs`` field.
+    """
 
     responses: Dict[str, Any] = field(default_factory=dict)
     """Mapping of node IDs → raw response objects."""
@@ -422,12 +441,22 @@ class FlowResult:
 
     @property
     def content(self) -> Optional[Any]:
-        """Alias for ``output`` (OutputFormatter compatibility)."""
+        """Alias for ``output`` (OutputFormatter compatibility).
+
+        Inherits :attr:`output`'s shape contract verbatim: a **scalar** when
+        the run had a single executed leaf, a ``dict[node_id, Any]`` on a
+        fan-out, ``None`` when nothing produced a result.
+        """
         return self.output
 
     @property
     def final_result(self) -> Optional[Any]:
-        """Compatibility alias for previous API."""
+        """Compatibility alias for previous API.
+
+        Inherits :attr:`output`'s shape contract verbatim: a **scalar** when
+        the run had a single executed leaf, a ``dict[node_id, Any]`` on a
+        fan-out, ``None`` when nothing produced a result.
+        """
         return self.output
 
     @property
@@ -437,11 +466,32 @@ class FlowResult:
 
     @property
     def node_results(self) -> Dict[str, Any]:
-        """Map node IDs to their output values extracted from responses."""
+        """Map node IDs to their scalar output values.
+
+        Handles both response shapes the two executors store in
+        ``responses``, so callers get a scalar answer either way (FEAT-447 G4):
+
+        * ``AgentCrew`` stores ``AgentResponse`` objects -> read ``.output``.
+        * ``AgentsFlow`` stores the ``AgentNode.execute()`` envelope dict
+          (``{"response", "output", "execution_time", "prompt"}``) -> read
+          the ``"output"`` key. Before FEAT-447 these fell through to the
+          ``else`` branch and callers received the whole envelope.
+
+        Anything else is returned as-is, and ``None`` stays ``None``. This is
+        a read-only projection: ``self.responses`` is never mutated.
+
+        Returns:
+            Mapping of node_id -> scalar output. Never an envelope dict.
+        """
         result: Dict[str, Any] = {}
         for node_id, resp in self.responses.items():
             if resp is None:
                 result[node_id] = None
+            # The envelope check must be explicit: a dict has no `.output`
+            # attribute, so it would otherwise fall through to `else` and
+            # leak the whole mapping to the caller.
+            elif isinstance(resp, dict) and "output" in resp:
+                result[node_id] = resp["output"]
             elif hasattr(resp, "output"):
                 result[node_id] = resp.output
             else:
