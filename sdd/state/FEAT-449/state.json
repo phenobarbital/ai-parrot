@@ -74,7 +74,7 @@
       "status": "completed",
       "started_at": "2026-08-23T00:57:17Z",
       "proposal_path": "sdd/proposals/legal-llm-wiki-spanish-eu-law.proposal.md",
-      "commit_sha": "8accce280919e58e2bbb4738c82114ca16fa0c96",
+      "commit_sha": "dc1c847cb8f5936a433e65020538437076622439",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "All five unknowns resolved and v1 narrowed to a single self-contained deliverable (BOE norms graph, zero LLM); the architectural fork was closed by D1/D2.",
       "completed_at": "2026-08-23T00:58:05Z"
