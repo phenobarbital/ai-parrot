@@ -298,10 +298,91 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added `sample_pdf`, `undecodable_file`, `mixed_corpus` (with
+`with_frontmatter.md`, `plain.md`, `contrato.pdf`, `decision.docx` via
+`pytest.importorskip("docx")`, and `bad.pdf`), and `mock_aiohttp_pdf` to
+`conftest.py` — no binary fixture committed, all built at runtime
+(pymupdf/python-docx). Added `TestFeat451DocumentIngestEndToEnd` to
+`test_integration.py` with all 8 named tests from the spec/task list
+(`test_ingest_pdf_end_to_end`, `test_ingest_page_carries_provenance`,
+`test_multi_page_pdf_identical_frontmatter`, `test_ingest_single_file`,
+`test_ingest_url`, `test_undecodable_never_reaches_llm`,
+`test_ingest_mixed_corpus` — driven through the real CLI and consuming
+the `mixed_corpus` fixture, 4 decodable + 1 skipped — and
+`test_legacy_pages_unchanged`). `test_build_unaffected` already existed
+(`TestBuildUnaffected`, pre-FEAT-451) and needed no changes; re-verified
+passing repeatedly throughout this task. Extended the local
+`_FakeTriageAdapter` with a `received_prompts` list (additive, doesn't
+affect existing tests) so the anti-mojibake test asserts directly against
+received prompts, not inferred output.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec — two real bugs found and fixed, per this task's
+own "if a test reveals a real bug, fix it in the owning module" allowance**:
 
-**Deviations from spec**: none | describe if any
+1. `packages/ai-parrot/src/parrot/knowledge/wiki/ingest.py` —
+   `WikiIngestOrchestrator.ingest()` unconditionally did
+   `Path(source_path).resolve()`. For a URL `source_path`, `.resolve()`
+   resolves it against the process cwd as if it were a relative
+   filesystem path (`"https://h/a.pdf"` → `"<cwd>/https:/h/a.pdf"`),
+   diverging from the identity `IngestTriageRouter.triage()` already
+   computes for the same URL (`str(Path(ref.uri))` — TASK-2357's own
+   contract explicitly sanctions passing `Path(ref.uri)` to `triage()`)
+   — `test_ingest_url` hit `FileNotFoundError` inside `add_source()`
+   because of this. Fixed by skipping `.resolve()` for a URL-scheme
+   `source_path`, matching the router's un-resolved, single-slash-
+   collapsed convention instead of diverging from it. Also relaxed the
+   `add_source()` exception handler: on the *triage-driven* path only
+   (never the legacy `triage=None` path — unchanged there), a
+   `FileNotFoundError`/`OSError` (always raised for a URL, which has no
+   local file to `stat()`) now defers registration to `record_decision()`
+   (Step 5) instead of hard-erroring — `record_decision()` was already
+   built to tolerate a source that was never registered via
+   `add_source()` (its own docstring: "a rejected document may never
+   have been registered ... at all").
+2. `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py` —
+   `SourceCollectionManager.record_decision()` independently re-did
+   `Path(path).resolve()` on its own `path` argument, so even after
+   fix #1 above it would re-diverge internally. Applied the identical,
+   narrowly-scoped fix: skip `.resolve()` for a URL-scheme path so its
+   own `source_uri` computation matches the router/orchestrator
+   convention instead of drifting.
+
+Both fixes touch only the `Path(<url>).resolve()` call site in each
+function — no broader redesign of URL source-identity handling (that
+remains a known, accepted limitation: a URL source's manifest
+`source_uri` is the single-slash-collapsed `str(Path(ref.uri))` form, not
+the double-slash original — consistent everywhere, but a genuine
+follow-up candidate is a dedicated URL-identity representation instead of
+overloading `pathlib.Path`). Verified via `git stash`/mypy-diff and
+`ruff check` baseline comparison that neither fix introduces any new
+lint/type finding — `ingest.py` has the same 4 pre-existing mypy errors
+(shifted line numbers) and the same 19 UP045 + 1 S112 pre-existing ruff
+findings (following this not-yet-pyupgraded file's `Optional[X]`
+convention for the small amount of new code); `sources.py` is fully
+clean both before and after. All 874 wiki-suite tests still pass (the one
+pre-existing `test_claude_code.py::TestInstaller` failure — an unrelated
+artifact-count assertion — was verified present on `dev` before this
+task via `git stash`, untouched here).
+
+Documentation: added a full `### parrot wiki ingest` section to
+`documentation/parrot-wiki-cli.md` (SOURCE's three shapes, all 13
+options including the two new ones, a supported-formats table stating
+plainly which need `ai-parrot-loaders`, and the full page-frontmatter
+contract with a worked YAML example) — no such section existed before
+this feature (FEAT-402 never added one either; this task also closes
+that pre-existing doc gap for `ingest` as a whole, not just the FEAT-451
+delta). `docs/wiki-claude-code.md` was left untouched — checked, it
+does not document the `ingest` command's argument shape at all (only
+`build`/`query`/`page`/`related`/`upsert`/`status`/`export`), so the
+task's own conditional ("if it mentions the folder-only shape") does not
+apply.
+
+The "suite passes with `ai-parrot-loaders` uninstalled" acceptance
+criterion was verified via the established repo pattern (forced
+`ImportError` on `parrot_loaders.*` imports, matching TASK-2351/2353's
+own test technique) rather than literally uninstalling the package from
+this shared dev venv, which would have risked breaking unrelated test
+suites. `test_undecodable_never_reaches_llm` exercises this path
+directly and deterministically.
