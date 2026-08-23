@@ -214,8 +214,77 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Confirmed FEAT-450 merged (`dev` @ `c42802ffe`, "Merge branch
+'feat-450-wiki-namespaces' into dev"), pushed `dev` to `origin/dev`, then
+merged `origin/dev` into this feature branch (clean merge, no conflicts —
+FEAT-450 touches only `packages/ai-parrot/src/parrot/knowledge/wiki/*`,
+disjoint from this feature's files). Re-verified every previously-UNVERIFIED
+FEAT-450 symbol against the real merged CLI: `wikitoolkit ns --help` /
+`ns add --help` confirmed the command exists with `--store DIR --backend
+[sqlite|memory]` exactly as expected (one correction vs. the task's
+UNVERIFIED assumption: the "another wiki project" flag is `--project`, not
+`--path` — irrelevant here since this task uses `--store`).
 
-**Deviations from spec**: none | describe if any
+Registered the namespace for real (not stubbed, not hand-edited config):
+`wikitoolkit ns add notes --store ~/.parrot/wikis/notes --backend sqlite
+--description "..."`. This is the FIRST real bootstrap of that storage
+directory in this environment — also exercised `_build_notes_wiki_toolkit()`
+live (offline-capable: `build_graph_memory_toolkit`'s default
+`HashingGraphEmbedder` needs no LLM/API key) to actually create it via
+`create_wiki()`, confirming TASK-2379's idempotent-bootstrap claim against
+real code, not just mocks. `wikitoolkit ns list --json` confirms `"name":
+"notes", "kind": "store", "backend": "sqlite", "built": true, "target":
+"../../.parrot/wikis/notes"` — resolves correctly to
+`~/.parrot/wikis/notes`, matching `AUDIO_NOTES_WIKI_STORAGE_DIR`'s default.
+`wikitoolkit query --ns notes "<phrase>"` and the default `--ns all`
+broadcast both reach the store cleanly (no error — "No wiki results", not
+an exception), and `--ns local` (the codebase's own wiki, standing in for
+the "meetings plane unaffected" check in this repo context) still answers
+normally, unaffected by the new namespace.
+
+Attempted a full live capture (`AudioNoteCaptureToolkit.capture_audio_note`
+against the real vault path and the real notes wiki toolkit built above) to
+get a positive query hit end-to-end. The Obsidian note write succeeded
+(durable artifact on disk, verbatim transcript, G5 intact) and
+`ingest_source` did not raise (`wiki_ingested=True` in the tool's own
+return value), but the underlying PageIndex authoring step logged
+`PageIndex insert failed ... "Tree 'notes' does not exist"` after a ~11s
+`AnthropicClient` call — this environment has no LLM API credentials
+configured, so no page was actually authored, and the subsequent
+`wikitoolkit query --ns notes "<distinctive phrase>"` correctly returned no
+hit (nothing to find). This is an environment/credentials limitation, not a
+FEAT-452 or FEAT-450 defect, and reproducing/fixing it is out of this
+task's scope regardless ("NOT in scope: implementing any part of FEAT-450").
+Flagging one observation for a future task, not fixed here: `ingest_source`
+appears to swallow the PageIndex-insert failure internally and still report
+non-error status to the caller (`AudioNoteCaptureToolkit._ingest_into_wiki`
+only ever sees "no exception" → `wiki_ingested=True`) — worth a look by
+whoever owns `wiki/ingest.py`, but it is `wiki/ingest.py:308`/`:931`
+(FEAT-260/FEAT-450 territory), not this feature's code.
+
+Documented the registration step as a new "Recipe: FirefliesWikiAgent's
+audio-notes plane (FEAT-452)" subsection in
+`documentation/parrot-wiki-cli.md` (the file FEAT-450 itself uses for
+namespace operator docs), following that file's existing tone/format:
+exact command, verification steps, the "run once per deployment, never
+committed, never auto-registered" note, and an explicit statement that the
+`meetings` plane is deliberately NOT registered by this recipe. Marked
+Module 6's two AC bullets `[x]` in `sdd/specs/audio-notes-obsidian.spec.md`
+§5, each with an inline verification note (including the sandbox-credential
+caveat above) rather than a bare checkmark.
+
+No production code was changed — only `documentation/parrot-wiki-cli.md`
+and `sdd/specs/audio-notes-obsidian.spec.md` (`git status --porcelain`
+confirms). Cleaned up: `~/.parrot/wikis/notes` (created live above) is a
+real, git-ignored `.parrot/`-style local artifact — left in place as a
+harmless bootstrap consistent with what a real `configure()` call would
+have produced. The `.parrot/wiki.json` namespace registration is likewise
+a local, gitignored, per-machine registry entry — correctly not part of
+this commit.
+
+**Deviations from spec**: none — the "no production code change is
+expected" guardrail held; the one CLI flag correction (`--project` not
+`--path`) was already anticipated by the task as a possible UNVERIFIED-vs-
+real drift and required no scope change since `--store` was used throughout.
