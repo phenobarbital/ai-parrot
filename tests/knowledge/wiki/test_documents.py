@@ -1,7 +1,8 @@
-"""Unit tests for parrot.knowledge.wiki.documents (FEAT-451, TASK-2351)."""
+"""Unit tests for parrot.knowledge.wiki.documents (FEAT-451, TASK-2351/2352)."""
 
 import click
 import pytest
+import yaml
 
 from parrot.knowledge.wiki.documents import (
     AcquiredDocument,
@@ -9,7 +10,9 @@ from parrot.knowledge.wiki.documents import (
     DocumentMetadata,
     DocumentRef,
     TriageProvenance,
+    render_frontmatter,
     resolve_sources,
+    split_frontmatter,
 )
 
 
@@ -68,3 +71,65 @@ class TestModels:
 
     def test_acquisition_error_is_exception(self):
         assert issubclass(DocumentAcquisitionError, Exception)
+
+
+class TestRenderFrontmatter:
+    def test_deterministic(self):
+        md = DocumentMetadata(title="A", author="B", page_count=3)
+        assert render_frontmatter(md) == render_frontmatter(md)
+
+    def test_omits_none(self):
+        out = render_frontmatter(DocumentMetadata(title="A"))
+        assert "author" not in out
+
+    def test_empty_returns_empty_string(self):
+        assert render_frontmatter(DocumentMetadata()) == ""
+
+    def test_extra_keys_sorted(self):
+        md = DocumentMetadata(extra={"z": 1, "a": 2})
+        out = render_frontmatter(md)
+        assert out.index("a:") < out.index("z:")
+
+    def test_provenance_nested_under_triage(self):
+        md = DocumentMetadata(title="A")
+        prov = TriageProvenance(composite_score=0.8, decision="admit")
+        parsed = yaml.safe_load(render_frontmatter(md, prov).strip("-\n"))
+        assert parsed["triage"]["decision"] == "admit"
+        assert parsed["title"] == "A"
+
+    def test_escapes_hostile_title(self):
+        md = DocumentMetadata(title="Report: Q3\nsecond line")
+        parsed = yaml.safe_load(render_frontmatter(md).strip("-\n"))
+        assert parsed["title"] == "Report: Q3\nsecond line"
+
+
+class TestSplitFrontmatter:
+    def test_roundtrip(self):
+        text = "---\ntitle: A\nauthor: B\n---\n# Body\n"
+        meta, body = split_frontmatter(text)
+        assert meta == {"title": "A", "author": "B"}
+        assert body.startswith("# Body")
+        assert "title: A" not in body
+
+    def test_no_block_unchanged(self):
+        text = "# Just a heading\n"
+        assert split_frontmatter(text) == ({}, text)
+
+    def test_unterminated_block_unchanged(self):
+        text = "---\ntitle: A\n# no closing fence\n"
+        assert split_frontmatter(text) == ({}, text)
+
+    def test_invalid_yaml_unchanged(self):
+        text = "---\n: : :\n---\nbody\n"
+        meta, body = split_frontmatter(text)
+        assert meta == {} and body == text
+
+    def test_non_mapping_unchanged(self):
+        text = "---\n- a\n- b\n---\nbody\n"
+        meta, body = split_frontmatter(text)
+        assert meta == {} and body == text
+
+    def test_crlf_tolerated(self):
+        text = "---\r\ntitle: A\r\n---\r\nbody\r\n"
+        meta, _ = split_frontmatter(text)
+        assert meta == {"title": "A"}

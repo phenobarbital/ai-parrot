@@ -15,14 +15,37 @@ argument into a list of :class:`DocumentRef`.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import click
+import yaml
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("parrot.knowledge.wiki.documents")
+
+# Explicit, fixed order — this tuple IS the determinism guarantee for
+# render_frontmatter(). Never iterate model_dump() insertion order and
+# never sort_keys=True over the whole document.
+_FRONTMATTER_FIELD_ORDER: tuple[str, ...] = (
+    "title",
+    "author",
+    "created_at",
+    "modified_at",
+    "page_count",
+    "word_count",
+    "language",
+    "content_type",
+    "source_url",
+    "loader",
+)
+
+# THE REGEX PRECEDENT — mirrors
+# parrot_loaders.markdown.MarkdownLoader._extract_metadata_from_markdown
+# (markdown.py:364-372). Tolerant of CRLF via the \r? group.
+_FRONTMATTER_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n", re.DOTALL)
 
 
 class DocumentRef(BaseModel):
@@ -179,3 +202,85 @@ def resolve_sources(source: str, *, recursive: bool = True) -> list[DocumentRef]
         f"SOURCE not found: {source!r} is neither an existing file/directory "
         "nor an http(s) URL."
     )
+
+
+def render_frontmatter(
+    metadata: DocumentMetadata,
+    provenance: TriageProvenance | None = None,
+) -> str:
+    """Render deterministic YAML frontmatter for a wiki page body.
+
+    Fixed key order, sorted collections, ``None`` fields omitted, and a
+    trailing ``---\\n`` — same determinism contract as
+    ``parrot.knowledge.okf.frontmatter.project_frontmatter``: same input
+    always produces byte-identical output. Returns ``""`` when every field
+    is ``None`` (never emits an empty ``---\\n---\\n`` block).
+
+    Descriptive document fields come first; ``provenance`` (when given and
+    non-empty) is rendered under a single nested ``triage:`` key so the
+    descriptive and audit halves can never collide on a key name.
+
+    Args:
+        metadata: Descriptive document metadata to render.
+        provenance: Optional FEAT-402 triage decision trail to render
+            under a nested ``triage:`` key.
+
+    Returns:
+        A YAML frontmatter block (``---\\n...\\n---\\n\\n``), or ``""`` when
+        ``metadata`` and ``provenance`` are both fully empty.
+    """
+    payload: dict[str, Any] = {}
+    for field in _FRONTMATTER_FIELD_ORDER:
+        value = getattr(metadata, field)
+        if value is not None:
+            payload[field] = value
+    if metadata.extra:
+        payload["extra"] = {key: metadata.extra[key] for key in sorted(metadata.extra)}
+    if provenance is not None:
+        triage = {
+            key: value
+            for key, value in provenance.model_dump().items()
+            if value is not None
+        }
+        if triage:
+            payload["triage"] = triage
+
+    if not payload:
+        return ""
+
+    body = yaml.safe_dump(
+        payload, sort_keys=False, allow_unicode=True, default_flow_style=False
+    )
+    return f"---\n{body}---\n\n"
+
+
+def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """Split leading YAML frontmatter off a text document.
+
+    Returns ``(parsed_mapping, body_without_frontmatter)``, or ``({},
+    text)`` unchanged when there is no leading ``---`` block, when the
+    block never terminates, or when it does not parse as a YAML mapping —
+    malformed frontmatter is never a hard error, it is simply left inline.
+
+    Args:
+        text: Raw document text, possibly carrying leading YAML
+            frontmatter.
+
+    Returns:
+        A ``(mapping, body)`` tuple. ``mapping`` is ``{}`` and ``body`` is
+        ``text`` unchanged whenever the leading block cannot be parsed as
+        a YAML mapping.
+    """
+    match = _FRONTMATTER_RE.match(text)
+    if not match:
+        return {}, text
+
+    try:
+        parsed = yaml.safe_load(match.group(1))
+    except yaml.YAMLError:
+        return {}, text
+
+    if not isinstance(parsed, dict):
+        return {}, text
+
+    return parsed, text[match.end() :]
