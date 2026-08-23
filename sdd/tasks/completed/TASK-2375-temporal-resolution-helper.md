@@ -232,10 +232,29 @@ class TestTemporalResolution:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Implemented `article_in_force(store, ctx, articulo_key, as_of)`
+exactly per the "Pattern to Follow" — reads `query_template` from
+`ctx.ontology.traversal_patterns["article_in_force"]`, binds
+`articulo_key`/`as_of`/`@articulo`, calls `execute_traversal`, returns
+`ArticleVersion(**rows[0])` or `None`. Added a `KeyError` with a clear
+message when the pattern is missing from the ontology (configuration bug,
+fails loudly per the task's constraint). Contains zero Python date
+comparison — asserted by `test_no_python_date_comparison`, which greps the
+module source for the literal string `"valid_from"` (also had to phrase
+the docstring's "no version in force" explanation without using that
+literal substring, to avoid tripping its own test). 9 unit tests pass
+(`pytest -c pytest.ini packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py -v`);
+full `tests/legal/` suite (38/38) passes together. `ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+The `legal_ctx` fixture (not shown in the task's Test Specification stub)
+was built by merging `base.ontology.yaml` + `legal.ontology.yaml` via
+`OntologyMerger`, matching TASK-2370/2371's own test fixture pattern, then
+wrapping the result in a `TenantContext`. Boundary semantics
+(`valid_from` inclusive / `valid_to` exclusive) are asserted at the
+binding/deserialisation level only, per the task's own note that true
+end-to-end boundary enforcement (via the AQL FILTER clauses against a real
+graph) is TASK-2376's concern.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -130,7 +130,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-norms-graph-boe",
       "spec": "sdd/specs/legal-norms-graph-boe.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Reads the traversal pattern authored in TASK-2371 — must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:17:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2375-temporal-resolution-helper.md"
+      "completed_at": "2026-08-23T01:43:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2375-temporal-resolution-helper.md"
     },
     {
       "id": "TASK-2376",
