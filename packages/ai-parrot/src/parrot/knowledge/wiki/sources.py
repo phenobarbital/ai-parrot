@@ -129,16 +129,11 @@ class SourceCollectionManager:
                 or ``arango_store``.
         """
         if backend not in ("sqlite", "json", "arangodb"):
-            raise ValueError(
-                f"Unknown sources backend {backend!r} — expected 'sqlite',"
-                " 'json', or 'arangodb'"
-            )
+            raise ValueError(f"Unknown sources backend {backend!r} — expected 'sqlite'," " 'json', or 'arangodb'")
         self.sources_dir: Path = Path(sources_dir)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.backend: str = backend
-        self.db_path: Path = (
-            Path(db_path) if db_path else self.sources_dir.parent / "wiki.db"
-        )
+        self.db_path: Path = Path(db_path) if db_path else self.sources_dir.parent / "wiki.db"
         self.manifest_path: Path = self.sources_dir / self._MANIFEST_FILENAME
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._manifest: dict[str, SourceManifestEntry] = {}
@@ -233,9 +228,7 @@ class SourceCollectionManager:
         if self.backend == "arangodb":
             return self._run_async(self._async_list_sources())
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM sources ORDER BY rowid"
-            ).fetchall()
+            rows = conn.execute("SELECT * FROM sources ORDER BY rowid").fetchall()
         return [self._row_to_entry(row) for row in rows]
 
     def get_source(self, source_id: str) -> SourceManifestEntry | None:
@@ -253,9 +246,7 @@ class SourceCollectionManager:
         if self.backend == "arangodb":
             return self._run_async(self._async_get_source(source_id))
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM sources WHERE source_id = ?", (source_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM sources WHERE source_id = ?", (source_id,)).fetchone()
         return self._row_to_entry(row) if row else None
 
     def is_stale(self, source_id: str) -> bool:
@@ -280,9 +271,7 @@ class SourceCollectionManager:
 
         path = Path(entry.source_uri)
         if not path.exists():
-            self.logger.debug(
-                "is_stale: source_id=%s file gone (%s)", source_id, path
-            )
+            self.logger.debug("is_stale: source_id=%s file gone (%s)", source_id, path)
             return True
 
         current_mtime = path.stat().st_mtime
@@ -320,9 +309,7 @@ class SourceCollectionManager:
         """
         entry = self.get_source(source_id)
         if entry is None:
-            self.logger.warning(
-                "mark_ingested: source_id=%s not found", source_id
-            )
+            self.logger.warning("mark_ingested: source_id=%s not found", source_id)
             return None
 
         # Refresh hash and mtime in case the file was re-written during ingest.
@@ -406,28 +393,16 @@ class SourceCollectionManager:
             file_hash = existing.file_hash if existing else ""
             mtime = existing.mtime if existing else 0.0
 
-        resolved_status = status or (
-            "rejected" if destination == "discard" else "ingested"
-        )
+        resolved_status = status or ("rejected" if destination == "discard" else "ingested")
 
         entry = SourceManifestEntry(
-            source_id=(
-                existing.source_id
-                if existing
-                else self._generate_source_id(source_uri)
-            ),
+            source_id=(existing.source_id if existing else self._generate_source_id(source_uri)),
             source_uri=source_uri,
             file_hash=file_hash,
             mtime=mtime,
-            ingested_at=(
-                existing.ingested_at
-                if existing
-                else datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-            ),
+            ingested_at=(existing.ingested_at if existing else datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")),
             pages_generated=(
-                pages_generated
-                if pages_generated is not None
-                else (existing.pages_generated if existing else [])
+                pages_generated if pages_generated is not None else (existing.pages_generated if existing else [])
             ),
             status=resolved_status,
             destination=destination,
@@ -437,8 +412,7 @@ class SourceCollectionManager:
         )
         self._upsert(entry)
         self.logger.debug(
-            "Recorded triage decision: source_uri=%s destination=%s"
-            " decision_source=%s status=%s",
+            "Recorded triage decision: source_uri=%s destination=%s" " decision_source=%s status=%s",
             source_uri,
             destination,
             decision_source,
@@ -473,9 +447,7 @@ class SourceCollectionManager:
         """
         entry = self.get_source(source_id)
         if entry is None:
-            self.logger.warning(
-                "record_document_metadata: source_id=%s not found", source_id
-            )
+            self.logger.warning("record_document_metadata: source_id=%s not found", source_id)
             return
 
         updated = entry.model_copy(
@@ -516,9 +488,7 @@ class SourceCollectionManager:
                 self.logger.debug("Source removed: source_id=%s", source_id)
             return removed
         with self._connect() as conn:
-            cur = conn.execute(
-                "DELETE FROM sources WHERE source_id = ?", (source_id,)
-            )
+            cur = conn.execute("DELETE FROM sources WHERE source_id = ?", (source_id,))
         removed = cur.rowcount > 0
         if removed:
             self.logger.debug("Source removed: source_id=%s", source_id)
@@ -591,11 +561,7 @@ class SourceCollectionManager:
                     entry.decision_source,
                     entry.charter_version,
                     entry.composite_score,
-                    (
-                        json.dumps(entry.doc_metadata)
-                        if entry.doc_metadata is not None
-                        else None
-                    ),
+                    (json.dumps(entry.doc_metadata) if entry.doc_metadata is not None else None),
                     entry.content_type,
                     entry.loader,
                 ),
@@ -629,13 +595,9 @@ class SourceCollectionManager:
             pages = json.loads(row["pages_generated"] or "[]")
         except (json.JSONDecodeError, TypeError):
             pages = []
-        raw_doc_metadata = SourceCollectionManager._optional_column(
-            row, "doc_metadata"
-        )
+        raw_doc_metadata = SourceCollectionManager._optional_column(row, "doc_metadata")
         try:
-            doc_metadata = (
-                json.loads(raw_doc_metadata) if raw_doc_metadata is not None else None
-            )
+            doc_metadata = json.loads(raw_doc_metadata) if raw_doc_metadata is not None else None
         except (TypeError, ValueError, json.JSONDecodeError):
             # A corrupt cell must never make the whole manifest unreadable.
             doc_metadata = None
@@ -648,19 +610,11 @@ class SourceCollectionManager:
             pages_generated=pages,
             status=row["status"],
             destination=SourceCollectionManager._optional_column(row, "destination"),
-            decision_source=SourceCollectionManager._optional_column(
-                row, "decision_source"
-            ),
-            charter_version=SourceCollectionManager._optional_column(
-                row, "charter_version"
-            ),
-            composite_score=SourceCollectionManager._optional_column(
-                row, "composite_score"
-            ),
+            decision_source=SourceCollectionManager._optional_column(row, "decision_source"),
+            charter_version=SourceCollectionManager._optional_column(row, "charter_version"),
+            composite_score=SourceCollectionManager._optional_column(row, "composite_score"),
             doc_metadata=doc_metadata,
-            content_type=SourceCollectionManager._optional_column(
-                row, "content_type"
-            ),
+            content_type=SourceCollectionManager._optional_column(row, "content_type"),
             loader=SourceCollectionManager._optional_column(row, "loader"),
         )
 
@@ -769,9 +723,7 @@ class SourceCollectionManager:
                     " directly here would deadlock)."
                 )
             if current is None:
-                return asyncio.run_coroutine_threadsafe(
-                    coro, self._arango_loop
-                ).result()
+                return asyncio.run_coroutine_threadsafe(coro, self._arango_loop).result()
 
         try:
             asyncio.get_running_loop()
@@ -797,9 +749,7 @@ class SourceCollectionManager:
             return self._arango_store._db
         return self._arango_db
 
-    async def _arango_query(
-        self, aql: str, bind_vars: dict[str, Any]
-    ) -> list[Any]:
+    async def _arango_query(self, aql: str, bind_vars: dict[str, Any]) -> list[Any]:
         """Run a read AQL query, treating an empty result as ``[]``.
 
         Same ``NoDataFound``-as-empty-result handling as
@@ -815,9 +765,7 @@ class SourceCollectionManager:
             raise RuntimeError(f"ArangoDB query failed: {error}")
         return result or []
 
-    async def _arango_execute(
-        self, aql: str, bind_vars: dict[str, Any]
-    ) -> list[Any]:
+    async def _arango_execute(self, aql: str, bind_vars: dict[str, Any]) -> list[Any]:
         """Run a write AQL statement (UPSERT/UPDATE/REMOVE)."""
         db = await self._resolve_arango_db()
         result, error = await db.execute(aql, bind_vars=bind_vars)
@@ -873,9 +821,7 @@ class SourceCollectionManager:
         )
         return [self._doc_to_entry(row) for row in rows]
 
-    async def _async_get_source(
-        self, source_id: str
-    ) -> SourceManifestEntry | None:
+    async def _async_get_source(self, source_id: str) -> SourceManifestEntry | None:
         """Fetch a single source document by its ``_key``."""
         rows = await self._arango_query(
             "FOR doc IN @@collection FILTER doc._key == @key LIMIT 1 RETURN doc",
@@ -886,8 +832,7 @@ class SourceCollectionManager:
     async def _async_remove_source(self, source_id: str) -> bool:
         """Delete a source document; ``True`` when a row was removed."""
         rows = await self._arango_query(
-            "FOR doc IN @@collection FILTER doc._key == @key"
-            " REMOVE doc IN @@collection RETURN OLD",
+            "FOR doc IN @@collection FILTER doc._key == @key" " REMOVE doc IN @@collection RETURN OLD",
             {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id},
         )
         return bool(rows)
@@ -895,8 +840,7 @@ class SourceCollectionManager:
     async def _async_find_id_by_uri(self, source_uri: str) -> str | None:
         """Look up an existing source ID by URI."""
         rows = await self._arango_query(
-            "FOR doc IN @@collection FILTER doc.source_uri == @uri"
-            " LIMIT 1 RETURN doc.source_id",
+            "FOR doc IN @@collection FILTER doc.source_uri == @uri" " LIMIT 1 RETURN doc.source_id",
             {"@collection": _ARANGO_SOURCES_COLLECTION, "uri": source_uri},
         )
         return rows[0] if rows else None
@@ -911,18 +855,13 @@ class SourceCollectionManager:
         (existing data is never touched; only missing structure is added).
         """
         with self._connect() as conn:
-            existing = {
-                row["name"]
-                for row in conn.execute("PRAGMA table_info(sources)").fetchall()
-            }
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
             for column_map in (_SOURCES_DECISION_COLUMNS, _SOURCES_DOCUMENT_COLUMNS):
                 for name, col_type in column_map.items():
                     if name in existing:
                         continue
                     conn.execute(f"ALTER TABLE sources ADD COLUMN {name} {col_type}")
-                    self.logger.debug(
-                        "Migrated sources table: added column %s (%s)", name, col_type
-                    )
+                    self.logger.debug("Migrated sources table: added column %s (%s)", name, col_type)
 
     def _migrate_json_manifest(self) -> None:
         """One-time migration of a legacy ``.manifest.json`` into SQLite.
@@ -935,18 +874,14 @@ class SourceCollectionManager:
         if not self.manifest_path.exists():
             return
         try:
-            raw: dict[str, Any] = json.loads(
-                self.manifest_path.read_text(encoding="utf-8")
-            )
+            raw: dict[str, Any] = json.loads(self.manifest_path.read_text(encoding="utf-8"))
             imported = 0
             for sid, data in raw.items():
                 entry = SourceManifestEntry(**data)
                 if self.get_source(sid) is None:
                     self._upsert(entry)
                     imported += 1
-            self.manifest_path.rename(
-                self.manifest_path.with_suffix(".json.bak")
-            )
+            self.manifest_path.rename(self.manifest_path.with_suffix(".json.bak"))
             self.logger.info(
                 "Migrated %d legacy manifest entrie(s) from %s into %s",
                 imported,
@@ -971,15 +906,11 @@ class SourceCollectionManager:
         exist or contains invalid JSON.
         """
         if not self.manifest_path.exists():
-            self.logger.debug(
-                "No existing manifest at %s; starting fresh", self.manifest_path
-            )
+            self.logger.debug("No existing manifest at %s; starting fresh", self.manifest_path)
             return
         try:
             raw: dict = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-            self._manifest = {
-                sid: SourceManifestEntry(**data) for sid, data in raw.items()
-            }
+            self._manifest = {sid: SourceManifestEntry(**data) for sid, data in raw.items()}
             self.logger.debug(
                 "Loaded manifest with %d source(s) from %s",
                 len(self._manifest),
@@ -1000,9 +931,7 @@ class SourceCollectionManager:
         ``model_dump()``.  The file is written atomically via a
         temporary sibling to avoid partial writes.
         """
-        data = {
-            sid: entry.model_dump() for sid, entry in self._manifest.items()
-        }
+        data = {sid: entry.model_dump() for sid, entry in self._manifest.items()}
         tmp_path = self.manifest_path.with_suffix(".json.tmp")
         tmp_path.write_text(
             json.dumps(data, indent=2, default=str),
@@ -1037,11 +966,7 @@ def format_decision_log_details(entry: SourceManifestEntry) -> str:
         A single-line, human-readable details string: source URI,
         composite score, decision source, and charter version.
     """
-    composite = (
-        f"{entry.composite_score:.4f}"
-        if entry.composite_score is not None
-        else "n/a"
-    )
+    composite = f"{entry.composite_score:.4f}" if entry.composite_score is not None else "n/a"
     return (
         f"source: {entry.source_uri}, composite: {composite}, "
         f"decision_source: {entry.decision_source or 'n/a'}, "

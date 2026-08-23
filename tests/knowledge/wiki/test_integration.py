@@ -39,7 +39,6 @@ from parrot.knowledge.wiki import (
 )
 from parrot.knowledge.wiki.models import WikiLintReport
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -79,9 +78,7 @@ def _make_pi_mock(
             "summary": "A neural network is a computational model.",
         }
     )
-    pi.insert_markdown = AsyncMock(
-        return_value={"tree_name": "test-wiki", "new_node_ids": ["pi-page-1"]}
-    )
+    pi.insert_markdown = AsyncMock(return_value={"tree_name": "test-wiki", "new_node_ids": ["pi-page-1"]})
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     pi.delete_tree = AsyncMock(return_value={"status": "deleted"})
     return pi
@@ -165,8 +162,7 @@ class TestEndToEnd:
         sources_dir.mkdir(parents=True)
         article = sources_dir / "neural_networks.md"
         article.write_text(
-            "# Neural Networks\n\n"
-            "A neural network is a computational model inspired by the human brain."
+            "# Neural Networks\n\n" "A neural network is a computational model inspired by the human brain."
         )
 
         pi = _make_pi_mock(
@@ -215,9 +211,9 @@ class TestEndToEnd:
         # The synthesised answer is built from snippets served by the
         # WikiStore plane, which recorded the ingested pages' summaries.
         answer = query_result["answer"]
-        assert "neural network" in answer.lower() or "computational model" in answer.lower(), (
-            f"Answer did not reference source content: {answer!r}"
-        )
+        assert (
+            "neural network" in answer.lower() or "computational model" in answer.lower()
+        ), f"Answer did not reference source content: {answer!r}"
 
         # Retrieval is answered from wiki.db — the toolkits are NOT
         # fanned out to at query time.
@@ -243,8 +239,7 @@ class TestEndToEnd:
         sources_dir.mkdir(parents=True)
         article = sources_dir / "article1.md"
         article.write_text(
-            "# Neural Networks\n\n"
-            "A neural network is a computational model inspired by the human brain."
+            "# Neural Networks\n\n" "A neural network is a computational model inspired by the human brain."
         )
 
         pi = _make_pi_mock()
@@ -267,9 +262,9 @@ class TestEndToEnd:
 
         # Verify source is now tracked
         sources_list = await toolkit.list_sources("test-wiki")
-        assert any(s["source_id"] == source_id for s in sources_list), (
-            f"source_id {source_id!r} not found in manifest: {sources_list}"
-        )
+        assert any(
+            s["source_id"] == source_id for s in sources_list
+        ), f"source_id {source_id!r} not found in manifest: {sources_list}"
 
         # --- Arrange: modify the source file ---
         article.write_text(
@@ -309,8 +304,7 @@ class TestEndToEnd:
         sources_dir.mkdir(parents=True)
         article1 = sources_dir / "article1.md"
         article1.write_text(
-            "# Neural Networks\n\n"
-            "A neural network is a computational model inspired by the human brain."
+            "# Neural Networks\n\n" "A neural network is a computational model inspired by the human brain."
         )
         article2 = sources_dir / "article2.md"
         article2.write_text(
@@ -377,17 +371,13 @@ class TestEndToEnd:
 
         # --- Assert: results are served by the WikiStore plane ---
         sources_seen = {r["source"] for r in search_results}
-        assert sources_seen <= {"lexical", "vector"}, (
-            f"Unexpected result sources: {sources_seen}"
-        )
+        assert sources_seen <= {"lexical", "vector"}, f"Unexpected result sources: {sources_seen}"
         pi.search.assert_not_called()
         gi.search_hybrid.assert_not_called()
 
         # --- Assert: results are sorted descending by score ---
         scores = [r["score"] for r in search_results]
-        assert scores == sorted(scores, reverse=True), (
-            f"Results are not sorted by score (desc): {scores}"
-        )
+        assert scores == sorted(scores, reverse=True), f"Results are not sorted by score (desc): {scores}"
 
     @pytest.mark.asyncio
     async def test_lint_reports_issues(
@@ -428,37 +418,25 @@ class TestEndToEnd:
         entry1 = toolkit._sources.add_source(orphan1)
         entry2 = toolkit._sources.add_source(orphan2)
 
-        assert entry1.pages_generated == [], (
-            "Freshly-added source should have no pages generated"
-        )
-        assert entry2.pages_generated == [], (
-            "Freshly-added source should have no pages generated"
-        )
+        assert entry1.pages_generated == [], "Freshly-added source should have no pages generated"
+        assert entry2.pages_generated == [], "Freshly-added source should have no pages generated"
 
         # --- Act: lint ---
         lint_result = await toolkit.lint(wiki_name="test-wiki")
 
         # --- Assert: lint report structure ---
-        assert "orphan_sources" in lint_result, (
-            f"lint result missing 'orphan_sources': {lint_result}"
-        )
-        assert "total_issues" in lint_result, (
-            f"lint result missing 'total_issues': {lint_result}"
-        )
+        assert "orphan_sources" in lint_result, f"lint result missing 'orphan_sources': {lint_result}"
+        assert "total_issues" in lint_result, f"lint result missing 'total_issues': {lint_result}"
 
         # --- Assert: both orphan source IDs are listed ---
         orphan_ids = lint_result["orphan_sources"]
-        assert entry1.source_id in orphan_ids, (
-            f"orphan1 ({entry1.source_id!r}) not in orphan_sources: {orphan_ids}"
-        )
-        assert entry2.source_id in orphan_ids, (
-            f"orphan2 ({entry2.source_id!r}) not in orphan_sources: {orphan_ids}"
-        )
+        assert entry1.source_id in orphan_ids, f"orphan1 ({entry1.source_id!r}) not in orphan_sources: {orphan_ids}"
+        assert entry2.source_id in orphan_ids, f"orphan2 ({entry2.source_id!r}) not in orphan_sources: {orphan_ids}"
 
         # --- Assert: total_issues reflects the orphan count ---
-        assert lint_result["total_issues"] >= 2, (
-            f"Expected total_issues >= 2 for 2 orphan sources, got {lint_result['total_issues']}"
-        )
+        assert (
+            lint_result["total_issues"] >= 2
+        ), f"Expected total_issues >= 2 for 2 orphan sources, got {lint_result['total_issues']}"
 
         # Verify the OKF lint was called
         okf.lint_knowledge_base.assert_called_once()
@@ -482,8 +460,7 @@ class _FakeTriageAdapter:
                 sensitive=False,
             ),
             "ARCHIVE_MARKER": TriageOutput(
-                briefing="Middling content — density and durability neither"
-                " clearly admits nor clearly rejects it.",
+                briefing="Middling content — density and durability neither" " clearly admits nor clearly rejects it.",
                 # With novelty fixed at 0.1 by the scorer below, this lands
                 # in the gray band [0.35, 0.75) and STAYS there after
                 # Stage-2 escalation (same canned output both stages) —
@@ -587,12 +564,8 @@ class TestSupervisedIngestionEndToEnd:
                 "SENSITIVE_MARKER": 0.9,
             }
         )
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
 
         # --- Act: triage all docs ---
         docs = sorted(corpus_dir.iterdir())
@@ -651,9 +624,7 @@ class TestSupervisedIngestionEndToEnd:
         bookkeeper = WikiBookkeeper()
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
         orch = WikiIngestOrchestrator(pi, None, sources, bookkeeper, store=store)
-        wiki_config = WikiConfig(
-            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
-        )
+        wiki_config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage")
 
         for entry in applied_entries:
             await orch.ingest(
@@ -664,9 +635,7 @@ class TestSupervisedIngestionEndToEnd:
             )
 
         # --- Assert: admitted doc got a page, decision fields persisted ---
-        admit_applied = next(
-            e for e in applied_entries if e.source_uri == admit_entry.source_uri
-        )
+        admit_applied = next(e for e in applied_entries if e.source_uri == admit_entry.source_uri)
         admit_source_id = sources.find_by_uri(admit_applied.source_uri)
         admit_record = sources.get_source(admit_source_id)
         assert admit_record.status == "ingested"
@@ -676,9 +645,7 @@ class TestSupervisedIngestionEndToEnd:
         assert len(admit_record.pages_generated) >= 1
 
         # --- Assert: archived doc got a page with category ARCHIVE ---
-        archive_applied = next(
-            e for e in applied_entries if e.source_uri == archive_entry.source_uri
-        )
+        archive_applied = next(e for e in applied_entries if e.source_uri == archive_entry.source_uri)
         archive_source_id = sources.find_by_uri(archive_applied.source_uri)
         archive_record = sources.get_source(archive_source_id)
         assert archive_record.destination == "archive"
@@ -689,9 +656,7 @@ class TestSupervisedIngestionEndToEnd:
         assert page["category"] == WikiPageCategory.ARCHIVE.value
 
         # --- Assert: rejected (sensitive) doc created ZERO pages ---
-        sensitive_applied = next(
-            e for e in applied_entries if e.source_uri == sensitive_entry.source_uri
-        )
+        sensitive_applied = next(e for e in applied_entries if e.source_uri == sensitive_entry.source_uri)
         sensitive_source_id = sources.find_by_uri(sensitive_applied.source_uri)
         sensitive_record = sources.get_source(sensitive_source_id)
         assert sensitive_record.status == "rejected"
@@ -709,9 +674,7 @@ class TestSupervisedIngestionEndToEnd:
         combined = WikiCombinedSearch(None, None, store=store)
         default_results = await combined.search("borderline", mode="lexical", top_k=10)
         assert all(r.node_id != archive_page_id for r in default_results)
-        archived_results = await combined.search(
-            "borderline", mode="lexical", top_k=10, include_archived=True
-        )
+        archived_results = await combined.search("borderline", mode="lexical", top_k=10, include_archived=True)
         assert any(r.node_id == archive_page_id for r in archived_results)
 
 
@@ -726,14 +689,11 @@ class TestBuildUnaffected:
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / "module.py").write_text(
-            '"""A tiny module."""\n\n\ndef greet(name):\n'
-            '    """Greet."""\n    return f"hi {name}"\n',
+            '"""A tiny module."""\n\n\ndef greet(name):\n' '    """Greet."""\n    return f"hi {name}"\n',
             encoding="utf-8",
         )
         runner = CliRunner()
-        first = runner.invoke(
-            wiki, ["build", "--path", str(repo), "--no-git", "--quiet"]
-        )
+        first = runner.invoke(wiki, ["build", "--path", str(repo), "--no-git", "--quiet"])
         assert first.exit_code == 0, first.output
 
         config = load_project_config(repo)
@@ -742,9 +702,7 @@ class TestBuildUnaffected:
 
         # Re-run build (deterministic, offline, no-LLM) — FEAT-402 code
         # being present anywhere in the codebase must not change output.
-        second = runner.invoke(
-            wiki, ["build", "--path", str(repo), "--no-git", "--quiet"]
-        )
+        second = runner.invoke(wiki, ["build", "--path", str(repo), "--no-git", "--quiet"])
         assert second.exit_code == 0, second.output
         stats_second = asyncio.run(store.stats())
         assert stats_first == stats_second
@@ -752,9 +710,7 @@ class TestBuildUnaffected:
         # No page picks up the new ARCHIVE category — `build` never routes
         # through supervised triage (spec §1 Non-Goals: build is untouched).
         pages = asyncio.run(store.list_pages(limit=1000))
-        assert all(
-            p.get("category") != WikiPageCategory.ARCHIVE.value for p in pages
-        )
+        assert all(p.get("category") != WikiPageCategory.ARCHIVE.value for p in pages)
 
 
 # ---------------------------------------------------------------------------
@@ -801,19 +757,13 @@ class TestFeat451DocumentIngestEndToEnd:
         from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
         from parrot.knowledge.wiki.triage import IngestTriageRouter
 
-        acquired = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
-        )
+        acquired = await DocumentAcquirer().acquire(DocumentRef(uri=str(sample_pdf), suffix=".pdf"))
 
         charter = _make_permissive_charter()
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         entry = await router.triage(sample_pdf, acquired.text)
         assert entry.proposed_action == "admit"
 
@@ -829,9 +779,7 @@ class TestFeat451DocumentIngestEndToEnd:
         bookkeeper = WikiBookkeeper()
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
         orch = WikiIngestOrchestrator(pi, None, sources, bookkeeper, store=store)
-        wiki_config = WikiConfig(
-            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
-        )
+        wiki_config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage")
 
         report = await orch.ingest(
             str(sample_pdf),
@@ -858,26 +806,18 @@ class TestFeat451DocumentIngestEndToEnd:
         assert source_entry.loader
 
     @pytest.mark.asyncio
-    async def test_ingest_page_carries_provenance(
-        self, tmp_path: Path, sample_pdf: Path
-    ) -> None:
+    async def test_ingest_page_carries_provenance(self, tmp_path: Path, sample_pdf: Path) -> None:
         """The nested ``triage:`` block matches the manifest entry's
         composite score, decision, decision source, and charter version."""
         from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
         from parrot.knowledge.wiki.triage import IngestTriageRouter
 
-        acquired = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
-        )
+        acquired = await DocumentAcquirer().acquire(DocumentRef(uri=str(sample_pdf), suffix=".pdf"))
         charter = _make_permissive_charter()
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         entry = await router.triage(sample_pdf, acquired.text)
         entry.decision = entry.proposed_action
         entry.decision_source = "human"
@@ -892,12 +832,8 @@ class TestFeat451DocumentIngestEndToEnd:
         )
         pi.get_tree = AsyncMock(return_value={})
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
-        orch = WikiIngestOrchestrator(
-            pi, None, sources, WikiBookkeeper(), store=store
-        )
-        wiki_config = WikiConfig(
-            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
-        )
+        orch = WikiIngestOrchestrator(pi, None, sources, WikiBookkeeper(), store=store)
+        wiki_config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage")
         await orch.ingest(
             str(sample_pdf),
             wiki_config,
@@ -916,26 +852,18 @@ class TestFeat451DocumentIngestEndToEnd:
         assert meta["triage"]["charter_version"] == "9.9"
 
     @pytest.mark.asyncio
-    async def test_multi_page_pdf_identical_frontmatter(
-        self, tmp_path: Path, sample_pdf: Path
-    ) -> None:
+    async def test_multi_page_pdf_identical_frontmatter(self, tmp_path: Path, sample_pdf: Path) -> None:
         """All pages derived from one multi-page source carry a
         byte-identical frontmatter block."""
         from parrot.knowledge.wiki.documents import DocumentAcquirer, DocumentRef
         from parrot.knowledge.wiki.triage import IngestTriageRouter
 
-        acquired = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
-        )
+        acquired = await DocumentAcquirer().acquire(DocumentRef(uri=str(sample_pdf), suffix=".pdf"))
         charter = _make_permissive_charter()
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         entry = await router.triage(sample_pdf, acquired.text)
 
         # Three node ids — PageIndex split this source into 3 pages.
@@ -949,12 +877,8 @@ class TestFeat451DocumentIngestEndToEnd:
         )
         pi.get_tree = AsyncMock(return_value={})
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
-        orch = WikiIngestOrchestrator(
-            pi, None, sources, WikiBookkeeper(), store=store
-        )
-        wiki_config = WikiConfig(
-            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
-        )
+        orch = WikiIngestOrchestrator(pi, None, sources, WikiBookkeeper(), store=store)
+        wiki_config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage")
         await orch.ingest(
             str(sample_pdf),
             wiki_config,
@@ -987,9 +911,7 @@ class TestFeat451DocumentIngestEndToEnd:
         assert refs[0].is_url is False
 
     @pytest.mark.asyncio
-    async def test_ingest_url(
-        self, tmp_path: Path, mock_aiohttp_pdf
-    ) -> None:
+    async def test_ingest_url(self, tmp_path: Path, mock_aiohttp_pdf) -> None:
         """A mocked URL fetch is extracted, triaged, and ingested — the
         resulting page frontmatter carries ``source_url``."""
         from parrot.knowledge.wiki.documents import DocumentAcquirer, resolve_sources
@@ -1006,12 +928,8 @@ class TestFeat451DocumentIngestEndToEnd:
         charter = _make_permissive_charter()
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         entry = await router.triage(Path(ref.uri), acquired.text)
 
         pi = _make_pi_mock(
@@ -1024,12 +942,8 @@ class TestFeat451DocumentIngestEndToEnd:
         )
         pi.get_tree = AsyncMock(return_value={})
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
-        orch = WikiIngestOrchestrator(
-            pi, None, sources, WikiBookkeeper(), store=store
-        )
-        wiki_config = WikiConfig(
-            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
-        )
+        orch = WikiIngestOrchestrator(pi, None, sources, WikiBookkeeper(), store=store)
+        wiki_config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage")
         report = await orch.ingest(
             ref.uri,
             wiki_config,
@@ -1054,9 +968,7 @@ class TestFeat451DocumentIngestEndToEnd:
         assert meta["source_url"] == "https://example.test/doc.pdf"
 
     @pytest.mark.asyncio
-    async def test_undecodable_never_reaches_llm(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_undecodable_never_reaches_llm(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """The anti-mojibake guarantee: an undecodable document is skipped
         before triage, asserted directly against the stub adapter's
         received prompts — never inferred from output."""
@@ -1071,9 +983,7 @@ class TestFeat451DocumentIngestEndToEnd:
 
         corpus = tmp_path / "mixed"
         corpus.mkdir()
-        (corpus / "good.md").write_text(
-            "# Good\n\nA plain markdown document.", encoding="utf-8"
-        )
+        (corpus / "good.md").write_text("# Good\n\nA plain markdown document.", encoding="utf-8")
         (corpus / "bad.pdf").write_bytes(b"not a real pdf at all")
 
         # Force ai-parrot-loaders unavailable so the undecodable .pdf
@@ -1091,12 +1001,8 @@ class TestFeat451DocumentIngestEndToEnd:
         charter = _make_permissive_charter()
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         acquirer = DocumentAcquirer()
 
         refs = resolve_sources(str(corpus))
@@ -1117,13 +1023,9 @@ class TestFeat451DocumentIngestEndToEnd:
         # anything derived from the undecodable document (it was never
         # read as text in the first place — acquisition failed first).
         assert adapter.calls == len(triaged_uris) == 1
-        assert all(
-            "bad.pdf" not in prompt for prompt in adapter.received_prompts
-        )
+        assert all("bad.pdf" not in prompt for prompt in adapter.received_prompts)
 
-    def test_ingest_mixed_corpus(
-        self, tmp_path: Path, mixed_corpus: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ingest_mixed_corpus(self, tmp_path: Path, mixed_corpus: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """All decodable docs (plain .md, .md with frontmatter, .pdf,
         .docx) are triaged, the undecodable .pdf is skipped and reported,
         and the run still exits 0 — driven through the real CLI, not the
@@ -1141,7 +1043,7 @@ class TestFeat451DocumentIngestEndToEnd:
         charter_dir = repo / ".parrot"
         charter_dir.mkdir(parents=True, exist_ok=True)
         (charter_dir / "charter.yaml").write_text(
-            "version: \"1\"\n"
+            'version: "1"\n'
             "scope:\n  include: []\n  exclude: []\n"
             "weights:\n  density: 0.4\n  novelty: 0.35\n  durability: 0.25\n"
             "thresholds:\n  admit: 0.75\n  reject: 0.35\n"
@@ -1175,18 +1077,12 @@ class TestFeat451DocumentIngestEndToEnd:
                 return {}
 
         monkeypatch.setattr(cli_module, "_build_triage_adapters", _fake_build_adapters)
-        monkeypatch.setattr(
-            cli_module, "_build_novelty_scorer", _fake_build_novelty_scorer
-        )
-        monkeypatch.setattr(
-            pageindex_toolkit, "PageIndexToolkit", _StubPageIndexToolkit
-        )
+        monkeypatch.setattr(cli_module, "_build_novelty_scorer", _fake_build_novelty_scorer)
+        monkeypatch.setattr(pageindex_toolkit, "PageIndexToolkit", _StubPageIndexToolkit)
         monkeypatch.setenv("WIKI_LIGHTWEIGHT_MODEL", "stub:light")
         monkeypatch.setenv("WIKI_MODEL", "stub:heavy")
 
-        result = CliRunner().invoke(
-            wiki, ["ingest", str(mixed_corpus), "--path", str(repo), "--dry-run"]
-        )
+        result = CliRunner().invoke(wiki, ["ingest", str(mixed_corpus), "--path", str(repo), "--dry-run"])
         assert result.exit_code == 0, result.output
         assert "skipped" in result.output.lower()
         # plain.md, with_frontmatter.md, contrato.pdf, decision.docx — 4
@@ -1213,22 +1109,14 @@ class TestFeat451DocumentIngestEndToEnd:
         await store.upsert_pages([legacy_record])
 
         new_doc = tmp_path / "new.md"
-        new_doc.write_text(
-            "# New\n\nA freshly ingested document.", encoding="utf-8"
-        )
-        acquired = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(new_doc), suffix=".md")
-        )
+        new_doc.write_text("# New\n\nA freshly ingested document.", encoding="utf-8")
+        acquired = await DocumentAcquirer().acquire(DocumentRef(uri=str(new_doc), suffix=".md"))
 
         charter = _make_permissive_charter()
         adapter = _FakeTriageAdapter()
         novelty_scorer = _FakeNoveltyScorer(novelty_by_marker={})
-        sources = SourceCollectionManager(
-            tmp_path / "sources", db_path=tmp_path / "wiki.db"
-        )
-        router = IngestTriageRouter(
-            charter, adapter, sources, novelty_scorer, heavy_adapter=adapter
-        )
+        sources = SourceCollectionManager(tmp_path / "sources", db_path=tmp_path / "wiki.db")
+        router = IngestTriageRouter(charter, adapter, sources, novelty_scorer, heavy_adapter=adapter)
         entry = await router.triage(new_doc, acquired.text)
 
         pi = _make_pi_mock(
@@ -1240,12 +1128,8 @@ class TestFeat451DocumentIngestEndToEnd:
             }
         )
         pi.get_tree = AsyncMock(return_value={})
-        orch = WikiIngestOrchestrator(
-            pi, None, sources, WikiBookkeeper(), store=store
-        )
-        wiki_config = WikiConfig(
-            wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage"
-        )
+        orch = WikiIngestOrchestrator(pi, None, sources, WikiBookkeeper(), store=store)
+        wiki_config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path / "wiki-storage")
         await orch.ingest(
             str(new_doc),
             wiki_config,

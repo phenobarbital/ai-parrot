@@ -89,9 +89,7 @@ _DESTINATION_TO_SOURCES_COLUMN: dict[str, str] = {
 }
 
 
-def _provenance_from(
-    triage: Optional[ManifestDocEntry], charter_version: Optional[str]
-) -> Optional[TriageProvenance]:
+def _provenance_from(triage: Optional[ManifestDocEntry], charter_version: Optional[str]) -> Optional[TriageProvenance]:
     """Build a FEAT-451 :class:`TriageProvenance` from a triage decision.
 
     Args:
@@ -307,9 +305,7 @@ class WikiIngestOrchestrator:
         # FEAT-402: "discard" never creates pages — short-circuit the
         # entire pipeline and just record the rejection.
         if effective_destination == "discard":
-            return await self._record_discard(
-                source_path_obj, source_uri, wiki_config, triage, charter_version, t0
-            )
+            return await self._record_discard(source_path_obj, source_uri, wiki_config, triage, charter_version, t0)
 
         # Step 1 — register or check staleness
         # Use public find_by_uri and wrap sync I/O in asyncio.to_thread so the
@@ -317,19 +313,13 @@ class WikiIngestOrchestrator:
         # FEAT-402: the staleness skip only applies to the legacy
         # (triage=None) path — a triage-driven re-application must
         # always re-persist decision fields, even on unchanged content.
-        existing_id = await asyncio.to_thread(
-            self._sources.find_by_uri, source_uri
-        )
+        existing_id = await asyncio.to_thread(self._sources.find_by_uri, source_uri)
         if existing_id and triage is None:
             source_id = existing_id
             entry = await asyncio.to_thread(self._sources.get_source, source_id)
-            is_stale = await asyncio.to_thread(
-                self._sources.is_stale, source_id
-            )
+            is_stale = await asyncio.to_thread(self._sources.is_stale, source_id)
             if not is_stale and entry:
-                self.logger.info(
-                    "Source %s is up to date — skipping ingest", source_uri
-                )
+                self.logger.info("Source %s is up to date — skipping ingest", source_uri)
                 return IngestReport(
                     source_id=source_id,
                     source_uri=source_uri,
@@ -341,15 +331,11 @@ class WikiIngestOrchestrator:
                 )
         else:
             try:
-                entry = await asyncio.to_thread(
-                    self._sources.add_source, source_path_obj
-                )
+                entry = await asyncio.to_thread(self._sources.add_source, source_path_obj)
                 source_id = entry.source_id
             except (FileNotFoundError, OSError) as exc:
                 # File does not exist; generate a deterministic placeholder ID.
-                source_id = (
-                    f"src-{uuid.uuid5(uuid.NAMESPACE_URL, source_uri).hex[:12]}"
-                )
+                source_id = f"src-{uuid.uuid5(uuid.NAMESPACE_URL, source_uri).hex[:12]}"
                 if triage is None:
                     return self._error_report(source_id, source_uri, t0, str(exc))
                 # FEAT-451 bug fix (revealed by TASK-2358's test_ingest_url):
@@ -361,8 +347,7 @@ class WikiIngestOrchestrator:
                 # own docstring: "a rejected document may never have been
                 # registered ... at all") — keep going instead of erroring.
                 self.logger.debug(
-                    "add_source could not stat %s (%s) — deferring"
-                    " registration to record_decision (triage-driven).",
+                    "add_source could not stat %s (%s) — deferring" " registration to record_decision (triage-driven).",
                     source_uri,
                     exc,
                 )
@@ -393,11 +378,7 @@ class WikiIngestOrchestrator:
         # slot this call used to drop), and force the ARCHIVE category on
         # every page when the effective destination is "archive".
         hint = triage.briefing if triage is not None else None
-        category_override = (
-            WikiPageCategory.ARCHIVE.value
-            if effective_destination == "archive"
-            else None
-        )
+        category_override = WikiPageCategory.ARCHIVE.value if effective_destination == "archive" else None
 
         # FEAT-451: page frontmatter is a supervised-ingestion-only
         # enhancement — the legacy (triage=None) build/upsert path emits
@@ -431,18 +412,12 @@ class WikiIngestOrchestrator:
                     page_ids,
                     source_id=source_id,
                     fallback_title=str(pi_result.get("title") or ""),
-                    fallback_summary=str(
-                        pi_result.get("summary") or content[:500]
-                    ),
+                    fallback_summary=str(pi_result.get("summary") or content[:500]),
                     category_override=category_override,
                     frontmatter=frontmatter,
                 )
-                edges = [
-                    (r.concept_id, source_id, "summarizes") for r in records
-                ]
-                await self._store.replace_source_slice(
-                    source_id, records, edges
-                )
+                edges = [(r.concept_id, source_id, "summarizes") for r in records]
+                await self._store.replace_source_slice(source_id, records, edges)
                 # Stable concept_ids become the recorded page identities.
                 page_ids = [r.concept_id for r in records]
             except Exception as exc:  # noqa: BLE001
@@ -482,9 +457,7 @@ class WikiIngestOrchestrator:
                 decision_entry = await asyncio.to_thread(
                     self._sources.record_decision,
                     source_path_obj,
-                    destination=_DESTINATION_TO_SOURCES_COLUMN.get(
-                        effective_destination, effective_destination
-                    ),
+                    destination=_DESTINATION_TO_SOURCES_COLUMN.get(effective_destination, effective_destination),
                     decision_source=triage.decision_source,
                     charter_version=charter_version,
                     composite_score=triage.composite,
@@ -528,9 +501,7 @@ class WikiIngestOrchestrator:
                     if decision_entry is not None
                     else f"source: {source_path_obj.name}, pages_created: {pages_created}"
                 )
-                await asyncio.to_thread(
-                    self._bookkeeper.log_operation, wiki_dir, operation, details
-                )
+                await asyncio.to_thread(self._bookkeeper.log_operation, wiki_dir, operation, details)
             else:
                 await asyncio.to_thread(
                     self._bookkeeper.log_operation,
@@ -597,12 +568,12 @@ class WikiIngestOrchestrator:
         if not isinstance(granularity, ExtractionGranularity):
             granularity = ExtractionGranularity(str(granularity))
 
-        adapter = getattr(self._pi, "_light_adapter", None) or getattr(
-            self._pi, "_adapter", None
-        )
+        adapter = getattr(self._pi, "_light_adapter", None) or getattr(self._pi, "_adapter", None)
         if adapter is None:
             return self._error_report(
-                source_id, tree_name, t0,
+                source_id,
+                tree_name,
+                t0,
                 "PageIndexToolkit has no LLM adapter for entity extraction",
             )
         try:
@@ -611,19 +582,12 @@ class WikiIngestOrchestrator:
             return self._error_report(source_id, tree_name, t0, str(exc))
 
         directives = {
-            ExtractionGranularity.MINIMAL: (
-                "Extract at most 3 KEY concepts central to the text."
-            ),
+            ExtractionGranularity.MINIMAL: ("Extract at most 3 KEY concepts central to the text."),
             ExtractionGranularity.STANDARD: (
-                "Extract up to 8 salient entities (people, projects, "
-                "systems, places) and concepts."
+                "Extract up to 8 salient entities (people, projects, " "systems, places) and concepts."
             ),
-            ExtractionGranularity.FINE: (
-                "Extract ALL distinct entities and concepts mentioned, "
-                "however minor."
-            ),
-            ExtractionGranularity.CUSTOM: custom_instructions
-            or "Extract the entities and concepts from the text.",
+            ExtractionGranularity.FINE: ("Extract ALL distinct entities and concepts mentioned, " "however minor."),
+            ExtractionGranularity.CUSTOM: custom_instructions or "Extract the entities and concepts from the text.",
         }
         directive = directives[granularity]
 
@@ -654,9 +618,7 @@ class WikiIngestOrchestrator:
         errors: list[str] = []
         for node in targets:
             node_id = node.get("node_id") or ""
-            body = self._load_body(
-                loader, node.get("concept_id") or node_id, node_id
-            )
+            body = self._load_body(loader, node.get("concept_id") or node_id, node_id)
             if not body or len(body.strip()) < 20:
                 continue
             prompt = (
@@ -710,7 +672,10 @@ class WikiIngestOrchestrator:
 
         self.logger.info(
             "extract_entities(%s, granularity=%s): %d entities, %d graph nodes",
-            tree_name, granularity.value, entities_created, graph_created,
+            tree_name,
+            granularity.value,
+            entities_created,
+            graph_created,
         )
         return IngestReport(
             source_id=source_id,
@@ -771,9 +736,7 @@ class WikiIngestOrchestrator:
             self.logger.warning("Bookkeeping failed: %s", exc)
 
         duration_ms = (time.monotonic() - t0) * 1000
-        self.logger.info(
-            "Discarded %s per triage decision (%.1f ms)", source_uri, duration_ms
-        )
+        self.logger.info("Discarded %s per triage decision (%.1f ms)", source_uri, duration_ms)
         return IngestReport(
             source_id=decision_entry.source_id,
             source_uri=source_uri,
@@ -938,9 +901,7 @@ class WikiIngestOrchestrator:
             category = (
                 category_override
                 if category_override is not None
-                else str(
-                    node.get("category") or node.get("type") or "concept"
-                ).lower()
+                else str(node.get("category") or node.get("type") or "concept").lower()
             )
             records.append(
                 WikiPageRecord(
@@ -1030,17 +991,12 @@ class WikiIngestOrchestrator:
                 )
                 if isinstance(result, dict):
                     node_ids = result.get("node_ids", [])
-                    return (
-                        node_ids[0]
-                        if node_ids
-                        else result.get("node_id")
-                    )
+                    return node_ids[0] if node_ids else result.get("node_id")
             except (AttributeError, TypeError):
                 # replace_document_slice exists but is not awaitable (e.g. in
                 # tests using MagicMock); fall through to create_node.
                 self.logger.debug(
-                    "replace_document_slice not awaitable on %s; "
-                    "falling back to create_node",
+                    "replace_document_slice not awaitable on %s; " "falling back to create_node",
                     type(self._gi).__name__,
                 )
 

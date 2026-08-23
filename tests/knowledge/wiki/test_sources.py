@@ -37,6 +37,7 @@ class TestSourceCollectionManager:
     def test_add_source_hash_is_sha1(self, sources_dir: Path, sample_source: Path):
         """file_hash is a valid 40-character SHA-1 hex string."""
         import hashlib
+
         mgr = SourceCollectionManager(sources_dir)
         entry = mgr.add_source(sample_source)
         # Verify by recomputing manually
@@ -75,17 +76,13 @@ class TestSourceCollectionManager:
         mgr = SourceCollectionManager(sources_dir)
         assert mgr.get_source("nonexistent-id") is None
 
-    def test_is_stale_false_for_fresh_source(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_is_stale_false_for_fresh_source(self, sources_dir: Path, sample_source: Path):
         """is_stale returns False immediately after add_source."""
         mgr = SourceCollectionManager(sources_dir)
         entry = mgr.add_source(sample_source)
         assert not mgr.is_stale(entry.source_id)
 
-    def test_is_stale_true_after_content_change(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_is_stale_true_after_content_change(self, sources_dir: Path, sample_source: Path):
         """is_stale returns True when the file content changes."""
         mgr = SourceCollectionManager(sources_dir)
         entry = mgr.add_source(sample_source)
@@ -93,9 +90,7 @@ class TestSourceCollectionManager:
         sample_source.write_text("# Updated Content\n\nDifferent text.")
         assert mgr.is_stale(entry.source_id)
 
-    def test_is_stale_true_for_missing_file(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_is_stale_true_for_missing_file(self, sources_dir: Path, sample_source: Path):
         """is_stale returns True when the source file is deleted."""
         mgr = SourceCollectionManager(sources_dir)
         entry = mgr.add_source(sample_source)
@@ -118,18 +113,14 @@ class TestSourceCollectionManager:
         assert len(sources) == 1
         assert sources[0].source_uri == str(sample_source.resolve())
 
-    def test_registry_db_exists_after_add(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_registry_db_exists_after_add(self, sources_dir: Path, sample_source: Path):
         """The shared wiki.db registry is created after the first add_source."""
         mgr = SourceCollectionManager(sources_dir)
         mgr.add_source(sample_source)
         assert mgr.db_path.exists()
         assert mgr.db_path == sources_dir.parent / "wiki.db"
 
-    def test_legacy_json_manifest_migrated(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_legacy_json_manifest_migrated(self, sources_dir: Path, sample_source: Path):
         """A legacy .manifest.json is imported into SQLite and renamed."""
         import json
 
@@ -153,15 +144,11 @@ class TestSourceCollectionManager:
         assert not (sources_dir / ".manifest.json").exists()
         assert (sources_dir / ".manifest.json.bak").exists()
 
-    def test_mark_ingested_updates_pages(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_mark_ingested_updates_pages(self, sources_dir: Path, sample_source: Path):
         """mark_ingested stores the pages_generated list in the manifest."""
         mgr = SourceCollectionManager(sources_dir)
         entry = mgr.add_source(sample_source)
-        updated = mgr.mark_ingested(
-            entry.source_id, pages_generated=["page-1", "page-2"]
-        )
+        updated = mgr.mark_ingested(entry.source_id, pages_generated=["page-1", "page-2"])
         assert updated is not None
         assert updated.pages_generated == ["page-1", "page-2"]
 
@@ -209,17 +196,13 @@ class TestSourceCollectionManager:
 class TestJsonBackend:
     """SourceCollectionManager with backend='json' (memory-backend wikis)."""
 
-    def test_manifest_file_exists_after_add(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_manifest_file_exists_after_add(self, sources_dir: Path, sample_source: Path):
         mgr = SourceCollectionManager(sources_dir, backend="json")
         mgr.add_source(sample_source)
         assert (sources_dir / ".manifest.json").exists()
         assert not mgr.db_path.exists()  # no wiki.db in json mode
 
-    def test_persistence_across_managers(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_persistence_across_managers(self, sources_dir: Path, sample_source: Path):
         first = SourceCollectionManager(sources_dir, backend="json")
         entry = first.add_source(sample_source)
         first.mark_ingested(entry.source_id, pages_generated=["0001"])
@@ -266,8 +249,7 @@ class TestDecisionColumnsMigration:
         # with one pre-existing row, simulating a database created before
         # this migration existed.
         conn = sqlite3.connect(str(db_path))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE sources (
                 source_id       TEXT PRIMARY KEY,
                 source_uri      TEXT NOT NULL UNIQUE,
@@ -277,8 +259,7 @@ class TestDecisionColumnsMigration:
                 pages_generated TEXT NOT NULL DEFAULT '[]',
                 status          TEXT NOT NULL DEFAULT 'ingested'
             )
-            """
-        )
+            """)
         conn.execute(
             "INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
@@ -324,9 +305,7 @@ class TestDecisionColumnsMigration:
         # Second open must not raise (idempotent ALTER TABLE guard).
         SourceCollectionManager(sources_dir)
 
-    def test_new_db_has_decision_columns_from_ddl(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_new_db_has_decision_columns_from_ddl(self, sources_dir: Path, sample_source: Path):
         """A brand-new database already has the decision columns via the DDL."""
         mgr = SourceCollectionManager(sources_dir)
         entry = mgr.add_source(sample_source)
@@ -382,23 +361,17 @@ class TestRecordDecision:
         assert fetched.status == "rejected"
         assert fetched.pages_generated == []
 
-    def test_record_decision_creates_untracked_source(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_record_decision_creates_untracked_source(self, sources_dir: Path, sample_source: Path):
         """record_decision works even when the source was never add_source'd
         — the typical case for a rejected document (spec §2)."""
         mgr = SourceCollectionManager(sources_dir)
         assert mgr.list_sources() == []
 
-        entry = mgr.record_decision(
-            sample_source, destination="archive", decision_source="auto"
-        )
+        entry = mgr.record_decision(sample_source, destination="archive", decision_source="auto")
         assert entry is not None
         assert len(mgr.list_sources()) == 1
 
-    def test_record_decision_updates_existing_source(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_record_decision_updates_existing_source(self, sources_dir: Path, sample_source: Path):
         """record_decision updates an already-tracked source in place
         rather than creating a duplicate row."""
         mgr = SourceCollectionManager(sources_dir)
@@ -413,9 +386,7 @@ class TestRecordDecision:
         assert updated.source_id == added.source_id
         assert len(mgr.list_sources()) == 1
 
-    def test_record_decision_archive_defaults_to_ingested_status(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_record_decision_archive_defaults_to_ingested_status(self, sources_dir: Path, sample_source: Path):
         """An 'archive' destination defaults to status='ingested' (it does
         become a wiki page, just excluded from default ranking)."""
         mgr = SourceCollectionManager(sources_dir)
@@ -443,9 +414,7 @@ class TestFormatDecisionLogDetails:
         assert "decision_source: model" in details
         assert "charter_version: 2" in details
 
-    def test_format_handles_missing_composite(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_format_handles_missing_composite(self, sources_dir: Path, sample_source: Path):
         from parrot.knowledge.wiki.sources import format_decision_log_details
 
         mgr = SourceCollectionManager(sources_dir)
@@ -471,8 +440,7 @@ class TestDocumentMetadataColumns:
         # table with one pre-existing row, simulating a database created
         # before this feature's migration existed.
         conn = sqlite3.connect(str(db_path))
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE sources (
                 source_id        TEXT PRIMARY KEY,
                 source_uri       TEXT NOT NULL UNIQUE,
@@ -486,8 +454,7 @@ class TestDocumentMetadataColumns:
                 charter_version  TEXT,
                 composite_score  REAL
             )
-            """
-        )
+            """)
         conn.execute(
             "INSERT INTO sources VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -534,9 +501,7 @@ class TestDocumentMetadataColumns:
         # Second call must not raise (idempotent ALTER TABLE guard).
         mgr._migrate_sources_columns()
 
-    def test_new_db_has_document_columns_from_migration(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_new_db_has_document_columns_from_migration(self, sources_dir: Path, sample_source: Path):
         """A brand-new database already has the document metadata columns
         (added by the additive migration that always runs at __init__)."""
         mgr = SourceCollectionManager(sources_dir)
@@ -565,9 +530,7 @@ class TestDocumentMetadataColumns:
         assert got.content_type == "application/pdf"
         assert got.loader == "MarkdownLoader"
 
-    def test_corrupt_doc_metadata_degrades_to_none(
-        self, sources_dir: Path, sample_source: Path
-    ):
+    def test_corrupt_doc_metadata_degrades_to_none(self, sources_dir: Path, sample_source: Path):
         """A bad JSON cell must not break list_sources()/get_source()."""
         import sqlite3
 
@@ -595,9 +558,7 @@ class TestDocumentMetadataColumns:
         mock_arango_db = MagicMock()
         mock_arango_db.query = AsyncMock(return_value=([], None))
         mock_arango_db.execute = AsyncMock(return_value=([], None))
-        mgr = SourceCollectionManager(
-            tmp_path / "sources", backend="arangodb", arango_db=mock_arango_db
-        )
+        mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=mock_arango_db)
 
         entry = SourceManifestEntry(
             source_id="src-arango1",
@@ -616,9 +577,7 @@ class TestDocumentMetadataColumns:
         assert bind_vars["doc"]["loader"] == "MarkdownLoader"
 
         # Round-trip back through _doc_to_entry.
-        mock_arango_db.query = AsyncMock(
-            return_value=([bind_vars["doc"]], None)
-        )
+        mock_arango_db.query = AsyncMock(return_value=([bind_vars["doc"]], None))
         fetched = mgr.get_source("src-arango1")
         assert fetched is not None
         assert fetched.doc_metadata == {"author": "Legal", "page_count": 3}

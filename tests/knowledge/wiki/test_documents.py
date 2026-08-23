@@ -173,18 +173,14 @@ class TestAcquireLocal:
     async def test_plaintext_without_loaders(self, tmp_path, no_parrot_loaders):
         p = tmp_path / "a.md"
         p.write_text("# Title\nbody\n")
-        doc = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(p), suffix=".md")
-        )
+        doc = await DocumentAcquirer().acquire(DocumentRef(uri=str(p), suffix=".md"))
         assert "body" in doc.text
         assert doc.metadata.loader == "plaintext"
 
     async def test_strips_md_frontmatter(self, tmp_path):
         p = tmp_path / "a.md"
         p.write_text("---\ntitle: Contrato\nauthor: Legal\n---\n# Body\n")
-        doc = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(p), suffix=".md")
-        )
+        doc = await DocumentAcquirer().acquire(DocumentRef(uri=str(p), suffix=".md"))
         assert doc.text.lstrip().startswith("# Body")
         assert "title: Contrato" not in doc.text
         assert doc.metadata.title == "Contrato"
@@ -194,14 +190,10 @@ class TestAcquireLocal:
         p = tmp_path / "a.pdf"
         p.write_bytes(b"%PDF-1.4\n\x00\x01binary")
         with pytest.raises(DocumentAcquisitionError):
-            await DocumentAcquirer().acquire(
-                DocumentRef(uri=str(p), suffix=".pdf")
-            )
+            await DocumentAcquirer().acquire(DocumentRef(uri=str(p), suffix=".pdf"))
 
     async def test_binary_uses_loader(self, tmp_path, monkeypatch, sample_pdf):
-        doc = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
-        )
+        doc = await DocumentAcquirer().acquire(DocumentRef(uri=str(sample_pdf), suffix=".pdf"))
         assert doc.text.strip()
         assert "\x00" not in doc.text
         assert doc.metadata.content_type == "application/pdf"
@@ -209,9 +201,7 @@ class TestAcquireLocal:
     async def test_pdf_page_count(self, sample_pdf):
         import pymupdf
 
-        doc = await DocumentAcquirer().acquire(
-            DocumentRef(uri=str(sample_pdf), suffix=".pdf")
-        )
+        doc = await DocumentAcquirer().acquire(DocumentRef(uri=str(sample_pdf), suffix=".pdf"))
         pdf = pymupdf.open(str(sample_pdf))
         try:
             expected = pdf.page_count
@@ -236,16 +226,11 @@ class TestAcquireLocal:
         p = tmp_path / "a.pdf"
         p.write_bytes(b"%PDF-1.4")
         with pytest.raises(DocumentAcquisitionError):
-            await DocumentAcquirer().acquire(
-                DocumentRef(uri=str(p), suffix=".pdf")
-            )
+            await DocumentAcquirer().acquire(DocumentRef(uri=str(p), suffix=".pdf"))
 
     def test_no_module_level_loader_import(self):
         repo_root = Path(__file__).resolve().parents[3]
-        src = (
-            repo_root
-            / "packages/ai-parrot/src/parrot/knowledge/wiki/documents.py"
-        )
+        src = repo_root / "packages/ai-parrot/src/parrot/knowledge/wiki/documents.py"
         text = src.read_text()
         head = text.split("class DocumentAcquirer")[0]
         assert "import parrot_loaders" not in head
@@ -361,9 +346,7 @@ def mock_aiohttp_pdf_no_extension(monkeypatch, url_pdf_bytes):
 
 @pytest.fixture
 def mock_aiohttp_404(monkeypatch):
-    resp = _FakeResponse(
-        status=404, headers={}, chunks=[], url="https://example.test/missing.pdf"
-    )
+    resp = _FakeResponse(status=404, headers={}, chunks=[], url="https://example.test/missing.pdf")
     _install_fake_session(monkeypatch, response=resp)
 
 
@@ -435,9 +418,7 @@ class TestAcquireUrl:
             "parrot.knowledge.wiki.documents.tempfile.gettempdir",
             lambda: str(tmp_path),
         )
-        monkeypatch.setattr(
-            "parrot.knowledge.wiki.documents.tempfile.tempdir", None, raising=False
-        )
+        monkeypatch.setattr("parrot.knowledge.wiki.documents.tempfile.tempdir", None, raising=False)
         ref = DocumentRef(uri="https://example.test/big.pdf", is_url=True, suffix=".pdf")
         with pytest.raises(DocumentAcquisitionError):
             await DocumentAcquirer(max_bytes=1024, cache_dir=tmp_path).acquire(ref)

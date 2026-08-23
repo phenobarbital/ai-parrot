@@ -145,14 +145,10 @@ class WikiConfig(BaseModel):
         """
         for key, weight in v.items():
             if not (0.0 <= weight <= 1.0):
-                raise ValueError(
-                    f"search_weights['{key}'] = {weight} is outside [0, 1]"
-                )
+                raise ValueError(f"search_weights['{key}'] = {weight} is outside [0, 1]")
         total = sum(v.values())
         if abs(total - 1.0) > 0.01:
-            raise ValueError(
-                f"search_weights values must sum to ~1.0 (got {total:.4f})"
-            )
+            raise ValueError(f"search_weights values must sum to ~1.0 (got {total:.4f})")
         return v
 
 
@@ -219,8 +215,7 @@ class SourceManifestEntry(BaseModel):
     decision_source: str | None = Field(
         default=None,
         description=(
-            "Who/what made the triage decision: 'heuristic' | 'model' | "
-            "'human' | 'auto'. None when not triaged."
+            "Who/what made the triage decision: 'heuristic' | 'model' | " "'human' | 'auto'. None when not triaged."
         ),
     )
     charter_version: str | None = Field(
@@ -235,10 +230,7 @@ class SourceManifestEntry(BaseModel):
     )
     doc_metadata: dict[str, Any] | None = Field(
         default=None,
-        description=(
-            "FEAT-451: extracted DocumentMetadata as a dict. "
-            "None for sources ingested before FEAT-451."
-        ),
+        description=("FEAT-451: extracted DocumentMetadata as a dict. " "None for sources ingested before FEAT-451."),
     )
     content_type: str | None = Field(
         default=None,
@@ -277,10 +269,7 @@ class WikiSearchResult(BaseModel):
     )
     source: str = Field(
         ...,
-        description=(
-            "Search leg: 'lexical'/'vector' (WikiStore) or "
-            "'pageindex'/'graphindex' (legacy)"
-        ),
+        description=("Search leg: 'lexical'/'vector' (WikiStore) or " "'pageindex'/'graphindex' (legacy)"),
     )
     token_count: int | None = Field(
         default=None,

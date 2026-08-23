@@ -181,11 +181,7 @@ def resolve_sources(source: str, *, recursive: bool = True) -> list[DocumentRef]
     path = Path(source)
     if path.is_dir():
         walker = path.rglob("*") if recursive else path.glob("*")
-        files = sorted(
-            p
-            for p in walker
-            if p.is_file() and not any(part.startswith(".") for part in p.parts)
-        )
+        files = sorted(p for p in walker if p.is_file() and not any(part.startswith(".") for part in p.parts))
         return [
             DocumentRef(
                 uri=str(p.resolve()),
@@ -206,8 +202,7 @@ def resolve_sources(source: str, *, recursive: bool = True) -> list[DocumentRef]
         ]
 
     raise click.ClickException(
-        f"SOURCE not found: {source!r} is neither an existing file/directory "
-        "nor an http(s) URL."
+        f"SOURCE not found: {source!r} is neither an existing file/directory " "nor an http(s) URL."
     )
 
 
@@ -244,20 +239,14 @@ def render_frontmatter(
     if metadata.extra:
         payload["extra"] = {key: metadata.extra[key] for key in sorted(metadata.extra)}
     if provenance is not None:
-        triage = {
-            key: value
-            for key, value in provenance.model_dump().items()
-            if value is not None
-        }
+        triage = {key: value for key, value in provenance.model_dump().items() if value is not None}
         if triage:
             payload["triage"] = triage
 
     if not payload:
         return ""
 
-    body = yaml.safe_dump(
-        payload, sort_keys=False, allow_unicode=True, default_flow_style=False
-    )
+    body = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True, default_flow_style=False)
     return f"---\n{body}---\n\n"
 
 
@@ -295,9 +284,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
 
 # Fields on DocumentMetadata that a flat mapping (e.g. parsed frontmatter)
 # can populate directly; everything else lands in `extra`.
-_METADATA_FIELD_NAMES: frozenset[str] = frozenset(DocumentMetadata.model_fields) - {
-    "extra"
-}
+_METADATA_FIELD_NAMES: frozenset[str] = frozenset(DocumentMetadata.model_fields) - {"extra"}
 
 # Keys consumed out of the `document_meta` closed shape
 # ({source_type, category, type, language, title} — abstract.py:864) that
@@ -409,11 +396,7 @@ def _normalize_metadata(doc_metadata: dict[str, Any]) -> DocumentMetadata:
         fields["modified_at"] = str(modified_at)
 
     for key, value in remaining.items():
-        if (
-            key in _METADATA_FIELD_NAMES
-            and key not in _LOADER_METADATA_RESERVED_KEYS
-            and value is not None
-        ):
+        if key in _METADATA_FIELD_NAMES and key not in _LOADER_METADATA_RESERVED_KEYS and value is not None:
             fields.setdefault(key, value)
         elif value is not None:
             extra[key] = value
@@ -441,8 +424,7 @@ def _validate_extracted_text(text: str, path: Path) -> None:
         raise DocumentAcquisitionError(f"{path}: extraction produced no text")
     if "\x00" in text:
         raise DocumentAcquisitionError(
-            f"{path}: extracted text contains a NUL byte "
-            "(likely a binary file misread as text)"
+            f"{path}: extracted text contains a NUL byte " "(likely a binary file misread as text)"
         )
 
 
@@ -549,9 +531,7 @@ class DocumentAcquirer:
         """
         parsed = urlparse(ref.uri)
         if parsed.scheme not in ("http", "https"):
-            raise DocumentAcquisitionError(
-                f"Unsupported URL scheme {parsed.scheme!r}: {ref.uri}"
-            )
+            raise DocumentAcquisitionError(f"Unsupported URL scheme {parsed.scheme!r}: {ref.uri}")
         tmp_path, suffix = await self._download(ref.uri)
         try:
             local = DocumentRef(uri=str(tmp_path), is_url=False, suffix=suffix)
@@ -594,29 +574,21 @@ class DocumentAcquirer:
                 session.get(url) as resp,
             ):
                 if not (200 <= resp.status < 300):
-                    raise DocumentAcquisitionError(
-                        f"{url}: fetch failed with HTTP status {resp.status}"
-                    )
+                    raise DocumentAcquisitionError(f"{url}: fetch failed with HTTP status {resp.status}")
                 final_scheme = urlparse(str(resp.url)).scheme
                 if final_scheme not in ("http", "https"):
                     raise DocumentAcquisitionError(
-                        "Unsupported URL scheme after redirect "
-                        f"{final_scheme!r}: {resp.url}"
+                        "Unsupported URL scheme after redirect " f"{final_scheme!r}: {resp.url}"
                     )
 
                 suffix = _resolve_url_suffix(resp.headers.get("Content-Type"), url)
-                with tempfile.NamedTemporaryFile(
-                    delete=False, suffix=suffix, dir=self.cache_dir
-                ) as tmp:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=self.cache_dir) as tmp:
                     tmp_path = Path(tmp.name)
                     total = 0
                     async for chunk in resp.content.iter_chunked(65536):
                         total += len(chunk)
                         if total > self.max_bytes:
-                            raise DocumentAcquisitionError(
-                                f"{url}: response exceeded "
-                                f"max_bytes={self.max_bytes}"
-                            )
+                            raise DocumentAcquisitionError(f"{url}: response exceeded " f"max_bytes={self.max_bytes}")
                         await asyncio.to_thread(tmp.write, chunk)
             success = True
             return tmp_path, suffix
@@ -626,9 +598,7 @@ class DocumentAcquirer:
             if not success and tmp_path is not None:
                 tmp_path.unlink(missing_ok=True)
 
-    async def _acquire_plaintext(
-        self, ref: DocumentRef, path: Path
-    ) -> AcquiredDocument:
+    async def _acquire_plaintext(self, ref: DocumentRef, path: Path) -> AcquiredDocument:
         """Acquire a plain-text/markdown document with no loader backend.
 
         Args:
@@ -645,9 +615,7 @@ class DocumentAcquirer:
         try:
             raw = await asyncio.to_thread(path.read_text, encoding="utf-8")
         except UnicodeDecodeError as exc:
-            raise DocumentAcquisitionError(
-                f"{path}: could not decode as UTF-8 plain text: {exc}"
-            ) from exc
+            raise DocumentAcquisitionError(f"{path}: could not decode as UTF-8 plain text: {exc}") from exc
         except OSError as exc:
             raise DocumentAcquisitionError(f"{path}: could not be read: {exc}") from exc
 
@@ -661,9 +629,7 @@ class DocumentAcquirer:
         _validate_extracted_text(body, path)
         return AcquiredDocument(ref=ref, text=body, metadata=metadata)
 
-    async def _acquire_via_loader(
-        self, ref: DocumentRef, path: Path
-    ) -> AcquiredDocument:
+    async def _acquire_via_loader(self, ref: DocumentRef, path: Path) -> AcquiredDocument:
         """Acquire a document through a lazily-imported ``parrot_loaders`` loader.
 
         Args:
@@ -682,14 +648,12 @@ class DocumentAcquirer:
             from parrot_loaders.factory import get_loader_class
         except ImportError as exc:
             logger.warning(
-                "No loader for %s: ai-parrot-loaders is not installed "
-                "(only %s are readable without it)",
+                "No loader for %s: ai-parrot-loaders is not installed " "(only %s are readable without it)",
                 path,
                 ", ".join(sorted(PLAIN_TEXT_EXTENSIONS)),
             )
             raise DocumentAcquisitionError(
-                f"{path}: ai-parrot-loaders is not installed; cannot extract "
-                f"{ref.suffix or 'this file type'}"
+                f"{path}: ai-parrot-loaders is not installed; cannot extract " f"{ref.suffix or 'this file type'}"
             ) from exc
 
         loader_cls = get_loader_class(ref.suffix)
@@ -697,9 +661,7 @@ class DocumentAcquirer:
         try:
             docs = await loader._load(str(path))
         except Exception as exc:
-            raise DocumentAcquisitionError(
-                f"{path}: loader extraction failed: {exc}"
-            ) from exc
+            raise DocumentAcquisitionError(f"{path}: loader extraction failed: {exc}") from exc
 
         if not docs:
             raise DocumentAcquisitionError(f"{path}: loader extracted no content")

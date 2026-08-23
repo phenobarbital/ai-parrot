@@ -99,9 +99,7 @@ class TestWikiConfig:
     def test_charter_path_accepts_explicit_path(self, tmp_path):
         """FEAT-402: WikiConfig.charter_path accepts an explicit Path."""
         charter_path = tmp_path / "charter.yaml"
-        config = WikiConfig(
-            wiki_name="test", storage_dir=tmp_path, charter_path=charter_path
-        )
+        config = WikiConfig(wiki_name="test", storage_dir=tmp_path, charter_path=charter_path)
         assert config.charter_path == charter_path
 
 
@@ -211,9 +209,7 @@ class TestWikiSearchResult:
 
     def test_snippet_defaults_empty(self):
         """snippet defaults to empty string when omitted."""
-        r = WikiSearchResult(
-            node_id="n1", title="T", score=0.5, source="graphindex"
-        )
+        r = WikiSearchResult(node_id="n1", title="T", score=0.5, source="graphindex")
         assert r.snippet == ""
 
 

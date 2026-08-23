@@ -88,8 +88,7 @@ def sample_sources(tmp_path: Path) -> Path:
     sources_dir = tmp_path / "sources"
     sources_dir.mkdir(parents=True, exist_ok=True)
     (sources_dir / "article1.md").write_text(
-        "# Neural Networks\n\n"
-        "A neural network is a computational model inspired by the human brain."
+        "# Neural Networks\n\n" "A neural network is a computational model inspired by the human brain."
     )
     (sources_dir / "article2.md").write_text(
         "# Deep Learning\n\n"
@@ -107,15 +106,15 @@ def mock_pi():
         MagicMock configured with async methods for the toolkit interface.
     """
     pi = MagicMock()
-    pi.search = AsyncMock(return_value=[
-        {"node_id": "n1", "title": "Neural Networks", "score": 0.9, "summary": "A neural network is..."},
-        {"node_id": "n2", "title": "Deep Learning", "score": 0.7, "summary": "Deep learning extends..."},
-    ])
+    pi.search = AsyncMock(
+        return_value=[
+            {"node_id": "n1", "title": "Neural Networks", "score": 0.9, "summary": "A neural network is..."},
+            {"node_id": "n2", "title": "Deep Learning", "score": 0.7, "summary": "Deep learning extends..."},
+        ]
+    )
     # Real PageIndexToolkit contract: insert_markdown returns
     # {"tree_name", "new_node_ids"}; insert_content adds "title"/"summary".
-    pi.insert_markdown = AsyncMock(
-        return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]}
-    )
+    pi.insert_markdown = AsyncMock(return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]})
     pi.insert_content = AsyncMock(
         return_value={
             "tree_name": "test-wiki",
@@ -137,9 +136,11 @@ def mock_gi():
         MagicMock configured with async methods for the toolkit interface.
     """
     gi = MagicMock()
-    gi.search_hybrid = AsyncMock(return_value=[
-        {"node_id": "g1", "title": "Graph: Neural Networks", "score": 0.85, "summary": "Graph node..."},
-    ])
+    gi.search_hybrid = AsyncMock(
+        return_value=[
+            {"node_id": "g1", "title": "Graph: Neural Networks", "score": 0.85, "summary": "Graph node..."},
+        ]
+    )
     gi.create_node = AsyncMock(return_value={"node_id": "wp-001", "status": "created"})
     gi.link_nodes = AsyncMock(return_value={"status": "ok"})
     gi.get_neighborhood = AsyncMock(return_value={"neighbours": []})
@@ -154,11 +155,13 @@ def mock_okf():
         MagicMock configured with async methods for the OKFToolkit interface.
     """
     okf = MagicMock()
-    okf.lint_knowledge_base = AsyncMock(return_value={
-        "orphan_nodes": 0,
-        "missing_types": [],
-        "stale_days": 90,
-    })
+    okf.lint_knowledge_base = AsyncMock(
+        return_value={
+            "orphan_nodes": 0,
+            "missing_types": [],
+            "stale_days": 90,
+        }
+    )
     return okf
 
 
@@ -215,17 +218,13 @@ async def arango_test_db(arango_params: dict[str, Any]):
     from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
 
     db_name = f"test_wiki_{uuid.uuid4().hex[:8]}"
-    store = ArangoDBWikiStore(
-        arango_params, database=db_name, wiki_name="integration_test"
-    )
+    store = ArangoDBWikiStore(arango_params, database=db_name, wiki_name="integration_test")
     await store.initialize()
     try:
         yield store
     finally:
         await store.close()
-        admin_db = AsyncDB(
-            "arangodb", params={**arango_params, "database": "_system"}
-        )
+        admin_db = AsyncDB("arangodb", params={**arango_params, "database": "_system"})
         await admin_db.connection()
         try:
             await admin_db.drop_database(db_name)
@@ -308,8 +307,7 @@ def mixed_corpus(tmp_path: Path, sample_pdf: Path, undecodable_file: Path) -> Pa
         encoding="utf-8",
     )
     (folder / "with_frontmatter.md").write_text(
-        "---\ntitle: Contrato\nauthor: Legal\n---\n"
-        "# Body\n\nMarkdown content with leading YAML frontmatter.",
+        "---\ntitle: Contrato\nauthor: Legal\n---\n" "# Body\n\nMarkdown content with leading YAML frontmatter.",
         encoding="utf-8",
     )
     (folder / "contrato.pdf").write_bytes(sample_pdf.read_bytes())

@@ -15,6 +15,7 @@ from parrot.knowledge.wiki.sources import SourceCollectionManager
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def wiki_config(tmp_path: Path) -> WikiConfig:
     """Minimal WikiConfig pointing to tmp_path."""
@@ -78,6 +79,7 @@ def orchestrator(mock_pi, mock_gi, source_manager, bookkeeper) -> WikiIngestOrch
 # IngestReport model tests
 # ---------------------------------------------------------------------------
 
+
 class TestIngestReport:
     """Tests for the IngestReport Pydantic model."""
 
@@ -111,6 +113,7 @@ class TestIngestReport:
 # ---------------------------------------------------------------------------
 # WikiIngestOrchestrator tests
 # ---------------------------------------------------------------------------
+
 
 class TestWikiIngestOrchestrator:
     """Tests for WikiIngestOrchestrator."""
@@ -180,9 +183,7 @@ class TestWikiIngestOrchestrator:
         wiki_config: WikiConfig,
     ):
         """With sync_graph=True, create_node is called on GraphIndexToolkit."""
-        orchestrator = WikiIngestOrchestrator(
-            mock_pi, mock_gi, source_manager, bookkeeper, sync_graph=True
-        )
+        orchestrator = WikiIngestOrchestrator(mock_pi, mock_gi, source_manager, bookkeeper, sync_graph=True)
         await orchestrator.ingest(str(sample_source), wiki_config)
         mock_gi.create_node.assert_called_once()
         call_kwargs = mock_gi.create_node.call_args[1] if mock_gi.create_node.call_args[1] else {}
@@ -202,9 +203,7 @@ class TestWikiIngestOrchestrator:
         wiki_config: WikiConfig,
     ):
         """graph_nodes_created >= 1 when sync_graph=True."""
-        orchestrator = WikiIngestOrchestrator(
-            mock_pi, mock_gi, source_manager, bookkeeper, sync_graph=True
-        )
+        orchestrator = WikiIngestOrchestrator(mock_pi, mock_gi, source_manager, bookkeeper, sync_graph=True)
         report = await orchestrator.ingest(str(sample_source), wiki_config)
         assert report.graph_nodes_created >= 1
 
@@ -295,15 +294,11 @@ class TestWikiIngestOrchestrator:
     ):
         """GraphIndex failure is logged but ingest still succeeds."""
         pi = MagicMock()
-        pi.insert_content = AsyncMock(
-            return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]}
-        )
+        pi.insert_content = AsyncMock(return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]})
         gi = MagicMock()
         gi.create_node = AsyncMock(side_effect=RuntimeError("GI down"))
 
-        orch = WikiIngestOrchestrator(
-            pi, gi, source_manager, bookkeeper, sync_graph=True
-        )
+        orch = WikiIngestOrchestrator(pi, gi, source_manager, bookkeeper, sync_graph=True)
         report = await orch.ingest(str(sample_source), wiki_config)
         assert report.status == "ok"
         assert report.graph_nodes_created == 0  # failed, but not fatal
@@ -330,12 +325,8 @@ class TestIngestWikiStoreSync:
         return WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
 
     @pytest.fixture
-    def store_orchestrator(
-        self, mock_pi, mock_gi, source_manager, bookkeeper, store
-    ) -> WikiIngestOrchestrator:
-        return WikiIngestOrchestrator(
-            mock_pi, mock_gi, source_manager, bookkeeper, store=store
-        )
+    def store_orchestrator(self, mock_pi, mock_gi, source_manager, bookkeeper, store) -> WikiIngestOrchestrator:
+        return WikiIngestOrchestrator(mock_pi, mock_gi, source_manager, bookkeeper, store=store)
 
     @pytest.mark.asyncio
     async def test_ingest_upserts_pages_into_store(
@@ -455,9 +446,7 @@ class TestOrchestratorTriageWiring:
         from parrot.knowledge.wiki.store import WikiStore
 
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
-        orch = WikiIngestOrchestrator(
-            mock_pi, mock_gi, source_manager, bookkeeper, store=store
-        )
+        orch = WikiIngestOrchestrator(mock_pi, mock_gi, source_manager, bookkeeper, store=store)
         triage = _make_triage_entry(proposed_action="archive")
 
         report = await orch.ingest(str(sample_source), wiki_config, triage=triage)
@@ -516,12 +505,8 @@ class TestOrchestratorTriageWiring:
         wiki_config: WikiConfig,
     ):
         """Admitted docs log ADMIT and persist decision fields via record_decision."""
-        triage = _make_triage_entry(
-            proposed_action="admit", decision_source="model", composite=0.91
-        )
-        report = await orchestrator.ingest(
-            str(sample_source), wiki_config, triage=triage, charter_version="3"
-        )
+        triage = _make_triage_entry(proposed_action="admit", decision_source="model", composite=0.91)
+        report = await orchestrator.ingest(str(sample_source), wiki_config, triage=triage, charter_version="3")
         assert report.status == "ok"
 
         log_path = wiki_config.storage_dir / "log.md"
@@ -569,9 +554,7 @@ class TestOrchestratorTriageWiring:
         from parrot.knowledge.wiki.store import WikiStore
 
         store = WikiStore(tmp_path / "wiki.db", wiki_name="test-wiki")
-        orch = WikiIngestOrchestrator(
-            mock_pi, mock_gi, source_manager, bookkeeper, store=store
-        )
+        orch = WikiIngestOrchestrator(mock_pi, mock_gi, source_manager, bookkeeper, store=store)
         triage = _make_triage_entry(proposed_action="admit", decision_source="human")
 
         report1 = await orch.ingest(str(sample_source), wiki_config, triage=triage)
@@ -628,12 +611,8 @@ class TestFrontmatterWiring:
         return WikiStore(tmp_path / "wiki-frontmatter.db", wiki_name="test-wiki")
 
     @pytest.fixture
-    def store_orchestrator(
-        self, mock_pi, mock_gi, source_manager, bookkeeper, store
-    ) -> WikiIngestOrchestrator:
-        return WikiIngestOrchestrator(
-            mock_pi, mock_gi, source_manager, bookkeeper, store=store
-        )
+    def store_orchestrator(self, mock_pi, mock_gi, source_manager, bookkeeper, store) -> WikiIngestOrchestrator:
+        return WikiIngestOrchestrator(mock_pi, mock_gi, source_manager, bookkeeper, store=store)
 
     @staticmethod
     async def _page_bodies(store, node_ids):
@@ -645,15 +624,11 @@ class TestFrontmatterWiring:
         return bodies
 
     @pytest.mark.asyncio
-    async def test_pages_carry_frontmatter(
-        self, store_orchestrator, store, sample_source, wiki_config
-    ):
+    async def test_pages_carry_frontmatter(self, store_orchestrator, store, sample_source, wiki_config):
         """Also exercises the fallback (``node is None``) branch: ``mock_pi``
         has no ``get_tree`` configured, so ``_build_page_records`` can never
         resolve a node and every record goes through that branch."""
-        triage = _make_triage_entry(
-            proposed_action="admit", decision_source="model", composite=0.8
-        )
+        triage = _make_triage_entry(proposed_action="admit", decision_source="model", composite=0.8)
         report = await store_orchestrator.ingest(
             str(sample_source), wiki_config, triage=triage, charter_version="1.2.0"
         )
@@ -667,18 +642,12 @@ class TestFrontmatterWiring:
         parsed = yaml.safe_load(block)
         assert parsed["triage"]["charter_version"] == "1.2.0"
         assert parsed["triage"]["composite_score"] == pytest.approx(triage.composite)
-        assert parsed["triage"]["decision"] == (
-            triage.decision or triage.proposed_action
-        )
+        assert parsed["triage"]["decision"] == (triage.decision or triage.proposed_action)
 
     @pytest.mark.asyncio
-    async def test_all_pages_identical_frontmatter(
-        self, store_orchestrator, store, sample_source, wiki_config
-    ):
+    async def test_all_pages_identical_frontmatter(self, store_orchestrator, store, sample_source, wiki_config):
         triage = _make_triage_entry(proposed_action="admit")
-        await store_orchestrator.ingest(
-            str(sample_source), wiki_config, triage=triage, charter_version="1"
-        )
+        await store_orchestrator.ingest(str(sample_source), wiki_config, triage=triage, charter_version="1")
         bodies = await self._page_bodies(store, ["0001", "0002", "0003"])
         blocks = [b.split("---\n", 2)[1] for b in bodies]
         assert len(set(blocks)) == 1
@@ -732,23 +701,17 @@ class TestFrontmatterWiring:
         assert records[0].body.startswith("---\ntitle: X\n---\n\n")
 
     @pytest.mark.asyncio
-    async def test_token_count_includes_frontmatter(
-        self, store_orchestrator, store, sample_source, wiki_config
-    ):
+    async def test_token_count_includes_frontmatter(self, store_orchestrator, store, sample_source, wiki_config):
         from parrot.knowledge.wiki.store import estimate_tokens
 
         triage = _make_triage_entry(proposed_action="admit")
-        await store_orchestrator.ingest(
-            str(sample_source), wiki_config, triage=triage, charter_version="1"
-        )
+        await store_orchestrator.ingest(str(sample_source), wiki_config, triage=triage, charter_version="1")
         page = await store.get_page("0001")
         assert page is not None
         assert page["token_count"] == estimate_tokens(page["body"])
 
     @pytest.mark.asyncio
-    async def test_legacy_path_emits_no_frontmatter(
-        self, store_orchestrator, store, sample_source, wiki_config
-    ):
+    async def test_legacy_path_emits_no_frontmatter(self, store_orchestrator, store, sample_source, wiki_config):
         """``triage=None`` -> build/upsert path -> byte-identical, no frontmatter."""
         report = await store_orchestrator.ingest(str(sample_source), wiki_config)
         assert report.status == "ok"
@@ -765,9 +728,7 @@ class TestFrontmatterWiring:
         wiki_config: WikiConfig,
     ):
         triage = _make_triage_entry(proposed_action="admit")
-        report = await orchestrator.ingest(
-            str(sample_source), wiki_config, triage=triage, charter_version="1.2.0"
-        )
+        report = await orchestrator.ingest(str(sample_source), wiki_config, triage=triage, charter_version="1.2.0")
         entry = source_manager.get_source(report.source_id)
         assert entry is not None
         assert entry.doc_metadata is not None
@@ -801,9 +762,7 @@ class TestFrontmatterWiring:
         """The discard path pre-dates this task and is untouched: no
         acquisition, no frontmatter, no doc_metadata persisted."""
         triage = _make_triage_entry(proposed_action="discard")
-        report = await orchestrator.ingest(
-            str(sample_source), wiki_config, triage=triage
-        )
+        report = await orchestrator.ingest(str(sample_source), wiki_config, triage=triage)
         assert report.pages_created == 0
         mock_pi.insert_content.assert_not_called()
 
@@ -835,9 +794,7 @@ class TestFrontmatterWiring:
         class _BoomAcquirer:
             async def acquire(self, ref):
                 called["count"] += 1
-                raise AssertionError(
-                    "should not re-acquire when `acquired` is given"
-                )
+                raise AssertionError("should not re-acquire when `acquired` is given")
 
         monkeypatch.setattr(ingest_module, "DocumentAcquirer", _BoomAcquirer)
 
