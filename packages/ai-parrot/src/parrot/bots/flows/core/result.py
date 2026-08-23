@@ -616,6 +616,48 @@ def _normalise_status(
     return mapping.get(status.lower(), "pending")
 
 
+#: Maximum number of envelope layers ``_unwrap_response`` will peel. Real
+#: envelopes are one level deep (``AgentNode.execute()``); the cap only exists
+#: so a self-referential or maliciously nested mapping cannot recurse forever.
+_MAX_UNWRAP_DEPTH: int = 5
+
+
+def _unwrap_response(response: Optional[Any], _depth: int = 0) -> Optional[Any]:
+    """Normalise a node/agent return value to its metadata-bearing object.
+
+    ``AgentNode.execute()`` returns an *envelope* dict
+    (``{"response", "output", "execution_time", "prompt"}`` --
+    ``core/node.py``) rather than the ``AgentResponse`` itself, while
+    ``AgentCrew`` passes the ``AgentResponse`` directly. This helper collapses
+    the former to the latter and leaves the latter untouched, so
+    :func:`build_node_metadata` sees a single shape from both executors and
+    the two cannot drift apart again (FEAT-447 G5).
+
+    A mapping is treated as an envelope **only** when it carries a
+    ``"response"`` key; a plain ``{"output": ...}`` dict is returned unchanged.
+    The function is intentionally total: it never raises, and on anything
+    unexpected it returns its input unchanged so ``build_node_metadata``
+    degrades exactly as it did before FEAT-447.
+
+    Args:
+        response: Any node/agent return value (envelope dict,
+            ``AgentResponse``, ``AIMessage``, ``str``, ``None``, or an
+            arbitrary user object).
+        _depth: Internal recursion guard; callers should not pass it.
+
+    Returns:
+        The metadata-bearing object, or ``response`` unchanged.
+    """
+    if _depth >= _MAX_UNWRAP_DEPTH:
+        return response
+    try:
+        if isinstance(response, dict) and "response" in response:
+            return _unwrap_response(response["response"], _depth + 1)
+    except Exception:  # noqa: BLE001 — defensive: arbitrary user objects
+        return response
+    return response
+
+
 def build_node_metadata(
     node_id: str,
     agent: Optional[Any],
@@ -630,11 +672,17 @@ def build_node_metadata(
     Mirrors ``build_agent_metadata()`` from ``parrot.models.crew`` but
     returns a ``NodeExecutionInfo`` instead of ``AgentExecutionInfo``.
 
+    ``response`` is first normalised through :func:`_unwrap_response`, so both
+    the bare ``AgentResponse`` an ``AgentCrew`` passes and the envelope dict an
+    ``AgentNode`` returns yield the same metadata (FEAT-447 G1/G5).
+
     Args:
         node_id: Unique identifier for this node instance.
-        agent: The agent object (used to extract name/provider/model).
-        response: Raw response object from the agent.
-        output: Extracted output value.
+        agent: The agent object (used to extract name/provider/model/client).
+        response: Raw response object from the agent, or the envelope dict
+            returned by ``AgentNode.execute()``.
+        output: Extracted output value. Passed through untouched -- it is
+            *not* unwrapped, so ``NodeExecutionInfo`` semantics are unchanged.
         execution_time: Wall-clock time for the execution.
         status: Status string (normalised to allowed literals).
         error: Error message if execution failed.
@@ -642,6 +690,11 @@ def build_node_metadata(
     Returns:
         Populated ``NodeExecutionInfo`` instance.
     """
+    # FEAT-447: collapse an AgentNode envelope to its AgentResponse *before*
+    # the isinstance ladder below; crew's bare AgentResponse passes through
+    # unchanged, so crew behaviour is bit-identical.
+    response = _unwrap_response(response)
+
     model: Optional[str] = None
     provider: Optional[str] = None
     usage: Optional[Dict[str, Any]] = None
@@ -688,10 +741,17 @@ def build_node_metadata(
             provider = getattr(response, "provider", None)
 
     # Fall back to agent attributes
+    client: Optional[str] = None
     if agent is not None:
         provider = provider or getattr(agent, "use_llm", None) or getattr(agent, "provider", None)
         if client_obj := getattr(agent, "llm", None) or getattr(agent, "_llm", None):
             model = model or getattr(client_obj, "model", None)
+            # FEAT-447: revive the declared-but-never-assigned `client` field.
+            # `agent.llm` is normally an AbstractClient instance; before
+            # `configure()` it can still hold the raw config (a str/dict), and
+            # a bare type name there would be noise rather than information.
+            if not isinstance(client_obj, (str, bytes, dict, list, tuple)):
+                client = type(client_obj).__name__
 
     node_name = getattr(agent, "name", node_id) if agent is not None else node_id
 
@@ -704,5 +764,6 @@ def build_node_metadata(
         tool_calls=tool_calls,
         status=_normalise_status(status),
         error=error,
+        client=client,
         usage=usage,
     )

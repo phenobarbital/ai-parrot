@@ -225,3 +225,194 @@ class TestBuildNodeMetadata:
             error="Something went wrong",
         )
         assert info.error == "Something went wrong"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-447 / TASK-2326 — shared envelope unwrapping + NodeExecutionInfo.client
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def agent_response_with_usage():
+    """AgentResponse whose AIMessage carries REAL usage + tool_calls.
+
+    NOTE: a real ``CompletionUsage`` is mandatory -- ``build_node_metadata``
+    calls ``usage_obj.model_dump()``, and a ``MagicMock`` would return another
+    Mock, making every assertion vacuous.
+    """
+    from parrot.models.basic import CompletionUsage, ToolCall
+    from parrot.models.responses import AgentResponse, AIMessage
+
+    message = AIMessage(
+        input="q",
+        output="answer",
+        model="gpt-4o",
+        provider="openai",
+        usage=CompletionUsage(
+            prompt_tokens=11, completion_tokens=7, total_tokens=18
+        ),
+        tool_calls=[
+            ToolCall(id="tc-1", name="get_weather", arguments={"city": "Madrid"})
+        ],
+    )
+    return AgentResponse(
+        agent_id="a1", agent_name="agent-one", question="q",
+        response=message, output="answer",
+    )
+
+
+@pytest.fixture
+def node_envelope(agent_response_with_usage):
+    """The exact dict ``AgentNode.execute()`` returns (``core/node.py``)."""
+    return {
+        "response": agent_response_with_usage,
+        "output": "answer",
+        "execution_time": 0.42,
+        "prompt": "q",
+    }
+
+
+class TestUnwrapResponse:
+    """Unit tests for the shared ``_unwrap_response`` helper."""
+
+    def test_unwrap_response_envelope(self, node_envelope, agent_response_with_usage):
+        """An envelope resolves to its inner AgentResponse."""
+        from parrot.bots.flows.core.result import _unwrap_response
+
+        assert _unwrap_response(node_envelope) is agent_response_with_usage
+
+    def test_unwrap_response_passthrough(self, agent_response_with_usage):
+        """AgentResponse, AIMessage, str and None pass through unchanged."""
+        from parrot.bots.flows.core.result import _unwrap_response
+
+        message = agent_response_with_usage.response
+        assert _unwrap_response(agent_response_with_usage) is agent_response_with_usage
+        assert _unwrap_response(message) is message
+        assert _unwrap_response("plain string") == "plain string"
+        assert _unwrap_response(None) is None
+
+        sentinel = object()
+        assert _unwrap_response(sentinel) is sentinel
+
+    def test_unwrap_response_nested_envelope(self, agent_response_with_usage):
+        """An envelope wrapping an envelope resolves; recursion is bounded."""
+        from parrot.bots.flows.core.result import (
+            _MAX_UNWRAP_DEPTH,
+            _unwrap_response,
+        )
+
+        inner = {"response": agent_response_with_usage, "output": "answer"}
+        outer = {"response": inner, "output": "answer"}
+        assert _unwrap_response(outer) is agent_response_with_usage
+
+        # Self-referential envelope: bounded, returns without raising.
+        cyclic: dict = {"output": "x"}
+        cyclic["response"] = cyclic
+        assert _unwrap_response(cyclic) is cyclic
+
+        # A chain deeper than the cap stops at the cap instead of recursing.
+        deep: object = agent_response_with_usage
+        for _ in range(_MAX_UNWRAP_DEPTH + 3):
+            deep = {"response": deep, "output": "answer"}
+        result = _unwrap_response(deep)
+        assert isinstance(result, dict)
+
+    def test_unwrap_response_dict_without_response_key(self):
+        """A dict with no ``"response"`` key is NOT an envelope."""
+        from parrot.bots.flows.core.result import _unwrap_response
+
+        plain = {"output": "answer", "execution_time": 0.1}
+        assert _unwrap_response(plain) is plain
+        assert _unwrap_response({}) == {}
+
+
+class TestBuildNodeMetadataEnvelope:
+    """``build_node_metadata`` fidelity for envelopes, crews, and ``client``."""
+
+    def test_build_node_metadata_from_envelope(self, node_envelope):
+        """Envelope input yields non-None usage and non-empty tool_calls."""
+        info = build_node_metadata(
+            node_id="n1",
+            agent=None,
+            response=node_envelope,
+            output="answer",
+            execution_time=1.25,
+            status="completed",
+        )
+        assert info.usage is not None
+        assert info.usage["prompt_tokens"] == 11
+        assert info.usage["completion_tokens"] == 7
+        assert info.tool_calls
+        assert info.tool_calls[0]["name"] == "get_weather"
+        assert info.model == "gpt-4o"
+        assert info.provider == "openai"
+        assert info.execution_time == 1.25
+        assert info.status == "completed"
+
+    def test_build_node_metadata_crew_shape_unchanged(self, agent_response_with_usage):
+        """A bare AgentResponse yields the same metadata as its envelope."""
+        crew_info = build_node_metadata(
+            node_id="n1",
+            agent=None,
+            response=agent_response_with_usage,
+            output="answer",
+            execution_time=1.25,
+            status="completed",
+        )
+        assert crew_info.model == "gpt-4o"
+        assert crew_info.provider == "openai"
+        assert crew_info.usage is not None
+        assert crew_info.usage["total_tokens"] == 18
+        assert crew_info.tool_calls[0]["name"] == "get_weather"
+        # Crew (bare response) and flow (envelope) must agree field-for-field.
+        flow_info = build_node_metadata(
+            node_id="n1",
+            agent=None,
+            response={
+                "response": agent_response_with_usage,
+                "output": "answer",
+                "execution_time": 0.42,
+                "prompt": "q",
+            },
+            output="answer",
+            execution_time=1.25,
+            status="completed",
+        )
+        assert flow_info.to_dict() == crew_info.to_dict()
+
+    def test_build_node_metadata_sets_client(self):
+        """client is the concrete client class name, not None."""
+        class OpenAIClient:
+            model = "gpt-4o"
+
+        class FakeAgent:
+            name = "agent-one"
+            llm = OpenAIClient()
+
+        info = build_node_metadata(
+            node_id="n1",
+            agent=FakeAgent(),
+            response=None,
+            output=None,
+            execution_time=0.0,
+            status="completed",
+        )
+        assert info.client == "OpenAIClient"
+        assert info.model == "gpt-4o"
+        assert info.to_dict()["client"] == "OpenAIClient"
+
+    def test_build_node_metadata_client_none_without_agent(self):
+        """No agent (or an unconfigured string llm) leaves client as None."""
+        assert build_node_metadata(
+            node_id="n1", agent=None, response=None, output=None,
+            execution_time=0.0, status="completed",
+        ).client is None
+
+        class UnconfiguredAgent:
+            name = "agent-one"
+            llm = "openai:gpt-4o"
+
+        assert build_node_metadata(
+            node_id="n1", agent=UnconfiguredAgent(), response=None, output=None,
+            execution_time=0.0, status="completed",
+        ).client is None
