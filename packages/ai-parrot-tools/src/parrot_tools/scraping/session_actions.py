@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import select
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -34,6 +36,8 @@ from .models import (
     GetCookies,
     ScrapingStep,
     SetCookies,
+    UploadFile,
+    WaitForDownload,
 )
 
 if TYPE_CHECKING:
@@ -655,3 +659,178 @@ async def _check_browser_event_ready(
         # higher level would spam a multi-minute wait's log output.
         logger.debug("await_browser_event readiness check raised", exc_info=True)
         return False
+
+
+# ── File transfer (upload / download) ───────────────────────────────
+#
+# Paths handled here will eventually be authored outside this repository (the
+# private plans directory, spec §3 Deliverable X), so they are treated as
+# untrusted input: existence is checked before any browser interaction, and
+# an opt-in root guard (PARROT_SCRAPING_FILES_ROOT) rejects path traversal.
+
+#: Environment variable naming a directory every upload/download/move_to path
+#: must resolve inside. Unset by default (back-compat for local/dev use) —
+#: set it to sandbox this module's filesystem access in production.
+_FILE_ROOT_ENV_VAR = "PARROT_SCRAPING_FILES_ROOT"
+
+#: Suffixes indicating a file is still mid-download (browser temp files).
+_INCOMPLETE_DOWNLOAD_SUFFIXES = {".tmp", ".crdownload", ".part", ".download"}
+
+
+def _resolve_within_root(raw_path: str) -> Optional[Path]:
+    """Resolve *raw_path*, rejecting it if it escapes the configured root.
+
+    The root is opt-in via the ``PARROT_SCRAPING_FILES_ROOT`` environment
+    variable: unset, any resolved path is accepted; set, any path resolving
+    outside that root is rejected and logged.
+
+    Returns:
+        The resolved :class:`Path`, or ``None`` if it escapes the root.
+    """
+    path = Path(raw_path).expanduser().resolve()
+    root = os.environ.get(_FILE_ROOT_ENV_VAR)
+    if root:
+        root_path = Path(root).expanduser().resolve()
+        try:
+            path.relative_to(root_path)
+        except ValueError:
+            logger.error(
+                "Rejecting path outside the configured root %s: %s", root_path, path
+            )
+            return None
+    return path
+
+
+async def exec_upload_file(driver: AbstractDriver, action: UploadFile) -> bool:
+    """Execute an :class:`UploadFile` action.
+
+    Uploads via ``driver.fill(selector, path)`` — the only file-input
+    interaction available through :class:`AbstractDriver` (neither the ABC
+    nor its concrete drivers expose an ``upload_file``/``set_input_files``
+    method). This is the same mechanism Selenium's ``send_keys`` on a file
+    input uses under the hood; Playwright's ``fill()`` does not support file
+    inputs, so this action is effectively Selenium-oriented until a native
+    per-driver upload hook exists.
+
+    Args:
+        driver: Browser driver implementing :class:`AbstractDriver`.
+        action: The :class:`UploadFile` model — single ``file_path`` or,
+            with ``multiple_files=True``, the ``file_paths`` list.
+
+    Returns:
+        ``True`` on success; ``False`` if a path is missing, escapes the
+        configured root, or the driver interaction fails.
+    """
+    if action.multiple_files and action.file_paths:
+        raw_paths = action.file_paths
+    else:
+        raw_paths = [action.file_path]
+
+    resolved_paths: List[Path] = []
+    for raw_path in raw_paths:
+        path = _resolve_within_root(raw_path)
+        if path is None:
+            return False
+        if not path.exists():
+            logger.error("Upload file not found: %s", path)
+            return False
+        resolved_paths.append(path)
+
+    value = "\n".join(str(p) for p in resolved_paths)
+    try:
+        await driver.fill(action.selector, value)
+    except Exception:
+        logger.exception("Failed to upload file(s) via selector %s", action.selector)
+        return False
+
+    logger.info("Uploaded %d file(s) via %s", len(resolved_paths), action.selector)
+
+    if action.wait_after_upload:
+        try:
+            await driver.wait_for_selector(action.wait_after_upload, timeout=action.wait_timeout)
+            logger.info("Post-upload element found: %s", action.wait_after_upload)
+        except Exception:  # noqa: BLE001 — a missing post-upload element is a warning, not an upload failure
+            logger.warning(
+                "Post-upload element not found within %ds: %s",
+                action.wait_timeout, action.wait_after_upload,
+            )
+
+    return True
+
+
+async def exec_wait_for_download(driver: AbstractDriver, action: WaitForDownload) -> bool:
+    """Execute a :class:`WaitForDownload` action.
+
+    Polls the filesystem for a file matching ``filename_pattern`` that has
+    stabilised (size unchanged across a short interval and non-zero) —
+    downloads are a driver-external filesystem event, so there is no
+    :class:`AbstractDriver` method for this; ``driver`` is accepted (unused)
+    for signature parity with the other ``exec_*`` functions.
+
+    Args:
+        driver: Browser driver implementing :class:`AbstractDriver` (unused).
+        action: The :class:`WaitForDownload` model — ``filename_pattern``,
+            ``download_path``, ``timeout``, ``move_to``, ``delete_after``.
+
+    Returns:
+        ``True`` once a matching, stable download is found (and moved, if
+        ``move_to`` is set); ``False`` on timeout or a rejected path.
+    """
+    if action.download_path:
+        download_dir = _resolve_within_root(action.download_path)
+        if download_dir is None:
+            return False
+    else:
+        download_dir = Path.home() / "Downloads"
+
+    download_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Monitoring for downloads in: %s", download_dir)
+
+    timeout = action.timeout
+    deadline = time.monotonic() + timeout
+    downloaded_file: Optional[Path] = None
+
+    while time.monotonic() < deadline:
+        candidates = [f for f in download_dir.glob("*") if f.is_file()]
+        if action.filename_pattern:
+            candidates = [f for f in candidates if f.match(action.filename_pattern)]
+        candidates = [
+            f for f in candidates if f.suffix.lower() not in _INCOMPLETE_DOWNLOAD_SUFFIXES
+        ]
+
+        for candidate in candidates:
+            try:
+                size1 = candidate.stat().st_size
+                await asyncio.sleep(0.2)
+                size2 = candidate.stat().st_size
+            except OSError:
+                continue
+            if size1 == size2 and size1 > 0:
+                downloaded_file = candidate
+                break
+
+        if downloaded_file:
+            break
+        await asyncio.sleep(0.3)
+
+    if downloaded_file is None:
+        logger.error("Download not detected within %ds", timeout)
+        return False
+
+    logger.info("Download complete: %s", downloaded_file.name)
+
+    if action.move_to:
+        move_target = _resolve_within_root(action.move_to)
+        if move_target is None:
+            return False
+        final_path = move_target / downloaded_file.name if move_target.is_dir() else move_target
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        downloaded_file.rename(final_path)
+        logger.info("Moved download to: %s", final_path)
+        downloaded_file = final_path
+
+    if action.delete_after:
+        downloaded_file.unlink()
+        logger.info("Deleted file: %s", downloaded_file.name)
+
+    return True
