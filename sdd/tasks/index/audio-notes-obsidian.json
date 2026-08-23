@@ -50,7 +50,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Edits agents/fireflies_wiki.py — sequential with the other agent-file tasks. Foundation for 2380 and 2382.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2379-notes-wiki-plane.md"
+      "completed_at": "2026-08-23T02:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2379-notes-wiki-plane.md"
     },
     {
       "id": "TASK-2380",
