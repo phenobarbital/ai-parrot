@@ -118,6 +118,7 @@ traversal_patterns:
     query_template: >
       FOR a IN @@articulo
         FILTER a._key == @articulo_key
+        LIMIT 1
         FOR v IN a.versions
           FILTER v.valid_from <= @as_of
           FILTER v.valid_to == null OR v.valid_to > @as_of

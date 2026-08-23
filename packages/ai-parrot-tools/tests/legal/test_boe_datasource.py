@@ -121,3 +121,24 @@ class TestBOEDataSource:
         result = await source.extract()
         assert result.records == []
         assert result.errors == []
+
+    async def test_extract_relations_returns_modifica_and_deroga(self, source, fixture_xml):
+        session = _mock_aiohttp_response(fixture_xml)
+        with patch("aiohttp.ClientSession", return_value=session):
+            relations = await source.extract_relations()
+
+        assert any(r["type"] == "modifica" for r in relations)
+        assert any(r["type"] == "deroga" for r in relations)
+
+    async def test_extract_relations_reuses_parse_cache(self, source, fixture_xml):
+        """extract() then extract_relations() on the SAME instance -> one fetch."""
+        session = _mock_aiohttp_response(fixture_xml)
+        with patch("aiohttp.ClientSession", return_value=session):
+            await source.extract()
+            await source.extract_relations()
+
+        assert session.get.call_count == 1
+
+    async def test_extract_relations_no_boe_ids_returns_empty(self):
+        source = BOEDataSource(name="boe", config={})
+        assert await source.extract_relations() == []

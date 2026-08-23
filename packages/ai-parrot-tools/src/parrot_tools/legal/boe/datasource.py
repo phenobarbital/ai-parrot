@@ -128,6 +128,37 @@ class BOEDataSource(ExtractDataSource):
         """
         return sorted(_NORMA_FIELDS | _ARTICULO_FIELDS)
 
+    async def extract_relations(self) -> list[dict[str, Any]]:
+        """Return the ``modifica``/``deroga`` provenance relations.
+
+        ``ExtractDataSource.extract()`` only ever returns node records
+        (norma/articulo), because it exists to feed
+        ``OntologyRefreshPipeline``'s generic node upsert path. The
+        provenance relations parsed alongside those nodes
+        (``ParsedNorm.relations`` — see ``parrot_tools.legal.boe.parser``)
+        have no field-match discovery rule to ride into the graph through
+        (``modifica``/``deroga`` declare zero rules in
+        ``legal.ontology.yaml`` by design, since they are facts extracted
+        directly from BOE's XML, not field-matchable). This method exposes
+        them explicitly so a caller (``sync_boe``) can bridge them into
+        ``OntologyGraphStore.create_edges`` itself.
+
+        Reuses the same per-instance parse cache as ``extract()`` — call
+        both on the SAME ``BOEDataSource`` instance to avoid re-fetching
+        each configured norm twice.
+
+        Returns:
+            Flattened list of relation records across all configured
+            ``boe_ids``, each ``{"type": "modifica"|"deroga", "from":
+            <boe_id>, "to": <boe_id or articulo_key>}``.
+        """
+        boe_ids = list(self.config.get("boe_ids", []))
+        relations: list[dict[str, Any]] = []
+        for boe_id in boe_ids:
+            parsed = await self._get_parsed_norm(boe_id)
+            relations.extend(parsed.relations)
+        return relations
+
     def _target_entity(self, fields: list[str] | None) -> str:
         """Infer which entity (norma|articulo|both) is being refreshed.
 

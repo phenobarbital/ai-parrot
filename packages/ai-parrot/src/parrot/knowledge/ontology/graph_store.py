@@ -251,11 +251,16 @@ class OntologyGraphStore:
         updated = 0
         unchanged = 0
 
-        # Batch upsert via AQL
+        # Batch upsert via AQL. INSERT explicitly copies key_field's value
+        # into ArangoDB's own `_key` so downstream `_key`-based lookups
+        # (soft_delete_nodes, get_by_key, and declarative traversal
+        # patterns like article_in_force's `FILTER a._key == @articulo_key`)
+        # match — without this, ArangoDB would auto-generate `_key` on
+        # insert instead of using the entity's declared identifier.
         aql = """
         FOR doc IN @nodes
             UPSERT { @key_field: doc[@key_field] }
-            INSERT MERGE(doc, { _active: true })
+            INSERT MERGE(doc, { _key: doc[@key_field], _active: true })
             UPDATE MERGE(doc, { _active: true })
             IN @@collection
             RETURN { type: OLD ? (OLD == NEW ? 'unchanged' : 'updated') : 'inserted' }
@@ -280,13 +285,13 @@ class OntologyGraphStore:
                         unchanged += 1
         except Exception as e:
             logger.error("Upsert failed for collection '%s': %s", collection, e)
-            # Fallback: individual upserts
+            # Fallback: individual upserts (same explicit `_key` copy as above)
             for node in nodes:
                 try:
                     await db.execute_query(
                         """
                         UPSERT { @key_field: @key_value }
-                        INSERT MERGE(@doc, { _active: true })
+                        INSERT MERGE(@doc, { _key: @key_value, _active: true })
                         UPDATE MERGE(@doc, { _active: true })
                         IN @@collection
                         """,

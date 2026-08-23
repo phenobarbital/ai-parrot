@@ -58,17 +58,19 @@ class FakeGraphStore:
     ``create_edges``, and ``execute_traversal`` (simulating the
     ``article_in_force`` AQL's version selection over ``versions[]``).
 
-    Documented deviation: nodes are keyed by their declared ``key_field``
-    value (e.g. ``articulo_key``), matching this feature's spec §2 intent
-    ("Entity keys follow the source's principle — identifiers are
-    canonical keys ... articulo._key is {norma}:{art}") and TASK-2371's
-    ``article_in_force`` AQL (``FILTER a._key == @articulo_key``). The
-    real ``OntologyGraphStore.upsert_nodes`` AQL
-    (``UPSERT { @key_field: doc[@key_field] } INSERT MERGE(doc, ...)``)
-    does not appear to explicitly copy ``key_field``'s value into
-    ArangoDB's own auto-generated ``_key`` attribute — see this task's
-    Completion Note for the finding. This fake models the documented
-    *intent*, not that possible framework-level gap.
+    Nodes are keyed by their declared ``key_field`` value (e.g.
+    ``articulo_key``), matching this feature's spec §2 intent ("Entity
+    keys follow the source's principle — identifiers are canonical keys
+    ... articulo._key is {norma}:{art}") and TASK-2371's
+    ``article_in_force`` AQL (``FILTER a._key == @articulo_key``). This
+    used to be a *documented deviation* from the real
+    ``OntologyGraphStore.upsert_nodes`` AQL, which did not copy
+    ``key_field``'s value into ArangoDB's own auto-generated ``_key``
+    attribute on INSERT (see this task's Completion Note for the original
+    finding) — fixed in a follow-up commit
+    (``INSERT MERGE(doc, { _key: doc[@key_field], _active: true })``), so
+    this fake now models the real behavior, not just the documented
+    intent.
     """
 
     def __init__(self) -> None:

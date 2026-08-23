@@ -345,3 +345,40 @@ list, core framework / prior-task files):**
 choice for the amendment-chain test is an autonomous resolution of an
 explicitly unresolved open question, flagged above for owner
 confirmation.
+
+**Follow-up (post-review fixes, same feature branch)**: findings #2 and
+#4 above were fixed after the adversarial code review confirmed them
+independently:
+- #2 (`OntologyGraphStore.upsert_nodes` not copying `key_field` into
+  `_key`): fixed in `graph_store.py` — INSERT now explicitly sets
+  `_key: doc[@key_field]` (both the batch AQL and the per-node fallback
+  path). Core framework file, in scope for this fix per explicit
+  instruction since the gap was self-discovered during this feature's
+  own implementation and blocks `article_in_force` against a real
+  ArangoDB deployment.
+- #4 (`modifica`/`deroga` edges never reaching `create_edges`): bridged
+  via a new `BOEDataSource.extract_relations()` method and a new
+  `parrot_tools.legal.boe.sync._sync_provenance_edges()` helper, wired
+  into `sync_boe()` after the node sync completes. New tests added:
+  `TestBOEDataSource::test_extract_relations_*` (test_boe_datasource.py)
+  and `TestProvenanceEdgeSync` (test_boe_integration.py).
+
+Also fixed as part of the same follow-up: `article_key()` (ids.py) now
+collapses whitespace in article designators (e.g. `"5 bis"` ->
+`"5_bis"`) since ArangoDB's `_key` grammar forbids spaces — a latent bug
+only reachable once finding #2 above was fixed and `_key` actually took
+on the article's composite key value. Also added a defensive `LIMIT 1`
+to `article_in_force`'s AQL.
+
+Findings #1 (empty `entity_results` on a true no-op refresh) and #3
+(`BOEDataSource`'s per-instance cache not crossing `DataSourceFactory`
+instances) were left as documented, intentional/non-correctness
+architecture notes — both would require changing shared core files
+(`OntologyRefreshPipeline`/`DataSourceFactory`) used by every ontology
+domain, for behavior that is either by-design (#1) or a minor
+inefficiency, not a bug (#3).
+
+**Still outstanding, requires the spec owner (Jesus Lara)**: the
+amendment-chain norm/article choice (Artículo 50, Ley 40/2015) still
+needs explicit sign-off — see the norm/article note above. Unchanged by
+this follow-up.

@@ -9,11 +9,13 @@ docstring for the wiring recipe.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from parrot.knowledge.ontology.cache import OntologyCache
-from parrot.knowledge.ontology.discovery import RelationDiscovery
+from parrot.knowledge.ontology.discovery import DiscoveryStats, RelationDiscovery
 from parrot.knowledge.ontology.graph_store import OntologyGraphStore
 from parrot.knowledge.ontology.refresh import OntologyRefreshPipeline, RefreshReport
+from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
 from parrot_loaders.extractors.factory import DataSourceFactory
 
@@ -24,7 +26,12 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
     Constructs a standalone ``OntologyRefreshPipeline`` (tenant manager,
     graph store, relation discovery, the shared ``DataSourceFactory``, and
     an ontology cache — no vector store, since v1 does no embedding) and
-    runs it against the ``"legal"`` domain.
+    runs it against the ``"legal"`` domain. After the pipeline's node sync
+    completes, also bridges the ``modifica``/``deroga`` provenance edges
+    parsed by ``BOEDataSource`` directly into
+    ``OntologyGraphStore.create_edges`` — see
+    ``_sync_provenance_edges``'s docstring for why the generic pipeline
+    cannot create them on its own.
 
     Deployment note: this function has no scheduler dependency (this
     module never imports the ``parrot.scheduler`` package — importing
@@ -69,4 +76,73 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
         vector_store=None,
         source_configs=source_configs,
     )
-    return await pipeline.run(tenant_id, domain="legal")
+    report = await pipeline.run(tenant_id, domain="legal")
+
+    # Bridge the `modifica`/`deroga` provenance edges parsed alongside the
+    # norma/articulo nodes. OntologyRefreshPipeline's generic REDISCOVER
+    # stage only creates edges via RelationDiscovery's field-match
+    # strategy, and modifica/deroga deliberately declare zero discovery
+    # rules in legal.ontology.yaml (they are facts read directly from
+    # BOE's XML, not field-matchable) — so those edges are otherwise never
+    # written. Never raises: failures degrade into `report.errors`, the
+    # same pattern OntologyRefreshPipeline._refresh_entity uses.
+    try:
+        ctx = tenant_manager.resolve(tenant_id, domain="legal")
+        boe_source = datasource_factory.get("boe", source_configs["boe"])
+        relation_stats = await _sync_provenance_edges(ctx, graph_store, boe_source)
+        report.discovery_results.update(relation_stats)
+    except Exception as e:  # noqa: BLE001 — degrade into report.errors, don't raise
+        report.errors.append(f"Provenance edge sync failed: {e}")
+
+    return report
+
+
+async def _sync_provenance_edges(
+    ctx: TenantContext,
+    graph_store: OntologyGraphStore,
+    boe_source: Any,
+) -> dict[str, DiscoveryStats]:
+    """Create `modifica`/`deroga` edges from the datasource's parsed relations.
+
+    Args:
+        ctx: Resolved TenantContext for the "legal" domain, used to map
+            each relation's declared ``from``/``to`` entity to its
+            collection name (building the ``_from``/``_to`` document IDs
+            ``OntologyGraphStore.create_edges`` requires) and its
+            ``edge_collection``.
+        graph_store: The OntologyGraphStore to write edges to.
+        boe_source: A ``BOEDataSource`` instance (same one used for node
+            extraction, so its per-instance parse cache is reused —
+            avoids re-fetching each configured norm).
+
+    Returns:
+        Per-relation-type DiscoveryStats (``total_source`` = relation
+        records seen, ``edges_created`` = edges written), keyed by
+        relation name (e.g. "modifica", "deroga") — merged into
+        ``RefreshReport.discovery_results`` by the caller.
+    """
+    relations = await boe_source.extract_relations()
+
+    edges_by_type: dict[str, list[dict[str, Any]]] = {}
+    for relation in relations:
+        rel_type = relation.get("type")
+        rel_def = ctx.ontology.relations.get(rel_type)
+        if rel_def is None:
+            continue
+        from_entity = ctx.ontology.entities.get(rel_def.from_entity)
+        to_entity = ctx.ontology.entities.get(rel_def.to_entity)
+        if from_entity is None or to_entity is None:
+            continue
+        edges_by_type.setdefault(rel_type, []).append({
+            "_from": f"{from_entity.collection}/{relation['from']}",
+            "_to": f"{to_entity.collection}/{relation['to']}",
+        })
+
+    stats: dict[str, DiscoveryStats] = {}
+    for rel_type, edges in edges_by_type.items():
+        rel_def = ctx.ontology.relations[rel_type]
+        created = await graph_store.create_edges(ctx, rel_def.edge_collection, edges)
+        stats[rel_type] = DiscoveryStats(
+            total_source=len(edges), edges_created=created,
+        )
+    return stats

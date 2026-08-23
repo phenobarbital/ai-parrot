@@ -62,3 +62,33 @@ class TestBOERegistration:
         assert captured["domain"] == "legal"
         assert captured["init_kwargs"]["vector_store"] is None
         assert captured["init_kwargs"]["source_configs"] == {"boe": {"since": None}}
+
+    async def test_sync_boe_never_raises_when_provenance_sync_fails(self, monkeypatch):
+        """A failure bridging modifica/deroga edges degrades into report.errors."""
+        from parrot.knowledge.ontology.refresh import RefreshReport
+        from parrot_tools.legal.boe import sync_boe
+
+        class _FakePipeline:
+            def __init__(self, **kwargs):
+                pass
+
+            async def run(self, tenant_id, domain=None):
+                return RefreshReport(
+                    tenant=tenant_id,
+                    started_at=datetime.now(UTC),
+                )
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(
+            "parrot_tools.legal.boe.sync.OntologyRefreshPipeline", _FakePipeline
+        )
+        monkeypatch.setattr(
+            "parrot_tools.legal.boe.sync.TenantOntologyManager.resolve", _boom
+        )
+
+        report = await sync_boe("legal_civil")
+
+        assert isinstance(report, RefreshReport)
+        assert any("Provenance edge sync failed" in e for e in report.errors)

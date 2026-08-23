@@ -29,7 +29,9 @@ from parrot.knowledge.ontology.refresh import OntologyRefreshPipeline
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
 from parrot.knowledge.ontology.validators import validate_aql
 from parrot_loaders.extractors.factory import DataSourceFactory
+from parrot_tools.legal.boe.datasource import BOEDataSource
 from parrot_tools.legal.boe.queries import article_in_force
+from parrot_tools.legal.boe.sync import _sync_provenance_edges
 
 from .conftest import BOE_FIXTURE_ID
 
@@ -209,3 +211,43 @@ class TestBOEIntegration:
         assert discovery.llm_client is None
         report = await run_sync(fake_store, boe_corpus)
         assert report.errors == []
+
+
+class TestProvenanceEdgeSync:
+    """`modifica`/`deroga` edges bridged via `sync._sync_provenance_edges`.
+
+    OntologyRefreshPipeline's generic REDISCOVER stage cannot create these
+    edges (modifica/deroga declare zero field-match discovery rules) — see
+    this task's Completion Note finding #4 and its follow-up fix commit.
+    """
+
+    async def test_creates_modifica_and_deroga_edges(
+        self, fake_store, boe_corpus, legal_tenant_ctx
+    ):
+        await run_sync(fake_store, boe_corpus)  # nodes must exist first
+
+        boe_source = BOEDataSource(name="boe", config={"boe_ids": [BOE_FIXTURE_ID]})
+        session = _mock_aiohttp_response(boe_corpus)
+        with patch("aiohttp.ClientSession", return_value=session):
+            stats = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
+
+        assert "modifica" in stats
+        assert "deroga" in stats
+        assert stats["modifica"].edges_created == stats["modifica"].total_source
+        assert stats["deroga"].edges_created == stats["deroga"].total_source
+
+        modifica_edges = fake_store._collections["__edges__modifica"]
+        assert any(
+            frm == "norma/BOE-A-2020-17340" and to == "articulo/BOE-A-2015-10566:50"
+            for (frm, to) in modifica_edges
+        )
+        deroga_edges = fake_store._collections["__edges__deroga"]
+        assert any(
+            frm == "norma/BOE-A-2015-10566" and to == "norma/BOE-A-2014-9467"
+            for (frm, to) in deroga_edges
+        )
+
+    async def test_no_boe_ids_creates_no_edges(self, fake_store, legal_tenant_ctx):
+        boe_source = BOEDataSource(name="boe", config={})
+        stats = await _sync_provenance_edges(legal_tenant_ctx, fake_store, boe_source)
+        assert stats == {}

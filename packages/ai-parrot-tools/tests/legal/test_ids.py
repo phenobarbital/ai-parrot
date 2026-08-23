@@ -21,3 +21,13 @@ class TestBOEIds:
 
     def test_article_key_composite(self):
         assert article_key("BOE-A-2015-10566", "5") == "BOE-A-2015-10566:5"
+
+    def test_article_key_normalizes_whitespace(self):
+        """Designators like '5 bis' must not leak a space into `_key`."""
+        assert article_key("BOE-A-2015-10566", "5 bis") == "BOE-A-2015-10566:5_bis"
+
+    def test_article_key_collapses_and_trims_whitespace(self):
+        assert (
+            article_key("BOE-A-2015-10566", "  10   ter ")
+            == "BOE-A-2015-10566:10_ter"
+        )

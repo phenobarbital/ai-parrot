@@ -58,16 +58,28 @@ def is_valid_boe_id(raw: str) -> bool:
     return True
 
 
+_KEY_WHITESPACE_RE = re.compile(r"\s+")
+
+
 def article_key(boe_id: str, article: str) -> str:
     """Build the composite key used as ``articulo.key_field``.
+
+    Article designators can contain whitespace (e.g. ``"5 bis"``,
+    ``"10 ter"``), which ArangoDB's ``_key`` grammar does not allow —
+    only letters, digits, and ``_ - : . @ ( ) + , = ; $ ! * ' %``. Runs of
+    whitespace in ``article`` are collapsed to a single underscore so the
+    composite key is always a valid ``_key`` value once it is written as
+    a vertex's ``_key`` (see ``OntologyGraphStore.upsert_nodes``).
 
     Args:
         boe_id: The canonical BOE identifier of the parent norm, e.g.
             ``"BOE-A-2015-10566"``.
-        article: The article designator within the norm, e.g. ``"5"``.
+        article: The article designator within the norm, e.g. ``"5"`` or
+            ``"5 bis"``.
 
     Returns:
         The composite key in ``{norma}:{art}`` form, e.g.
-        ``"BOE-A-2015-10566:5"``.
+        ``"BOE-A-2015-10566:5"`` or ``"BOE-A-2015-10566:5_bis"``.
     """
-    return f"{boe_id}:{article}"
+    safe_article = _KEY_WHITESPACE_RE.sub("_", article.strip())
+    return f"{boe_id}:{safe_article}"
