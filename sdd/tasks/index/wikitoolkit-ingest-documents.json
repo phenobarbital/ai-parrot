@@ -93,7 +93,7 @@
       "feature_id": "FEAT-451",
       "feature": "wikitoolkit-ingest-documents",
       "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Touches only models.py and sources.py — shares NO file with TASK-2352/2353/2354 (documents.py). Can run in a separate worktree concurrently with the acquirer chain once 2351 lands. The spec chooses per-spec isolation, so it will normally run sequentially anyway; this flag records that it CAN be split if the feature needs to be parallelized.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2355-source-manifest-metadata-persistence.md"
+      "completed_at": "2026-08-23T01:23:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2355-source-manifest-metadata-persistence.md"
     },
     {
       "id": "TASK-2356",

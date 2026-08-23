@@ -310,10 +310,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added `doc_metadata`/`content_type`/`loader` to
+`SourceManifestEntry` (models.py) and a mirroring
+`_SOURCES_DOCUMENT_COLUMNS` dict + additive migration loop, `_upsert`,
+`_row_to_entry` (JSON-decoded with a `try/except` degrading corrupt cells
+to `None`), `_doc_to_entry`/`_async_upsert` (Arango — native dict, no JSON
+round-trip needed), and `record_document_metadata()` (sources.py). Merged
+`origin/dev` first per the task's shared-file warning (only unrelated SDD
+doc commits landed since branch-off; no code conflict). All three new
+fields default to `None` so pre-FEAT-451 rows and non-`ingest` code paths
+are unaffected. `record_document_metadata` follows `mark_ingested`'s
+no-op-plus-warning shape for an unknown `source_id` (matching the
+acceptance criteria's literal wording), not `record_decision`'s
+create-if-missing shape, since a document's metadata is only meaningful
+once the source is already tracked. 71 tests pass in
+`test_sources.py`/`test_models.py` (18 new, incl. an Arango round-trip
+test added to `test_sources.py` itself — `test_sources_arango.py` was not
+in this task's Files to Create/Modify list, so it stayed untouched); the
+pre-existing `test_build_unaffected` regression guard in
+`test_integration.py` still passes. `ruff check`/`mypy` clean on
+`sources.py`/`models.py`/`test_sources.py`; `test_models.py` has 4
+pre-existing `pytest.raises(Exception)` B017 findings verified present on
+`origin/dev` before this task (not introduced here, left untouched per
+no-scope-creep).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — `store.py`'s `WIKI_SCHEMA_SQL` CREATE
+TABLE DDL was deliberately left untouched (not in this task's Files to
+Create/Modify list); the always-run additive migration in
+`_migrate_sources_columns` adds the new columns to brand-new databases
+too, so this has no functional effect, only a documentation-comment
+symmetry gap with the FEAT-402 precedent.
