@@ -73,7 +73,7 @@
       "feature_id": "FEAT-451",
       "feature": "wikitoolkit-ingest-documents",
       "spec": "sdd/specs/wikitoolkit-ingest-documents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Completes the is_url branch 2353 stubs, in the same class and file.",
       "assigned_to": null,
       "started_at": "2026-08-23T01:00:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2354-document-acquirer-url.md"
+      "completed_at": "2026-08-23T01:18:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2354-document-acquirer-url.md"
     },
     {
       "id": "TASK-2355",

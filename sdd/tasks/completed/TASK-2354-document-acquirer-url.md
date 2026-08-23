@@ -139,6 +139,14 @@ async def _acquire_url(self, ref: DocumentRef) -> AcquiredDocument:
             tmp_path.unlink(missing_ok=True)
 ```
 
+> **Contract correction (verified 2026-08-23, at TASK-2354 pickup)**: TASK-2353's
+> actual, committed `DocumentAcquirer.__init__` stores its constructor args as
+> **public** attributes — `self.fetch_timeout`, `self.max_bytes`,
+> `self.cache_dir` (documents.py:477-479) — not the private
+> `self._fetch_timeout` / `self._max_bytes` spelling used in the pattern
+> snippet above. Use the public spelling (`self.fetch_timeout`,
+> `self.max_bytes`) when implementing `_acquire_url` / `_download`.
+
 ### Key Constraints
 
 - **SSRF surface.** This is an operator-run CLI, not a server endpoint, so do
@@ -258,10 +266,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Implemented `_acquire_url` + `_download` + module-level
+`_resolve_url_suffix` in `documents.py`. `_download` streams via
+`aiohttp.ClientSession`/`ClientTimeout`, checks the scheme both up-front
+and again on the post-redirect `resp.url`, caps on bytes actually read
+(never trusting `Content-Length`), and always cleans up its temp file on
+any failure path (tracked via a `success` flag in a `finally`).
+`_acquire_url` delegates the downloaded temp file back through
+`self.acquire()` (the same local branches TASK-2353 built), then restores
+`ref`/`metadata.source_url` to the original URL and unlinks the temp file
+in `finally`. No `aioresponses`-style dependency is installed in this
+repo, so aiohttp is mocked with a hand-rolled async-context-manager double
+(`_FakeClientSession`/`_FakeResponse`/`_FakeGetContextManager`), matching
+the existing precedent in `tests/tools/gigsmart/test_client.py`. Added one
+extra test beyond the task's Test Specification —
+`test_no_temp_file_leaks_on_size_cap` — that exercises real mid-download
+cleanup via `cache_dir=tmp_path` (the literal `test_no_temp_file_leaks`
+test never actually creates a temp file, since its 404 status short-
+circuits before temp-file creation). All 37 tests in
+`tests/knowledge/wiki/test_documents.py` pass (9 new); `ruff check` clean;
+`mypy` targeted at `documents.py` reports zero errors in that file (the
+whole-repo follow-imports run surfaces ~2494 pre-existing errors across
+182 unrelated files, none in `documents.py`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Contract correction — the task's `_acquire_url`
+pattern snippet referenced private `self._fetch_timeout`/`self._max_bytes`
+attribute names, but TASK-2353's actual, committed `DocumentAcquirer.
+__init__` stores them as public `self.fetch_timeout`/`self.max_bytes`
+(documents.py, TASK-2353 commit). Updated the contract note in this task
+file before implementing and used the public spelling throughout.
