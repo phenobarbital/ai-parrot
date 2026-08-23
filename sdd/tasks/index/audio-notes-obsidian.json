@@ -68,7 +68,7 @@
       "feature_id": "FEAT-452",
       "feature": "audio-notes-obsidian",
       "spec": "sdd/specs/audio-notes-obsidian.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Needs the notes plane from TASK-2379 and edits the same file. Strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T02:06:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2380-note-structuring-and-capture-toolkit.md"
+      "completed_at": "2026-08-23T02:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2380-note-structuring-and-capture-toolkit.md"
     },
     {
       "id": "TASK-2381",
