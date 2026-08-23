@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Nothing is broken; the source asks to compose a new capability out of eight named-but-unverified building blocks (scraping DSL, browser drivers, Chrome DevTools MCP, wiki, Obsidian, Telegram/WhatsApp, AgentsFlow-as-tool, Calendar). The research must therefore verify which of those exist today, in which distribution, and with what contract — not diagnose a defect.",
+  "queries": [
+    {"id": "Q001", "intent": "Locate the WebscrapingToolkit and its JSON/DSL definition layer — the reuse anchor for the whole proposal", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "WebscrapingToolkit scraping DSL definition"}},
+    {"id": "Q002", "intent": "Find the selenium and playwright browser drivers and their shared driver abstraction", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "selenium playwright browser driver"}},
+    {"id": "Q003", "intent": "Enumerate the scraping/browser source tree to see module boundaries and where a BrowserAutomationToolkit would land", "type": "tree", "priority": 1, "depth": 0, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools", "max_depth": 2}},
+    {"id": "Q004", "intent": "Read the DSL step/action model that a browser-automation directive language would extend", "type": "read", "priority": 1, "depth": 0, "params": {"path": "<resolved from Q001>", "lines": null}},
+    {"id": "Q005", "intent": "Determine how external MCP servers (e.g. chrome-devtools) are consumed as agent tools", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "MCP client external server tools consume"}},
+    {"id": "Q006", "intent": "Verify whether a WikiToolkit exposing wiki_query/wiki_remember as agent tools exists in-process (vs only the MCP stdio server)", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "wiki toolkit agent tools wiki_query wiki_remember"}},
+    {"id": "Q007", "intent": "Verify whether an ObsidianToolkit / Obsidian vault mirror exists, and how FEAT-452 audio-notes-obsidian relates", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "Obsidian vault notes toolkit"}},
+    {"id": "Q008", "intent": "Locate the Telegram integration and confirm whether a WhatsApp channel exists in ai-parrot-integrations", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "Telegram WhatsApp integration bot channel"}},
+    {"id": "Q009", "intent": "Confirm the mechanism by which an Agent invokes an AgentsFlow as a tool", "type": "wiki_query", "priority": 1, "depth": 0, "params": {"pattern": "AgentsFlow as tool agent invoke flow"}},
+    {"id": "Q010", "intent": "Find any Google Calendar / Google Workspace toolkit for the tax-deadline reminder requirement", "type": "grep", "priority": 2, "depth": 0, "params": {"pattern": "calendar|gcal|google_calendar", "path": "packages", "include": "*.py", "max_results": 40}},
+    {"id": "Q011", "intent": "Find Excel/spreadsheet loaders for the bank-statement ingestion path", "type": "wiki_query", "priority": 2, "depth": 0, "params": {"pattern": "excel xlsx spreadsheet loader"}},
+    {"id": "Q012", "intent": "Determine how credentials/secrets are supplied to tools (browser login to Hooba needs them)", "type": "wiki_query", "priority": 2, "depth": 0, "params": {"pattern": "credentials secrets navconfig environment tool configuration"}},
+    {"id": "Q013", "intent": "Find scheduling/cron machinery for recurring tax-deadline reminders", "type": "grep", "priority": 3, "depth": 0, "params": {"pattern": "scheduler|croniter|APScheduler|cron", "path": "packages", "include": "*.py", "max_results": 40}},
+    {"id": "Q014", "intent": "Read the AbstractToolkit contract that BrowserAutomationToolkit must implement", "type": "wiki_query", "priority": 2, "depth": 0, "params": {"pattern": "AbstractToolkit base class get_tools"}},
+    {"id": "Q015", "intent": "Check the wiki namespaces / federation feature (FEAT-450) as the substrate for a per-business wiki plane", "type": "wiki_query", "priority": 3, "depth": 0, "params": {"pattern": "wiki namespaces federation remember memory"}},
+    {"id": "Q016", "intent": "Recent activity on the tools distribution to see whether scraping/browser code is actively moving", "type": "git_log", "priority": 3, "depth": 0, "params": {"path": "packages/ai-parrot-tools", "since": "60.days.ago", "max_results": 20}},
+    {"id": "Q017", "intent": "Recent activity on integrations to gauge Telegram/WhatsApp maturity", "type": "git_log", "priority": 3, "depth": 0, "params": {"path": "packages/ai-parrot-integrations", "since": "90.days.ago", "max_results": 20}},
+    {"id": "Q018", "intent": "Read the FEAT-452 audio-notes-obsidian spec — it may already define the Obsidian write path this proposal needs", "type": "read", "priority": 2, "depth": 0, "params": {"path": "sdd/specs/audio-notes-obsidian.spec.md", "lines": [1, 120]}}
+  ],
+  "expected_findings": [
+    "A concrete WebscrapingToolkit DSL with a serializable step/action model that a browser directive language can extend or fork",
+    "A driver abstraction shared by selenium and playwright implementations",
+    "Confirmation of whether the Chrome DevTools MCP is registered in .mcp.json and consumable by an in-process agent",
+    "Whether WikiToolkit and ObsidianToolkit exist as agent toolkits or must be built",
+    "Whether WhatsApp exists at all in ai-parrot-integrations, or only Telegram",
+    "The concrete API for wrapping an AgentsFlow as a tool",
+    "Whether Google Calendar and scheduling support exist or are net-new",
+    "Where credentials for an authenticated browser session would come from"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["Hooba", "WebscrapingToolkit", "BrowserAutomationToolkit", "Chrome DevTools MCP", "WikiToolkit", "ObsidianToolkit", "TelegramWrapper", "ai-parrot-integrations", "WhatsApp", "Google Calendar", "AgentsFlow", "Selenium", "Playwright"],
+      "verbs": ["crear", "automatizar", "registrar", "emitir", "gestionar", "coordinar", "procesar", "espejar"],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {"files_read": 22, "grep_calls": 6, "git_calls": 2},
+    "schema_note": "Query types wiki_query/wiki_page/wiki_related are mandated by the /sdd-proposal command (Phase 2, wiki-first) but are NOT yet in research_plan.schema.json v1.0 type enum. Schema is stale relative to FEAT-403/FEAT-450; recorded here rather than downgrading the queries."
+  }
+}

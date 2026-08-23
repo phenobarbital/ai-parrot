@@ -1,0 +1,685 @@
+{
+  "schema_version": "1.0",
+  "detected_mode": "enrichment",
+  "mode_rationale": "The source is additive and greenfield in intent ('se me ocurre... crear'), with the only negation aimed at an external system (Hooba has no API). No defect is reported. However research surfaced one latent defect (C2) that is a hard prerequisite, giving this an investigation-flavoured sub-thread inside an enrichment proposal.",
+  "summary_oneline": "Compose a Hooba browser-automation agent on the existing scraping DSL, reachable over Telegram/WhatsApp, with a gestoria wiki plane mirrored to Obsidian",
+  "summary": "The request is to automate a Spanish legally-mandated, API-less accounting SaaS (Hooba) through the browser, and to drive that automation conversationally from Telegram/WhatsApp with a durable wiki+Obsidian memory. Research shows the proposal is substantially better-supported than the source assumes: the JSON action DSL already exists as 27 typed BrowserAction Pydantic models (C1) including Authenticate, AwaitHuman, UploadFile and WaitForDownload; FEAT-222 already merged parameterized TemplatePlan binding, a session-affine ScrapingFlow DAG and a resumable FlowExecutor (C3); both drivers and a Chrome DevTools MCP WebAgent are live (C4); the wiki tools, ObsidianToolkit, Telegram/WhatsApp wrappers, credential broker with signed audit ledger, Excel loaders and an APScheduler-based scheduler all exist (C6, C7, C8, C10). The genuinely new work is therefore much narrower than 'build a BrowserAutomationToolkit': close the eight actions that executor.py silently stubs with return True (C2), validate plan steps at rest (C12), build a Hooba-specific domain toolkit over TemplatePlan/ScrapingFlow, add Google Calendar event tools (C9), and stand up a gestoria wiki plane \u2014 the last of which should follow rather than race FEAT-452 (C11).",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/models.py",
+      "symbol": "BrowserAction + 27 subclasses",
+      "lines": "14-757",
+      "role": "the JSON action DSL the source proposes to create \u2014 already typed and complete",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/executor.py",
+      "symbol": "_dispatch_step",
+      "lines": "251-311",
+      "role": "modern dispatch path; silently stubs 8 actions with return True",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/tool.py",
+      "symbol": "_execute_step, _await_human",
+      "lines": "689-760, 2086-2172",
+      "role": "legacy tool holding the only real implementations of the stubbed actions",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/plan.py",
+      "symbol": "ScrapingPlan",
+      "lines": "59-110",
+      "role": "plan value object; steps stored as untyped List[Dict[str, Any]]",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/template_plan.py",
+      "symbol": "TemplatePlan.bind, ParamSpec",
+      "lines": "72-205",
+      "role": "parameterized plan binding \u2014 'same flow, different invoice' primitive",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/flow_models.py",
+      "symbol": "ScrapingFlow, FlowNode, FlowResult",
+      "lines": "19-147",
+      "role": "DAG model with session affinity for login-then-operate flows",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/flow_executor.py",
+      "symbol": "FlowExecutor",
+      "lines": "1-1",
+      "role": "topological execution with per-node checkpoints (resumability)",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/session_manager.py",
+      "symbol": "SessionManager",
+      "lines": "1-1",
+      "role": "BrowserContext lifecycle, shared auth state across stages",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/abstract.py",
+      "symbol": "AbstractDriver",
+      "lines": "37-337",
+      "role": "27-method driver surface implemented by playwright + selenium; includes save_pdf",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/chrome.py",
+      "symbol": "WebAgent, ChromeConfig",
+      "lines": "15-334",
+      "role": "existing agent wired to chrome-devtools-mcp; second automation channel",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/execution_plan/toolkit.py",
+      "symbol": "ExecutionPlanToolkit.plan_execute",
+      "lines": "62-500",
+      "role": "the real 'agent invokes a flow as a tool' mechanism, LLM-free during execution",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/agent.py",
+      "symbol": "AgentTool",
+      "lines": "52-75",
+      "role": "agent-as-tool wrapper; requires AbstractBot, so cannot wrap AgentsFlow",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py",
+      "symbol": "create_wiki_tools + 7 wiki tools",
+      "lines": "155-541",
+      "role": "the WikiToolkit the source asks for \u2014 already agent-callable",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/obsidian.py",
+      "symbol": "ObsidianToolkit",
+      "lines": "78-702",
+      "role": "20-tool vault CRUD/search/link-graph toolkit",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+      "symbol": "TelegramAgentWrapper.handle_document, _send_attachments",
+      "lines": "67, 300, 1461-1552, 3075-3120",
+      "role": "Excel upload ingress and document egress already wired to agent.ask(attachments=...)",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/whatsapp/bridge_wrapper.py",
+      "symbol": "WhatsAppBridgeWrapper",
+      "lines": "1-16",
+      "role": "personal-number WhatsApp transport via Go whatsmeow bridge",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/whatsapp/wrapper.py",
+      "symbol": "WhatsAppAgentWrapper",
+      "lines": "37-359",
+      "role": "Meta Cloud API / pywa transport (business number)",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-integrations/src/parrot/integrations/manager.py",
+      "symbol": "IntegrationBotManager",
+      "lines": "38-272",
+      "role": "YAML-driven multi-channel bot startup",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/scheduler/functions/__init__.py",
+      "symbol": "BaseSchedulerCallback",
+      "lines": "16-168",
+      "role": "extension point for recurring tax-deadline reminders",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/google.py",
+      "symbol": "GoogleClient.get_calendar_client",
+      "lines": "57-61, 688-762",
+      "role": "calendar OAuth scopes + service config only \u2014 no event tools exist",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/o365/events.py",
+      "symbol": "Office365 event tools",
+      "lines": "1-1",
+      "role": "the only working calendar-event tooling in the repo today",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-loaders/src/parrot_loaders/excel.py",
+      "symbol": "ExcelLoader",
+      "lines": "1-1",
+      "role": "bank-statement ingestion, per-sheet and per-row document modes",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/broker.py",
+      "symbol": "CredentialBroker, _VaultStaticKeyResolver",
+      "lines": "51-326",
+      "role": "where Hooba credentials should come from",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/security/audit_ledger.py",
+      "symbol": "audit ledger",
+      "lines": "1-1",
+      "role": "signed append-only record of credential use \u2014 evidence trail for automated filings",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "sdd/tasks/index/audio-notes-obsidian.json",
+      "symbol": "FEAT-452 task index",
+      "lines": "1-40",
+      "role": "in-flight feature building the same domain-plane + vault-mirror + Telegram-scoping pattern",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "title": "Eight DSL actions are stubbed, not missing",
+      "detail": "executor.py:298-311 returns True for authenticate, upload_file, wait_for_download, get_cookies, set_cookies, await_human, await_keypress, await_browser_event. A Hooba plan whose first step is authenticate proceeds believing it is logged in, operating subsequent steps against a login page.",
+      "implication": "Closing this gap is a prerequisite task, not an enhancement. Silent success against an accounting system is worse than failure.",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "title": "FEAT-222 already fixed this defect class once, partially",
+      "detail": "FEAT-222 spec \u00a71 gap 4 identified exactly this stub pattern for Loop/Conditional and extracted them into advanced_actions.py. The remaining eight were left behind.",
+      "implication": "advanced_actions.py is the established extraction pattern to follow; do not invent a new one.",
+      "evidence": [
+        "F002",
+        "F003"
+      ]
+    },
+    {
+      "title": "Plan steps are untyped at rest",
+      "detail": "ScrapingPlan.steps is List[Dict[str, Any]]; typed BrowserAction parsing happens only at execution time in the legacy tool.",
+      "implication": "Malformed plans fail mid-transaction. For financial writes, validate the whole plan against the BrowserAction union before opening the browser.",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "title": "AgentsFlow is not an AbstractBot",
+      "detail": "AgentsFlow(PersistenceMixin); AgentTool.__init__ requires an AbstractBot. as_tool() cannot wrap a flow.",
+      "implication": "The Excel expense pipeline must go through ExecutionPlanToolkit.plan_execute (bounded, LLM-free, with run_id polling) rather than a hypothetical AgentsFlow.as_tool().",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "title": "Scheduling lives in ai-parrot-server",
+      "detail": "parrot/scheduler/manager.py and BaseSchedulerCallback are in the server distribution, not core.",
+      "implication": "Tax-deadline reminders imply deploying ai-parrot-server, not just running a bot process. That is a deployment decision the source has not made.",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "title": "Google Calendar has scopes but no tools",
+      "detail": "GoogleClient declares calendar scopes and returns a service config dict; nothing consumes it. O365 has real event tools with per-user OAuth.",
+      "implication": "Google Calendar event tooling is net-new and self-contained \u2014 a clean candidate for deferral out of a first release.",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "title": "FEAT-452 owns the domain-plane + vault-mirror pattern and is in flight",
+      "detail": "All six FEAT-452 tasks are in-progress on dev, building a separate notes wiki plane, registering it as a queryable namespace, scoping nightly vault ingest to a folder, and adding telegram_chat_scope.",
+      "implication": "FEAT-453's wiki layer must consume that mechanism, not race it. Two incompatible domain-plane designs in one repo is the failure mode to avoid.",
+      "evidence": [
+        "F009",
+        "F006"
+      ]
+    },
+    {
+      "title": "Channel authorization is a financial control here",
+      "detail": "WhatsAppAgentWrapper._is_authorized(wa_id) and telegram/auth.py gate who can talk to the bot.",
+      "implication": "This agent can spend money and file tax-relevant records; the allowlist is a security boundary, and await_human before any legally-effective write should be the default posture.",
+      "evidence": [
+        "F007",
+        "F002"
+      ]
+    },
+    {
+      "title": "Fan-out on a shared authenticated session is known deferred debt",
+      "detail": "FEAT-222 lists this as an explicit non-goal, safe in sequential mode only.",
+      "implication": "Fine for a single autonomo, but the expense-import flow must stay sequential over one Hooba session.",
+      "evidence": [
+        "F003"
+      ]
+    }
+  ],
+  "scope": {
+    "whats_new": [
+      "A Hooba domain toolkit: TemplatePlans for the recurring operations (login, create client, register expense, draft invoice, download invoice PDF) composed into ScrapingFlows",
+      "Google Calendar event tools (create/list/update) on the existing GoogleClient auth",
+      "A gestoria wiki plane + Obsidian folder mirror, built on FEAT-452's namespace mechanism",
+      "A scheduler callback for Spanish tax-calendar deadlines (modelo 303/130/390 and similar)",
+      "An ExecutionPlan for iterative bank-Excel expense ingestion, triggered as a bounded tool call"
+    ],
+    "what_changes": [
+      {
+        "target": "packages/ai-parrot-tools/src/parrot_tools/scraping/executor.py::_dispatch_step",
+        "change": "Replace the 8-action stub branch with real dispatch, extracting the implementations out of tool.py following the advanced_actions.py pattern",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-tools/src/parrot_tools/scraping/tool.py",
+        "change": "Delegate authenticate/await_human/upload_file/wait_for_download/cookies to the extracted module, eliminating the duplicate implementation",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-tools/src/parrot_tools/scraping/plan.py::ScrapingPlan",
+        "change": "Add opt-in validation of steps against the BrowserAction union at load time",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot-tools/src/parrot_tools/scraping/models.py::Authenticate",
+        "change": "Source credentials through parrot.auth.broker.CredentialBroker instead of literal values in plan JSON",
+        "evidence": [
+          "F001",
+          "F010"
+        ]
+      },
+      {
+        "target": "packages/ai-parrot/src/parrot/interfaces/google.py",
+        "change": "Promote get_calendar_client from a config dict to a usable client backing new calendar tools",
+        "evidence": [
+          "F008"
+        ]
+      }
+    ],
+    "non_goals": [
+      "Building a new browser-automation DSL \u2014 27 typed BrowserAction models already exist (C1)",
+      "Building a WikiToolkit or ObsidianToolkit \u2014 both exist and are complete (C6)",
+      "Building WhatsApp or Telegram transport \u2014 both ship, WhatsApp with two transports (C7)",
+      "Building scheduling machinery \u2014 only a new callback is needed (C8)",
+      "Re-implementing the domain wiki plane / vault mirror pattern that FEAT-452 is landing (C11)",
+      "Concurrent fan-out over one authenticated Hooba session \u2014 FEAT-222 deferred debt (C3)"
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "advanced_actions.py extraction: standalone async functions taking AbstractDriver + a dispatch_step_fn callback, consumed by both executor.py and tool.py",
+        "evidence": [
+          "F002",
+          "F003"
+        ]
+      },
+      {
+        "pattern": "FEAT-207 shared-state toolkit: one AbstractToolkit instance initialized with live dependencies, shared across every tool call (as ExecutionPlanToolkit and the skill toolkits do)",
+        "evidence": [
+          "F005",
+          "F006"
+        ]
+      },
+      {
+        "pattern": "FEAT-391 lazy lifecycle hooks (_open/_close/auto_open) for the browser session, as ObsidianToolkit does for the vault",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "pattern": "run_id + plan_status/plan_artifacts polling for long operations, so a chat turn is not held open during an expense import",
+        "evidence": [
+          "F005",
+          "F007"
+        ]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "Hooba DOM churn breaks every TemplatePlan at once",
+        "mitigation": "PlanRegistry fingerprinting plus a smoke ScrapingFlow that exercises login + one read-only navigation on a schedule, alerting over Telegram before a real operation fails",
+        "evidence": [
+          "F003",
+          "F008"
+        ]
+      },
+      {
+        "risk": "Unattended writes to a legally-mandated system produce wrong filings",
+        "mitigation": "await_human confirmation gate (now that it actually executes) on every write with legal effect; the signed audit ledger records what was done and with which credential",
+        "evidence": [
+          "F002",
+          "F010"
+        ]
+      },
+      {
+        "risk": "MFA/CAPTCHA on Hooba login makes unattended authenticate impossible",
+        "mitigation": "Fall back to ChromeConfig.user_data_dir persistent profile plus await_human on session expiry; unresolved until the site is inspected",
+        "evidence": [
+          "F004",
+          "F010"
+        ]
+      },
+      {
+        "risk": "FEAT-453 and FEAT-452 produce two incompatible domain-plane designs",
+        "mitigation": "Sequence the wiki layer of FEAT-453 after FEAT-452 merges and reuse its namespace registration",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "risk": "Scope is 3-4 features under one FEAT-ID",
+        "mitigation": "Split: browser layer, conversational agent, wiki/Obsidian brain, calendar+reminders",
+        "evidence": [
+          "F002",
+          "F008",
+          "F009"
+        ]
+      }
+    ]
+  },
+  "hypotheses": [],
+  "confidence_map": [
+    {
+      "id": "C1",
+      "claim": "The JSON browser-action DSL the source proposes to create already exists as 27 typed BrowserAction Pydantic models, including Authenticate, AwaitHuman, UploadFile and WaitForDownload",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of models.py class list"
+    },
+    {
+      "id": "C2",
+      "claim": "executor.py::_dispatch_step silently stubs 8 actions with a warning and return True, and those 8 are precisely the login/file/HITL/session primitives this feature needs",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of the stub branch at lines 298-311"
+    },
+    {
+      "id": "C3",
+      "claim": "FEAT-222 merged parameterized TemplatePlan.bind, a session-affine ScrapingFlow DAG, a checkpointing FlowExecutor and a SessionManager",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "files present on disk plus 10 TASK commits and a code-review remediation commit in git log"
+    },
+    {
+      "id": "C4",
+      "claim": "Selenium and Playwright drivers implement a 27-method AbstractDriver, and WebAgent already connects chrome-devtools-mcp via ChromeConfig",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of abstract.py, chrome.py:290-334 and mcp/integration.py:1105/1476"
+    },
+    {
+      "id": "C5",
+      "claim": "An agent triggers a flow via ExecutionPlanToolkit.plan_execute; AgentsFlow is not an AbstractBot so Agent.as_tool() cannot wrap it",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "class signature AgentsFlow(PersistenceMixin) vs AgentTool.__init__(agent: AbstractBot)"
+    },
+    {
+      "id": "C6",
+      "claim": "Seven agent-callable wiki tools and a 20-tool ObsidianToolkit already exist",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of tools.py class/name declarations and obsidian.py method list"
+    },
+    {
+      "id": "C7",
+      "claim": "Telegram and WhatsApp both ship, WhatsApp with a Meta-Cloud-API and a personal-number bridge transport, and Telegram already forwards uploaded documents to agent.ask(attachments=...)",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of manager.py wiring, both whatsapp wrappers, and the telegram attachment path"
+    },
+    {
+      "id": "C8",
+      "claim": "APScheduler-based scheduling with a BaseSchedulerCallback extension point exists, but only in the ai-parrot-server distribution",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "file locations under packages/ai-parrot-server plus callback class list"
+    },
+    {
+      "id": "C9",
+      "claim": "Google Calendar has declared OAuth scopes and a service-config accessor but no event tools; O365 has real calendar event tooling",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "get_calendar_client returns a dict of config with no consumer, versus parrot_tools/o365/events.py"
+    },
+    {
+      "id": "C10",
+      "claim": "A CredentialBroker with vault resolvers, toolkit-facing credential abstractions and a KMS-signed invocation ledger already exists",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of auth/broker.py class list plus security/vault_utils.py and audit_ledger.py"
+    },
+    {
+      "id": "C11",
+      "claim": "FEAT-452 is concurrently building a domain-scoped wiki plane, namespace registration, folder-scoped vault ingest and telegram_chat_scope \u2014 the same pattern FEAT-453 needs",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "all six tasks read as in-progress in the per-spec index; notes namespace already registered per wikitoolkit status"
+    },
+    {
+      "id": "C12",
+      "claim": "ScrapingPlan.steps is untyped at rest, so a malformed plan fails mid-execution rather than at load",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "medium",
+      "reasoning": "the field type is directly observed; the mid-execution failure consequence is inferred from where typed parsing happens, not from an observed failure"
+    },
+    {
+      "id": "C13",
+      "claim": "Net-new work is materially narrower than the source assumes \u2014 stub closure, load-time plan validation, a Hooba domain toolkit, Google Calendar tools, and a gestoria wiki plane",
+      "evidence": [
+        "F001",
+        "F002",
+        "F003",
+        "F006",
+        "F007",
+        "F008",
+        "F009"
+      ],
+      "confidence": "medium",
+      "reasoning": "each component's existence is high-confidence, but the claim that nothing else is missing is an inference over the union of findings rather than a verified inventory"
+    },
+    {
+      "id": "C14",
+      "claim": "Unattended browser automation against Hooba is feasible: the operator confirms app.hooba.com has no MFA or CAPTCHA on login",
+      "evidence": [],
+      "confidence": "medium",
+      "reasoning": "resolved by operator answer to U1, not by codebase evidence; medium because it is an unverified external assertion about a third-party site that can change"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Does app.hooba.com enforce MFA, CAPTCHA, or short session expiry on login?",
+      "blocks_claims": [
+        "C14"
+      ],
+      "plausible_answers": [
+        "No MFA \u2014 unattended authenticate works",
+        "MFA present \u2014 persistent ChromeConfig.user_data_dir profile plus await_human on expiry",
+        "Unknown, needs a manual inspection session before spec"
+      ],
+      "user_answer": "Sin MFA \u2014 login desatendido. La acci\u00f3n `authenticate` (una vez desestubada) resuelve credenciales v\u00eda CredentialBroker y entra sola.",
+      "resolved": true
+    },
+    {
+      "id": "U2",
+      "question": "Which WhatsApp transport does the phone number you will assign imply \u2014 Meta Cloud API business number (pywa wrapper) or a personal number via the Go whatsmeow bridge?",
+      "blocks_claims": [
+        "C7"
+      ],
+      "plausible_answers": [
+        "Business number, Meta Cloud API (WhatsAppAgentWrapper)",
+        "Personal number, whatsmeow bridge (WhatsAppBridgeWrapper)",
+        "Telegram only for v1, WhatsApp deferred"
+      ],
+      "user_answer": "N\u00famero personal \u2014 puente whatsmeow (`WhatsAppBridgeWrapper` + el bridge Go). Sin cuenta Business ni aprobaci\u00f3n de Meta.",
+      "resolved": true
+    },
+    {
+      "id": "U3",
+      "question": "Is Google Calendar a hard requirement, given that O365 already has working event tools and Google has none?",
+      "blocks_claims": [
+        "C9"
+      ],
+      "plausible_answers": [
+        "Google Calendar required \u2014 build the tools",
+        "O365 acceptable \u2014 use what exists",
+        "Defer calendar entirely; reminders over Telegram from the scheduler suffice for v1"
+      ],
+      "user_answer": "Google Calendar \u2014 construir las tools. Promover `GoogleClient.get_calendar_client` a cliente real y a\u00f1adir create/list/update_event.",
+      "resolved": true
+    },
+    {
+      "id": "U4",
+      "question": "Should FEAT-453 be split into separate features, and should its wiki/Obsidian layer wait for FEAT-452 to merge?",
+      "blocks_claims": [
+        "C11",
+        "C13"
+      ],
+      "plausible_answers": [
+        "Split into 4 features; wiki layer waits for FEAT-452",
+        "Keep as one feature but sequence the wiki layer last",
+        "One feature, accept the risk of a parallel domain-plane design"
+      ],
+      "user_answer": "Una feature, capa wiki al final. Todo bajo FEAT-453, secuenciando el plano wiki como \u00faltima tarea, tras el merge de FEAT-452.",
+      "resolved": true
+    },
+    {
+      "id": "U5",
+      "question": "What autonomy level should the agent have for writes with legal effect (submitting an invoice, filing an expense)?",
+      "blocks_claims": [
+        "C2"
+      ],
+      "plausible_answers": [
+        "Always await_human confirmation before any write",
+        "Drafts unattended, submission always confirmed",
+        "Fully unattended for expenses, confirmed for invoices"
+      ],
+      "user_answer": "Borradores solos, env\u00edo siempre confirmado. El agente monta drafts sin intervenci\u00f3n; todo submit con efecto legal pasa por `await_human`.",
+      "resolved": true
+    }
+  ],
+  "overall_confidence": "medium",
+  "overall_confidence_reasoning": "Localization and component-existence claims are uniformly high-confidence and directly read from source. Confidence is held at medium by three things, none of which more research on this repo would fix: the scope claim C13 is an inference over a union of findings rather than a verified inventory; the decisive feasibility question C14 is external to the codebase; and the feature as stated spans three or four deliverables, so any single-spec scope statement is provisional until U4 is answered.",
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The highest-value slice \u2014 closing the eight stubbed actions, validating plans at load, and building the Hooba domain toolkit on TemplatePlan/ScrapingFlow \u2014 is high-confidence, precisely localized, and blocking everything else. Spec that first under FEAT-453 and give the conversational agent, the gestoria wiki plane and the calendar/reminder work their own FEAT-IDs."
+  },
+  "budget_status": {
+    "consumed": {
+      "files_read": 24,
+      "grep_calls": 19,
+      "git_calls": 2,
+      "wall_seconds": 620
+    },
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "phases_note": "unknowns resolved during Phase 5 Q&A"
+}

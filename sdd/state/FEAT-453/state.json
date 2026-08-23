@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-453",
+  "feature_slug": "web-automation-infra",
+  "started_at": "2026-08-23T09:14:05Z",
+  "updated_at": "2026-08-23T09:44:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-453/source.md",
+    "fetched_at": "2026-08-23T09:14:05Z",
+    "summary_oneline": "Browser-automation toolkit (DSL) + autonomous agent over Hooba (no-API Spanish accounting SaaS), reachable via Telegram/WhatsApp, with wiki+Obsidian memory"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-08-23T09:14:05Z",
+      "completed_at": "2026-08-23T09:14:40Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-08-23T09:14:40Z",
+      "completed_at": "2026-08-23T09:16:00Z",
+      "queries_total": 18,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-453/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-08-23T09:18:00Z",
+      "completed_at": "2026-08-23T09:31:00Z",
+      "duration_seconds": 620,
+      "queries_executed": 18,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 24,
+      "grep_calls": 19,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-08-23T09:32:00Z",
+      "completed_at": "2026-08-23T09:35:00Z",
+      "synthesis_path": "sdd/state/FEAT-453/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 14,
+      "claims_high_conf": 11,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-08-23T09:36:00Z",
+      "completed_at": "2026-08-23T09:40:00Z",
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-08-23T09:40:00Z",
+      "proposal_path": "sdd/proposals/web-automation-infra.proposal.md",
+      "commit_sha": "0108171df364a11d01ce23da51edd236879fec09",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Stub closure + load-time plan validation + the Hooba domain toolkit on TemplatePlan/ScrapingFlow is high-confidence, precisely localized, and blocks everything else. Single feature per U4, wiki layer ordered last.",
+      "completed_at": "2026-08-23T09:44:00Z"
+    }
+  },
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 24,
+    "grep_calls": 19,
+    "git_calls": 2,
+    "wall_seconds": 620
+  },
+  "resume_hint": {
+    "next_phase": "spec",
+    "next_action": "Run /sdd-spec FEAT-453."
+  },
+  "detected_mode": "enrichment"
+}
