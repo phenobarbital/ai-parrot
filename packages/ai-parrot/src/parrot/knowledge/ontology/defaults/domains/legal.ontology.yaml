@@ -1,0 +1,100 @@
+name: legal
+version: "1.0"
+description: >
+  Legal Norms Graph domain (FEAT-449, Sprint 1). Declares the BOE
+  (Boletin Oficial del Estado) consolidated-legislation vocabulary:
+  norma, articulo and materia entities, their provenance relations
+  (modifica, deroga, pertenece_a), and the article_in_force temporal
+  traversal pattern. Zero LLM involvement — ingestion and resolution are
+  entirely deterministic.
+
+entities:
+  Norma:
+    collection: norma
+    source: boe
+    key_field: boe_id
+    properties:
+      - boe_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical BOE identifier, e.g. BOE-A-2015-10566 (normalize_boe_id output)
+      - titulo:
+          type: string
+          description: Official title of the norm
+      - rango:
+          type: string
+          description: Legal rank of the norm (e.g. ley, real_decreto, orden)
+      - fecha_disposicion:
+          type: date
+          description: Date the norm was enacted
+      - fecha_publicacion:
+          type: date
+          description: Date the norm was published in the BOE
+      - materia_id:
+          type: string
+          description: Identifier of the materia this norm belongs to (for pertenece_a)
+
+  Articulo:
+    collection: articulo
+    source: boe
+    key_field: articulo_key
+    properties:
+      - articulo_key:
+          type: string
+          required: true
+          unique: true
+          description: Composite key '{boe_id}:{numero}' (article_key output)
+      - norma_ref:
+          type: string
+          required: true
+          description: BOE id of the parent norma
+      - numero:
+          type: string
+          required: true
+          description: Article designator as it appears in the source (e.g. '5', '5 bis')
+      - versions:
+          type: list
+          required: true
+          description: >
+            Ordered list of ArticleVersion entries (n, text, valid_from, valid_to,
+            modified_by, kind, source, derived). Shape enforced in Python by
+            BOEDataSource, not by the ontology schema (PropertyDef.type is a
+            closed Literal with no nested-model support).
+
+  Materia:
+    collection: materia
+    key_field: materia_id
+    properties:
+      - materia_id:
+          type: string
+          required: true
+          unique: true
+          description: Static taxonomy identifier for a legal materia
+      - nombre:
+          type: string
+          required: true
+          description: Display name of the materia
+
+relations:
+  modifica:
+    from: Norma
+    to: Articulo
+    edge_collection: modifica
+
+  deroga:
+    from: Norma
+    to: Norma
+    edge_collection: deroga
+
+  pertenece_a:
+    from: Norma
+    to: Materia
+    edge_collection: pertenece_a
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: materia_id
+          target_field: materia_id
+          match_type: exact
+          description: Norm-to-materia membership via materia_id field
