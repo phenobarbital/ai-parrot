@@ -14,7 +14,7 @@ reuse_feature_id: FEAT-453
 **Feature ID**: FEAT-453
 **Date**: 2026-08-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 > **Proposal**: [`sdd/proposals/web-automation-infra.proposal.md`](../proposals/web-automation-infra.proposal.md)
@@ -182,6 +182,10 @@ Layer 4 ── gestoria wiki plane (own LLMWikiToolkit instance)
 | `FlowExecutor` | **uses, unmodified** | constructed by the toolkit with `templates=` from the plans dir |
 | `SessionManager` | uses, unmodified | session affinity comes free via `FlowNode.session` |
 | `CredentialBroker` | uses | `resolve(provider, surface, user)` at action time |
+| `ConfirmationGuard` | uses | primary SUBMIT gate at the tool-call boundary (D2) |
+| `HumanInteractionManager` | uses | injected into the guard; `None` ⇒ fail-closed |
+| `HumanChannel` / `TelegramHumanChannel` | uses | mid-plan `await_human` reaches Telegram (D2) |
+| `ToolManager.set_confirmation_guard()` | uses | wiring point for the guard |
 | `AuditLedger` | uses | credential-use trail for automated filings |
 | `ExecutionPlanToolkit` | uses, unmodified | `plan_execute` for the bank-Excel ingest |
 | `ExcelLoader` | uses, unmodified | `output_mode="row"` for per-transaction Documents |
@@ -214,13 +218,18 @@ class BusinessOperation(BaseModel):
     confirm_prompt: str | None = None      # shown to the human at the gate
 
 
-class SubmitGateDecision(BaseModel):
-    """Outcome of a human confirmation at a SUBMIT boundary."""
-    approved: bool
-    operation: str
-    params_digest: str                     # sha256 of the bound params
-    decided_at: datetime
-    decided_by: str | None = None
+# NOTE: there is deliberately NO bespoke gate-decision model here.
+# The SUBMIT gate reuses the existing HITL stack — `ConfirmationDecision`
+# (auth/confirmation.py) and `InteractionResult` (parrot/human/models.py).
+# See §7 Decision D2.
+
+
+class ImportRun(BaseModel):
+    """Discriminates one bank-statement import from another so two legitimate
+    imports with identical logical params never share a checkpoint token."""
+    statement_digest: str                  # sha256 of the source Excel bytes
+    period: str                            # e.g. "2026-Q1"
+    started_at: datetime
 ```
 
 ### New Public Interfaces
@@ -237,7 +246,10 @@ async def exec_authenticate(
 ) -> bool: ...
 
 async def exec_await_human(
-    driver: AbstractDriver, action: AwaitHuman, *, notifier: NotifierFn | None = None
+    driver: AbstractDriver,
+    action: AwaitHuman,
+    *,
+    channel: HumanChannel | None = None,   # parrot.human — NOT a bespoke notifier (D2)
 ) -> bool: ...
 
 async def exec_upload_file(driver: AbstractDriver, action: UploadFile) -> bool: ...
@@ -264,7 +276,7 @@ class BusinessAutomationToolkit(AbstractToolkit):
         plans_dir: str | Path,
         browser: Any | None = None,
         credential_broker: CredentialBroker | None = None,
-        submit_gate: SubmitGateFn | None = None,
+        human_manager: HumanInteractionManager | None = None,   # HITL — D2
         checkpoint_dir: Path | None = None,
         **kwargs: Any,
     ) -> None: ...
@@ -290,6 +302,15 @@ class InProcessScheduler:
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
     def add_cron(self, name: str, cron: str, callback: Callable[..., Awaitable[Any]]) -> str: ...
+
+
+# parrot_tools/business_automation/smoke.py  (NEW — mechanism only; D4)
+class SmokeCheck(BaseModel):
+    """Scheduled canary: runs one READ-kind operation and alerts on failure,
+    so DOM churn is discovered before a real write fails."""
+    operation: str                         # must resolve to OperationKind.READ
+    cron: str
+    alert_channel: str = "telegram"
 ```
 
 ---
@@ -332,7 +353,12 @@ class InProcessScheduler:
 ### Module 5: `BusinessAutomationToolkit`
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/business_automation/toolkit.py` (new package)
 - **Responsibility**: The generic engine — operation registry, `FlowExecutor`
-  wiring, submit gate, `run_id` bookkeeping, `auto_open` browser lifecycle.
+  wiring, `run_id` bookkeeping, `auto_open` browser lifecycle, and SUBMIT
+  gating **via the existing HITL stack** (`ConfirmationGuard` +
+  `HumanInteractionManager`), not a bespoke gate. Marks `run_operation` as a
+  confirmation tool through `routing_meta` when the resolved operation is
+  `OperationKind.SUBMIT`, and sets `confirm_window_seconds=0` for it so a
+  repeated submit is never auto-approved by a window hit (D2).
   Contains **no** Hooba identifiers.
 - **Depends on**: Modules 2, 3, 4
 
@@ -356,7 +382,8 @@ class InProcessScheduler:
 - **Path**: `packages/ai-parrot/src/parrot/scheduler/inprocess.py` (new),
   `packages/ai-parrot/pyproject.toml` (reactivate the `scheduler` extra)
 - **Responsibility**: A lightweight APScheduler wrapper usable without deploying
-  ai-parrot-server, plus tax-calendar reminder callbacks. **Must not shadow**
+  ai-parrot-server, plus tax-calendar reminder callbacks and the `SmokeCheck`
+  runner (D4). **Must not shadow**
   the satellite-delegating `__getattr__` in `parrot/scheduler/__init__.py` —
   `AgentSchedulerManager` and friends stay satellite-only.
   See §7 **Decision D1** for why this partially reverses FEAT-203.
@@ -368,6 +395,10 @@ class InProcessScheduler:
   row-mode Documents and invokes the `register_expense` operation per row, run
   via `ExecutionPlanToolkit.plan_execute` so the loop costs no LLM tokens.
   Progress surfaced through `plan_status`/`plan_artifacts`.
+  **Must inject `ImportRun.statement_digest` into `flow.global_params`** so the
+  checkpoint token discriminates two legitimate imports with identical logical
+  parameters (D3) — otherwise the second import resumes the first's checkpoint
+  and silently skips every row.
 - **Depends on**: Module 5
 
 ### Module 10: `gestoria` wiki plane + Obsidian mirror
@@ -390,7 +421,9 @@ class InProcessScheduler:
 - **Path**: private plans directory consumed by Module 6
 - **Contents**: five Hooba `BusinessOperation`s — `login`, `create_client`,
   `register_expense`, `draft_invoice`, `download_invoice_pdf` — with their
-  `TemplatePlan`s and selectors.
+  `TemplatePlan`s and selectors, plus the Hooba `SmokeCheck` plan (a READ-kind
+  login + dashboard navigation), which needs real credentials and real
+  selectors and therefore cannot live in this repo (D4).
 - **Why out of repo**: §8, resolved — the engine is public, site plans are not.
 
 ---
@@ -414,8 +447,14 @@ class InProcessScheduler:
 | `test_validate_steps_rejects_missing_required_field` | M3 | `UploadFile` without `file_path` raises |
 | `test_authenticate_prefers_broker_over_literals` | M4 | With `credential_provider` set, literal fields are ignored |
 | `test_authenticate_never_logs_secrets` | M4 | Password never appears in log records |
-| `test_submit_gate_blocks_submit_kind` | M5 | `OperationKind.SUBMIT` requires approval |
-| `test_submit_gate_skips_draft_kind` | M5 | `DRAFT` runs unattended |
+| `test_submit_gate_blocks_submit_kind` | M5 | `OperationKind.SUBMIT` routes through `ConfirmationGuard.confirm()` |
+| `test_submit_gate_skips_draft_kind` | M5 | `DRAFT` runs unattended, guard returns `not_required` |
+| `test_submit_gate_fails_closed_without_human_manager` | M5 | `human_manager=None` ⇒ decision `cancelled`, browser never opened |
+| `test_submit_gate_window_disabled` | M5 | Two identical submits ask twice — no `confirm_window_seconds` hit |
+| `test_await_human_manual_requires_channel` | M1 | `condition_type="manual"` with no `HumanChannel` fails closed |
+| `test_await_human_notifies_channel` | M1 | DOM-condition pause also emits `send_notification()` |
+| `test_checkpoint_token_differs_per_statement` | M9 | Same period + different statement digest ⇒ different checkpoint file |
+| `test_checkpoint_permissions` | M9 | Checkpoint dir 0700, files 0600 |
 | `test_plans_dir_schema_validation` | M6 | Malformed operation file rejected at load |
 | `test_calendar_create_event` | M7 | Builds a valid Calendar v3 insert body |
 | `test_inprocess_scheduler_does_not_shadow_satellite` | M8 | `parrot.scheduler.AgentSchedulerManager` still resolves via `__getattr__` |
@@ -463,11 +502,16 @@ def fake_broker() -> CredentialBroker:
 - [ ] **AC-5** — With `credential_provider` set, `Authenticate` resolves through `CredentialBroker` and the literal `username`/`password` fields are never read.
 - [ ] **AC-6** — No test or log emits a credential value (`test_authenticate_never_logs_secrets`).
 - [ ] **AC-7** — `BusinessAutomationToolkit` contains zero occurrences of "hooba" (case-insensitive) — the engine is domain-neutral.
-- [ ] **AC-8** — Every `OperationKind.SUBMIT` operation pauses for `await_human`; every `DRAFT` runs unattended.
+- [ ] **AC-8** — Every `OperationKind.SUBMIT` operation is gated by `ConfirmationGuard.confirm()`; every `DRAFT` runs unattended.
+- [ ] **AC-8a** — With `human_manager=None` a SUBMIT operation is **denied** and no browser is opened (fail-closed).
+- [ ] **AC-8b** — `confirm_window_seconds` is 0 for SUBMIT operations: two identical submits prompt twice.
+- [ ] **AC-8c** — A mid-plan `await_human` with `condition_type="manual"` and no `HumanChannel` fails closed rather than blocking forever.
 - [ ] **AC-9** — The plans directory loads from a path outside the repository and schema-validates on load.
 - [ ] **AC-10** — Google Calendar `create_event` / `list_events` / `update_event` work against a mocked Calendar v3 client.
 - [ ] **AC-11** — `parrot.scheduler.AgentSchedulerManager` still resolves through the satellite `__getattr__` after Module 8 lands (no shadowing regression).
 - [ ] **AC-12** — A bank-statement Excel of N rows produces N expense registrations, and a mid-run kill resumes without duplicates.
+- [ ] **AC-12a** — Two imports with identical `period` but different statement bytes produce **different** checkpoint files (no cross-resume).
+- [ ] **AC-12b** — The checkpoint directory is 0700 and its files 0600, and is located outside both the Obsidian vault and any wiki storage root.
 - [ ] **AC-13** — The `gestoria` plane uses a storage root distinct from the default wiki, and `create_wiki()` is idempotent across restarts.
 - [ ] **AC-14** — The operator runbook documents the one-off `wikitoolkit ns add` for the `gestoria` plane, and `wikitoolkit query --ns gestoria` returns a seeded page.
 - [ ] **AC-15** — The WhatsApp bridge refuses to start with an empty `allowed_numbers` when SUBMIT-kind operations are exposed.
@@ -475,6 +519,7 @@ def fake_broker() -> CredentialBroker:
 - [ ] **AC-17** — All integration tests pass, none contacting `app.hooba.com`.
 - [ ] **AC-18** — No breaking change to `WebScrapingToolkit`'s public API; existing scraping tests pass unchanged.
 - [ ] **AC-19** — Documentation updated: plans-directory contract, submit-gate policy, operator runbook.
+- [ ] **AC-20** — A `SmokeCheck` on a READ-kind operation runs on schedule and alerts on failure (verified against the fixture site).
 
 ---
 
@@ -508,6 +553,20 @@ from parrot.auth.broker import CredentialBroker                      # verified:
 from parrot.knowledge.wiki.toolkit import LLMWikiToolkit             # verified: wiki/toolkit.py:54
 from parrot.tools.obsidian import ObsidianToolkit                    # verified: tools/obsidian.py:78
 from parrot_loaders.excel import ExcelLoader                         # verified: parrot_loaders/excel.py:21
+
+# HITL stack (Decision D2) — do NOT reinvent any of this
+from parrot.human import (
+    HumanChannel,                # verified: human/__init__.py:31 (re-export of channels/base.py:47)
+    HumanInteractionManager,     # verified: human/__init__.py:33 (manager.py)
+    HumanTool,                   # verified: human/__init__.py:34
+    HumanDecisionNode,           # verified: human/__init__.py:35
+    WaitStrategy, InteractionType, InteractionStatus, TimeoutAction,
+    HumanInteraction, HumanResponse, InteractionResult, Severity,  # verified: human/__init__.py:18-29
+)
+from parrot.human.channels import ChannelRegistry           # verified: human/channels/__init__.py:16
+# TelegramHumanChannel is LAZY (PEP 562) — contributed by ai-parrot-integrations:
+#   parrot.human.TelegramHumanChannel  → ".channels.telegram"   (human/__init__.py:40)
+from parrot.auth.confirmation import ConfirmationGuard      # verified: auth/confirmation.py:378
 ```
 
 ### Existing Class Signatures
@@ -661,6 +720,43 @@ async def get_calendar_client(self, version: str = 'v3') -> Dict[str, Any]:  # l
 class ExcelLoader(AbstractLoader):                  # line 21
     output_mode: Literal["sheet","row"] = "sheet"   # line 56
 
+# packages/ai-parrot/src/parrot/auth/confirmation.py
+class ConfirmationGuard:                            # line 378
+    """The Governor: asks a human to confirm each marked tool call.
+    Wired into ToolManager via set_confirmation_guard(), invoked in
+    execute_tool() AFTER the grant check and BEFORE tool.execute().
+    Lifecycle: non-confirmation tool -> allow; within confirm_window_seconds
+    for same args_hash -> allow; NO human_manager -> DENY (fail-closed,
+    'cancelled'); else build briefing -> ask HITL -> map to decision."""
+    def __init__(self, store: ConfirmationWindowStore,
+                 human_manager: Optional["HumanInteractionManager"] = None,
+                 config: Optional[ConfirmationConfig] = None) -> None: ...  # line 401
+    async def confirm(self, *, tool: "AbstractTool", parameters: dict,
+                      permission_context: Optional["PermissionContext"] = None
+                      ) -> ConfirmationDecision: ...                        # line 418
+
+# packages/ai-parrot/src/parrot/human/channels/base.py
+class HumanChannel(ABC):                            # line 47
+    async def start(self) -> None: ...              # line 83
+    async def stop(self) -> None: ...               # line 90
+    async def send_interaction(...) -> ...          # line 100
+    async def send_notification(...) -> ...         # line 119
+    async def cancel_interaction(...) -> ...        # line 132
+    async def register_response_handler(...) -> ... # line 151
+    async def register_cancel_handler(...) -> ...   # line 162
+
+# packages/ai-parrot-tools/src/parrot_tools/scraping/flow_executor.py — checkpoints (D3)
+def _checkpoint_token(global_params: Dict[str, Any]) -> str:   # line 271
+    #   sha256(json.dumps(global_params, sort_keys=True))[:8]
+    #   "Distinct parameter sets get distinct checkpoint files ... while an
+    #    identical parameter set resolves deterministically — which is what
+    #    resume_from relies on."   <-- THE HAZARD D3 addresses
+def _checkpoint_path(self, flow, token) -> Optional[Path]:     # line 282
+    #   {checkpoint_dir}/{flow.name}.{token}.checkpoint.json
+async def _write_checkpoint(self, flow, token, node_results) -> Optional[str]:  # line 290
+    #   Persists ONLY result.extracted_data (bs_soup not serializable,
+    #   content too large). Resumed nodes expose extracted_data only.
+
 # packages/ai-parrot-integrations/.../whatsapp/bridge_config.py
 class WhatsAppBridgeConfig:                         # line 9
     name: str; chatbot_id: str
@@ -702,6 +798,7 @@ Verified absent across `packages/*/src` on the current `dev`:
 - ~~`AgentsFlow.as_tool()`~~ — does not exist. `AgentsFlow` is `AgentsFlow(PersistenceMixin)` (`flow/flow.py:217`), **not** an `AbstractBot`; `AgentTool.__init__` requires `AbstractBot` (`tools/agent.py:52`). Only `Agent.as_tool()` exists (`bots/agent.py:961`). Use `ExecutionPlanToolkit.plan_execute` instead.
 - ~~`apscheduler` in ai-parrot core~~ — the extra is **commented out** at `packages/ai-parrot/pyproject.toml:254`; `parrot/scheduler/__init__.py` is a lazy satellite shim. Module 8 changes this deliberately — see §7 Decision D1.
 - ~~a `gestoria` wiki namespace~~ — `wikitoolkit ns list` shows only `notes`. Module 10 + AC-14 create it.
+- ~~`SubmitGateFn`~~, ~~`SubmitGateDecision`~~, ~~`NotifierFn`~~ — these appeared in this spec's **first draft** and were **removed at v0.2**. They duplicated the shipped HITL stack. Use `ConfirmationGuard`, `HumanInteractionManager`, `HumanChannel`, `ConfirmationDecision` and `InteractionResult` instead (Decision D2). Do not resurrect them.
 
 ---
 
@@ -732,6 +829,69 @@ Constraints this imposes on Module 8:
 - `packages/ai-parrot/pyproject.toml` must carry a comment explaining that this
   reverses part of FEAT-203 by decision, referencing FEAT-453, so the next
   reader does not "fix" it back.
+
+### Decision D2 — The SUBMIT gate reuses the shipped HITL stack; no bespoke gate
+
+This spec's first draft invented `SubmitGateFn` / `SubmitGateDecision` /
+`NotifierFn`. They duplicate machinery that already ships, and are removed.
+
+The gate is **two-tier**, because the human is in Telegram and not watching Chrome:
+
+1. **Tool-call boundary (primary).** `ConfirmationGuard` (`auth/confirmation.py:378`)
+   is wired into `ToolManager` via `set_confirmation_guard()` and fires in
+   `execute_tool()` after the grant check, before `tool.execute()`. Module 5
+   marks `run_operation` as a confirmation tool via `routing_meta` when the
+   resolved operation is `OperationKind.SUBMIT`. The guard renders a briefing
+   of the bound parameters and asks over HITL. **It fails closed**: with no
+   `human_manager` the decision is `cancelled` — which is exactly the posture a
+   financial write needs, and it means the gate cannot be bypassed by omitting
+   configuration.
+   - **`confirm_window_seconds` MUST be 0 for SUBMIT operations.** The guard's
+     normal behaviour allows a repeat call with the same `args_hash` inside the
+     window without re-asking. For "issue this invoice" that would silently
+     approve a duplicate filing. AC-8b tests it.
+2. **Mid-plan (secondary).** `exec_await_human` takes an injected
+   `HumanChannel` (resolved through `ChannelRegistry`; `TelegramHumanChannel` is
+   contributed lazily by ai-parrot-integrations). `condition_type="manual"` has
+   no DOM condition to poll and therefore **requires** a channel — with none it
+   fails closed rather than blocking for its 300s timeout. The DOM-based
+   condition types keep polling but also emit `send_notification()` so the
+   operator learns the browser is waiting.
+
+### Decision D3 — Checkpoint location, discrimination and retention
+
+Grounded in `flow_executor.py:271-315`: the checkpoint path is
+`{checkpoint_dir}/{flow.name}.{token}.checkpoint.json` where `token` is
+`sha256(global_params)[:8]`, and only `extracted_data` is persisted.
+
+- **Location**: `${PARROT_STATE_DIR}/business_automation/checkpoints/<operation>/`.
+  Not `/tmp` — a quarterly import may span days and must survive a reboot. Not
+  the plans directory — plans are read-only and may be version-controlled.
+- **Discrimination (the hazard)**: the token is derived from parameters *only*.
+  Two legitimate imports of different statements for the same period would
+  produce the **same** token, so the second would resume the first's checkpoint
+  and skip every row it thinks is done. Module 9 therefore injects
+  `ImportRun.statement_digest` into `global_params`. AC-12a tests it.
+- **Retention**: a checkpoint for a financial import is a record of what was
+  already written to Hooba. Deleting it early causes **duplicate expense
+  registration** on the next resume. Delete only after the run reports success
+  *and* reconciliation confirms the row count. Otherwise keep, bounded at
+  **90 days** (a quarterly cycle plus margin), then archive-and-alert — never
+  silently drop.
+- **Confidentiality**: checkpoints contain client names and amounts extracted
+  from an accounting system. Directory `0700`, files `0600`, and the path MUST
+  lie outside the Obsidian vault and every wiki storage root — both of those
+  are mirrored/ingested surfaces. AC-12b tests it.
+
+### Decision D4 — The smoke check splits along the same public/private seam
+
+The *mechanism* is generic and public: `SmokeCheck` in
+`business_automation/smoke.py`, run by Module 8's scheduler, asserting a
+READ-kind operation still succeeds and alerting over the configured channel.
+The *plan it runs* needs real credentials and real Hooba selectors, so the Hooba
+smoke plan is part of Deliverable X. This is the same seam already chosen for
+the engine and its plans, applied consistently. The repo tests the mechanism
+against the local fixture site (AC-20).
 
 ### Patterns to Follow
 
@@ -774,6 +934,13 @@ Constraints this imposes on Module 8:
   question. Filing-calendar dates are an AEAT-calendar concern. Do not wire
   Module 8's reminders to FEAT-449's graph on the assumption it knows when
   modelo 303 is due; it does not.
+- **A confirmation window is a duplicate-filing hazard.** `ConfirmationGuard`
+  allows a repeat call with the same `args_hash` inside `confirm_window_seconds`
+  without re-asking. Convenient for a read tool, dangerous for "issue invoice".
+  Set it to 0 for SUBMIT (D2).
+- **Checkpoint tokens key on parameters only.** Re-importing a different
+  statement for the same period collides unless a content digest is in
+  `global_params` (D3). The symptom is silent: rows are skipped, not errored.
 - **The plane can be built but unqueryable.** An unregistered `gestoria`
   namespace silently accumulates knowledge nobody can retrieve — the exact
   failure FEAT-452's TASK-2382 was written to prevent. AC-14 guards it.
@@ -802,19 +969,26 @@ Constraints this imposes on Module 8:
 - [x] **Scheduler deployment shape?** — *Resolved (this spec)*: In-process APScheduler in the bot process, **reactivating the core extra** rather than depending on `ai-parrot-server`. Explicitly acknowledged as a partial reversal of FEAT-203. → drives Module 8, Decision D1, AC-11.
 - [x] **Which Hooba operations in v1?** — *Resolved (this spec)*: All five — `login`, `create_client`, `register_expense`, `draft_invoice`, `download_invoice_pdf`. → drives Deliverable X, fixtures.
 
-### Unresolved (defer to implementation)
+- [x] **What is the submit-gate transport?** — *Resolved (v0.2, Decision D2)*:
+  reuse the shipped HITL stack. `ConfirmationGuard` gates `run_operation` at the
+  tool-call boundary (fail-closed, `confirm_window_seconds=0`); `exec_await_human`
+  takes an injected `HumanChannel` for mid-plan pauses. The draft's
+  `SubmitGateFn`/`SubmitGateDecision`/`NotifierFn` are **deleted** — they
+  duplicated `ConfirmationDecision` and `InteractionResult`.
+- [x] **Where does the checkpoint directory live, and what is its retention?** —
+  *Resolved (v0.2, Decision D3)*:
+  `${PARROT_STATE_DIR}/business_automation/checkpoints/<operation>/`, 0700/0600,
+  outside the vault and every wiki root. Kept until the run is reconciled, bounded
+  at 90 days, then archive-and-alert. `ImportRun.statement_digest` goes into
+  `global_params` so two imports never share a token.
+- [x] **Should the smoke-test flow live in this repo or with the private plans?**
+  — *Resolved (v0.2, Decision D4)*: split along the existing seam — `SmokeCheck`
+  mechanism public (Module 8 + `smoke.py`), the Hooba smoke plan private
+  (Deliverable X). Tested in-repo against the fixture site.
 
-- [ ] **What is the submit-gate transport?** — *Owner: tbd*. `await_human`'s
-  condition types are browser-side (`selector`/`url_contains`/`title_contains`/
-  `manual`), but the human is in Telegram, not watching the browser. Module 5
-  needs a `SubmitGateFn` that bridges the two — likely a chat prompt whose reply
-  releases the wait. Decide when writing Module 5.
-- [ ] **Where does the checkpoint directory live for a multi-day expense import?**
-  — *Owner: tbd*. `FlowExecutor(checkpoint_dir=...)` persists per-node results;
-  retention and cleanup policy for financial runs is undecided.
-- [ ] **Should the smoke-test flow live in this repo or with the private plans?**
-  — *Owner: tbd*. It needs a real Hooba login, so it is arguably a private
-  deliverable, but the alerting logic is generic.
+### Unresolved
+
+None. All questions are resolved; the spec is approved for decomposition.
 
 ---
 
@@ -848,3 +1022,4 @@ dependency.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-23 | Jesus Lara | Initial draft from FEAT-453 proposal rev 2; 8 resolved questions carried forward; Decision D1 recorded |
+| 0.2 | 2026-08-23 | Jesus Lara | Resolved all 3 open questions (D2 HITL reuse, D3 checkpoints, D4 smoke split); removed invented `SubmitGateFn`/`SubmitGateDecision`/`NotifierFn` in favour of the shipped HITL stack; +6 acceptance criteria, +8 tests; **status → approved** |
