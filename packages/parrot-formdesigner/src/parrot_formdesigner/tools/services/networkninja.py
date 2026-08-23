@@ -22,6 +22,7 @@ from ...core.constraints import (
     DependencyRule,
     FieldCondition,
     FieldConstraints,
+    LogicGroup,
 )
 from ...core.options import FieldOption
 from ...core.resolution import resolve_rule_references
@@ -110,6 +111,16 @@ def _prune_dangling_rule_references(schema: FormSchema) -> int:
     (an empty condition list reads as "unconditional" to ``_eval_logic``,
     which would be a lie).
 
+    FEAT-440: a ``groups``-carrying rule (store-group gating, spec §3
+    Module 4) keeps its own flat ``conditions`` EMPTY by design — the flat
+    list is not "everything pruned away" for such a rule, it never carried
+    anything to begin with. Each group's conditions are pruned the same way
+    as the flat list; a group left with nothing is dropped as a whole
+    alternative (an empty group reads as "always matches" to
+    ``_eval_logic``'s empty-list convention, which would wrongly reveal the
+    element unconditionally). The rule itself is only dropped when BOTH the
+    flat conditions and every group end up empty.
+
     No source form triggers this today: all 91 forms in the corpus use only
     mapped data_types. It is a guard against the next new ``data_type`` at
     the source turning a partial import into a total failure.
@@ -125,18 +136,33 @@ def _prune_dangling_rule_references(schema: FormSchema) -> int:
     known = {f.field_id for f in schema.iter_fields_recursive()}
     dropped = 0
 
-    def _prune(rule: DependencyRule | None) -> DependencyRule | None:
+    def _prune_conditions(conditions: list[FieldCondition]) -> list[FieldCondition]:
         nonlocal dropped
-        if rule is None:
-            return None
         kept = [
-            c for c in rule.conditions
+            c for c in conditions
             if (c.source or "field") != "field" or (c.field_id or "") in known
         ]
-        dropped += len(rule.conditions) - len(kept)
-        if not kept:
+        dropped += len(conditions) - len(kept)
+        return kept
+
+    def _prune(rule: DependencyRule | None) -> DependencyRule | None:
+        if rule is None:
             return None
-        rule.conditions = kept
+
+        rule.conditions = _prune_conditions(rule.conditions)
+
+        if rule.groups:
+            pruned_groups: list[LogicGroup] = []
+            for group in rule.groups:
+                group.conditions = _prune_conditions(group.conditions)
+                if group.conditions:
+                    pruned_groups.append(group)
+                # A group pruned to nothing is dropped as a whole
+                # alternative, not kept as an unconditional match.
+            rule.groups = pruned_groups or None
+
+        if not rule.conditions and not rule.groups:
+            return None
         return rule
 
     for section in schema.sections:
@@ -900,6 +926,29 @@ class NetworkninjaFormService(AbstractFormService):
             or []
         )
 
+    @staticmethod
+    def _block_store_groups(block: dict[str, Any]) -> list[str]:
+        """Return a block's store-group gating names, if the source carries any.
+
+        Mirrors :meth:`_block_logic_groups`: the store-group condition is
+        section-level exactly like ``block_logic_groups`` is (spec §1 —
+        "blocks gated on a store group: 6 of 17"), so it is read off the
+        block dict under the same ``store_groups`` key
+        :meth:`_map_logic_groups` reads at question level. NO source this
+        importer reads populates this key today (spec §1 Non-Goals —
+        store-group membership lives only in the Recap Definition export,
+        verified nowhere in the replicated database); this accessor exists
+        so the mapping in :meth:`_map_logic_groups` activates the moment a
+        source does supply it, and is exercised by fixtures only until then.
+
+        Args:
+            block: A single question block dict.
+
+        Returns:
+            The block's store-group names, or an empty list.
+        """
+        return block.get("store_groups") or []
+
     def _map_block_to_section(
         self,
         block: dict[str, Any],
@@ -984,7 +1033,10 @@ class NetworkninjaFormService(AbstractFormService):
         # question, and without the rule 277 of 292 fields (234 of them
         # required) render unconditionally and the form cannot be submitted.
         section_depends_on = self._map_logic_groups(
-            {"logic_groups": self._block_logic_groups(block)},
+            {
+                "logic_groups": self._block_logic_groups(block),
+                "store_groups": self._block_store_groups(block),
+            },
             question_id_index,
             option_id_catalog,
         )
@@ -1270,23 +1322,31 @@ class NetworkninjaFormService(AbstractFormService):
           with no catalog keep the original text comparison; an unmatched
           comparison value is preserved as-is (logged at debug, never
           dropped).
+        - FEAT-440 (spec §3 Module 4): a ``store_groups`` list of store-group
+          names on ``question`` (or the block-level shim passed from
+          ``_map_block_to_section``) is translated via
+          :meth:`_map_store_group_rule` instead of the flat conditions/logic
+          pair — see that method for the group-nesting shape.
 
         Args:
-            question: Question dict potentially containing logic_groups.
+            question: Question dict potentially containing logic_groups
+                and/or store_groups.
             question_id_index: question_id → column_name reverse index.
             option_id_catalog: column_name → {option_value: option_id} from
                 ``_build_option_id_catalog``. ``None``/empty behaves like no
                 catalog (text comparison preserved).
 
         Returns:
-            DependencyRule if any valid conditions are present, else None.
+            DependencyRule if any valid conditions and/or store groups are
+            present, else None.
         """
         logic_groups: list[dict[str, Any]] = (
             question.get("logic_groups")
             or question.get("question_logic_groups")
             or []
         )
-        if not logic_groups:
+        store_groups: list[str] = question.get("store_groups") or []
+        if not logic_groups and not store_groups:
             return None
 
         all_conditions: list[FieldCondition] = []
@@ -1337,6 +1397,15 @@ class NetworkninjaFormService(AbstractFormService):
 
             all_conditions.extend(group_conditions)
 
+        # Store groups on an element are alternatives (any ONE of them shows
+        # it), which `groups`/`LogicGroup` expresses and a flat conditions/
+        # logic pair cannot — see `_map_store_group_rule`. Any answer
+        # condition already collected above (e.g. a visit-type EQUALS) joins
+        # EVERY store-group alternative, since it must hold regardless of
+        # which group matched.
+        if store_groups:
+            return self._map_store_group_rule(store_groups, all_conditions)
+
         if not all_conditions:
             return None
 
@@ -1373,3 +1442,59 @@ class NetworkninjaFormService(AbstractFormService):
             logic=top_logic,
             effect="show",
         )
+
+    @staticmethod
+    def _map_store_group_rule(
+        store_groups: list[str],
+        shared_conditions: list[FieldCondition],
+    ) -> DependencyRule:
+        """Translate a per-element list of store-group names into a rule.
+
+        Spec §3 Module 4. Store groups on one element are alternatives — any
+        SINGLE one showing it — so each becomes its OWN :class:`LogicGroup`,
+        holding a ``visit_context`` ``CONTAINS`` condition for that one group
+        name. An existing answer condition already gating this element (e.g.
+        a visit-type ``EQUALS``) is not itself an alternative: it must hold
+        no matter which store-group alternative matched, so it is copied
+        into EVERY group alongside the group's own condition.
+
+        Nothing populates ``visit_context`` yet (spec §7 Risks) — a rule
+        built here fails closed against a live form with no context, which
+        is stricter than no rule at all, by design (see the Hazard note in
+        TASK-2315). This method itself is source-agnostic: it is exercised
+        directly by fixtures, and reached in production only once a source
+        row supplies a ``store_groups`` list (see ``_block_store_groups`` /
+        the ``question.get("store_groups")`` read in ``_map_logic_groups``).
+
+        Args:
+            store_groups: Store-group names gating this element. Must be
+                non-empty (callers only invoke this when it is).
+            shared_conditions: Conditions already required by this element
+                (e.g. from an existing answer-based logic_groups), each
+                AND'd into every store-group alternative. May be empty when
+                the element is gated on store group alone.
+
+        Returns:
+            A ``DependencyRule`` expressed via ``groups`` (never the flat
+            ``conditions``/``logic`` pair — see
+            :class:`~parrot_formdesigner.core.constraints.LogicGroup`).
+        """
+        groups = [
+            LogicGroup(
+                conditions=[
+                    FieldCondition(
+                        source="visit_context",
+                        key="store_groups",
+                        operator=ConditionOperator.CONTAINS,
+                        value=group_name,
+                    ),
+                    # Fresh copies per group — resolution (FEAT-393) writes
+                    # field_uid onto each condition in place, and every group
+                    # must carry its own instance rather than aliasing the
+                    # same object across alternatives.
+                    *(c.model_copy() for c in shared_conditions),
+                ]
+            )
+            for group_name in store_groups
+        ]
+        return DependencyRule(conditions=[], groups=groups, effect="show")

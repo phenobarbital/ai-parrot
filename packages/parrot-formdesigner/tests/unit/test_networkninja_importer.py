@@ -1332,3 +1332,151 @@ def test_rule_pointing_at_an_unbuilt_field_does_not_abort_the_import():
     # The gated section survives, unconditional, rather than the import dying.
     assert schema.sections[0].section_id == "section_168"
     assert schema.sections[0].depends_on is None
+
+
+# ---------------------------------------------------------------------------
+# Store-group gating (FEAT-440 TASK-2315, spec §3 Module 4)
+# ---------------------------------------------------------------------------
+
+
+def test_store_groups_produce_one_logic_group_per_group():
+    """Each store group is its own alternative, sharing the existing answer condition.
+
+    Mirrors the real gating shape (spec §1): a block gated on BOTH a store
+    group and an answer needs AND-of-ORs, which only ``groups`` can express.
+    """
+    row = _gated_row()
+    row["question_blocks"][1]["store_groups"] = ["Ring of Fire", "Epson Test Store"]
+
+    rule = _svc().to_form_schema(row).sections[1].depends_on
+
+    assert rule.conditions == []
+    assert rule.groups is not None
+    assert len(rule.groups) == 2
+
+    for group, expected_store in zip(rule.groups, ["Ring of Fire", "Epson Test Store"]):
+        assert len(group.conditions) == 2
+        store_cond, shared_cond = group.conditions
+        assert store_cond.source == "visit_context"
+        assert store_cond.key == "store_groups"
+        assert store_cond.operator == "contains"
+        assert store_cond.value == expected_store
+        # The shared visit-type condition — same shape as the flat-rule case.
+        assert shared_cond.field_id == "field_9050"
+        assert shared_cond.operator == "eq"
+        assert shared_cond.value == "4784"  # FEAT-325 re-indexed to option_id
+
+
+def test_store_group_conditions_carry_independent_instances():
+    """The shared condition must not be the SAME object across groups.
+
+    Resolution (FEAT-393) mutates field_uid in place; aliasing the same
+    FieldCondition instance across every group's list would still behave
+    correctly today (idempotent resolution), but is a latent trap for any
+    future per-group mutation. Guard the invariant directly.
+    """
+    row = _gated_row()
+    row["question_blocks"][1]["store_groups"] = ["Ring of Fire", "Epson Test Store"]
+
+    rule = _svc().to_form_schema(row).sections[1].depends_on
+    shared_a = rule.groups[0].conditions[1]
+    shared_b = rule.groups[1].conditions[1]
+    assert shared_a is not shared_b
+    assert shared_a.field_uid == shared_b.field_uid  # same resolved target
+    # AC6: a context condition carries no field reference and is never resolved.
+    assert rule.groups[0].conditions[0].field_uid is None
+
+
+def test_store_group_alone_with_no_shared_condition():
+    """A block gated on store group alone still produces valid alternatives."""
+    row = _gated_row()
+    row["question_blocks"][1]["block_logic_groups"] = []
+    row["question_blocks"][1]["store_groups"] = ["Ring of Fire"]
+
+    rule = _svc().to_form_schema(row).sections[1].depends_on
+
+    assert rule.groups is not None
+    (group,) = rule.groups
+    (condition,) = group.conditions
+    assert condition.source == "visit_context"
+    assert condition.value == "Ring of Fire"
+
+
+def test_store_group_dangling_shared_condition_drops_only_that_group():
+    """A group whose shared condition points at an unbuilt field is dropped
+    as a whole alternative, not silently treated as unconditional (FEAT-440
+    extension of the FEAT-393 pruning contract to ``groups``)."""
+    row = _gated_row()
+    row["question_blocks"][1]["store_groups"] = ["Ring of Fire"]
+    # Driver becomes a type the mapping table does not know, so field_9050
+    # is never built and the shared condition inside the store-group's
+    # LogicGroup dangles.
+    row["metadata"][0]["data_type"] = "FIELD_SOMETHING_NEW"
+
+    schema = _svc().to_form_schema(row)
+
+    # The store-group condition alone survives pruning inside the group —
+    # only the dangling shared condition is stripped, not the whole group.
+    rule = schema.sections[0].depends_on
+    assert rule.groups is not None
+    (group,) = rule.groups
+    (condition,) = group.conditions
+    assert condition.source == "visit_context"
+
+
+@pytest.mark.asyncio
+async def test_store_group_alternatives_evaluate_correctly():
+    """End-to-end: the imported rule fires only for a matching store AND answer.
+
+    Exercised on a FIELD rule (RuleEvaluator only reads FormField.depends_on,
+    not FormSection.depends_on directly — see the multi-group precedent above)
+    by moving the same store-group + visit-type gate onto the question.
+    """
+    from parrot_formdesigner.services.rule_evaluator import RuleEvaluator
+
+    row = _gated_row()
+    row["question_blocks"][1]["questions"][0]["store_groups"] = [
+        "Ring of Fire", "Epson Test Store",
+    ]
+    row["question_blocks"][1]["questions"][0]["question_logic_groups"] = (
+        row["question_blocks"][1]["block_logic_groups"]
+    )
+    row["question_blocks"][1]["block_logic_groups"] = []
+
+    schema = _svc().to_form_schema(row)
+    rule = schema.sections[1].fields[0].depends_on
+    assert rule.groups is not None and len(rule.groups) == 2
+
+    evaluator = RuleEvaluator()
+
+    # Right store, right answer -> visible.
+    hit = await evaluator.resolve(
+        schema, {"field_9050": "4784"},
+        visit_context={"store_groups": ["Ring of Fire"]},
+    )
+    assert hit.visible["field_9100"] is True
+
+    # Right store, wrong answer -> hidden (the shared condition still gates).
+    wrong_answer = await evaluator.resolve(
+        schema, {"field_9050": "4782"},
+        visit_context={"store_groups": ["Ring of Fire"]},
+    )
+    assert wrong_answer.visible["field_9100"] is False
+
+    # Right answer, wrong store -> hidden.
+    wrong_store = await evaluator.resolve(
+        schema, {"field_9050": "4784"},
+        visit_context={"store_groups": ["Best Buy"]},
+    )
+    assert wrong_store.visible["field_9100"] is False
+
+    # Right answer, no context at all -> hidden (fail closed — spec §3 Module 5).
+    no_context = await evaluator.resolve(schema, {"field_9050": "4784"})
+    assert no_context.visible["field_9100"] is False
+
+    # The other alternative group also fires on its own store.
+    other_group = await evaluator.resolve(
+        schema, {"field_9050": "4784"},
+        visit_context={"store_groups": ["Epson Test Store"]},
+    )
+    assert other_group.visible["field_9100"] is True
