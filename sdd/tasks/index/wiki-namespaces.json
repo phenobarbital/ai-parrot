@@ -14,16 +14,16 @@
       "feature_id": "FEAT-450",
       "feature": "wiki-namespaces",
       "spec": "sdd/specs/wiki-namespaces.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only touches project.py; no imports from other FEAT-450 tasks.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2359-namespace-config-and-global-registry.md"
+      "assigned_to": "claude-code (main session)",
+      "started_at": "2026-08-23T01:23:15Z",
+      "completed_at": "2026-08-23T01:23:15Z",
+      "file": "sdd/tasks/completed/TASK-2359-namespace-config-and-global-registry.md"
     },
     {
       "id": "TASK-2360",
