@@ -421,10 +421,22 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             )
             return {"ingested": False, "reason": "wiki toolkit unavailable"}
 
+        # G6 — scope the nightly ingest to the meetings subfolder only, so
+        # unrelated vault notes (e.g. audio-notes/) never bleed into the
+        # meetings wiki. ingest_obsidian_vault has no folder-filter
+        # parameter; narrowing is done by passing the subdirectory itself.
+        meetings_path = self.vault_path / self.meetings_folder
+
         try:
+            if not meetings_path.is_dir():
+                reason = f"meetings folder not found: {meetings_path}"
+                self.logger.warning(reason)
+                return {"ingested": False, "reason": reason}
+
+            self.logger.info("Ingesting vault path into wiki: %s", meetings_path)
             result = await self._wiki.ingest_obsidian_vault(
                 self.wiki_name,
-                str(self.vault_path),
+                str(meetings_path),
                 incremental=True,
                 extract_entities=_EXTRACT_ENTITIES,
             )

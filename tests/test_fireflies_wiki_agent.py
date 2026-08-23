@@ -51,18 +51,24 @@ def agent_module():
 
 
 @pytest.fixture
-def agent(agent_module):
+def agent(agent_module, tmp_path):
     """A FirefliesWikiAgent with every external seam mocked.
 
     Built via ``__new__`` so no LLM client, MCP server, or vault is touched.
+    ``vault_path`` points at a real temp directory with a ``meetings/``
+    subfolder present, so the G6 scoping check in
+    ``_ingest_vault_into_wiki`` (TASK-2378) finds it by default.
     """
     cls = agent_module.FirefliesWikiAgent
     inst = cls.__new__(cls)
 
+    vault_root = tmp_path / "vault"
+    (vault_root / "meetings").mkdir(parents=True)
+
     inst.name = "FirefliesWikiTest"
     inst.logger = MagicMock()
     inst.meetings_folder = "meetings"
-    inst.vault_path = Path("/tmp/vault")
+    inst.vault_path = vault_root
     inst.wiki_name = "meetings"
     inst.wiki_storage_dir = Path("/tmp/wiki")
     inst.daily_recipients = ["daily@example.com"]
@@ -325,6 +331,66 @@ class TestSyncMeetingsToWiki:
 
         assert report["status"] == "error"
         assert "fireflies down" in report["error"]
+
+
+# ---------------------------------------------------------------------------
+# Vault scoping (TASK-2378, G6) — _ingest_vault_into_wiki
+# ---------------------------------------------------------------------------
+
+class TestVaultScoping:
+    """The nightly ingest must target <vault>/<meetings_folder>, not the whole vault."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_scoped_to_meetings_folder(self, agent):
+        """The nightly ingest targets <vault>/meetings, not the whole vault."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+
+        await agent._ingest_vault_into_wiki()
+
+        args, _kwargs = wiki.ingest_obsidian_vault.call_args
+        assert args[1] == str(agent.vault_path / "meetings")
+        assert args[1] != str(agent.vault_path)
+
+    @pytest.mark.asyncio
+    async def test_extract_entities_unchanged(self, agent, agent_module):
+        """Entity extraction stays at the module default (a non-goal of FEAT-452)."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+
+        await agent._ingest_vault_into_wiki()
+
+        _args, kwargs = wiki.ingest_obsidian_vault.call_args
+        assert kwargs["extract_entities"] == agent_module._EXTRACT_ENTITIES
+
+    @pytest.mark.asyncio
+    async def test_missing_meetings_folder_reports_not_ingested(self, agent):
+        """A missing folder returns the not-ingested shape rather than raising."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+        # Point at a meetings subfolder that does not exist on disk.
+        agent.vault_path = agent.vault_path.parent / "other-vault"
+
+        result = await agent._ingest_vault_into_wiki()
+
+        assert result["ingested"] is False
+        assert result["reason"]
+        wiki.ingest_obsidian_vault.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_never_raises_on_toolkit_error(self, agent):
+        """An ingest exception is swallowed into the report (existing behavior)."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(side_effect=RuntimeError("disk full"))
+        agent._wiki = wiki
+
+        result = await agent._ingest_vault_into_wiki()
+
+        assert result["ingested"] is False
+        assert "disk full" in result["reason"]
 
 
 # ---------------------------------------------------------------------------
