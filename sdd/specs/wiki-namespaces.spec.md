@@ -14,7 +14,7 @@ reuse_feature_id: FEAT-450
 **Feature ID**: FEAT-450
 **Date**: 2026-08-23
 **Author**: Jesus Lara (spec: Claude session 2026-08-23)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Input**: `sdd/proposals/wiki-namespaces.proposal.md` (status `accepted`, research audit `sdd/state/FEAT-450/`)
 
@@ -736,8 +736,10 @@ packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py: `create_wiki_m
 - [x] D4.3 `vault_dir` auto-registration — *Resolved*: no; `ns add --vault` only.
 - [x] D4.4 `_prune_removed` fix location — *Resolved*: inside FEAT-450 (`scope="root"` for
   `VaultIngestTool`).
-- [ ] Whether `LLMWikiToolkit` (toolkit.py) should accept an injected `FederatedWikiStore` in this
-  feature or in a follow-up — *Owner: Jesus* (non-blocking; not in AC; decide at `/sdd-task`).
+- [x] Whether `LLMWikiToolkit` (toolkit.py) should accept an injected `FederatedWikiStore` in this
+  feature or in a follow-up — *Resolved (user, 2026-08-23 at /sdd-task)*: **in this feature** —
+  `LLMWikiToolkit.__init__` accepts an optional pre-built store (federated or plain) and
+  `list_wikis` / `_config_for` enumerate and dispatch namespaces when it is federated (own task).
 
 ---
 
@@ -759,3 +761,4 @@ packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py: `create_wiki_m
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-23 | Jesus Lara / Claude | Initial draft from accepted proposal (U1–U3, D4.1–D4.4, Delta 2) |
+| 0.2 | 2026-08-23 | Jesus Lara | Approved; §8 toolkit question resolved: federated injection in this feature |
