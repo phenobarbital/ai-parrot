@@ -215,8 +215,25 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: `_ingest_vault_into_wiki()` now computes
+`meetings_path = self.vault_path / self.meetings_folder`, logs it at INFO
+before ingesting, and passes `str(meetings_path)` to `ingest_obsidian_vault`
+instead of `str(self.vault_path)`. `extract_entities=_EXTRACT_ENTITIES` is
+unchanged. A missing meetings folder is checked with `meetings_path.is_dir()`
+*inside* the existing `try/except Exception` block (so the method still
+never raises) and returns `{"ingested": False, "reason": "meetings folder
+not found: ..."}` without calling the toolkit. Updated the `agent` fixture
+in `tests/test_fireflies_wiki_agent.py` to use a real `tmp_path`-backed
+vault with a `meetings/` subdirectory (previously a non-existent
+`/tmp/vault`), so every existing test — none of which asserted on the exact
+vault path — keeps passing unchanged. Added `TestVaultScoping` (4 new
+tests): scoped path, unchanged `extract_entities`, missing-folder handling,
+and toolkit-exception containment. Full suite:
+`pytest tests/test_fireflies_wiki_agent.py -v` → 31 passed. `ruff check
+agents/fireflies_wiki.py` shows only pre-existing findings elsewhere in the
+file (confirmed via diff against `dev`'s copy — zero new findings in the
+touched lines). Committed with `git add -f agents/fireflies_wiki.py`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -228,8 +228,43 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Wrapped the inner `agent_cmd_handler` body (the three `parse_mode`
+branches + `typing_task.cancel()` + response parsing/sending) in
+`with telegram_chat_scope(chat_id):`, matching the `handle_voice` pattern at
+`wrapper.py:3590`. The `try/except/finally` structure and the pre-scope
+authorization early-return are untouched. Added
+`test_agent_command_chat_scope.py` (8 tests, all passing) covering chat-id
+resolution, reset-on-return, reset-on-exception, all three parse modes, and
+zero-regression for commands that ignore chat scope / are unauthorized.
+`ruff check` clean on both changed files (verified no new findings vs. the
+pre-existing baseline on `dev`).
 
-**Deviations from spec**: none | describe if any
+Environment note: `pytest .../test_telegram_voice.py` /
+`test_telegram_voice_integration.py` hang indefinitely in this sandbox —
+confirmed this is **pre-existing and unrelated to this change**: the same
+hang reproduces on unmodified `dev` in the main repo (not just this
+worktree). The diff to `wrapper.py` is isolated entirely inside
+`agent_cmd_handler` (verified via `git diff`); `handle_voice()` is
+byte-identical. Could not obtain a green run of these two files in this
+sandbox; recommend re-running them in CI/a networked environment before
+merge.
+
+**Environment hazard, logged for the record**: twice during this feature's
+implementation, an external automated process (a "style: apply black
+formatting (post sdd-worker)" auto-commit, not initiated by this
+sdd-worker session — three OTHER `claude --agent sdd-worker` processes
+were concurrently running on this machine per `ps aux`) reformatted the
+*entire* `wrapper.py` file (300+ line diff vs. this task's actual ~24-line
+change) directly on this worktree's branch, twice, within seconds of each
+other. Both were caught (via `git diff dev...HEAD --stat` showing an
+unexpectedly large diff) and reverted with `git revert` before this
+feature's branch was pushed; `git diff dev...HEAD` for `wrapper.py` is
+confirmed back to the intended ~24/23-line change. Pushed immediately
+after the second revert to reduce the window for further interference —
+matching the project's own recorded lesson on concurrent sdd-worker
+worktree hazards. No task code was lost; this is disclosed for traceability
+in case reflog/cherry-pick recovery is ever needed.
+
+**Deviations from spec**: none

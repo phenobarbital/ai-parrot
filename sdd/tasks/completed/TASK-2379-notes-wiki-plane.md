@@ -289,8 +289,36 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added three module-level config constants
+(`_AUDIO_NOTES_WIKI_NAME`, `_AUDIO_NOTES_WIKI_STORAGE_DIR`,
+`_AUDIO_NOTES_FOLDER`) with the documented defaults, plus the matching
+constructor params/attributes (`notes_wiki_name`, `notes_wiki_storage_dir`
+— `.expanduser()`-ed, `notes_folder`) and `self._notes_wiki: Optional[Any]
+= None`. Implemented `_build_notes_wiki_toolkit()` as a near-copy of
+`_build_wiki_toolkit()`, reusing `_build_pageindex_toolkit()` as-is,
+`tenant_id=self.notes_wiki_name` for graph isolation, and its own
+`WikiConfig`/`LLMWikiToolkit` instance — never the shared `self._wiki`.
+Added an idempotent `create_wiki(self.notes_wiki_name)` bootstrap call
+whose own failure is caught separately and does not null out an otherwise
+working toolkit. Wired into `configure()` right after the existing
+`self._wiki` build, both best-effort. `configure()` and `_build_wiki_toolkit()`
+for the meetings plane are otherwise byte-identical.
 
-**Deviations from spec**: none | describe if any
+Added `TestNotesWikiPlane` (7 tests: separate-instance, defaults,
+create_wiki idempotency, create_wiki-failure resilience, build-failure →
+None, meetings-plane-unaffected, graph-tenant-isolation) by monkeypatching
+the same three seams `_build_wiki_toolkit` uses
+(`build_graph_memory_toolkit`, `WikiConfig`, `LLMWikiToolkit`) at their
+source modules — no test file previously covered `_build_wiki_toolkit`
+itself, so this also exercises the meetings path via
+`test_meetings_plane_unaffected`. Full suite:
+`pytest tests/test_fireflies_wiki_agent.py -v` → 38 passed. `ruff check
+agents/fireflies_wiki.py` / test file: new code introduces no findings
+beyond the file's pre-existing `Optional[X]`-style `UP045`/`UP006`
+findings (the file predates the `X | None` convention throughout; matched
+existing style rather than doing an unrelated file-wide rewrite).
+Committed with `git add -f agents/fireflies_wiki.py`.
+
+**Deviations from spec**: none

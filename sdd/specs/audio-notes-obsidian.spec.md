@@ -479,9 +479,24 @@ def fake_notes_wiki(mocker):
 - [ ] No blocking I/O in the async capture path (G4)
 - [ ] `agents/fireflies_wiki.py` is committed with `git add -f` (it is
       gitignored — see the file's own module docstring)
-- [ ] FEAT-450 is merged before this feature's branch is merged (see §7)
-- [ ] Notes wiki registered as a namespace and reachable via
-      `wikitoolkit query --ns notes` (G2, Module 6)
+- [x] FEAT-450 is merged before this feature's branch is merged (see §7) —
+      *verified 2026-08-23*: `dev` @ `c42802ffe` ("Merge branch
+      'feat-450-wiki-namespaces' into dev") merged into this feature branch.
+- [x] Notes wiki registered as a namespace and reachable via
+      `wikitoolkit query --ns notes` (G2, Module 6) — *verified 2026-08-23*
+      (TASK-2382): `wikitoolkit ns add notes --store ~/.parrot/wikis/notes
+      --backend sqlite` registered; `wikitoolkit ns list --json` reports
+      `built: true` at the correct target; `wikitoolkit query --ns notes` and
+      the default broadcast both reach the store without error (clean "no
+      results" rather than an error, matching FEAT-450 G9's skip-not-fail
+      posture). **Caveat**: a positive content hit for an actual captured
+      note was not verified end-to-end in this sandbox — `ingest_source`'s
+      page-authoring step needs a live LLM call and no API credentials are
+      configured here (`AnthropicClient` call observed to fail after ~11s).
+      The Obsidian-note-write half of the pipeline (durable artifact, G5) is
+      unaffected and independently verified by TASK-2380's tests. Recommend
+      re-running `wikitoolkit query --ns notes "<phrase>"` against a real
+      deployment with LLM credentials as the final sign-off.
 - [ ] `capture_audio_note` is reachable from typed text messages as well as
       voice transcripts; its `language` argument is optional and `None` for
       typed input (Module 3, Module 4)

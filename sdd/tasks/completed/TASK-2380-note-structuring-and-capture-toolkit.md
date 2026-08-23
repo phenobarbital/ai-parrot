@@ -352,8 +352,65 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (Claude session 2026-08-23)
+**Date**: 2026-08-23
+**Notes**: Added `AudioNoteStructure`/`AudioNoteResult` Pydantic models,
+`_build_note_structuring_prompt` / `_parse_note_structure_response`
+(modelled on `_build_analysis_prompt` / `_parse_analysis_response` —
+labelled `##` sections), `_build_note_okf_frontmatter` (OKF `{"okf": {...}}`
+shape via the real `project_okf_block`/`ConceptType.DOCUMENT_NODE`
+machinery, best-effort → `{}` on failure — same posture as
+`_build_okf_frontmatter`), and `AudioNoteCaptureToolkit(AbstractToolkit)`
+exposing exactly one public method, `capture_audio_note(transcript,
+language=None)`. Pipeline: structure (1 LLM call, verbatim fallback on any
+failure) → `create_note()` with `FileExistsError` → `-2`/`-3`… retry
+(propagates any other exception, so a real vault failure surfaces) →
+best-effort `ingest_source(notes_wiki_name, <absolute path>)`. Wired into
+`configure()` via `_initialize_tools([capture_toolkit])`, injecting
+`obsidian_toolkit=self.obsidian_toolkit`,
+`notes_wiki_provider=lambda: self._notes_wiki` (always reads the live
+value), `llm_call=self.client.complete`, `vault_path=self.vault_path`,
+`notes_folder=self.notes_folder`, `wiki_name=self.notes_wiki_name`.
 
-**Deviations from spec**: none | describe if any
+Added `TestAudioNoteCapture` (12 tests covering every AC: transcript
+path/preservation, language split, slug-collision retry, LLM-failure
+fallback, wiki-unavailable / ingest-error resilience, vault-failure
+surfacing, absolute-path ingest, exactly-one-LLM-call, single-tool
+exposure, typed-input `language=None`). Full suite:
+`pytest tests/test_fireflies_wiki_agent.py -v` → 49 passed. `ruff check
+agents/fireflies_wiki.py`: new code introduces no findings beyond the
+file's pre-existing `Optional[X]`/`List[X]`/`datetime.utcnow` style
+findings (matched existing convention, no unrelated rewrite). Committed
+with `git add -f agents/fireflies_wiki.py`.
+
+The `configure()` wiring itself (the `_initialize_tools([capture_toolkit])`
+call) was verified with a manual end-to-end smoke script (structure → real
+`create_note`/`ingest_source` call shapes, `get_tools()` → exactly
+`capture_audio_note`) rather than a `configure()`-level unit test — no
+existing test in this file drives `configure()` end-to-end (it needs
+`tool_manager`/`client`/MCP wiring the lightweight `__new__`-built `agent`
+fixture doesn't set up); the established convention here is to unit-test
+the constituent builder methods directly, which `TestAudioNoteCapture`
+does for the toolkit itself.
+
+**Deviations from spec**: (1) The spec's illustrative
+`AudioNoteCaptureToolkit.__init__` pseudocode omits a `vault_path`
+parameter, but computing the **absolute** path `ingest_source` requires
+(per this task's own Implementation Notes: "Compose the absolute path as
+`self.vault_path / notes_folder / ...`") needs the vault root inside the
+toolkit itself — added `vault_path: Path` as a required constructor
+parameter, populated from `self.vault_path` at `configure()` time.
+(2) The spec's pseudocode types `llm_call` as
+`Callable[[str], Awaitable[AIMessage]]`; verified via
+`packages/ai-parrot/src/parrot/clients/base.py:983` that
+`AbstractClient.complete()` actually returns `str` (its own docstring:
+"collapse to a single string here") — typed `llm_call` as
+`Callable[[str], Awaitable[str]]` and parse a plain string instead, wiring
+`llm_call=self.client.complete` directly (still `AbstractClient`, never the
+Anthropic SDK). (3) Added two imports not in the original Codebase
+Contract — `project_okf_block` (`parrot.interfaces.obsidian.okf`) and
+`ConceptType` (`parrot.knowledge.okf.ontology`) — verified by direct source
+read (`okf.py:71`, `_build_model` requires only `concept_id`; ontology.py:57
+confirms `DOCUMENT_NODE`) before use, per the anti-hallucination protocol,
+since `_build_okf_frontmatter`'s fixed meeting-shaped signature could not
+be reused as-is (contract explicitly forbids fabricating meeting args).
