@@ -84,9 +84,7 @@ def _make_request(
     req.json = AsyncMock(return_value=body or {})
     # FEAT-421: declared_tenant() reads request.get("tenant") — the value
     # @requires_tenant would have stashed.
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     # Session for tenant resolution
     session = MagicMock()
     session.get = MagicMock(return_value={"programs": [_TEST_TENANT]})
@@ -175,9 +173,9 @@ class TestOnBeforeSubmit:
         # Capture what the validator receives
         original_validate = handler.validator.validate
 
-        async def capturing_validate(form, data):  # type: ignore[no-untyped-def]
+        async def capturing_validate(form, data, **kwargs):  # type: ignore[no-untyped-def]
             received_payloads.append(dict(data))
-            return await original_validate(form, data)
+            return await original_validate(form, data, **kwargs)
 
         handler.validator.validate = capturing_validate
         req = _make_request(body={"name": "RAW"})

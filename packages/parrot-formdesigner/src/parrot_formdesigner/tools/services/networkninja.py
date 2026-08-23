@@ -22,6 +22,7 @@ from ...core.constraints import (
     DependencyRule,
     FieldCondition,
     FieldConstraints,
+    LogicGroup,
 )
 from ...core.options import FieldOption
 from ...core.resolution import resolve_rule_references
@@ -41,9 +42,7 @@ from .abstract import AbstractFormService
 
 #: Namespace for every UUIDv5 minted by this importer. Derived (not a magic
 #: literal) so the value is reproducible from the URI alone.
-_IDENTITY_NAMESPACE = uuid.uuid5(
-    uuid.NAMESPACE_URL, "https://parrot-formdesigner/import/networkninja"
-)
+_IDENTITY_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://parrot-formdesigner/import/networkninja")
 
 
 def stable_form_uid(formid: int | str, orgid: int | str) -> uuid.UUID:
@@ -86,9 +85,7 @@ def _apply_stable_identity(schema: FormSchema, form_uid: uuid.UUID) -> None:
         section.section_uid = uuid.uuid5(form_uid, f"section:{section.section_id}")
         for item in section.fields:
             if isinstance(item, FormSubsection):
-                item.subsection_uid = uuid.uuid5(
-                    form_uid, f"subsection:{item.subsection_id}"
-                )
+                item.subsection_uid = uuid.uuid5(form_uid, f"subsection:{item.subsection_id}")
     for field in schema.iter_fields_recursive():
         field.field_uid = uuid.uuid5(form_uid, f"field:{field.field_id}")
 
@@ -110,6 +107,16 @@ def _prune_dangling_rule_references(schema: FormSchema) -> int:
     (an empty condition list reads as "unconditional" to ``_eval_logic``,
     which would be a lie).
 
+    FEAT-440: a ``groups``-carrying rule (store-group gating, spec §3
+    Module 4) keeps its own flat ``conditions`` EMPTY by design — the flat
+    list is not "everything pruned away" for such a rule, it never carried
+    anything to begin with. Each group's conditions are pruned the same way
+    as the flat list; a group left with nothing is dropped as a whole
+    alternative (an empty group reads as "always matches" to
+    ``_eval_logic``'s empty-list convention, which would wrongly reveal the
+    element unconditionally). The rule itself is only dropped when BOTH the
+    flat conditions and every group end up empty.
+
     No source form triggers this today: all 91 forms in the corpus use only
     mapped data_types. It is a guard against the next new ``data_type`` at
     the source turning a partial import into a total failure.
@@ -125,18 +132,30 @@ def _prune_dangling_rule_references(schema: FormSchema) -> int:
     known = {f.field_id for f in schema.iter_fields_recursive()}
     dropped = 0
 
-    def _prune(rule: DependencyRule | None) -> DependencyRule | None:
+    def _prune_conditions(conditions: list[FieldCondition]) -> list[FieldCondition]:
         nonlocal dropped
+        kept = [c for c in conditions if (c.source or "field") != "field" or (c.field_id or "") in known]
+        dropped += len(conditions) - len(kept)
+        return kept
+
+    def _prune(rule: DependencyRule | None) -> DependencyRule | None:
         if rule is None:
             return None
-        kept = [
-            c for c in rule.conditions
-            if (c.source or "field") != "field" or (c.field_id or "") in known
-        ]
-        dropped += len(rule.conditions) - len(kept)
-        if not kept:
+
+        rule.conditions = _prune_conditions(rule.conditions)
+
+        if rule.groups:
+            pruned_groups: list[LogicGroup] = []
+            for group in rule.groups:
+                group.conditions = _prune_conditions(group.conditions)
+                if group.conditions:
+                    pruned_groups.append(group)
+                # A group pruned to nothing is dropped as a whole
+                # alternative, not kept as an unconditional match.
+            rule.groups = pruned_groups or None
+
+        if not rule.conditions and not rule.groups:
             return None
-        rule.conditions = kept
         return rule
 
     for section in schema.sections:
@@ -383,9 +402,7 @@ class NetworkninjaFormService(AbstractFormService):
         schema, _ = self._build_form_schema_with_report(raw)
         return schema
 
-    def import_with_report(
-        self, raw: dict[str, Any]
-    ) -> tuple[FormSchema, ImportDiffReport]:
+    def import_with_report(self, raw: dict[str, Any]) -> tuple[FormSchema, ImportDiffReport]:
         """Transform a raw row into a FormSchema plus an ImportDiffReport.
 
         The form is always returned (never aborted).  Unmappable fields are
@@ -421,21 +438,18 @@ class NetworkninjaFormService(AbstractFormService):
             return env_dsn
         try:
             from parrot.conf import default_dsn  # noqa: PLC0415
+
             if default_dsn:
                 return default_dsn
         except ImportError:
             pass
-        raise RuntimeError(
-            "No DSN configured. Set PARROT_NETWORKNINJA_DSN env var or pass dsn= to the constructor."
-        )
+        raise RuntimeError("No DSN configured. Set PARROT_NETWORKNINJA_DSN env var or pass dsn= to the constructor.")
 
     # ------------------------------------------------------------------
     # Form building pipeline
     # ------------------------------------------------------------------
 
-    def _build_form_schema_with_report(
-        self, row: dict[str, Any]
-    ) -> tuple[FormSchema, ImportDiffReport]:
+    def _build_form_schema_with_report(self, row: dict[str, Any]) -> tuple[FormSchema, ImportDiffReport]:
         """Internal pipeline that produces both the FormSchema and the diff report.
 
         Args:
@@ -486,9 +500,7 @@ class NetworkninjaFormService(AbstractFormService):
         #   c) Legacy double-encoding: JSON string wrapping a list that uses
         #      old keys (question_block_id, question_block_type, etc.)
         question_blocks_raw = row.get("question_blocks") or "[]"
-        question_blocks: list[dict[str, Any]] = self._normalize_question_blocks(
-            question_blocks_raw
-        )
+        question_blocks: list[dict[str, Any]] = self._normalize_question_blocks(question_blocks_raw)
 
         # Build question_id → column_name reverse index (for conditional resolution)
         question_id_index = self._build_question_id_index(question_blocks, meta_index)
@@ -524,8 +536,12 @@ class NetworkninjaFormService(AbstractFormService):
         sections: list[FormSection] = []
         for block in question_blocks:
             section = self._map_block_to_section(
-                block, meta_index, question_id_index, select_options,
-                options_provenance, option_id_catalog,
+                block,
+                meta_index,
+                question_id_index,
+                select_options,
+                options_provenance,
+                option_id_catalog,
                 report_entries=report_entries,
                 seen_columns=seen_columns,
             )
@@ -542,9 +558,7 @@ class NetworkninjaFormService(AbstractFormService):
 
         # Identity must be a pure function of the source row, never uuid4 —
         # see stable_form_uid() for why a random uid breaks re-import.
-        _apply_stable_identity(
-            schema, stable_form_uid(row["formid"], row["orgid"])
-        )
+        _apply_stable_identity(schema, stable_form_uid(row["formid"], row["orgid"]))
 
         # Rules are authored here against field_id, but FEAT-393 made
         # field_uid the authoritative reference: `_eval_condition` reads
@@ -556,8 +570,9 @@ class NetworkninjaFormService(AbstractFormService):
         dangling = _prune_dangling_rule_references(schema)
         if dangling:
             self.logger.warning(
-                "Dropped %d rule condition(s) in %s pointing at fields this "
-                "import did not build", dangling, schema.form_id,
+                "Dropped %d rule condition(s) in %s pointing at fields this " "import did not build",
+                dangling,
+                schema.form_id,
             )
         resolve_rule_references(schema)
         return schema
@@ -613,9 +628,7 @@ class NetworkninjaFormService(AbstractFormService):
     # Index builders
     # ------------------------------------------------------------------
 
-    def _build_metadata_index(
-        self, raw_metadata: list[dict[str, Any]]
-    ) -> dict[str, dict[str, Any]]:
+    def _build_metadata_index(self, raw_metadata: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Build column_name → metadata dict index.
 
         Args:
@@ -664,9 +677,7 @@ class NetworkninjaFormService(AbstractFormService):
             return []
         return [opt for opt in raw if isinstance(opt, dict)]
 
-    def _build_option_id_catalog(
-        self, meta_index: dict[str, dict[str, Any]]
-    ) -> dict[str, dict[str, str]]:
+    def _build_option_id_catalog(self, meta_index: dict[str, dict[str, Any]]) -> dict[str, dict[str, str]]:
         """Build column_name → {option_value: option_id} from metadata options.
 
         Used to re-index ``EQUALS`` conditions (whose
@@ -758,11 +769,7 @@ class NetworkninjaFormService(AbstractFormService):
               (``"metadata" | "inline" | "logic_groups" | "none"``) for every
               option-typed column present in ``meta_index``.
         """
-        option_columns = {
-            col
-            for col, meta in meta_index.items()
-            if meta.get("data_type") in _OPTION_FIELD_TYPES
-        }
+        option_columns = {col for col, meta in meta_index.items() if meta.get("data_type") in _OPTION_FIELD_TYPES}
 
         collector: dict[str, dict[str, FieldOption]] = {}  # col_name → {value: FieldOption}
         provenance: dict[str, str] = {}
@@ -800,9 +807,7 @@ class NetworkninjaFormService(AbstractFormService):
         def _scan_conditions(conditions: list[dict[str, Any]]) -> None:
             """Extract option values from a list of conditions."""
             for cond in conditions:
-                ref_qid = str(
-                    cond.get("condition_question_reference_id", "")
-                )
+                ref_qid = str(cond.get("condition_question_reference_id", ""))
                 ref_col = question_id_index.get(ref_qid)
                 if not ref_col or ref_col in metadata_populated:
                     continue
@@ -833,33 +838,20 @@ class NetworkninjaFormService(AbstractFormService):
                         inline_opts = question.get("options") or []
                         for opt in inline_opts:
                             value = opt.get("value") or opt.get("option_id")
-                            label = (
-                                opt.get("label")
-                                or opt.get("option_text")
-                                or opt.get("text")
-                            )
+                            label = opt.get("label") or opt.get("option_text") or opt.get("text")
                             if value is not None:
                                 if col_name not in legacy_collector:
                                     legacy_collector[col_name] = {}
-                                legacy_collector[col_name][str(value)] = (
-                                    str(label) if label else str(value)
-                                )
+                                legacy_collector[col_name][str(value)] = str(label) if label else str(value)
                                 inline_populated.add(col_name)
 
                 # Source 2: options inferred from conditional references
-                logic_groups = (
-                    question.get("logic_groups")
-                    or question.get("question_logic_groups")
-                    or []
-                )
+                logic_groups = question.get("logic_groups") or question.get("question_logic_groups") or []
                 for group in logic_groups:
                     _scan_conditions(group.get("conditions") or [])
 
         for col, options in legacy_collector.items():
-            collector[col] = {
-                value: FieldOption(value=value, label=label)
-                for value, label in options.items()
-            }
+            collector[col] = {value: FieldOption(value=value, label=label) for value, label in options.items()}
             if col in inline_populated:
                 provenance[col] = "inline"
             elif col in logic_populated:
@@ -894,11 +886,30 @@ class NetworkninjaFormService(AbstractFormService):
         Returns:
             The block's logic groups, or an empty list.
         """
-        return (
-            block.get("block_logic_groups")
-            or block.get("question_block_logic_groups")
-            or []
-        )
+        return block.get("block_logic_groups") or block.get("question_block_logic_groups") or []
+
+    @staticmethod
+    def _block_store_groups(block: dict[str, Any]) -> list[str]:
+        """Return a block's store-group gating names, if the source carries any.
+
+        Mirrors :meth:`_block_logic_groups`: the store-group condition is
+        section-level exactly like ``block_logic_groups`` is (spec §1 —
+        "blocks gated on a store group: 6 of 17"), so it is read off the
+        block dict under the same ``store_groups`` key
+        :meth:`_map_logic_groups` reads at question level. NO source this
+        importer reads populates this key today (spec §1 Non-Goals —
+        store-group membership lives only in the Recap Definition export,
+        verified nowhere in the replicated database); this accessor exists
+        so the mapping in :meth:`_map_logic_groups` activates the moment a
+        source does supply it, and is exercised by fixtures only until then.
+
+        Args:
+            block: A single question block dict.
+
+        Returns:
+            The block's store-group names, or an empty list.
+        """
+        return block.get("store_groups") or []
 
     def _map_block_to_section(
         self,
@@ -934,9 +945,7 @@ class NetworkninjaFormService(AbstractFormService):
             FormSection if the block has at least one mappable field, else None.
         """
         block_id = block.get("block_id") or block.get("question_block_id", "")
-        block_title: str | None = (
-            block.get("block_description") or block.get("block_name") or None
-        )
+        block_title: str | None = block.get("block_description") or block.get("block_name") or None
         section_id = f"section_{block_id}" if block_id else "section_default"
 
         fields: list[FormField] = []
@@ -945,27 +954,32 @@ class NetworkninjaFormService(AbstractFormService):
             if seen_columns is not None and col_name in seen_columns:
                 self.logger.debug(
                     "Skipping duplicate column '%s' in block '%s'",
-                    col_name, block_id,
+                    col_name,
+                    block_id,
                 )
                 if report_entries is not None:
-                    report_entries.append(ImportDiffEntry(
-                        column_name=col_name,
-                        source_data_type=(
-                            meta_index.get(col_name, {}).get("data_type") or ""
-                        ),
-                        mapped_field_type=None,
-                        status="requiere_intervencion",
-                        note=(
-                            f"column repeated in block '{block_id}' — already "
-                            "imported from an earlier block; this occurrence "
-                            "was dropped to keep field_id unique"
-                        ),
-                    ))
+                    report_entries.append(
+                        ImportDiffEntry(
+                            column_name=col_name,
+                            source_data_type=(meta_index.get(col_name, {}).get("data_type") or ""),
+                            mapped_field_type=None,
+                            status="requiere_intervencion",
+                            note=(
+                                f"column repeated in block '{block_id}' — already "
+                                "imported from an earlier block; this occurrence "
+                                "was dropped to keep field_id unique"
+                            ),
+                        )
+                    )
                 continue
 
             field = self._map_question_to_field(
-                question, meta_index, question_id_index, select_options,
-                options_provenance, option_id_catalog,
+                question,
+                meta_index,
+                question_id_index,
+                select_options,
+                options_provenance,
+                option_id_catalog,
                 report_entries=report_entries,
             )
             if field is not None:
@@ -984,7 +998,10 @@ class NetworkninjaFormService(AbstractFormService):
         # question, and without the rule 277 of 292 fields (234 of them
         # required) render unconditionally and the form cannot be submitted.
         section_depends_on = self._map_logic_groups(
-            {"logic_groups": self._block_logic_groups(block)},
+            {
+                "logic_groups": self._block_logic_groups(block),
+                "store_groups": self._block_store_groups(block),
+            },
             question_id_index,
             option_id_catalog,
         )
@@ -1037,9 +1054,7 @@ class NetworkninjaFormService(AbstractFormService):
 
         # Skip if column is not in active metadata
         if col_name not in meta_index:
-            self.logger.debug(
-                "Skipping question: column '%s' not in active metadata", col_name
-            )
+            self.logger.debug("Skipping question: column '%s' not in active metadata", col_name)
             return None
 
         meta_entry = meta_index[col_name]
@@ -1049,16 +1064,19 @@ class NetworkninjaFormService(AbstractFormService):
         if data_type not in _FIELD_TYPE_MAP:
             self.logger.warning(
                 "Unknown data_type '%s' for column '%s'",
-                data_type, col_name,
+                data_type,
+                col_name,
             )
             if report_entries is not None:
-                report_entries.append(ImportDiffEntry(
-                    column_name=col_name,
-                    source_data_type=data_type,
-                    mapped_field_type=None,
-                    status="requiere_intervencion",
-                    note=f"data_type '{data_type}' is not in the mapping table — manual review required",
-                ))
+                report_entries.append(
+                    ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=data_type,
+                        mapped_field_type=None,
+                        status="requiere_intervencion",
+                        note=f"data_type '{data_type}' is not in the mapping table — manual review required",
+                    )
+                )
             return None
 
         mapping = _FIELD_TYPE_MAP[data_type]
@@ -1067,16 +1085,19 @@ class NetworkninjaFormService(AbstractFormService):
             # but kept as a safety net for future explicitly-unsupported entries.
             self.logger.warning(
                 "Explicitly unsupported data_type '%s' for column '%s'",
-                data_type, col_name,
+                data_type,
+                col_name,
             )
             if report_entries is not None:
-                report_entries.append(ImportDiffEntry(
-                    column_name=col_name,
-                    source_data_type=data_type,
-                    mapped_field_type=None,
-                    status="requiere_intervencion",
-                    note=f"data_type '{data_type}' is explicitly unsupported — manual review required",
-                ))
+                report_entries.append(
+                    ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=data_type,
+                        mapped_field_type=None,
+                        status="requiere_intervencion",
+                        note=f"data_type '{data_type}' is explicitly unsupported — manual review required",
+                    )
+                )
             return None
 
         field_type, extra_kwargs = mapping
@@ -1086,17 +1107,11 @@ class NetworkninjaFormService(AbstractFormService):
 
         # Validations → required flag + numeric bounds
         validations: list[dict[str, Any]] = question.get("validations") or []
-        required = any(
-            v.get("validation_type") == "responseRequired" for v in validations
-        )
-        constraints, unmapped_validations = self._map_validations(
-            validations, field_type
-        )
+        required = any(v.get("validation_type") == "responseRequired" for v in validations)
+        constraints, unmapped_validations = self._map_validations(validations, field_type)
 
         # Conditional logic → DependencyRule
-        depends_on: DependencyRule | None = self._map_logic_groups(
-            question, question_id_index, option_id_catalog
-        )
+        depends_on: DependencyRule | None = self._map_logic_groups(question, question_id_index, option_id_catalog)
 
         # Options for select-type fields (collected during pre-scan)
         options: list[FieldOption] | None = None
@@ -1117,55 +1132,62 @@ class NetworkninjaFormService(AbstractFormService):
 
             if is_formula:
                 # Formula expressions are never available from networkninja
-                report_entries.append(ImportDiffEntry(
-                    column_name=col_name,
-                    source_data_type=data_type,
-                    mapped_field_type=field_type.value,
-                    status="requiere_intervencion",
-                    note=(
-                        "formula expression unavailable at networkninja source "
-                        "(options=[]); meta.expression=None; evaluator is FEAT-301"
-                    ),
-                    options_source=field_options_source,
-                ))
+                report_entries.append(
+                    ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=data_type,
+                        mapped_field_type=field_type.value,
+                        status="requiere_intervencion",
+                        note=(
+                            "formula expression unavailable at networkninja source "
+                            "(options=[]); meta.expression=None; evaluator is FEAT-301"
+                        ),
+                        options_source=field_options_source,
+                    )
+                )
             elif unmapped_validations:
                 # A validation the model cannot express is a real loss of
                 # fidelity — reporting it as "mapeado" tells a reviewer the
                 # field came across whole when it did not. Outranks the
                 # "aproximado" render_as hint below: a missing bound changes
                 # what the form accepts, a render hint does not.
-                report_entries.append(ImportDiffEntry(
-                    column_name=col_name,
-                    source_data_type=data_type,
-                    mapped_field_type=field_type.value,
-                    status="requiere_intervencion",
-                    note=(
-                        "validation(s) not representable as FieldConstraints: "
-                        + ", ".join(unmapped_validations)
-                    ),
-                    options_source=field_options_source,
-                ))
+                report_entries.append(
+                    ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=data_type,
+                        mapped_field_type=field_type.value,
+                        status="requiere_intervencion",
+                        note=(
+                            "validation(s) not representable as FieldConstraints: " + ", ".join(unmapped_validations)
+                        ),
+                        options_source=field_options_source,
+                    )
+                )
             elif is_approximate:
-                report_entries.append(ImportDiffEntry(
-                    column_name=col_name,
-                    source_data_type=data_type,
-                    mapped_field_type=field_type.value,
-                    status="aproximado",
-                    note=(
-                        f"mapped to {field_type.value} with render_as hint "
-                        f"{extra_kwargs['meta'].get('render_as')!r}"
-                    ),
-                    options_source=field_options_source,
-                ))
+                report_entries.append(
+                    ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=data_type,
+                        mapped_field_type=field_type.value,
+                        status="aproximado",
+                        note=(
+                            f"mapped to {field_type.value} with render_as hint "
+                            f"{extra_kwargs['meta'].get('render_as')!r}"
+                        ),
+                        options_source=field_options_source,
+                    )
+                )
             else:
-                report_entries.append(ImportDiffEntry(
-                    column_name=col_name,
-                    source_data_type=data_type,
-                    mapped_field_type=field_type.value,
-                    status="mapeado",
-                    note="",
-                    options_source=field_options_source,
-                ))
+                report_entries.append(
+                    ImportDiffEntry(
+                        column_name=col_name,
+                        source_data_type=data_type,
+                        mapped_field_type=field_type.value,
+                        status="mapeado",
+                        note="",
+                        options_source=field_options_source,
+                    )
+                )
 
         return FormField(
             field_id=field_id,
@@ -1270,23 +1292,27 @@ class NetworkninjaFormService(AbstractFormService):
           with no catalog keep the original text comparison; an unmatched
           comparison value is preserved as-is (logged at debug, never
           dropped).
+        - FEAT-440 (spec §3 Module 4): a ``store_groups`` list of store-group
+          names on ``question`` (or the block-level shim passed from
+          ``_map_block_to_section``) is translated via
+          :meth:`_map_store_group_rule` instead of the flat conditions/logic
+          pair — see that method for the group-nesting shape.
 
         Args:
-            question: Question dict potentially containing logic_groups.
+            question: Question dict potentially containing logic_groups
+                and/or store_groups.
             question_id_index: question_id → column_name reverse index.
             option_id_catalog: column_name → {option_value: option_id} from
                 ``_build_option_id_catalog``. ``None``/empty behaves like no
                 catalog (text comparison preserved).
 
         Returns:
-            DependencyRule if any valid conditions are present, else None.
+            DependencyRule if any valid conditions and/or store groups are
+            present, else None.
         """
-        logic_groups: list[dict[str, Any]] = (
-            question.get("logic_groups")
-            or question.get("question_logic_groups")
-            or []
-        )
-        if not logic_groups:
+        logic_groups: list[dict[str, Any]] = question.get("logic_groups") or question.get("question_logic_groups") or []
+        store_groups: list[str] = question.get("store_groups") or []
+        if not logic_groups and not store_groups:
             return None
 
         all_conditions: list[FieldCondition] = []
@@ -1305,9 +1331,7 @@ class NetworkninjaFormService(AbstractFormService):
                 ref_qid = str(cond.get("condition_question_reference_id", ""))
                 ref_col = question_id_index.get(ref_qid)
                 if not ref_col:
-                    self.logger.debug(
-                        "Skipping condition: question_id '%s' not resolved", ref_qid
-                    )
+                    self.logger.debug("Skipping condition: question_id '%s' not resolved", ref_qid)
                     continue
 
                 ref_field_id = f"field_{ref_col}"
@@ -1324,7 +1348,8 @@ class NetworkninjaFormService(AbstractFormService):
                         self.logger.debug(
                             "comparison_value '%s' not found in option_id "
                             "catalog for column '%s' — keeping original value",
-                            comparison_value, ref_col,
+                            comparison_value,
+                            ref_col,
                         )
 
                 group_conditions.append(
@@ -1336,6 +1361,26 @@ class NetworkninjaFormService(AbstractFormService):
                 )
 
             all_conditions.extend(group_conditions)
+
+        # Store groups on an element are alternatives (any ONE of them shows
+        # it), which `groups`/`LogicGroup` expresses and a flat conditions/
+        # logic pair cannot — see `_map_store_group_rule`. Any answer
+        # condition already collected above (e.g. a visit-type EQUALS) joins
+        # EVERY store-group alternative, since it must hold regardless of
+        # which group matched.
+        #
+        # A LogicGroup only ANDs its conditions — unlike the flat path just
+        # below, there is no top-level "or" available inside a group. When
+        # the source expresses "visit type == Brand Ambassador OR visit type
+        # == Assisted Sales" as two logic_groups on the SAME field (the
+        # majority real shape per spec §1 — 23 of 26 dual-axis elements need
+        # exactly this), ANDing both EQ conditions verbatim into every
+        # store-group alternative is unsatisfiable (one select carries one
+        # answer). `_collapse_same_field_alternatives` folds them into a
+        # single IN condition first — the exact shape spec §2's worked
+        # example uses — so the alternation survives inside one AND'd group.
+        if store_groups:
+            return self._map_store_group_rule(store_groups, self._collapse_same_field_alternatives(all_conditions))
 
         if not all_conditions:
             return None
@@ -1364,12 +1409,117 @@ class NetworkninjaFormService(AbstractFormService):
         if len(logic_groups) > 1 and len(referenced_fields) > 1:
             top_logic = cast(Literal["and", "or"], "and")
         else:
-            top_logic = cast(
-                Literal["and", "or"], "or" if len(all_conditions) > 1 else "and"
-            )
+            top_logic = cast(Literal["and", "or"], "or" if len(all_conditions) > 1 else "and")
 
         return DependencyRule(
             conditions=all_conditions,
             logic=top_logic,
             effect="show",
         )
+
+    @staticmethod
+    def _collapse_same_field_alternatives(
+        conditions: list[FieldCondition],
+    ) -> list[FieldCondition]:
+        """Collapse same-field EQ alternates into one IN condition each.
+
+        Only used ahead of the store-group path (see the note above its call
+        site) — the flat path below handles the same "alternatives on one
+        field" case differently, by choosing a top-level ``logic="or"``
+        instead, since a flat rule has that option and a ``LogicGroup``
+        doesn't.
+
+        Conditions on different fields (genuine multi-field prerequisites,
+        3 of 91 source forms per the flat path's own sweep) are left
+        untouched and still AND together, same as the flat path.
+
+        Args:
+            conditions: Conditions collected from this element's
+                logic_groups (each ``source="field"``, ``operator=EQ`` —
+                see the loop above this method's call site).
+
+        Returns:
+            ``conditions`` with same-``field_id`` runs collapsed into one
+            ``FieldCondition(operator=IN, value=[...])`` each, in
+            first-seen field order. A field with only one condition is
+            returned unchanged (still ``EQ``).
+        """
+        by_field: dict[str, list[FieldCondition]] = {}
+        order: list[str] = []
+        for c in conditions:
+            key = c.field_id or ""
+            if key not in by_field:
+                by_field[key] = []
+                order.append(key)
+            by_field[key].append(c)
+
+        collapsed: list[FieldCondition] = []
+        for key in order:
+            group = by_field[key]
+            if len(group) == 1:
+                collapsed.append(group[0])
+            else:
+                collapsed.append(
+                    FieldCondition(
+                        field_id=key,
+                        operator=ConditionOperator.IN,
+                        value=[c.value for c in group],
+                    )
+                )
+        return collapsed
+
+    @staticmethod
+    def _map_store_group_rule(
+        store_groups: list[str],
+        shared_conditions: list[FieldCondition],
+    ) -> DependencyRule:
+        """Translate a per-element list of store-group names into a rule.
+
+        Spec §3 Module 4. Store groups on one element are alternatives — any
+        SINGLE one showing it — so each becomes its OWN :class:`LogicGroup`,
+        holding a ``visit_context`` ``CONTAINS`` condition for that one group
+        name. An existing answer condition already gating this element (e.g.
+        a visit-type ``EQUALS``) is not itself an alternative: it must hold
+        no matter which store-group alternative matched, so it is copied
+        into EVERY group alongside the group's own condition.
+
+        Nothing populates ``visit_context`` yet (spec §7 Risks) — a rule
+        built here fails closed against a live form with no context, which
+        is stricter than no rule at all, by design (see the Hazard note in
+        TASK-2315). This method itself is source-agnostic: it is exercised
+        directly by fixtures, and reached in production only once a source
+        row supplies a ``store_groups`` list (see ``_block_store_groups`` /
+        the ``question.get("store_groups")`` read in ``_map_logic_groups``).
+
+        Args:
+            store_groups: Store-group names gating this element. Must be
+                non-empty (callers only invoke this when it is).
+            shared_conditions: Conditions already required by this element
+                (e.g. from an existing answer-based logic_groups), each
+                AND'd into every store-group alternative. May be empty when
+                the element is gated on store group alone.
+
+        Returns:
+            A ``DependencyRule`` expressed via ``groups`` (never the flat
+            ``conditions``/``logic`` pair — see
+            :class:`~parrot_formdesigner.core.constraints.LogicGroup`).
+        """
+        groups = [
+            LogicGroup(
+                conditions=[
+                    FieldCondition(
+                        source="visit_context",
+                        key="store_groups",
+                        operator=ConditionOperator.CONTAINS,
+                        value=group_name,
+                    ),
+                    # Fresh copies per group — resolution (FEAT-393) writes
+                    # field_uid onto each condition in place, and every group
+                    # must carry its own instance rather than aliasing the
+                    # same object across alternatives.
+                    *(c.model_copy() for c in shared_conditions),
+                ]
+            )
+            for group_name in store_groups
+        ]
+        return DependencyRule(conditions=[], groups=groups, effect="show")

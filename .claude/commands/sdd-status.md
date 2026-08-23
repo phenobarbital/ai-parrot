@@ -35,7 +35,21 @@ If a `<feature-name>` filter is provided, show only the index whose
 `feature` slug matches (substring) or whose `feature_id` matches exactly.
 
 ### 2. Group and Display
-Group tasks by `status` (in-progress → pending → done) and by feature. Print:
+
+The task `status` field has **exactly four** valid values — match each
+task's status literally against this set; never fall through to a
+default bucket for a status string you don't recognize:
+
+- `"pending"` → ⏳ Pending
+- `"in-progress"` → 🔄 In-Progress
+- `"done"` → ✅ Done
+- `"done-with-issues"` → ⚠️ Done (with issues) — a task `sdd-worker`
+  completed but flagged after being unable to satisfy every acceptance
+  criterion within scope (see its Completion Note for details). This is
+  a completed state, NOT pending — never group it under ⏳ Pending.
+
+Group tasks by status (in-progress → pending → done-with-issues → done)
+and by feature. Print:
 
 ```
 📊 SDD Task Board
@@ -49,11 +63,14 @@ Spec: sdd/specs/<feature>.spec.md
   ⏳ Pending
      TASK-<NNN> — <title>  [<priority>/<effort>]  blocked-by: <deps or —>
 
+  ⚠️ Done (with issues)
+     TASK-<NNN> — <title>  — see Completion Note in the task file
+
   ✅ Done
      TASK-<NNN> — <title>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Summary: <N> done / <N> in-progress / <N> pending / <N> total
+Summary: <N> done / <N> done-with-issues / <N> in-progress / <N> pending / <N> total
 ```
 
 ### 3. Highlight Blockers
