@@ -32,7 +32,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Extends session_actions.py created by TASK-2384 — same file, must be sequential.",
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2385-session-actions-waits-humanchannel.md"
+      "completed_at": "2026-08-23T23:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2385-session-actions-waits-humanchannel.md"
     },
     {
       "id": "TASK-2386",
