@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-452
 **Date**: 2026-08-23
 **Author**: Jesus Lara (spec: Claude session 2026-08-23)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Input**: `sdd/proposals/audio-notes-obsidian.brainstorm.md` (status `exploration`, Recommended Option A)
 **Depends on**: FEAT-450 (`sdd/specs/wiki-namespaces.spec.md`) — hard prerequisite, see §7 and Worktree Strategy
@@ -270,11 +270,16 @@ class AudioNoteCaptureToolkit(AbstractToolkit):
         transcript: str,
         language: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Save a spoken thought as a structured Obsidian note and wiki page.
+        """Save a note as a structured Obsidian note and wiki page.
 
-        Call this when the user is dictating something to REMEMBER
+        Call this when the user is recording something to REMEMBER
         (a note, idea, decision, reminder or follow-up) rather than
         asking a question.
+
+        Transport-neutral: the text may come from a transcribed voice
+        note OR from a typed message — voice is only the vehicle.
+        ``language`` is the transcript's detected language for voice
+        input, and ``None`` for typed input.
         """
 
 
@@ -353,6 +358,21 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):   # existing, extended
   (`wikitoolkit ns add notes --store <AUDIO_NOTES_WIKI_STORAGE_DIR>`) so
   `wikitoolkit query` reaches audio notes and `--ns notes` targets them.
 - **Depends on**: **FEAT-450 merged.** See §7 and Worktree Strategy.
+
+### Module 7: Scheduled entity extraction on the notes plane
+- **Path**: `agents/fireflies_wiki.py`
+- **Responsibility**: A `@schedule`d job that runs Phase-2 LLM entity extraction
+  over the notes wiki tree, so audio notes contribute CONCEPT nodes to the graph.
+- **Why scheduled and not per-capture**: `ingest_source()` (`wiki/toolkit.py:166`)
+  has **no** `extract_entities` parameter, and `WikiConfig` has no such field.
+  Extraction is `WikiIngestOrchestrator.extract_entities(tree_name, wiki_config,
+  granularity, custom_instructions)` (`wiki/ingest.py:439`), reached inside
+  `LLMWikiToolkit` only via `ingest_obsidian_vault` (`wiki/toolkit.py:298`).
+  It **iterates the whole PageIndex tree**, not the newly added page — so calling
+  it per capture would cost O(n) LLM calls per note and would violate the
+  acceptance criterion "exactly one LLM call per note". A scheduled sweep
+  delivers the graph value without putting it in the latency-critical path.
+- **Depends on**: Module 2.
 
 ---
 
@@ -474,6 +494,12 @@ def fake_notes_wiki(mocker):
 - [ ] FEAT-450 is merged before this feature's branch is merged (see §7)
 - [ ] Notes wiki registered as a namespace and reachable via
       `wikitoolkit query --ns notes` (G2, Module 6)
+- [ ] Entity extraction over the notes plane runs on a **schedule**, never in
+      the capture path — the capture path's one-LLM-call budget is unchanged
+      (Module 7)
+- [ ] `capture_audio_note` is reachable from typed text messages as well as
+      voice transcripts; its `language` argument is optional and `None` for
+      typed input (Module 3, Module 4)
 
 **Process**
 - [ ] All unit tests pass
@@ -868,21 +894,25 @@ git worktree add -b feat-452-audio-notes-obsidian \
 
 **Still open**:
 
-- [ ] Should the meetings wiki be **retroactively pruned** of non-meeting vault
+- [x] Should the meetings wiki be **retroactively pruned** of non-meeting vault
   notes it has absorbed while the nightly ingest was unscoped? Module 5 stops
   the bleed going forward but does not clean up history. Cheapest options: leave
   as-is, or a one-off `wikitoolkit` prune. Not blocking implementation.
-  — *Owner: Jesus Lara*
-- [ ] Should `capture_audio_note` also be reachable from **text** messages
+  — *Owner: Jesus Lara*: leave as-is
+- [x] Should `capture_audio_note` also be reachable from **text** messages
   (not just voice), e.g. "note to self: …" typed rather than spoken? The tool
   itself is transport-agnostic and would work; the question is whether intent
   detection on typed text produces too many false saves. Decidable during
-  implementation. — *Owner: Jesus Lara*
-- [ ] Does the notes wiki warrant `extract_entities=True` (Phase-2 LLM entity
+  implementation. — *Owner: Jesus Lara*: I think yes, a note written is equal than voice, used to save notes into wiki/obsidian, voice is only the vehicle.
+- [x] Does the notes wiki warrant `extract_entities=True` (Phase-2 LLM entity
   extraction) at ingest? The meetings plane defaults it off
   (`_EXTRACT_ENTITIES`, `agents/fireflies_wiki.py:155`). Personal notes are
   short, so cost is low and graph value may be high. Deferrable.
-  — *Owner: Jesus Lara*
+  — *Owner: Jesus Lara*: yes.
+  **Implementation constraint discovered during decomposition**: `ingest_source`
+  has no `extract_entities` parameter and extraction iterates the whole tree
+  (`wiki/ingest.py:439`), so it CANNOT run per capture without violating the
+  "exactly one LLM call per note" criterion. Realized as scheduled Module 7.
 
 ---
 
@@ -891,3 +921,4 @@ git worktree add -b feat-452-audio-notes-obsidian \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-23 | Jesus Lara (Claude session) | Initial draft from `audio-notes-obsidian.brainstorm.md` (Option A) |
+| 0.2 | 2026-08-23 | Jesus Lara (Claude session) | Approved. Open questions resolved: no retroactive prune; capture reachable from typed text; entity extraction enabled — realized as scheduled Module 7 (cannot run per capture, see §3 Module 7) |
