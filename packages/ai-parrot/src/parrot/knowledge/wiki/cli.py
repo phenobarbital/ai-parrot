@@ -40,6 +40,11 @@ from parrot.knowledge.wiki.context import (
     pack_results,
     truncate_to_tokens,
 )
+from parrot.knowledge.wiki.documents import (
+    DocumentAcquirer,
+    DocumentAcquisitionError,
+    resolve_sources,
+)
 from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
@@ -2090,29 +2095,6 @@ def ground(
 # --------------------------------------------------------------------------
 
 
-def _discover_documents(folder: Path) -> list[Path]:
-    """List regular files under ``folder`` for supervised triage.
-
-    Deliberately NOT the language-aware ``repo_scan`` scanner — that
-    scanner's deterministic, offline, no-LLM contract is load-bearing for
-    the git post-commit hook and is never touched by this feature (spec
-    §1 Non-Goals). This is a flat, deterministic walk suited to arbitrary
-    document corpora (meeting notes, summaries, etc), not source code.
-
-    Args:
-        folder: Root folder to scan.
-
-    Returns:
-        Sorted list of file paths; dotfiles and dot-directories are
-        skipped (e.g. ``.git/``, ``.parrot/``).
-    """
-    return sorted(
-        p
-        for p in folder.rglob("*")
-        if p.is_file() and not any(part.startswith(".") for part in p.parts)
-    )
-
-
 def _resolve_charter_path(root: Path, charter_opt: str | None) -> Path:
     """Resolve the charter YAML path: ``--charter``, else the project default.
 
@@ -2263,8 +2245,17 @@ def _build_novelty_scorer(
     return NoveltyScorer(grounding_evaluator=evaluator)
 
 
-def _print_triage_summary(entries: list[Any]) -> None:
-    """Print a rich admit/archive/discard summary table."""
+def _print_triage_summary(
+    entries: list[Any], skipped: list[str] | None = None
+) -> None:
+    """Print a rich admit/archive/discard summary table.
+
+    Args:
+        entries: Triaged manifest entries.
+        skipped: FEAT-451 — source URIs that could not be decoded/
+            extracted and were skipped before triage. Adds a "skipped"
+            row when non-empty.
+    """
     from rich.console import Console
     from rich.table import Table
 
@@ -2274,13 +2265,13 @@ def _print_triage_summary(entries: list[Any]) -> None:
     table.add_column("Count", justify="right", style="cyan")
     for action in ("admit", "archive", "discard"):
         table.add_row(action, str(counts.get(action, 0)))
+    if skipped:
+        table.add_row("skipped (undecodable)", str(len(skipped)))
     Console().print(table)
 
 
 @wiki.command()
-@click.argument(
-    "folder", type=click.Path(exists=True, file_okay=False, path_type=Path)
-)
+@click.argument("source")
 @path_option
 @click.option(
     "--charter",
@@ -2348,8 +2339,22 @@ def _print_triage_summary(entries: list[Any]) -> None:
     type=click.Path(path_type=Path),
     help="Manifest output path (default: <storage_dir>/ingest-manifest.jsonl).",
 )
+@click.option(
+    "--recursive/--no-recursive",
+    "recursive",
+    default=True,
+    show_default=True,
+    help="When SOURCE is a directory, walk it recursively.",
+)
+@click.option(
+    "--fetch-timeout",
+    "fetch_timeout",
+    default=30.0,
+    show_default=True,
+    help="Timeout (seconds) for a URL SOURCE fetch.",
+)
 def ingest(
-    folder: Path,
+    source: str,
     path_: str | None,
     charter_opt: str | None,
     dry_run: bool,
@@ -2361,14 +2366,24 @@ def ingest(
     model_opt: str | None,
     audit_rate: float,
     manifest_opt: Path | None,
+    recursive: bool,
+    fetch_timeout: float,
 ) -> None:
     """Supervised (charter-driven) ingestion of a document corpus.
 
     Unlike ``build`` (deterministic, offline, no-LLM), ``ingest`` triages
-    each document in FOLDER against an editorial charter before it
+    each document in SOURCE against an editorial charter before it
     becomes a wiki page: free heuristics reject duplicates/oversized
     files, a lightweight model scores the rest, and only gray-zone
     documents escalate to a heavier model. Exactly one mode is required.
+
+    SOURCE accepts a directory (recursive walk by default — see
+    ``--recursive``/``--no-recursive``), a single document path, or an
+    ``http(s)://`` URL. PDF, DOCX, PPTX, XLSX, HTML, and EPUB are
+    extracted through the optional ``ai-parrot-loaders`` package;
+    plain-text/Markdown formats need no extra dependency. A document
+    that cannot be decoded is skipped, counted, and reported — never
+    triaged, and never charged an LLM call.
 
     \b
     --dry-run      Triage everything, write a manifest, ingest nothing.
@@ -2428,6 +2443,16 @@ def ingest(
         )
         bookkeeper.log_operation(wiki_dir, "TRIAGE", details)
 
+    def _report_skipped(skipped: list[str]) -> None:
+        """Echo the skip count; list the paths too under -v/--verbose."""
+        if not skipped:
+            return
+        click.echo(f"Skipped {len(skipped)} undecodable document(s).")
+        verbose = click.get_current_context().find_root().params.get("verbose")
+        if verbose:
+            for uri in skipped:
+                click.echo(f"  skipped: {uri}")
+
     lightweight_model = _resolve_model_id(
         lightweight_model_opt, "WIKI_LIGHTWEIGHT_MODEL"
     )
@@ -2469,21 +2494,43 @@ def ingest(
         sync_graph=config.sync_graph,
     )
 
-    async def _triage_all(paths: list[Path], router: Any) -> list[Any]:
+    async def _triage_all(
+        refs: list[Any], router: Any, acquirer: DocumentAcquirer
+    ) -> tuple[list[Any], dict[str, Any], list[str]]:
+        """Acquire + triage every resolved source.
+
+        A document that cannot be decoded/extracted is skipped (logged,
+        counted) rather than triaged as mojibake — never charged an LLM
+        call (spec §1). The acquired document is kept alongside its
+        triage entry (keyed by the SAME ``str(Path(...))`` identity
+        ``router.triage`` uses for ``source_uri``) so ``--interactive``/
+        ``--auto`` can pass it into ``orch.ingest(acquired=...)`` and
+        avoid a second extraction pass.
+        """
         entries = []
-        for doc_path in paths:
-            content = await asyncio.to_thread(
-                doc_path.read_text, encoding="utf-8", errors="ignore"
-            )
-            entry = await router.triage(doc_path, content)
+        acquired_by_uri: dict[str, Any] = {}
+        skipped: list[str] = []
+        for ref in refs:
+            try:
+                acquired = await acquirer.acquire(ref)
+            except DocumentAcquisitionError as exc:
+                _cli_logger.warning("Skipping %s: %s", ref.uri, exc)
+                skipped.append(ref.uri)
+                continue
+            doc_path = Path(ref.uri)
+            entry = await router.triage(doc_path, acquired.text)
             if not extract_flag:
                 entry.claims = []
             entries.append(entry)
+            acquired_by_uri[str(doc_path)] = acquired
             await asyncio.to_thread(_log_triage, entry)
-        return entries
+        return entries, acquired_by_uri, skipped
 
     async def _apply_all(
-        entries: list[Any], wiki_config: WikiConfig, charter_version: str | None
+        entries: list[Any],
+        wiki_config: WikiConfig,
+        charter_version: str | None,
+        acquired_by_uri: dict[str, Any] | None = None,
     ) -> None:
         for entry in entries:
             if entry.decision is None:
@@ -2493,6 +2540,7 @@ def ingest(
                 wiki_config,
                 triage=entry,
                 charter_version=charter_version,
+                acquired=(acquired_by_uri or {}).get(entry.source_uri),
             )
 
     # ---- --review: apply pre-computed decisions, no re-triage ----------
@@ -2541,8 +2589,9 @@ def ingest(
         sync_graph=config.sync_graph,
         storage_backend=config.backend,
     )
-    paths = _discover_documents(folder)
-    entries = _run(_triage_all(paths, router))
+    refs = resolve_sources(source, recursive=recursive)
+    acquirer = DocumentAcquirer(fetch_timeout=fetch_timeout)
+    entries, acquired_by_uri, skipped = _run(_triage_all(refs, router, acquirer))
 
     if mode == "dry-run":
         header = ManifestRunHeader(
@@ -2554,8 +2603,12 @@ def ingest(
             created_at=datetime.now(UTC).isoformat(),
         )
         ManifestWriter(manifest_path).write(header, entries)
-        click.echo(f"Triaged {len(entries)} document(s). Manifest: {manifest_path}")
-        _print_triage_summary(entries)
+        click.echo(
+            f"Triaged {len(entries)} document(s), skipped {len(skipped)}."
+            f" Manifest: {manifest_path}"
+        )
+        _print_triage_summary(entries, skipped)
+        _report_skipped(skipped)
         return
 
     if mode == "interactive":
@@ -2601,10 +2654,12 @@ def ingest(
             created_at=datetime.now(UTC).isoformat(),
         )
         ManifestWriter(manifest_path).write(header, entries)
-        _run(_apply_all(entries, wiki_config, charter.version))
+        _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
         click.echo(
-            f"Applied {len(entries)} interactive decision(s). Manifest: {manifest_path}"
+            f"Applied {len(entries)} interactive decision(s),"
+            f" skipped {len(skipped)}. Manifest: {manifest_path}"
         )
+        _report_skipped(skipped)
         return
 
     # ---- --auto ----------------------------------------------------------
@@ -2629,17 +2684,18 @@ def ingest(
         created_at=datetime.now(UTC).isoformat(),
     )
     ManifestWriter(manifest_path).write(header, entries)
-    _run(_apply_all(entries, wiki_config, charter.version))
+    _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
     audited = [e for e in entries if e.audit_sample]
     click.echo(
-        f"Applied {len(entries)} auto decision(s). Audit sample: "
-        f"{len(audited)} flagged for human review ({audit_rate:.0%} of batch)."
-        f" Manifest: {manifest_path}"
+        f"Applied {len(entries)} auto decision(s), skipped {len(skipped)}."
+        f" Audit sample: {len(audited)} flagged for human review"
+        f" ({audit_rate:.0%} of batch). Manifest: {manifest_path}"
     )
     click.echo(
         "agreement_rate(): computable once the audit sample's `decision` "
         f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
     )
+    _report_skipped(skipped)
 
 
 @wiki.command(name="claude-hook", hidden=True)

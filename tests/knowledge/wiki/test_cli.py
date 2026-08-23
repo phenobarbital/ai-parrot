@@ -890,3 +890,321 @@ class TestSupervisedIngestInteractive:
         _header, entries = ManifestReader(manifest_path).read()
         assert entries[0].decision == "admit"
         assert entries[0].decision_source == "human"
+
+
+# ---------------------------------------------------------------------------
+# FEAT-451 (TASK-2357): widened SOURCE argument, DocumentAcquirer wiring,
+# skip reporting.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_pdf(tmp_path: Path) -> Path:
+    """A tiny real PDF, written via pymupdf (goes through the loader branch)."""
+    import pymupdf
+
+    p = tmp_path / "sample.pdf"
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page()
+        page.insert_text(
+            (72, 72), "A durable architectural decision about migration."
+        )
+        doc.set_metadata({"title": "Decision Doc", "author": "Legal"})
+        doc.save(str(p))
+    finally:
+        doc.close()
+    return p
+
+
+@pytest.fixture
+def nested_corpus(tmp_path: Path) -> Path:
+    """A top-level file plus a nested one, for --no-recursive testing."""
+    folder = tmp_path / "nested_corpus"
+    folder.mkdir()
+    (folder / "top.md").write_text(
+        "# Top\n\nTop-level durable decision content.", encoding="utf-8"
+    )
+    sub = folder / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text(
+        "# Nested\n\nNested durable decision content.", encoding="utf-8"
+    )
+    return folder
+
+
+@pytest.fixture
+def mixed_corpus(tmp_path: Path) -> Path:
+    """One good .md + one undecodable .pdf, for skip-and-report testing."""
+    folder = tmp_path / "mixed_corpus"
+    folder.mkdir()
+    (folder / "good.md").write_text(
+        "# Good doc\n\nSome durable decision content.", encoding="utf-8"
+    )
+    (folder / "bad.pdf").write_bytes(b"not a real pdf at all")
+    return folder
+
+
+@pytest.fixture
+def no_parrot_loaders(monkeypatch):
+    """Force `from parrot_loaders... import ...` to raise ImportError —
+    deterministic acquisition failure regardless of what real PDF/loader
+    libraries happen to tolerate in this environment."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("simulated: ai-parrot-loaders not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+class _FakeAiohttpContentStream:
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def iter_chunked(self, _size):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _FakeAiohttpResponse:
+    def __init__(self, *, status, headers, chunks, url):
+        self.status = status
+        self.headers = headers
+        self.content = _FakeAiohttpContentStream(chunks)
+        self.url = url
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAiohttpGetContextManager:
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAiohttpSession:
+    def __init__(self, response):
+        self._response = response
+
+    def get(self, _url, **_kwargs):
+        return _FakeAiohttpGetContextManager(self._response)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+@pytest.fixture
+def mock_aiohttp_pdf(monkeypatch, sample_pdf):
+    """Mock a URL fetch that streams back the real sample_pdf's bytes, so
+    downstream loader extraction actually succeeds, not just the fetch."""
+    body = sample_pdf.read_bytes()
+    resp = _FakeAiohttpResponse(
+        status=200,
+        headers={"Content-Type": "application/pdf"},
+        chunks=[body],
+        url="https://example.test/doc.pdf",
+    )
+    session = _FakeAiohttpSession(resp)
+    monkeypatch.setattr(
+        "parrot.knowledge.wiki.documents.aiohttp.ClientSession",
+        lambda **kwargs: session,
+    )
+
+
+class TestIngestSourceArgument:
+    """FEAT-451 (TASK-2357): SOURCE widened to dir | file | URL."""
+
+    def test_single_file_dry_run(
+        self, runner, repo, sample_pdf, charter_file, stub_ingest_wiring
+    ):
+        """A single document path (not a directory) produces a one-entry manifest."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(sample_pdf),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        _header, entries = ManifestReader(manifest_path).read()
+        assert len(entries) == 1
+
+    def test_url_dry_run(
+        self, runner, repo, charter_file, stub_ingest_wiring, mock_aiohttp_pdf
+    ):
+        """An http(s):// SOURCE is fetched, extracted, and triaged."""
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                "https://example.test/doc.pdf",
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "Triaged 1 document" in result.output
+
+    def test_missing_path_clean_error(self, runner, repo):
+        """A nonexistent SOURCE exits non-zero with a clean Click error —
+        no traceback (resolve_sources raises click.ClickException)."""
+        result = runner.invoke(
+            wiki,
+            ["ingest", "/no/such/path/at/all", "--path", str(repo), "--dry-run"],
+        )
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+
+    def test_no_recursive(
+        self, runner, repo, nested_corpus, charter_file, stub_ingest_wiring
+    ):
+        """--no-recursive only walks the directory's immediate children."""
+        from parrot.knowledge.wiki.review import ManifestReader
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(nested_corpus),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+                "--no-recursive",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        manifest_path = repo / ".parrot" / "wiki" / "ingest-manifest.jsonl"
+        _header, entries = ManifestReader(manifest_path).read()
+        assert len(entries) == 1
+        assert entries[0].source_uri.endswith("top.md")
+
+    def test_undecodable_skipped_and_reported(
+        self,
+        runner,
+        repo,
+        mixed_corpus,
+        charter_file,
+        stub_ingest_wiring,
+        no_parrot_loaders,
+    ):
+        """One bad doc: skipped, counted, reported — run still succeeds and
+        the other document is still triaged."""
+        light, _heavy = stub_ingest_wiring
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(mixed_corpus),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "skipped" in result.output.lower()
+        assert "1" in result.output  # skipped count
+        # router.triage() is never reached for the skipped document — the
+        # only successful acquisition (and thus only triage call) is the
+        # good .md.
+        assert light.calls == 1
+
+    def test_fetch_timeout_reaches_acquirer(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring, monkeypatch
+    ):
+        """--fetch-timeout reaches DocumentAcquirer.__init__."""
+        captured: dict = {}
+        orig_init = cli_module.DocumentAcquirer.__init__
+
+        def _spy_init(self, *args, **kwargs):
+            captured.update(kwargs)
+            return orig_init(self, *args, **kwargs)
+
+        monkeypatch.setattr(cli_module.DocumentAcquirer, "__init__", _spy_init)
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--dry-run",
+                "--fetch-timeout",
+                "5.5",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert captured.get("fetch_timeout") == 5.5
+
+    def test_auto_reuses_acquired_no_double_acquisition(
+        self, runner, repo, docs_folder, charter_file, stub_ingest_wiring, monkeypatch
+    ):
+        """--auto passes the triage lane's AcquiredDocument into
+        orch.ingest(acquired=...) — the document is acquired exactly once,
+        not once for triage and again for apply."""
+        import parrot.knowledge.wiki.documents as documents_module
+
+        call_count = {"n": 0}
+        orig_acquire = documents_module.DocumentAcquirer.acquire
+
+        async def _counting_acquire(self, ref):
+            call_count["n"] += 1
+            return await orig_acquire(self, ref)
+
+        monkeypatch.setattr(
+            documents_module.DocumentAcquirer, "acquire", _counting_acquire
+        )
+
+        result = runner.invoke(
+            wiki,
+            [
+                "ingest",
+                str(docs_folder),
+                "--path",
+                str(repo),
+                "--charter",
+                str(charter_file),
+                "--auto",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert call_count["n"] == 1
+
+    def test_discover_documents_removed(self):
+        assert not hasattr(cli_module, "_discover_documents")
