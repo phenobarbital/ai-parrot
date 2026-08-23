@@ -759,29 +759,30 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 raw_args = text[1] if len(text) > 1 else ""
                 typing_task = asyncio.create_task(self._typing_indicator(chat_id))
                 try:
-                    if _parse_mode == "keyword":
-                        kwargs = self._parse_kwargs(raw_args)
-                        result = (
-                            await _method(**kwargs)
-                            if asyncio.iscoroutinefunction(_method)
-                            else _method(**kwargs)
-                        )
-                    elif _parse_mode == "positional":
-                        args = raw_args.split() if raw_args else []
-                        result = (
-                            await _method(*args)
-                            if asyncio.iscoroutinefunction(_method)
-                            else _method(*args)
-                        )
-                    else:  # raw
-                        result = (
-                            await _method(raw_args)
-                            if asyncio.iscoroutinefunction(_method)
-                            else _method(raw_args)
-                        )
-                    typing_task.cancel()
-                    parsed = self._parse_response(result)
-                    await self._send_parsed_response(message, parsed)
+                    with telegram_chat_scope(chat_id):
+                        if _parse_mode == "keyword":
+                            kwargs = self._parse_kwargs(raw_args)
+                            result = (
+                                await _method(**kwargs)
+                                if asyncio.iscoroutinefunction(_method)
+                                else _method(**kwargs)
+                            )
+                        elif _parse_mode == "positional":
+                            args = raw_args.split() if raw_args else []
+                            result = (
+                                await _method(*args)
+                                if asyncio.iscoroutinefunction(_method)
+                                else _method(*args)
+                            )
+                        else:  # raw
+                            result = (
+                                await _method(raw_args)
+                                if asyncio.iscoroutinefunction(_method)
+                                else _method(raw_args)
+                            )
+                        typing_task.cancel()
+                        parsed = self._parse_response(result)
+                        await self._send_parsed_response(message, parsed)
                 except Exception as e:
                     typing_task.cancel()
                     self.logger.error(
