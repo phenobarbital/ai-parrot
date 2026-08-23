@@ -1380,9 +1380,7 @@ class NetworkninjaFormService(AbstractFormService):
         # single IN condition first — the exact shape spec §2's worked
         # example uses — so the alternation survives inside one AND'd group.
         if store_groups:
-            return self._map_store_group_rule(
-                store_groups, self._collapse_same_field_alternatives(all_conditions)
-            )
+            return self._map_store_group_rule(store_groups, self._collapse_same_field_alternatives(all_conditions))
 
         if not all_conditions:
             return None

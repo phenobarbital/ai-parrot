@@ -1742,19 +1742,22 @@ def test_store_group_collapses_same_field_alternatives_into_in():
     row = _gated_row()
     # A second logic_group on the SAME field (566 / field_9050) — an
     # alternative answer, not an independent prerequisite.
-    row["question_blocks"][1]["block_logic_groups"].append({
-        "logic_group_id": 3211,
-        "conditions": [{
-            "condition_id": 3415,
-            "condition_logic": "EQUALS",
-            "condition_option_id": 4782,
-            "condition_comparison_value": "Brand Ambassador",
-            "condition_question_reference_id": 566,
-        }],
-    })
+    row["question_blocks"][1]["block_logic_groups"].append(
+        {
+            "logic_group_id": 3211,
+            "conditions": [
+                {
+                    "condition_id": 3415,
+                    "condition_logic": "EQUALS",
+                    "condition_option_id": 4782,
+                    "condition_comparison_value": "Brand Ambassador",
+                    "condition_question_reference_id": 566,
+                }
+            ],
+        }
+    )
     row["metadata"][0]["options"].append(
-        {"option_id": "4782", "option_value": "Brand Ambassador",
-         "column_name": 9050, "is_active": True}
+        {"option_id": "4782", "option_value": "Brand Ambassador", "column_name": 9050, "is_active": True}
     )
     row["question_blocks"][1]["store_groups"] = ["Ring of Fire", "Epson Test Store"]
 
@@ -1780,19 +1783,22 @@ async def test_store_group_alternatives_evaluate_for_either_answer_value():
     from parrot_formdesigner.services.rule_evaluator import _eval_rule
 
     row = _gated_row()
-    row["question_blocks"][1]["block_logic_groups"].append({
-        "logic_group_id": 3211,
-        "conditions": [{
-            "condition_id": 3415,
-            "condition_logic": "EQUALS",
-            "condition_option_id": 4782,
-            "condition_comparison_value": "Brand Ambassador",
-            "condition_question_reference_id": 566,
-        }],
-    })
+    row["question_blocks"][1]["block_logic_groups"].append(
+        {
+            "logic_group_id": 3211,
+            "conditions": [
+                {
+                    "condition_id": 3415,
+                    "condition_logic": "EQUALS",
+                    "condition_option_id": 4782,
+                    "condition_comparison_value": "Brand Ambassador",
+                    "condition_question_reference_id": 566,
+                }
+            ],
+        }
+    )
     row["metadata"][0]["options"].append(
-        {"option_id": "4782", "option_value": "Brand Ambassador",
-         "column_name": 9050, "is_active": True}
+        {"option_id": "4782", "option_value": "Brand Ambassador", "column_name": 9050, "is_active": True}
     )
     row["question_blocks"][1]["store_groups"] = ["Ring of Fire"]
 
@@ -1805,7 +1811,9 @@ async def test_store_group_alternatives_evaluate_for_either_answer_value():
     rule = schema.sections[1].depends_on
     for answer in ("4784", "4782"):
         fired = _eval_rule(
-            rule, {"field_9050": answer}, schema,
+            rule,
+            {"field_9050": answer},
+            schema,
             visit_context={"store_groups": ["Ring of Fire"]},
         )
         assert fired is True, f"answer={answer!r} should fire at a matching store"
@@ -1813,7 +1821,9 @@ async def test_store_group_alternatives_evaluate_for_either_answer_value():
     # Wrong store, either answer -> does not fire.
     for answer in ("4784", "4782"):
         fired = _eval_rule(
-            rule, {"field_9050": answer}, schema,
+            rule,
+            {"field_9050": answer},
+            schema,
             visit_context={"store_groups": ["Best Buy"]},
         )
         assert fired is False, f"answer={answer!r} must not fire at a non-matching store"
