@@ -95,3 +95,48 @@ findings throughout), zero new; the new test file is fully clean.
 **Deviations from spec**: none in behavior. The HTTP envelope shape
 (reserved body key vs. header) is this implementation's own choice, made
 explicit above since the spec intentionally left it open.
+
+---
+
+### Post-completion code-review fixes (2026-08-24)
+
+Both remaining findings from the adversarial `code-reviewer` pass on the
+full FEAT-440 diff were addressed (the third, CRITICAL, finding was
+against TASK-2315's importer and is documented in that task's own
+Completion Note):
+
+**🟠 IMPORTANT — field-name-collision risk, fixed.** `_extract_visit_context`
+now takes `form` and checks whether the TARGET FORM actually owns a field
+literally named `visit_context` before treating that body key as context.
+Nothing in `core/schema.py` reserves the name, so a hand-authored form
+(via `create_blank_form`) could legally have one; without the guard, that
+field's real submitted answer would have been silently intercepted and
+stripped, with no error surfaced to the caller. Chose a per-form runtime
+check over a global schema-level name reservation — smaller, stays inside
+this task's file scope (`api/handlers.py` only), and degrades gracefully:
+the colliding form's answer is preserved (not dropped), a warning is
+logged naming the form, and that one form simply can't supply store
+context via this channel until renamed — an explicit, traceable
+limitation rather than a silent data-loss bug. 3 new tests
+(`TestVisitContextFieldNameCollision`) cover: a real field named
+`visit_context` preserved for both a scalar and (harder case) a
+dict-shaped answer value indistinguishable in shape from real context,
+plus a sanity check that non-colliding forms are unaffected.
+
+**🟡 SUGGESTION — kwargs workaround, fixed.** Widened the two pre-existing
+test doubles the review named
+(`test_lifecycle_events_submit.py::TestOnBeforeSubmit::
+test_onbeforesubmit_payload_replacement`'s `capturing_validate` and
+`test_lifecycle_events_e2e.py::TestOnBeforeSubmitPayloadReplacement::
+test_replacement_payload_reaches_validator`'s `capture`) to accept
+`**kwargs` and forward them to the real `orig`/`original_validate` call —
+one line each. This let `validate()`/`submit_data()` go back to calling
+`FormValidator.validate(form, data, visit_context=visit_context)`
+directly, removing the `**validate_kwargs`-splat indirection that existed
+only to avoid breaking those two narrower fakes.
+
+**Verification**: `pytest packages/parrot-formdesigner/tests/ -q` —
+identical 40-failure baseline (diffed explicitly, unchanged from every
+prior verification pass in this feature), 2225 passed (2222 prior + 3
+new). `ruff check` — `handlers.py` still exactly 45 pre-existing
+findings (zero new), all four touched test files fully clean.
