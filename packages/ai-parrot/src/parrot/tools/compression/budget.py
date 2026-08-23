@@ -161,7 +161,11 @@ def is_rust_available() -> bool:
     except ImportError:
         _rust_available_cache = False
         if not _rust_absence_logged:
-            logger.warning(
+            # `debug`, not `warning`: the extension is a separate maturin
+            # sub-project that never ships in the `ai-parrot` wheel, so its
+            # absence is the DEFAULT state, not a misconfiguration. Level
+            # matches this function's docstring and docs/tools/compression.md.
+            logger.debug(
                 "parrot_codec Rust extension not available; large payloads "
                 "over the size threshold will pass through uncompressed (G9)."
             )

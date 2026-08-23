@@ -207,12 +207,54 @@ class TestInstallService:
 
 class TestCoreRegistration:
     def test_missing_module_message(self, monkeypatch):
+        """A genuinely absent distribution names the install target."""
         from parrot.cli import cli as core_cli
 
         def _raise_import_error(name, *args, **kwargs):
-            raise ImportError(f"No module named {name!r}")
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
 
         monkeypatch.setattr(importlib, "import_module", _raise_import_error)
+
+        with pytest.raises(click.ClickException) as excinfo:
+            core_cli.get_command(None, "serve")
+
+        assert "ai-parrot-integrations[agentd]" in str(excinfo.value)
+
+    def test_inner_import_error_reports_real_cause(self, monkeypatch):
+        """An ImportError raised INSIDE an installed agentd must not be
+        blamed on the (unrelated) optional extra -- that message sent a user
+        chasing an already-installed package while the real failure was a
+        missing transitive dependency.
+        """
+        from parrot.cli import cli as core_cli
+
+        def _raise_inner(name, *args, **kwargs):
+            raise ImportError(
+                "cannot import name 'genai' from 'google' (unknown location)",
+                name="google",
+            )
+
+        monkeypatch.setattr(importlib, "import_module", _raise_inner)
+
+        with pytest.raises(click.ClickException) as excinfo:
+            core_cli.get_command(None, "serve")
+
+        message = str(excinfo.value)
+        assert "ai-parrot-integrations[agentd]" not in message
+        assert "genai" in message
+        assert "parrot.integrations.agentd.cli" in message
+
+    def test_parent_package_absence_names_extra(self, monkeypatch):
+        """ModuleNotFoundError on a PARENT package still names the extra."""
+        from parrot.cli import cli as core_cli
+
+        def _raise_parent(name, *args, **kwargs):
+            raise ModuleNotFoundError(
+                "No module named 'parrot.integrations.agentd'",
+                name="parrot.integrations.agentd",
+            )
+
+        monkeypatch.setattr(importlib, "import_module", _raise_parent)
 
         with pytest.raises(click.ClickException) as excinfo:
             core_cli.get_command(None, "serve")

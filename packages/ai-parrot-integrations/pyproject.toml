@@ -32,11 +32,17 @@ dependencies = [
 
 [project.optional-dependencies]
 # FEAT-422 — Agent CLI Daemon. Marker extra: rich/prompt_toolkit/click/
-# pydantic/pyyaml all come from ai-parrot core already; this extra exists
-# so the core CLI's missing-module error can name a concrete `pip install`
-# target. Scheduler support is via the separate optional `ai-parrot-server`
-# install (lazily imported, degrades with a warning when absent).
+# pydantic/pyyaml all come from ai-parrot core already, so this extra is
+# deliberately empty — it exists only so the core CLI's missing-DISTRIBUTION
+# error can name a concrete `pip install` target. It can never fix an
+# ImportError raised from *inside* an installed agentd (see
+# `LazyGroup._is_missing_target` in parrot/cli/__init__.py).
 agentd = []
+# Optional `schedules.*` RPC support for the daemon. Without it
+# `AgentDaemon._start_scheduler()` degrades to SCHEDULER_UNAVAILABLE (1003).
+agentd-scheduler = [
+    "ai-parrot-server[scheduler]",
+]
 slack = [
     "slack-sdk>=3.27",
     "slack-bolt>=1.18",
