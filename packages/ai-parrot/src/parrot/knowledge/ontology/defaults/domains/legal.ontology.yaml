@@ -1,0 +1,126 @@
+name: legal
+version: "1.0"
+description: >
+  Legal Norms Graph domain (FEAT-449, Sprint 1). Declares the BOE
+  (Boletin Oficial del Estado) consolidated-legislation vocabulary:
+  norma, articulo and materia entities, their provenance relations
+  (modifica, deroga, pertenece_a), and the article_in_force temporal
+  traversal pattern. Zero LLM involvement — ingestion and resolution are
+  entirely deterministic.
+
+entities:
+  Norma:
+    collection: norma
+    source: boe
+    key_field: boe_id
+    properties:
+      - boe_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical BOE identifier, e.g. BOE-A-2015-10566 (normalize_boe_id output)
+      - titulo:
+          type: string
+          description: Official title of the norm
+      - rango:
+          type: string
+          description: Legal rank of the norm (e.g. ley, real_decreto, orden)
+      - fecha_disposicion:
+          type: date
+          description: Date the norm was enacted
+      - fecha_publicacion:
+          type: date
+          description: Date the norm was published in the BOE
+      - materia_id:
+          type: string
+          description: Identifier of the materia this norm belongs to (for pertenece_a)
+
+  Articulo:
+    collection: articulo
+    source: boe
+    key_field: articulo_key
+    properties:
+      - articulo_key:
+          type: string
+          required: true
+          unique: true
+          description: Composite key '{boe_id}:{numero}' (article_key output)
+      - norma_ref:
+          type: string
+          required: true
+          description: BOE id of the parent norma
+      - numero:
+          type: string
+          required: true
+          description: Article designator as it appears in the source (e.g. '5', '5 bis')
+      - versions:
+          type: list
+          required: true
+          description: >
+            Ordered list of ArticleVersion entries (n, text, valid_from, valid_to,
+            modified_by, kind, source, derived). Shape enforced in Python by
+            BOEDataSource, not by the ontology schema (PropertyDef.type is a
+            closed Literal with no nested-model support).
+
+  Materia:
+    collection: materia
+    key_field: materia_id
+    properties:
+      - materia_id:
+          type: string
+          required: true
+          unique: true
+          description: Static taxonomy identifier for a legal materia
+      - nombre:
+          type: string
+          required: true
+          description: Display name of the materia
+
+relations:
+  modifica:
+    from: Norma
+    to: Articulo
+    edge_collection: modifica
+
+  deroga:
+    from: Norma
+    to: Norma
+    edge_collection: deroga
+
+  pertenece_a:
+    from: Norma
+    to: Materia
+    edge_collection: pertenece_a
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: materia_id
+          target_field: materia_id
+          match_type: exact
+          description: Norm-to-materia membership via materia_id field
+
+traversal_patterns:
+  article_in_force:
+    description: >
+      Resolve which wording of an article was legally in force on a given
+      date. Selection is O(1) over the embedded versions[] array, not a
+      graph traversal. Boundary semantics: valid_from is INCLUSIVE (a
+      version starts applying on its valid_from date) and valid_to is
+      EXCLUSIVE (the version stops applying on its valid_to date, when the
+      next version takes over); a null valid_to means the version is
+      currently in force. A date before the first version's valid_from
+      returns no result — never version 0 by default.
+    trigger_intents:
+      - que decia el articulo
+      - redaccion vigente
+      - article in force
+      - wording on date
+    query_template: >
+      FOR a IN @@articulo
+        FILTER a._key == @articulo_key
+        LIMIT 1
+        FOR v IN a.versions
+          FILTER v.valid_from <= @as_of
+          FILTER v.valid_to == null OR v.valid_to > @as_of
+          RETURN v
+    post_action: none

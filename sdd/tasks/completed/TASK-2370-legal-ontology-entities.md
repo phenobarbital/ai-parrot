@@ -254,10 +254,30 @@ class TestLegalOntology:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Declared `Norma`, `Articulo`, `Materia` entities and `modifica`,
+`deroga`, `pertenece_a` relations in `legal.ontology.yaml`, mirroring the
+shape of `field_services.ontology.yaml`. `Norma`/`Articulo` carry
+`source: boe`; `Materia` deliberately has no `source` (static taxonomy,
+skipped by the refresh pipeline). `Articulo.versions` declared `type: list`
+per the closed-Literal constraint on `PropertyDef`. `modifica`/`deroga` omit
+`discovery` (defaults to empty field_match rules) since edge creation for
+provenance is out of this task's scope — deferred to the parser/datasource
+tasks (TASK-2372/2373). `pertenece_a` includes a `materia_id` field-match
+discovery rule as a reasonable default. All 5 unit tests pass
+(`pytest -c pytest.ini packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py -v`).
+`ruff check` clean (one import-order autofix applied).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Environment note (not a defect in this task's deliverable): running pytest
+with a bare deep path (e.g. `pytest packages/ai-parrot/tests/knowledge/ontology/...`)
+from the worktree root mis-resolves `rootdir` to `packages/ai-parrot` because
+`packages/ai-parrot/conftest.py` and `packages/ai-parrot/pyproject.toml`
+exist as closer ini-like ancestors, which skips loading the worktree-root
+`conftest.py` that installs the Cython-extension stubs (`parrot.utils.types`)
+and prepends worktree src paths. Passing `-c pytest.ini` (or invoking from
+the worktree root with the full test suite) forces the correct rootdir and
+all tests collect and pass cleanly. This is a pre-existing worktree/pytest
+rootdir-detection quirk, unrelated to and out of scope for this task.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

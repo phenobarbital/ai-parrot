@@ -237,10 +237,37 @@ class TestBOEDataSource:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Implemented `BOEDataSource(ExtractDataSource)` with `extract()`
+and `list_fields()`. Fetches via `aiohttp` (session created directly, not
+via `async with ClientSession()`, matching the repo's mockable pattern seen
+in `Json2Transport`), delegates parsing to TASK-2372's `parse_consolidated`,
+sends an identifying `User-Agent`. Caches `ParsedNorm` per BOE id on the
+instance so the pipeline's two `extract()` calls (one for `Norma`, one for
+`Articulo`) fetch each configured norm exactly once. 9 unit tests pass, all
+network-free (`aiohttp.ClientSession` mocked via
+`unittest.mock.patch`, following the project convention in
+`packages/ai-parrot/tests/test_odoo_json2_transport.py`).
+`ruff check` clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Two design decisions not fully pinned down by the Codebase Contract,
+resolved pragmatically:
+1. **Entity routing.** `extract()` is called once per entity by the
+   pipeline with `fields=property_names`. Since `Norma`'s and `Articulo`'s
+   property sets (declared in TASK-2370's `legal.ontology.yaml`) are
+   disjoint, `_target_entity()` infers norma-vs-articulo-vs-both from
+   which field set `fields` intersects, and only that record type is
+   built/returned — this is what "design so each call returns the records
+   for the entity being refreshed" required.
+2. **`since` filter semantics.** TASK-2372's `ParsedNorm.norma` does not
+   carry BOE's `fecha_actualizacion` (last-update) field — only
+   `fecha_publicacion` — so `filters={"since": ...}` is implemented as
+   "norms published on/after that date" rather than "norms whose
+   consolidated text changed since that date". This is a documented
+   approximation, not a defect; a true `fecha_actualizacion`-based
+   incremental filter would require extending `ParsedNorm.norma`, which is
+   outside this task's file list (`parser.py`/`models.py` are TASK-2372's,
+   not TASK-2373's).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

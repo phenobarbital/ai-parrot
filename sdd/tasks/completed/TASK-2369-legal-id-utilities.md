@@ -163,10 +163,15 @@ class TestBOEIds:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-23
+**Notes**: Implemented `normalize_boe_id`, `is_valid_boe_id`, `article_key` in
+`parrot_tools/legal/ids.py` exactly as specified. All 5 unit tests pass
+(`pytest packages/ai-parrot-tools/tests/legal/test_ids.py -v`). `ruff check`
+clean. Import verified via pytest (which shadows the main-repo editable
+install with the worktree's `packages/ai-parrot-tools/src` per root
+`conftest.py`); a bare `python -c` import from the worktree resolves to the
+main-repo install and will not see this module until merged — expected
+worktree behavior, not a defect.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
