@@ -1,15 +1,15 @@
 """Unit tests for WikiIngestOrchestrator and IngestReport (TASK-1632)."""
 
+import builtins
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator, IngestReport
+import yaml
+from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
 from parrot.knowledge.wiki.models import WikiConfig
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -603,3 +603,255 @@ class TestOrchestratorTriageWiring:
         entry = source_manager.get_source(report.source_id)
         assert entry is not None
         assert entry.status == "rejected"
+
+
+@pytest.fixture
+def no_parrot_loaders(monkeypatch):
+    """Force `from parrot_loaders... import ...` to raise ImportError."""
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("parrot_loaders"):
+            raise ImportError("simulated: ai-parrot-loaders not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+class TestFrontmatterWiring:
+    """FEAT-451 (TASK-2356): page frontmatter + document metadata wiring."""
+
+    @pytest.fixture
+    def store(self, tmp_path: Path):
+        from parrot.knowledge.wiki.store import WikiStore
+
+        return WikiStore(tmp_path / "wiki-frontmatter.db", wiki_name="test-wiki")
+
+    @pytest.fixture
+    def store_orchestrator(
+        self, mock_pi, mock_gi, source_manager, bookkeeper, store
+    ) -> WikiIngestOrchestrator:
+        return WikiIngestOrchestrator(
+            mock_pi, mock_gi, source_manager, bookkeeper, store=store
+        )
+
+    @staticmethod
+    async def _page_bodies(store, node_ids):
+        bodies = []
+        for nid in node_ids:
+            page = await store.get_page(nid)
+            assert page is not None
+            bodies.append(page["body"])
+        return bodies
+
+    @pytest.mark.asyncio
+    async def test_pages_carry_frontmatter(
+        self, store_orchestrator, store, sample_source, wiki_config
+    ):
+        """Also exercises the fallback (``node is None``) branch: ``mock_pi``
+        has no ``get_tree`` configured, so ``_build_page_records`` can never
+        resolve a node and every record goes through that branch."""
+        triage = _make_triage_entry(
+            proposed_action="admit", decision_source="model", composite=0.8
+        )
+        report = await store_orchestrator.ingest(
+            str(sample_source), wiki_config, triage=triage, charter_version="1.2.0"
+        )
+        assert report.status == "ok"
+
+        page = await store.get_page("0001")
+        assert page is not None
+        body = page["body"]
+        assert body.startswith("---\n")
+        block = body.split("---\n", 2)[1]
+        parsed = yaml.safe_load(block)
+        assert parsed["triage"]["charter_version"] == "1.2.0"
+        assert parsed["triage"]["composite_score"] == pytest.approx(triage.composite)
+        assert parsed["triage"]["decision"] == (
+            triage.decision or triage.proposed_action
+        )
+
+    @pytest.mark.asyncio
+    async def test_all_pages_identical_frontmatter(
+        self, store_orchestrator, store, sample_source, wiki_config
+    ):
+        triage = _make_triage_entry(proposed_action="admit")
+        await store_orchestrator.ingest(
+            str(sample_source), wiki_config, triage=triage, charter_version="1"
+        )
+        bodies = await self._page_bodies(store, ["0001", "0002", "0003"])
+        blocks = [b.split("---\n", 2)[1] for b in bodies]
+        assert len(set(blocks)) == 1
+
+    @pytest.mark.asyncio
+    async def test_fallback_branch_gets_frontmatter(self, orchestrator):
+        """``node is None`` branch (unresolvable tree/node) must be
+        prefixed with frontmatter — checked directly against
+        ``_build_page_records`` so it cannot be confused with the
+        resolved-node branch below."""
+        records = await orchestrator._build_page_records(
+            "test-wiki",
+            ["n1"],
+            source_id="src-1",
+            fallback_title="FT",
+            fallback_summary="FS",
+            frontmatter="---\ntitle: X\n---\n\n",
+        )
+        assert len(records) == 1
+        assert records[0].body.startswith("---\ntitle: X\n---\n\n")
+
+    @pytest.mark.asyncio
+    async def test_resolved_node_branch_gets_frontmatter(self, orchestrator, mock_pi):
+        """The resolved-node branch (a real tree/node found) must ALSO be
+        prefixed — the fallback branch is not the only construction site."""
+        mock_pi.get_tree = AsyncMock(
+            return_value={
+                "structure": {
+                    "node_id": "root",
+                    "child_nodes": [
+                        {
+                            "node_id": "0001",
+                            "concept_id": "c-0001",
+                            "title": "T",
+                            "summary": "S",
+                            "category": "concept",
+                        }
+                    ],
+                }
+            }
+        )
+        records = await orchestrator._build_page_records(
+            "test-wiki",
+            ["0001"],
+            source_id="src-1",
+            fallback_title="FT",
+            fallback_summary="FS",
+            frontmatter="---\ntitle: X\n---\n\n",
+        )
+        assert len(records) == 1
+        assert records[0].body.startswith("---\ntitle: X\n---\n\n")
+
+    @pytest.mark.asyncio
+    async def test_token_count_includes_frontmatter(
+        self, store_orchestrator, store, sample_source, wiki_config
+    ):
+        from parrot.knowledge.wiki.store import estimate_tokens
+
+        triage = _make_triage_entry(proposed_action="admit")
+        await store_orchestrator.ingest(
+            str(sample_source), wiki_config, triage=triage, charter_version="1"
+        )
+        page = await store.get_page("0001")
+        assert page is not None
+        assert page["token_count"] == estimate_tokens(page["body"])
+
+    @pytest.mark.asyncio
+    async def test_legacy_path_emits_no_frontmatter(
+        self, store_orchestrator, store, sample_source, wiki_config
+    ):
+        """``triage=None`` -> build/upsert path -> byte-identical, no frontmatter."""
+        report = await store_orchestrator.ingest(str(sample_source), wiki_config)
+        assert report.status == "ok"
+        page = await store.get_page("0001")
+        assert page is not None
+        assert not page["body"].startswith("---\n")
+
+    @pytest.mark.asyncio
+    async def test_metadata_persisted(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        triage = _make_triage_entry(proposed_action="admit")
+        report = await orchestrator.ingest(
+            str(sample_source), wiki_config, triage=triage, charter_version="1.2.0"
+        )
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        assert entry.doc_metadata is not None
+        assert entry.content_type is not None
+        assert entry.loader == "plaintext"
+
+    @pytest.mark.asyncio
+    async def test_acquisition_error_propagates(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        wiki_config: WikiConfig,
+        tmp_path: Path,
+        no_parrot_loaders,
+    ):
+        from parrot.knowledge.wiki.documents import DocumentAcquisitionError
+
+        p = tmp_path / "undecodable.pdf"
+        p.write_bytes(b"%PDF-1.4\n\x00\x01binary")
+        with pytest.raises(DocumentAcquisitionError):
+            await orchestrator.ingest(str(p), wiki_config)
+
+    @pytest.mark.asyncio
+    async def test_discard_creates_nothing(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        mock_pi,
+        source_manager: SourceCollectionManager,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+    ):
+        """The discard path pre-dates this task and is untouched: no
+        acquisition, no frontmatter, no doc_metadata persisted."""
+        triage = _make_triage_entry(proposed_action="discard")
+        report = await orchestrator.ingest(
+            str(sample_source), wiki_config, triage=triage
+        )
+        assert report.pages_created == 0
+        mock_pi.insert_content.assert_not_called()
+
+        entry = source_manager.get_source(report.source_id)
+        assert entry is not None
+        assert entry.status == "rejected"
+        assert entry.doc_metadata is None
+
+    @pytest.mark.asyncio
+    async def test_acquired_reused_not_reacquired(
+        self,
+        orchestrator: WikiIngestOrchestrator,
+        sample_source: Path,
+        wiki_config: WikiConfig,
+        monkeypatch,
+    ):
+        """``ingest(acquired=...)`` must not re-acquire through
+        DocumentAcquirer — the whole point is to keep the triaged and
+        ingested text in agreement without a second extraction pass."""
+        import parrot.knowledge.wiki.ingest as ingest_module
+        from parrot.knowledge.wiki.documents import (
+            AcquiredDocument,
+            DocumentMetadata,
+            DocumentRef,
+        )
+
+        called = {"count": 0}
+
+        class _BoomAcquirer:
+            async def acquire(self, ref):
+                called["count"] += 1
+                raise AssertionError(
+                    "should not re-acquire when `acquired` is given"
+                )
+
+        monkeypatch.setattr(ingest_module, "DocumentAcquirer", _BoomAcquirer)
+
+        pre_acquired = AcquiredDocument(
+            ref=DocumentRef(uri=str(sample_source), suffix=".md"),
+            text=sample_source.read_text(),
+            metadata=DocumentMetadata(loader="plaintext"),
+        )
+        triage = _make_triage_entry(proposed_action="admit")
+        report = await orchestrator.ingest(
+            str(sample_source),
+            wiki_config,
+            triage=triage,
+            acquired=pre_acquired,
+        )
+        assert report.status == "ok"
+        assert called["count"] == 0

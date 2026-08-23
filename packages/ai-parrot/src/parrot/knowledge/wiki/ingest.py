@@ -53,6 +53,14 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+from parrot.knowledge.wiki.documents import (
+    AcquiredDocument,
+    DocumentAcquirer,
+    DocumentAcquisitionError,
+    DocumentRef,
+    TriageProvenance,
+    render_frontmatter,
+)
 from parrot.knowledge.wiki.models import WikiConfig, WikiPageCategory
 from parrot.knowledge.wiki.review import ManifestDocEntry
 from parrot.knowledge.wiki.sources import (
@@ -78,6 +86,36 @@ _DESTINATION_TO_SOURCES_COLUMN: dict[str, str] = {
     "archive": "archive",
     "discard": "discard",
 }
+
+
+def _provenance_from(
+    triage: Optional[ManifestDocEntry], charter_version: Optional[str]
+) -> Optional[TriageProvenance]:
+    """Build a FEAT-451 :class:`TriageProvenance` from a triage decision.
+
+    Args:
+        triage: The supervised-ingestion triage decision, or ``None`` on
+            the legacy `wikitoolkit build`/`upsert` path.
+        charter_version: Editorial charter version the decision was made
+            against.
+
+    Returns:
+        ``None`` when ``triage`` is ``None`` (legacy path — no triage
+        block is ever rendered). Otherwise a populated
+        :class:`TriageProvenance`, mapping ``ManifestDocEntry.composite``
+        (NOT ``composite_score`` — that name only exists on
+        ``SourceManifestEntry``/``TriageProvenance`` themselves) onto
+        ``composite_score``, and ``triage.decision or
+        triage.proposed_action`` onto ``decision``.
+    """
+    if triage is None:
+        return None
+    return TriageProvenance(
+        composite_score=triage.composite,
+        decision=triage.decision or triage.proposed_action,
+        decision_source=triage.decision_source,
+        charter_version=charter_version,
+    )
 
 
 class IngestReport(BaseModel):
@@ -165,6 +203,7 @@ class WikiIngestOrchestrator:
         *,
         triage: Optional[ManifestDocEntry] = None,
         charter_version: Optional[str] = None,
+        acquired: Optional[AcquiredDocument] = None,
     ) -> IngestReport:
         """Run the full ingest pipeline for a single source file.
 
@@ -215,9 +254,31 @@ class WikiIngestOrchestrator:
                 only recorded once per manifest run header — so the
                 caller that has the run header passes it here). Ignored
                 when ``triage`` is ``None``.
+            acquired: FEAT-451 — an already-acquired
+                :class:`~parrot.knowledge.wiki.documents.AcquiredDocument`
+                (typically the triage lane's own acquisition result).
+                When given, ``ingest()`` reuses it instead of re-acquiring
+                the source through :class:`DocumentAcquirer` — so the
+                triaged text and the ingested text always agree. When
+                ``None`` (the default), the source is acquired
+                internally. On the supervised path (``triage`` given),
+                the acquired document's metadata is persisted onto the
+                source manifest and rendered as YAML frontmatter on every
+                generated page; on the legacy path (``triage=None``, the
+                `wikitoolkit build`/`upsert` callers), no frontmatter is
+                ever emitted, keeping that output byte-identical to
+                pre-FEAT-451 behavior.
 
         Returns:
             An :class:`IngestReport` describing what was created/updated.
+
+        Raises:
+            DocumentAcquisitionError: When ``acquired`` is not given and
+                the source cannot be decoded/extracted (FEAT-451). This
+                propagates out of ``ingest()`` rather than degrading to
+                an ``IngestReport(status="error")`` — callers must
+                explicitly decide to skip an undecodable document, never
+                triage or ingest mojibake.
         """
         t0 = time.monotonic()
         source_path_obj = Path(source_path).resolve()
@@ -275,9 +336,19 @@ class WikiIngestOrchestrator:
                 return self._error_report(source_id, source_uri, t0, str(exc))
             source_id = entry.source_id
 
-        # Step 2 — load content (offloaded to thread to avoid blocking the loop)
+        # Step 2 — acquire content (FEAT-451: loader-backed, not a raw
+        # read_text()). Reuse the caller's already-acquired document when
+        # given (the triage lane's own result) so triaged and ingested
+        # text always agree; otherwise acquire internally via
+        # DocumentAcquirer. DocumentAcquisitionError propagates out of
+        # ingest() — never silently degrade to an error report, that
+        # would recreate the mojibake bug this feature fixes.
         try:
-            content = await self._load_source(source_path_obj)
+            if acquired is None:
+                acquired = await self._load_source(source_path_obj)
+            content = acquired.text
+        except DocumentAcquisitionError:
+            raise
         except Exception as exc:  # noqa: BLE001
             return self._error_report(source_id, source_uri, t0, str(exc))
 
@@ -296,6 +367,17 @@ class WikiIngestOrchestrator:
             if effective_destination == "archive"
             else None
         )
+
+        # FEAT-451: page frontmatter is a supervised-ingestion-only
+        # enhancement — the legacy (triage=None) build/upsert path emits
+        # NO frontmatter at all, keeping its output byte-identical to
+        # pre-FEAT-451 behavior. Computed once, outside the per-page loop
+        # in _build_page_records, so every page from this source carries
+        # an identical frontmatter block (resolved spec §8).
+        frontmatter = ""
+        if triage is not None:
+            provenance = _provenance_from(triage, charter_version)
+            frontmatter = render_frontmatter(acquired.metadata, provenance)
 
         try:
             pi_result = await self._create_wiki_pages(content, tree_name, hint=hint)
@@ -322,6 +404,7 @@ class WikiIngestOrchestrator:
                         pi_result.get("summary") or content[:500]
                     ),
                     category_override=category_override,
+                    frontmatter=frontmatter,
                 )
                 edges = [
                     (r.concept_id, source_id, "summarizes") for r in records
@@ -375,6 +458,17 @@ class WikiIngestOrchestrator:
                     charter_version=charter_version,
                     composite_score=triage.composite,
                     pages_generated=page_ids,
+                )
+                # FEAT-451: persist extracted document metadata alongside
+                # the triage decision — admit/archive only (discard never
+                # reaches this branch, it short-circuits via
+                # _record_discard before Step 1).
+                await asyncio.to_thread(
+                    self._sources.record_document_metadata,
+                    decision_entry.source_id,
+                    doc_metadata=acquired.metadata.model_dump(),
+                    content_type=acquired.metadata.content_type,
+                    loader=acquired.metadata.loader,
                 )
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning("Manifest update failed: %s", exc)
@@ -663,23 +757,35 @@ class WikiIngestOrchestrator:
     # Private pipeline steps
     # ------------------------------------------------------------------
 
-    async def _load_source(self, path: Path) -> str:
-        """Read the raw source content from disk without blocking the event loop.
+    async def _load_source(self, path: Path) -> AcquiredDocument:
+        """Acquire the source document's text and metadata (FEAT-451).
 
-        Delegates the file read to a thread pool via ``asyncio.to_thread`` so
-        that large source files do not stall other concurrent tasks.
+        Delegates to :class:`DocumentAcquirer`, which routes plain-text
+        extensions (``PLAIN_TEXT_EXTENSIONS``) through a direct read and
+        everything else (PDF, DOCX, PPTX, XLSX, HTML, EPUB, ...) through
+        the loader layer — replacing the previous
+        ``path.read_text(encoding="utf-8")`` call, which corrupted binary
+        documents into mojibake instead of rejecting them. Builds the
+        :class:`~parrot.knowledge.wiki.documents.DocumentRef` the
+        acquirer needs from ``path``; this method is only ever called
+        with a local file path (``is_url=False``) — URL sources are
+        acquired by the caller (the CLI, TASK-2357) and passed in via
+        :meth:`ingest`'s ``acquired`` parameter instead.
 
         Args:
             path: Absolute path to the source file.
 
         Returns:
-            File contents as a UTF-8 string.
+            The extracted :class:`AcquiredDocument` (text + metadata).
 
         Raises:
-            FileNotFoundError: If the file does not exist.
-            OSError: On read errors.
+            DocumentAcquisitionError: When the document cannot be decoded
+                or extracted. Callers MUST let this propagate — never
+                triage or ingest undecodable content as if it were real
+                text (the bug this feature fixes).
         """
-        return await asyncio.to_thread(path.read_text, encoding="utf-8")
+        ref = DocumentRef(uri=str(path), suffix=path.suffix.lower())
+        return await DocumentAcquirer().acquire(ref)
 
     async def _create_wiki_pages(
         self,
@@ -714,6 +820,7 @@ class WikiIngestOrchestrator:
         fallback_title: str = "",
         fallback_summary: str = "",
         category_override: Optional[str] = None,
+        frontmatter: str = "",
     ) -> list[WikiPageRecord]:
         """Build :class:`WikiPageRecord` rows for freshly inserted nodes.
 
@@ -735,6 +842,15 @@ class WikiIngestOrchestrator:
                 ``category`` to this value regardless of what the
                 PageIndex tree reports. ``None`` preserves legacy
                 category resolution.
+            frontmatter: FEAT-451 — a pre-rendered YAML frontmatter block
+                (see ``render_frontmatter``) prefixed onto every record's
+                ``body`` — in BOTH branches below — before
+                ``token_count`` is computed, so it reflects what is
+                actually stored. ``""`` (the default, and always the
+                value on the legacy ``triage=None`` path) preserves
+                byte-identical pre-FEAT-451 output. Every page derived
+                from one source gets the identical block — compute it
+                once, outside this loop.
 
         Returns:
             One record per node id.
@@ -764,14 +880,20 @@ class WikiIngestOrchestrator:
                 node = self._find_node(tree, nid)
 
             if node is None:
-                record_kwargs: dict[str, Any] = dict(
-                    concept_id=nid,
-                    node_id=nid,
-                    title=fallback_title or nid,
-                    summary=fallback_summary,
-                    source_id=source_id,
-                    token_count=estimate_tokens(fallback_summary),
-                )
+                # FEAT-451: this fallback branch never had real body
+                # content (it defaulted to WikiPageRecord.body=""); the
+                # frontmatter, when present, becomes the entire body.
+                fallback_body = frontmatter
+                record_kwargs: dict[str, Any] = {
+                    "concept_id": nid,
+                    "node_id": nid,
+                    "title": fallback_title or nid,
+                    "summary": fallback_summary,
+                    "source_id": source_id,
+                    "token_count": estimate_tokens(fallback_body or fallback_summary),
+                }
+                if fallback_body:
+                    record_kwargs["body"] = fallback_body
                 if category_override is not None:
                     record_kwargs["category"] = category_override
                 records.append(WikiPageRecord(**record_kwargs))
@@ -779,6 +901,8 @@ class WikiIngestOrchestrator:
 
             concept_id = str(node.get("concept_id") or nid)
             body = self._load_body(loader, concept_id, nid)
+            if frontmatter:
+                body = frontmatter + body
             summary = str(node.get("summary") or fallback_summary)
             category = (
                 category_override
