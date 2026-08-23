@@ -19,6 +19,7 @@ import pytest
 
 from parrot.knowledge.wiki.store import (
     BaseWikiStore,
+    SQLiteWikiStore,
     WikiPageRecord,
     create_wiki_store,
     estimate_tokens,
@@ -584,3 +585,135 @@ class TestReadOnlyFallback:
         finally:
             tmp_path.chmod(0o755)
             (tmp_path / "wiki.db").chmod(0o644)
+
+
+class TestExplicitReadOnlyMode:
+    """FEAT-450 — ``SQLiteWikiStore(read_only=True)`` never mutates a plane.
+
+    A federated namespace points at *another project's* ``wiki.db``.
+    Reading it must not create sidecars, replay the schema, or run
+    column migrations, and every write must be refused up front.
+    """
+
+    @pytest.fixture()
+    async def built_plane(self, tmp_path: Path) -> Path:
+        """A populated, cleanly checkpointed plane (no -wal/-shm)."""
+        store = create_wiki_store(tmp_path, wiki_name="foreign", backend="sqlite")
+        await store.upsert_pages(
+            [_page("ro-1", body="# doc\n\nneedle haystack content")]
+        )
+        async with aiosqlite.connect(str(tmp_path / "wiki.db")) as conn:
+            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            await conn.commit()
+        (tmp_path / "wiki.db-wal").unlink(missing_ok=True)
+        (tmp_path / "wiki.db-shm").unlink(missing_ok=True)
+        return tmp_path
+
+    @pytest.mark.asyncio
+    async def test_reads_work_read_only(self, built_plane: Path):
+        store = SQLiteWikiStore(built_plane / "wiki.db", read_only=True)
+        assert store.read_only is True
+        page = await store.get_page("ro-1")
+        assert page is not None and "needle" in page["body"]
+        hits = await store.search_fts("needle", limit=5)
+        assert [h["concept_id"] for h in hits] == ["ro-1"]
+        stats = await store.stats()
+        assert stats["pages"] == 1
+
+    @pytest.mark.asyncio
+    async def test_no_sidecars_created(self, built_plane: Path):
+        store = SQLiteWikiStore(built_plane / "wiki.db", read_only=True)
+        await store.search_fts("needle", limit=5)
+        assert not (built_plane / "wiki.db-wal").exists()
+        assert not (built_plane / "wiki.db-shm").exists()
+
+    @pytest.mark.asyncio
+    async def test_never_migrates_a_stale_schema(self, built_plane: Path):
+        """A plane missing a post-schema column is left exactly as found."""
+        db = built_plane / "wiki.db"
+        async with aiosqlite.connect(str(db)) as conn:
+            await conn.execute("ALTER TABLE pages DROP COLUMN asserted_by")
+            await conn.commit()
+            await conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            await conn.commit()
+        (db.parent / "wiki.db-wal").unlink(missing_ok=True)
+        (db.parent / "wiki.db-shm").unlink(missing_ok=True)
+
+        def columns() -> set[str]:
+            with sqlite3.connect(str(db)) as conn:
+                return {
+                    row[1] for row in conn.execute("PRAGMA table_info(pages)")
+                }
+
+        before = columns()
+        assert "asserted_by" not in before
+
+        store = SQLiteWikiStore(db, read_only=True)
+        # A query that does not need the dropped column still works...
+        assert (await store.stats())["pages"] == 1
+        # ...and the schema is exactly as it was found.
+        assert columns() == before
+
+        # The writable store, by contrast, migrates it back.
+        writable = SQLiteWikiStore(db)
+        assert await writable.get_page("ro-1") is not None
+        assert "asserted_by" in columns()
+
+    @pytest.mark.asyncio
+    async def test_writes_are_refused(self, built_plane: Path):
+        store = SQLiteWikiStore(built_plane / "wiki.db", read_only=True)
+        with pytest.raises(PermissionError):
+            await store.upsert_pages([_page("nope")])
+        with pytest.raises(PermissionError):
+            await store.add_edges([("ro-1", "ro-2", "references")])
+        with pytest.raises(PermissionError):
+            await store.replace_source_slice("src", [_page("nope")])
+        with pytest.raises(PermissionError):
+            await store.delete_page("ro-1")
+        with pytest.raises(PermissionError):
+            await store.upsert_embedding("ro-1", [0.1, 0.2])
+        with pytest.raises(PermissionError):
+            await store.rebuild_from_tree({"structure": []})
+        assert (await store.stats())["pages"] == 1
+
+    def test_unbuilt_plane_raises_at_open(self, tmp_path: Path):
+        with pytest.raises(FileNotFoundError):
+            SQLiteWikiStore(tmp_path / "missing" / "wiki.db", read_only=True)
+        # ... and the read-only open never creates the directory.
+        assert not (tmp_path / "missing").exists()
+
+    def test_writable_default_is_unchanged(self, tmp_path: Path):
+        store = SQLiteWikiStore(tmp_path / "new" / "wiki.db")
+        assert store.read_only is False
+        assert (tmp_path / "new").is_dir()
+
+
+class TestReadOnlyConcurrencySafety:
+    """E1 — ``immutable=1`` is only used while the plane really is quiescent."""
+
+    @pytest.mark.asyncio
+    async def test_live_wal_takes_the_locking_ladder(self, tmp_path: Path):
+        """A writer's committed data must be visible, not snapshotted away."""
+        writer = create_wiki_store(tmp_path, wiki_name="w", backend="sqlite")
+        await writer.upsert_pages([_page("p1", body="first content")])
+
+        db = tmp_path / "wiki.db"
+        # Simulate a live writer: a non-empty -wal beside the plane.
+        wal = db.with_name(db.name + "-wal")
+        wal.write_bytes(b"\x00" * 64)
+        try:
+            store = SQLiteWikiStore(db, read_only=True)
+            assert store._sidecars_quiescent() is False
+            page = await store.get_page("p1")
+            assert page is not None and "first" in page["body"]
+        finally:
+            wal.unlink(missing_ok=True)
+
+    def test_sidecars_quiescent_fails_closed(self, tmp_path: Path):
+        db = tmp_path / "wiki.db"
+        db.write_bytes(b"")
+        store = SQLiteWikiStore(db, read_only=True)
+        assert store._sidecars_quiescent() is True
+        journal = db.with_name(db.name + "-journal")
+        journal.write_bytes(b"\x01")
+        assert store._sidecars_quiescent() is False

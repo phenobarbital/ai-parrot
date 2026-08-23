@@ -83,6 +83,19 @@ _AC_FALLBACK_TYPES = frozenset({
     FieldType.REST,
     # FEAT-300 — formula fields (evaluator is FEAT-301)
     FieldType.FORMULA,
+    # FEAT-448 (TASK-2337) — no Adaptive Card element represents a
+    # hierarchical tree, a signature capture, a structured card object, a
+    # (multi-)file uploader or an unconstrained third-party payload;
+    # credit_card is additionally never rendered as an editable widget
+    # (spec §4) — text-placeholder fallback for all seven, same posture as
+    # SIGNATURE/REST above.
+    FieldType.TREE_SELECT,
+    FieldType.SIGNATURE_PAD,
+    FieldType.CREDIT_CARD,
+    FieldType.IMAGE_DROPZONE,
+    FieldType.MULTI_UPLOAD,
+    FieldType.AI_CAPTURE,
+    FieldType.PLACE,
 })
 
 
@@ -691,8 +704,15 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         ft = field.field_type
 
+        # FEAT-448 (TASK-2337) — SEARCH/MASKED/COLOR_PICKER/EMOJI/CRON are
+        # plain scalar strings; native Input.Text is a recorded choice, the
+        # same posture as TEXT/COLOR above (no dedicated Adaptive Card
+        # element exists for search, masking, color-swatch, emoji-picker or
+        # cron-builder UI).
         if ft in (FieldType.TEXT, FieldType.EMAIL, FieldType.URL, FieldType.PHONE,
-                  FieldType.COLOR, FieldType.HIDDEN, FieldType.PASSWORD):
+                  FieldType.COLOR, FieldType.HIDDEN, FieldType.PASSWORD,
+                  FieldType.SEARCH, FieldType.MASKED, FieldType.COLOR_PICKER,
+                  FieldType.EMOJI, FieldType.CRON):
             elem: dict[str, Any] = {
                 **base,
                 "type": "Input.Text",

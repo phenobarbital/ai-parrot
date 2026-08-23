@@ -51,6 +51,7 @@ class WikiCombinedSearch:
         default_weights: Optional[dict[str, float]] = None,
         store: Optional[BaseWikiStore] = None,
         embedder: Optional[Callable[[str], Awaitable[list[float]]]] = None,
+        normalize_store_rows: bool = True,
     ) -> None:
         """Initialise combined search.
 
@@ -71,6 +72,11 @@ class WikiCombinedSearch:
         self._pi = pageindex_toolkit
         self._gi = graphindex_toolkit
         self._store = store
+        #: Whether store rows still need min-max normalising here.
+        #: A federated store has ALREADY normalised each namespace and
+        #: applied its weight; a second global pass would re-stretch the
+        #: merged rows and erase those weights (FEAT-450 review).
+        self._normalize_store_rows = normalize_store_rows
         self._embedder = embedder
         self._weights: dict[str, float] = default_weights or {
             "pageindex": 0.6,
@@ -187,7 +193,7 @@ class WikiCombinedSearch:
                     rows = rows + archived_rows
                 lexical_results = [
                     self._store_row_to_wiki(r, source="lexical")
-                    for r in self._normalize_rows(rows)
+                    for r in self._maybe_normalize(rows)
                 ]
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning("WikiStore FTS search failed: %s", exc)
@@ -199,7 +205,7 @@ class WikiCombinedSearch:
                 rows = await self._store.search_vector(embedding, limit=top_k)
                 vector_results = [
                     self._store_row_to_wiki(r, source="vector")
-                    for r in self._normalize_rows(rows)
+                    for r in self._maybe_normalize(rows)
                 ]
                 if not include_archived:
                     # search_vector has no category filter at all (it
@@ -224,6 +230,12 @@ class WikiCombinedSearch:
             [(lexical_results, lex_weight), (vector_results, vec_weight)]
         )
         return merged[:top_k]
+
+    def _maybe_normalize(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Min-max the rows unless the store already ranked them."""
+        if not self._normalize_store_rows:
+            return rows
+        return self._normalize_rows(rows)
 
     @staticmethod
     def _normalize_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

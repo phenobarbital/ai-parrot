@@ -72,6 +72,12 @@ _EXPORT_MODULES: dict[str, str] = {
     # Context packing
     "PackedContext": "parrot.knowledge.wiki.context",
     "pack_results": "parrot.knowledge.wiki.context",
+    # Federation (FEAT-450 — multi-wiki namespaces)
+    "FederatedWikiStore": "parrot.knowledge.wiki.federation",
+    "NamespaceHandle": "parrot.knowledge.wiki.federation",
+    "NamespaceSkip": "parrot.knowledge.wiki.federation",
+    "resolve_namespaces": "parrot.knowledge.wiki.federation",
+    "open_namespace_store": "parrot.knowledge.wiki.federation",
     # Crew/flow execution recording (FEAT: execution wiki)
     "ExecutionWikiRecorder": "parrot.knowledge.wiki.execution",
 }

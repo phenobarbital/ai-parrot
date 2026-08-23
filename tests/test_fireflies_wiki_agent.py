@@ -7,6 +7,7 @@ path rather than as a package module — same situation as
 No network, no real LLM, no real vault: the Fireflies/Obsidian/wiki seams
 are all injected as mocks onto an instance built without ``__init__``.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -17,6 +18,8 @@ from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from parrot.integrations.telegram.context import telegram_chat_scope
+from parrot.integrations.telegram.decorators import discover_telegram_commands
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENT_PATH = REPO_ROOT / "agents" / "fireflies_wiki.py"
@@ -35,9 +38,7 @@ def _load_agent_module():
     """
     if "fireflies_wiki_agent_under_test" in sys.modules:
         return sys.modules["fireflies_wiki_agent_under_test"]
-    spec = importlib.util.spec_from_file_location(
-        "fireflies_wiki_agent_under_test", AGENT_PATH
-    )
+    spec = importlib.util.spec_from_file_location("fireflies_wiki_agent_under_test", AGENT_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules["fireflies_wiki_agent_under_test"] = module
     spec.loader.exec_module(module)
@@ -51,23 +52,36 @@ def agent_module():
 
 
 @pytest.fixture
-def agent(agent_module):
+def agent(agent_module, tmp_path):
     """A FirefliesWikiAgent with every external seam mocked.
 
     Built via ``__new__`` so no LLM client, MCP server, or vault is touched.
+    ``vault_path`` points at a real temp directory with a ``meetings/``
+    subfolder present, so the G6 scoping check in
+    ``_ingest_vault_into_wiki`` (TASK-2378) finds it by default.
     """
     cls = agent_module.FirefliesWikiAgent
     inst = cls.__new__(cls)
 
+    vault_root = tmp_path / "vault"
+    (vault_root / "meetings").mkdir(parents=True)
+
     inst.name = "FirefliesWikiTest"
     inst.logger = MagicMock()
     inst.meetings_folder = "meetings"
-    inst.vault_path = Path("/tmp/vault")
+    inst.vault_path = vault_root
     inst.wiki_name = "meetings"
     inst.wiki_storage_dir = Path("/tmp/wiki")
     inst.daily_recipients = ["daily@example.com"]
     inst.weekly_recipients = ["weekly@example.com"]
     inst._wiki = None
+
+    inst.notes_wiki_name = "notes"
+    inst.notes_wiki_storage_dir = tmp_path / "wiki-notes"
+    inst.notes_folder = "audio-notes"
+    inst._notes_wiki = None
+    inst._capture_toolkit = None
+    inst._note_mode = {}
 
     inst.obsidian_toolkit = MagicMock()
     inst.obsidian_toolkit.read_note = AsyncMock(return_value={"content": ""})
@@ -100,6 +114,7 @@ def _note(analysis: str | None) -> Dict[str, Any]:
 # _notes_in_window
 # ---------------------------------------------------------------------------
 
+
 class TestNotesInWindow:
     """Date-prefix windowing over meeting note titles."""
 
@@ -122,9 +137,7 @@ class TestNotesInWindow:
     @pytest.mark.asyncio
     async def test_window_boundary_is_inclusive(self, agent):
         """A note dated exactly `days` ago is inside the window."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"2026-08-16-retro", "2026-08-15-too-old"}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-16-retro", "2026-08-15-too-old"})
         now = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
 
         result = await agent._notes_in_window(7, now=now)
@@ -134,9 +147,7 @@ class TestNotesInWindow:
     @pytest.mark.asyncio
     async def test_ignores_titles_without_date_prefix(self, agent):
         """Malformed titles are skipped, not raised on."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"README", "notes-about-things", "2026-08-23-ok"}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"README", "notes-about-things", "2026-08-23-ok"})
         now = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
 
         result = await agent._notes_in_window(1, now=now)
@@ -153,23 +164,15 @@ class TestNotesInWindow:
         """
         from zoneinfo import ZoneInfo
 
-        monkeypatch.setattr(
-            agent_module, "_schedule_tzinfo", lambda: ZoneInfo("Asia/Tokyo")
-        )
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"2026-08-23-tokyo-standup"}
-        )
+        monkeypatch.setattr(agent_module, "_schedule_tzinfo", lambda: ZoneInfo("Asia/Tokyo"))
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-23-tokyo-standup"})
 
         # 2026-08-23 08:00 Tokyo == 2026-08-22 23:00 UTC.
         result = await agent._notes_in_window(0)
 
         # Only correct if "today" is resolved in Tokyo, not UTC.
         tokyo_today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
-        expected = (
-            ["2026-08-23-tokyo-standup"]
-            if tokyo_today.isoformat() == "2026-08-23"
-            else []
-        )
+        expected = ["2026-08-23-tokyo-standup"] if tokyo_today.isoformat() == "2026-08-23" else []
         assert result == expected
 
     def test_unknown_timezone_falls_back_to_utc(self, agent_module):
@@ -184,9 +187,7 @@ class TestNotesInWindow:
     @pytest.mark.asyncio
     async def test_future_dated_notes_excluded(self, agent):
         """A note dated after the reference date is outside the window."""
-        agent._get_existing_meeting_titles = AsyncMock(
-            return_value={"2026-08-25-future", "2026-08-23-today"}
-        )
+        agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-25-future", "2026-08-23-today"})
         now = datetime(2026, 8, 23, 9, 0, tzinfo=timezone.utc)
 
         result = await agent._notes_in_window(1, now=now)
@@ -198,6 +199,7 @@ class TestNotesInWindow:
 # _collect_analyses
 # ---------------------------------------------------------------------------
 
+
 class TestCollectAnalyses:
     """Extraction of the generated Analysis section from notes."""
 
@@ -205,9 +207,7 @@ class TestCollectAnalyses:
     async def test_extracts_only_the_analysis_block(self, agent):
         """The raw transcript is excluded; only the Analysis text is kept."""
         agent.ANALYSIS_HEADING = ANALYSIS_HEADING
-        agent.obsidian_toolkit.read_note = AsyncMock(
-            return_value=_note("Summary of the meeting.")
-        )
+        agent.obsidian_toolkit.read_note = AsyncMock(return_value=_note("Summary of the meeting."))
 
         result = await agent._collect_analyses(["2026-08-23-standup"])
 
@@ -238,9 +238,7 @@ class TestCollectAnalyses:
 
         agent.obsidian_toolkit.read_note = AsyncMock(side_effect=_read)
 
-        result = await agent._collect_analyses(
-            ["2026-08-23-broken", "2026-08-23-fine"]
-        )
+        result = await agent._collect_analyses(["2026-08-23-broken", "2026-08-23-fine"])
 
         assert [entry["note"] for entry in result] == ["2026-08-23-fine"]
 
@@ -248,6 +246,7 @@ class TestCollectAnalyses:
 # ---------------------------------------------------------------------------
 # sync_meetings_to_wiki
 # ---------------------------------------------------------------------------
+
 
 class TestSyncMeetingsToWiki:
     """The 07:00 job: sync -> summarize -> wiki ingest."""
@@ -258,17 +257,14 @@ class TestSyncMeetingsToWiki:
         calls: List[str] = []
 
         agent.sync_fireflies_transcripts = AsyncMock(
-            side_effect=lambda **_: calls.append("sync")
-            or {"status": "ok", "synced": 1, "notes": [], "errors": []}
+            side_effect=lambda **_: calls.append("sync") or {"status": "ok", "synced": 1, "notes": [], "errors": []}
         )
         agent.summarize_pending_transcripts = AsyncMock(
             side_effect=lambda **_: calls.append("summarize")
             or {"status": "ok", "analyzed": [], "skipped": [], "errors": []}
         )
         wiki = MagicMock()
-        wiki.ingest_obsidian_vault = AsyncMock(
-            side_effect=lambda *a, **k: calls.append("ingest") or {"raw_ingest": {}}
-        )
+        wiki.ingest_obsidian_vault = AsyncMock(side_effect=lambda *a, **k: calls.append("ingest") or {"raw_ingest": {}})
         agent._wiki = wiki
 
         report = await agent.sync_meetings_to_wiki()
@@ -317,9 +313,7 @@ class TestSyncMeetingsToWiki:
     @pytest.mark.asyncio
     async def test_never_raises(self, agent):
         """A failing sync step is captured in the report, not raised."""
-        agent.sync_fireflies_transcripts = AsyncMock(
-            side_effect=RuntimeError("fireflies down")
-        )
+        agent.sync_fireflies_transcripts = AsyncMock(side_effect=RuntimeError("fireflies down"))
 
         report = await agent.sync_meetings_to_wiki()
 
@@ -328,8 +322,481 @@ class TestSyncMeetingsToWiki:
 
 
 # ---------------------------------------------------------------------------
+# Notes wiki plane (TASK-2379, G2) — _build_notes_wiki_toolkit
+# ---------------------------------------------------------------------------
+
+
+class TestNotesWikiPlane:
+    """A separate LLMWikiToolkit instance backs audio-note captures."""
+
+    @staticmethod
+    def _patch_wiki_construction(monkeypatch, agent, *, create_wiki_error=None):
+        """Patch the graph/wiki-config/toolkit seams _build_notes_wiki_toolkit uses.
+
+        Returns:
+            The ``fake_toolkit`` MagicMock returned by the patched
+            ``LLMWikiToolkit(...)`` constructor, with ``create_wiki`` as an
+            ``AsyncMock`` (optionally raising ``create_wiki_error``).
+        """
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+        import parrot.knowledge.wiki.models as wiki_models
+        import parrot.knowledge.wiki.toolkit as wiki_toolkit_module
+
+        monkeypatch.setattr(
+            graphindex_factory,
+            "build_graph_memory_toolkit",
+            AsyncMock(return_value=MagicMock(name="graph_toolkit")),
+        )
+        monkeypatch.setattr(wiki_models, "WikiConfig", MagicMock(name="WikiConfig"))
+
+        fake_toolkit = MagicMock(name="LLMWikiToolkit_instance")
+        fake_toolkit.create_wiki = AsyncMock(side_effect=create_wiki_error, return_value={})
+        monkeypatch.setattr(
+            wiki_toolkit_module,
+            "LLMWikiToolkit",
+            MagicMock(return_value=fake_toolkit),
+        )
+        monkeypatch.setattr(agent, "_build_pageindex_toolkit", MagicMock(return_value=None))
+        return fake_toolkit
+
+    @pytest.mark.asyncio
+    async def test_separate_instance_from_meetings(self, agent, monkeypatch):
+        """The notes plane is a distinct toolkit from the meetings plane."""
+        self._patch_wiki_construction(monkeypatch, agent)
+        agent._wiki = MagicMock(name="meetings_toolkit")
+
+        agent._notes_wiki = await agent._build_notes_wiki_toolkit()
+
+        assert agent._notes_wiki is not None
+        assert agent._notes_wiki is not agent._wiki
+
+    def test_defaults(self, agent):
+        """Unset env yields notes / ~/.parrot/wikis/notes / audio-notes."""
+        assert agent.notes_wiki_name == "notes"
+        assert agent.notes_folder == "audio-notes"
+
+    @pytest.mark.asyncio
+    async def test_create_wiki_called_and_idempotent(self, agent, monkeypatch):
+        """create_wiki bootstraps the plane and tolerates a second configure()."""
+        fake_toolkit = self._patch_wiki_construction(monkeypatch, agent)
+
+        await agent._build_notes_wiki_toolkit()
+        await agent._build_notes_wiki_toolkit()  # second configure() pass
+
+        assert fake_toolkit.create_wiki.await_count == 2
+        fake_toolkit.create_wiki.assert_awaited_with(agent.notes_wiki_name)
+
+    @pytest.mark.asyncio
+    async def test_create_wiki_failure_does_not_null_the_toolkit(self, agent, monkeypatch):
+        """A create_wiki error is logged but the toolkit is still returned."""
+        self._patch_wiki_construction(monkeypatch, agent, create_wiki_error=RuntimeError("disk full"))
+
+        result = await agent._build_notes_wiki_toolkit()
+
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_build_failure_returns_none(self, agent, monkeypatch):
+        """A construction error leaves _notes_wiki as None without raising."""
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+
+        monkeypatch.setattr(
+            graphindex_factory,
+            "build_graph_memory_toolkit",
+            AsyncMock(side_effect=RuntimeError("graph plane unavailable")),
+        )
+
+        agent._notes_wiki = await agent._build_notes_wiki_toolkit()
+
+        assert agent._notes_wiki is None
+
+    @pytest.mark.asyncio
+    async def test_meetings_plane_unaffected(self, agent, monkeypatch):
+        """self._wiki still builds via the unmodified meetings code path."""
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+        import parrot.knowledge.wiki.models as wiki_models
+        import parrot.knowledge.wiki.toolkit as wiki_toolkit_module
+
+        monkeypatch.setattr(
+            graphindex_factory,
+            "build_graph_memory_toolkit",
+            AsyncMock(return_value=MagicMock(name="graph_toolkit")),
+        )
+        monkeypatch.setattr(wiki_models, "WikiConfig", MagicMock(name="WikiConfig"))
+        meetings_toolkit = MagicMock(name="meetings_toolkit_instance")
+        monkeypatch.setattr(
+            wiki_toolkit_module,
+            "LLMWikiToolkit",
+            MagicMock(return_value=meetings_toolkit),
+        )
+        monkeypatch.setattr(agent, "_build_pageindex_toolkit", MagicMock(return_value=None))
+
+        agent._wiki = await agent._build_wiki_toolkit()
+
+        assert agent._wiki is meetings_toolkit
+
+    @pytest.mark.asyncio
+    async def test_graph_tenant_isolated(self, agent, monkeypatch):
+        """build_graph_memory_toolkit receives tenant_id=notes_wiki_name."""
+        import parrot.knowledge.graphindex.factory as graphindex_factory
+        import parrot.knowledge.wiki.models as wiki_models
+        import parrot.knowledge.wiki.toolkit as wiki_toolkit_module
+
+        graph_mock = AsyncMock(return_value=MagicMock(name="graph_toolkit"))
+        monkeypatch.setattr(graphindex_factory, "build_graph_memory_toolkit", graph_mock)
+        monkeypatch.setattr(wiki_models, "WikiConfig", MagicMock(name="WikiConfig"))
+        fake_toolkit = MagicMock(name="LLMWikiToolkit_instance")
+        fake_toolkit.create_wiki = AsyncMock(return_value={})
+        monkeypatch.setattr(
+            wiki_toolkit_module,
+            "LLMWikiToolkit",
+            MagicMock(return_value=fake_toolkit),
+        )
+        monkeypatch.setattr(agent, "_build_pageindex_toolkit", MagicMock(return_value=None))
+
+        await agent._build_notes_wiki_toolkit()
+
+        _args, kwargs = graph_mock.call_args
+        assert kwargs["tenant_id"] == agent.notes_wiki_name
+        assert kwargs["tenant_id"] != agent.wiki_name
+
+
+# ---------------------------------------------------------------------------
+# Audio-note capture toolkit (TASK-2380, G1/G2/G5) — capture_audio_note
+# ---------------------------------------------------------------------------
+
+_STRUCTURED_RESPONSE = (
+    "## Title\nBuy Milk\n\n"
+    "## Tags\nshopping, reminder\n\n"
+    "## Summary\nRecordar comprar leche.\n\n"
+    "## Key Points\n- comprar leche en la tienda\n\n"
+    "## Action Items\n- ir a la tienda hoy"
+)
+
+
+@pytest.fixture
+def toolkit(agent_module, tmp_path):
+    """An AudioNoteCaptureToolkit with every collaborator mocked.
+
+    ``obsidian.create_note`` and ``notes_wiki.ingest_source`` are
+    ``AsyncMock``s the test can reconfigure; ``llm_call`` defaults to a
+    well-formed structured response.
+    """
+    obsidian = MagicMock()
+    obsidian.create_note = AsyncMock(return_value={"created": True, "file": {}})
+
+    notes_wiki = MagicMock()
+    notes_wiki.ingest_source = AsyncMock(return_value={})
+
+    llm_call = AsyncMock(return_value=_STRUCTURED_RESPONSE)
+
+    cls = agent_module.AudioNoteCaptureToolkit
+    tk = cls(
+        obsidian_toolkit=obsidian,
+        notes_wiki_provider=lambda: notes_wiki,
+        llm_call=llm_call,
+        vault_path=tmp_path / "vault",
+    )
+    # Expose the mocks for assertions without re-deriving them from the toolkit.
+    tk._test_obsidian = obsidian
+    tk._test_notes_wiki = notes_wiki
+    tk._test_llm_call = llm_call
+    return tk
+
+
+class TestAudioNoteCapture:
+    """The single capture_audio_note tool: structure -> vault write -> wiki ingest."""
+
+    @pytest.mark.asyncio
+    async def test_note_path_and_transcript_preserved(self, toolkit):
+        """Note lands in audio-notes/ with the raw transcript under ## Transcript."""
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["vault_path"].startswith("audio-notes/")
+        content = toolkit._test_obsidian.create_note.call_args.kwargs["content"]
+        assert "## Transcript" in content
+        assert "recordar comprar leche" in content
+
+    @pytest.mark.asyncio
+    async def test_language_split(self, toolkit):
+        """Spanish body, English title and tags."""
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["structured"] is True
+        frontmatter = toolkit._test_obsidian.create_note.call_args.kwargs["frontmatter"]
+        assert frontmatter["okf"]["title"] == "Buy Milk"
+        assert frontmatter["tags"] == ["shopping", "reminder"]
+        content = toolkit._test_obsidian.create_note.call_args.kwargs["content"]
+        assert "Recordar comprar leche." in content
+
+    @pytest.mark.asyncio
+    async def test_slug_collision_retries_with_suffix(self, toolkit):
+        """FileExistsError on the first path -> retry as -2."""
+        toolkit._test_obsidian.create_note = AsyncMock(side_effect=[FileExistsError(), {"created": True, "file": {}}])
+
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["note_title"].endswith("-2")
+        assert toolkit._test_obsidian.create_note.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_writes_verbatim(self, toolkit):
+        """Structuring failure still writes a note, flagged structured=False."""
+        toolkit._test_llm_call.side_effect = RuntimeError("llm down")
+
+        result = await toolkit.capture_audio_note("just a raw thought", language="en")
+
+        assert result["structured"] is False
+        content = toolkit._test_obsidian.create_note.call_args.kwargs["content"]
+        assert "just a raw thought" in content
+
+    @pytest.mark.asyncio
+    async def test_wiki_unavailable_keeps_note(self, toolkit, agent_module, tmp_path):
+        """_notes_wiki is None -> note written, wiki_ingested False."""
+        cls = agent_module.AudioNoteCaptureToolkit
+        tk = cls(
+            obsidian_toolkit=toolkit._test_obsidian,
+            notes_wiki_provider=lambda: None,
+            llm_call=toolkit._test_llm_call,
+            vault_path=tmp_path / "vault",
+        )
+
+        result = await tk.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["wiki_ingested"] is False
+        assert result["wiki_reason"]
+        toolkit._test_obsidian.create_note.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_ingest_error_keeps_note(self, toolkit):
+        """ingest_source raising does not propagate and does not lose the note."""
+        toolkit._test_notes_wiki.ingest_source = AsyncMock(side_effect=RuntimeError("wiki down"))
+
+        result = await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert result["wiki_ingested"] is False
+        assert "wiki down" in result["wiki_reason"]
+        toolkit._test_obsidian.create_note.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_vault_failure_surfaces(self, toolkit):
+        """A vault write failure is NOT swallowed."""
+        toolkit._test_obsidian.create_note = AsyncMock(side_effect=OSError("disk full"))
+
+        with pytest.raises(OSError):
+            await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+    @pytest.mark.asyncio
+    async def test_ingest_source_receives_absolute_path(self, toolkit):
+        """ingest_source is called with an absolute path, not a vault-relative one."""
+        await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        args, _kwargs = toolkit._test_notes_wiki.ingest_source.call_args
+        assert Path(args[1]).is_absolute()
+
+    @pytest.mark.asyncio
+    async def test_exactly_one_llm_call(self, toolkit):
+        """The capture path makes exactly one LLM call."""
+        await toolkit.capture_audio_note("recordar comprar leche", language="es")
+
+        assert toolkit._test_llm_call.await_count == 1
+
+    def test_toolkit_exposes_single_tool(self, toolkit):
+        """Only capture_audio_note is exposed; helpers stay private."""
+        assert [t.name for t in toolkit.get_tools()] == ["capture_audio_note"]
+
+    @pytest.mark.asyncio
+    async def test_typed_input_without_language(self, toolkit):
+        """language=None (typed note) works."""
+        result = await toolkit.capture_audio_note("remember to buy milk")
+
+        assert result["structured"] is True
+        assert toolkit._test_llm_call.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# `/note` sticky mode (TASK-2381, G3) — arm_note_mode + ask() routing
+# ---------------------------------------------------------------------------
+
+
+def _find_ask_owner(agent) -> type:
+    """Find the first class in the MRO (after the leaf) that defines ``ask``.
+
+    Used to monkeypatch the real parent ``ask()`` without hardcoding which
+    base class in the deep bot hierarchy owns it.
+    """
+    for klass in type(agent).__mro__[1:]:
+        if "ask" in klass.__dict__:
+            return klass
+    raise AssertionError("No class in the MRO defines ask()")
+
+
+class TestNoteMode:
+    """Deterministic /note override: arm -> next message captured -> cleared."""
+
+    @pytest.mark.asyncio
+    async def test_note_arms_current_chat(self, agent):
+        """/note arms the invoking chat, keyed by STRING chat id."""
+        with telegram_chat_scope(12345):
+            reply = await agent.arm_note_mode("")
+
+        assert agent._note_mode["12345"] is True  # str key, not int
+        assert "next message" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_note_without_chat_scope_does_not_raise(self, agent):
+        """get_current_telegram_chat_id() -> None does not raise or arm anything."""
+        reply = await agent.arm_note_mode("")
+
+        assert agent._note_mode == {}
+        assert "could not determine" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_next_message_captured_then_cleared(self, agent):
+        """Consume-on-next-message: one capture, then disarmed."""
+        agent._capture_toolkit = MagicMock()
+        agent._capture_toolkit.capture_audio_note = AsyncMock(return_value={"note_title": "2026-08-23-idea"})
+
+        with telegram_chat_scope(12345):
+            await agent.arm_note_mode("")
+            reply = await agent.ask("remember to buy milk")
+
+        assert reply == "✅ Saved: 2026-08-23-idea"
+        assert agent._note_mode["12345"] is False
+        agent._capture_toolkit.capture_audio_note.assert_awaited_once_with("remember to buy milk", language=None)
+
+    @pytest.mark.asyncio
+    async def test_mode_cleared_even_when_capture_fails(self, agent):
+        """A failing capture must not leave the chat permanently armed."""
+        agent._capture_toolkit = MagicMock()
+        agent._capture_toolkit.capture_audio_note = AsyncMock(side_effect=RuntimeError("vault write failed"))
+
+        with telegram_chat_scope(12345):
+            await agent.arm_note_mode("")
+            reply = await agent.ask("remember to buy milk")
+
+        assert agent._note_mode["12345"] is False
+        assert "could not save" in reply.lower()
+
+    @pytest.mark.asyncio
+    async def test_per_chat_isolation(self, agent):
+        """Arming chat A leaves chat B unarmed."""
+        with telegram_chat_scope(12345):
+            await agent.arm_note_mode("")
+
+        assert not agent._note_mode.get("67890")
+
+    @pytest.mark.asyncio
+    async def test_ask_falls_through_when_unarmed(self, agent, monkeypatch):
+        """Without /note and without an armed chat, ask() forwards unchanged."""
+        owner = _find_ask_owner(agent)
+        parent_ask = AsyncMock(return_value="normal answer")
+        monkeypatch.setattr(owner, "ask", parent_ask)
+
+        with telegram_chat_scope(12345):
+            reply = await agent.ask("what time is the meeting?", user_id="u1")
+
+        assert reply == "normal answer"
+        # NOTE: monkeypatched as a plain AsyncMock (not a function), so
+        # attribute access via `super().ask` does not auto-bind `self` —
+        # the mock only sees the args/kwargs the override forwards.
+        parent_ask.assert_awaited_once_with("what time is the meeting?", user_id="u1")
+
+    @pytest.mark.asyncio
+    async def test_question_not_captured_when_no_chat_scope(self, agent, monkeypatch):
+        """No /note, no chat scope -> answered normally, no note created."""
+        owner = _find_ask_owner(agent)
+        parent_ask = AsyncMock(return_value="normal answer")
+        monkeypatch.setattr(owner, "ask", parent_ask)
+        agent._capture_toolkit = MagicMock()
+        agent._capture_toolkit.capture_audio_note = AsyncMock()
+
+        reply = await agent.ask("what time is the meeting?")
+
+        assert reply == "normal answer"
+        agent._capture_toolkit.capture_audio_note.assert_not_called()
+
+    def test_note_command_is_public_and_discovered(self, agent):
+        """discover_telegram_commands finds /note (it skips _-prefixed attrs)."""
+        cmds = discover_telegram_commands(agent)
+
+        assert any(c["command"] == "note" for c in cmds)
+
+    def test_agent_boots_without_telegram_integration(self, agent_module):
+        """The module-level fallback keeps the class importable/usable
+        even when parrot.integrations.telegram is not installed."""
+        # _TELEGRAM_AVAILABLE reflects whatever is actually installed in
+        # this test environment; the meaningful invariant is that the
+        # fallback symbols exist and are callable either way.
+        assert callable(agent_module.get_current_telegram_chat_id)
+        assert callable(agent_module.telegram_command)
+
+
+# ---------------------------------------------------------------------------
+# Vault scoping (TASK-2378, G6) — _ingest_vault_into_wiki
+# ---------------------------------------------------------------------------
+
+
+class TestVaultScoping:
+    """The nightly ingest must target <vault>/<meetings_folder>, not the whole vault."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_scoped_to_meetings_folder(self, agent):
+        """The nightly ingest targets <vault>/meetings, not the whole vault."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+
+        await agent._ingest_vault_into_wiki()
+
+        args, _kwargs = wiki.ingest_obsidian_vault.call_args
+        assert args[1] == str(agent.vault_path / "meetings")
+        assert args[1] != str(agent.vault_path)
+
+    @pytest.mark.asyncio
+    async def test_extract_entities_unchanged(self, agent, agent_module):
+        """Entity extraction stays at the module default (a non-goal of FEAT-452)."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+
+        await agent._ingest_vault_into_wiki()
+
+        _args, kwargs = wiki.ingest_obsidian_vault.call_args
+        assert kwargs["extract_entities"] == agent_module._EXTRACT_ENTITIES
+
+    @pytest.mark.asyncio
+    async def test_missing_meetings_folder_reports_not_ingested(self, agent):
+        """A missing folder returns the not-ingested shape rather than raising."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+        # Point at a meetings subfolder that does not exist on disk.
+        agent.vault_path = agent.vault_path.parent / "other-vault"
+
+        result = await agent._ingest_vault_into_wiki()
+
+        assert result["ingested"] is False
+        assert result["reason"]
+        wiki.ingest_obsidian_vault.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_never_raises_on_toolkit_error(self, agent):
+        """An ingest exception is swallowed into the report (existing behavior)."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(side_effect=RuntimeError("disk full"))
+        agent._wiki = wiki
+
+        result = await agent._ingest_vault_into_wiki()
+
+        assert result["ingested"] is False
+        assert "disk full" in result["reason"]
+
+
+# ---------------------------------------------------------------------------
 # Digest emails
 # ---------------------------------------------------------------------------
+
 
 class TestDailyDigest:
     """The 08:00 job."""
@@ -350,9 +817,7 @@ class TestDailyDigest:
         """A populated window emails the condensed digest."""
         agent.ANALYSIS_HEADING = ANALYSIS_HEADING
         agent._notes_in_window = AsyncMock(return_value=["2026-08-23-standup"])
-        agent.obsidian_toolkit.read_note = AsyncMock(
-            return_value=_note("Decided to ship on Friday.")
-        )
+        agent.obsidian_toolkit.read_note = AsyncMock(return_value=_note("Decided to ship on Friday."))
         agent.client.complete = AsyncMock(return_value="- Ship on Friday")
 
         result = await agent.email_daily_meeting_digest()
@@ -396,9 +861,7 @@ class TestWeeklyInsights:
         """Weekly insights look back a week and go to the weekly list."""
         agent.ANALYSIS_HEADING = ANALYSIS_HEADING
         agent._notes_in_window = AsyncMock(return_value=["2026-08-20-planning"])
-        agent.obsidian_toolkit.read_note = AsyncMock(
-            return_value=_note("Blocked on vendor API.")
-        )
+        agent.obsidian_toolkit.read_note = AsyncMock(return_value=_note("Blocked on vendor API."))
         agent.client.complete = AsyncMock(return_value="- Vendor API still blocking")
 
         result = await agent.email_weekly_insights()
@@ -426,15 +889,14 @@ class TestWeeklyInsights:
 # _email
 # ---------------------------------------------------------------------------
 
+
 class TestEmailHelper:
     """send_notification swallows provider errors — the status must be read."""
 
     @pytest.mark.asyncio
     async def test_returns_false_on_error_status(self, agent):
         """A reported error status is a failure, despite the await succeeding."""
-        agent.send_notification = AsyncMock(
-            return_value={"status": "error", "error": "smtp refused"}
-        )
+        agent.send_notification = AsyncMock(return_value={"status": "error", "error": "smtp refused"})
 
         assert await agent._email("Subject", "Body", ["a@example.com"]) is False
 
@@ -457,6 +919,7 @@ class TestEmailHelper:
 # Schedule metadata
 # ---------------------------------------------------------------------------
 
+
 class TestScheduleMetadata:
     """The three methods must carry the expected @schedule configuration."""
 
@@ -471,10 +934,7 @@ class TestScheduleMetadata:
 
     def test_digest_scheduled_daily_at_eight(self, agent_module):
         """The daily digest fires at 08:00, an hour after the sync."""
-        cfg = (
-            agent_module.FirefliesWikiAgent
-            .email_daily_meeting_digest._schedule_config
-        )
+        cfg = agent_module.FirefliesWikiAgent.email_daily_meeting_digest._schedule_config
 
         assert cfg["schedule_type"] == "cron"
         assert cfg["schedule_config"]["hour"] == 8

@@ -16,7 +16,8 @@ lines themselves — nothing is re-tokenised at query time.
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -24,10 +25,81 @@ from parrot.knowledge.wiki.store import estimate_tokens
 
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s")
 
-#: Leading ``<kind>:`` namespace of a page id.  Matched non-greedily and
-#: only at the start, so a path that itself contains a colon (e.g.
-#: ``file:docs/summaries/mod:parrot.skills.md``) keeps its inner one.
-_ID_PREFIX_RE = re.compile(r"^(?:file|dir|mod|pkg|doc|func|class|concept|page):")
+#: Separator between a federated namespace and a page id (``ns::id``).
+#: Local pages are never qualified (FEAT-450, U3) — only foreign ones.
+NS_SEPARATOR = "::"
+
+#: Grammar of the ``<ns>::`` part of a qualified id.  Mirrors
+#: :func:`parrot.knowledge.wiki.project.validate_namespace_name`; kept
+#: here so ``context.py`` stays free of config imports.
+_NS_PREFIX_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+
+#: Page id kinds recognised as the leading ``<kind>:`` of an id.
+_ID_KINDS = "file|dir|mod|pkg|doc|func|class|concept|page"
+
+#: Leading ``<kind>:`` namespace of a page id, optionally preceded by a
+#: federated ``<ns>::`` prefix.  Matched non-greedily and only at the
+#: start, so a path that itself contains a colon (e.g.
+#: ``file:docs/summaries/mod:parrot.skills.md``) keeps its inner one and
+#: a qualified id (``asyncdb::file:README.md``) still elides its title.
+_ID_PREFIX_RE = re.compile(
+    rf"^(?:[A-Za-z0-9][A-Za-z0-9_.:-]*?{NS_SEPARATOR})?(?:{_ID_KINDS}):"
+)
+
+#: The bare ``<kind>:`` prefix, used to tell a namespace apart from an id
+#: whose own path happens to contain ``::``.
+_BARE_ID_PREFIX_RE = re.compile(rf"^(?:{_ID_KINDS}):")
+
+
+def split_namespaced_id(page_id: str) -> tuple[str | None, str]:
+    """Split a possibly qualified page id into ``(namespace, local_id)``.
+
+    Ids are qualified with the **first** ``::`` only, so a namespace may
+    itself contain a single colon (``legal:civil::concept:x``) and a
+    local id keeps any inner colons it has.
+
+    Args:
+        page_id: A page id, qualified (``ns::file:a.py``) or not
+            (``file:a.py``).
+
+    Returns:
+        ``(namespace, local_id)``; ``namespace`` is ``None`` when the id
+        carries no valid namespace prefix, and ``local_id`` is then the
+        input unchanged.
+    """
+    head, sep, tail = page_id.partition(NS_SEPARATOR)
+    if not sep or not head or not tail:
+        return None, page_id
+    if not _NS_PREFIX_RE.match(head):
+        return None, page_id
+    if _BARE_ID_PREFIX_RE.match(head):
+        # ``file:a::b.py`` is one local id whose path contains ``::``,
+        # not the namespace ``file:a``.
+        return None, page_id
+    return head, tail
+
+
+def qualify_id(namespace: str | None, page_id: str) -> str:
+    """Prefix a page id with its namespace (``ns::id``).
+
+    Local pages stay unprefixed (FEAT-450, U3), so a ``None`` or empty
+    namespace returns the id unchanged. Qualifying an id that already
+    carries the same namespace is a no-op, which makes the helper safe
+    to apply to rows that have been through a federated store once.
+
+    Args:
+        namespace: Namespace name, or ``None`` for the local plane.
+        page_id: Unqualified (or already qualified) page id.
+
+    Returns:
+        The qualified id.
+    """
+    if not namespace:
+        return page_id
+    existing, _ = split_namespaced_id(page_id)
+    if existing == namespace:
+        return page_id
+    return f"{namespace}{NS_SEPARATOR}{page_id}"
 
 #: Leads carrying no information — typically a frontmatter delimiter
 #: captured as a page summary at ingest time.
@@ -197,7 +269,7 @@ def pack_results(
     )
 
 
-def truncate_to_tokens(text: str, max_tokens: Optional[int]) -> tuple[str, bool]:
+def truncate_to_tokens(text: str, max_tokens: int | None) -> tuple[str, bool]:
     """Deterministically truncate ``text`` to approximately ``max_tokens``.
 
     Uses the same 4-chars-per-token heuristic as the fallback estimator

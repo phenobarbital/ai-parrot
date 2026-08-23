@@ -180,3 +180,225 @@ class TestFactory:
         by_name = {t.name: t for t in tools}
         assert by_name["wiki_remember"]._storage_dir == config.storage_path(tmp_path)
         assert by_name["wiki_note"]._storage_dir == config.storage_path(tmp_path)
+
+
+class TestNamespaceArgument:
+    """FEAT-450 — the optional ``namespace`` argument on the read tools."""
+
+    @pytest.fixture
+    async def federated(self, tmp_path):
+        """A real FederatedWikiStore over two temp planes."""
+        from parrot.knowledge.wiki.federation import (
+            FederatedWikiStore,
+            NamespaceHandle,
+        )
+        from parrot.knowledge.wiki.project import WikiNamespaceConfig
+        from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
+
+        local = SQLiteWikiStore(tmp_path / "local" / "wiki.db")
+        await local.upsert_pages([
+            WikiPageRecord(
+                concept_id="file:a.py", title="a", summary="alpha local",
+                body="alpha local",
+            )
+        ])
+        writable_other = SQLiteWikiStore(tmp_path / "other" / "wiki.db")
+        await writable_other.upsert_pages([
+            WikiPageRecord(
+                concept_id="file:b.py", title="b", summary="alpha other",
+                body="alpha other",
+            )
+        ])
+        await writable_other.add_edges([("file:b.py", "file:a.py", "references")])
+        other = SQLiteWikiStore(tmp_path / "other" / "wiki.db", read_only=True)
+        return FederatedWikiStore(
+            local=local,
+            local_name="local",
+            handles=[
+                NamespaceHandle(
+                    name="other",
+                    store=other,
+                    config=WikiNamespaceConfig(store=str(tmp_path / "other")),
+                    origin="repo",
+                    storage_dir=tmp_path / "other",
+                )
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_query_broadcasts_by_default(self, federated):
+        text = await WikiQueryTool(federated)._execute(question="alpha")
+        assert "file:a.py" in text
+        assert "other::file:b.py" in text
+
+    @pytest.mark.asyncio
+    async def test_query_scoped_to_one_namespace(self, federated):
+        text = await WikiQueryTool(federated)._execute(
+            question="alpha", namespace="other"
+        )
+        assert "other::file:b.py" in text
+        assert "[file:a.py]" not in text
+
+    @pytest.mark.asyncio
+    async def test_query_local_only(self, federated):
+        text = await WikiQueryTool(federated)._execute(
+            question="alpha", namespace="local"
+        )
+        assert "file:a.py" in text
+        assert "other::" not in text
+
+    @pytest.mark.asyncio
+    async def test_query_unknown_namespace(self, federated):
+        text = await WikiQueryTool(federated)._execute(
+            question="alpha", namespace="ghost"
+        )
+        assert "Unknown namespace" in text
+        assert "other" in text
+
+    @pytest.mark.asyncio
+    async def test_page_accepts_qualified_id(self, federated):
+        result = await WikiPageTool(federated)._execute(
+            page_id="other::file:b.py"
+        )
+        assert result.success
+        assert result.result["concept_id"] == "other::file:b.py"
+
+    @pytest.mark.asyncio
+    async def test_page_unknown_namespace(self, federated):
+        result = await WikiPageTool(federated)._execute(
+            page_id="file:b.py", namespace="ghost"
+        )
+        assert result.success is False
+        assert "Unknown namespace" in result.error
+
+    @pytest.mark.asyncio
+    async def test_related_returns_qualified_neighbours(self, federated):
+        result = await WikiRelatedTool(federated)._execute(
+            page_id="other::file:b.py"
+        )
+        assert result.success
+        neighbours = result.result["neighbors"]
+        assert neighbours
+        assert all(n["concept_id"].startswith("other::") for n in neighbours)
+
+    @pytest.mark.asyncio
+    async def test_related_unknown_namespace(self, federated):
+        result = await WikiRelatedTool(federated)._execute(
+            page_id="file:b.py", namespace="ghost"
+        )
+        assert result.success is False
+        assert "Unknown namespace" in result.error
+
+    @pytest.mark.asyncio
+    async def test_status_exposes_namespaces(self, federated):
+        result = await WikiStatusTool(federated)._execute()
+        assert "other" in result.result["namespaces"]
+        assert result.result["skipped"] == []
+
+    @pytest.mark.asyncio
+    async def test_plain_store_ignores_namespace(self, mock_store):
+        """An AsyncMock has a `scoped` attribute — it must not be used."""
+        await WikiQueryTool(mock_store)._execute(
+            question="test", namespace="whatever"
+        )
+        mock_store.search_fts.assert_called_once()
+        mock_store.scoped.assert_not_called()
+
+        page = await WikiPageTool(mock_store)._execute(
+            page_id="page-1", namespace="whatever"
+        )
+        assert page.success
+        related = await WikiRelatedTool(mock_store)._execute(
+            page_id="page-1", namespace="whatever"
+        )
+        assert related.success
+
+    def test_input_schemas_expose_namespace(self):
+        from parrot.knowledge.wiki.tools import (
+            WikiPageInput,
+            WikiQueryInput,
+            WikiRelatedInput,
+        )
+
+        for model in (WikiQueryInput, WikiPageInput, WikiRelatedInput):
+            assert "namespace" in model.model_fields
+            assert model.model_fields["namespace"].default is None
+
+
+class TestForeignPageWrites:
+    """M4 — writes to a namespaced page fail cleanly, never mid-write."""
+
+    @pytest.fixture
+    async def federated(self, tmp_path):
+        from parrot.knowledge.wiki.federation import (
+            FederatedWikiStore,
+            NamespaceHandle,
+        )
+        from parrot.knowledge.wiki.project import WikiNamespaceConfig
+        from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
+
+        local = SQLiteWikiStore(tmp_path / "local" / "wiki.db")
+        await local.upsert_pages(
+            [WikiPageRecord(concept_id="file:a.py", title="a", body="local")]
+        )
+        writable = SQLiteWikiStore(tmp_path / "other" / "wiki.db")
+        await writable.upsert_pages(
+            [WikiPageRecord(concept_id="file:b.py", title="b", body="other")]
+        )
+        other = SQLiteWikiStore(tmp_path / "other" / "wiki.db", read_only=True)
+        return FederatedWikiStore(
+            local=local,
+            local_name="local",
+            handles=[
+                NamespaceHandle(
+                    name="other",
+                    store=other,
+                    config=WikiNamespaceConfig(store=str(tmp_path / "other")),
+                    origin="repo",
+                    storage_dir=tmp_path / "other",
+                )
+            ],
+        )
+
+    @pytest.mark.asyncio
+    async def test_note_on_a_foreign_page_returns_a_tool_error(
+        self, federated, tmp_path
+    ):
+        result = await WikiNoteTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(page_id="other::file:b.py", text="hi")
+        assert result.success is False
+        assert "other" in result.error
+        assert "--ns other" in result.error
+
+    @pytest.mark.asyncio
+    async def test_note_on_a_local_page_still_works(self, federated, tmp_path):
+        result = await WikiNoteTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(page_id="file:a.py", text="hi")
+        assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_remember_with_a_foreign_link_writes_nothing(
+        self, federated, tmp_path
+    ):
+        result = await WikiRememberTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(
+            fact="zebra fact", title="ZZZ", link_page_id="other::file:b.py"
+        )
+        assert result.success is False
+        assert "--ns other" in result.error
+        # Nothing was written — the validation happens before the upsert.
+        pages = await federated.local.list_pages(limit=50)
+        assert not [p for p in pages if str(p["concept_id"]).startswith("mem-")]
+
+    @pytest.mark.asyncio
+    async def test_remember_with_a_local_link_still_works(
+        self, federated, tmp_path
+    ):
+        result = await WikiRememberTool(
+            federated, storage_dir=tmp_path / "local"
+        )._execute(fact="ok fact", title="OK", link_page_id="file:a.py")
+        assert result.success is True
+        assert result.result["linked"] is True

@@ -66,6 +66,24 @@ _WEBAPP_FIELD_TYPES = {
     FieldType.REST,
     # FEAT-300 — formula fields (evaluator is FEAT-301)
     FieldType.FORMULA,
+    # FEAT-448 (TASK-2337) — none of the twelve absorbed types fits a simple
+    # inline-keyboard choice; all twelve need the full HTML5 form (search,
+    # masked, cron and emoji are free text; color_picker/tree_select/place
+    # need real widgets; signature_pad/credit_card/image_dropzone/
+    # multi_upload/ai_capture are the same "no inline equivalent" posture as
+    # SIGNATURE/FILE/IMAGE above).
+    FieldType.SEARCH,
+    FieldType.MASKED,
+    FieldType.COLOR_PICKER,
+    FieldType.EMOJI,
+    FieldType.CRON,
+    FieldType.TREE_SELECT,
+    FieldType.SIGNATURE_PAD,
+    FieldType.CREDIT_CARD,
+    FieldType.IMAGE_DROPZONE,
+    FieldType.MULTI_UPLOAD,
+    FieldType.AI_CAPTURE,
+    FieldType.PLACE,
 }
 
 # File-type fields that cannot be handled inline even if forced
