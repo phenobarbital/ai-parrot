@@ -34,16 +34,19 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import click
+from pydantic import ValidationError
 
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
     qualify_id,
+    split_namespaced_id,
     truncate_to_tokens,
 )
 from parrot.knowledge.wiki.federation import (
     FederatedWikiStore,
     NamespaceSkip,
+    open_namespace_store,
     resolve_namespaces,
 )
 from parrot.knowledge.wiki.languages import all_scanners
@@ -52,11 +55,17 @@ from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiNamespaceConfig,
     WikiProjectConfig,
+    config_path,
     find_project_root,
+    global_registry_path,
     load_global_registry,
     load_project_config,
     merge_namespaces,
+    parrot_home,
+    resolve_entry_base,
+    save_global_registry,
     save_project_config,
+    validate_namespace_name,
     wiki_write_lock,
 )
 from parrot.knowledge.wiki.repo_scan import (
@@ -216,6 +225,36 @@ def _qualify_for_ns(page_id: str, ns_opt: str | None) -> str:
     if not ns_opt or ns_opt in ("all", "local") or "," in ns_opt:
         return page_id
     return qualify_id(ns_opt, page_id)
+
+
+def _write_id_for_ns(page_id: str, ns_opt: str | None) -> str:
+    """Strip the namespace prefix a write is already scoped to.
+
+    A write path holds the target namespace's own store, which knows
+    nothing about the ``ns::`` prefix. An id qualified with a DIFFERENT
+    namespace is a mistake worth reporting rather than silently writing
+    to the wrong plane.
+
+    Args:
+        page_id: Page id as typed.
+        ns_opt: The ``--ns`` selector of this write.
+
+    Returns:
+        The id as the target store knows it.
+
+    Raises:
+        click.ClickException: The id names another namespace.
+    """
+    namespace, local_id = split_namespaced_id(page_id)
+    if namespace is None:
+        return page_id
+    target = None if ns_opt in (None, "local") else ns_opt
+    if namespace == target:
+        return local_id
+    raise click.ClickException(
+        f"Page id {page_id!r} belongs to namespace {namespace!r} — "
+        f"pass `--ns {namespace}` to write there."
+    )
 
 
 def _collect_skips(store: BaseWikiStore) -> list[NamespaceSkip]:
@@ -1505,6 +1544,291 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo("Run `wikitoolkit build` to refresh stale sources.")
 
 
+# --------------------------------------------------------------------------
+# Namespace registry (FEAT-450)
+# --------------------------------------------------------------------------
+
+
+def _namespace_source(
+    src_project: str | None,
+    src_store: str | None,
+    src_database: str | None,
+    src_vault: str | None,
+) -> None:
+    """Validate that exactly one namespace source flag was given.
+
+    Raises:
+        click.ClickException: When zero or several sources were given.
+    """
+    given = [
+        flag
+        for flag, value in (
+            ("--project", src_project),
+            ("--store", src_store),
+            ("--database", src_database),
+            ("--vault", src_vault),
+        )
+        if value
+    ]
+    if len(given) != 1:
+        raise click.ClickException(
+            "Give exactly one of --project / --store / --database / --vault "
+            f"(got: {', '.join(given) or 'none'})."
+        )
+
+
+def _namespace_built(cfg: WikiNamespaceConfig, base_dir: Path) -> bool | None:
+    """Whether a declared namespace already has a plane on disk.
+
+    Args:
+        cfg: The namespace declaration.
+        base_dir: Directory its relative paths resolve against.
+
+    Returns:
+        ``True``/``False`` for on-disk kinds, ``None`` for ArangoDB
+        (server-hosted — there is no local artifact to probe).
+    """
+    if cfg.kind == "database":
+        return None
+    target = Path(cfg.target).expanduser()
+    if not target.is_absolute():
+        target = base_dir / target
+    if cfg.kind in ("path", "vault"):
+        try:
+            foreign = load_project_config(target)
+        except WikiConfigError:
+            return False
+        return foreign.is_built(target)
+    if cfg.backend == "memory":
+        return (target / "pages").exists()
+    return (target / "wiki.db").exists()
+
+
+@wiki.group(name="ns")
+def ns() -> None:
+    """Manage federated wiki namespaces (other wikis this one can read)."""
+
+
+@ns.command("list")
+@path_option
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+def ns_list(path_: str | None, as_json: bool) -> None:
+    """List the namespaces visible from this project (repo + global)."""
+    root, config = _resolve_project(path_)
+    declared = _declared_namespaces(config)
+    rows = []
+    for name in sorted(declared):
+        cfg, origin = declared[name]
+        base_dir = resolve_entry_base(origin, root)
+        built = _namespace_built(cfg, base_dir)
+        rows.append(
+            {
+                "name": name,
+                "kind": cfg.kind,
+                "backend": cfg.backend,
+                "origin": origin,
+                "target": cfg.target,
+                "weight": cfg.weight,
+                "description": cfg.description,
+                "built": built,
+            }
+        )
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, default=str))
+        return
+    if not rows:
+        click.echo(
+            "No namespaces declared. Add one with "
+            "`wikitoolkit ns add <name> --project <dir>`."
+        )
+        return
+    click.echo(
+        f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} "
+        f"{'built':<6} target"
+    )
+    for row in rows:
+        built = "n/a" if row["built"] is None else ("yes" if row["built"] else "no")
+        click.echo(
+            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} "
+            f"{row['origin']:<7} {built:<6} {row['target']}"
+        )
+        if row["description"]:
+            click.echo(f"{'':<16} {row['description']}")
+
+
+@ns.command("add")
+@click.argument("name")
+@path_option
+@click.option(
+    "--project",
+    "src_project",
+    default=None,
+    help="Root of another wiki project (kind: path).",
+)
+@click.option(
+    "--store",
+    "src_store",
+    default=None,
+    help="Pre-built store directory (kind: store).",
+)
+@click.option(
+    "--backend",
+    "backend_opt",
+    type=click.Choice(["sqlite", "memory"]),
+    default=None,
+    help="Backend of a --store directory (default: sqlite).",
+)
+@click.option(
+    "--database",
+    "src_database",
+    default=None,
+    help="ArangoDB database holding the plane (kind: database).",
+)
+@click.option(
+    "--credentials-env",
+    default="ARANGODB",
+    show_default=True,
+    help="Env var prefix for --database credentials.",
+)
+@click.option(
+    "--vault",
+    "src_vault",
+    default=None,
+    help="Obsidian vault root (kind: vault; requires .obsidian/).",
+)
+@click.option("--description", default="", help="What this namespace holds.")
+@click.option(
+    "--weight",
+    default=1.0,
+    show_default=True,
+    type=float,
+    help="Score multiplier when merging this namespace (0.0-1.0).",
+)
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Write to the per-user registry (PARROT_HOME/wikis.json) "
+    "instead of this repo's wiki.json.",
+)
+def ns_add(
+    name: str,
+    path_: str | None,
+    src_project: str | None,
+    src_store: str | None,
+    backend_opt: str | None,
+    src_database: str | None,
+    credentials_env: str,
+    src_vault: str | None,
+    description: str,
+    weight: float,
+    is_global: bool,
+) -> None:
+    """Register NAME as a namespace this wiki can read.
+
+    This is the only writer of namespace entries — neither ``build`` nor
+    any other command ever self-registers a wiki.
+    """
+    try:
+        validate_namespace_name(name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _namespace_source(src_project, src_store, src_database, src_vault)
+
+    root, config = _resolve_project(path_)
+    base_dir = parrot_home() if is_global else root
+
+    if src_vault:
+        vault_dir = Path(src_vault).expanduser()
+        if not vault_dir.is_absolute():
+            vault_dir = base_dir / vault_dir
+        # Inline probe — importing vault_scan here would drag the
+        # Obsidian interfaces into every `ns add`.
+        if not (vault_dir / ".obsidian").is_dir():
+            raise click.ClickException(
+                f"{vault_dir} is not an Obsidian vault (no .obsidian/ "
+                "directory). Use --project for a plain wiki project."
+            )
+
+    try:
+        entry = WikiNamespaceConfig(
+            path=src_project,
+            store=src_store,
+            backend=backend_opt or "sqlite",
+            database=src_database,
+            credentials_env=credentials_env,
+            vault=src_vault,
+            description=description,
+            weight=weight,
+        )
+    except ValidationError as exc:
+        raise click.ClickException(f"Invalid namespace entry: {exc}") from exc
+
+    if is_global:
+        registry = load_global_registry()
+        if name in registry.namespaces:
+            raise click.ClickException(
+                f"Namespace {name!r} already exists in the global registry "
+                f"({global_registry_path()}). Remove it first."
+            )
+        registry.namespaces[name] = entry
+        written = save_global_registry(registry)
+    else:
+        if name in config.namespaces:
+            raise click.ClickException(
+                f"Namespace {name!r} already exists in {config_path(root)}. "
+                "Remove it first."
+            )
+        config.namespaces[name] = entry
+        written = save_project_config(root, config)
+        if name in load_global_registry().namespaces:
+            click.echo(
+                f"Note: this repo entry shadows the global namespace {name!r}."
+            )
+
+    click.echo(f"Added namespace {name!r} ({entry.kind}) → {written}")
+    built = _namespace_built(entry, base_dir)
+    if built is False:
+        target = Path(entry.target).expanduser()
+        if not target.is_absolute():
+            target = base_dir / target
+        flag = "--store" if entry.kind == "store" else "--path"
+        click.echo(
+            f"Namespace {name!r} has no plane yet — build it with "
+            f"`wikitoolkit build {flag} {target}`."
+        )
+
+
+@ns.command("remove")
+@click.argument("name")
+@path_option
+@click.option(
+    "--global",
+    "is_global",
+    is_flag=True,
+    help="Remove from the per-user registry instead of this repo.",
+)
+def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
+    """Remove namespace NAME from this repo (or the global registry)."""
+    if is_global:
+        registry = load_global_registry()
+        if name not in registry.namespaces:
+            raise click.ClickException(
+                f"No namespace {name!r} in {global_registry_path()}."
+            )
+        del registry.namespaces[name]
+        written = save_global_registry(registry)
+    else:
+        root, config = _resolve_project(path_)
+        if name not in config.namespaces:
+            raise click.ClickException(
+                f"No namespace {name!r} in {config_path(root)}."
+            )
+        del config.namespaces[name]
+        written = save_project_config(root, config)
+    click.echo(f"Removed namespace {name!r} from {written}")
+
+
 @wiki.command()
 @path_option
 @click.option(
@@ -1688,7 +2012,8 @@ def _resolve_write_store(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
-) -> tuple[BaseWikiStore, Path, Path | None, WikiProjectConfig | None]:
+    ns_opt: str | None = None,
+) -> tuple[BaseWikiStore, Path | None, Path | None, WikiProjectConfig | None]:
     """Open a store for an authoring command, creating the plane lazily.
 
     Same precedence as ``_resolve_read_store`` (``--store`` > ``--path``
@@ -1696,10 +2021,53 @@ def _resolve_write_store(
     that was never built is initialised on first write instead of
     aborting — remembering something must work from a blank slate.
 
+    A write targets exactly ONE plane (spec U2): with ``--ns <name>``
+    that namespace is opened read-write directly, bypassing the
+    federation entirely. ``--ns all`` is rejected — there is no such
+    thing as a broadcast write.
+
     Returns:
         ``(store, storage_dir, root, config)`` — ``root``/``config`` are
-        ``None`` for ``--store`` targets (no project context).
+        ``None`` for ``--store`` and ``--ns`` targets (no local project
+        context), and ``storage_dir`` is ``None`` for a server-hosted
+        namespace.
+
+    Raises:
+        click.ClickException: On ``--ns all``, several ``--ns`` names,
+            ``--store`` combined with ``--ns``, an undeclared namespace,
+            or a namespace that cannot be opened.
     """
+    if ns_opt not in (None, "local"):
+        if store_opt:
+            raise click.ClickException(
+                "--store and --ns target different planes; use one of them."
+            )
+        if ns_opt == "all" or "," in ns_opt:
+            raise click.ClickException(
+                "A write targets exactly one namespace — "
+                f"`--ns {ns_opt}` is not a write target."
+            )
+        root, config = _resolve_project(path_)
+        declared = _declared_namespaces(config)
+        entry = declared.get(ns_opt)
+        if entry is None:
+            raise _unknown_namespace(ns_opt, list(declared))
+        cfg, origin = entry
+        try:
+            store, storage_dir = _run(
+                open_namespace_store(
+                    ns_opt,
+                    cfg,
+                    base_dir=resolve_entry_base(origin, root),
+                    read_only=False,
+                )
+            )
+        except Exception as exc:  # surfaced as a clear CLI error
+            raise click.ClickException(
+                f"Could not open namespace {ns_opt!r} for writing: {exc}"
+            ) from exc
+        return store, storage_dir, None, None
+
     store_override = store_opt
     if not store_override and not path_:
         store_override = _env_setting("WIKI_STORE")
@@ -1878,6 +2246,7 @@ def _extract_into_graph(
     help="Existing page id to link the memory to (repeatable).",
 )
 @click.option("--rel", default="references", help="Relation for --link edges.")
+@ns_option
 @click.option("--source", "source_uri", default=None, help="Citation URI.")
 @click.option("--by", default=None, help="Identity asserting this memory.")
 @click.option(
@@ -1899,6 +2268,7 @@ def remember(
     category: str,
     links: tuple[str, ...],
     rel: str,
+    ns_opt: str | None,
     source_uri: str | None,
     by: str | None,
     extract_: bool,
@@ -1915,7 +2285,7 @@ def remember(
     import hashlib
 
     store, storage_dir, root, config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
     asserted_by = _authoring_identity(by)
     run_id = _authoring_run_id()
@@ -1949,7 +2319,7 @@ def remember(
 
     linked: list[tuple[str, str]] = []
     skipped_links: list[str] = []
-    for target in links:
+    for target in (_write_id_for_ns(link, ns_opt) for link in links):
         page = _run(store.get_page(target, include_body=False))
         if page is None:
             skipped_links.append(target)
@@ -1959,13 +2329,14 @@ def remember(
 
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "REMEMBER",
-        f"page_id: {page_id}, title: {resolved_title!r}, "
-        f"category: {category}, by: {asserted_by}"
-        + (f", run: {run_id}" if run_id else ""),
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "REMEMBER",
+            f"page_id: {page_id}, title: {resolved_title!r}, "
+            f"category: {category}, by: {asserted_by}"
+            + (f", run: {run_id}" if run_id else ""),
+        )
 
     commit_id: str | None = None
     if root is not None and config is not None and config.sync_graph:
@@ -2021,6 +2392,7 @@ def remember(
 @click.argument("text")
 @path_option
 @_store_options
+@ns_option
 @click.option("--by", default=None, help="Identity asserting this note.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def note(
@@ -2029,15 +2401,21 @@ def note(
     path_: str | None,
     store_opt: str | None,
     backend_opt: str | None,
+    ns_opt: str | None,
     by: str | None,
     as_json: bool,
 ) -> None:
-    """Append an attributed note to an existing wiki page."""
+    """Append an attributed note to an existing wiki page.
+
+    With ``--ns <name>`` the note is written into that namespace's own
+    plane; PAGE_ID may be given qualified (``name::file:a.py``).
+    """
     from datetime import datetime
 
     store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
+    page_id = _write_id_for_ns(page_id, ns_opt)
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
         raise click.ClickException(
@@ -2068,11 +2446,12 @@ def note(
     )
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "NOTE",
-        f"page_id: {page['concept_id']}, by: {asserted_by}",
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "NOTE",
+            f"page_id: {page['concept_id']}, by: {asserted_by}",
+        )
     result = {"page_id": page["concept_id"], "status": "noted", "by": asserted_by}
     if as_json:
         click.echo(json.dumps(result, indent=2))
@@ -2086,6 +2465,7 @@ def note(
 @path_option
 @_store_options
 @click.option("--rel", default="references", help="Edge relation.")
+@ns_option
 @click.option("--by", default=None, help="Identity asserting this link.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def link(
@@ -2095,15 +2475,24 @@ def link(
     store_opt: str | None,
     backend_opt: str | None,
     rel: str,
+    ns_opt: str | None,
     by: str | None,
     as_json: bool,
 ) -> None:
-    """Connect two existing wiki pages with an asserted, typed edge."""
+    """Connect two existing wiki pages with an asserted, typed edge.
+
+    Both pages must live in the same plane — there are no
+    cross-namespace edges. With ``--ns <name>`` the edge is written into
+    that namespace; ids may be given qualified with that same name.
+    """
     store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt
+        path_, store_opt, backend_opt, ns_opt
     )
     pages = {}
-    for label, cid in (("src", src), ("dst", dst)):
+    for label, cid in (
+        ("src", _write_id_for_ns(src, ns_opt)),
+        ("dst", _write_id_for_ns(dst, ns_opt)),
+    ):
         page = _run(store.get_page(cid, include_body=False))
         if page is None:
             raise click.ClickException(f"{label} page {cid!r} not found.")
@@ -2113,11 +2502,12 @@ def link(
 
     from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 
-    WikiBookkeeper().log_operation(
-        storage_dir,
-        "LINK",
-        f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
-    )
+    if storage_dir is not None:
+        WikiBookkeeper().log_operation(
+            storage_dir,
+            "LINK",
+            f"{pages['src']} -{rel}-> {pages['dst']}, by: {asserted_by}",
+        )
     result = {
         "src": pages["src"],
         "dst": pages["dst"],

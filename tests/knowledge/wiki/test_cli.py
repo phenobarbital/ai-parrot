@@ -1125,3 +1125,275 @@ class TestNamespaceReads:
         assert result.exit_code == 0, result.output
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert any(i.startswith("glob::") for i in ids)
+
+
+@pytest.mark.usefixtures("isolated_home")
+class TestNamespaceRegistry:
+    """FEAT-450 — ``wikitoolkit ns list|add|remove``."""
+
+    def test_add_list_remove_repo_and_global(
+        self, runner, repo, tmp_path, isolated_home
+    ):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+
+        added = runner.invoke(
+            wiki,
+            ["ns", "add", "other", "--project", str(other), "--path", str(repo)],
+        )
+        assert added.exit_code == 0, added.output
+
+        brain = tmp_path / "brain"
+        brain.mkdir()
+        added_global = runner.invoke(
+            wiki,
+            [
+                "ns", "add", "brain", "--store", str(brain),
+                "--global", "--path", str(repo),
+            ],
+        )
+        assert added_global.exit_code == 0, added_global.output
+        assert (isolated_home / "wikis.json").exists()
+
+        listed = runner.invoke(
+            wiki, ["ns", "list", "--path", str(repo), "--json"]
+        )
+        assert listed.exit_code == 0, listed.output
+        rows = {r["name"]: r for r in json.loads(listed.output)}
+        assert rows["other"]["origin"] == "repo"
+        assert rows["other"]["kind"] == "path"
+        assert rows["other"]["built"] is True
+        assert rows["brain"]["origin"] == "global"
+        assert rows["brain"]["built"] is False
+
+        # The repo config keeps its other settings.
+        config = load_project_config(repo)
+        assert config.namespaces["other"].path == str(other)
+        assert config.wiki_name
+
+        removed = runner.invoke(
+            wiki, ["ns", "remove", "brain", "--global", "--path", str(repo)]
+        )
+        assert removed.exit_code == 0, removed.output
+        rows = {
+            r["name"]
+            for r in json.loads(
+                runner.invoke(
+                    wiki, ["ns", "list", "--path", str(repo), "--json"]
+                ).output
+            )
+        }
+        assert rows == {"other"}
+
+    def test_add_rejects_reserved_name(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        result = runner.invoke(
+            wiki,
+            ["ns", "add", "all", "--project", str(other), "--path", str(repo)],
+        )
+        assert result.exit_code != 0
+        assert "reserved" in result.output
+
+    def test_add_rejects_zero_or_two_sources(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        none = runner.invoke(wiki, ["ns", "add", "x", "--path", str(repo)])
+        assert none.exit_code != 0 and "exactly one" in none.output
+        both = runner.invoke(
+            wiki,
+            [
+                "ns", "add", "x", "--project", str(tmp_path),
+                "--store", str(tmp_path), "--path", str(repo),
+            ],
+        )
+        assert both.exit_code != 0 and "exactly one" in both.output
+
+    def test_add_rejects_duplicate_in_same_registry(
+        self, runner, repo, tmp_path
+    ):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        args = ["ns", "add", "other", "--project", str(other), "--path", str(repo)]
+        assert runner.invoke(wiki, args).exit_code == 0
+        again = runner.invoke(wiki, args)
+        assert again.exit_code != 0 and "already exists" in again.output
+
+    def test_repo_entry_shadowing_global_is_noted(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        assert (
+            runner.invoke(
+                wiki,
+                [
+                    "ns", "add", "dup", "--project", str(other),
+                    "--global", "--path", str(repo),
+                ],
+            ).exit_code
+            == 0
+        )
+        shadow = runner.invoke(
+            wiki,
+            ["ns", "add", "dup", "--project", str(other), "--path", str(repo)],
+        )
+        assert shadow.exit_code == 0, shadow.output
+        assert "shadows the global namespace" in shadow.output
+
+    def test_add_vault_requires_obsidian(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        plain = tmp_path / "notes"
+        plain.mkdir()
+        rejected = runner.invoke(
+            wiki,
+            ["ns", "add", "notes", "--vault", str(plain), "--path", str(repo)],
+        )
+        assert rejected.exit_code != 0
+        assert ".obsidian" in rejected.output
+
+        (plain / ".obsidian").mkdir()
+        accepted = runner.invoke(
+            wiki,
+            ["ns", "add", "notes", "--vault", str(plain), "--path", str(repo)],
+        )
+        assert accepted.exit_code == 0, accepted.output
+        assert "wikitoolkit build --path" in accepted.output
+        assert load_project_config(repo).namespaces["notes"].kind == "vault"
+
+    def test_remove_missing_namespace_errors(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(wiki, ["ns", "remove", "ghost", "--path", str(repo)])
+        assert result.exit_code != 0 and "No namespace" in result.output
+
+    def test_list_without_namespaces(self, runner, repo):
+        _build(runner, repo)
+        result = runner.invoke(wiki, ["ns", "list", "--path", str(repo)])
+        assert result.exit_code == 0, result.output
+        assert "No namespaces declared" in result.output
+
+
+@pytest.mark.usefixtures("isolated_home")
+class TestNamespaceWrites:
+    """FEAT-450 U2 — ``remember`` / ``note`` / ``link`` with ``--ns``."""
+
+    @staticmethod
+    def _setup(runner, repo, tmp_path) -> Path:
+        _build(runner, repo)
+        other = _second_repo(tmp_path, runner)
+        _write_namespaces(repo, {"other": {"path": str(other)}})
+        return other
+
+    def test_remember_ns_writes_foreign_only(self, runner, repo, tmp_path):
+        other = self._setup(runner, repo, tmp_path)
+        saved = runner.invoke(
+            wiki,
+            ["remember", "zebra fact", "--ns", "other", "--path", str(repo), "--json"],
+        )
+        assert saved.exit_code == 0, saved.output
+
+        in_other = runner.invoke(
+            wiki, ["query", "zebra", "--path", str(other), "--json"]
+        )
+        assert "zebra" in in_other.output
+
+        in_local = runner.invoke(
+            wiki,
+            ["query", "zebra", "--path", str(repo), "--ns", "local", "--json"],
+        )
+        assert "zebra" not in in_local.output
+
+    def test_remember_defaults_to_local(self, runner, repo, tmp_path):
+        other = self._setup(runner, repo, tmp_path)
+        assert (
+            runner.invoke(
+                wiki, ["remember", "okapi fact", "--path", str(repo), "--json"]
+            ).exit_code
+            == 0
+        )
+        assert (
+            "okapi"
+            in runner.invoke(
+                wiki,
+                ["query", "okapi", "--path", str(repo), "--ns", "local", "--json"],
+            ).output
+        )
+        assert (
+            "okapi"
+            not in runner.invoke(
+                wiki, ["query", "okapi", "--path", str(other), "--json"]
+            ).output
+        )
+
+    def test_remember_ns_all_is_rejected(self, runner, repo, tmp_path):
+        self._setup(runner, repo, tmp_path)
+        result = runner.invoke(
+            wiki, ["remember", "x", "--ns", "all", "--path", str(repo)]
+        )
+        assert result.exit_code != 0
+        assert "exactly one namespace" in result.output
+
+    def test_remember_ns_unknown_is_rejected(self, runner, repo, tmp_path):
+        self._setup(runner, repo, tmp_path)
+        result = runner.invoke(
+            wiki, ["remember", "x", "--ns", "ghost", "--path", str(repo)]
+        )
+        assert result.exit_code != 0 and "Unknown namespace" in result.output
+
+    def test_store_and_ns_together_are_rejected(self, runner, repo, tmp_path):
+        self._setup(runner, repo, tmp_path)
+        result = runner.invoke(
+            wiki,
+            [
+                "remember", "x", "--ns", "other",
+                "--store", str(load_project_config(repo).storage_path(repo)),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "different planes" in result.output
+
+    def test_note_and_link_with_ns(self, runner, repo, tmp_path):
+        other = self._setup(runner, repo, tmp_path)
+        noted = runner.invoke(
+            wiki,
+            [
+                "note", "other::file:pkg/store.py", "a foreign note",
+                "--ns", "other", "--path", str(repo), "--json",
+            ],
+        )
+        assert noted.exit_code == 0, noted.output
+        page = runner.invoke(
+            wiki, ["page", "file:pkg/store.py", "--path", str(other)]
+        )
+        assert "a foreign note" in page.output
+
+        linked = runner.invoke(
+            wiki,
+            [
+                "link", "file:pkg/store.py", "file:pkg/util.py",
+                "--ns", "other", "--path", str(repo), "--json",
+            ],
+        )
+        assert linked.exit_code == 0, linked.output
+        rel = runner.invoke(
+            wiki, ["related", "other::file:pkg/store.py", "--path", str(repo), "--json"]
+        )
+        assert "other::file:pkg/util.py" in rel.output
+
+    def test_mismatched_qualified_id_is_rejected(self, runner, repo, tmp_path):
+        self._setup(runner, repo, tmp_path)
+        result = runner.invoke(
+            wiki,
+            [
+                "note", "elsewhere::file:pkg/store.py", "text",
+                "--ns", "other", "--path", str(repo),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "belongs to namespace" in result.output
+
+    def test_local_write_rejects_qualified_id(self, runner, repo, tmp_path):
+        self._setup(runner, repo, tmp_path)
+        result = runner.invoke(
+            wiki,
+            ["note", "other::file:pkg/store.py", "text", "--path", str(repo)],
+        )
+        assert result.exit_code != 0
+        assert "pass `--ns other`" in result.output
