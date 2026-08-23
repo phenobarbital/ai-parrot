@@ -91,6 +91,20 @@ second corpus inside one plane.
   excerpt: |
     Obsidian vault ingestion into PageIndex/GraphIndex (a different plane from the
     wikitoolkit retrieval store) — prior art, not a competing namespace design.
+- path: `packages/ai-parrot/src/parrot/knowledge/wiki/bookkeeper.py`
+  lines: 44-45, 142, 201
+  symbol: `WikiBookkeeper.INDEX_FILENAME`, `LOG_FILENAME`, `write_index`, `log_operation`
+  excerpt: |
+    INDEX_FILENAME: str = "index.md"
+    LOG_FILENAME: str = "log.md"
+    index_path = Path(wiki_dir) / self.INDEX_FILENAME   # 142
+    log_path = Path(wiki_dir) / self.LOG_FILENAME       # 201
+- path: `packages/ai-parrot/src/parrot/knowledge/wiki/repo_scan.py`
+  lines: 85-89, 227-240
+  symbol: `DEFAULT_EXCLUDE_DIRS`
+  excerpt: |
+    ".parrot", ".claude", ".worktrees", ".graphindex",   # pruned by bare name at any depth
+    if any(part in pruned_names for part in p.parts): return False
 
 ## Self-ingestion hazard for a vault-hosted plane (D4.2)
 `scan_vault` (vault_scan.py:111-137) rglobs `*.md` under the vault and filters **only**

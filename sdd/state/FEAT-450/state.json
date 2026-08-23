@@ -11,7 +11,7 @@
     "file_path": null,
     "raw_path": "sdd/state/FEAT-450/source.md",
     "fetched_at": "2026-08-23T00:17:13Z",
-    "summary_oneline": "Namespaces for wikitoolkit — federate N wiki stores (repos, Obsidian vaults, brains) behind ns::id with explicit + broadcast routing"
+    "summary_oneline": "Namespaces for wikitoolkit \u2014 federate N wiki stores (repos, Obsidian vaults, brains) behind ns::id with explicit + broadcast routing"
   },
   "mode": "auto",
   "phase": "committed",
@@ -79,7 +79,31 @@
       "proposal_path": "sdd/proposals/wiki-namespaces.proposal.md",
       "commit_sha": null,
       "next_command_recommended": "sdd-spec",
-      "next_command_rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user — no open question remains."
+      "next_command_rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user \u2014 no open question remains.",
+      "deltas": [
+        {
+          "id": 1,
+          "recorded_at": "2026-08-23T12:00:00Z",
+          "phase_at_delta": "committed",
+          "summary": "obsidian namespace kind \u2014 vault registers as {vault: <path>}, plane inside the vault, ns add --vault only, _prune_removed scoping + .parrot exclusion fixed in-feature",
+          "findings_added": [
+            "F017"
+          ],
+          "questions_resolved": [
+            "D4.1",
+            "D4.2",
+            "D4.3",
+            "D4.4"
+          ],
+          "artifacts_touched": [
+            "sdd/state/FEAT-450/source.md",
+            "sdd/state/FEAT-450/findings/F017-obsidian-vault-namespace.md",
+            "sdd/state/FEAT-450/synthesis.json",
+            "sdd/proposals/wiki-namespaces.proposal.md"
+          ],
+          "research_rerun": false
+        }
+      ]
     }
   },
   "budget": {
@@ -99,30 +123,6 @@
   "detected_mode": "enrichment",
   "resume_hint": {
     "next_phase": "done",
-    "next_action": "Run /sdd-spec FEAT-450; all unknowns resolved (U1-U3, D4.1-D4.4 incl. delta 1 — obsidian namespace kind)."
-  },
-  "deltas": [
-    {
-      "id": 1,
-      "recorded_at": "2026-08-23T12:00:00Z",
-      "phase_at_delta": "committed",
-      "summary": "obsidian namespace kind — vault registers as {vault: <path>}, plane inside the vault, ns add --vault only, _prune_removed scoping + .parrot exclusion fixed in-feature",
-      "findings_added": [
-        "F017"
-      ],
-      "questions_resolved": [
-        "D4.1",
-        "D4.2",
-        "D4.3",
-        "D4.4"
-      ],
-      "artifacts_touched": [
-        "sdd/state/FEAT-450/source.md",
-        "sdd/state/FEAT-450/findings/F017-obsidian-vault-namespace.md",
-        "sdd/state/FEAT-450/synthesis.json",
-        "sdd/proposals/wiki-namespaces.proposal.md"
-      ],
-      "research_rerun": false
-    }
-  ]
+    "next_action": "Run /sdd-spec FEAT-450; all unknowns resolved (U1-U3, D4.1-D4.4 incl. delta 1 \u2014 obsidian namespace kind)."
+  }
 }

@@ -87,7 +87,8 @@ min-max + dedup merge helpers (`search.py:473-530`); a tools factory and an MCP 
 bound to *one* injected store (`tools.py:399-428`, `mcp_server.py:66-146`); and an explicit
 "multi-wiki dispatch would go here" placeholder in `toolkit.py:1205-1228`. What is missing is a
 **`FederatedWikiStore`** that implements the contract over `{name: store}`, prefixes ids with
-`ns::`, routes by prefix, merges on broadcast and delegates writes to the local namespace — plus a
+`ns::`, routes by prefix, merges on broadcast and sends each write to exactly one namespace
+(local by default, or the one named by `--ns`, per U2) — plus a
 `namespaces` config model, a global registry loader, a `--ns` selector and an explicit read-only
 open path for foreign SQLite planes (today `_connect` migrates on open, `store.py:565`). No
 competing design exists: the `KnowledgeRouter` cited by FEAT-449 is not in source, and
@@ -114,7 +115,7 @@ Paths below are relative to `packages/ai-parrot/src/parrot/knowledge/wiki/` unle
 |---|------|--------|-------|------|----------|
 | 1 | `cli.py` | `_resolve_read_store` | 199-251 | single-store read resolver (`--store`/`WIKI_STORE`); becomes the federation entry point | F002 |
 | 2 | `cli.py` | `_store_options`, `query`, `page`, `related`, `status` | 255-272, 1075-1288 | read commands that gain `--ns` | F002, F011 |
-| 3 | `cli.py` | `_resolve_write_store` | 1488-1493 | authoring resolver (writes stay local) | F002 |
+| 3 | `cli.py` | `_resolve_write_store` | 1488-1493 | authoring resolver — gains `--ns <name>` (single namespace, read-write; U2) | F002 |
 | 4 | `store.py` | `BaseWikiStore` | 289-385 | contract the federated store implements (15 abstract methods) | F003 |
 | 5 | `store.py` | `create_wiki_store` | 1217-1274 | factory used to open each namespace (sqlite / memory / arangodb) | F003 |
 | 6 | `store.py` | `SQLiteWikiStore._connect`, `_connect_readonly` | 514-655 | write-first open running `_migrate`; read-only ladder only as error fallback | F004 |
