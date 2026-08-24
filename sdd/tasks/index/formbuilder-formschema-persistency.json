@@ -308,7 +308,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -319,8 +319,8 @@
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2431-docs-and-packaging.md"
+      "completed_at": "2026-08-24T17:18:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2431-docs-and-packaging.md"
     }
   ]
 }
