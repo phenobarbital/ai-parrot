@@ -363,14 +363,66 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: Added a standalone `jira` extra to `packages/ai-parrot/pyproject
+.toml` right after the similarly-shaped single-service `reddit` extra
+(before `retrieval`), with a comment explaining why it exists (the
+`JiraDependencyError` install string). Verified it actually resolves via
+`uv pip install -e 'packages/ai-parrot[jira]'` in the shared venv, then
+**reverted the editable install back to the main checkout** immediately
+after verifying (`cd` to the main repo, reinstall against
+`packages/ai-parrot` there) — the shared venv's editable pointer had
+switched to this worktree, which would have left the venv in a broken
+state for other concurrent worktree sessions once this worktree is
+eventually removed post-merge. Confirmed `all`/`all-fast` already reach
+`jira` transitively (they already depend on `agents`/`mcp`/`agents-lite`,
+all three of which already pin `jira`/`html2text`), so no change was
+needed there. `packages/ai-parrot-tools/pyproject.toml` is untouched
+(verified via `git diff --quiet`).
 
-**Pin style chosen** (exact `==` vs floor `>=`) and why: (required)
-**Runbook commands executed and verified**: (required — list them)
-**Runbook location** (and why, if not `docs/runbooks/`): (required)
+TASK-2382's referenced notes-namespace runbook could not be found
+anywhere in the repo (`find docs -iname '*runbook*'` and
+`grep -rln "ns add" docs/` both returned nothing) — `docs/runbooks/` did
+not exist yet. Created it at the spec's own suggested path
+(`docs/runbooks/jira-issues-namespace.md`), the first runbook of its kind
+in this repo, following `docs/migration/feat-201-ai-parrot-embeddings.md`
+for tone/structure per the task's own reference.
 
-**Deviations from spec**: none | describe if any
+Saved the durable LLM-wiki memory per Agent Instructions step 7:
+`wikitoolkit remember "The Jira ticket corpus is queryable as the
+\`issues\` namespace; see docs/runbooks/jira-issues-namespace.md"
+--category note --title "issues namespace (Jira corpus)"` — succeeded
+(`mem-6bf27c6444de`, graph commit `75aa5aec8004479e`), written to the
+repo's own git-ignored `.parrot/wiki` plane (untracked, no effect on this
+feature's commits).
+
+**Pin style chosen**: **exact (`==`)** — `jira==3.10.5`,
+`html2text==2025.4.15` — matching the host's existing `agents`/
+`agents-lite`/`mcp` extras verbatim (all three already pin these two
+packages at these exact versions). `ai-parrot-tools[jira]`'s floor
+(`jira>=3.10`) is a deliberately different package with a different
+install surface (a tools-only, no-html2text extra) and was left
+unchanged, per scope.
+
+**Runbook commands executed and verified** (via `CliRunner`, isolated
+`PARROT_HOME`, never touching the developer's real registry):
+- `wikitoolkit ingest-jira --help` → exit 0
+- `wikitoolkit ns add --help` → exit 0 (confirmed exact flag names:
+  `--store`, `--global`, `--description`, no `--vault` requirement issue)
+- `wikitoolkit query --help` → exit 0
+- `wikitoolkit ns add issues --store <dir> --global --description "Jira
+  ticket corpus"` → exit 0, `"Added namespace 'issues' (store) →
+  <tmp>/wikis.json"`
+- `wikitoolkit ns list --json` → exit 0, `"issues"` present in output
+- `uv pip install -e 'packages/ai-parrot[jira]'` → resolved and installed
+  cleanly
+- `python -c "import jira, html2text; print(jira.__version__,
+  html2text.__file__)"` → `3.10.5 <path>/html2text/__init__.py`
+
+**Runbook location**: `docs/runbooks/jira-issues-namespace.md` (the
+spec's own suggested default) — no existing runbook convention was found
+to defer to instead (see Notes above).
+
+**Deviations from spec**: none.

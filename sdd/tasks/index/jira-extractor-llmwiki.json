@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-24T02:58:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-24T02:55:39+00:00",
   "tasks": [
     {
       "id": "TASK-2398",
@@ -182,7 +182,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M7",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -192,8 +192,8 @@
       "parallelism_notes": "Touches only pyproject.toml, docs/ and CLAUDE.md — no source-file overlap, so it CAN run beside TASK-2405 in its own worktree. Depends on TASK-2404 because every runbook command must be executed against the real CLI before being documented.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2406-jira-extra-and-runbook.md"
+      "completed_at": "2026-08-24T02:55:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2406-jira-extra-and-runbook.md"
     }
   ]
 }
