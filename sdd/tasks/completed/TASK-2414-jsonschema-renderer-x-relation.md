@@ -166,10 +166,21 @@ async def test_html5_byte_identical_with_relation():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Added unconditional `x-relation` emission in
+`JsonSchemaRenderer._field_to_property` beside the `x-options-source`
+block, using `field.relation.model_dump(exclude_none=True)`. Added a
+one-line "Note:" docstring on `render()` to the six other renderers
+(html5, adaptive_card, xforms, pdf, audio, telegram/renderer)
+documenting the intentional no-op. 5 new tests cover emission, absence on
+non-relational fields, extractor round-trip, and byte-identical HTML5 +
+AdaptiveCard output (built via `model_copy(deep=True)` + clearing
+`relation` so every UID stays identical across the two renders — a naive
+two-instance comparison would have failed since `field_uid` is embedded
+in both outputs). Full renderer suite (89) and full unit suite show
+identical results to baseline (no regressions). `ruff check` clean on
+every new/modified line (30 pre-existing findings across these 7 files,
+all on untouched lines, left as-is).
 
 **Deviations from spec**: none
