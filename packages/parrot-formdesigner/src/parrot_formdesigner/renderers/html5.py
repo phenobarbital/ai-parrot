@@ -77,6 +77,22 @@ _HTML5_FALLBACK_TYPES: frozenset[FieldType] = frozenset(
     }
 )
 
+
+def _extract_display_name(value: Any) -> str:
+    """Extract a display name from a legacy or FileEnvelope upload value.
+
+    Args:
+        value: Legacy string (URL or base64) or FileEnvelope dict.
+
+    Returns:
+        A human-readable filename/label. Empty string if value is falsy.
+    """
+    if isinstance(value, dict) and "filename" in value:
+        return str(value.get("filename") or "")
+    if isinstance(value, str):
+        return value.rsplit("/", 1)[-1] if "/" in value else value
+    return str(value) if value else ""
+
 _HTML5_FALLBACK_LABELS: dict[FieldType, str] = {
     FieldType.IMAGE_DROPZONE: "image upload",
     FieldType.MULTI_UPLOAD: "multiple file upload",
@@ -1602,7 +1618,20 @@ class HTML5Renderer(AbstractFormRenderer):
             f'class="{tw}"',
         ]
 
-        if value is not None:
+        # FEAT-460 — FILE/IMAGE: <input type="file"> cannot be pre-filled via
+        # the `value` attribute (browsers ignore/reject it for security), so
+        # a submitted value (legacy string OR FileEnvelope dict) is surfaced
+        # as a `data-filename` attribute for display instead. `accept` is
+        # derived from the field's allowed_mime_types constraint.
+        if field.field_type in (FieldType.FILE, FieldType.IMAGE):
+            if value:
+                display_name = _extract_display_name(value)
+                if display_name:
+                    attrs.append(f'data-filename="{html.escape(display_name, quote=True)}"')
+            if field.constraints and field.constraints.allowed_mime_types:
+                accept = ",".join(field.constraints.allowed_mime_types)
+                attrs.append(f'accept="{html.escape(accept, quote=True)}"')
+        elif value is not None:
             attrs.append(f'value="{html.escape(str(value), quote=True)}"')
         if placeholder:
             attrs.append(f'placeholder="{placeholder}"')
