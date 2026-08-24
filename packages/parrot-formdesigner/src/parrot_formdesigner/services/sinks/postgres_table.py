@@ -21,7 +21,7 @@ import logging
 from typing import Any
 
 from parrot_formdesigner.core.persistence import PostgresTableTarget, SinkCapability
-from parrot_formdesigner.core.schema import FormSchema, FormSubsection
+from parrot_formdesigner.core.schema import FormSchema
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services._identifiers import (
     qualified_table,
@@ -33,7 +33,7 @@ from parrot_formdesigner.services.sinks.base import (
     SinkTargetMismatchError,
     SinkUnavailableError,
 )
-from parrot_formdesigner.services.sinks.mapper import column_names_for
+from parrot_formdesigner.services.sinks.mapper import column_names_for, field_types_for
 from parrot_formdesigner.services.submissions import FormSubmission
 
 # Reserved-column DDL, matching FormSubmissionStorage's own CREATE TABLE
@@ -87,34 +87,6 @@ def _ddl_type_for(field_type: FieldType) -> str:
 def _compatible_types_for(field_type: FieldType) -> frozenset[str]:
     """Return the set of compatible ``information_schema`` data types."""
     return _FIELD_TYPE_PG.get(field_type, (_DEFAULT_DDL_TYPE, _DEFAULT_COMPATIBLE_TYPES))[1]
-
-
-def _walk_field_types(items: list[Any], prefix: str = "") -> Any:
-    """Yield ``(column_name, field_type)`` for tabular flattening.
-
-    Mirrors the traversal in ``services/sinks/mapper.py`` (GROUP ->
-    ``parent__child``, ARRAY not expanded). Duplicated locally, rather than
-    importing the mapper's private helper, to keep this sink's file
-    self-contained.
-    """
-    for item in items:
-        if isinstance(item, FormSubsection):
-            yield from _walk_field_types(item.fields, prefix)
-            continue
-        name = f"{prefix}__{item.field_id}" if prefix else item.field_id
-        if item.field_type == FieldType.GROUP and item.children:
-            yield from _walk_field_types(item.children, name)
-        else:
-            yield name, item.field_type
-
-
-def _field_types_for(form: FormSchema) -> dict[str, FieldType]:
-    """Return a ``{column_name: field_type}`` map for every tabular column."""
-    types: dict[str, FieldType] = {}
-    for section in form.sections:
-        for name, field_type in _walk_field_types(list(section.fields)):
-            types[name] = field_type
-    return types
 
 
 class PostgresTableSink(AbstractSubmissionSink):
@@ -259,8 +231,14 @@ class PostgresTableSink(AbstractSubmissionSink):
     async def close(self) -> None:
         """Close the pool if this sink owns it. Idempotent."""
         if self._owns_pool and self._pool is not None:
-            await self._pool.close()
-            self.logger.info("PostgresTableSink: pool closed")
+            try:
+                await self._pool.close()
+            except Exception:
+                self.logger.warning(
+                    "PostgresTableSink: error closing pool", exc_info=True
+                )
+            else:
+                self.logger.info("PostgresTableSink: pool closed")
         self._pool = None
         self._owns_pool = False
 
@@ -279,7 +257,7 @@ class PostgresTableSink(AbstractSubmissionSink):
                 incompatible with what this form will send.
             SinkUnavailableError: If the connection cannot be established.
         """
-        field_types = _field_types_for(form)
+        field_types = field_types_for(form)
         self._known_field_types = field_types
 
         try:

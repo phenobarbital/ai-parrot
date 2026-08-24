@@ -48,6 +48,17 @@ class TestPersistenceModels:
         with pytest.raises(ValueError):
             CsvFileTarget(type="csv_file", connection="exports", path=bad)
 
+    @pytest.mark.parametrize("bad", ["", "multi", ";;"])
+    def test_rejects_invalid_delimiter_length(self, bad):
+        with pytest.raises(ValueError):
+            CsvFileTarget(type="csv_file", connection="exports", path="a.csv", delimiter=bad)
+
+    def test_accepts_single_char_delimiter(self):
+        target = CsvFileTarget(
+            type="csv_file", connection="exports", path="a.csv", delimiter=";"
+        )
+        assert target.delimiter == ";"
+
     def test_capabilities_enum_members(self):
         assert {c.value for c in SinkCapability} == {
             "write",

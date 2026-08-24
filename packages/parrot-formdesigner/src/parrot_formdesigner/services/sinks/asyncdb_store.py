@@ -49,6 +49,7 @@ from typing import Any
 
 from parrot_formdesigner.core.persistence import AsyncDBTarget, SinkCapability
 from parrot_formdesigner.core.schema import FormSchema
+from parrot_formdesigner.services._identifiers import validate_identifier
 from parrot_formdesigner.services.sink_aliases import SinkAliasRegistry
 from parrot_formdesigner.services.sinks.base import (
     AbstractSubmissionSink,
@@ -139,8 +140,16 @@ class AsyncDBSink(AbstractSubmissionSink):
         the dataset (``dataset_id = self._tenant``, mirroring how tenant
         already scopes the Postgres schema elsewhere in this package) and
         ``collection`` is the table id within it.
+
+        ``tenant`` is validated here (mirroring
+        ``FormSubmissionStorage._resolve_schema``'s identical convention,
+        ``services/submissions.py:159``) because — unlike ``collection``,
+        which Pydantic already validated at target construction — it is
+        interpolated raw into backtick-quoted SQL by ``read()``/
+        ``list_revisions()`` and is not otherwise identifier-checked
+        before reaching this sink.
         """
-        return self._tenant, self._target.collection
+        return validate_identifier(self._tenant, kind="tenant"), self._target.collection
 
     # ------------------------------------------------------------------
     # Driver lifecycle

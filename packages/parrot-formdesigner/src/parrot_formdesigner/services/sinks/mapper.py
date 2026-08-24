@@ -241,3 +241,23 @@ def column_names_for(form: FormSchema) -> list[str]:
     if form.metadata:
         names.extend(meta_field.key for meta_field in form.metadata)
     return names
+
+
+def field_types_for(form: FormSchema) -> dict[str, FieldType]:
+    """Return a ``{flattened column name: FieldType}`` map for ``form``.
+
+    Built on the SAME canonical traversal :func:`column_names_for` uses
+    (:func:`_iter_form_fields`), so a column's reported type can never
+    drift from what :func:`flatten_submission` actually emits for it —
+    sinks that need per-column type inference (e.g. ``PostgresTableSink``
+    DDL, ``AsyncDBSink``'s BigQuery schema) should use this instead of
+    re-implementing the field-tree walk.
+
+    Args:
+        form: The form whose tabular columns to type.
+
+    Returns:
+        A dict mapping each flattened (non-reserved, non-metadata)
+        column name to its originating field's ``FieldType``.
+    """
+    return {name: field.field_type for name, field in _iter_form_fields(form)}

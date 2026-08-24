@@ -16,6 +16,7 @@ from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.services.sinks.mapper import (
     RESERVED_COLUMNS,
     column_names_for,
+    field_types_for,
     flatten_submission,
     nest_submission,
 )
@@ -155,3 +156,20 @@ class TestColumnNames:
     def test_reserved_come_first(self, form_with_group):
         names = column_names_for(form_with_group)
         assert set(names[: len(RESERVED_COLUMNS)]) == RESERVED_COLUMNS
+
+
+class TestFieldTypesFor:
+    def test_matches_flattened_columns(self, form_with_group):
+        types = field_types_for(form_with_group)
+        assert "address__city" in types
+        assert types["address__city"] == FieldType.TEXT
+
+    def test_array_field_type_reported(self, form_with_array):
+        types = field_types_for(form_with_array)
+        assert types["answers"] == FieldType.ARRAY
+
+    def test_excludes_reserved_and_metadata_columns(self, form_with_metadata):
+        types = field_types_for(form_with_metadata)
+        assert "campaign_id" not in types  # metadata key, not a form field
+        assert "submission_id" not in types  # reserved column
+        assert "name" in types

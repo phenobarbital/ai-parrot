@@ -113,8 +113,13 @@ class AsyncDBTarget(BaseModel):
     Attributes:
         type: Discriminator literal, always ``"asyncdb"``.
         connection: Alias resolved server-side to credentials — NEVER a raw DSN.
-        driver: The asyncdb driver name, e.g. ``"mongo"``, ``"bigquery"``,
-            ``"arango"``.
+        driver: The asyncdb driver name — restricted to the three v1
+            drivers this sink family actually supports (``AsyncDBSink``,
+            TASK-2423). Constraining this at the Pydantic layer, rather
+            than only in ``AsyncDBSink.ensure_target()``'s if/elif/else,
+            prevents a form from making the server dynamically load and
+            connect through an arbitrary installed ``asyncdb`` driver
+            name before that later check ever runs.
         collection: Collection / dataset.table / document collection name.
             Document drivers (``mongo``, ``arango``) store ``data`` NESTED,
             unflattened — see the submission mapper.
@@ -124,7 +129,7 @@ class AsyncDBTarget(BaseModel):
 
     type: Literal["asyncdb"] = "asyncdb"
     connection: str = Field(..., description="Alias resolved server-side, never a DSN")
-    driver: str
+    driver: Literal["mongo", "arango", "bigquery"]
     collection: str
 
     @field_validator("collection")
@@ -141,7 +146,11 @@ class CsvFileTarget(BaseModel):
         connection: Alias resolved server-side to an allowed base directory.
         path: Relative path (inside the alias's base dir). Traversal segments
             (``..``) and absolute paths are rejected at construction.
-        delimiter: CSV field delimiter, defaults to ``","``.
+        delimiter: CSV field delimiter, defaults to ``","``. Must be
+            exactly one character — ``csv.writer`` raises ``TypeError``
+            for anything else, and that would otherwise surface as an
+            unhandled 500 from ``CsvFileSink.write()`` instead of a clean
+            422 at schema-construction time.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -155,6 +164,15 @@ class CsvFileTarget(BaseModel):
     @classmethod
     def _validate_path(cls, value: str) -> str:
         return _reject_path_traversal(value)
+
+    @field_validator("delimiter")
+    @classmethod
+    def _validate_delimiter(cls, value: str) -> str:
+        if len(value) != 1:
+            raise ValueError(
+                f"delimiter must be exactly one character, got {value!r}"
+            )
+        return value
 
 
 class GoogleSheetTarget(BaseModel):

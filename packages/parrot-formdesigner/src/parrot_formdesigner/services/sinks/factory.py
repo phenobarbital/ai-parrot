@@ -11,8 +11,10 @@ in one place forever and is why ``promote()`` needs no changes.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import uuid
 from typing import TYPE_CHECKING
 
@@ -77,6 +79,7 @@ class SinkFactory:
         # Coordinate fingerprint of the FIRST target ever seen for a given
         # (tenant, form_uid), independent of version.
         self._fingerprints: dict[tuple[str, uuid.UUID], str] = {}
+        self.logger = logging.getLogger(__name__)
 
     async def get(self, form: FormSchema, *, tenant: str) -> AbstractSubmissionSink:
         """Return the sink for ``form``'s declared persistence target.
@@ -126,8 +129,25 @@ class SinkFactory:
         return sink
 
     async def close_all(self) -> None:
-        """Close every cached sink. Idempotent — safe to call twice."""
+        """Close every cached sink. Idempotent — safe to call twice.
+
+        Closes all sinks concurrently and tolerates individual failures
+        (via ``return_exceptions=True``): one sink raising during
+        ``close()`` must not prevent the others from closing, and the
+        cache is cleared only after every close attempt has completed —
+        never before, so a failure never leaves an uncloseable sink
+        stranded outside the cache.
+        """
         sinks = list(self._cache.values())
+        if sinks:
+            results = await asyncio.gather(
+                *(sink.close() for sink in sinks), return_exceptions=True
+            )
+            for sink, result in zip(sinks, results, strict=True):
+                if isinstance(result, BaseException):
+                    self.logger.warning(
+                        "SinkFactory.close_all: %s.close() raised: %s",
+                        type(sink).__name__,
+                        result,
+                    )
         self._cache.clear()
-        for sink in sinks:
-            await sink.close()

@@ -150,6 +150,20 @@ class TestCloseAll:
         await factory.close_all()
         await factory.close_all()  # must not raise
 
+    async def test_close_all_tolerates_one_failure(self, factory, form):
+        from unittest.mock import AsyncMock
+
+        other_form = _postgres_form(form_id="other")
+        sink_a = await factory.get(form, tenant="navigator")
+        sink_b = await factory.get(other_form, tenant="navigator")
+        sink_a.close = AsyncMock(side_effect=RuntimeError("boom"))
+        sink_b.close = AsyncMock()
+
+        await factory.close_all()  # must not raise despite sink_a failing
+
+        sink_a.close.assert_awaited_once()
+        sink_b.close.assert_awaited_once()  # sink_b still closed
+
     async def test_no_persistence_raises(self, factory):
         section = FormSection(
             section_id="s1",
