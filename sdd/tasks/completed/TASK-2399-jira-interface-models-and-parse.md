@@ -600,10 +600,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
+**Notes**: Created `parrot/interfaces/jira/` (`__init__.py`, `models.py`,
+`parse.py`) with all seven spec models and the pure `parse_issue` projection
+(signature includes the `ac_field_id` parameter per the task's corrected
+contract). PII boundary implemented via a single `_person()` helper reading
+only `accountId`/`displayName` — never `**raw_user`/`model_validate`. Issue
+links normalized via a module-level `(type.name.lower(), direction) ->
+JiraIssueLinkKind` dict with unknown types degrading to `RELATES` (logged at
+debug). History sorted ascending by `(at, field)`. Verified empirically (not
+assumed) that `from tests.fixtures.jira_payloads import ...` resolves under
+this repo's pytest config with no extra `pythonpath` setting, confirming the
+task's fixture-sharing approach works as designed. Created the
+`tests/fixtures/jira_payloads.py`, `tests/interfaces/jira/{__init__.py,
+conftest.py, test_jira_models.py}` exactly as scoped. All 16 tests pass;
+`ruff check` clean on all new files (added a justified `# noqa: TRY004` on
+the `fields`-missing check, since the spec/AC mandates `ValueError` there,
+not `TypeError`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

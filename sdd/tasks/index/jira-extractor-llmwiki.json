@@ -34,7 +34,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M1a",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +42,8 @@
       "parallelism_notes": "Leaf. All-new files under parrot/interfaces/jira/ plus tests/fixtures/jira_payloads.py — no overlap with any other task, so it CAN run in its own worktree. Sequential in one worktree per the spec's per-spec Worktree Strategy: the two hottest files (cli.py, 123 KB, touched by every wiki feature; jiratoolkit.py, contested by FEAT-138/TASK-948, TASK-953 and the 3LO spec) must not be edited from two worktrees at once.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2399-jira-interface-models-and-parse.md"
+      "completed_at": "2026-08-24T01:08:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2399-jira-interface-models-and-parse.md"
     },
     {
       "id": "TASK-2400",
