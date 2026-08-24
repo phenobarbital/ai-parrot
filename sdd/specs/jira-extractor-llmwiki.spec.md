@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-454
 **Date**: 2026-08-24
 **Author**: Jesus Lara (spec: Claude session 2026-08-24)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Builds on**: FEAT-450 (`sdd/specs/wiki-namespaces.spec.md`), FEAT-451
 (`sdd/specs/wikitoolkit-ingest-documents.spec.md`)
@@ -217,7 +217,7 @@ state file and the plane are never re-ingested as notes.
 | `parrot/knowledge/wiki/vault_scan.py` | uses (no change) | `scan_vault()` consumed as-is via `build --vault`. |
 | `parrot/knowledge/wiki/documents.py` | pattern precedent | `render_frontmatter` determinism contract mirrored, not modified. |
 | `parrot/knowledge/okf/ontology.py` | extends | Additive: `ISSUE`, `PERSON`, `PROJECT` members. |
-| `parrot/knowledge/wiki/export.py` | uses (no change) | `_okf_type_for` falls back to `category.title()` (`export.py:73`), so categories `issue`/`person`/`project` already project to the new type names. |
+| `parrot/knowledge/wiki/export.py` | uses (no change) | The helper is `okf_type` (`export.py:71`, **not** `_okf_type_for`); it falls back to `category.title()`, so categories `issue`/`person`/`project` *would* project to the new type names. **Caveat**: `scan_vault` hard-codes `category="document"` on every note page (`vault_scan.py:166`), so no issues-plane page actually carries category `issue` in v1. The `type: Issue` value lives in the markdown frontmatter (queryable via FTS), not in `WikiPageRecord.category`. Changing `scan_vault` is out of scope. |
 | `parrot/knowledge/graphindex/builder.py` | pattern precedent | `_loader_for` (`:667-704`) is the lazy optional-dependency idiom to copy. |
 | `packages/ai-parrot/pyproject.toml` | modifies | Add a `jira` extra; today `jira` only rides `agents`/`mcp`. |
 | `wikitoolkit build` (repo plane) | **none** | Hard non-goal. |
@@ -668,7 +668,7 @@ from parrot.knowledge.okf import (
 )                                                                            # okf/__init__.py:15-30
 from parrot.knowledge.wiki.documents import render_frontmatter, split_frontmatter
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper                  # cli.py:2685
-from parrot.knowledge.wiki.export import CATEGORY_TO_OKF_TYPE               # export.py:38
+from parrot.knowledge.wiki.export import CATEGORY_TO_OKF_TYPE, okf_type      # export.py:38, :71
 from parrot.auth.jira_oauth import JiraOAuthManager, JiraTokenSet           # jira_oauth.py:86, :59
 ```
 
@@ -726,10 +726,14 @@ def resolve_sources(source: str, *, recursive: bool = True) -> list[DocumentRef]
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/export.py
 CATEGORY_TO_OKF_TYPE: dict[str, str] = {...}   # :38-45
-def _okf_type_for(category: str) -> str:       # :73
+def okf_type(category: str) -> str:            # :71  (NOT `_okf_type_for`)
     return CATEGORY_TO_OKF_TYPE.get(category, category.title() or "Other")
-# ^ categories "issue"/"person"/"project" already project to
-#   "Issue"/"Person"/"Project" via the .title() fallback — export.py needs NO change.
+# ^ the .title() fallback WOULD project "issue"/"person"/"project" to
+#   "Issue"/"Person"/"Project" — export.py needs NO change.
+# BUT vault_scan.py:166 hard-codes category="document" for every note page,
+#   so no issues-plane page carries category "issue" in v1. The Issue/Person/
+#   Project vocabulary is consumed via the markdown frontmatter `type:` key
+#   (FTS-visible), not via WikiPageRecord.category. Do NOT modify scan_vault.
 # packages/ai-parrot/src/parrot/knowledge/wiki/file_store.py:160-162 — the bundle
 #   reader deliberately uses plain yaml.safe_load, NOT the OKF parser, "which
 #   enforces the closed ConceptType enum".
@@ -1048,17 +1052,30 @@ class SourceCollectionManager:
   research*: yes, add `jira = ["jira>=3.10"]` to
   `packages/ai-parrot/pyproject.toml` (M7); today it only rides
   `agents`/`mcp`.
-- [ ] **Cron cadence and host for the sweep** — daily vs weekly, and which
-  machine owns the schedule (developer workstation, CI runner, or a server).
-  The runbook must name one; the code is indifferent. — *Owner: Jesus*
-- [ ] **Which JQL scope ships as the documented default?** `project = NAV`
-  is the obvious start, but the corpus's usefulness depends on whether
-  closed/archived tickets and other projects are in scope. Needs a decision
-  before the first production sweep, not before implementation. — *Owner: Jesus*
-- [ ] **Acceptance-criteria field id.** The AC lives in a custom field whose
-  id is instance-specific (`customfield_NNNNN`). Resolve it dynamically by
-  field name via `get_projects`/field metadata, or configure it explicitly
-  as `JIRA_WIKI_AC_FIELD`? Implementation-time decision. — *Owner: Jesus*
+- [x] **Cron cadence and host for the sweep** — *Resolved by Jesus
+  2026-08-24*: **daily**. The runbook names a daily cron; the host machine
+  is an operator choice the runbook documents as a placeholder (the code is
+  indifferent, and the watermark makes a re-run on a different host safe).
+  See M7.
+- [x] **Which JQL scope ships as the documented default?** — *Resolved
+  2026-08-24 (Jesus deferred to the recommendation)*: the shipped default is
+  **`project = ${JIRA_DEFAULT_PROJECT}`** — a single project, **no status
+  filter** and **no date bound**. Closed and resolved tickets are kept in
+  scope deliberately: "what do we already know about X" is answered mostly
+  by finished work, so excluding them would gut the corpus's value. The
+  watermark supplies incrementality, so the unbounded scope costs one full
+  backfill on the first run and near-zero afterwards. Widening to more
+  projects is an operator action via `JIRA_WIKI_JQL`, documented in the
+  runbook — not a code change. See M5 default resolution and M7.
+- [x] **Acceptance-criteria field id.** — *Resolved by Jesus 2026-08-24*:
+  **config key with a dynamic fallback.** `JIRA_WIKI_AC_FIELD` wins when
+  set; otherwise `JiraInterface` resolves the field id by *name* from
+  `GET /rest/api/2/field` (case-insensitive match against a small candidate
+  name list, e.g. "Acceptance Criteria"), caches the resolved id for the
+  process lifetime, and degrades to **omitting the AC section entirely**
+  when neither path resolves — never raising and never guessing a
+  `customfield_NNNNN`. See M1 (`resolve_ac_field_id`) and M3 (the AC section
+  is omitted, not emitted empty, so determinism holds either way).
 
 ---
 
@@ -1067,3 +1084,4 @@ class SourceCollectionManager:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-24 | Jesus Lara (spec: Claude) | Initial draft from `jira-extractor-llmwiki.brainstorm.md` (Option A), with 17 resolved decisions carried forward and 3 open items. |
+| 0.2 | 2026-08-24 | Jesus Lara (spec: Claude) | Status → approved. Resolved the 3 remaining Open Questions (daily cron; default JQL `project = ${JIRA_DEFAULT_PROJECT}` with closed tickets in scope; AC field via `JIRA_WIKI_AC_FIELD` with a by-name dynamic fallback). Corrected `export.py` helper name to `okf_type` and recorded the `scan_vault` `category="document"` constraint. |
