@@ -161,6 +161,31 @@ def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
             reserved.add(first_segment)
     return frozenset(reserved)
 
+def _stash_without_clobbering(app: web.Application, key: str, value: object) -> None:
+    """Put ``value`` on ``app[key]`` without destroying what the host wired.
+
+    Extracted rather than inlined (ARCHITECTURE Rule 4): ``setup_form_api``
+    already sits above the complexity ceiling at 26, and four inline branches
+    pushed it to 28. A function that already violates a budget is not grown —
+    the branches move out.
+
+    Semantics:
+      * an EXPLICIT ``value`` wins — it is the more specific instruction;
+      * ``None`` only ensures the key EXISTS, so callers reading ``app[key]``
+        get ``None`` rather than a ``KeyError`` (the pre-FEAT-460 contract);
+      * a backend the host wired BEFORE calling setup SURVIVES.
+
+    Args:
+        app: The aiohttp application.
+        key: The app key to stash under.
+        value: The service instance, or ``None``.
+    """
+    if value is not None:
+        app[key] = value
+    else:
+        app.setdefault(key, None)
+
+
 
 def setup_form_api(
     app: web.Application,
@@ -248,8 +273,26 @@ def setup_form_api(
 
     # Stash REST-field services (FEAT-170). Both may be None; the upload
     # handler resolves defaults lazily on first request.
-    app["blob_storage"] = blob_storage
-    app["rest_resolver"] = resolver
+    #
+    # NEVER overwrite a backend the HOST already wired (FEAT-460). These two
+    # lines used to assign unconditionally, so a host that wired
+    # ``app["blob_storage"]`` BEFORE calling this function had it replaced
+    # with the ``None`` default a line later. That is not hypothetical: it is
+    # what fieldsync does — ``fieldsync/forms.py::_wire_blob_storage`` binds
+    # an ``S3BlobStorage(prefix="fieldsync/forms/")``, logs "persistent S3
+    # blob storage wired", and then calls ``setup_form_api`` without the
+    # kwarg. `_get_blob_storage` then found ``None`` on the first upload,
+    # built a ``TempBlobStorage`` and cached it under the SAME key, so every
+    # form attachment since FEAT-484 landed in a process-local temp directory
+    # that dies on restart — the exact failure `_wire_blob_storage` exists to
+    # prevent. Observed live 2026-08-24: ten photos written as
+    # ``temp://…`` while the startup log said S3.
+    #
+    # An EXPLICIT kwarg still wins (it is the more specific instruction). A
+    # ``None`` kwarg only ensures the key exists, so callers reading
+    # ``app["blob_storage"]`` keep getting ``None`` rather than a KeyError.
+    _stash_without_clobbering(app, "blob_storage", blob_storage)
+    _stash_without_clobbering(app, "rest_resolver", resolver)
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
