@@ -89,6 +89,22 @@ a fail-closed condition — the bridge refuses to start rather than accept
 financial-write commands from an unauthenticated sender. See TASK-2397 /
 `packages/ai-parrot-integrations/src/parrot/integrations/whatsapp/bridge_config.py`.
 
+**This is a security boundary, not a UX nicety.** `WhatsAppBridgeWrapper.__init__()`
+detects whether the bound agent has a registered `BusinessAutomationToolkit`
+exposing at least one `OperationKind.SUBMIT` operation (walking the agent's
+`ToolManager`, the same way `ToolManager.cleanup_toolkits()` already does);
+if so, and `allowed_numbers` is empty/`None`, construction raises `ValueError`
+naming the wrapper's `name`/`chatbot_id` — the operator sees exactly which
+config is unsafe, instead of the bridge silently accepting instructions from
+any WhatsApp number. Bots with no SUBMIT-kind operations exposed are
+completely unaffected — the permissive "empty = all" default from before
+TASK-2397 is preserved for them.
+
+Numbers (both the configured allowlist and each incoming sender) are
+normalized to digits-only before comparison
+(`WhatsAppBridgeConfig.normalized_allowed_numbers`) — `+34 600 11 22 33` and
+`34600112233` are the same allowlist entry.
+
 ## 5. The `gestoria` wiki plane — one-off registration step
 
 `build_gestoria_wiki()` (`parrot_tools.business_automation.memory`)
