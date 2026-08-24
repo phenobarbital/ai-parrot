@@ -7,6 +7,8 @@ from pathlib import Path
 
 from parrot.interfaces.jira import JiraAuthError, parse_issue
 from parrot.knowledge.wiki.jira_sync import (
+    BACKFILL_SWEEP_CONCURRENCY,
+    DEFAULT_SWEEP_CONCURRENCY,
     JiraScopeState,
     JiraSyncState,
     SweepReport,
@@ -457,3 +459,188 @@ class TestConcurrency:
             report = _sweep(FakeJiraInterface([raw_issue]), issues_dir)
         assert report.errors
         assert report.written == 0
+
+
+def _keyed(raw_issue, key: str) -> dict:
+    """A distinct copy of the shared payload under another issue key."""
+    import copy
+
+    clone = copy.deepcopy(raw_issue)
+    clone["key"] = key
+    clone["id"] = str(abs(hash(key)) % 10**6)
+    return clone
+
+
+class _ConcurrencyProbeInterface(FakeJiraInterface):
+    """Records the peak number of overlapping `get_remote_links` calls."""
+
+    def __init__(self, raw_issues, *, hold=0.01, approx=None, **kw):
+        super().__init__(raw_issues, **kw)
+        self.hold = hold
+        self.approx = approx
+        self.in_flight = 0
+        self.peak_in_flight = 0
+        self.pool_sized_for: int | None = None
+
+    async def get_remote_links(self, key):
+        self.in_flight += 1
+        self.peak_in_flight = max(self.peak_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(self.hold)
+            return await super().get_remote_links(key)
+        finally:
+            self.in_flight -= 1
+
+    async def configure_connection_pool(self, size):
+        self.pool_sized_for = size
+
+    async def approximate_issue_count(self, jql):
+        return self.approx
+
+
+class TestSweepConcurrency:
+    """The per-issue remote-links call is the backfill's wall clock — it
+    must actually overlap, and overlapping must not change the result."""
+
+    def test_fans_out_up_to_concurrency(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(12)]
+        iface = _ConcurrencyProbeInterface(issues)
+
+        report = _sweep(iface, issues_dir, concurrency=4)
+
+        assert report.fetched == 12
+        assert iface.peak_in_flight == 4, "the semaphore must saturate at `concurrency`"
+        assert iface.pool_sized_for == 4
+
+    def test_concurrency_one_is_strictly_sequential(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(5)]
+        iface = _ConcurrencyProbeInterface(issues)
+
+        _sweep(iface, issues_dir, concurrency=1)
+
+        assert iface.peak_in_flight == 1
+        assert iface.pool_sized_for is None, "a sequential sweep must not resize the pool"
+
+    def test_parallel_and_sequential_produce_identical_corpora(self, raw_issue, tmp_path):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(9)]
+        seq_dir, par_dir = tmp_path / "seq", tmp_path / "par"
+        seq_dir.mkdir(), par_dir.mkdir()
+
+        seq = _sweep(_ConcurrencyProbeInterface(issues), seq_dir, concurrency=1)
+        par = _sweep(_ConcurrencyProbeInterface(issues), par_dir, concurrency=8)
+
+        assert seq.fetched == par.fetched == 9
+        assert seq.written == par.written
+        # Byte-identical except for the sync.fetched_at wall clock, which
+        # differs between the two runs by construction.
+        strip = lambda tree: {k: b"\n".join(l for l in v.split(b"\n") if b"fetched_at" not in l) for k, v in tree.items()}
+        assert strip(_tree(seq_dir)) == strip(_tree(par_dir))
+
+    def test_watermark_is_the_max_regardless_of_completion_order(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(6)]
+        issues[3]["fields"]["updated"] = "2026-08-22T10:00:00.000-0400"
+        iface = _ConcurrencyProbeInterface(issues)
+
+        report = _sweep(iface, issues_dir, concurrency=6)
+
+        scope = load_sync_state(issues_dir).scopes[jql_fingerprint(JQL)]
+        assert report.watermark_advanced is True
+        assert scope.last_watermark.startswith("2026-08-22")
+
+    def test_mid_sweep_failure_still_records_partial(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(10)]
+        iface = _ConcurrencyProbeInterface(issues, fail_after=6)
+
+        report = _sweep(iface, issues_dir, concurrency=4)
+
+        scope = load_sync_state(issues_dir).scopes[jql_fingerprint(JQL)]
+        assert report.errors and report.watermark_advanced is False
+        assert scope.last_run_status == "partial"
+        assert iface.in_flight == 0, "in-flight tasks must be awaited/cancelled, not orphaned"
+
+
+class TestScopeCompletenessCanary:
+    """The guard for the bug class that truncated this corpus to one page:
+    a full sweep that fetched far less than the scope holds."""
+
+    def test_shortfall_warns_by_default(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(5)]
+        iface = _ConcurrencyProbeInterface(issues, approx=500)
+
+        report = _sweep(iface, issues_dir)
+
+        assert report.approx_scope_count == 500
+        assert report.warnings and "~500" in report.warnings[0]
+        assert not report.errors
+        assert report.watermark_advanced is True, "a warning must not gate the watermark"
+
+    def test_shortfall_is_an_error_when_enforced(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(5)]
+        iface = _ConcurrencyProbeInterface(issues, approx=500)
+
+        report = _sweep(iface, issues_dir, enforce_scope_count=True)
+
+        scope = load_sync_state(issues_dir).scopes[jql_fingerprint(JQL)]
+        assert report.errors and report.watermark_advanced is False
+        assert scope.last_run_status == "partial"
+
+    def test_within_tolerance_is_silent(self, raw_issue, issues_dir):
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(19)]
+        iface = _ConcurrencyProbeInterface(issues, approx=20)
+
+        report = _sweep(iface, issues_dir, enforce_scope_count=True)
+
+        assert not report.warnings and not report.errors
+        assert report.watermark_advanced is True
+
+    def test_tiny_scope_skew_does_not_cry_wolf(self, raw_issue, issues_dir):
+        """One ticket updated between fetch and count is a >10% "shortfall"
+        on a handful of tickets — the truncation this guards against is
+        page-sized, so small scopes are exempt."""
+        iface = _ConcurrencyProbeInterface([_keyed(raw_issue, "NAV-9000")], approx=5)
+
+        report = _sweep(iface, issues_dir, enforce_scope_count=True)
+
+        assert report.approx_scope_count == 5
+        assert not report.warnings and not report.errors
+
+    def test_enforcement_also_covers_a_date_bounded_scope(self, raw_issue, issues_dir):
+        """A one-shot load of `... AND updated >= -365d` is not a "full
+        sweep", but it still deserves the guarantee it asked for."""
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(5)]
+        iface = _ConcurrencyProbeInterface(issues, approx=500)
+
+        report = _sweep(
+            iface,
+            issues_dir,
+            since=datetime(2026, 1, 1, tzinfo=UTC),
+            enforce_scope_count=True,
+        )
+
+        assert report.errors and report.watermark_advanced is False
+
+    def test_no_canary_on_an_incremental_sweep(self, raw_issue, issues_dir):
+        """A watermark-bounded run fetches a slice on purpose — comparing it
+        against the whole scope's size would cry wolf on every cron run."""
+        _sweep(_ConcurrencyProbeInterface([_keyed(raw_issue, "NAV-9000")], approx=1), issues_dir)
+
+        second = _sweep(_ConcurrencyProbeInterface([], approx=9000), issues_dir)
+
+        assert second.approx_scope_count is None
+        assert not second.warnings and not second.errors
+
+    def test_absent_counter_degrades_quietly(self, raw_issue, issues_dir):
+        """`interface` is a duck-typed seam: a stand-in without the counter
+        must not break the sweep."""
+        report = _sweep(FakeJiraInterface([raw_issue]), issues_dir, enforce_scope_count=True)
+
+        assert report.approx_scope_count is None
+        assert not report.errors and report.watermark_advanced is True
+
+
+class TestConcurrencyPresets:
+    def test_backfill_preset_is_higher_than_the_cron_default(self):
+        assert BACKFILL_SWEEP_CONCURRENCY > DEFAULT_SWEEP_CONCURRENCY
+        # The cron default must stay inside `requests`' default pool (10),
+        # so an unconfigured sweep never churns TLS connections.
+        assert DEFAULT_SWEEP_CONCURRENCY <= 10

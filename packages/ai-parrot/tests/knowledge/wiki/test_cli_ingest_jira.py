@@ -89,6 +89,9 @@ class TestHelpAndRegistration:
             "--no-build",
             "--enrich",
             "--force",
+            "--backfill",
+            "--concurrency",
+            "--progress-every",
             "--dry-run",
             "--json",
             "--quiet",
@@ -324,3 +327,95 @@ class TestAppendOnlyEdit:
         assert hasattr(cli, "ingest_jira")
         for existing in ("ingest", "claude_hook"):
             assert hasattr(cli, existing), existing
+
+
+class TestBackfillPreset:
+    """`--backfill` is the one-shot full load: force + parallel + progress
+    + a hard refusal to record a watermark over a short corpus."""
+
+    def _invoke(self, runner, monkeypatch, tmp_path, *extra_args):
+        capture: dict = {}
+        _patch_sweep(monkeypatch, capture=capture)
+        _patch_interface(monkeypatch)
+        result = runner.invoke(
+            wiki,
+            ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path), *extra_args],
+        )
+        assert result.exit_code == 0, result.output
+        return capture, result
+
+    def test_default_run_is_a_conservative_cron(self, runner, monkeypatch, tmp_path):
+        from parrot.knowledge.wiki.jira_sync import DEFAULT_SWEEP_CONCURRENCY
+
+        capture, _ = self._invoke(runner, monkeypatch, tmp_path)
+
+        assert capture["concurrency"] == DEFAULT_SWEEP_CONCURRENCY
+        assert capture["force"] is False
+        assert capture["enforce_scope_count"] is False
+        assert capture["progress_every"] == 0
+
+    def test_backfill_presets_force_progress_and_enforcement(self, runner, monkeypatch, tmp_path):
+        from parrot.knowledge.wiki.jira_sync import BACKFILL_SWEEP_CONCURRENCY
+
+        capture, _ = self._invoke(runner, monkeypatch, tmp_path, "--backfill")
+
+        assert capture["force"] is True, "--backfill must ignore the stored watermark"
+        assert capture["enforce_scope_count"] is True
+        assert capture["concurrency"] == BACKFILL_SWEEP_CONCURRENCY
+        assert capture["progress_every"] == 100
+
+    def test_explicit_concurrency_beats_the_preset(self, runner, monkeypatch, tmp_path):
+        capture, _ = self._invoke(runner, monkeypatch, tmp_path, "--backfill", "--concurrency", "3")
+
+        assert capture["concurrency"] == 3
+
+    def test_env_default_concurrency(self, runner, monkeypatch, tmp_path):
+        monkeypatch.setenv("JIRA_WIKI_CONCURRENCY", "5")
+        capture, _ = self._invoke(runner, monkeypatch, tmp_path)
+
+        assert capture["concurrency"] == 5
+
+    def test_non_integer_env_concurrency_is_a_clean_error(self, runner, monkeypatch, tmp_path):
+        monkeypatch.setenv("JIRA_WIKI_CONCURRENCY", "lots")
+        _patch_sweep(monkeypatch)
+        _patch_interface(monkeypatch)
+        result = runner.invoke(
+            wiki,
+            ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+        assert "JIRA_WIKI_CONCURRENCY" in result.output
+
+    def test_concurrency_is_range_checked(self, runner, monkeypatch, tmp_path):
+        _patch_sweep(monkeypatch)
+        _patch_interface(monkeypatch)
+        result = runner.invoke(
+            wiki,
+            ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path), "--concurrency", "0"],
+        )
+        assert result.exit_code != 0
+
+    def test_quiet_backfill_prints_no_progress(self, runner, monkeypatch, tmp_path):
+        capture, _ = self._invoke(runner, monkeypatch, tmp_path, "--backfill", "--quiet")
+
+        assert capture["progress_every"] == 0
+
+    def test_shortfall_warning_is_surfaced(self, runner, monkeypatch, tmp_path):
+        from parrot.knowledge.wiki.jira_sync import SweepReport
+
+        _patch_sweep(
+            monkeypatch,
+            report_factory=lambda: SweepReport(
+                fetched=100,
+                approx_scope_count=9320,
+                warnings=["Fetched 100 issue(s) for a scope Jira sizes at ~9320."],
+            ),
+        )
+        _patch_interface(monkeypatch)
+        result = runner.invoke(
+            wiki,
+            ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path)],
+        )
+        assert result.exit_code == 0, result.output
+        assert "~9320" in result.output
+        assert "WARNING" in result.output

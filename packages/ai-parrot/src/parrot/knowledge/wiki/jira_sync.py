@@ -75,11 +75,17 @@ DEFAULT_SWEEP_CONCURRENCY = 8
 # aggressive than a daily cron.
 BACKFILL_SWEEP_CONCURRENCY = 16
 
-# A full sweep that fetched less than this fraction of Jira's own
-# approximate count for the scope is reported as a shortfall — the canary
-# for a truncated fetch (the Cloud cursor-pagination bug). Generous on
-# purpose: the count is documented as approximate.
+# A sweep that fetched less than this fraction of Jira's own approximate
+# count for the scope is reported as a shortfall — the canary for a
+# truncated fetch (the Cloud cursor-pagination bug). Generous on purpose:
+# the count is documented as approximate.
 SCOPE_SHORTFALL_RATIO = 0.9
+
+# ...and only for a scope big enough for the comparison to mean something.
+# On a handful of tickets, one ticket updated between the fetch and the
+# count call is already a >10% "shortfall", while the truncation this
+# guards against is page-sized (>=100).
+SCOPE_SHORTFALL_MIN_COUNT = 20
 
 
 class JiraScopeState(BaseModel):
@@ -563,17 +569,27 @@ async def _run_sweep(
             save_sync_state(issues_dir, state)
         return report
 
-    # --- Completeness canary (full sweeps only) ------------------------
+    # --- Completeness canary -------------------------------------------
     # Runs BEFORE orphan detection on purpose: a truncated fetch makes
     # every unfetched ticket look like an orphan, so a short sweep must be
     # caught here rather than probing thousands of healthy tickets for
     # unreachability.
-    if is_full_sweep:
+    #
+    # Compared against the count for the EFFECTIVE JQL, so a bounded scope
+    # is judged against its own size. Skipped on a routine incremental
+    # sweep (nothing asked for the guarantee, and a watermark slice is
+    # small enough for fetch/count skew to look like a shortfall), always
+    # run when a caller asked to enforce it (`--backfill`).
+    if is_full_sweep or enforce_scope_count:
         # Duck-typed seam again: no counter, no canary.
         counter = getattr(interface, "approximate_issue_count", None)
         approx = await counter(effective_jql) if counter is not None else None
         report.approx_scope_count = approx
-        if approx is not None and approx > 0 and report.fetched < approx * SCOPE_SHORTFALL_RATIO:
+        if (
+            approx is not None
+            and approx >= SCOPE_SHORTFALL_MIN_COUNT
+            and report.fetched < approx * SCOPE_SHORTFALL_RATIO
+        ):
             message = (
                 f"Fetched {report.fetched} issue(s) for a scope Jira sizes at "
                 f"~{approx}. A shortfall this large means the scope was not "
