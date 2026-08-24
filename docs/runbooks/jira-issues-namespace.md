@@ -204,8 +204,10 @@ sync; nothing in it is discarded.
 
 - **Comments.** Explicitly out of scope — the largest token contributor
   and highest-churn field on re-sync.
-- **Attachment payloads.** Recorded as references only (filename, size,
-  URL) — nothing is downloaded.
+- **Attachment and remote-link payloads.** Both are recorded as
+  references only (attachments: filename, size, URL; remote links:
+  title, URL, under a `## Remote Links` section) — nothing is
+  downloaded.
 - **Cross-namespace edges.** `wikitoolkit link` refuses them outright:
   *"Both pages must live in the same plane — there are no cross-namespace
   edges"*. A ticket ↔ repo-spec relationship is a **text-level join
@@ -216,7 +218,10 @@ sync; nothing in it is discarded.
 - **PII beyond display name.** Person pages carry `displayName` and
   `accountId` only — no email address is ever captured (G9). The parse
   boundary drops `emailAddress` before it can reach any model, document,
-  or export.
+  or export. As defense in depth, any email-shaped string that shows up
+  in free text (description, acceptance criteria) is also redacted at
+  render time — G9's own acceptance criterion is a blanket check over
+  the whole generated corpus, not just structured Jira user objects.
 
 ## G8 — keep the corpus out of git
 
