@@ -99,6 +99,7 @@ if TYPE_CHECKING:
     from ..services.project_service import ProjectService
     from ..services.question_bank import QuestionBankService
     from ..services.rbac import RBACService
+    from ..services.sinks.factory import SinkFactory
     from ..services.submissions import FormSubmissionStorage
     from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
@@ -133,6 +134,10 @@ class FormAPIHandler:
             form endpoints runs in **shadow mode** — it logs permission checks
             but never blocks requests. Set to ``True`` only when nav-auth
             policies are fully configured. Consistent with ``Policy.enforcing=False``.
+        sink_factory: Optional ``SinkFactory`` (FEAT-457). When set, a form
+            declaring ``persistence`` writes exclusively to its own sink in
+            :meth:`submit_data` instead of ``submission_storage``. ``None``
+            (default) preserves today's behaviour exactly for every form.
     """
 
     def __init__(
@@ -148,11 +153,16 @@ class FormAPIHandler:
         workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
         venue_service: "VenueService | None" = None,
         rbac_enforcing: bool = False,
+        sink_factory: "SinkFactory | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
         self._submission_storage = submission_storage
         self._forwarder = forwarder
+        # FEAT-457 — Autonomous FormSchema Persistence. When set, forms
+        # declaring `persistence` write exclusively to their own sink
+        # instead of `submission_storage` — see submit_data's branch.
+        self._sink_factory = sink_factory
         self._partial_store = partial_store
         # FEAT-302 — Org Graph services
         self._org_graph_service = org_graph_service
@@ -1447,7 +1457,15 @@ class FormAPIHandler:
            (submitted values override cached; skipped silently if no store or
            no cached partial).
         4. Validate submission data (422 if invalid).
-        5. Store locally if ``submission_storage`` is configured.
+        5. Persist the submission — EXCLUSIVELY (FEAT-457): when
+           ``form.persistence`` is set, resolve the form's own sink via
+           ``sink_factory``, ``ensure_target()`` it, map the submission
+           (nested for document-family sinks, flattened otherwise), and
+           ``write()`` — ``submission_storage`` is never called for such a
+           form. A sink failure returns ``503``/``422`` immediately, with
+           nothing persisted anywhere. Otherwise (``persistence`` unset),
+           store locally if ``submission_storage`` is configured — today's
+           behaviour, unchanged.
         6. Forward to endpoint if form has an ``endpoint`` submit action and
            ``forwarder`` is configured.
         7. If merge was performed, delete the cached partial on success.
@@ -1612,8 +1630,62 @@ class FormAPIHandler:
                 if extra_flat:
                     submission.data = {**submission.data, **extra_flat}
 
-            # Store locally (if storage configured)
-            if self._submission_storage is not None:
+            # Persist the submission (FEAT-457): a form declaring
+            # `persistence` writes EXCLUSIVELY to its own sink —
+            # `submission_storage` is never called for it, and a sink
+            # failure never falls back to the generic table. A form
+            # without `persistence` takes today's path, unchanged.
+            if form.persistence is not None:
+                from ..services.sinks.base import (
+                    SinkNotCapableError,
+                    SinkTargetMismatchError,
+                    SinkUnavailableError,
+                )
+                from ..services.sinks.mapper import flatten_submission, nest_submission
+
+                async def _dispatch_on_error_best_effort(error: Exception) -> None:
+                    try:
+                        await dispatch(
+                            "onError",
+                            form=form,
+                            request=request,
+                            tenant=tenant,
+                            auth_context=_auth_ctx,
+                            error=error,
+                        )
+                    except Exception:
+                        self.logger.exception(
+                            "onError handler raised during sink write"
+                        )
+
+                try:
+                    if self._sink_factory is None:
+                        raise SinkUnavailableError(
+                            "Form declares persistence but no sink_factory "
+                            "is configured on this handler"
+                        )
+                    sink = await self._sink_factory.get(form, tenant=tenant)
+                    await sink.ensure_target(form)
+                    payload = (
+                        nest_submission(form, submission)
+                        if sink.family == "document"
+                        else flatten_submission(form, submission)
+                    )
+                    await sink.write(submission, payload)
+                except SinkUnavailableError as exc:
+                    await _dispatch_on_error_best_effort(exc)
+                    return JSONResponse(
+                        {"error": str(exc)},
+                        status=503,
+                        headers={"Retry-After": "30"},
+                    )
+                except SinkTargetMismatchError as exc:
+                    await _dispatch_on_error_best_effort(exc)
+                    return JSONResponse({"error": str(exc)}, status=422)
+                except SinkNotCapableError as exc:
+                    await _dispatch_on_error_best_effort(exc)
+                    return JSONResponse({"error": str(exc)}, status=501)
+            elif self._submission_storage is not None:
                 await self._submission_storage.store(submission)
             else:
                 self.logger.debug(

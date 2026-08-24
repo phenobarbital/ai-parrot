@@ -69,6 +69,23 @@ class AbstractSubmissionSink(ABC):
     def capabilities(self) -> frozenset[SinkCapability]:
         """Return the frozenset of operations this sink supports."""
 
+    @property
+    def family(self) -> str:
+        """Data family for the submission mapper: ``"tabular"`` or ``"document"``.
+
+        Tabular sinks (Postgres, CSV, Google Sheets, and the ``bigquery``
+        ``asyncdb`` driver) receive
+        :func:`~parrot_formdesigner.services.sinks.mapper.
+        flatten_submission`'s output; document sinks (the ``mongo``/
+        ``arango`` ``asyncdb`` drivers) receive
+        :func:`~parrot_formdesigner.services.sinks.mapper.nest_submission`'s
+        output instead (FEAT-457, TASK-2428's submit-path branch decides
+        which mapper to call based on this property). Defaults to
+        ``"tabular"`` — the common case; ``AsyncDBSink`` overrides this
+        per its configured driver.
+        """
+        return "tabular"
+
     @abstractmethod
     async def ensure_target(self, form: FormSchema) -> None:
         """Idempotently create/extend the destination. Additive only.

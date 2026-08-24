@@ -116,6 +116,11 @@ class AsyncDBSink(AbstractSubmissionSink):
             base.add(SinkCapability.EXTEND)
         return frozenset(base)
 
+    @property
+    def family(self) -> str:
+        """``"document"`` for mongo/arango, ``"tabular"`` for bigquery."""
+        return "document" if self._is_document() else "tabular"
+
     def _is_document(self) -> bool:
         return self._target.driver in DOCUMENT_DRIVERS
 
