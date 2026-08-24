@@ -11,11 +11,10 @@ intent: "One vault-access + parsing core reused by ObsidianToolkit, the
 loaders, and wiki vault_scan."
 
 The ``jira`` distribution is an optional, lazily-imported dependency —
-importing this package must never require it to be installed. Today this
-package exposes the pure models plus :func:`parse_issue`; ``JiraInterface``
-(auth resolution, lazy ``jira`` import, the read surface) is added by
-TASK-2400 and appended to ``__all__`` at that time.
+importing this package must never require it to be installed.
 """
+from .client import JiraInterface
+from .errors import JiraAuthError, JiraDependencyError, JiraInterfaceError
 from .models import (
     JiraAttachmentRef,
     JiraChangeEvent,
@@ -29,7 +28,11 @@ from .parse import parse_issue
 
 __all__ = (
     "JiraAttachmentRef",
+    "JiraAuthError",
     "JiraChangeEvent",
+    "JiraDependencyError",
+    "JiraInterface",
+    "JiraInterfaceError",
     "JiraIssue",
     "JiraIssueLink",
     "JiraIssueLinkKind",
