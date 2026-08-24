@@ -4,7 +4,6 @@ import logging
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navigator.views import BaseHandler
-from navigator_auth.conf import exclude_list
 from parrot.bots import AbstractBot
 from parrot.models.responses import AIMessage
 
@@ -380,16 +379,22 @@ class StreamHandler(BaseHandler):
                 self.logger.error("Error broadcasting to client: %s", e)
 
     def configure_routes(self, app: web.Application):
-        """Configure routes for streaming endpoints."""
+        """Configure routes for streaming endpoints.
+
+        FEAT-446 (TASK-2324): these four routes used to self-exclude from
+        navigator-auth's middleware (via ``exclude_list.append(...)``),
+        making every bot stream anonymous. The excludes are intentionally
+        removed — navigator-auth's auth middleware now enforces
+        authentication on all four routes (it raises
+        ``web.HTTPUnauthorized`` for unauthenticated callers; see
+        ``navigator_auth/middlewares/abstract.py``). This is a breaking
+        change by design (spec §7 "Known Risks / Gotchas").
+        """
         # sse endpoint
-        exclude_list.append('/bots/*/stream/sse')
         app.router.add_post('/bots/{bot_id}/stream/sse', self.stream_sse)
         # ndjson endpoint
-        exclude_list.append('/bots/*/stream/ndjson')
         app.router.add_post('/bots/{bot_id}/stream/ndjson', self.stream_ndjson)
         # chunked endpoint
-        exclude_list.append('/bots/*/stream/chunked')
         app.router.add_post('/bots/{bot_id}/stream/chunked', self.stream_chunked)
         # websocket endpoint
-        exclude_list.append('/bots/*/stream/ws')
         app.router.add_get('/bots/{bot_id}/stream/ws', self.stream_websocket)
