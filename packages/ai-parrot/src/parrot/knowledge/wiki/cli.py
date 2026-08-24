@@ -3428,6 +3428,197 @@ def ingest(
     _report_skipped(skipped)
 
 
+@wiki.command(name="ingest-jira")
+@click.option(
+    "--jql",
+    default=None,
+    help="JQL scope (default: JIRA_WIKI_JQL, or `project = <JIRA_DEFAULT_PROJECT>`).",
+)
+@click.option(
+    "--project",
+    "project_key",
+    default=None,
+    help="Shorthand for `project = <KEY>`.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Override the stored watermark (ISO-8601).",
+)
+@click.option(
+    "--issues-dir",
+    "issues_dir_opt",
+    default=None,
+    type=click.Path(file_okay=False),
+    help="Output directory (default: JIRA_WIKI_ISSUES_DIR or ${PARROT_HOME}/wikis/issues).",
+)
+@click.option(
+    "--build/--no-build",
+    "do_build",
+    default=True,
+    show_default=True,
+    help="Build the plane after emitting (FEAT-454, G10).",
+)
+@click.option(
+    "--enrich",
+    is_flag=True,
+    help="Opt-in LLM summary for thin descriptions — not implemented in v1.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Re-render every issue in scope, ignoring the stored watermark.",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Report what would change; write nothing at all.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the SweepReport as JSON.",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Only print the final summary line.")
+def ingest_jira(
+    jql: str | None,
+    project_key: str | None,
+    since: str | None,
+    issues_dir_opt: str | None,
+    do_build: bool,
+    enrich: bool,
+    force: bool,
+    dry_run: bool,
+    as_json: bool,
+    quiet: bool,
+) -> None:
+    """Extract Jira tickets into the `issues` markdown corpus and build it.
+
+    Deterministic and zero-LLM by default (FEAT-454): every frontmatter
+    field is a Jira field or a pure function of one, so two runs over
+    unchanged tickets produce byte-identical documents and write nothing.
+
+    Scope is JQL; each run fetches only issues updated since the last
+    successful watermark, so a daily cron stays cheap. Content below the
+    `<!-- jira-sync:end -->` marker in any document is preserved forever.
+    Builds the plane by default so it can never silently lag the files
+    (G10) — pass ``--no-build`` to emit documents only.
+
+    Register the corpus once as a namespace (see the runbook):
+
+        wikitoolkit ns add issues --store <issues-dir>/.parrot/wiki --global
+    """
+    if enrich:
+        raise click.ClickException("--enrich is not implemented in v1 (zero-LLM default path only).")
+    if jql and project_key:
+        raise click.UsageError("--jql and --project are mutually exclusive.")
+
+    # Lazy imports: `wikitoolkit --help` must never pay for `jira`
+    # (mirrors `build`'s vault_scan import at cli.py:1118-1121).
+    from parrot.interfaces.jira import JiraAuthError, JiraDependencyError, JiraInterface
+    from parrot.knowledge.wiki.jira_sync import resolve_issues_dir, sweep_jira_issues
+
+    if jql:
+        effective_jql = jql
+    elif project_key:
+        effective_jql = f"project = {project_key}"
+    else:
+        env_jql = _env_setting("JIRA_WIKI_JQL")
+        if env_jql:
+            effective_jql = env_jql
+        else:
+            default_project = _env_setting("JIRA_DEFAULT_PROJECT")
+            if default_project:
+                effective_jql = f"project = {default_project}"
+            else:
+                raise click.ClickException(
+                    "No JQL scope resolved. Provide --jql, or --project, or "
+                    "set JIRA_WIKI_JQL (or JIRA_DEFAULT_PROJECT) in the environment."
+                )
+
+    since_dt: datetime | None = None
+    if since is not None:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except ValueError as exc:
+            raise click.ClickException(f"--since must be ISO-8601 (got {since!r}): {exc}") from exc
+
+    issues_dir = resolve_issues_dir(issues_dir_opt or _env_setting("JIRA_WIKI_ISSUES_DIR"))
+
+    interface = JiraInterface()
+
+    try:
+        report = _run(
+            sweep_jira_issues(
+                interface,
+                issues_dir,
+                jql=effective_jql,
+                since=since_dt,
+                force=force,
+                dry_run=dry_run,
+            )
+        )
+    except JiraDependencyError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except JiraAuthError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    namespace_name = _env_setting("JIRA_WIKI_NAMESPACE") or "issues"
+
+    if do_build and not dry_run:
+        # vault_mode=True EXPLICITLY: the issues dir has no .obsidian/, and
+        # build's own auto-detect (cli.py:1124-1125) would pick repository
+        # mode and scan the markdown as source code. no_git=True: the
+        # corpus is not a git repo. no_export/no_graph default ON to keep
+        # a cron cheap — an operator can run `build` by hand for the extras.
+        build.callback(
+            path_=str(issues_dir),
+            name=namespace_name,
+            backend=None,
+            force=force,
+            no_git=True,
+            quiet=quiet,
+            no_export=True,
+            no_graph=True,
+            graph_kinds="module,document,overview",
+            vault_mode=True,
+        )
+
+    if as_json:
+        click.echo(report.model_dump_json(indent=2))
+    elif quiet:
+        click.echo(
+            f"Jira sweep: {report.fetched} fetched, {report.written} written, "
+            f"{report.unchanged} unchanged, {report.orphaned} orphaned, "
+            f"{len(report.errors)} error(s)."
+        )
+    else:
+        click.echo(f"Jira sweep against {issues_dir}:")
+        click.echo(f"  fetched:      {report.fetched}")
+        click.echo(f"  written:      {report.written}")
+        click.echo(f"  unchanged:    {report.unchanged}")
+        click.echo(f"  orphaned:     {report.orphaned}")
+        click.echo(f"  entity notes: {report.entity_notes}")
+        click.echo(f"  watermark advanced: {report.watermark_advanced}")
+        if report.unresolved_link_keys:
+            click.echo(
+                f"  WARNING: {len(report.unresolved_link_keys)} relation(s) point "
+                "outside the current JQL scope and were dropped as unresolved "
+                "wikilinks — widen the JQL to include them: "
+                f"{', '.join(report.unresolved_link_keys[:10])}"
+                + ("..." if len(report.unresolved_link_keys) > 10 else "")
+            )
+        if report.errors:
+            click.echo(f"  ERRORS: {len(report.errors)}")
+            for err in report.errors:
+                click.echo(f"    - {err}")
+
+    if report.errors:
+        raise SystemExit(1)
+
+
 @wiki.command(name="claude-hook", hidden=True)
 def claude_hook() -> None:
     """Claude Code PreToolUse hook runtime (reads stdin JSON).
