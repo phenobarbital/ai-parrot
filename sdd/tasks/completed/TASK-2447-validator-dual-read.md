@@ -227,10 +227,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Codebase Contract was stale for `_coerce_value` (actual signature
+is `(self, value, field)`, no `all_data` param — corrected in this file
+before implementing). Added FILE/IMAGE branches (str passthrough, dict
+passthrough for structural check), and legacy-mapping branches for
+IMAGE_DROPZONE/MULTI_UPLOAD that only map a *complete* legacy shape to a
+FileEnvelope dict — an incomplete legacy dict (e.g. missing `blob_ref`) is
+left unmapped so the pre-existing legacy-key validation still flags it,
+preserving `test_feat448_validator_branches.py`'s existing regression
+coverage bit-for-bit (`[{"answer": "a1"}]` still errors). `_validate_by_type`
+now branches on `_is_file_envelope_shaped()` to check FileEnvelope-required
+keys vs. legacy keys. MIME side-channel (validate_field, ~line 326) now
+skips when the coerced value is FileEnvelope-shaped. Full regression sweep:
+`tests/unit/services/` + all three FEAT-448 validator test files = 362
+passed, 0 failed. New `test_validator_file_envelope.py`: 13/13 passed.
+No new ruff findings (14 pre-existing BLE001 in validators.py, confirmed
+identical count via `git stash` before/after).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the "Does NOT Exist" and most "Existing
+Signatures" entries were accurate; only the `_coerce_value` signature shape
+was wrong, and it was corrected in the contract above rather than guessed.

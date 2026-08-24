@@ -112,7 +112,7 @@
       "feature_id": "FEAT-460",
       "feature": "raw-upload-field-types",
       "spec": "sdd/specs/raw-upload-field-types.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Only depends on FileEnvelope (TASK-2442). Could structurally parallel with TASK-2444/2445, but modifies validators.py — a high-traffic file best done sequentially.",
       "assigned_to": null,
       "started_at": "2026-08-24T23:03:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2447-validator-dual-read.md"
+      "completed_at": "2026-08-24T23:23:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2447-validator-dual-read.md"
     },
     {
       "id": "TASK-2448",
