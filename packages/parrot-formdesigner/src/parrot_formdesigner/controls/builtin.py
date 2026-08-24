@@ -21,7 +21,6 @@ from ..renderers.jsonschema import type_level_value_shape
 from ..tools.field_helpers import get_form_field_schema_snippets
 from .registry import register_field_control
 
-
 # ---------------------------------------------------------------------------
 # Rule capability buckets (FEAT-234)
 # Each constant is a list of string values from the respective enums.
@@ -32,9 +31,7 @@ from .registry import register_field_control
 # Operators applicable to any text-like field
 _TEXT_OPERATORS: list[str] = ["eq", "neq", "in", "not_in", "is_empty", "is_not_empty"]
 # Operators applicable to numeric fields (superset of text)
-_NUMERIC_OPERATORS: list[str] = [
-    "eq", "neq", "gt", "lt", "gte", "lte", "in", "not_in", "is_empty", "is_not_empty"
-]
+_NUMERIC_OPERATORS: list[str] = ["eq", "neq", "gt", "lt", "gte", "lte", "in", "not_in", "is_empty", "is_not_empty"]
 # Operators for boolean fields
 _BOOLEAN_OPERATORS: list[str] = ["eq", "neq", "is_empty", "is_not_empty"]
 # Operators for date/time fields (same as numeric for ordering)
@@ -45,14 +42,10 @@ _SELECT_OPERATORS: list[str] = ["eq", "neq", "in", "not_in", "is_empty", "is_not
 # Standard visibility/requirement effects applicable to all non-container fields
 _STANDARD_EFFECTS: list[str] = ["show", "hide", "require", "disable"]
 # Extended effects that include set/calc/cascade (applicable to simple value fields)
-_EXTENDED_EFFECTS: list[str] = [
-    "show", "hide", "require", "disable", "set", "calc", "reload_options", "cascade_clear"
-]
+_EXTENDED_EFFECTS: list[str] = ["show", "hide", "require", "disable", "set", "calc", "reload_options", "cascade_clear"]
 
 # Operations for numeric types (arithmetic + comparison helpers)
-_NUMERIC_OPERATIONS: list[str] = [
-    "add", "subtract", "multiply", "divide", "percent", "copy", "format"
-]
+_NUMERIC_OPERATIONS: list[str] = ["add", "subtract", "multiply", "divide", "percent", "copy", "format"]
 # Operations for text types (string manipulation)
 _TEXT_OPERATIONS: list[str] = ["copy", "concat", "format"]
 # Operations for date types
@@ -428,10 +421,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     # Phase 3 — FEAT-170
     FieldType.REST: {
         "label": "REST",
-        "description": (
-            "Upload content to a REST endpoint or callback; "
-            "the API response becomes the field answer."
-        ),
+        "description": ("Upload content to a REST endpoint or callback; " "the API response becomes the field answer."),
         "category": "advanced",
         "icon": "rest",
         "render_hint": "upload",
@@ -609,8 +599,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     },
     FieldType.PLACE: {
         "label": "Place",
-        "description": "Country → State → City cascade. Distinct from Location, "
-                        "which is a country-only picker.",
+        "description": "Country → State → City cascade. Distinct from Location, " "which is a country-only picker.",
         "category": "selection",
         "icon": "place",
         "render_hint": "cascade-select",

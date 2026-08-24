@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .types import LocalizedString
 
-
 DEFAULT_MAX_INLINE_SIZE = 10_485_760
 """System default (10 MB) for the inline data_url size threshold (FEAT-460)."""
 
@@ -52,9 +51,7 @@ class FieldConstraints(BaseModel):
     min_items: int | None = Field(default=None, ge=0, description="Minimum number of items")
     max_items: int | None = Field(default=None, ge=0, description="Maximum number of items")
     allowed_mime_types: list[str] | None = None
-    max_file_size_bytes: int | None = Field(
-        default=None, ge=0, description="Maximum file size in bytes"
-    )
+    max_file_size_bytes: int | None = Field(default=None, ge=0, description="Maximum file size in bytes")
     max_inline_size_bytes: int | None = Field(
         default=None,
         ge=0,
@@ -89,9 +86,7 @@ class FieldConstraints(BaseModel):
         """
         scale_min = info.data.get("scale_min")
         if v is not None and scale_min is not None and v <= scale_min:
-            raise ValueError(
-                f"scale_max ({v}) must be greater than scale_min ({scale_min})"
-            )
+            raise ValueError(f"scale_max ({v}) must be greater than scale_min ({scale_min})")
         return v
 
     @field_validator("anchor_labels")
@@ -116,9 +111,7 @@ class FieldConstraints(BaseModel):
         if scale_max is not None:
             for key in v:
                 if not (scale_min <= key <= scale_max):
-                    raise ValueError(
-                        f"anchor_labels key {key} is outside [{scale_min}, {scale_max}]"
-                    )
+                    raise ValueError(f"anchor_labels key {key} is outside [{scale_min}, {scale_max}]")
         return v
 
     @field_validator("pattern")
@@ -399,9 +392,7 @@ class PostDependency(BaseModel):
                 ``operation`` is ``None``.
         """
         if self.effect in ("set", "calc") and self.operation is None:
-            raise ValueError(
-                f"effect={self.effect!r} requires an 'operation' (DependencyOperation)"
-            )
+            raise ValueError(f"effect={self.effect!r} requires an 'operation' (DependencyOperation)")
         return self
 
 

@@ -70,9 +70,7 @@ class ThumbnailService:
         try:
             thumb_bytes = await asyncio.to_thread(self._resize, image_bytes)
         except Exception:
-            logger.warning(
-                "Thumbnail generation failed for %s", metadata.field_id, exc_info=True
-            )
+            logger.warning("Thumbnail generation failed for %s", metadata.field_id, exc_info=True)
             return None
 
         thumb_meta = BlobMetadata(

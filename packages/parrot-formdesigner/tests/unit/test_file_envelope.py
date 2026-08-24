@@ -35,19 +35,27 @@ class TestFileEnvelope:
 
     def test_full_envelope(self):
         env = FileEnvelope(
-            filename="photo.jpg", content_type="image/jpeg", size=45000,
-            blob_ref="s3://bucket/key", data_url="data:image/jpeg;base64,/9j/...",
-            thumbnail_url="/thumb/abc", checksum="sha256:abc123",
+            filename="photo.jpg",
+            content_type="image/jpeg",
+            size=45000,
+            blob_ref="s3://bucket/key",
+            data_url="data:image/jpeg;base64,/9j/...",
+            thumbnail_url="/thumb/abc",
+            checksum="sha256:abc123",
         )
         assert env.blob_ref == "s3://bucket/key"
 
 
 class TestUploadFieldTypes:
     def test_contains_exactly_four(self):
-        assert UPLOAD_FIELD_TYPES == frozenset({
-            FieldType.FILE, FieldType.IMAGE,
-            FieldType.IMAGE_DROPZONE, FieldType.MULTI_UPLOAD,
-        })
+        assert UPLOAD_FIELD_TYPES == frozenset(
+            {
+                FieldType.FILE,
+                FieldType.IMAGE,
+                FieldType.IMAGE_DROPZONE,
+                FieldType.MULTI_UPLOAD,
+            }
+        )
 
     def test_is_frozenset(self):
         assert isinstance(UPLOAD_FIELD_TYPES, frozenset)

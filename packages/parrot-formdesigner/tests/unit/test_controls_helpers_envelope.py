@@ -10,10 +10,15 @@ from parrot_formdesigner.tools.field_helpers import _FIELD_SCHEMA_SNIPPETS
 
 
 class TestBuiltinMetadataEnvelope:
-    @pytest.mark.parametrize("ft", [
-        FieldType.FILE, FieldType.IMAGE,
-        FieldType.IMAGE_DROPZONE, FieldType.MULTI_UPLOAD,
-    ])
+    @pytest.mark.parametrize(
+        "ft",
+        [
+            FieldType.FILE,
+            FieldType.IMAGE,
+            FieldType.IMAGE_DROPZONE,
+            FieldType.MULTI_UPLOAD,
+        ],
+    )
     def test_value_shape_includes_filename(self, ft):
         # value_shape is NOT stored in _BUILTIN_METADATA (verified against
         # the actual file: it's computed dynamically in builtin.py's
@@ -28,10 +33,15 @@ class TestBuiltinMetadataEnvelope:
     def test_file_image_still_media_category(self, ft):
         assert _BUILTIN_METADATA[ft]["category"] == "media"
 
-    @pytest.mark.parametrize("ft", [
-        FieldType.FILE, FieldType.IMAGE,
-        FieldType.IMAGE_DROPZONE, FieldType.MULTI_UPLOAD,
-    ])
+    @pytest.mark.parametrize(
+        "ft",
+        [
+            FieldType.FILE,
+            FieldType.IMAGE,
+            FieldType.IMAGE_DROPZONE,
+            FieldType.MULTI_UPLOAD,
+        ],
+    )
     def test_upload_types_still_upload_render_hint(self, ft):
         assert _BUILTIN_METADATA[ft]["render_hint"] == "upload"
 

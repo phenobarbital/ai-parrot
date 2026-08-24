@@ -96,8 +96,7 @@ class TestFileUploadHandler:
         data.add_field("file", io.BytesIO(b"two"), filename="b.txt", content_type="text/plain")
 
         resp = await client.post(
-            f"/api/v1/navigator/forms/{form.form_uid}/fields/"
-            f"{_field_uid(form, 'gallery')}/file-upload",
+            f"/api/v1/navigator/forms/{form.form_uid}/fields/" f"{_field_uid(form, 'gallery')}/file-upload",
             data=data,
         )
         assert resp.status == 200
@@ -124,7 +123,9 @@ class TestFileUploadHandler:
     @pytest.mark.asyncio
     async def test_mime_rejected(self, aiohttp_client, mock_blob_storage):
         field = FormField(
-            field_id="photo", field_type=FieldType.IMAGE, label={"en": "Photo"},
+            field_id="photo",
+            field_type=FieldType.IMAGE,
+            label={"en": "Photo"},
             constraints=FieldConstraints(allowed_mime_types=["image/png"]),
         )
         form = _make_form(field)
@@ -139,7 +140,9 @@ class TestFileUploadHandler:
     @pytest.mark.asyncio
     async def test_size_exceeded(self, aiohttp_client, mock_blob_storage):
         field = FormField(
-            field_id="doc", field_type=FieldType.FILE, label={"en": "Doc"},
+            field_id="doc",
+            field_type=FieldType.FILE,
+            label={"en": "Doc"},
             constraints=FieldConstraints(max_file_size_bytes=5),
         )
         form = _make_form(field)
@@ -166,7 +169,9 @@ class TestFileUploadHandler:
     @pytest.mark.asyncio
     async def test_data_url_under_threshold(self, aiohttp_client, mock_blob_storage):
         field = FormField(
-            field_id="doc", field_type=FieldType.FILE, label={"en": "Doc"},
+            field_id="doc",
+            field_type=FieldType.FILE,
+            label={"en": "Doc"},
             constraints=FieldConstraints(max_inline_size_bytes=1024),
         )
         form = _make_form(field)
@@ -183,7 +188,9 @@ class TestFileUploadHandler:
     @pytest.mark.asyncio
     async def test_data_url_over_threshold(self, aiohttp_client, mock_blob_storage):
         field = FormField(
-            field_id="doc", field_type=FieldType.FILE, label={"en": "Doc"},
+            field_id="doc",
+            field_type=FieldType.FILE,
+            label={"en": "Doc"},
             constraints=FieldConstraints(max_inline_size_bytes=2),
         )
         form = _make_form(field)

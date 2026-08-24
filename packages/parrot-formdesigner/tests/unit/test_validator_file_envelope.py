@@ -27,8 +27,13 @@ class TestCoerceFileLegacy:
     async def test_envelope_dict_accepted(self, validator: FormValidator):
         """FileEnvelope dict for FILE is validated and accepted."""
         envelope = {
-            "filename": "report.pdf", "content_type": "application/pdf", "size": 1024,
-            "blob_ref": "temp://x", "data_url": None, "thumbnail_url": None, "checksum": None,
+            "filename": "report.pdf",
+            "content_type": "application/pdf",
+            "size": 1024,
+            "blob_ref": "temp://x",
+            "data_url": None,
+            "thumbnail_url": None,
+            "checksum": None,
         }
         errors = await validator.validate_field(_field(FieldType.FILE), envelope)
         assert errors == []
@@ -45,8 +50,13 @@ class TestCoerceImageLegacy:
     async def test_envelope_dict_accepted(self, validator: FormValidator):
         """FileEnvelope dict for IMAGE is validated and accepted."""
         envelope = {
-            "filename": "photo.jpg", "content_type": "image/jpeg", "size": 45000,
-            "blob_ref": "temp://y", "data_url": None, "thumbnail_url": None, "checksum": None,
+            "filename": "photo.jpg",
+            "content_type": "image/jpeg",
+            "size": 45000,
+            "blob_ref": "temp://y",
+            "data_url": None,
+            "thumbnail_url": None,
+            "checksum": None,
         }
         errors = await validator.validate_field(_field(FieldType.IMAGE), envelope)
         assert errors == []
@@ -57,9 +67,7 @@ class TestCoerceDropzoneLegacy:
     async def test_legacy_shape_mapped(self, validator: FormValidator):
         """Legacy {name,type,size,dataUrl} mapped to FileEnvelope fields."""
         legacy = {"name": "photo.jpg", "type": "image/jpeg", "size": 45000, "dataUrl": "data:image/jpeg;base64,AA=="}
-        result = await validator.validate(
-            _one_field_form(FieldType.IMAGE_DROPZONE), {"upload": legacy}
-        )
+        result = await validator.validate(_one_field_form(FieldType.IMAGE_DROPZONE), {"upload": legacy})
         assert result.is_valid, result.errors
         sanitized = result.sanitized_data["upload"]
         assert sanitized["filename"] == "photo.jpg"
@@ -72,8 +80,13 @@ class TestCoerceDropzoneLegacy:
     async def test_envelope_dict_accepted(self, validator: FormValidator):
         """FileEnvelope dict for IMAGE_DROPZONE accepted directly."""
         envelope = {
-            "filename": "photo.jpg", "content_type": "image/jpeg", "size": 45000,
-            "blob_ref": "temp://z", "data_url": None, "thumbnail_url": None, "checksum": None,
+            "filename": "photo.jpg",
+            "content_type": "image/jpeg",
+            "size": 45000,
+            "blob_ref": "temp://z",
+            "data_url": None,
+            "thumbnail_url": None,
+            "checksum": None,
         }
         errors = await validator.validate_field(_field(FieldType.IMAGE_DROPZONE), envelope)
         assert errors == []
@@ -90,9 +103,7 @@ class TestCoerceMultiUploadLegacy:
     async def test_legacy_list_mapped(self, validator: FormValidator):
         """Legacy [{answer,blob_ref,display}] mapped to FileEnvelopes."""
         legacy = [{"answer": "result", "blob_ref": "s3://bucket/key", "display": "photo.jpg"}]
-        result = await validator.validate(
-            _one_field_form(FieldType.MULTI_UPLOAD), {"upload": legacy}
-        )
+        result = await validator.validate(_one_field_form(FieldType.MULTI_UPLOAD), {"upload": legacy})
         assert result.is_valid, result.errors
         sanitized = result.sanitized_data["upload"][0]
         assert sanitized["filename"] == "photo.jpg"
@@ -103,10 +114,17 @@ class TestCoerceMultiUploadLegacy:
     @pytest.mark.asyncio
     async def test_envelope_list_accepted(self, validator: FormValidator):
         """List of FileEnvelope dicts accepted directly."""
-        envelope = [{
-            "filename": "a.jpg", "content_type": "image/jpeg", "size": 100,
-            "blob_ref": "temp://a", "data_url": None, "thumbnail_url": None, "checksum": None,
-        }]
+        envelope = [
+            {
+                "filename": "a.jpg",
+                "content_type": "image/jpeg",
+                "size": 100,
+                "blob_ref": "temp://a",
+                "data_url": None,
+                "thumbnail_url": None,
+                "checksum": None,
+            }
+        ]
         errors = await validator.validate_field(_field(FieldType.MULTI_UPLOAD), envelope)
         assert errors == []
 

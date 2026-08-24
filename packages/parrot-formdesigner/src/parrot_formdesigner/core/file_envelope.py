@@ -37,9 +37,7 @@ class FileEnvelope(BaseModel):
     size: int = Field(..., ge=0, description="File size in bytes")
     blob_ref: str | None = Field(default=None, description="Server storage reference")
     data_url: str | None = Field(default=None, description="Inline base64 data URL")
-    thumbnail_url: str | None = Field(
-        default=None, description="Thumbnail URL (images)"
-    )
+    thumbnail_url: str | None = Field(default=None, description="Thumbnail URL (images)")
     checksum: str | None = Field(default=None, description="SHA-256 hash")
 
 
@@ -54,9 +52,7 @@ UPLOAD_FIELD_TYPES: frozenset[FieldType] = frozenset(
 """Field types whose value shape is (or maps to) a FileEnvelope."""
 
 
-_SINGLE_CARDINALITY_TYPES: frozenset[FieldType] = frozenset(
-    {FieldType.FILE, FieldType.IMAGE}
-)
+_SINGLE_CARDINALITY_TYPES: frozenset[FieldType] = frozenset({FieldType.FILE, FieldType.IMAGE})
 
 
 def is_single_cardinality(field_type: FieldType) -> bool:

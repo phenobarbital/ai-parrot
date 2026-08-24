@@ -191,9 +191,7 @@ class TestFileUploadEndToEnd:
 
         data = FormData()
         for i in range(3):
-            data.add_field(
-                "file", io.BytesIO(f"content-{i}".encode()), filename=f"f{i}.txt", content_type="text/plain"
-            )
+            data.add_field("file", io.BytesIO(f"content-{i}".encode()), filename=f"f{i}.txt", content_type="text/plain")
 
         resp = await client.post(
             f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'gallery')}/file-upload",

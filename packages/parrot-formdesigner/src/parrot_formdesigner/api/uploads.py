@@ -79,6 +79,7 @@ def _get_rest_spec_adapter() -> TypeAdapter[RestFieldSpec]:
         _rest_spec_adapter = TypeAdapter(RestFieldSpec)
     return _rest_spec_adapter
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -128,6 +129,7 @@ def _get_blob_storage(app: web.Application) -> Any:
     # where no real backend is configured. Cached on the app so subsequent
     # uploads share the same temp directory.
     from ..services.blob_storage import TempBlobStorage  # deferred
+
     storage = TempBlobStorage()
     app["blob_storage"] = storage
     return storage
@@ -182,9 +184,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     field_id = field.field_id
 
     if field.field_type != FieldType.REST:
-        raise web.HTTPNotFound(
-            reason=f"Field {field_id!r} is not a REST field (got {field.field_type.value!r})"
-        )
+        raise web.HTTPNotFound(reason=f"Field {field_id!r} is not a REST field (got {field.field_type.value!r})")
 
     # --- 2. Parse constraints ------------------------------------------------
     constraints = field.constraints
@@ -215,8 +215,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             # MIME validation
             if allowed_mimes and detected_mime not in allowed_mimes:
                 raise web.HTTPUnsupportedMediaType(
-                    text=f"MIME type {detected_mime!r} is not allowed. "
-                    f"Allowed: {allowed_mimes}"
+                    text=f"MIME type {detected_mime!r} is not allowed. " f"Allowed: {allowed_mimes}"
                 )
             # Stream with size limit
             chunks: list[bytes] = []
@@ -264,8 +263,8 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         form_id=form.form_id,
         field_uid=field.field_uid,
         field_id=field_id,
-        submission_id=session_id,       # str | None — None is correct when absent
-        tenant=blob_tenant,             # str | None — None is correct when absent
+        submission_id=session_id,  # str | None — None is correct when absent
+        tenant=blob_tenant,  # str | None — None is correct when absent
         content_type=detected_mime or "application/octet-stream",
         size_bytes=len(file_bytes),
     )
@@ -292,7 +291,10 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             warnings.append(f"blob_cleanup_failed: {exc}")
             logger.warning(
                 "Failed to delete prior blob %r for %s/%s: %s",
-                prior_blob_ref, form_uid, field_id, exc,
+                prior_blob_ref,
+                form_uid,
+                field_id,
+                exc,
             )
 
     # --- 7b. Merge additional args (public from submission, private from spec)
@@ -310,17 +312,15 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     # --- 8. Resolve -----------------------------------------------------------
     # Derive user_id from JWT claims (sub / user_id), not the raw token string.
     _claims = auth_context.claims
-    _user_id: str | None = (
-        _claims.get("sub") or _claims.get("user_id") or None
-    )
+    _user_id: str | None = _claims.get("sub") or _claims.get("user_id") or None
 
     payload = RestCallbackInput(
         form_id=form.form_id,
         field_uid=field.field_uid,
         field_id=field_id,
-        session_id=session_id,          # str | None
-        user_id=_user_id,               # str | None — from JWT claims
-        tenant=tenant,                  # str | None
+        session_id=session_id,  # str | None
+        user_id=_user_id,  # str | None — from JWT claims
+        tenant=tenant,  # str | None
         content_type=detected_mime or "application/octet-stream",
         content=file_bytes,
         extra_fields=extra_fields,
@@ -332,7 +332,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         payload,
         auth_context=auth_context,
         tenant=tenant,
-        request_host=request.host,      # enables internal-mode host fallback
+        request_host=request.host,  # enables internal-mode host fallback
     )
 
     # Merge any resolver warnings with ours
@@ -371,33 +371,26 @@ def _coerce_arg_value(raw: str, data_type: str, *, name: str) -> Any:
         try:
             return int(raw)
         except (TypeError, ValueError) as exc:
-            raise web.HTTPBadRequest(
-                reason=f"Invalid integer for {name!r}: {raw!r}"
-            ) from exc
+            raise web.HTTPBadRequest(reason=f"Invalid integer for {name!r}: {raw!r}") from exc
     if data_type == "number":
         try:
             return float(raw)
         except (TypeError, ValueError) as exc:
-            raise web.HTTPBadRequest(
-                reason=f"Invalid number for {name!r}: {raw!r}"
-            ) from exc
+            raise web.HTTPBadRequest(reason=f"Invalid number for {name!r}: {raw!r}") from exc
     if data_type == "boolean":
         lowered = raw.strip().lower()
         if lowered in {"true", "1", "yes", "on"}:
             return True
         if lowered in {"false", "0", "no", "off", ""}:
             return False
-        raise web.HTTPBadRequest(
-            reason=f"Invalid boolean for {name!r}: {raw!r}"
-        )
+        raise web.HTTPBadRequest(reason=f"Invalid boolean for {name!r}: {raw!r}")
     if data_type == "json":
         import json as _json
+
         try:
             return _json.loads(raw)
         except _json.JSONDecodeError as exc:
-            raise web.HTTPBadRequest(
-                reason=f"Invalid JSON for {name!r}: {exc.msg}"
-            ) from exc
+            raise web.HTTPBadRequest(reason=f"Invalid JSON for {name!r}: {exc.msg}") from exc
     return raw
 
 
@@ -439,15 +432,11 @@ def _merge_additional_args(
             if raw == "" and not arg.required and arg.value is not None:
                 merged[arg.name] = arg.value
             else:
-                merged[arg.name] = _coerce_arg_value(
-                    raw, arg.data_type, name=arg.name
-                )
+                merged[arg.name] = _coerce_arg_value(raw, arg.data_type, name=arg.name)
         elif arg.value is not None:
             merged[arg.name] = arg.value
         elif arg.required:
-            raise web.HTTPBadRequest(
-                reason=f"Missing required public additional_arg: {arg.name!r}"
-            )
+            raise web.HTTPBadRequest(reason=f"Missing required public additional_arg: {arg.name!r}")
     return merged
 
 

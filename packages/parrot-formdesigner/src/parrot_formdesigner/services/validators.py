@@ -650,11 +650,13 @@ class FormValidator:
                 return value
             if isinstance(value, list):
                 return [
-                    _map_legacy_dropzone(item)
-                    if isinstance(item, dict)
-                    and not _is_file_envelope_shaped(item)
-                    and all(k in item for k in _IMAGE_DROPZONE_KEYS)
-                    else item
+                    (
+                        _map_legacy_dropzone(item)
+                        if isinstance(item, dict)
+                        and not _is_file_envelope_shaped(item)
+                        and all(k in item for k in _IMAGE_DROPZONE_KEYS)
+                        else item
+                    )
                     for item in value
                 ]
             raise ValueError("Image dropzone value must be a dict or a list of dicts")
@@ -665,11 +667,13 @@ class FormValidator:
             # items as-is for _validate_by_type's legacy-key check.
             if isinstance(value, list):
                 return [
-                    _map_legacy_multi_upload_item(item)
-                    if isinstance(item, dict)
-                    and not _is_file_envelope_shaped(item)
-                    and all(k in item for k in _MULTI_UPLOAD_KEYS)
-                    else item
+                    (
+                        _map_legacy_multi_upload_item(item)
+                        if isinstance(item, dict)
+                        and not _is_file_envelope_shaped(item)
+                        and all(k in item for k in _MULTI_UPLOAD_KEYS)
+                        else item
+                    )
                     for item in value
                 ]
             raise ValueError("Multi upload value must be a list of upload envelopes")

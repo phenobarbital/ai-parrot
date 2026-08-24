@@ -77,9 +77,7 @@ def _get_blob_storage(app: web.Application) -> AbstractBlobStorage:
     return storage
 
 
-def _get_thumbnail_service(
-    app: web.Application, blob_storage: AbstractBlobStorage
-) -> ThumbnailService:
+def _get_thumbnail_service(app: web.Application, blob_storage: AbstractBlobStorage) -> ThumbnailService:
     """Return the app-level ThumbnailService, or construct+cache a default.
 
     Args:
@@ -157,10 +155,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
 
     if field.field_type not in UPLOAD_FIELD_TYPES:
         raise web.HTTPNotFound(
-            reason=(
-                f"Field {field_id!r} is not an upload field "
-                f"(got {field.field_type.value!r})"
-            )
+            reason=(f"Field {field_id!r} is not an upload field " f"(got {field.field_type.value!r})")
         )
 
     constraints = field.constraints
@@ -184,8 +179,15 @@ async def handle_file_upload(request: web.Request) -> web.Response:
     result: FileEnvelope | list[FileEnvelope]
     if upload_offset is not None and upload_length is not None:
         envelope = await _handle_chunk(
-            request, request.app, form, field, blob_storage, blob_tenant,
-            max_size, allowed_mimes, max_inline,
+            request,
+            request.app,
+            form,
+            field,
+            blob_storage,
+            blob_tenant,
+            max_size,
+            allowed_mimes,
+            max_inline,
         )
         if envelope is None:
             return web.json_response({"status": "chunk_received"}, status=202)
@@ -205,12 +207,17 @@ async def handle_file_upload(request: web.Request) -> web.Response:
             if (part.name or "") != "file":
                 continue
             if single and envelopes:
-                raise web.HTTPBadRequest(
-                    reason=f"Field {field_id!r} accepts a single file only"
-                )
+                raise web.HTTPBadRequest(reason=f"Field {field_id!r} accepts a single file only")
             envelope = await _process_file_part(
-                part, request.app, form, field, blob_storage, blob_tenant,
-                max_size, allowed_mimes, max_inline,
+                part,
+                request.app,
+                form,
+                field,
+                blob_storage,
+                blob_tenant,
+                max_size,
+                allowed_mimes,
+                max_inline,
             )
             envelopes.append(envelope)
 
@@ -226,7 +233,10 @@ async def handle_file_upload(request: web.Request) -> web.Response:
         except Exception as exc:
             logger.warning(
                 "Failed to delete prior blob %r for %s/%s: %s",
-                prior_blob_ref, form_uid, field_id, exc,
+                prior_blob_ref,
+                form_uid,
+                field_id,
+                exc,
             )
 
     if isinstance(result, list):
@@ -267,9 +277,7 @@ async def _process_file_part(
     """
     content_type = part.headers.get("Content-Type", "application/octet-stream")
     if allowed_mimes and content_type not in allowed_mimes:
-        raise web.HTTPUnsupportedMediaType(
-            text=f"MIME type {content_type!r} is not allowed. Allowed: {allowed_mimes}"
-        )
+        raise web.HTTPUnsupportedMediaType(text=f"MIME type {content_type!r} is not allowed. Allowed: {allowed_mimes}")
     filename = part.filename or "upload"
 
     hasher = hashlib.sha256()
@@ -280,8 +288,16 @@ async def _process_file_part(
     file_bytes = b"".join(chunks)
 
     return await _finalize_envelope(
-        file_bytes, filename, content_type, hasher.hexdigest(),
-        app, form, field, blob_storage, blob_tenant, max_inline,
+        file_bytes,
+        filename,
+        content_type,
+        hasher.hexdigest(),
+        app,
+        form,
+        field,
+        blob_storage,
+        blob_tenant,
+        max_inline,
     )
 
 
@@ -323,9 +339,7 @@ async def _handle_chunk(
         offset = int(request.headers["X-Parrot-Upload-Offset"])
         total_length = int(request.headers["X-Parrot-Upload-Length"])
     except (KeyError, ValueError) as exc:
-        raise web.HTTPBadRequest(
-            reason="Invalid X-Parrot-Upload-Offset/X-Parrot-Upload-Length headers"
-        ) from exc
+        raise web.HTTPBadRequest(reason="Invalid X-Parrot-Upload-Offset/X-Parrot-Upload-Length headers") from exc
 
     chunk_bytes = await request.read()
     key = (str(form.form_uid), str(field.field_uid))
@@ -340,9 +354,7 @@ async def _handle_chunk(
         content_type="application/octet-stream",
         size_bytes=len(chunk_bytes),
     )
-    session[offset] = await blob_storage.put(
-        _bytes_iter(chunk_bytes), metadata=chunk_meta
-    )
+    session[offset] = await blob_storage.put(_bytes_iter(chunk_bytes), metadata=chunk_meta)
 
     if offset + len(chunk_bytes) < total_length:
         return None
@@ -365,9 +377,7 @@ async def _handle_chunk(
 
     file_bytes = bytes(assembled)
     if max_size is not None and len(file_bytes) > max_size:
-        raise web.HTTPRequestEntityTooLarge(
-            max_size=max_size, actual_size=len(file_bytes)
-        )
+        raise web.HTTPRequestEntityTooLarge(max_size=max_size, actual_size=len(file_bytes))
 
     content_type = (
         request.headers.get("X-Parrot-Upload-Content-Type")
@@ -375,15 +385,21 @@ async def _handle_chunk(
         or "application/octet-stream"
     )
     if allowed_mimes and content_type not in allowed_mimes:
-        raise web.HTTPUnsupportedMediaType(
-            text=f"MIME type {content_type!r} is not allowed. Allowed: {allowed_mimes}"
-        )
+        raise web.HTTPUnsupportedMediaType(text=f"MIME type {content_type!r} is not allowed. Allowed: {allowed_mimes}")
     filename = request.headers.get("X-Parrot-Upload-Filename", f"{field_id}-upload")
     checksum_hex = hashlib.sha256(file_bytes).hexdigest()
 
     return await _finalize_envelope(
-        file_bytes, filename, content_type, checksum_hex,
-        app, form, field, blob_storage, blob_tenant, max_inline,
+        file_bytes,
+        filename,
+        content_type,
+        checksum_hex,
+        app,
+        form,
+        field,
+        blob_storage,
+        blob_tenant,
+        max_inline,
     )
 
 
@@ -432,9 +448,7 @@ async def _finalize_envelope(
     try:
         blob_ref = await blob_storage.put(_bytes_iter(file_bytes), metadata=blob_meta)
     except Exception as exc:
-        logger.exception(
-            "blob_storage.put failed for %s/%s", form.form_uid, field.field_id
-        )
+        logger.exception("blob_storage.put failed for %s/%s", form.form_uid, field.field_id)
         raise web.HTTPInternalServerError(
             reason="Blob storage error",
             text="Blob storage error. Check server logs for details.",

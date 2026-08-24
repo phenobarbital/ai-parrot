@@ -4,7 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from parrot_formdesigner.core.constraints import (
-    FieldConstraints, DEFAULT_MAX_INLINE_SIZE,
+    FieldConstraints,
+    DEFAULT_MAX_INLINE_SIZE,
 )
 
 

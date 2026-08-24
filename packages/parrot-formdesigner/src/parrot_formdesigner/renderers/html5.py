@@ -93,6 +93,7 @@ def _extract_display_name(value: Any) -> str:
         return value.rsplit("/", 1)[-1] if "/" in value else value
     return str(value) if value else ""
 
+
 _HTML5_FALLBACK_LABELS: dict[FieldType, str] = {
     FieldType.IMAGE_DROPZONE: "image upload",
     FieldType.MULTI_UPLOAD: "multiple file upload",

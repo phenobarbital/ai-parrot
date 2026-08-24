@@ -12,7 +12,6 @@ from typing import Any
 
 from ..core.types import FieldType
 
-
 _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
     FieldType.TEXT.value: {
         "field_id": "full_name",

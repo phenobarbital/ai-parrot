@@ -19,9 +19,12 @@ def mock_storage():
 @pytest.fixture
 def sample_metadata():
     return BlobMetadata(
-        form_uid=uuid.uuid4(), form_id="test-form",
-        field_uid=uuid.uuid4(), field_id="photo",
-        content_type="image/jpeg", size_bytes=10000,
+        form_uid=uuid.uuid4(),
+        form_id="test-form",
+        field_uid=uuid.uuid4(),
+        field_id="photo",
+        content_type="image/jpeg",
+        size_bytes=10000,
     )
 
 
