@@ -28,7 +28,13 @@ jobs:
         with:
           version: "latest"
 
-      - name: Install all packages
+      # Best-effort only. CodeQL's Python extractor works without installed
+      # dependencies (it just loses some import-resolution precision), and a
+      # monorepo-wide resolution failure must never blind security scanning
+      # again -- an unsatisfiable `uv sync` kept CodeQL dark from 2026-08-21
+      # onward while the alert list silently went stale.
+      - name: Install all packages (best-effort)
+        continue-on-error: true
         run: uv sync --all-packages
 
       - name: Initialize CodeQL
