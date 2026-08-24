@@ -15,14 +15,14 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M6",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Leaf. Touches only okf/ontology.py + one new test file — no file overlap with any other task, so it CAN run in its own worktree. Sequential in one worktree per the spec's per-spec Worktree Strategy: the two hottest files (cli.py, 123 KB, touched by every wiki feature; jiratoolkit.py, contested by FEAT-138/TASK-948, TASK-953 and the 3LO spec) must not be edited from two worktrees at once.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2398-okf-concept-type-issue-person-project.md"
     },
@@ -34,14 +34,14 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M1a",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Leaf. All-new files under parrot/interfaces/jira/ plus tests/fixtures/jira_payloads.py — no overlap with any other task, so it CAN run in its own worktree. Sequential in one worktree per the spec's per-spec Worktree Strategy: the two hottest files (cli.py, 123 KB, touched by every wiki feature; jiratoolkit.py, contested by FEAT-138/TASK-948, TASK-953 and the 3LO spec) must not be edited from two worktrees at once.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2399-jira-interface-models-and-parse.md"
     },
@@ -53,7 +53,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M1b",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": false,
       "parallelism_notes": "Imports TASK-2399's models and extends its __init__.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2400-jira-interface-client-auth-reads.md"
     },
@@ -74,7 +74,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M3",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallel": false,
       "parallelism_notes": "Needs TASK-2399's JiraIssue models and TASK-2398's ConceptType.ISSUE. Independent of TASK-2400 (no transport), so it could in principle run beside it — but both extend the same package surface and the spec chose one worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2401-jira-deterministic-renderer.md"
     },
@@ -96,7 +96,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M2",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -105,7 +105,7 @@
       "parallel": false,
       "parallelism_notes": "Consumes TASK-2400's JiraInterface. Edits jiratoolkit.py, contested by three other in-flight efforts — must never be edited from a second worktree concurrently.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2402-jiratoolkit-delegation-refactor.md"
     },
@@ -117,7 +117,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M4",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -127,7 +127,7 @@
       "parallel": false,
       "parallelism_notes": "Orchestrates TASK-2400's reads and TASK-2401's renderer; needs both landed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2403-jira-sweep-watermark-orphans.md"
     },
@@ -139,7 +139,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M5",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -148,7 +148,7 @@
       "parallel": false,
       "parallelism_notes": "Calls TASK-2403's sweep. Edits cli.py (123 KB, touched by every wiki feature) — append-only, single worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2404-wikitoolkit-ingest-jira-command.md"
     },
@@ -160,7 +160,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "§4 Integration Tests",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -170,7 +170,7 @@
       "parallel": false,
       "parallelism_notes": "Exercises the whole feature end to end, including the TASK-2402 toolkit regression gate; needs every implementation task landed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2405-jira-wiki-integration-tests.md"
     },
@@ -182,7 +182,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M7",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -191,7 +191,7 @@
       "parallel": true,
       "parallelism_notes": "Touches only pyproject.toml, docs/ and CLAUDE.md — no source-file overlap, so it CAN run beside TASK-2405 in its own worktree. Depends on TASK-2404 because every runbook command must be executed against the real CLI before being documented.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T01:01:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2406-jira-extra-and-runbook.md"
     }
