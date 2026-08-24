@@ -193,3 +193,40 @@ excludes — grep-verified zero changes to any of those files.
 obtain session/user... add a read where needed" scope note was
 evaluated and found not-needed (no current logic depends on caller
 identity); documented above rather than adding speculative code.
+
+---
+
+### Addendum (post-implementation code-review, before push)
+
+The FEAT-446 adversarial code review flagged (🟠 IMPORTANT, "plausible
+rather than proven") that closing `stream_websocket()`'s exclude-list
+entry might have made its pre-existing `Sec-WebSocket-Protocol: jwt,
+<token>` auth convention unreachable — added specifically because
+browsers can't set custom headers (e.g. `Authorization`) on a WS
+upgrade request. **Verified TRUE**, not just plausible: traced
+navigator-auth's `auth_middleware`/`verify_exceptions`
+(`.venv/.../navigator_auth/auth.py:833-1040`) and `IdP.get_payload()`
+(`backends/idp/__init__.py:255`) — the global middleware only reads
+the `Authorization` header or a session cookie; it has zero awareness
+of `Sec-WebSocket-Protocol`. Wrote a probe test confirming a WS request
+carrying ONLY a valid subprotocol JWT (no cookie, no Authorization
+header) got `401` before this fix — a genuine regression this task's
+own exclude-list removal introduced for that one auth path (browser
+clients with an existing session cookie were unaffected, since cookies
+ARE sent automatically on same-origin WS upgrades).
+
+Fixed with a new `_ws_subprotocol_preauth_middleware` on
+`StreamHandler`, registered via `app.middlewares.insert(0, ...)` in
+`configure_routes()` (guaranteed to run before navigator-auth's
+`auth_middleware` regardless of `AuthHandler.setup()` call order,
+since that method only ever *appends*). For the WS route only, it
+validates the subprotocol token with the exact check
+`stream_websocket()` already performed, and on success sets
+`request["authenticated"] = True` — the same signal navigator-auth's
+own `verify_exceptions()` already treats as "skip my check," so no
+navigator-auth internals were touched. Verified with 4 new integration
+tests in `test_saas_auth_hardening.py::TestWsSubprotocolPreauth`: valid
+subprotocol-only token now passes (no longer 401); no credentials at
+all still 401; an invalid subprotocol token still 401; other routes
+(e.g. `/stream/sse`) are unaffected by a stray subprotocol header.
+Ruff flat at 14 (dev baseline), zero new lint debt.

@@ -385,3 +385,73 @@ Fixes committed as `fix(saas-auth-hardening): close cross-tenant gaps
 found in code review` (code) — this SDD-state commit follows
 separately, per the worktree's established code-then-state commit
 pattern.
+
+---
+
+### Addendum 2 — closed the remaining findings (user follow-up: "fix all issues")
+
+After the fixes above, the user explicitly asked to fix all remaining
+review findings. Disposition of what was left:
+
+**🟠 IMPORTANT #4 (WS subprotocol auth), previously ESCALATE — now
+FIXED.** Verified the reviewer's "plausible rather than proven"
+concern empirically (a probe test): a WS request carrying only a valid
+`Sec-WebSocket-Protocol: jwt, <token>` (no session cookie, no
+`Authorization` header) got `401` from navigator-auth's global auth
+middleware before `stream_websocket()`'s own token check ever ran —
+confirmed by tracing `auth_middleware`/`get_payload()` in the
+installed `navigator_auth` package, which has no notion of that
+header. Fixed in `stream.py` via a new
+`_ws_subprotocol_preauth_middleware`; full detail and 4 new tests in
+TASK-2324's Completion Note addendum and
+`test_saas_auth_hardening.py::TestWsSubprotocolPreauth`.
+
+**🟠 IMPORTANT #5 (`flow_authoring.py::_get_job_status()` ownership
+check) — deliberately NOT fixed, judgment call explained.** The
+original review's own disposition for this finding was **REJECT as a
+FEAT-446 defect**: it is explicitly out-of-scope per this feature's
+approved spec (Module 4 scopes `FlowAuthoringHandler` to the auth
+requirement only; `flows:author` PBAC/ownership policy is an open
+question explicitly deferred to S5). Re-examined whether "fix all
+issues" should override that: concluded no — adding a per-user
+ownership gate here would mean inventing new authorization semantics
+(there is no tenant concept for this handler, and no existing
+session-derived-user-identity helper on it, unlike
+`CrewExecutionHistoryHandler`'s `_get_authenticated_user_id`) beyond
+what the approved spec authorizes for S0. That is architecture
+invention, not a bug fix, and squarely the kind of scope expansion the
+Cardinal Rules forbid ("YOU ARE A BUILDER, NOT AN ARCHITECT"). Also
+noted in passing: `post()`'s `user_id` is itself client-supplied
+(`data.pop("user_id", None)`, not session-derived) — the same class of
+problem as the tenant issues fixed above, but tied to the same
+deferred-to-S5 ownership model, so left alongside it rather than fixed
+in isolation. Recorded here for the human/PR reviewer's visibility
+rather than silently dropped.
+
+**🟡 Suggestions:**
+- `_active_crews` unbounded process-global growth — NOT fixed. This is
+  a memory/ops concern unrelated to auth, requires a real eviction
+  policy (the existing `start_cleanup_task` is an explicit placeholder,
+  and the code has standing comments warning against premature removal
+  — "Do NOT remove from active_crews yet, so user can fetch agent
+  details"), and is out of scope for a security-hardening feature.
+  Left as a noted follow-up, not attempted.
+- Migration-doc caveat — already resolved by the CRITICAL fixes
+  (the doc's original "uniform coverage" claim became true once
+  `put()`/`get()`/`patch()` were all fixed); no further action needed.
+- Cross-reference comments between `stream.py`'s middleware-based
+  enforcement and the crew handlers' decorator-based enforcement —
+  FIXED: added to both `StreamHandler`'s and `CrewHandler`'s class
+  docstrings (trivial, safe, doc-only).
+
+Final state: all CRITICAL and IMPORTANT findings from the code review
+are fixed; the one deliberately-rejected finding (#5) is explained
+above with its rationale on the record, not silently dropped. Fixes
+committed as `fix(saas-auth-hardening): restore WS subprotocol JWT
+auth + cross-ref docs`. Full regression re-run after this round: 548
+passed / 3 pre-existing-unrelated-failed / 1 skipped across
+`packages/ai-parrot-server/tests/{handlers,unit,integration}/` (same
+3 a2a-vertical failures verified against `dev` throughout this
+feature); `test_saas_auth_hardening.py` + `test_stream_auth.py` +
+`test_crew_tenancy.py` together: 49 passed. Ruff flat at baseline for
+both touched files (`stream.py` 14/14, `handler.py` 22/22).
