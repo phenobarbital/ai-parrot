@@ -352,7 +352,8 @@ async def _handle_chunk(
     assembled = bytearray()
     for off in ordered_offsets:
         ref = session[off]
-        async for part_bytes in blob_storage.get(ref):
+        stream = await blob_storage.get(ref)
+        async for part_bytes in stream:
             assembled.extend(part_bytes)
     del _CHUNK_BUFFERS[key]
 
