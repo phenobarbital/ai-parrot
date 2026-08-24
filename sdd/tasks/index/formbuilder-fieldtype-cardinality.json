@@ -1,0 +1,159 @@
+{
+  "feature": "formbuilder-fieldtype-cardinality",
+  "feature_id": "FEAT-456",
+  "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-24T14:51:38Z",
+  "completed_at": "2026-08-24T15:59:50+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2410",
+      "slug": "relation-core-models",
+      "title": "Relation Core Models (EntityRef, RelationSpec)",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — everything else imports these models.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:13:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2410-relation-core-models.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2411",
+      "slug": "formfield-relation-aspect",
+      "title": "FormField.relation aspect + combination validator + exports",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2410"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Gates 2412-2415; touches core/schema.py, the file every sibling depends on.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:17:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2411-formfield-relation-aspect.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2412",
+      "slug": "resolution-inverse-field-check",
+      "title": "Embed-mode inverse_field existence check at the resolution boundary",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2411"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Disjoint files from 2413/2414/2415 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:19:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2412-resolution-inverse-field-check.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2413",
+      "slug": "extractor-relation-mappings",
+      "title": "Extractor mappings — YAML relation: block + JSON Schema x-relation",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2411"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Disjoint files from 2412/2414/2415 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:23:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2413-extractor-relation-mappings.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2414",
+      "slug": "jsonschema-renderer-x-relation",
+      "title": "JsonSchemaRenderer x-relation emission + renderer no-op notes",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2411"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Round-trip test needs 2413 merged to fully pass; core emission is independent. Sequential per-spec isolation chosen.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:27:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2414-jsonschema-renderer-x-relation.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2415",
+      "slug": "validator-relation-shape",
+      "title": "FormValidator shape validation for relational submissions",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2411"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Disjoint files from 2412/2413/2414 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:30:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2415-validator-relation-shape.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2416",
+      "slug": "relation-docs-and-integration",
+      "title": "Relation documentation + end-to-end integration tests",
+      "feature_id": "FEAT-456",
+      "feature": "formbuilder-fieldtype-cardinality",
+      "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2412",
+        "TASK-2413",
+        "TASK-2414",
+        "TASK-2415"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closing task — requires every other task merged; walks the spec §5 checklist.",
+      "assigned_to": null,
+      "started_at": "2026-08-24T15:10:59+00:00",
+      "completed_at": "2026-08-24T15:36:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2416-relation-docs-and-integration.md",
+      "verification": "verified"
+    }
+  ]
+}

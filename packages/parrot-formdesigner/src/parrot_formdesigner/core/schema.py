@@ -20,7 +20,13 @@ from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints, PostDependency
 from .events import FormEventsConfig
 from .options import FieldOption, OptionsSource
+from .relations import RelationSpec
 from .types import FieldType, LocalizedString
+
+# Legal (field_type) sets for each (mode, cardinality) combination of
+# FormField.relation — spec §2 "Canonical combinations" table (FEAT-456).
+_RELATION_REFERENCE_ONE_TYPES = frozenset({FieldType.SELECT, FieldType.DYNAMIC_SELECT, FieldType.TREE_SELECT})
+_RELATION_REFERENCE_MANY_TYPES = frozenset({FieldType.MULTI_SELECT, FieldType.TAGS, FieldType.TRANSFER_LIST})
 
 
 class FormType(str, Enum):
@@ -72,6 +78,11 @@ class FormField(BaseModel):
             effects. Validated by :class:`~parrot_formdesigner.services.FormValidator`.
         children: Child fields for GROUP type fields.
         item_template: Template for items in ARRAY type fields.
+        relation: Relational semantics of this field's value (FEAT-456),
+            orthogonal to ``field_type`` — e.g. a Many2one reference, a
+            Many2many reference, or a One2many embedded-rows relation.
+            ``None`` (default) means the field carries no relational
+            meaning; existing renderers and consumers are unaffected.
         meta: Arbitrary metadata for renderer-specific extensions.
     """
 
@@ -93,7 +104,53 @@ class FormField(BaseModel):
     post_depends: list[PostDependency] | None = None
     children: list[FormField] | None = None
     item_template: FormField | None = None
+    relation: RelationSpec | None = None
     meta: dict[str, Any] | None = None
+
+    @property
+    def is_relational(self) -> bool:
+        """Whether this field carries relational semantics (FEAT-456)."""
+        return self.relation is not None
+
+    @model_validator(mode="after")
+    def _validate_relation_combination(self) -> FormField:
+        """Enforce the legal (field_type x cardinality x mode) table.
+
+        See spec §2 "Canonical combinations" (FEAT-456). Only runs when
+        ``relation`` is set — ``relation=None`` is always legal and leaves
+        every other field untouched.
+        """
+        relation = self.relation
+        if relation is None:
+            return self
+
+        if relation.mode == "reference":
+            if relation.cardinality == "one":
+                if self.field_type not in _RELATION_REFERENCE_ONE_TYPES:
+                    raise ValueError(
+                        f"Field '{self.field_id}': relation mode='reference', "
+                        "cardinality='one' requires field_type in "
+                        f"{sorted(t.value for t in _RELATION_REFERENCE_ONE_TYPES)} "
+                        f"(got {self.field_type.value!r})"
+                    )
+            else:  # cardinality == "many"
+                if self.field_type not in _RELATION_REFERENCE_MANY_TYPES:
+                    raise ValueError(
+                        f"Field '{self.field_id}': relation mode='reference', "
+                        "cardinality='many' requires field_type in "
+                        f"{sorted(t.value for t in _RELATION_REFERENCE_MANY_TYPES)} "
+                        f"(got {self.field_type.value!r})"
+                    )
+        else:  # mode == "embed"
+            if self.field_type != FieldType.ARRAY:
+                raise ValueError(
+                    f"Field '{self.field_id}': relation mode='embed' requires "
+                    f"field_type=ARRAY (got {self.field_type.value!r})"
+                )
+            if self.item_template is None:
+                raise ValueError(f"Field '{self.field_id}': relation mode='embed' requires " "item_template to be set")
+
+        return self
 
 
 # Required for self-referential model resolution (also resolves PostDependency forward ref)
@@ -300,13 +357,9 @@ class FormMetadataField(BaseModel):
     @model_validator(mode="after")
     def _validate_callback_ref(self) -> "FormMetadataField":
         if self.source == "callback" and not self.callback_ref:
-            raise ValueError(
-                "callback_ref is required when source='callback'"
-            )
+            raise ValueError("callback_ref is required when source='callback'")
         if self.source != "callback" and self.callback_ref:
-            raise ValueError(
-                "callback_ref is only valid when source='callback'"
-            )
+            raise ValueError("callback_ref is only valid when source='callback'")
         return self
 
 
@@ -410,34 +463,22 @@ class FormSchema(BaseModel):
 
         for section in self.sections:
             if section.section_uid in seen_uids:
-                raise ValueError(
-                    f"Duplicate section_uid {section.section_uid} in form "
-                    f"{self.form_id!r}"
-                )
+                raise ValueError(f"Duplicate section_uid {section.section_uid} in form " f"{self.form_id!r}")
             seen_uids.add(section.section_uid)
 
             for item in section.fields:
                 if isinstance(item, FormSubsection):
                     if item.subsection_uid in seen_uids:
-                        raise ValueError(
-                            f"Duplicate subsection_uid {item.subsection_uid} "
-                            f"in form {self.form_id!r}"
-                        )
+                        raise ValueError(f"Duplicate subsection_uid {item.subsection_uid} " f"in form {self.form_id!r}")
                     seen_uids.add(item.subsection_uid)
 
         for field in self.iter_fields_recursive():
             if field.field_uid in seen_uids:
-                raise ValueError(
-                    f"Duplicate field_uid {field.field_uid} in form "
-                    f"{self.form_id!r}"
-                )
+                raise ValueError(f"Duplicate field_uid {field.field_uid} in form " f"{self.form_id!r}")
             seen_uids.add(field.field_uid)
 
             if field.field_id in seen_field_ids:
-                raise ValueError(
-                    f"Duplicate field_id {field.field_id!r} in form "
-                    f"{self.form_id!r}"
-                )
+                raise ValueError(f"Duplicate field_id {field.field_id!r} in form " f"{self.form_id!r}")
             seen_field_ids.add(field.field_id)
 
         return self
@@ -457,28 +498,18 @@ class FormSchema(BaseModel):
             try:
                 validate_identifier(entry.key, kind="metadata key")
             except ValueError as exc:
-                raise ValueError(
-                    f"FormMetadataField.key {entry.key!r} is not a valid "
-                    f"identifier: {exc}"
-                ) from exc
+                raise ValueError(f"FormMetadataField.key {entry.key!r} is not a valid " f"identifier: {exc}") from exc
 
             if entry.key in seen_keys:
-                raise ValueError(
-                    f"Duplicate metadata key {entry.key!r} in FormSchema "
-                    f"{self.form_id!r}."
-                )
+                raise ValueError(f"Duplicate metadata key {entry.key!r} in FormSchema " f"{self.form_id!r}.")
             seen_keys.add(entry.key)
 
             if entry.key in field_ids:
                 raise ValueError(
-                    f"Metadata key {entry.key!r} collides with a form "
-                    f"field_id in FormSchema {self.form_id!r}."
+                    f"Metadata key {entry.key!r} collides with a form " f"field_id in FormSchema {self.form_id!r}."
                 )
 
-            if (
-                entry.source == "callback"
-                and entry.key in BUILTIN_METADATA_SOURCE_NAMES
-            ):
+            if entry.source == "callback" and entry.key in BUILTIN_METADATA_SOURCE_NAMES:
                 raise ValueError(
                     f"Metadata key {entry.key!r} is a reserved built-in "
                     "source name and cannot be overridden with "
@@ -487,7 +518,6 @@ class FormSchema(BaseModel):
                 )
 
         return self
-
 
 
 def derive_stable_identities(schema: FormSchema, form_uid: uuid.UUID) -> None:
@@ -517,14 +547,10 @@ def derive_stable_identities(schema: FormSchema, form_uid: uuid.UUID) -> None:
             identity cannot accidentally derive from the stale one.
     """
     for section in schema.sections:
-        section.section_uid = uuid.uuid5(
-            form_uid, f"section:{section.section_id}"
-        )
+        section.section_uid = uuid.uuid5(form_uid, f"section:{section.section_id}")
         for item in section.fields:
             if isinstance(item, FormSubsection):
-                item.subsection_uid = uuid.uuid5(
-                    form_uid, f"subsection:{item.subsection_id}"
-                )
+                item.subsection_uid = uuid.uuid5(form_uid, f"subsection:{item.subsection_id}")
     for field in schema.iter_fields_recursive():
         field.field_uid = uuid.uuid5(form_uid, f"field:{field.field_id}")
 

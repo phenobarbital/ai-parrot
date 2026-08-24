@@ -538,6 +538,15 @@ class JiraInterface:
     ) -> AsyncIterator[dict[str, Any]]:
         """Yield raw issue dicts matching ``jql``, paging until exhausted.
 
+        Deployment-aware pagination (FEAT-454 follow-up): Jira Cloud's
+        offset-based ``/search`` endpoint is gone — pycontribs delegates
+        ``search_issues(startAt=0)`` to the cursor-based
+        ``enhanced_search_issues`` and *raises* for any ``startAt > 0``
+        (`jira/client.py:3629-3640`). That response carries no ``total``
+        either, so an offset loop silently stopped after the first page
+        (exactly ``page_size`` issues). On Cloud this therefore follows
+        ``nextPageToken``; on Server/DC it keeps the ``startAt`` loop.
+
         An empty first page is not trusted as proof of an empty scope
         (the Jira Cloud ``AUTHENTICATED_FAILED`` trap) — it triggers a
         ``/myself`` probe, which raises on a definitive rejection.
@@ -552,6 +561,21 @@ class JiraInterface:
             Raw issue dicts, one per matching issue.
         """
         client = await self._ensure_client()
+
+        # `_is_cloud` reads the `deploymentType` captured at construction
+        # time (`jira/client.py:658-667`) — a plain attribute read, no I/O.
+        # A fake/stubbed client without it degrades to the Server path.
+        if bool(getattr(client, "_is_cloud", False)):
+            async for raw in self._search_issues_cloud(
+                client,
+                jql,
+                fields=fields,
+                expand=expand,
+                page_size=page_size,
+            ):
+                yield raw
+            return
+
         start_at = 0
         while True:
             page = await asyncio.to_thread(
@@ -571,9 +595,140 @@ class JiraInterface:
             for raw in issues:
                 yield raw
             start_at += len(issues)
-            total = (page or {}).get("total", start_at)
-            if start_at >= total:
+            total = (page or {}).get("total")
+            if total is not None:
+                if start_at >= total:
+                    return
+            # A missing `total` must NOT be read as "we are done" (that is
+            # what truncated Cloud sweeps at exactly one page) — page on
+            # until a short page proves exhaustion. Only when `total` is
+            # absent: a Server/DC instance may cap `maxResults` below the
+            # requested page size, so a short page alone proves nothing.
+            elif len(issues) < page_size:
                 return
+
+    async def _search_issues_cloud(
+        self,
+        client: Any,
+        jql: str,
+        *,
+        fields: str | None,
+        expand: str | None,
+        page_size: int,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Cursor-paginate Jira Cloud's ``/search/jql`` endpoint.
+
+        Args:
+            client: The resolved pycontribs ``JIRA`` client.
+            jql: JQL scope.
+            fields: Comma-separated field list, or ``None`` for all.
+            expand: Comma-separated expand list.
+            page_size: Page size for each underlying search call.
+
+        Yields:
+            Raw issue dicts, one per matching issue.
+
+        Raises:
+            JiraAuthError: When the first page is empty and the
+                ``/myself`` probe reveals an unauthenticated session.
+        """
+        next_page_token: str | None = None
+        seen_tokens: set[str] = set()
+        first_page = True
+        while True:
+            page = await asyncio.to_thread(
+                client.enhanced_search_issues,
+                jql,
+                nextPageToken=next_page_token,
+                maxResults=page_size,
+                fields=fields,
+                expand=expand,
+                json_result=True,
+            )
+            issues = (page or {}).get("issues") or []
+            if not issues:
+                if first_page:
+                    await self._probe_myself()
+                return
+            for raw in issues:
+                yield raw
+            first_page = False
+
+            if (page or {}).get("isLast") is True:
+                return
+            next_page_token = (page or {}).get("nextPageToken")
+            if not next_page_token:
+                return
+            if next_page_token in seen_tokens:
+                # A non-advancing cursor would loop forever. It must RAISE,
+                # not return: a silent stop here is indistinguishable from
+                # "scope exhausted", which is precisely how the offset loop
+                # this replaced managed to truncate a corpus and still let
+                # its caller record a complete-looking watermark.
+                raise RuntimeError(
+                    f"Jira returned a repeated nextPageToken for JQL {jql!r} "
+                    f"after {len(seen_tokens) + 1} page(s) — refusing to treat "
+                    "a non-advancing cursor as the end of the scope."
+                )
+            seen_tokens.add(next_page_token)
+
+    async def approximate_issue_count(self, jql: str) -> int | None:
+        """Return Jira Cloud's approximate issue count for ``jql``.
+
+        A **canary, never a gate**: the endpoint is explicitly approximate,
+        Cloud-only, and this method swallows every failure — callers use it
+        to notice a sweep that came up short (the truncated-pagination
+        class of bug), not to decide correctness.
+
+        Args:
+            jql: JQL scope.
+
+        Returns:
+            The approximate count, or ``None`` when the deployment does not
+            offer the endpoint or the call failed.
+        """
+        client = await self._ensure_client()
+        if not bool(getattr(client, "_is_cloud", False)):
+            return None
+        counter = getattr(client, "approximate_issue_count", None)
+        if counter is None:
+            return None
+        try:
+            count = await asyncio.to_thread(counter, jql)
+        except Exception as exc:  # noqa: BLE001 — a canary must never raise
+            self.logger.debug("approximate_issue_count failed for %r: %s", jql, exc)
+            return None
+        return count if isinstance(count, int) else None
+
+    async def configure_connection_pool(self, size: int) -> None:
+        """Right-size the underlying ``requests`` connection pool.
+
+        pycontribs never mounts an adapter of its own, so the session
+        inherits ``requests``' default ``pool_maxsize=10``. Driving more
+        concurrent reads than that (see the sweep's ``concurrency``) makes
+        every overflow discard its connection and pay a fresh TLS
+        handshake. Mounting a right-sized ``HTTPAdapter`` does not disturb
+        the library's retry handling, which lives in ``ResilientSession``,
+        not in the adapter.
+
+        A no-op for ``size <= 10`` (the default pool already covers it),
+        and for any client without a mountable session.
+
+        Args:
+            size: Peak number of concurrent requests to size the pool for.
+        """
+        if size <= 10:
+            return
+        client = await self._ensure_client()
+        session = getattr(client, "_session", None)
+        if session is None or not hasattr(session, "mount"):
+            return
+        from requests.adapters import HTTPAdapter
+
+        adapter = HTTPAdapter(pool_connections=size, pool_maxsize=size)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        self.logger.debug("Sized the Jira connection pool for %d concurrent requests.", size)
 
     async def get_changelog(self, key: str, page_size: int = 100) -> list[dict[str, Any]]:
         """Fetch the full changelog for an issue, paging as needed.
