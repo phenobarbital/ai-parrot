@@ -364,3 +364,33 @@ class TestPayloadPresence:
 
         text, _ = _Owner()._extract_message_content(None, _Report())
         assert text == "report body"
+
+
+# ===================================================================
+# notification_succeeded — public counterpart to _notification_error
+# ===================================================================
+
+class TestNotificationSucceeded:
+    """The success predicate every caller uses instead of a bare await."""
+
+    def test_only_success_status_counts(self):
+        notifications = _load_notifications()
+        succeeded = notifications.NotificationMixin.notification_succeeded
+        assert succeeded({"status": "success"}) is True
+        assert succeeded({"status": "error", "error": "smtp refused"}) is False
+        assert succeeded({}) is False
+        assert succeeded(None) is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", sorted(WRAPPERS))
+    async def test_agrees_with_every_wrapper(self, name):
+        """Its verdict matches what each homologated wrapper returns."""
+        owner = _owner()
+        assert owner.notification_succeeded(
+            await getattr(owner, name)(message="hi", recipients="target")
+        ) is True
+
+        failing = _owner(AsyncMock(side_effect=RuntimeError("boom")))
+        assert failing.notification_succeeded(
+            await getattr(failing, name)(message="hi", recipients="target")
+        ) is False

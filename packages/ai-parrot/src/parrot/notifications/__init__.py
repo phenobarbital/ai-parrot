@@ -251,6 +251,27 @@ class NotificationMixin:
             return provider.lower()
         return None
 
+    @staticmethod
+    def notification_succeeded(result: Optional[Dict[str, Any]]) -> bool:
+        """Report whether a notification result describes a successful send.
+
+        ``send_notification`` (and therefore every ``send_*`` convenience
+        method) reports provider failures as ``{"status": "error", ...}``
+        instead of raising, so a bare ``await`` *always* looks like it
+        worked. Callers that need a real success/failure signal must inspect
+        the returned status — this helper is that inspection, so no caller
+        has to re-derive the convention. It is the public counterpart to
+        :meth:`_notification_error`, which builds the failure payload.
+
+        Args:
+            result: The dict returned by any ``send_*`` method. ``None`` is
+                accepted and treated as a failure.
+
+        Returns:
+            ``True`` only when the provider reported success.
+        """
+        return bool(result) and result.get("status") == "success"
+
     @classmethod
     def _notification_error(
         cls,
