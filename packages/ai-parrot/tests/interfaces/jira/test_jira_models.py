@@ -9,6 +9,7 @@ from parrot.interfaces.jira import (
     JiraIssue,
     JiraIssueLinkKind,
     JiraPerson,
+    JiraRemoteLink,
     parse_issue,
 )
 
@@ -69,6 +70,25 @@ class TestParseIssueProjection:
     def test_labels_and_components(self, issue):
         assert set(issue.labels) == {"multitenant", "forms"}
         assert set(issue.components) == {"navigator-forms", "api"}
+
+    def test_remote_links_omitted_when_not_given(self, issue):
+        """Adversarial-review finding: `raw_remote_links` is optional and
+        additive — every existing caller that omits it (like the `issue`
+        fixture above) keeps getting `remote_links=[]`, exactly as before
+        this fix."""
+        assert issue.remote_links == []
+
+    def test_remote_links_projected_when_given(self, raw_issue, remote_links):
+        """Remote links live on their own endpoint (never in `fields`), so
+        they are fetched separately (`JiraInterface.get_remote_links`) and
+        passed in explicitly — this is `parse_issue`'s side of that wiring."""
+        parsed = parse_issue(
+            raw_issue, base_url=BASE, ac_field_id="customfield_10101", raw_remote_links=remote_links
+        )
+        (rl,) = parsed.remote_links
+        assert isinstance(rl, JiraRemoteLink)
+        assert rl.title == "Runbook"
+        assert rl.url == "https://wiki/runbook"
 
 
 class TestPIIBoundary:

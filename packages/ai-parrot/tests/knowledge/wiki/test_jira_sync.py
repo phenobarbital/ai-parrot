@@ -43,6 +43,7 @@ class FakeJiraInterface:
         probe_error=None,
         transient_error_keys=(),
         server_url=BASE,
+        remote_links_by_key=None,
     ):
         self.raw_issues = list(raw_issues)
         self.fail_after = fail_after
@@ -50,7 +51,9 @@ class FakeJiraInterface:
         self.probe_error = probe_error
         self.transient_error_keys = set(transient_error_keys)
         self.server_url = server_url
+        self.remote_links_by_key = dict(remote_links_by_key or {})
         self.searched: list[str] = []
+        self.remote_links_calls: list[str] = []
 
     async def search_issues(self, jql, *, fields=None, expand=None, page_size=100):
         self.searched.append(jql)
@@ -74,7 +77,8 @@ class FakeJiraInterface:
         return "customfield_10101"
 
     async def get_remote_links(self, key):
-        return []
+        self.remote_links_calls.append(key)
+        return self.remote_links_by_key.get(key, [])
 
     async def verify_auth(self):
         if self.probe_error is not None:
@@ -82,8 +86,10 @@ class FakeJiraInterface:
         return {"accountId": "x"}
 
     @staticmethod
-    def parse_issue(raw, *, base_url=BASE, ac_field_id=None):
-        return parse_issue(raw, base_url=base_url, ac_field_id=ac_field_id)
+    def parse_issue(raw, *, base_url=BASE, ac_field_id=None, raw_remote_links=None):
+        return parse_issue(
+            raw, base_url=base_url, ac_field_id=ac_field_id, raw_remote_links=raw_remote_links
+        )
 
 
 def _sweep(iface, d, **kw) -> SweepReport:
@@ -274,6 +280,79 @@ class TestEntityNotes:
             text = path.read_text()
             assert "jlara@example.com" not in text
             assert "aruiz@example.com" not in text
+
+    def test_remote_links_fetched_and_rendered(self, raw_issue, issues_dir):
+        """Adversarial-review finding: `get_remote_links` existed on the
+        interface since TASK-2400 but the sweep never called it — every
+        ticket silently got `remote_links=[]` regardless of what Jira
+        actually had. This is the sweep's side of that wiring."""
+        iface = FakeJiraInterface(
+            [raw_issue],
+            remote_links_by_key={"NAV-9372": [{"object": {"title": "Runbook", "url": "https://wiki/runbook"}}]},
+        )
+        _sweep(iface, issues_dir)
+        assert iface.remote_links_calls == ["NAV-9372"]
+        text = (issues_dir / "NAV-9372.md").read_text()
+        assert "## Remote Links" in text
+        assert "[Runbook](https://wiki/runbook)" in text
+
+
+class TestEntityNoteStaleMembershipPruning:
+    """Adversarial-review finding: entity notes never removed stale
+    membership at all — a ticket that left the JQL scope stayed listed on
+    its person/project/component/label satellite notes forever. See
+    `_prune_stale_entity_notes`'s docstring for the documented scope
+    boundary of this fix (a same-scope reassignment while the ticket
+    stays in scope is only half-corrected: the gaining entity's note is
+    always fresh; the losing entity's note is not addressed here)."""
+
+    def test_ticket_moved_out_of_scope_is_pruned_from_person_note(self, raw_issue, issues_dir):
+        _sweep(FakeJiraInterface([raw_issue]), issues_dir, force=True)
+        person_note = next((issues_dir / "people").glob("*.md"))
+        assert "NAV-9372" in person_note.read_text()
+
+        # A subsequent FULL sweep whose JQL scope no longer matches this
+        # ticket at all (e.g. it moved to a different project) — fetches
+        # nothing, but is still a full sweep (no watermark conjunct).
+        _sweep(FakeJiraInterface([]), issues_dir, force=True)
+        assert "NAV-9372" not in person_note.read_text()
+
+    def test_ticket_moved_out_of_scope_is_pruned_from_project_note(self, raw_issue, issues_dir):
+        _sweep(FakeJiraInterface([raw_issue]), issues_dir, force=True)
+        project_note = issues_dir / "projects" / "NAV.md"
+        assert "NAV-9372" in project_note.read_text()
+
+        _sweep(FakeJiraInterface([]), issues_dir, force=True)
+        assert "NAV-9372" not in project_note.read_text()
+
+    def test_incremental_sweep_never_prunes(self, raw_issue, issues_dir):
+        """An incremental sweep only ever sees a subset of tickets — it
+        must never treat "not seen this run" as "no longer valid"."""
+        _sweep(FakeJiraInterface([raw_issue]), issues_dir, force=True)
+        project_note_before = (issues_dir / "projects" / "NAV.md").read_text()
+
+        second = json.loads(json.dumps(raw_issue))
+        second["key"] = "NAV-9999"
+        second["id"] = "184221"
+        second["fields"]["updated"] = "2026-08-25T10:00:00.000+0000"
+        # No force=True and a watermark already exists — this is an
+        # incremental sweep that does not re-fetch NAV-9372 at all.
+        _sweep(FakeJiraInterface([second]), issues_dir)
+
+        project_note_after = (issues_dir / "projects" / "NAV.md").read_text()
+        assert "NAV-9372" in project_note_after, "incremental sweep must not prune what it didn't re-fetch"
+        assert "NAV-9999" in project_note_after
+        assert project_note_before != project_note_after  # merged, not untouched
+
+    def test_dry_run_reports_without_writing(self, raw_issue, issues_dir):
+        _sweep(FakeJiraInterface([raw_issue]), issues_dir, force=True)
+        person_note = next((issues_dir / "people").glob("*.md"))
+        before = person_note.read_text()
+
+        report = _sweep(FakeJiraInterface([]), issues_dir, force=True, dry_run=True)
+
+        assert person_note.read_text() == before, "dry_run must never write"
+        assert report.entity_notes > 0
 
 
 class TestOrphansAndUnreachable:

@@ -92,6 +92,18 @@ _SYNC_MARKER_RE = re.compile(
 # Filename-unsafe characters stripped/replaced by group_slug().
 _SLUG_UNSAFE_RE = re.compile(r"[^a-z0-9]+")
 
+# G9's own acceptance criterion is a blanket `grep -ri "@"` over the WHOLE
+# generated corpus finding no email address — stronger than "the parse
+# boundary drops emailAddress from user objects" (which only covers
+# structured Jira user objects, not free text). description/acceptance
+# criteria HTML is operator/customer-authored free text that can legally
+# contain a pasted email address, so this is a defense-in-depth redaction
+# at the one funnel every such free-text field passes through
+# (html_to_markdown) — deliberately blunt (any email-shaped string, not
+# just personal ones) rather than risk a real leak.
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_EMAIL_REDACTED = "[email redacted]"
+
 
 class IssueSyncStamp(BaseModel):
     """Sync bookkeeping embedded in a ticket document's frontmatter."""
@@ -267,6 +279,10 @@ def html_to_markdown(html: str | None) -> str:
     because both Jira REST API versions can be asked for
     ``expand=renderedFields``, which is HTML on both.
 
+    Any email-shaped substring in the converted text is redacted (G9 —
+    see :data:`_EMAIL_RE`'s module-level comment for why this exists in
+    addition to the parse-boundary's structured-user-object guard).
+
     Args:
         html: Rendered HTML from Jira, or ``None``.
 
@@ -275,7 +291,8 @@ def html_to_markdown(html: str | None) -> str:
     """
     if not html:
         return ""
-    return _converter().handle(html).strip()
+    converted = _converter().handle(html).strip()
+    return _EMAIL_RE.sub(_EMAIL_REDACTED, converted)
 
 
 # ----------------------------------------------------------------------
@@ -383,6 +400,12 @@ def _render_body(issue: JiraIssue, *, repo_pages: list[str] | None = None) -> st
             size = _fmt_size(att.size_bytes)
             mime = att.mime_type or "unknown"
             lines.append(f"- `{att.filename}` ({size}, {mime}) — {att.url}")
+        lines.append("")
+
+    if issue.remote_links:
+        lines.append("## Remote Links")
+        for rl in issue.remote_links:
+            lines.append(f"- [{rl.title}]({rl.url})")
         lines.append("")
 
     if repo_pages:

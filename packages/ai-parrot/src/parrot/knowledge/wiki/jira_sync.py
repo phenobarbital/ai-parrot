@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from parrot.interfaces.jira import JiraInterface, JiraPerson
 from parrot.knowledge.wiki.jira_render import (
     EXTRACTOR_VERSION,
+    SYNC_MARKER,
     group_slug,
     issue_filename,
     person_slug,
@@ -392,7 +393,21 @@ async def _run_sweep(
     try:
         async for raw in interface.search_issues(effective_jql, expand="renderedFields,changelog"):
             report.fetched += 1
-            issue = interface.parse_issue(raw, base_url=interface.server_url, ac_field_id=ac_field_id)
+            # Remote links live on their own endpoint (never in `fields`),
+            # so they need one extra per-issue call — adversarial-review
+            # finding: this was previously never wired up at all, silently
+            # hardcoding remote_links=[] for every ticket despite the spec's
+            # "attachments and remote links are recorded as references"
+            # non-goal note and JiraInterface.get_remote_links existing
+            # since TASK-2400 for exactly this purpose.
+            raw_key = raw.get("key")
+            raw_remote_links = await interface.get_remote_links(raw_key) if raw_key else []
+            issue = interface.parse_issue(
+                raw,
+                base_url=interface.server_url,
+                ac_field_id=ac_field_id,
+                raw_remote_links=raw_remote_links,
+            )
             fetched_keys.add(issue.key)
 
             if issue.updated_at is not None and (max_updated is None or issue.updated_at > max_updated):
@@ -461,7 +476,17 @@ async def _run_sweep(
     report.unresolved_link_keys = sorted(referenced_keys - known_keys)
 
     # --- Entity notes -----------------------------------------------------
-    _write_entity_notes(issues_dir, people, projects, components, labels, report, dry_run=dry_run)
+    _write_entity_notes(
+        issues_dir,
+        people,
+        projects,
+        components,
+        labels,
+        report,
+        dry_run=dry_run,
+        is_full_sweep=is_full_sweep,
+        fetched_keys=fetched_keys,
+    )
 
     # An orphan-verification probe failure (recorded above, never raised)
     # must gate the watermark exactly like the fetch loop's own failures
@@ -518,6 +543,109 @@ async def _check_and_mark_unreachable(
         path.write_text(patched, encoding="utf-8")
 
 
+_TICKET_BULLET_RE = re.compile(r"^- \[\[([^\]]+)\]\]\n", re.MULTILINE)
+
+
+def _prune_stale_tickets(text: str, valid_keys: set[str]) -> str | None:
+    """Drop ``- [[KEY]]`` bullets from a satellite note's generated region
+    whose ``KEY`` is no longer in ``valid_keys``, preserving everything
+    else — frontmatter, heading, and human tail — byte-for-byte.
+
+    Full-sweep only: the caller guarantees ``valid_keys`` (``fetched_keys``)
+    is a definitive, exhaustive membership set for the current JQL scope,
+    exactly like ticket-orphan detection already assumes above. An
+    incremental sweep must never call this — it only ever sees a subset of
+    tickets, so "not seen this run" would not mean "no longer valid".
+
+    Args:
+        text: The note's current on-disk content.
+        valid_keys: The full set of ticket keys still in scope.
+
+    Returns:
+        The patched text, or ``None`` if nothing needed pruning (including
+        when there is no :data:`SYNC_MARKER` at all — content this module
+        cannot safely distinguish from human-authored is never touched).
+    """
+    if SYNC_MARKER not in text:
+        return None
+    generated, tail = split_at_marker(text)
+
+    changed = False
+
+    def _filter(match: re.Match) -> str:
+        nonlocal changed
+        if match.group(1) in valid_keys:
+            return match.group(0)
+        changed = True
+        return ""
+
+    new_generated = _TICKET_BULLET_RE.sub(_filter, generated)
+    if not changed:
+        return None
+    return new_generated + tail
+
+
+def _prune_stale_entity_notes(
+    issues_dir: Path,
+    subdir: str,
+    touched_slugs: set[str],
+    fetched_keys: set[str],
+    *,
+    dry_run: bool,
+) -> int:
+    """Prune stale ticket bullets from entity notes NOT touched this run.
+
+    Full-sweep only, called from :func:`_write_entity_notes`. Scope of
+    this fix (adversarial-review finding: entity notes never removed
+    stale membership at all): a note whose ticket key has left the JQL
+    scope entirely — the ticket was closed out of scope, moved to a
+    different project, relabeled away, or deleted — is pruned of that key
+    here, using ``fetched_keys`` (this full sweep's definitive, exhaustive
+    ticket membership for the JQL scope) as the source of truth.
+
+    **Known residual limitation**, documented rather than silently
+    unaddressed: a ticket that stays *in scope* but is reassigned to a
+    *different* person/component/label is only half-corrected — the
+    newly-touched entity's note is freshly (re)computed by
+    :func:`_write_entity_notes` (correct), but the entity that lost the
+    ticket is not visited here, because its key is still in
+    ``fetched_keys`` (still a valid ticket, just no longer theirs). Fully
+    closing that gap would require tracking JQL-scope provenance per
+    entity-note key — a real design extension, not attempted here, since
+    entity notes are written per corpus directory (not per scope) and two
+    different JQL scopes may legitimately share one ``issues_dir``;
+    blanket-clearing every untouched note here would risk erasing a
+    different scope's still-valid membership.
+
+    Args:
+        issues_dir: The corpus root.
+        subdir: One of ``"people"``, ``"projects"``, ``"components"``,
+            ``"labels"``.
+        touched_slugs: Filenames (stem, no ``.md``) already rewritten this
+            run by :func:`_write_entity_notes` — skipped here.
+        fetched_keys: The full sweep's definitive ticket-key membership.
+        dry_run: When true, compute but never write.
+
+    Returns:
+        The number of notes pruned (written, unless ``dry_run``).
+    """
+    dir_path = issues_dir / subdir
+    if not dir_path.is_dir():
+        return 0
+    pruned = 0
+    for path in sorted(dir_path.glob("*.md")):
+        if path.stem in touched_slugs:
+            continue
+        text = path.read_text(encoding="utf-8")
+        patched = _prune_stale_tickets(text, fetched_keys)
+        if patched is None:
+            continue
+        pruned += 1
+        if not dry_run:
+            path.write_text(patched, encoding="utf-8")
+    return pruned
+
+
 def _write_entity_notes(
     issues_dir: Path,
     people: dict[str, tuple[JiraPerson, set[str]]],
@@ -527,20 +655,30 @@ def _write_entity_notes(
     report: SweepReport,
     *,
     dry_run: bool,
+    is_full_sweep: bool,
+    fetched_keys: set[str],
 ) -> None:
-    """Emit person/project/component/label satellite notes, merging keys.
+    """Emit person/project/component/label satellite notes.
 
-    On an incremental sweep the accumulated ``keys`` sets only cover
+    On an **incremental** sweep the accumulated ``keys`` sets only cover
     *this run's* tickets — merged here with whatever keys the existing
     on-disk note already lists, so a daily run never rewrites a note down
     to just the one ticket that changed that day.
+
+    On a **full** sweep, ``fetched_keys`` is a definitive, exhaustive
+    membership set for the current JQL scope — so a touched entity's note
+    is rewritten from THIS run's keys alone (no merge, so a
+    reassignment/relabel is reflected immediately), and every *untouched*
+    existing note is pruned of any now-stale ticket key (adversarial-
+    review finding: entity notes previously never removed stale
+    membership — see :func:`_prune_stale_entity_notes`).
     """
     written = 0
 
     for slug, (person, keys) in people.items():
         path = issues_dir / "people" / f"{slug}.md"
         existing_text = path.read_text(encoding="utf-8") if path.exists() else None
-        merged = sorted(keys | _existing_note_keys(existing_text))
+        merged = sorted(keys) if is_full_sweep else sorted(keys | _existing_note_keys(existing_text))
         new_text = render_person_note(person, merged, existing=existing_text)
         if not dry_run and (existing_text is None or new_text != existing_text):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -553,7 +691,7 @@ def _write_entity_notes(
     for project_key, keys in projects.items():
         path = issues_dir / "projects" / f"{project_key}.md"
         existing_text = path.read_text(encoding="utf-8") if path.exists() else None
-        merged = sorted(keys | _existing_note_keys(existing_text))
+        merged = sorted(keys) if is_full_sweep else sorted(keys | _existing_note_keys(existing_text))
         new_text = render_group_note("project", project_key, merged, existing=existing_text)
         if not dry_run and (existing_text is None or new_text != existing_text):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -563,7 +701,7 @@ def _write_entity_notes(
     for name, keys in components.items():
         path = issues_dir / "components" / f"{group_slug(name)}.md"
         existing_text = path.read_text(encoding="utf-8") if path.exists() else None
-        merged = sorted(keys | _existing_note_keys(existing_text))
+        merged = sorted(keys) if is_full_sweep else sorted(keys | _existing_note_keys(existing_text))
         new_text = render_group_note("component", name, merged, existing=existing_text)
         if not dry_run and (existing_text is None or new_text != existing_text):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -573,11 +711,21 @@ def _write_entity_notes(
     for name, keys in labels.items():
         path = issues_dir / "labels" / f"{group_slug(name)}.md"
         existing_text = path.read_text(encoding="utf-8") if path.exists() else None
-        merged = sorted(keys | _existing_note_keys(existing_text))
+        merged = sorted(keys) if is_full_sweep else sorted(keys | _existing_note_keys(existing_text))
         new_text = render_group_note("label", name, merged, existing=existing_text)
         if not dry_run and (existing_text is None or new_text != existing_text):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(new_text, encoding="utf-8")
         written += 1
+
+    if is_full_sweep:
+        written += _prune_stale_entity_notes(issues_dir, "people", set(people), fetched_keys, dry_run=dry_run)
+        written += _prune_stale_entity_notes(issues_dir, "projects", set(projects), fetched_keys, dry_run=dry_run)
+        written += _prune_stale_entity_notes(
+            issues_dir, "components", {group_slug(n) for n in components}, fetched_keys, dry_run=dry_run
+        )
+        written += _prune_stale_entity_notes(
+            issues_dir, "labels", {group_slug(n) for n in labels}, fetched_keys, dry_run=dry_run
+        )
 
     report.entity_notes = written

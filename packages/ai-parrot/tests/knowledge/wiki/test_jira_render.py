@@ -155,6 +155,27 @@ class TestWikilinksAndTags:
         assert "**Jira**:" in out and "/browse/NAV-9372" in out
 
 
+class TestRemoteLinks:
+    """Adversarial-review finding: `JiraIssue.remote_links` existed on the
+    model since TASK-2399 but the renderer never emitted a section for it
+    at all — silently dropping remote links even when `parse_issue` was
+    given some."""
+
+    def test_no_section_when_empty(self, issue, frozen_now):
+        """The `issue` fixture never passes `raw_remote_links` — the
+        section must not appear for an issue with none."""
+        out = render_issue_document(issue, fetched_at=frozen_now)
+        assert "## Remote Links" not in out
+
+    def test_section_present_when_populated(self, raw_issue, remote_links, frozen_now):
+        issue_with_links = parse_issue(
+            raw_issue, base_url=BASE, ac_field_id="customfield_10101", raw_remote_links=remote_links
+        )
+        out = render_issue_document(issue_with_links, fetched_at=frozen_now)
+        assert "## Remote Links" in out
+        assert "[Runbook](https://wiki/runbook)" in out
+
+
 class TestHtmlConversion:
     def test_deterministic(self):
         html = "<p>a <code>b</code></p><table><tr><td>x</td></tr></table>"
@@ -175,6 +196,23 @@ class TestHtmlConversion:
     def test_links_and_code_survive(self):
         out = jira_render.html_to_markdown('<p><a href="https://x/y">y</a> <pre>code()</pre></p>')
         assert "https://x/y" in out and "code()" in out
+
+    def test_email_in_free_text_is_redacted(self):
+        """G9's own acceptance criterion is a blanket `grep -ri "@"` over
+        the WHOLE generated corpus — the parse boundary's structured
+        `JiraPerson` guard doesn't cover a customer's email pasted into a
+        ticket description, so this is a defense-in-depth redaction at
+        the HTML->markdown funnel."""
+        out = jira_render.html_to_markdown("<p>Contact jane.doe@example.com for details.</p>")
+        assert "jane.doe@example.com" not in out
+        assert "@" not in out
+        assert "[email redacted]" in out
+
+    def test_non_email_at_signs_pass_through(self):
+        """Only email-shaped substrings are redacted — an `@mention`-style
+        token with no domain must survive untouched."""
+        out = jira_render.html_to_markdown("<p>cc @jsmith re this</p>")
+        assert "@jsmith" in out
 
 
 class TestSlugsAndFilenames:

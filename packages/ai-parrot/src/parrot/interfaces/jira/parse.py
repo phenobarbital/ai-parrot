@@ -230,6 +230,7 @@ def parse_issue(
     *,
     base_url: str,
     ac_field_id: str | None = None,
+    raw_remote_links: list[dict[str, Any]] | None = None,
 ) -> JiraIssue:
     """Project a raw Jira issue payload into a validated :class:`JiraIssue`.
 
@@ -243,6 +244,12 @@ def parse_issue(
         ac_field_id: Resolved acceptance-criteria custom field id (see
             ``JiraInterface.resolve_ac_field_id``, TASK-2400), or ``None``
             to omit the acceptance-criteria section entirely.
+        raw_remote_links: Raw ``/remotelink`` entries for this issue, fetched
+            separately via ``JiraInterface.get_remote_links`` (remote links
+            live on their own endpoint, never in ``fields``) — or ``None``
+            to omit them entirely. Optional and additive: every existing
+            caller that omits it keeps getting ``remote_links=[]``, exactly
+            as before.
 
     Returns:
         A validated :class:`JiraIssue`.
@@ -322,6 +329,6 @@ def parse_issue(
         resolved_at=_dt(fields.get("resolutiondate")),
         history=_history(raw.get("changelog")),
         attachments=_attachments(fields.get("attachment")),
-        remote_links=[],
+        remote_links=_remote_links(raw_remote_links),
         url=url,
     )
