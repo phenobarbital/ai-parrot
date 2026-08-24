@@ -56,9 +56,7 @@ def _fingerprint(target: SubmissionTarget) -> str:
     """
     fields = _COORDINATE_FIELDS[target.type]
     coords = target.model_dump(include=set(fields))
-    return hashlib.sha256(
-        json.dumps(coords, sort_keys=True, default=str).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(coords, sort_keys=True, default=str).encode()).hexdigest()
 
 
 class SinkFactory:
@@ -98,9 +96,7 @@ class SinkFactory:
                 form_uid)`` on a previous call.
         """
         if form.persistence is None:
-            raise ValueError(
-                f"FormSchema {form.form_id!r} has no persistence configured"
-            )
+            raise ValueError(f"FormSchema {form.form_id!r} has no persistence configured")
 
         target = form.persistence.data
         coord_key = (tenant, form.form_uid)
@@ -125,9 +121,7 @@ class SinkFactory:
         from parrot_formdesigner.services.sinks import _load
 
         sink_cls = _load(target.type)
-        sink: AbstractSubmissionSink = sink_cls(
-            target, alias_registry=self._alias_registry, tenant=tenant
-        )
+        sink: AbstractSubmissionSink = sink_cls(target, alias_registry=self._alias_registry, tenant=tenant)
         self._cache[cache_key] = sink
         return sink
 

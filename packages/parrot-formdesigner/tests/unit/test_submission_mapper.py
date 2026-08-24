@@ -70,9 +70,7 @@ def form_with_array():
 
 @pytest.fixture
 def submission_with_array(form_with_array):
-    return _submission(
-        {"answers": [{"q": 1}, {"q": 2}]}, form_uid=form_with_array.form_uid
-    )
+    return _submission({"answers": [{"q": 1}, {"q": 2}]}, form_uid=form_with_array.form_uid)
 
 
 @pytest.fixture
@@ -83,11 +81,7 @@ def form_with_metadata():
         form_id="f3",
         title="Form 3",
         sections=[section],
-        metadata=[
-            FormMetadataField(
-                key="campaign_id", source="constant", default="fall-2026"
-            )
-        ],
+        metadata=[FormMetadataField(key="campaign_id", source="constant", default="fall-2026")],
     )
 
 
@@ -96,12 +90,8 @@ def form_with_deep_group():
     # Build a GROUP path deep enough that the flattened leaf name exceeds
     # 63 characters.
     leaf = FormField(field_id="z" * 20, field_type=FieldType.TEXT, label="Z")
-    inner = FormField(
-        field_id="y" * 20, field_type=FieldType.GROUP, label="Y", children=[leaf]
-    )
-    outer = FormField(
-        field_id="x" * 20, field_type=FieldType.GROUP, label="X", children=[inner]
-    )
+    inner = FormField(field_id="y" * 20, field_type=FieldType.GROUP, label="Y", children=[leaf])
+    outer = FormField(field_id="x" * 20, field_type=FieldType.GROUP, label="X", children=[inner])
     section = FormSection(section_id="s1", fields=[outer])
     return FormSchema(form_id="f4", title="Form 4", sections=[section])
 
@@ -137,16 +127,12 @@ class TestFlatten:
         assert RESERVED_COLUMNS <= set(row)
 
     def test_long_path_raises(self, form_with_deep_group):
-        submission = _submission(
-            {}, form_uid=form_with_deep_group.form_uid
-        )
+        submission = _submission({}, form_uid=form_with_deep_group.form_uid)
         with pytest.raises(ValueError):
             flatten_submission(form_with_deep_group, submission)
 
     def test_subsection_is_walked(self, form_with_subsection):
-        submission = _submission(
-            {"notes": "hello"}, form_uid=form_with_subsection.form_uid
-        )
+        submission = _submission({"notes": "hello"}, form_uid=form_with_subsection.form_uid)
         assert "notes" in flatten_submission(form_with_subsection, submission)
 
 

@@ -138,24 +138,18 @@ class TestRoundtrip:
         got = await autonomous_storage.load_by_slug(autonomous_form.form_id, "navigator")
         assert got == autonomous_form
 
-    async def test_delete_removes_body(
-        self, autonomous_storage, autonomous_form, definition_path
-    ):
+    async def test_delete_removes_body(self, autonomous_storage, autonomous_form, definition_path):
         await autonomous_storage.save(autonomous_form)
         assert definition_path.exists()
         await autonomous_storage.delete(autonomous_form.form_uid, tenant="navigator")
         assert not definition_path.exists()
 
-    async def test_body_file_contains_full_form(
-        self, autonomous_storage, autonomous_form, definition_path
-    ):
+    async def test_body_file_contains_full_form(self, autonomous_storage, autonomous_form, definition_path):
         await autonomous_storage.save(autonomous_form)
         body = FormSchema.model_validate_json(definition_path.read_text())
         assert body == autonomous_form
 
-    async def test_pointer_row_has_empty_sections(
-        self, autonomous_storage, inner_storage, autonomous_form
-    ):
+    async def test_pointer_row_has_empty_sections(self, autonomous_storage, inner_storage, autonomous_form):
         await autonomous_storage.save(autonomous_form)
         pointer = await inner_storage.load(autonomous_form.form_uid, tenant="navigator")
         assert pointer.sections == []
@@ -170,9 +164,7 @@ class TestPassThrough:
 
     async def test_list_forms_includes_pointer(self, autonomous_storage, autonomous_form):
         await autonomous_storage.save(autonomous_form)
-        ids = [
-            r["form_id"] for r in await autonomous_storage.list_forms(tenant="navigator")
-        ]
+        ids = [r["form_id"] for r in await autonomous_storage.list_forms(tenant="navigator")]
         assert autonomous_form.form_id in ids
 
 

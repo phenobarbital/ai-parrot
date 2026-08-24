@@ -131,9 +131,7 @@ class GoogleSheetSink(AbstractSubmissionSink):
     @property
     def capabilities(self) -> frozenset[SinkCapability]:
         """``{WRITE, PROVISION, EXTEND}`` — no READ, no LIST."""
-        return frozenset(
-            {SinkCapability.WRITE, SinkCapability.PROVISION, SinkCapability.EXTEND}
-        )
+        return frozenset({SinkCapability.WRITE, SinkCapability.PROVISION, SinkCapability.EXTEND})
 
     def _build_service_sync(self, creds_blob: str) -> Any:
         """Build a raw `googleapiclient` Sheets v4 service (blocking).
@@ -149,9 +147,7 @@ class GoogleSheetSink(AbstractSubmissionSink):
             info = json.loads(creds_blob)
             credentials = service_account.Credentials.from_service_account_info(info)
         except (ValueError, TypeError):
-            credentials = service_account.Credentials.from_service_account_file(
-                creds_blob
-            )
+            credentials = service_account.Credentials.from_service_account_file(creds_blob)
         return build("sheets", "v4", credentials=credentials)
 
     async def _ensure_client(self) -> Any:
@@ -165,25 +161,17 @@ class GoogleSheetSink(AbstractSubmissionSink):
         if self._client is None:
             if build is None:
                 raise SinkUnavailableError(
-                    "Google Sheets sink requires the 'gsheet' extra: "
-                    "pip install parrot-formdesigner[gsheet]"
+                    "Google Sheets sink requires the 'gsheet' extra: " "pip install parrot-formdesigner[gsheet]"
                 )
             try:
-                creds_blob = self._alias_registry.resolve_credentials(
-                    self._target.connection, tenant=self._tenant
-                )
-                service = await asyncio.to_thread(
-                    self._build_service_sync, creds_blob
-                )
-                self._client = _SheetsClient(
-                    service, self._target.spreadsheet_id, self._target.worksheet
-                )
+                creds_blob = self._alias_registry.resolve_credentials(self._target.connection, tenant=self._tenant)
+                service = await asyncio.to_thread(self._build_service_sync, creds_blob)
+                self._client = _SheetsClient(service, self._target.spreadsheet_id, self._target.worksheet)
             except SinkUnavailableError:
                 raise
             except Exception as exc:
                 raise SinkUnavailableError(
-                    f"Cannot build Google Sheets client for "
-                    f"{self._target.connection!r}: {exc}"
+                    f"Cannot build Google Sheets client for " f"{self._target.connection!r}: {exc}"
                 ) from exc
         return self._client
 
@@ -213,8 +201,7 @@ class GoogleSheetSink(AbstractSubmissionSink):
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"Google Sheets sink {self._target.connection!r} "
-                f"unavailable during ensure_target: {exc}"
+                f"Google Sheets sink {self._target.connection!r} " f"unavailable during ensure_target: {exc}"
             ) from exc
 
     async def write(self, submission: FormSubmission, payload: Any) -> str:
@@ -240,7 +227,6 @@ class GoogleSheetSink(AbstractSubmissionSink):
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"Google Sheets sink {self._target.connection!r} "
-                f"unavailable during write: {exc}"
+                f"Google Sheets sink {self._target.connection!r} " f"unavailable during write: {exc}"
             ) from exc
         return submission.submission_id

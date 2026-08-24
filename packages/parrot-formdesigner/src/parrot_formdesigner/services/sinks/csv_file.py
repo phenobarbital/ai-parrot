@@ -96,9 +96,7 @@ class CsvFileSink(AbstractSubmissionSink):
             The rendered line, already ``\\n``-terminated by ``csv.writer``.
         """
         buf = io.StringIO()
-        csv.writer(buf, delimiter=self._target.delimiter).writerow(
-            [row.get(col, "") for col in columns]
-        )
+        csv.writer(buf, delimiter=self._target.delimiter).writerow([row.get(col, "") for col in columns])
         return buf.getvalue()
 
     def _append(self, line: str) -> None:
@@ -169,8 +167,7 @@ class CsvFileSink(AbstractSubmissionSink):
             raise
         except OSError as exc:
             raise SinkUnavailableError(
-                f"CSV sink {self._target.connection!r} unavailable during "
-                f"ensure_target: {exc}"
+                f"CSV sink {self._target.connection!r} unavailable during " f"ensure_target: {exc}"
             ) from exc
 
     async def write(self, submission: FormSubmission, payload: Any) -> str:
@@ -191,11 +188,7 @@ class CsvFileSink(AbstractSubmissionSink):
         Raises:
             SinkUnavailableError: If the append fails.
         """
-        columns = (
-            [*self._header, *self._extra_columns]
-            if self._header is not None
-            else list(payload.keys())
-        )
+        columns = [*self._header, *self._extra_columns] if self._header is not None else list(payload.keys())
         line = self._render_line(payload, columns)
         try:
             await asyncio.to_thread(self._append, line)
@@ -203,7 +196,6 @@ class CsvFileSink(AbstractSubmissionSink):
             raise
         except OSError as exc:
             raise SinkUnavailableError(
-                f"CSV sink {self._target.connection!r} unavailable during "
-                f"write: {exc}"
+                f"CSV sink {self._target.connection!r} unavailable during " f"write: {exc}"
             ) from exc
         return submission.submission_id

@@ -76,9 +76,7 @@ class SinkAliasRegistry:
             base_dir=base_dir,
             credentials_env=credentials_env,
         )
-        self.logger.info(
-            "Registered sink alias %r for tenant %r", alias, tenant
-        )
+        self.logger.info("Registered sink alias %r for tenant %r", alias, tenant)
 
     def is_allowed(self, alias: str, *, tenant: str) -> bool:
         """Return whether ``alias`` is registered and scoped to ``tenant``.
@@ -111,9 +109,7 @@ class SinkAliasRegistry:
         if entry is None:
             raise ValueError(f"Unknown sink alias: {alias!r}")
         if entry.tenant != tenant:
-            raise ValueError(
-                f"Sink alias {alias!r} is not registered for tenant {tenant!r}"
-            )
+            raise ValueError(f"Sink alias {alias!r} is not registered for tenant {tenant!r}")
         return entry
 
     def resolve_dsn(self, alias: str, *, tenant: str) -> str:
@@ -170,9 +166,7 @@ class SinkAliasRegistry:
         """
         entry = self._require(alias, tenant=tenant)
         if entry.credentials_env is None:
-            raise ValueError(
-                f"Sink alias {alias!r} has no credentials configured"
-            )
+            raise ValueError(f"Sink alias {alias!r} has no credentials configured")
         return _get_env(entry.credentials_env)
 
     def contain(self, alias: str, *, tenant: str, relative_path: str) -> Path:
@@ -197,8 +191,5 @@ class SinkAliasRegistry:
         base = self.resolve_base_dir(alias, tenant=tenant).resolve()
         candidate = (base / relative_path).resolve()
         if not candidate.is_relative_to(base):
-            raise ValueError(
-                f"Path {relative_path!r} escapes the base directory for "
-                f"alias {alias!r}"
-            )
+            raise ValueError(f"Path {relative_path!r} escapes the base directory for " f"alias {alias!r}")
         return candidate

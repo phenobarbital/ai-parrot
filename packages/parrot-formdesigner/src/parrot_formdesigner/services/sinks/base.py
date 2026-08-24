@@ -150,9 +150,7 @@ class AbstractSubmissionSink(ABC):
             f"(capabilities={sorted(c.value for c in self.capabilities)})"
         )
 
-    async def list_revisions(
-        self, root_submission_id: str
-    ) -> list[FormSubmission]:
+    async def list_revisions(self, root_submission_id: str) -> list[FormSubmission]:
         """List all revisions of a submission.
 
         Args:

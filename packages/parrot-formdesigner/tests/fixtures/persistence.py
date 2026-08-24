@@ -95,10 +95,7 @@ class _FakeConn:
 
     async def fetch(self, sql: str, *args: object):
         if "information_schema.columns" in sql:
-            return [
-                {"column_name": k, "data_type": v}
-                for k, v in self.pool.existing_columns.items()
-            ]
+            return [{"column_name": k, "data_type": v} for k, v in self.pool.existing_columns.items()]
         return self.pool.fetch_rows
 
     async def fetchrow(self, sql: str, *args: object):

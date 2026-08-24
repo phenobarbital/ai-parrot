@@ -178,15 +178,9 @@ class PostgresTableSink(AbstractSubmissionSink):
     def _create_table_sql(self) -> str:
         """Idempotent ``CREATE TABLE`` DDL for the reserved column set."""
         qt = self._qualified()
-        reserved_sql = ",\n            ".join(
-            f'"{name}" {ddl}' for name, ddl in _RESERVED_COLUMN_DDL.items()
-        )
-        form_uid_idx = validate_identifier(
-            f"idx_{self._target.table}_form_uid", kind="index"
-        )
-        root_idx = validate_identifier(
-            f"idx_{self._target.table}_root_submission_id", kind="index"
-        )
+        reserved_sql = ",\n            ".join(f'"{name}" {ddl}' for name, ddl in _RESERVED_COLUMN_DDL.items())
+        form_uid_idx = validate_identifier(f"idx_{self._target.table}_form_uid", kind="index")
+        root_idx = validate_identifier(f"idx_{self._target.table}_root_submission_id", kind="index")
         return f"""
         CREATE TABLE IF NOT EXISTS {qt} (
             {reserved_sql}
@@ -224,8 +218,7 @@ class PostgresTableSink(AbstractSubmissionSink):
         cols = columns if columns is not None else list(_RESERVED_COLUMN_DDL.keys())
         quoted_cols = ", ".join(f'"{c}"' for c in cols)
         placeholders = [
-            f"${i}::text::jsonb" if col in jsonb_columns else f"${i}"
-            for i, col in enumerate(cols, start=1)
+            f"${i}::text::jsonb" if col in jsonb_columns else f"${i}" for i, col in enumerate(cols, start=1)
         ]
         return f'INSERT INTO {qt} ({quoted_cols}) VALUES ({", ".join(placeholders)})'
 
@@ -244,9 +237,7 @@ class PostgresTableSink(AbstractSubmissionSink):
     async def _ensure_pool(self) -> Any:
         if self._pool is None:
             try:
-                dsn = self._alias_registry.resolve_dsn(
-                    self._target.connection, tenant=self._tenant
-                )
+                dsn = self._alias_registry.resolve_dsn(self._target.connection, tenant=self._tenant)
                 import asyncpg  # lazy runtime import
 
                 self._pool = await asyncpg.create_pool(
@@ -261,8 +252,7 @@ class PostgresTableSink(AbstractSubmissionSink):
                 )
             except Exception as exc:
                 raise SinkUnavailableError(
-                    f"Cannot connect to Postgres sink "
-                    f"{self._target.connection!r}: {exc}"
+                    f"Cannot connect to Postgres sink " f"{self._target.connection!r}: {exc}"
                 ) from exc
         return self._pool
 
@@ -309,9 +299,7 @@ class PostgresTableSink(AbstractSubmissionSink):
                         continue  # already covered by _create_table_sql
                     field_type = field_types.get(column)
                     compatible = (
-                        _compatible_types_for(field_type)
-                        if field_type is not None
-                        else _DEFAULT_COMPATIBLE_TYPES
+                        _compatible_types_for(field_type) if field_type is not None else _DEFAULT_COMPATIBLE_TYPES
                     )
                     if column in existing:
                         if existing[column] not in compatible:
@@ -321,11 +309,7 @@ class PostgresTableSink(AbstractSubmissionSink):
                                 f"form field type {field_type!r}"
                             )
                         continue
-                    ddl_type = (
-                        _ddl_type_for(field_type)
-                        if field_type is not None
-                        else _DEFAULT_DDL_TYPE
-                    )
+                    ddl_type = _ddl_type_for(field_type) if field_type is not None else _DEFAULT_DDL_TYPE
                     await conn.execute(self._add_column_sql(column, ddl_type))
         except SinkTargetMismatchError:
             raise
@@ -333,8 +317,7 @@ class PostgresTableSink(AbstractSubmissionSink):
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"Postgres sink {self._target.connection!r} unavailable "
-                f"during ensure_target: {exc}"
+                f"Postgres sink {self._target.connection!r} unavailable " f"during ensure_target: {exc}"
             ) from exc
 
     async def write(self, submission: FormSubmission, payload: Any) -> str:
@@ -354,14 +337,10 @@ class PostgresTableSink(AbstractSubmissionSink):
             SinkUnavailableError: If the write fails (connection or query).
         """
         if not isinstance(payload, dict):
-            raise TypeError(
-                "PostgresTableSink.write() expects a flattened dict payload"
-            )
+            raise TypeError("PostgresTableSink.write() expects a flattened dict payload")
 
         jsonb_columns = {"context"} | {
-            column
-            for column, field_type in self._known_field_types.items()
-            if field_type == FieldType.ARRAY
+            column for column, field_type in self._known_field_types.items() if field_type == FieldType.ARRAY
         }
 
         columns = list(payload.keys())
@@ -383,8 +362,7 @@ class PostgresTableSink(AbstractSubmissionSink):
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"Postgres sink {self._target.connection!r} unavailable "
-                f"during write: {exc}"
+                f"Postgres sink {self._target.connection!r} unavailable " f"during write: {exc}"
             ) from exc
 
         return submission.submission_id
@@ -431,8 +409,7 @@ class PostgresTableSink(AbstractSubmissionSink):
                 row = await conn.fetchrow(sql, submission_id)
         except Exception as exc:
             raise SinkUnavailableError(
-                f"Postgres sink {self._target.connection!r} unavailable "
-                f"during read: {exc}"
+                f"Postgres sink {self._target.connection!r} unavailable " f"during read: {exc}"
             ) from exc
         return self._row_to_submission(row) if row is not None else None
 
@@ -440,17 +417,13 @@ class PostgresTableSink(AbstractSubmissionSink):
         """Return the full revision chain, oldest first."""
         self.require(SinkCapability.LIST)
         qt = self._qualified()
-        sql = (
-            f"SELECT * FROM {qt} WHERE root_submission_id = $1 "
-            "ORDER BY revision ASC"
-        )
+        sql = f"SELECT * FROM {qt} WHERE root_submission_id = $1 " "ORDER BY revision ASC"
         try:
             pool = await self._ensure_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(sql, root_submission_id)
         except Exception as exc:
             raise SinkUnavailableError(
-                f"Postgres sink {self._target.connection!r} unavailable "
-                f"during list_revisions: {exc}"
+                f"Postgres sink {self._target.connection!r} unavailable " f"during list_revisions: {exc}"
             ) from exc
         return [self._row_to_submission(row) for row in rows]

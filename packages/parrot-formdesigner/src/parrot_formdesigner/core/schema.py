@@ -301,13 +301,9 @@ class FormMetadataField(BaseModel):
     @model_validator(mode="after")
     def _validate_callback_ref(self) -> "FormMetadataField":
         if self.source == "callback" and not self.callback_ref:
-            raise ValueError(
-                "callback_ref is required when source='callback'"
-            )
+            raise ValueError("callback_ref is required when source='callback'")
         if self.source != "callback" and self.callback_ref:
-            raise ValueError(
-                "callback_ref is only valid when source='callback'"
-            )
+            raise ValueError("callback_ref is only valid when source='callback'")
         return self
 
 
@@ -418,34 +414,22 @@ class FormSchema(BaseModel):
 
         for section in self.sections:
             if section.section_uid in seen_uids:
-                raise ValueError(
-                    f"Duplicate section_uid {section.section_uid} in form "
-                    f"{self.form_id!r}"
-                )
+                raise ValueError(f"Duplicate section_uid {section.section_uid} in form " f"{self.form_id!r}")
             seen_uids.add(section.section_uid)
 
             for item in section.fields:
                 if isinstance(item, FormSubsection):
                     if item.subsection_uid in seen_uids:
-                        raise ValueError(
-                            f"Duplicate subsection_uid {item.subsection_uid} "
-                            f"in form {self.form_id!r}"
-                        )
+                        raise ValueError(f"Duplicate subsection_uid {item.subsection_uid} " f"in form {self.form_id!r}")
                     seen_uids.add(item.subsection_uid)
 
         for field in self.iter_fields_recursive():
             if field.field_uid in seen_uids:
-                raise ValueError(
-                    f"Duplicate field_uid {field.field_uid} in form "
-                    f"{self.form_id!r}"
-                )
+                raise ValueError(f"Duplicate field_uid {field.field_uid} in form " f"{self.form_id!r}")
             seen_uids.add(field.field_uid)
 
             if field.field_id in seen_field_ids:
-                raise ValueError(
-                    f"Duplicate field_id {field.field_id!r} in form "
-                    f"{self.form_id!r}"
-                )
+                raise ValueError(f"Duplicate field_id {field.field_id!r} in form " f"{self.form_id!r}")
             seen_field_ids.add(field.field_id)
 
         return self
@@ -465,28 +449,18 @@ class FormSchema(BaseModel):
             try:
                 validate_identifier(entry.key, kind="metadata key")
             except ValueError as exc:
-                raise ValueError(
-                    f"FormMetadataField.key {entry.key!r} is not a valid "
-                    f"identifier: {exc}"
-                ) from exc
+                raise ValueError(f"FormMetadataField.key {entry.key!r} is not a valid " f"identifier: {exc}") from exc
 
             if entry.key in seen_keys:
-                raise ValueError(
-                    f"Duplicate metadata key {entry.key!r} in FormSchema "
-                    f"{self.form_id!r}."
-                )
+                raise ValueError(f"Duplicate metadata key {entry.key!r} in FormSchema " f"{self.form_id!r}.")
             seen_keys.add(entry.key)
 
             if entry.key in field_ids:
                 raise ValueError(
-                    f"Metadata key {entry.key!r} collides with a form "
-                    f"field_id in FormSchema {self.form_id!r}."
+                    f"Metadata key {entry.key!r} collides with a form " f"field_id in FormSchema {self.form_id!r}."
                 )
 
-            if (
-                entry.source == "callback"
-                and entry.key in BUILTIN_METADATA_SOURCE_NAMES
-            ):
+            if entry.source == "callback" and entry.key in BUILTIN_METADATA_SOURCE_NAMES:
                 raise ValueError(
                     f"Metadata key {entry.key!r} is a reserved built-in "
                     "source name and cannot be overridden with "
@@ -513,9 +487,7 @@ class FormSchema(BaseModel):
             return self
 
         target = self.persistence.data
-        is_document_target = (
-            target.type == "asyncdb" and target.driver in {"mongo", "arango"}
-        )
+        is_document_target = target.type == "asyncdb" and target.driver in {"mongo", "arango"}
         if is_document_target:
             return self
 
@@ -529,7 +501,7 @@ class FormSchema(BaseModel):
         # exceeding the 63-character Postgres identifier cap) — that
         # propagation covers criterion (b) with no extra call needed here.
         names = column_names_for(self)
-        author_supplied = names[len(RESERVED_COLUMNS):]
+        author_supplied = names[len(RESERVED_COLUMNS) :]
 
         for column in author_supplied:
             if column in RESERVED_COLUMNS:
@@ -570,14 +542,10 @@ def derive_stable_identities(schema: FormSchema, form_uid: uuid.UUID) -> None:
             identity cannot accidentally derive from the stale one.
     """
     for section in schema.sections:
-        section.section_uid = uuid.uuid5(
-            form_uid, f"section:{section.section_id}"
-        )
+        section.section_uid = uuid.uuid5(form_uid, f"section:{section.section_id}")
         for item in section.fields:
             if isinstance(item, FormSubsection):
-                item.subsection_uid = uuid.uuid5(
-                    form_uid, f"subsection:{item.subsection_id}"
-                )
+                item.subsection_uid = uuid.uuid5(form_uid, f"subsection:{item.subsection_id}")
     for field in schema.iter_fields_recursive():
         field.field_uid = uuid.uuid5(form_uid, f"field:{field.field_id}")
 

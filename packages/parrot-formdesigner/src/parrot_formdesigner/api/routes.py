@@ -52,7 +52,6 @@ from . import uploads as uploads_module
 from .handlers import FormAPIHandler
 from .tenant import requires_tenant
 
-
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
     from parrot.core.ws_auth import TokenValidator
@@ -154,7 +153,7 @@ def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
         canonical = resource.canonical
         if bp and not canonical.startswith(f"{bp}/"):
             continue
-        remainder = canonical[len(bp):].lstrip("/")
+        remainder = canonical[len(bp) :].lstrip("/")
         if not remainder:
             continue
         first_segment = remainder.split("/", 1)[0]
@@ -328,14 +327,10 @@ def setup_form_api(
     app.router.add_delete(f"{tp}/forms/{{form_uid}}", _wrap_auth(handler.delete_form))
 
     # Natural language editing
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form))
 
     # Clone endpoint
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form))
 
     # Contract endpoints (schema, style). /schema is one of the five
     # public-form globs (services/public_forms.py); /style is not.
@@ -343,9 +338,7 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/schema",
         _wrap_auth(handler.get_schema, tenant="public"),
     )
-    app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style)
-    )
+    app.router.add_get(f"{tp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style))
 
     # Render dispatcher (path-param format) — a public-form glob.
     app.router.add_get(
@@ -384,15 +377,9 @@ def setup_form_api(
     )
 
     # Partial saves (FEAT-186)
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial)
-    )
-    app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial)
-    )
-    app.router.add_delete(
-        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial))
+    app.router.add_get(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial))
+    app.router.add_delete(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial))
 
     # Remote lifecycle event bridge (FEAT-188)
     app.router.add_post(
@@ -435,18 +422,10 @@ def setup_form_api(
     # Note: /versions and /import-report routes are registered BEFORE the
     # generic /{form_uid} catch-all to avoid shadowing issues if the router
     # were order-sensitive (aiohttp matches on specificity, but belt-and-braces).
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form)
-    )
-    app.router.add_get(
-        f"{tp}/fields", _wrap_auth(handler.list_fields)
-    )
-    app.router.add_post(
-        f"{tp}/fields", _wrap_auth(handler.create_field)
-    )
-    app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form))
+    app.router.add_get(f"{tp}/fields", _wrap_auth(handler.list_fields))
+    app.router.add_post(f"{tp}/fields", _wrap_auth(handler.create_field))
+    app.router.add_get(f"{tp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions))
     app.router.add_get(
         f"{tp}/forms/{{form_uid}}/versions/{{version}}",
         _wrap_auth(handler.get_version),
@@ -461,12 +440,8 @@ def setup_form_api(
     # byte-identical to 0.8.21 and none of them carries the tenant
     # decorator (tenant="none"). Organizations are the layer that
     # *defines* tenants; scoping them by one would invert the dependency.
-    app.router.add_get(
-        f"{bp}/org/graph", _wrap_auth(handler.get_org_graph, tenant="none")
-    )
-    app.router.add_post(
-        f"{bp}/org/projects", _wrap_auth(handler.create_project, tenant="none")
-    )
+    app.router.add_get(f"{bp}/org/graph", _wrap_auth(handler.get_org_graph, tenant="none"))
+    app.router.add_post(f"{bp}/org/projects", _wrap_auth(handler.create_project, tenant="none"))
     app.router.add_post(
         f"{bp}/org/cost-centers/{{project_id}}/workday-map",
         _wrap_auth(handler.map_project_workday, tenant="none"),
@@ -544,9 +519,7 @@ def setup_form_api(
                             form_uid,
                         )
                         return
-                    _auth.register_exclusions(
-                        public_form_paths(form_uid, tenant, base_path=_bp)
-                    )
+                    _auth.register_exclusions(public_form_paths(form_uid, tenant, base_path=_bp))
                 else:
                     # The form may already be gone (unregister() fires this
                     # callback AFTER removing the form — FEAT-241) or may
@@ -557,16 +530,10 @@ def setup_form_api(
                     # the only way to guarantee no stale exemption survives
                     # a delete or a re-tenant.
                     for candidate_tenant in await registry.list_tenants():
-                        _auth.unregister_exclusions(
-                            public_form_paths(
-                                form_uid, candidate_tenant, base_path=_bp
-                            )
-                        )
+                        _auth.unregister_exclusions(public_form_paths(form_uid, candidate_tenant, base_path=_bp))
 
             registry.set_public_toggle_callback(_public_toggle)
-            logger.info(
-                "setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp
-            )
+            logger.info("setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp)
 
     # FEAT-241 M7: Register exclude-provider for restart re-hydration.
     # On each server startup, AuthHandler will invoke this provider and
@@ -602,15 +569,9 @@ def setup_form_api(
                 for tenant in await registry.list_tenants():
                     for form in await registry.list_forms(tenant=tenant):
                         if form.is_public:
-                            paths.extend(
-                                public_form_paths(
-                                    form.form_uid, tenant, base_path=_bp_m7
-                                )
-                            )
+                            paths.extend(public_form_paths(form.form_uid, tenant, base_path=_bp_m7))
             except Exception as exc:
-                logger.warning(
-                    "public_forms_exclude_provider: failed: %s", exc
-                )
+                logger.warning("public_forms_exclude_provider: failed: %s", exc)
             return paths
 
         _auth.add_exclude_provider(_public_forms_exclude_provider)
@@ -631,8 +592,7 @@ def setup_form_api(
     # surfaces and a tenant identity is not siloed per mount.
     api_reserved_tenant_segments = _reserved_tenant_segments(app, bp)
     app["formdesigner_reserved_tenant_segments"] = (
-        app.get("formdesigner_reserved_tenant_segments", frozenset())
-        | api_reserved_tenant_segments
+        app.get("formdesigner_reserved_tenant_segments", frozenset()) | api_reserved_tenant_segments
     )
 
     # FEAT-429 Module 5: boot-time warning when a provisioned tenant

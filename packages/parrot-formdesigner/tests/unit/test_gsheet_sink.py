@@ -98,17 +98,13 @@ def fake_client():
 
 @pytest.fixture
 def gsheet_sink(fake_client):
-    return GoogleSheetSink(
-        _target(), alias_registry=SinkAliasRegistry(), tenant="navigator", client=fake_client
-    )
+    return GoogleSheetSink(_target(), alias_registry=SinkAliasRegistry(), tenant="navigator", client=fake_client)
 
 
 @pytest.fixture
 def gsheet_sink_429():
     client = _FakeSheetsClient(rate_limited=True)
-    return GoogleSheetSink(
-        _target(), alias_registry=SinkAliasRegistry(), tenant="navigator", client=client
-    )
+    return GoogleSheetSink(_target(), alias_registry=SinkAliasRegistry(), tenant="navigator", client=client)
 
 
 class TestGuardedImport:
@@ -122,9 +118,7 @@ class TestGuardedImport:
         import parrot_formdesigner.services.sinks.gsheet as mod
 
         monkeypatch.setattr(mod, "build", None)
-        sink = GoogleSheetSink(
-            _target(), alias_registry=SinkAliasRegistry(), tenant="navigator"
-        )
+        sink = GoogleSheetSink(_target(), alias_registry=SinkAliasRegistry(), tenant="navigator")
         with pytest.raises(SinkUnavailableError, match="gsheet"):
             await sink.ensure_target(form)
 
@@ -135,9 +129,7 @@ class TestProvision:
         assert fake_client.header_written
         assert fake_client.header[0] == "submission_id"
 
-    async def test_new_field_appends_column(
-        self, gsheet_sink, fake_client, form, form_with_extra_field
-    ):
+    async def test_new_field_appends_column(self, gsheet_sink, fake_client, form, form_with_extra_field):
         await gsheet_sink.ensure_target(form)
         fake_client.header_written = False
         await gsheet_sink.ensure_target(form_with_extra_field)

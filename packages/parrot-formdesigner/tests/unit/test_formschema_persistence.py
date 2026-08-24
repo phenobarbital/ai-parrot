@@ -56,25 +56,17 @@ class TestFormSchemaPersistence:
         assert FormSchema.model_validate_json(form.model_dump_json()) == form
 
     def test_reserved_field_id_rejected(self, form_dict_with_persistence):
-        form_dict_with_persistence["sections"][0]["fields"][0]["field_id"] = (
-            "submission_id"
-        )
+        form_dict_with_persistence["sections"][0]["fields"][0]["field_id"] = "submission_id"
         with pytest.raises(ValidationError):
             FormSchema.model_validate(form_dict_with_persistence)
 
     def test_reserved_metadata_key_rejected(self, form_dict_with_persistence):
-        form_dict_with_persistence["metadata"] = [
-            {"key": "form_uid", "source": "constant"}
-        ]
+        form_dict_with_persistence["metadata"] = [{"key": "form_uid", "source": "constant"}]
         with pytest.raises(ValidationError):
             FormSchema.model_validate(form_dict_with_persistence)
 
-    def test_document_target_skips_column_checks(
-        self, form_dict_with_mongo_persistence
-    ):
-        form_dict_with_mongo_persistence["sections"][0]["fields"][0]["field_id"] = (
-            "submission_id"
-        )
+    def test_document_target_skips_column_checks(self, form_dict_with_mongo_persistence):
+        form_dict_with_mongo_persistence["sections"][0]["fields"][0]["field_id"] = "submission_id"
         assert FormSchema.model_validate(form_dict_with_mongo_persistence) is not None
 
     def test_no_persistence_no_reserved_check(self, minimal_form_dict):

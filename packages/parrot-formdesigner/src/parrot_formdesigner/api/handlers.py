@@ -1654,15 +1654,12 @@ class FormAPIHandler:
                             error=error,
                         )
                     except Exception:
-                        self.logger.exception(
-                            "onError handler raised during sink write"
-                        )
+                        self.logger.exception("onError handler raised during sink write")
 
                 try:
                     if self._sink_factory is None:
                         raise SinkUnavailableError(
-                            "Form declares persistence but no sink_factory "
-                            "is configured on this handler"
+                            "Form declares persistence but no sink_factory " "is configured on this handler"
                         )
                     sink = await self._sink_factory.get(form, tenant=tenant)
                     await sink.ensure_target(form)

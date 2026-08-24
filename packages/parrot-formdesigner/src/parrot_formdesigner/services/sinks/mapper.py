@@ -95,9 +95,7 @@ def _reserved_values(submission: FormSubmission) -> dict[str, Any]:
     return {name: getattr(submission, name) for name in _RESERVED_COLUMN_ORDER}
 
 
-def _walk_tabular(
-    items: list[SectionItem], prefix: str = ""
-) -> Iterator[tuple[str, FormField]]:
+def _walk_tabular(items: list[SectionItem], prefix: str = "") -> Iterator[tuple[str, FormField]]:
     """Yield ``(column_name, field)`` pairs for tabular flattening.
 
     ``GROUP`` fields recurse into their ``children`` with a path prefix
@@ -169,9 +167,7 @@ def flatten_submission(form: FormSchema, submission: FormSubmission) -> dict[str
     return row
 
 
-def _extract_value(
-    data: dict[str, Any], column_name: str, field: FormField
-) -> Any:
+def _extract_value(data: dict[str, Any], column_name: str, field: FormField) -> Any:
     """Extract the value for ``column_name`` from a submission's ``data``.
 
     ``ARRAY`` values are JSON-serialized into a single column. Nested

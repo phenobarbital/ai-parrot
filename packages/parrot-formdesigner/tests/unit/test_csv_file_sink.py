@@ -96,17 +96,13 @@ class TestProvision:
         await csv_sink.ensure_target(form)
         assert csv_path.read_text().splitlines()[0].startswith("submission_id")
 
-    async def test_existing_header_untouched(
-        self, csv_sink, csv_path, form, form_with_extra_field
-    ):
+    async def test_existing_header_untouched(self, csv_sink, csv_path, form, form_with_extra_field):
         await csv_sink.ensure_target(form)
         header_before = csv_path.read_text().splitlines()[0]
         await csv_sink.ensure_target(form_with_extra_field)
         assert csv_path.read_text().splitlines()[0] == header_before
 
-    async def test_header_drift_logs_warning(
-        self, csv_sink, form, form_with_extra_field, caplog
-    ):
+    async def test_header_drift_logs_warning(self, csv_sink, form, form_with_extra_field, caplog):
         caplog.set_level("WARNING")
         await csv_sink.ensure_target(form)
         await csv_sink.ensure_target(form_with_extra_field)
@@ -114,9 +110,7 @@ class TestProvision:
 
 
 class TestWrite:
-    async def test_two_submissions_two_lines(
-        self, csv_sink, csv_path, form, submission_factory
-    ):
+    async def test_two_submissions_two_lines(self, csv_sink, csv_path, form, submission_factory):
         await csv_sink.ensure_target(form)
         await csv_sink.write(submission_factory(), {})
         await csv_sink.write(submission_factory(), {})
@@ -136,9 +130,7 @@ class TestWrite:
 
 class TestCapabilities:
     def test_write_only(self, csv_sink):
-        assert csv_sink.capabilities == frozenset(
-            {SinkCapability.WRITE, SinkCapability.PROVISION}
-        )
+        assert csv_sink.capabilities == frozenset({SinkCapability.WRITE, SinkCapability.PROVISION})
 
     async def test_read_not_capable(self, csv_sink):
         with pytest.raises(SinkNotCapableError):
@@ -151,9 +143,7 @@ class TestCapabilities:
 
 class TestSafety:
     async def test_path_escape_rejected(self, alias_registry):
-        target = CsvFileTarget(
-            type="csv_file", connection="exports", path="safe.csv"
-        )
+        target = CsvFileTarget(type="csv_file", connection="exports", path="safe.csv")
         sink = CsvFileSink(target, alias_registry=alias_registry, tenant="navigator")
         # Simulate an escape attempt post-construction validation by
         # pointing the alias's base dir resolution at a forged path.

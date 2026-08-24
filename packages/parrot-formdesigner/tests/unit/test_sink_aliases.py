@@ -23,9 +23,7 @@ class TestSinkAliasRegistry:
             registry.resolve_dsn("survey_db", tenant="other")
 
     def test_resolves_via_get_env(self, registry):
-        assert registry.resolve_dsn("survey_db", tenant="navigator").startswith(
-            "postgresql://"
-        )
+        assert registry.resolve_dsn("survey_db", tenant="navigator").startswith("postgresql://")
 
     @pytest.mark.parametrize("bad", ["../escape.csv", "/etc/passwd"])
     def test_contain_rejects_escape(self, registry, bad):
@@ -42,9 +40,7 @@ class TestSinkAliasRegistry:
         link = tmp_path / "escape_link"
         link.symlink_to(outside, target_is_directory=True)
         with pytest.raises(ValueError):
-            registry.contain(
-                "exports", tenant="navigator", relative_path="escape_link/x.csv"
-            )
+            registry.contain("exports", tenant="navigator", relative_path="escape_link/x.csv")
 
     def test_is_allowed(self, registry):
         assert registry.is_allowed("survey_db", tenant="navigator") is True
@@ -65,6 +61,4 @@ class TestSinkAliasRegistry:
         monkeypatch.setenv("GSHEET_CREDS", "service-account-blob")
         reg = SinkAliasRegistry()
         reg.register("sheets", tenant="navigator", credentials_env="GSHEET_CREDS")
-        assert reg.resolve_credentials("sheets", tenant="navigator") == (
-            "service-account-blob"
-        )
+        assert reg.resolve_credentials("sheets", tenant="navigator") == ("service-account-blob")

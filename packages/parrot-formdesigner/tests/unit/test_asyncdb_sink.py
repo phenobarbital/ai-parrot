@@ -77,9 +77,7 @@ class _BrokenDriver:
 
 
 def _target(driver: str, collection: str = "responses") -> AsyncDBTarget:
-    return AsyncDBTarget(
-        type="asyncdb", connection="db_alias", driver=driver, collection=collection
-    )
+    return AsyncDBTarget(type="asyncdb", connection="db_alias", driver=driver, collection=collection)
 
 
 def _submission() -> FormSubmission:
@@ -164,9 +162,7 @@ class TestMappingMode:
         assert payload["data"] == submission.data
         assert not any("__" in k for k in payload)
 
-    async def test_tabular_driver_flattens(
-        self, bigquery_sink, fake_driver, form_with_group, submission
-    ):
+    async def test_tabular_driver_flattens(self, bigquery_sink, fake_driver, form_with_group, submission):
         submission.data = {"address": {"city": "Tampa"}}
         await bigquery_sink.write(submission, None)
         assert any("__" in k for k in fake_driver.written[-1])

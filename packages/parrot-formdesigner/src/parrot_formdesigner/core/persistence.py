@@ -170,9 +170,7 @@ class GoogleSheetTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: Literal["gsheet"] = "gsheet"
-    connection: str = Field(
-        ..., description="Alias resolved server-side to service-account credentials"
-    )
+    connection: str = Field(..., description="Alias resolved server-side to service-account credentials")
     spreadsheet_id: str
     worksheet: str = "Sheet1"
 

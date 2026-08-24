@@ -149,17 +149,14 @@ class AsyncDBSink(AbstractSubmissionSink):
     async def _ensure_driver(self) -> Any:
         if self._driver is None:
             try:
-                dsn = self._alias_registry.resolve_dsn(
-                    self._target.connection, tenant=self._tenant
-                )
+                dsn = self._alias_registry.resolve_dsn(self._target.connection, tenant=self._tenant)
                 from asyncdb import AsyncDB  # lazy runtime import
 
                 self._driver = AsyncDB(driver=self._target.driver, dsn=dsn)
                 await self._driver.connection()
             except ImportError as exc:
                 raise SinkUnavailableError(
-                    f"asyncdb driver {self._target.driver!r} requires an "
-                    f"extra that is not installed: {exc}"
+                    f"asyncdb driver {self._target.driver!r} requires an " f"extra that is not installed: {exc}"
                 ) from exc
             except Exception as exc:
                 raise SinkUnavailableError(
@@ -174,9 +171,7 @@ class AsyncDBSink(AbstractSubmissionSink):
             try:
                 await self._driver.close()
             except Exception:
-                self.logger.warning(
-                    "AsyncDBSink: error closing driver", exc_info=True
-                )
+                self.logger.warning("AsyncDBSink: error closing driver", exc_info=True)
             self.logger.info("AsyncDBSink: driver closed")
         self._driver = None
         self._owns_driver = False
@@ -203,9 +198,7 @@ class AsyncDBSink(AbstractSubmissionSink):
                 existing = await driver.list_collections()
                 if self._target.collection not in existing:
                     database = getattr(driver, "_database_name", None)
-                    await driver.create_collection(
-                        database=database, collection=self._target.collection
-                    )
+                    await driver.create_collection(database=database, collection=self._target.collection)
             elif self._target.driver == "arango":
                 if not await driver.collection_exists(self._target.collection):
                     await driver.create_collection(self._target.collection)
@@ -213,26 +206,19 @@ class AsyncDBSink(AbstractSubmissionSink):
                 from google.cloud import bigquery as bq  # lazy runtime import
 
                 dataset_id, table_id = self._split_bigquery_collection()
-                schema = [
-                    bq.SchemaField(name, "STRING")
-                    for name in column_names_for(form)
-                ]
+                schema = [bq.SchemaField(name, "STRING") for name in column_names_for(form)]
                 await driver.create_table(dataset_id, table_id, schema)
             else:
-                raise SinkUnavailableError(
-                    f"Unsupported asyncdb driver: {self._target.driver!r}"
-                )
+                raise SinkUnavailableError(f"Unsupported asyncdb driver: {self._target.driver!r}")
         except SinkUnavailableError:
             raise
         except ImportError as exc:
             raise SinkUnavailableError(
-                f"asyncdb driver {self._target.driver!r} requires an extra "
-                f"that is not installed: {exc}"
+                f"asyncdb driver {self._target.driver!r} requires an extra " f"that is not installed: {exc}"
             ) from exc
         except Exception as exc:
             raise SinkUnavailableError(
-                f"asyncdb sink {self._target.connection!r} unavailable "
-                f"during ensure_target: {exc}"
+                f"asyncdb sink {self._target.connection!r} unavailable " f"during ensure_target: {exc}"
             ) from exc
 
     async def write(self, submission: FormSubmission, payload: Any) -> str:
@@ -255,8 +241,7 @@ class AsyncDBSink(AbstractSubmissionSink):
         if payload is None:
             if self._form is None:
                 raise SinkUnavailableError(
-                    "AsyncDBSink.write() needs ensure_target(form) to have "
-                    "run first, or an explicit payload"
+                    "AsyncDBSink.write() needs ensure_target(form) to have " "run first, or an explicit payload"
                 )
             payload = self._payload_for(self._form, submission)
 
@@ -270,15 +255,12 @@ class AsyncDBSink(AbstractSubmissionSink):
                 dataset_id, table_id = self._split_bigquery_collection()
                 await driver.write([payload], table_id=table_id, dataset_id=dataset_id)
             else:
-                raise SinkUnavailableError(
-                    f"Unsupported asyncdb driver: {self._target.driver!r}"
-                )
+                raise SinkUnavailableError(f"Unsupported asyncdb driver: {self._target.driver!r}")
         except SinkUnavailableError:
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"asyncdb sink {self._target.connection!r} unavailable "
-                f"during write: {exc}"
+                f"asyncdb sink {self._target.connection!r} unavailable " f"during write: {exc}"
             ) from exc
 
         return submission.submission_id
@@ -312,29 +294,24 @@ class AsyncDBSink(AbstractSubmissionSink):
         try:
             driver = await self._ensure_driver()
             if self._target.driver == "mongo":
-                doc = await driver.fetch_one(
-                    self._target.collection, {"submission_id": submission_id}
-                )
+                doc = await driver.fetch_one(self._target.collection, {"submission_id": submission_id})
             elif self._target.driver == "arango":
                 result, _error = await driver.query(
-                    f"FOR doc IN {self._target.collection} "
-                    "FILTER doc.submission_id == @sid LIMIT 1 RETURN doc",
+                    f"FOR doc IN {self._target.collection} " "FILTER doc.submission_id == @sid LIMIT 1 RETURN doc",
                     bind_vars={"sid": submission_id},
                 )
                 doc = result[0] if result else None
             else:
                 dataset_id, table_id = self._split_bigquery_collection()
                 result, _error = await driver.query(
-                    f"SELECT * FROM `{dataset_id}.{table_id}` "
-                    f"WHERE submission_id = @sid LIMIT 1",
+                    f"SELECT * FROM `{dataset_id}.{table_id}` " f"WHERE submission_id = @sid LIMIT 1",
                 )
                 doc = result[0] if result else None
         except SinkUnavailableError:
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"asyncdb sink {self._target.connection!r} unavailable "
-                f"during read: {exc}"
+                f"asyncdb sink {self._target.connection!r} unavailable " f"during read: {exc}"
             ) from exc
         return self._doc_to_submission(doc) if doc else None
 
@@ -358,14 +335,12 @@ class AsyncDBSink(AbstractSubmissionSink):
             else:
                 dataset_id, table_id = self._split_bigquery_collection()
                 docs, _error = await driver.query(
-                    f"SELECT * FROM `{dataset_id}.{table_id}` "
-                    "WHERE root_submission_id = @rid ORDER BY revision ASC",
+                    f"SELECT * FROM `{dataset_id}.{table_id}` " "WHERE root_submission_id = @rid ORDER BY revision ASC",
                 )
         except SinkUnavailableError:
             raise
         except Exception as exc:
             raise SinkUnavailableError(
-                f"asyncdb sink {self._target.connection!r} unavailable "
-                f"during list_revisions: {exc}"
+                f"asyncdb sink {self._target.connection!r} unavailable " f"during list_revisions: {exc}"
             ) from exc
         return [self._doc_to_submission(doc) for doc in (docs or [])]

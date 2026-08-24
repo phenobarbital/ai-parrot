@@ -25,9 +25,7 @@ def factory(alias_registry):
 def _postgres_form(*, form_id="nps", version="1.0", table="nps_2026", extra_field=False):
     fields = [FormField(field_id="comment", field_type=FieldType.TEXT, label="Comment")]
     if extra_field:
-        fields.append(
-            FormField(field_id="rating", field_type=FieldType.INTEGER, label="Rating")
-        )
+        fields.append(FormField(field_id="rating", field_type=FieldType.INTEGER, label="Rating"))
     section = FormSection(section_id="s1", fields=fields)
     return FormSchema(
         form_id=form_id,

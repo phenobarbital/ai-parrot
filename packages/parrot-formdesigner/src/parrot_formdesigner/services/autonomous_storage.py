@@ -70,9 +70,7 @@ class AutonomousFormStorage(FormStorage):
         self.logger = logging.getLogger(__name__)
 
     def _resolve_path(self, target: Any, *, tenant: str):
-        return self._aliases.contain(
-            target.connection, tenant=tenant, relative_path=target.path
-        )
+        return self._aliases.contain(target.connection, tenant=tenant, relative_path=target.path)
 
     def _write_body_sync(self, path, body: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -140,8 +138,7 @@ class AutonomousFormStorage(FormStorage):
             }
         )
         self.logger.info(
-            "AutonomousFormStorage: wrote definition body for form %s "
-            "(uid=%s) to %s",
+            "AutonomousFormStorage: wrote definition body for form %s " "(uid=%s) to %s",
             form.form_id,
             form.form_uid,
             path,
@@ -213,13 +210,9 @@ class AutonomousFormStorage(FormStorage):
         """
         pointer = await self._inner.load(form_uid, tenant=tenant)
         if pointer is not None and _is_pointer(pointer):
-            effective_tenant = tenant if tenant is not None else (
-                pointer.tenant or _DEFAULT_TENANT
-            )
+            effective_tenant = tenant if tenant is not None else (pointer.tenant or _DEFAULT_TENANT)
             target = pointer.persistence.definition  # type: ignore[union-attr]
-            path = await asyncio.to_thread(
-                self._resolve_path, target, tenant=effective_tenant
-            )
+            path = await asyncio.to_thread(self._resolve_path, target, tenant=effective_tenant)
             await asyncio.to_thread(self._delete_body_sync, path)
         return await self._inner.delete(form_uid, tenant=tenant)
 
@@ -227,9 +220,7 @@ class AutonomousFormStorage(FormStorage):
         """Delegate to the inner storage — pointer rows list identically."""
         return await self._inner.list_forms(tenant=tenant)
 
-    async def list_versions(
-        self, form_uid: uuid.UUID, *, tenant: str | None = None
-    ) -> list[dict[str, Any]]:
+    async def list_versions(self, form_uid: uuid.UUID, *, tenant: str | None = None) -> list[dict[str, Any]]:
         """Delegate to the inner storage."""
         return await self._inner.list_versions(form_uid, tenant=tenant)
 

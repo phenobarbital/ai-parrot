@@ -29,10 +29,7 @@ class _FakeConn:
 
     async def fetch(self, sql: str, *args: object):
         if "information_schema.columns" in sql:
-            return [
-                {"column_name": k, "data_type": v}
-                for k, v in self.pool.existing_columns.items()
-            ]
+            return [{"column_name": k, "data_type": v} for k, v in self.pool.existing_columns.items()]
         return self.pool.fetch_rows
 
     async def fetchrow(self, sql: str, *args: object):
@@ -191,14 +188,9 @@ class TestDDL:
 
     async def test_new_field_adds_column(self, sink, fake_pool, form_with_extra_field):
         await sink.ensure_target(form_with_extra_field)
-        assert any(
-            "ADD COLUMN IF NOT EXISTS" in s and "rating" in s
-            for s in fake_pool.executed
-        )
+        assert any("ADD COLUMN IF NOT EXISTS" in s and "rating" in s for s in fake_pool.executed)
 
-    async def test_removed_field_emits_nothing(
-        self, sink, fake_pool, form_with_extra_field, form_with_fewer_fields
-    ):
+    async def test_removed_field_emits_nothing(self, sink, fake_pool, form_with_extra_field, form_with_fewer_fields):
         await sink.ensure_target(form_with_extra_field)
         fake_pool.existing_columns = {"comment": "text", "rating": "integer"}
         fake_pool.executed.clear()
@@ -208,9 +200,7 @@ class TestDDL:
 
 
 class TestFailure:
-    async def test_connection_error_maps_unavailable(
-        self, sink_with_broken_pool, submission
-    ):
+    async def test_connection_error_maps_unavailable(self, sink_with_broken_pool, submission):
         with pytest.raises(SinkUnavailableError):
             await sink_with_broken_pool.write(submission, {"comment": "hi"})
 

@@ -70,9 +70,7 @@ def _make_request(body: dict | None = None, *, session_id: str | None = None) ->
     else:
         req.__contains__ = lambda self, key: False
     req.json = AsyncMock(return_value=body or {"comment": "great"})
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     req.session = {"session": {"programs": [_TEST_TENANT]}}
     return req
 
@@ -114,9 +112,7 @@ def _make_handler(
         partial_store=partial_store,
     )
     handler.validator = MagicMock(spec=FormValidator)
-    handler.validator.validate = AsyncMock(
-        return_value=_make_validation_result(validation_data)
-    )
+    handler.validator.validate = AsyncMock(return_value=_make_validation_result(validation_data))
     return handler
 
 
@@ -169,9 +165,7 @@ class TestExclusivity:
         )
         storage = MagicMock(spec=FormSubmissionStorage)
         storage.store = AsyncMock()
-        handler = _make_handler(
-            survey_form_postgres, sink_factory=_SingleSinkFactory(sink), submission_storage=storage
-        )
+        handler = _make_handler(survey_form_postgres, sink_factory=_SingleSinkFactory(sink), submission_storage=storage)
         resp = await handler.submit_data(_make_request())
         assert resp.status == 200
         storage.store.assert_not_called()  # the guarantee — asserted on the call
@@ -181,9 +175,11 @@ class TestExclusivity:
             form_id="plain",
             title="Plain",
             tenant=_TEST_TENANT,
-            sections=[FormSection(section_id="s1", fields=[
-                FormField(field_id="name", field_type=FieldType.TEXT, label="Name")
-            ])],
+            sections=[
+                FormSection(
+                    section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")]
+                )
+            ],
         )
         storage = MagicMock(spec=FormSubmissionStorage)
         storage.store = AsyncMock()
@@ -195,9 +191,7 @@ class TestExclusivity:
 
 class TestCsvSink:
     async def test_submit_to_csv_appends_row(self, survey_form_csv, alias_registry, tmp_path):
-        sink = CsvFileSink(
-            survey_form_csv.persistence.data, alias_registry=alias_registry, tenant=_TEST_TENANT
-        )
+        sink = CsvFileSink(survey_form_csv.persistence.data, alias_registry=alias_registry, tenant=_TEST_TENANT)
         handler = _make_handler(survey_form_csv, sink_factory=_SingleSinkFactory(sink))
         await handler.submit_data(_make_request())
         await handler.submit_data(_make_request())
@@ -234,9 +228,7 @@ class TestCapabilityGating:
         strict=True,
     )
     async def test_read_on_csv_form_returns_501(self, survey_form_csv, alias_registry):
-        sink = CsvFileSink(
-            survey_form_csv.persistence.data, alias_registry=alias_registry, tenant=_TEST_TENANT
-        )
+        sink = CsvFileSink(survey_form_csv.persistence.data, alias_registry=alias_registry, tenant=_TEST_TENANT)
         handler = _make_handler(survey_form_csv, sink_factory=_SingleSinkFactory(sink))
         resp = await handler.get_submission(_make_request())  # does not exist
         assert resp.status == 501
@@ -290,9 +282,7 @@ class TestProvisioning:
         handler.registry.get = AsyncMock(return_value=extended)
         await handler.submit_data(_make_request())
 
-        assert any(
-            "ADD COLUMN IF NOT EXISTS" in s and "rating" in s for s in fake_pool.executed
-        )
+        assert any("ADD COLUMN IF NOT EXISTS" in s and "rating" in s for s in fake_pool.executed)
 
     async def test_removed_field_leaves_column(self, alias_registry, fake_pool):
         extended = _form_with_fields(
@@ -352,9 +342,7 @@ class TestInteractions:
 
         sink.write = spy_write
 
-        handler = _make_handler(
-            survey_form_postgres, sink_factory=_SingleSinkFactory(sink), partial_store=store
-        )
+        handler = _make_handler(survey_form_postgres, sink_factory=_SingleSinkFactory(sink), partial_store=store)
         await handler.submit_data(_make_request(session_id="sess-1"))
 
         store.get.assert_awaited_once()
@@ -381,16 +369,11 @@ class TestInteractions:
                 return False
 
             async def list_forms(self, *, tenant=None):
-                return [
-                    {"form_id": f.form_id, "version": f.version, "title": f.title}
-                    for f in self._rows.values()
-                ]
+                return [{"form_id": f.form_id, "version": f.version, "title": f.title} for f in self._rows.values()]
 
         alias_reg_local = MagicMock()
         alias_reg_local.contain = MagicMock(
-            side_effect=lambda alias, *, tenant, relative_path: __import__("pathlib").Path(
-                f"/tmp/{relative_path}"
-            )
+            side_effect=lambda alias, *, tenant, relative_path: __import__("pathlib").Path(f"/tmp/{relative_path}")
         )
         inner = _InMemoryFormStorage()
         storage = AutonomousFormStorage(inner, alias_reg_local)
@@ -398,9 +381,9 @@ class TestInteractions:
             form_id="autonomous",
             title="Autonomous",
             tenant=_TEST_TENANT,
-            sections=[FormSection(section_id="s1", fields=[
-                FormField(field_id="x", field_type=FieldType.TEXT, label="X")
-            ])],
+            sections=[
+                FormSection(section_id="s1", fields=[FormField(field_id="x", field_type=FieldType.TEXT, label="X")])
+            ],
             persistence=FormPersistenceConfig.model_validate(
                 {
                     "data": {"type": "csv_file", "connection": "exports", "path": "auto.csv"},
@@ -463,9 +446,7 @@ class TestInteractions:
             form.persistence.data, alias_registry=alias_registry, tenant=_TEST_TENANT, pool=fake_pool
         )
         forwarder = MagicMock(spec=SubmissionForwarder)
-        forwarder.forward = AsyncMock(
-            return_value=ForwardResult(success=True, status_code=200, error=None)
-        )
+        forwarder.forward = AsyncMock(return_value=ForwardResult(success=True, status_code=200, error=None))
         handler = _make_handler(form, sink_factory=_SingleSinkFactory(sink), forwarder=forwarder)
         resp = await handler.submit_data(_make_request())
         assert resp.status == 200

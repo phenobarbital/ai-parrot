@@ -76,9 +76,7 @@ def _make_request(body: dict | None = None) -> MagicMock:
     req.query.get = MagicMock(return_value="")
     req.__contains__ = lambda self, key: False
     req.json = AsyncMock(return_value=body or {"comment": "great"})
-    req.get = MagicMock(
-        side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default
-    )
+    req.get = MagicMock(side_effect=lambda key, default=None: _TEST_TENANT if key == "tenant" else default)
     req.session = {"session": {"programs": [_TEST_TENANT]}}
     return req
 
@@ -94,9 +92,7 @@ class _FakeSink(AbstractSubmissionSink):
     ) -> None:
         self.calls: list[str] = []
         self._family = family
-        self._capabilities = capabilities or frozenset(
-            {SinkCapability.WRITE, SinkCapability.PROVISION}
-        )
+        self._capabilities = capabilities or frozenset({SinkCapability.WRITE, SinkCapability.PROVISION})
         self._raise_on = raise_on
         self._error = error
         self.written: list[dict] = []
@@ -206,9 +202,7 @@ class TestStatusMapping:
         sink = _FakeSink(raise_on="write", error=SinkUnavailableError("down"))
         storage = MagicMock(spec=FormSubmissionStorage)
         storage.store = AsyncMock()
-        handler = _make_handler(
-            autonomous_form, sink_factory=_FakeSinkFactory(sink), submission_storage=storage
-        )
+        handler = _make_handler(autonomous_form, sink_factory=_FakeSinkFactory(sink), submission_storage=storage)
         await handler.submit_data(_make_request())
         storage.store.assert_not_called()
 
@@ -221,9 +215,7 @@ class TestStatusMapping:
         resp = await handler.submit_data(_make_request())
         assert resp.status == 422
 
-    async def test_on_error_dispatched_and_raising_handler_does_not_mask(
-        self, autonomous_form, monkeypatch
-    ):
+    async def test_on_error_dispatched_and_raising_handler_does_not_mask(self, autonomous_form, monkeypatch):
         sink = _FakeSink(raise_on="write", error=SinkUnavailableError("down"))
         handler = _make_handler(autonomous_form, sink_factory=_FakeSinkFactory(sink))
 
