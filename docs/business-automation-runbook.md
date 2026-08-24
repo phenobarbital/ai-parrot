@@ -55,6 +55,35 @@ Every `BusinessOperation` declares an `OperationKind`:
 - [ ] The operation's `confirm_prompt` renders a clear, actionable briefing
       (client name, amount, or whatever the human needs to approve safely).
 
+## 2a. Broker-backed login and mid-plan human pauses
+
+`BusinessAutomationToolkit`'s `credential_broker`/`human_channel` constructor
+parameters reach every operation's real browser session (code-review
+remediation — earlier builds accepted these but never forwarded them to
+`FlowExecutor`, so a `credential_provider`-backed `Authenticate` step always
+failed closed regardless of configuration):
+
+- `credential_broker`: a `CredentialBroker` (`parrot.auth.broker`). Adapted
+  internally into the `(username, password)` shape `Authenticate` steps
+  expect — the broker's `ResolvedCredential.secret` may be a
+  `{"username", "password"}` dict, a 2-tuple, or a single opaque secret
+  (used as the password with no separate username, e.g. an API key).
+  `credential_user_id` (default `"gestoria"`) is the canonical identity
+  passed to `broker.resolve(provider, "business_automation", user_id)` —
+  this is a single-operator agent, not a multi-tenant surface, so a fixed
+  identity is deliberate.
+- `human_channel`: a `HumanChannel` instance for mid-plan `await_human`
+  pauses (e.g. "the site is showing a CAPTCHA, please solve it"). Configure
+  a **dedicated** channel instance here — do **not** reuse a channel from
+  `human_manager.channels`: `exec_await_human`'s manual-wait path registers
+  its own response handler on the channel, which would collide with
+  `HumanInteractionManager`'s own registration on the same instance.
+
+Without a `credential_broker`, a `credential_provider`-backed `Authenticate`
+still fails closed exactly as before (Decision D2/G3 — never falls back to
+literal credentials). Without a `human_channel`, `condition_type="manual"`
+`await_human` steps still fail closed immediately rather than hanging.
+
 ## 3. Checkpoints and retention (Decision D3)
 
 Checkpoints and import manifests live under:
@@ -73,6 +102,20 @@ client names and amounts extracted from an accounting system.
   `period` never collide: `ImportRun.statement_digest` (sha256 of the
   source Excel bytes) is baked into every import's node/working-memory
   identity.
+- **Resume without duplicates**: `ExecutionPlanToolkit`'s own flow-level
+  checkpointing is deliberately disabled (FEAT-399); per-row resumability
+  lives in `ingest.py`'s own manifest instead. Pass
+  `make_import_progress_listener(operation, digest)`'s return value as
+  `ExecutionPlanToolkit(on_node_event=...)` (or compose it via
+  `AgentsFlow.add_node_event_listener`) when running the plan from
+  `build_import_plan()` — it records each row's completion into the
+  manifest synchronously, so a process kill mid-import leaves every
+  already-registered row durably marked done. Re-running
+  `build_import_plan()` for the same statement afterward returns a plan
+  containing only the remaining rows (`ImportPlanBundle.fully_completed`
+  is `True`, `plan is None`, if every row was already done). Skipping this
+  listener does not lose data — it only means a naive re-run duplicates
+  rows, exactly as before this remediation.
 - Retention: **90 days**, then **archive-and-alert** — `sweep_checkpoint_retention()`
   (`parrot.scheduler.inprocess`) moves aged-out checkpoints to an
   `archive/` subdirectory and notifies the configured `HumanChannel`. It
@@ -99,6 +142,22 @@ config is unsafe, instead of the bridge silently accepting instructions from
 any WhatsApp number. Bots with no SUBMIT-kind operations exposed are
 completely unaffected — the permissive "empty = all" default from before
 TASK-2397 is preserved for them.
+
+**Install `ai-parrot-integrations[business-automation]`.** The detection
+above imports `parrot_tools.business_automation` (a deferred, guarded
+import — `ai-parrot-tools` is not a hard dependency of
+`ai-parrot-integrations`, matching the "satellites depend only on core"
+convention). If `ai-parrot-tools` is not installed, the check cannot see
+any `BusinessAutomationToolkit` and therefore cannot detect a SUBMIT
+operation — which is safe *only* because a `BusinessAutomationToolkit`
+cannot exist without that package installed in the first place. Still,
+**always install this extra** when running a `BusinessAutomationToolkit`-backed
+agent over WhatsApp, so this is a verified guarantee rather than an
+accident of the deployment's package set:
+
+```bash
+pip install "ai-parrot-integrations[business-automation]"
+```
 
 Numbers (both the configured allowlist and each incoming sender) are
 normalized to digits-only before comparison

@@ -16,6 +16,8 @@ import asyncio
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from parrot_tools.business_automation import toolkit as business_toolkit
@@ -171,6 +173,145 @@ class TestPlansDirWiring:
         # Previously-loaded operations must remain usable after a failed
         # reload — the store leaves its last-good state untouched.
         assert "register_expense" in tk._operations
+
+
+class TestCredentialResolverFromBroker:
+    """AC-5 code-review remediation: BusinessAutomationToolkit adapts a
+    CredentialBroker into a CredentialResolverFn and forwards it to
+    FlowExecutor — previously the resolver was built nowhere, so a
+    credential_provider-backed Authenticate always failed closed regardless
+    of whether a broker was configured."""
+
+    async def test_dict_secret_maps_to_username_password(self, tmp_path):
+        from parrot.auth.credentials import ResolvedCredential
+        from parrot_tools.business_automation.toolkit import (
+            _credential_resolver_from_broker,
+        )
+
+        broker = AsyncMock()
+        broker.resolve = AsyncMock(
+            return_value=ResolvedCredential(
+                provider="acme", secret={"username": "bob", "password": "s3cret"}, key_fingerprint="fp"
+            )
+        )
+        resolver = _credential_resolver_from_broker(broker, "gestoria")
+
+        action = SimpleNamespace(credential_provider="acme")
+        result = await resolver(action)
+
+        assert result == ("bob", "s3cret")
+        broker.resolve.assert_awaited_once_with("acme", "business_automation", "gestoria")
+
+    async def test_tuple_secret_passthrough(self, tmp_path):
+        from parrot.auth.credentials import ResolvedCredential
+        from parrot_tools.business_automation.toolkit import (
+            _credential_resolver_from_broker,
+        )
+
+        broker = AsyncMock()
+        broker.resolve = AsyncMock(
+            return_value=ResolvedCredential(provider="acme", secret=("bob", "s3cret"), key_fingerprint="fp")
+        )
+        resolver = _credential_resolver_from_broker(broker, "gestoria")
+        result = await resolver(SimpleNamespace(credential_provider="acme"))
+        assert result == ("bob", "s3cret")
+
+    async def test_opaque_string_secret_maps_to_password_only(self, tmp_path):
+        from parrot.auth.credentials import ResolvedCredential
+        from parrot_tools.business_automation.toolkit import (
+            _credential_resolver_from_broker,
+        )
+
+        broker = AsyncMock()
+        broker.resolve = AsyncMock(
+            return_value=ResolvedCredential(provider="acme", secret="api-key-xyz", key_fingerprint="fp")
+        )
+        resolver = _credential_resolver_from_broker(broker, "gestoria")
+        result = await resolver(SimpleNamespace(credential_provider="acme"))
+        assert result == (None, "api-key-xyz")
+
+    async def test_needs_auth_resolves_to_none(self, tmp_path):
+        from parrot.auth.credentials import NeedsAuth
+        from parrot_tools.business_automation.toolkit import (
+            _credential_resolver_from_broker,
+        )
+
+        broker = AsyncMock()
+        broker.resolve = AsyncMock(
+            return_value=NeedsAuth(provider="acme", auth_url="https://auth.example/consent", auth_kind="oauth2")
+        )
+        resolver = _credential_resolver_from_broker(broker, "gestoria")
+        result = await resolver(SimpleNamespace(credential_provider="acme"))
+        assert result is None
+
+    async def test_broker_exception_resolves_to_none_not_raise(self, tmp_path):
+        from parrot_tools.business_automation.toolkit import (
+            _credential_resolver_from_broker,
+        )
+
+        broker = AsyncMock()
+        broker.resolve = AsyncMock(side_effect=KeyError("no resolver registered"))
+        resolver = _credential_resolver_from_broker(broker, "gestoria")
+        result = await resolver(SimpleNamespace(credential_provider="acme"))
+        assert result is None
+
+    async def test_unrecognized_secret_shape_resolves_to_none(self, tmp_path):
+        from parrot.auth.credentials import ResolvedCredential
+        from parrot_tools.business_automation.toolkit import (
+            _credential_resolver_from_broker,
+        )
+
+        broker = AsyncMock()
+        broker.resolve = AsyncMock(
+            return_value=ResolvedCredential(provider="acme", secret=12345, key_fingerprint="fp")
+        )
+        resolver = _credential_resolver_from_broker(broker, "gestoria")
+        result = await resolver(SimpleNamespace(credential_provider="acme"))
+        assert result is None
+
+
+class TestToolkitWiresResolverAndChannel:
+    """The toolkit must build and forward the resolver/channel into
+    FlowExecutor at _open() time — not just store the raw broker/manager."""
+
+    async def test_no_broker_means_no_resolver(self, fixture_plans_dir_for_wiring):
+        tk = BusinessAutomationToolkit(
+            plans_dir=fixture_plans_dir_for_wiring, browser=None, operations={}, flows={}, templates={}
+        )
+        assert tk._credential_resolver is None
+
+    async def test_broker_produces_a_resolver(self, fixture_plans_dir_for_wiring):
+        broker = AsyncMock()
+        tk = BusinessAutomationToolkit(
+            plans_dir=fixture_plans_dir_for_wiring,
+            browser=None,
+            credential_broker=broker,
+            operations={},
+            flows={},
+            templates={},
+        )
+        assert tk._credential_resolver is not None
+
+    async def test_open_forwards_resolver_and_channel_to_flow_executor(self, fixture_plans_dir_for_wiring):
+        broker = AsyncMock()
+        channel = object()
+        tk = BusinessAutomationToolkit(
+            plans_dir=fixture_plans_dir_for_wiring,
+            browser=None,
+            credential_broker=broker,
+            human_channel=channel,
+            operations={},
+            flows={},
+            templates={},
+        )
+        await tk._open()
+        assert tk._flow_executor._credential_resolver is tk._credential_resolver
+        assert tk._flow_executor._channel is channel
+
+
+@pytest.fixture
+def fixture_plans_dir_for_wiring(tmp_path):
+    return tmp_path
 
 
 class TestNoSiteIdentifiers:

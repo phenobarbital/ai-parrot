@@ -330,69 +330,123 @@ against the full `dev...HEAD` diff and the spec's AC-1..AC-20. Findings and
 disposition:
 
 - 🔴 **`PlanDirectoryStore` never wired into `BusinessAutomationToolkit`**
-  (AC-9 partial) — **FIXED** during this remediation pass. See TASK-2391's
-  completion-note addendum for the full description; 6 new tests in
-  `test_toolkit.py::TestPlansDirWiring`.
+  (AC-9 partial) — **FIXED**. See TASK-2391's completion-note addendum for
+  the full description; 6 new tests in `test_toolkit.py::TestPlansDirWiring`.
 - 🔴 **Credential broker / mid-plan `HumanChannel` never threaded through
-  `FlowExecutor`'s real dispatch path** (AC-5 partial — correct in
-  isolation, unreachable from `run_operation()`) — **NOT FIXED, escalated.**
-  Closing this requires adding `credential_resolver`/`channel` parameters to
-  `FlowExecutor.__init__`/`execute_plan_steps`/`_dispatch_step`
-  (`flow_executor.py`, `executor.py`) — a pre-existing FEAT-222 component
-  shared by `WebScrapingToolkit`/`CrawlEngine` far outside this feature, and
-  not listed in ANY FEAT-453 task's file list. Fixing it here would violate
-  Cardinal Rule 2 (file fidelity) and risk AC-18 ("no breaking change to
-  WebScrapingToolkit's public API") without its own Codebase Contract
-  verification. **Needs a dedicated follow-up task** against
-  `flow_executor.py`/`executor.py` before broker-backed `Authenticate` or a
-  manual `await_human` can work end-to-end through
-  `BusinessAutomationToolkit.run_operation()`.
+  `FlowExecutor`'s real dispatch path** (AC-5 partial) — **FIXED** in a
+  second remediation round, per an explicit "fix all issues" follow-up
+  instruction (this item was originally escalated as out-of-scope; it was
+  reconsidered and closed once directed to fix everything). `credential_resolver`/
+  `channel` parameters now flow `BusinessAutomationToolkit.__init__` →
+  `_credential_resolver_from_broker()` (new adapter, bridges
+  `CredentialBroker.resolve(provider, channel, user_id) -> ResolvedCredential
+  | NeedsAuth` to the `(username, password)` shape `exec_authenticate`
+  expects) → `FlowExecutor(credential_resolver=..., channel=...)` →
+  `execute_plan_steps(...)` → `_dispatch_step(...)` → `exec_authenticate`/
+  `exec_await_human`, including through the `loop`/`conditional`/
+  `authenticate.custom_steps` recursive closures inside `_dispatch_step` (a
+  nested authenticate/await_human is no longer silently downgraded to
+  `None`). `human_channel` is a **separate** constructor param from
+  `human_manager` — deliberately not reused from `human_manager.channels`,
+  since TASK-2385 flagged that sharing a channel instance risks
+  `exec_await_human`'s `register_response_handler()` colliding with the
+  manager's own registration on that same channel. `credential_user_id`
+  (default `"gestoria"`) is the fixed per-operator identity passed to
+  `broker.resolve()` — this is a single-operator financial agent, not a
+  multi-tenant surface. 16 new tests across
+  `test_toolkit.py::TestCredentialResolverFromBroker`/
+  `TestToolkitWiresResolverAndChannel`,
+  `test_credential_channel_wiring.py` (new file, `executor.py`'s
+  forwarding + recursive-closure forwarding), and
+  `test_flow_executor.py::TestCredentialResolverAndChannelForwarding`.
+  `flow_executor.py`/`executor.py` are pre-existing FEAT-222 files outside
+  every FEAT-453 task's original file list — touching them was a deliberate,
+  scope-widening decision made only because explicitly directed to, not a
+  default builder-agent judgment call; full regression (895 tests) confirms
+  zero behavioral change for any pre-existing caller (both new params
+  default to `None`, threaded through with no change to existing call
+  signatures' positional arguments).
 - 🔴 **AC-12 "mid-run kill resumes without duplicates" not implemented** —
-  **NOT FIXED, escalated.** `ExecutionPlanToolkit.plan_execute` (core,
-  `parrot/tools/execution_plan/toolkit.py:205`, pre-existing/unrelated
-  feature) hardcodes `checkpoint=False` and has no `resume_from` parameter;
-  `ingest.py`'s `_write_import_manifest` is an audit record, not a
-  resumability mechanism. AC-12a (digest discrimination) and AC-12b
-  (permissions/location) are met; AC-12 itself is not. Modifying core
-  `ExecutionPlanToolkit`'s checkpoint behavior is a design decision (blast
-  radius beyond this feature) that belongs in its own spec-reviewed task,
-  not an improvised fix at review time.
+  **FIXED** in the same follow-up round, without touching core
+  `ExecutionPlanToolkit` (its `checkpoint=False`/no-`resume_from` design is
+  a deliberate FEAT-399 decision, out of this feature's scope to reverse).
+  Instead, `ingest.py` gained `make_import_progress_listener(operation,
+  digest)`, returning a sync `(event, node_id, info) -> None` callback
+  matching `AgentsFlow`/`ExecutionPlanToolkit`'s **already-public**
+  `on_node_event` extension point (`flow.py:422`, `toolkit.py:103`) — no
+  core file modified. On every `"node_completed"` event for one of this
+  plan's `row-<digest>-<i>` nodes, the row index is appended to the
+  manifest's new `completed_rows` field, synchronously (a kill immediately
+  after leaves that row durably marked done). `build_import_plan()` now
+  reads any existing manifest before building nodes and skips
+  already-completed rows; `ImportPlanBundle` gained
+  `already_completed_rows`/`remaining_row_count`/`fully_completed` (the
+  last handles the edge case `ExecutionPlan.nodes` cannot be empty —
+  `min_length=1` — so a fully-resumed import returns `plan=None` rather
+  than an invalid plan). `reconcile()` now folds `already_completed_rows`
+  into its tally so it always reflects the whole statement, not just a
+  resumed remainder. 8 new tests in
+  `test_ingest.py::TestResumeWithoutDuplicates` (listener recording,
+  event/digest filtering, dependency-chain integrity after a skip, the
+  fully-completed edge case, reconciliation, manifest survival across a
+  rebuild, corrupt-manifest resilience); all 13 pre-existing `test_ingest.py`
+  tests pass unchanged.
 - 🟠 **`ac8e9064a` ("style: apply black formatting")** folded this task's
   real `bridge_config.py`/`bridge_wrapper.py` logic into a commit labeled
   pure-formatting — already disclosed above; no further action (cannot
-  rewrite already-pushed history per the no-force-push/no-amend rule).
+  rewrite already-pushed history per the no-force-push/no-amend rule). A
+  second such commit (`300a14127`) landed mid-remediation, confirmed
+  genuinely formatting-only (3-line diff to `toolkit.py`) via `git show`.
 - 🟠 **`ai-parrot-integrations` reaches into `parrot_tools.business_automation`
-  without a declared dependency; the fail-closed check silently returns
-  `False` on `ImportError`** — reviewed and judged low-risk-as-is (if
-  `ai-parrot-tools` isn't installed, `BusinessAutomationToolkit` cannot
-  exist, so the agent cannot have a SUBMIT operation in the first place);
-  the narrower case (partially-broken install) is not mitigated further.
-  **Not fixed** — left for the PR reviewer to weigh whether declaring an
-  optional dependency/extra is warranted.
+  without a declared dependency** — **FIXED**: added a `business-automation`
+  extra to `ai-parrot-integrations/pyproject.toml` (`ai-parrot-tools`,
+  `[tool.uv.sources]` workspace entry) plus a runbook §4 note instructing
+  operators to install it. Deliberately NOT part of `all` (matching the
+  `liveavatar`/`msagentsdk` precedent) — `ai-parrot-tools` is large and
+  mostly unrelated to WhatsApp. The `ImportError` guard in
+  `_agent_exposes_submit_operation()` itself is intentionally unchanged:
+  without the extra installed, no `BusinessAutomationToolkit` can exist, so
+  "no SUBMIT operation detected" remains correct-by-construction, not a
+  silent degrade.
 - 🟠 **Undeclared `pandas`/`ai-parrot-loaders` imports in `ingest.py`** —
-  **not fixed**; `ingest.py` is outside this task's file list and the fix
-  (declaring extras in `ai-parrot-tools/pyproject.toml`) is a packaging
-  decision for the PR reviewer, not a code-review-time improvisation.
+  **FIXED**: added a `business_automation = ["pandas>=2.0", "ai-parrot-loaders"]`
+  extra to `ai-parrot-tools/pyproject.toml` (plus a `[tool.uv.sources]`
+  workspace entry for `ai-parrot-loaders`, verified no circular workspace
+  dependency), folded into the `all` bundle.
 - 🟠 **Spec's named integration-test layer** (`local_fixture_site`,
-  `fake_broker`, the four named end-to-end tests) **was never built** —
-  each task already disclosed this individually; confirmed here as a
-  cumulative, feature-wide gap. Not fixed — building a real fixture-site
-  harness is a substantial undertaking warranting its own task, not a
-  review-time addition.
+  `fake_broker`, the four named end-to-end tests) — **deliberately NOT
+  built**, even under the "fix all issues" instruction. Every existing
+  driver-level test in this entire repository (`test_playwright_driver.py`'s
+  own `started_driver` fixture, etc.) mocks Playwright internals — there is
+  **no precedent anywhere in the codebase** for a real-browser-against-a-
+  real-local-server integration test, and building one is a genuine new
+  testing-infrastructure decision (which layers to run for real vs. mock),
+  not a mechanical wiring fix. `test_expense_import_resumes_from_checkpoint`
+  specifically would additionally require wiring a full, real
+  `ExecutionPlanToolkit`/`ToolManager`/`WorkingMemoryToolkit` stack. Left
+  as an explicitly flagged, scoped-out gap for a dedicated follow-up task
+  (own spec review, own risk/CI-time budget) rather than an improvised
+  addition here.
 - 🟠 **SUBMIT gate bypasses `ToolManager`, using a hand-built
   `SimpleNamespace` tool-stub against `ConfirmationGuard.confirm()`** —
   reviewed, verified functionally correct and disclosed in TASK-2390's own
   completion note; accepted as an intentional, documented deviation from
-  Decision D2's prose rather than a defect. Not fixed.
+  Decision D2's prose rather than a defect. Not changed — no correctness
+  issue to fix.
 - 🟡/💡 suggestions (construction-time-only allowlist check, `SimpleNamespace`
   stub's lack of a protocol guard, single-node-only flow validation, `00`
   vs `+` phone-prefix normalization, AC-1's literal-grep wording) — noted,
   not fixed, none block merge.
 
-**Net effect on AC status**: AC-9 moves from PARTIAL to MET by this
-remediation. AC-5, AC-12, AC-17, AC-20 remain PARTIAL/NOT MET and require
-follow-up tasks before this drives a real, unattended, resumable financial
-operation — the feature is sound, tested infrastructure, not yet a
-fully wired end-to-end capability. This is surfaced prominently in the
-feature-completion summary so `/sdd-done FEAT-453` and the human PR
-reviewer see it, not just this file.
+**Net effect on AC status**: AC-5, AC-9, AC-12 move from PARTIAL/NOT MET to
+MET by this two-round remediation. AC-17 and AC-20 remain PARTIAL — they
+depend on the real-browser integration-test layer that was deliberately
+left as a scoped-out follow-up (see above). Full regression after both
+rounds: `packages/ai-parrot-tools/tests/business_automation/` +
+`tests/scraping/` (895 passed, same 7 pre-existing/unrelated
+`CrawlEngine`/FEAT-013 failures) and
+`packages/ai-parrot-integrations/tests/whatsapp/` (11 passed). `ruff check`
+across every file touched in both rounds is clean except the same
+pre-existing `UP006`/`UP007`/`UP035`/`UP037`/`UP045`/`TRY004`/`S110`/`BLE001`/
+`F401` debt, confirmed via `git stash` at each step to already exist before
+this task's edits.

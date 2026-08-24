@@ -17,7 +17,7 @@ import logging
 import re as _re
 import time
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -32,6 +32,7 @@ from .models import (
 )
 from .plan import ScrapingPlan
 from .session_actions import (
+    CredentialResolverFn,
     exec_authenticate,
     exec_await_browser_event,
     exec_await_human,
@@ -42,6 +43,12 @@ from .session_actions import (
     exec_wait_for_download,
 )
 from .toolkit_models import DriverConfig
+
+if TYPE_CHECKING:
+    # Soft dependency (Decision D2), same pattern as session_actions.py:
+    # parrot.human.channels.base.HumanChannel is core, but this module must
+    # not force a hard runtime import just to type-hint an optional param.
+    from parrot.human.channels.base import HumanChannel
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +64,8 @@ async def execute_plan_steps(
     selectors: Optional[List[Dict[str, Any]]] = None,
     config: Optional[DriverConfig] = None,
     base_url: Optional[str] = None,
+    credential_resolver: Optional[CredentialResolverFn] = None,
+    channel: Optional["HumanChannel"] = None,
 ) -> ScrapingResult:
     """Execute a scraping plan's steps against a browser driver.
 
@@ -71,6 +80,15 @@ async def execute_plan_steps(
         selectors: Content extraction selectors (used when *plan* is ``None``).
         config: Driver configuration for delay/timeout settings.
         base_url: Fallback base URL for relative link resolution.
+        credential_resolver: Optional resolver forwarded to every
+            ``authenticate`` step's :func:`~.session_actions.exec_authenticate`
+            (Decision D2/G3 — broker-backed credentials, never literal
+            fields, when ``Authenticate.credential_provider`` is set).
+        channel: Optional :class:`HumanChannel` forwarded to every
+            ``await_human`` step's :func:`~.session_actions.exec_await_human`,
+            so a mid-plan pause actually reaches a person instead of
+            silently defaulting to ``channel=None`` (fail-closed on
+            ``condition_type="manual"``).
 
     Returns:
         ``ScrapingResult`` with extracted data and metadata.
@@ -113,7 +131,15 @@ async def execute_plan_steps(
         logger.info("Executing step %d/%d: %s", idx + 1, len(scraping_steps), step_desc)
 
         try:
-            success = await _dispatch_step(driver, step, url, timeout, step_extracted)
+            success = await _dispatch_step(
+                driver,
+                step,
+                url,
+                timeout,
+                step_extracted,
+                credential_resolver=credential_resolver,
+                channel=channel,
+            )
         except Exception as exc:
             logger.error("Step %d failed: %s — %s", idx + 1, step_desc, exc)
             step_errors.append(
@@ -241,6 +267,9 @@ async def _dispatch_step(
     base_url: str,
     timeout: int,
     step_extracted: Dict[str, Any],
+    *,
+    credential_resolver: Optional[CredentialResolverFn] = None,
+    channel: Optional["HumanChannel"] = None,
 ) -> bool:
     """Dispatch a single ``ScrapingStep`` to the appropriate action handler.
 
@@ -250,6 +279,10 @@ async def _dispatch_step(
         base_url: Base URL for resolving relative URLs.
         timeout: Default timeout in seconds.
         step_extracted: Shared dict collecting results from ``extract`` steps.
+        credential_resolver: Forwarded to ``authenticate`` steps (see
+            :func:`execute_plan_steps`).
+        channel: Forwarded to ``await_human`` steps (see
+            :func:`execute_plan_steps`).
 
     Returns:
         ``True`` if the step succeeded.
@@ -290,11 +323,16 @@ async def _dispatch_step(
     elif action_type == "loop":
         # Recursive closure: forwards each sub-step back through this same
         # dispatcher (enabling loop-within-loop) while preserving the shared
-        # ``step_extracted`` accumulator for nested ``extract`` actions.
+        # ``step_extracted`` accumulator for nested ``extract`` actions, and
+        # forwarding this call's own credential_resolver/channel so a nested
+        # authenticate/await_human step is never silently downgraded to
+        # ``None`` just because it is inside a loop.
         async def _dispatch(d, s, u, t, _caller_se):
             # Ignore the callee-supplied accumulator on purpose: we forward the
             # enclosing ``step_extracted`` so nested extracts share one dict.
-            return await _dispatch_step(d, s, u, t, step_extracted)
+            return await _dispatch_step(
+                d, s, u, t, step_extracted, credential_resolver=credential_resolver, channel=channel
+            )
 
         return await exec_loop(driver, action, _dispatch, base_url, timeout)
     elif action_type == "conditional":
@@ -302,7 +340,9 @@ async def _dispatch_step(
         async def _dispatch(d, s, u, t, _caller_se):
             # Ignore the callee-supplied accumulator on purpose: we forward the
             # enclosing ``step_extracted`` so nested extracts share one dict.
-            return await _dispatch_step(d, s, u, t, step_extracted)
+            return await _dispatch_step(
+                d, s, u, t, step_extracted, credential_resolver=credential_resolver, channel=channel
+            )
 
         return await exec_conditional(driver, action, _dispatch, base_url, timeout)
     elif action_type == "authenticate":
@@ -311,15 +351,19 @@ async def _dispatch_step(
         async def _dispatch(d, s, u, t, _caller_se):
             # Ignore the callee-supplied accumulator on purpose: we forward the
             # enclosing ``step_extracted`` so nested extracts share one dict.
-            return await _dispatch_step(d, s, u, t, step_extracted)
+            return await _dispatch_step(
+                d, s, u, t, step_extracted, credential_resolver=credential_resolver, channel=channel
+            )
 
-        return await exec_authenticate(driver, action, _dispatch, timeout=timeout)
+        return await exec_authenticate(
+            driver, action, _dispatch, credential_resolver=credential_resolver, timeout=timeout
+        )
     elif action_type == "get_cookies":
         return await _action_get_cookies(driver, action, step, step_extracted)
     elif action_type == "set_cookies":
         return await exec_set_cookies(driver, action)
     elif action_type == "await_human":
-        return await exec_await_human(driver, action)
+        return await exec_await_human(driver, action, channel=channel)
     elif action_type == "await_keypress":
         return await exec_await_keypress(driver, action)
     elif action_type == "await_browser_event":

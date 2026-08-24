@@ -14,7 +14,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import aiofiles
 from bs4 import BeautifulSoup
@@ -26,9 +26,17 @@ from .flow_models import FlowNode, FlowResult, ScrapingFlow
 from .models import ScrapingResult
 from .plan import ScrapingPlan
 from .plan_io import load_plan_from_disk
+from .session_actions import CredentialResolverFn
 from .session_manager import SessionManager
 from .template_plan import TemplatePlan
 from .toolkit_models import DriverConfig
+
+if TYPE_CHECKING:
+    # Soft dependency (Decision D2), same pattern as session_actions.py /
+    # executor.py: parrot.human.channels.base.HumanChannel is core, but this
+    # module must not force a hard runtime import just to type-hint an
+    # optional param.
+    from parrot.human.channels.base import HumanChannel
 
 # Parses a field reference like ``field``, ``field[3]``, or ``field[*]``.
 _FIELD_REF_RE = re.compile(r"^(\w+)(?:\[(\d+|\*)\])?$")
@@ -53,6 +61,16 @@ class FlowExecutor:
             to resolve and bind ``plan_ref`` values. (The dedicated
             ``TemplatePlanRegistry`` is deferred per the spec; this mapping is
             the template source in the meantime.)
+        credential_resolver: Optional resolver forwarded to every executed
+            node's ``authenticate`` steps (code-review remediation,
+            FEAT-453 AC-5) — without this, a ``credential_provider``-backed
+            ``Authenticate`` always fails closed even when the caller (e.g.
+            ``BusinessAutomationToolkit``) was constructed with a
+            ``CredentialBroker``, since ``execute_plan_steps`` previously
+            had no way to receive one.
+        channel: Optional :class:`HumanChannel` forwarded to every executed
+            node's ``await_human`` steps, so a mid-plan pause actually
+            reaches a person instead of always resolving ``channel=None``.
     """
 
     def __init__(
@@ -64,10 +82,14 @@ class FlowExecutor:
         checkpoint_dir: Optional[Path] = None,
         logger: Optional[logging.Logger] = None,
         templates: Optional[Dict[str, TemplatePlan]] = None,
+        credential_resolver: Optional[CredentialResolverFn] = None,
+        channel: Optional["HumanChannel"] = None,
     ) -> None:
         self._browser = browser
         self._registry = registry
         self._config = config
+        self._credential_resolver = credential_resolver
+        self._channel = channel
         self._concurrency = max(1, concurrency)
         self._checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
         self.logger = logger or logging.getLogger(__name__)
@@ -189,7 +211,12 @@ class FlowExecutor:
             driver = PageDriver(page)
             try:
                 result = await execute_plan_steps(
-                    driver, plan, config=self._config, base_url=plan.url
+                    driver,
+                    plan,
+                    config=self._config,
+                    base_url=plan.url,
+                    credential_resolver=self._credential_resolver,
+                    channel=self._channel,
                 )
             except Exception as exc:  # noqa: BLE001
                 result = None

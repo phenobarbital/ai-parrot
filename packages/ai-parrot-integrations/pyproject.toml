@@ -102,6 +102,18 @@ messaging = [
     "ai-parrot-integrations[msteams]",
     "ai-parrot-integrations[whatsapp]",
 ]
+# FEAT-453 code-review remediation: WhatsAppBridgeWrapper's fail-closed
+# financial control (bridge_wrapper.py::_agent_exposes_submit_operation)
+# detects a bound BusinessAutomationToolkit by importing
+# parrot_tools.business_automation, deferred and guarded by
+# try/except ImportError so ai-parrot-tools stays optional for every
+# other WhatsApp deployment. Intentionally NOT part of `all` (like
+# `liveavatar`/`msagentsdk`) — ai-parrot-tools is a large distribution
+# with dozens of unrelated extras; only opt in when actually running a
+# BusinessAutomationToolkit-backed agent over WhatsApp.
+business-automation = [
+    "ai-parrot-tools",
+]
 all = [
     "ai-parrot-integrations[messaging]",
     "ai-parrot-integrations[matrix]",
@@ -141,3 +153,5 @@ override-dependencies = ["emoji==1.7.0"]
 [tool.uv.sources]
 ai-parrot = { workspace = true }
 parrot-formdesigner = { workspace = true }
+# FEAT-453: business-automation extra (bridge_wrapper.py's fail-closed check).
+ai-parrot-tools = { workspace = true }

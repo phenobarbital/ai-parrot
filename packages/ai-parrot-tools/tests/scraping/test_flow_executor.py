@@ -3,7 +3,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bs4 import BeautifulSoup
-
 from parrot_tools.scraping.flow_executor import FlowExecutor
 from parrot_tools.scraping.flow_models import FlowNode, ScrapingFlow
 from parrot_tools.scraping.models import ScrapingResult
@@ -365,3 +364,53 @@ class TestCheckpointResume:
         assert result.success
         assert resume_calls == ["plan-b"]  # A skipped (loaded from checkpoint)
         assert result.resumed_from == "B"
+
+
+# ── Credential resolver / HumanChannel forwarding (code-review remediation) ──
+
+class TestCredentialResolverAndChannelForwarding:
+    """FlowExecutor(credential_resolver=..., channel=...) must reach every
+    node's execute_plan_steps() call — before this remediation, FlowExecutor
+    had no such params at all, so BusinessAutomationToolkit's configured
+    CredentialBroker/HumanChannel were unreachable from a real run."""
+
+    async def test_forwards_credential_resolver_and_channel_to_execute_plan_steps(self):
+        flow = ScrapingFlow(name="f", nodes=[FlowNode(id="A", plan_ref="plan-a")])
+        templates = {"plan-a": simple_template("plan-a")}
+
+        captured = {}
+
+        async def fake(driver, plan, **kw):
+            captured.update(kw)
+            return make_result({"ok": True})
+
+        resolver = AsyncMock(return_value=("user", "pass"))
+        channel = object()
+        ex = FlowExecutor(
+            make_browser(), templates=templates, credential_resolver=resolver, channel=channel
+        )
+        with patch(EPS, new=AsyncMock(side_effect=fake)):
+            result = await ex.run(flow)
+
+        assert result.success
+        assert captured["credential_resolver"] is resolver
+        assert captured["channel"] is channel
+
+    async def test_defaults_to_none_when_not_supplied(self):
+        """Every pre-existing FlowExecutor caller never passes these kwargs
+        — they must still resolve to None, not raise."""
+        flow = ScrapingFlow(name="f", nodes=[FlowNode(id="A", plan_ref="plan-a")])
+        templates = {"plan-a": simple_template("plan-a")}
+
+        captured = {}
+
+        async def fake(driver, plan, **kw):
+            captured.update(kw)
+            return make_result({"ok": True})
+
+        ex = FlowExecutor(make_browser(), templates=templates)
+        with patch(EPS, new=AsyncMock(side_effect=fake)):
+            await ex.run(flow)
+
+        assert captured["credential_resolver"] is None
+        assert captured["channel"] is None
