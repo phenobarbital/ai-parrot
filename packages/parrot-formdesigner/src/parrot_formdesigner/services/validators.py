@@ -276,6 +276,19 @@ class FormValidator:
         if is_empty:
             return errors
 
+        # Relation shape validation (FEAT-456) — reference-mode only,
+        # shape-only, no I/O (no existence checks — the target system's
+        # job). Runs BEFORE type coercion: coercion is deliberately lossy
+        # for SELECT/MULTI_SELECT-family types (e.g. MULTI_SELECT silently
+        # wraps a bare scalar into a single-item list) and would mask the
+        # exact shape mismatches this check exists to catch. Embed-mode
+        # relations are untouched — their values flow through the existing
+        # ARRAY recursive path below.
+        if field.relation is not None and field.relation.mode == "reference":
+            relation_errors = self._validate_relation_shape(field, value, label)
+            if relation_errors:
+                return relation_errors
+
         # Type coercion
         try:
             coerced = self._coerce_value(value, field)
@@ -344,6 +357,44 @@ class FormValidator:
             errors.extend(remote_errors)
 
         return errors
+
+    def _validate_relation_shape(
+        self, field: FormField, value: Any, label: str
+    ) -> list[str]:
+        """Shape-check a reference-mode relational field's submitted value
+        (FEAT-456, Module 6).
+
+        ``cardinality="one"`` expects a scalar ID (``str``/``int``);
+        ``cardinality="many"`` expects a list of scalar IDs. Shape only —
+        no existence checks, no I/O (resolved in the brainstorm: verifying
+        a referenced ID actually exists is the target system's job).
+
+        Args:
+            field: The relational ``FormField`` (``field.relation.mode ==
+                "reference"``).
+            value: The submitted value (already known non-empty by the
+                caller).
+            label: Resolved field label for error messages.
+
+        Returns:
+            List of error messages (empty list if the shape is valid).
+        """
+        relation = field.relation
+        cardinality = relation.cardinality if relation else None
+
+        if cardinality == "one":
+            if isinstance(value, (list, dict)):
+                return [f"{label} must be a single ID, not a list"]
+            if not isinstance(value, (str, int)):
+                return [f"{label} must be a valid ID"]
+            return []
+
+        # cardinality == "many"
+        if not isinstance(value, list):
+            return [f"{label} must be a list of IDs"]
+        if any(not isinstance(v, (str, int)) for v in value):
+            return [f"{label} must be a list of scalar IDs"]
+        return []
 
     def _coerce_value(self, value: Any, field: FormField) -> Any:
         """Coerce a value to the appropriate Python type for the field.
