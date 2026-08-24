@@ -11,6 +11,7 @@ Covers the 7 scenarios from Spec §4:
 
 All tests use stub agents and an in-memory StubRegistry — no real LLM calls.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,7 +38,6 @@ from parrot.bots.flows.flow.nodes import (
     DecisionResult,
     DecisionType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -293,7 +293,11 @@ class TestBranchingFanIn:
                 return "merged"
 
             async def ask(self, question: str = "", **kw: Any) -> Any:
-                received_deps.update(dict(question.split("=") for segment in question.split(",") if "=" in segment) if "," in question else {})
+                received_deps.update(
+                    dict(question.split("=") for segment in question.split(",") if "=" in segment)
+                    if "," in question
+                    else {}
+                )
                 return type("R", (), {"content": "merged"})()
 
         stub_registry.register(RecordingAgent("a"))
@@ -540,3 +544,166 @@ class TestOnCompleteHookFires:
         result = await flow.run_flow(on_complete=(broken_hook,))
         # Status must remain completed despite hook failure.
         assert result.status == FlowStatus.COMPLETED
+
+
+# ---------------------------------------------------------------------------
+# FEAT-447 / TASK-2329 — run_flow wiring: fidelity end-to-end
+# ---------------------------------------------------------------------------
+
+
+class UsageAgent:
+    """Agent stub returning a REAL AgentResponse carrying usage + tool_calls.
+
+    A `MagicMock` would be useless here: `build_node_metadata` calls
+    `usage.model_dump()`, so the usage object must be a real
+    `CompletionUsage` for the assertions to mean anything.
+    """
+
+    def __init__(self, name: str, reply: str = "ok", delay: float = 0.0) -> None:
+        self._name = name
+        self.reply = reply
+        self.delay = delay
+        # `build_node_metadata` reads the concrete client class name off
+        # `agent.llm` for NodeExecutionInfo.client (spec AC3).
+        self.llm = type("FakeOpenAIClient", (), {"model": "gpt-4o"})()
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    async def invoke(self, prompt: str, **kwargs: Any) -> Any:
+        # Required by the AgentLike protocol (core/types.py).
+        return self.reply
+
+    async def ask(self, question: str = "", **kwargs: Any) -> Any:
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        from parrot.models.basic import CompletionUsage, ToolCall
+        from parrot.models.responses import AgentResponse, AIMessage
+
+        message = AIMessage(
+            input=question,
+            output=self.reply,
+            model="gpt-4o",
+            provider="openai",
+            usage=CompletionUsage(prompt_tokens=13, completion_tokens=5, total_tokens=18),
+            tool_calls=[ToolCall(id="tc-1", name="search", arguments={"q": question})],
+        )
+        return AgentResponse(
+            agent_name=self._name,
+            question=question,
+            response=message,
+            output=self.reply,
+        )
+
+
+def _make_usage_flow(delay: float = 0.0) -> AgentsFlow:
+    """Linear a → b flow whose agents report usage and tool calls.
+
+    Args:
+        delay: Per-agent sleep, used when a test needs a run long enough to
+            be visible at ``FlowResult.__repr__``'s two-decimal resolution.
+    """
+    node_a = AgentNode(
+        agent=UsageAgent("agent_a", reply="out_a", delay=delay),
+        node_id="a",
+        dependencies=set(),
+        successors={"b"},
+    )
+    node_b = AgentNode(
+        agent=UsageAgent("agent_b", reply="out_b", delay=delay),
+        node_id="b",
+        dependencies={"a"},
+        successors=set(),
+    )
+    flow = AgentsFlow("usage-fidelity-test")
+    flow.add_node(node_a)
+    flow.add_node(node_b)
+    return flow
+
+
+class TestFlowResultFidelityEndToEnd:
+    """The fidelity guarantees, observed through a real run_flow()."""
+
+    async def test_flow_run_populates_usage(self) -> None:
+        """Every nodes[i].usage is non-None after a run (spec AC2/AC3)."""
+        result = await _make_usage_flow().run_flow()
+
+        assert len(result.nodes) == 2
+        for info in result.nodes:
+            assert info.usage is not None, f"{info.node_id} lost its usage"
+            assert info.usage["total_tokens"] == 18
+            assert info.tool_calls, f"{info.node_id} lost its tool_calls"
+            assert info.tool_calls[0]["name"] == "search"
+            assert info.model == "gpt-4o"
+            assert info.provider == "openai"
+            # AC3: the previously-dead `client` field.
+            assert info.client == "FakeOpenAIClient"
+        # AC7: ordered by real completion order, not set-iteration order.
+        assert [n.node_id for n in result.nodes] == ["a", "b"]
+        # AC8: node_results yields scalars, never envelopes, end-to-end.
+        assert result.node_results == {"a": "out_a", "b": "out_b"}
+
+    async def test_flow_run_total_time_nonzero(self) -> None:
+        """total_time > 0 and repr() no longer prints time=0.00s (spec AC4)."""
+        # 15ms per node: enough to be visible at __repr__'s 2-decimal
+        # resolution, so the repr assertion below is a real check and not
+        # satisfied by rounding.
+        result = await _make_usage_flow(delay=0.015).run_flow()
+
+        assert result.total_time > 0
+        assert result.total_execution_time == result.total_time
+        assert "time=0.00s" not in repr(result)
+        # AC5/AC6: the other previously-default run-level fields.
+        assert len(result.execution_log) == 2
+        assert result.metadata["completed_count"] == 2
+        assert result.metadata["failed_count"] == 0
+        assert result.metadata["leaves"] == ["b"]
+        # AC12: summary stays empty — AgentsFlow has no SynthesisMixin.
+        assert result.summary == ""
+
+    async def test_flow_context_carries_metadata(self) -> None:
+        """After run_flow, ctx.responses and ctx.node_metadata are populated."""
+        ctx = FlowContext(initial_task="do the thing")
+        result = await _make_usage_flow().run_flow(ctx=ctx)
+
+        assert set(ctx.responses) == {"a", "b"}
+        assert set(ctx.node_metadata) == {"a", "b"}
+        # ctx carries the SAME fidelity as the FlowResult (spec AC10).
+        for nid in ("a", "b"):
+            info = ctx.node_metadata[nid]
+            assert info.usage is not None
+            assert info.tool_calls
+            assert info.client == "FakeOpenAIClient"
+            assert info.status == "completed"
+        assert ctx.completion_order == ["a", "b"]
+        assert [n.node_id for n in result.nodes] == ctx.completion_order
+
+    async def test_flow_context_metadata_for_failed_node(self) -> None:
+        """A failed node also lands in ctx.node_metadata, marked failed."""
+        node_a = AgentNode(
+            agent=MockAgent("agent_a", reply="out_a"),
+            node_id="a",
+            dependencies=set(),
+            successors={"b"},
+        )
+        node_b = AgentNode(
+            agent=MockAgent("agent_b", fail=True),
+            node_id="b",
+            dependencies={"a"},
+            successors=set(),
+        )
+        flow = AgentsFlow("failed-metadata-test")
+        flow.add_node(node_a)
+        flow.add_node(node_b)
+
+        ctx = FlowContext(initial_task="t")
+        result = await flow.run_flow(ctx=ctx)
+
+        assert set(ctx.node_metadata) == {"a", "b"}
+        assert ctx.node_metadata["b"].status == "failed"
+        assert "failed intentionally" in ctx.node_metadata["b"].error
+        # The failed node is absent from completion_order but still reported.
+        assert ctx.completion_order == ["a"]
+        assert [n.node_id for n in result.nodes] == ["a", "b"]
+        assert result.metadata["failed_count"] == 1

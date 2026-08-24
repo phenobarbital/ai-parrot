@@ -14,6 +14,7 @@ Key components:
 
 See sdd/specs/agentsflow-refactor-spec3.spec.md for the full design.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -73,7 +74,6 @@ from .node_configs import (
 
 # AgentRegistry (type annotation only)
 from parrot.registry.registry import AgentRegistry  # type: ignore[import-untyped]
-
 
 logger = logging.getLogger(__name__)
 
@@ -185,24 +185,16 @@ def register_node(
         TypeError: If the decorated class is not a ``Node`` subclass, or
             ``config_model`` is not a ``BaseModel`` subclass.
     """
-    if config_model is not None and not (
-        isinstance(config_model, type) and issubclass(config_model, BaseModel)
-    ):
+    if config_model is not None and not (isinstance(config_model, type) and issubclass(config_model, BaseModel)):
         raise TypeError(
-            f"register_node({name!r}, config_model=...) expects a pydantic "
-            f"BaseModel subclass, got {config_model!r}"
+            f"register_node({name!r}, config_model=...) expects a pydantic " f"BaseModel subclass, got {config_model!r}"
         )
 
     def decorator(cls: Type[Node]) -> Type[Node]:
         if not (isinstance(cls, type) and issubclass(cls, Node)):
-            raise TypeError(
-                f"@register_node({name!r}) target must be a Node subclass, got {cls!r}"
-            )
+            raise TypeError(f"@register_node({name!r}) target must be a Node subclass, got {cls!r}")
         if name in NODE_REGISTRY:
-            raise ValueError(
-                f"Node type {name!r} already registered to "
-                f"{NODE_REGISTRY[name].__name__}"
-            )
+            raise ValueError(f"Node type {name!r} already registered to " f"{NODE_REGISTRY[name].__name__}")
         NODE_REGISTRY[name] = cls
         if config_model is not None:
             NODE_CONFIG_MODELS[name] = config_model
@@ -294,9 +286,7 @@ class AgentsFlow(PersistenceMixin):
         # factory closes over live dependencies (dispatcher, toolkits, …) and
         # is called as ``factory(node_def, deps, succs) -> Node`` afresh per
         # ``run_flow()`` so concurrent runs do not share node state.
-        self._node_factories: dict[
-            str, Callable[["NodeDefinition", set[str], set[str]], Node]
-        ] = {}
+        self._node_factories: dict[str, Callable[["NodeDefinition", set[str], set[str]], Node]] = {}
         # node_id → single resolved agent (agent nodes), and node_id →
         # {agent_name: instance} for multi-agent types (decision). Both are
         # populated by ``from_definition``; empty in programmatic mode.
@@ -304,9 +294,7 @@ class AgentsFlow(PersistenceMixin):
         self._resolved_agent_groups: dict[str, dict[str, Any]] = {}
         self._nodes: dict[str, Node] = {}
         self._edges: list[FlowEdge] = []
-        self._node_event_listeners: list[
-            Callable[[str, str, Dict[str, Any]], Any]
-        ] = []
+        self._node_event_listeners: list[Callable[[str, str, Dict[str, Any]], Any]] = []
         if on_node_event is not None:
             if callable(on_node_event):
                 self._node_event_listeners.append(on_node_event)
@@ -317,14 +305,8 @@ class AgentsFlow(PersistenceMixin):
         # ── Checkpointing (FEAT-399) ────────────────────────────────────
         self.flow_id: str = flow_id or str(uuid.uuid4())
         self._checkpoint_enabled = checkpoint
-        self._checkpoint_retention = (
-            FLOW_CHECKPOINT_REDIS_TTL
-            if checkpoint_retention is None
-            else checkpoint_retention
-        )
-        self._checkpoint_history = (
-            FLOW_CHECKPOINT_HISTORY if checkpoint_history is None else checkpoint_history
-        )
+        self._checkpoint_retention = FLOW_CHECKPOINT_REDIS_TTL if checkpoint_retention is None else checkpoint_retention
+        self._checkpoint_history = FLOW_CHECKPOINT_HISTORY if checkpoint_history is None else checkpoint_history
         self._checkpoint_include_responses = checkpoint_include_responses
         self._checkpoint_durable = durable
         self._checkpoint_store_arg = checkpoint_store
@@ -357,9 +339,7 @@ class AgentsFlow(PersistenceMixin):
             ValueError: If a node with the same ``node_id`` is already present.
         """
         if node.node_id in self._nodes:
-            raise ValueError(
-                f"Node {node.node_id!r} already added to flow {self.name!r}"
-            )
+            raise ValueError(f"Node {node.node_id!r} already added to flow {self.name!r}")
         self._nodes[node.node_id] = node
         self.logger.debug("Added node %r to flow %r", node.node_id, self.name)
 
@@ -401,27 +381,17 @@ class AgentsFlow(PersistenceMixin):
         if predicate is not None and condition == "always":
             condition = "on_condition"
         if condition not in EDGE_CONDITIONS:
-            raise ValueError(
-                f"Unknown edge condition {condition!r}. "
-                f"Expected one of {EDGE_CONDITIONS}"
-            )
+            raise ValueError(f"Unknown edge condition {condition!r}. " f"Expected one of {EDGE_CONDITIONS}")
         if condition == "on_condition" and predicate is None:
-            raise ValueError(
-                "Edge condition 'on_condition' requires a predicate "
-                "(CEL string or callable)"
-            )
+            raise ValueError("Edge condition 'on_condition' requires a predicate " "(CEL string or callable)")
         edge = FlowEdge(from_=from_, to=to, condition=condition, predicate=predicate)
         self._edges.append(edge)
-        self.logger.debug(
-            "Added edge %r → %r (%s) to flow %r", from_, to, condition, self.name
-        )
+        self.logger.debug("Added edge %r → %r (%s) to flow %r", from_, to, condition, self.name)
         return edge
 
     # ── Node-event notification ───────────────────────────────────────────
 
-    def add_node_event_listener(
-        self, callback: Callable[[str, str, Dict[str, Any]], Any]
-    ) -> None:
+    def add_node_event_listener(self, callback: Callable[[str, str, Dict[str, Any]], Any]) -> None:
         """Attach an additional node-event listener.
 
         Listeners are invoked in registration order with the same
@@ -434,9 +404,7 @@ class AgentsFlow(PersistenceMixin):
         """
         self._node_event_listeners.append(callback)
 
-    def _notify_node_event(
-        self, event: str, node_id: str, info: Dict[str, Any]
-    ) -> None:
+    def _notify_node_event(self, event: str, node_id: str, info: Dict[str, Any]) -> None:
         """Invoke every node-event listener, shielding the scheduler.
 
         Sync callbacks run inline; coroutines are scheduled as fire-and-forget
@@ -460,7 +428,9 @@ class AgentsFlow(PersistenceMixin):
             except Exception as exc:  # noqa: BLE001 - telemetry must not break runs
                 self.logger.warning(
                     "node-event listener raised for %s/%s: %s",
-                    event, node_id, exc,
+                    event,
+                    node_id,
+                    exc,
                 )
 
     def _log_event_task_error(self, task: "asyncio.Task[Any]") -> None:
@@ -479,9 +449,7 @@ class AgentsFlow(PersistenceMixin):
         definition: FlowDefinition,
         *,
         agent_registry: Optional[AgentRegistry] = None,
-        node_factories: Optional[
-            dict[str, Callable[["NodeDefinition", set[str], set[str]], Node]]
-        ] = None,
+        node_factories: Optional[dict[str, Callable[["NodeDefinition", set[str], set[str]], Node]]] = None,
         checkpoint: Optional[bool] = None,
         checkpoint_retention: Optional[int] = None,
         checkpoint_history: Optional[int] = None,
@@ -542,8 +510,7 @@ class AgentsFlow(PersistenceMixin):
 
         if agent_registry is None:
             raise ValueError(
-                "AgentsFlow.from_definition() requires an agent_registry. "
-                "Pass an AgentRegistry instance explicitly."
+                "AgentsFlow.from_definition() requires an agent_registry. " "Pass an AgentRegistry instance explicitly."
             )
 
         # Eagerly resolve every agent-type node's agent_ref.
@@ -564,9 +531,7 @@ class AgentsFlow(PersistenceMixin):
             # AgentRegistry.get_bot_instance is the sync getter (matches TASK-1061 pattern).
             agent = agent_registry.get_bot_instance(agent_ref)
             if agent is None:
-                raise AgentNotFoundError(
-                    f"Cannot resolve agent_ref {agent_ref!r} for node {node_def.id!r}"
-                )
+                raise AgentNotFoundError(f"Cannot resolve agent_ref {agent_ref!r} for node {node_def.id!r}")
             # Keyed by node_id so _materialize_nodes can look up by node_def.id.
             resolved_agents[node_def.id] = agent
 
@@ -592,10 +557,7 @@ class AgentsFlow(PersistenceMixin):
             for ref in refs:
                 agent = agent_registry.get_bot_instance(ref)
                 if agent is None:
-                    raise AgentNotFoundError(
-                        f"Cannot resolve agent_refs entry {ref!r} for node "
-                        f"{node_def.id!r}"
-                    )
+                    raise AgentNotFoundError(f"Cannot resolve agent_refs entry {ref!r} for node " f"{node_def.id!r}")
                 group[ref] = agent
             resolved_groups[node_def.id] = group
 
@@ -609,15 +571,9 @@ class AgentsFlow(PersistenceMixin):
             agent_registry=agent_registry,
             checkpoint=checkpoint if checkpoint is not None else meta.checkpoint,
             checkpoint_retention=(
-                checkpoint_retention
-                if checkpoint_retention is not None
-                else meta.checkpoint_retention
+                checkpoint_retention if checkpoint_retention is not None else meta.checkpoint_retention
             ),
-            checkpoint_history=(
-                checkpoint_history
-                if checkpoint_history is not None
-                else meta.checkpoint_history
-            ),
+            checkpoint_history=(checkpoint_history if checkpoint_history is not None else meta.checkpoint_history),
             checkpoint_include_responses=(
                 checkpoint_include_responses
                 if checkpoint_include_responses is not None
@@ -704,9 +660,7 @@ class AgentsFlow(PersistenceMixin):
                         f"cannot export flow {self.name!r} to a FlowDefinition."
                     )
 
-            node_defs.append(
-                NodeDefinition(id=node_id, type=type_name, agent_ref=agent_ref)
-            )
+            node_defs.append(NodeDefinition(id=node_id, type=type_name, agent_ref=agent_ref))
 
         edge_defs: list[EdgeDefinition] = []
         for edge in self._edges:
@@ -749,9 +703,7 @@ class AgentsFlow(PersistenceMixin):
             # concurrent run_flow() calls do not share FSM state (B-lite contract).
             fresh: dict[str, Node] = {}
             for nid, node in self._nodes.items():
-                new_fsm = AgentTaskMachine(
-                    agent_name=getattr(node, "node_id", nid)
-                )
+                new_fsm = AgentTaskMachine(agent_name=getattr(node, "node_id", nid))
                 try:
                     fresh[nid] = node.model_copy(update={"fsm": new_fsm})
                 except Exception:
@@ -770,8 +722,7 @@ class AgentsFlow(PersistenceMixin):
             cls = NODE_REGISTRY.get(node_type)
             if cls is None:
                 raise ValueError(
-                    f"Unknown node type {node_type!r} in flow {self.name!r}. "
-                    f"Available: {sorted(NODE_REGISTRY)}"
+                    f"Unknown node type {node_type!r} in flow {self.name!r}. " f"Available: {sorted(NODE_REGISTRY)}"
                 )
 
             # Build dependencies and successors from edges.
@@ -821,9 +772,7 @@ class AgentsFlow(PersistenceMixin):
                     dependencies=deps,
                     successors=succs,
                 )
-                fresh[nid] = start_end_node.model_copy(
-                    update={"fsm": AgentTaskMachine(agent_name=nid)}
-                )
+                fresh[nid] = start_end_node.model_copy(update={"fsm": AgentTaskMachine(agent_name=nid)})
             else:
                 # Custom node type: prefer a registered factory so the node can
                 # close over live dependencies (dispatcher, toolkits, …) that a
@@ -940,16 +889,16 @@ class AgentsFlow(PersistenceMixin):
         """
         try:
             # FSM: idle → ready → running
-            node.fsm.schedule()    # idle → ready
-            node.fsm.start()       # ready → running
+            node.fsm.schedule()  # idle → ready
+            node.fsm.start()  # ready → running
             result = await node.execute(ctx, deps)
-            node.fsm.succeed()     # running → completed
+            node.fsm.succeed()  # running → completed
             await queue.put(CompletionEvent(node_id=node.node_id, result=result))
         except BaseException as exc:
             try:
-                node.fsm.fail()    # any → failed
+                node.fsm.fail()  # any → failed
             except Exception:
-                pass               # ignore double-transition errors
+                pass  # ignore double-transition errors
             await queue.put(CompletionEvent(node_id=node.node_id, error=exc))
 
     def _aggregate_result(
@@ -961,8 +910,40 @@ class AgentsFlow(PersistenceMixin):
         failed: set[str],
         edges: Optional[list[Any]] = None,
         durations: Optional[dict[str, float]] = None,
+        *,
+        ctx: Optional[FlowContext] = None,
+        run_started_at: Optional[float] = None,
+        skipped: Optional[set[str]] = None,
     ) -> FlowResult:
         """Build a FlowResult from scheduler state after the main loop exits.
+
+        **Output shape contract (normative, FEAT-447 G4).** ``FlowResult.output``
+        is polymorphic and its shape is decided here, by how many *leaf* nodes
+        the run actually executed:
+
+        * exactly one executed leaf -> that leaf's **scalar** output (unwrapped
+          from its ``AgentNode.execute()`` envelope);
+        * a fan-out of two or more executed leaves -> a ``dict[node_id, Any]``
+          of each leaf's scalar output;
+        * no executed leaf (empty graph, or every leaf failed/skipped) -> an
+          empty dict ``{}`` -- that case falls into the fan-out branch with
+          nothing to collect. Pre-existing behaviour, left unchanged here
+          because normalising it to ``None`` would break an existing field's
+          contract; use ``status`` / ``metadata["leaves"]`` to detect it.
+
+        The node_ids that produced ``output`` are echoed in
+        ``metadata["leaves"]``. This polymorphism is deliberate and pinned by
+        tests -- see :attr:`FlowResult.output`.
+
+        **Timing notes.** ``NodeExecutionInfo.execution_time`` comes from the
+        scheduler's ``durations`` (which include spawn/queue overhead), *not*
+        from the node's own ``envelope["execution_time"]``; the two coexist and
+        measure different spans. Because ``durations[nid]`` is rewritten on
+        every completion event, a retried node reports its **last** attempt.
+        ``total_time`` is measured against ``run_started_at`` on the event
+        loop's monotonic clock -- the same clock the scheduler uses -- so on a
+        **resumed** run it is the wall clock of the resumed *segment*, not of
+        the original run.
 
         Args:
             nodes: All materialized nodes for this run.
@@ -975,12 +956,47 @@ class AgentsFlow(PersistenceMixin):
                 or ``node.successors`` respectively).
             durations: Optional node_id → wall-clock seconds of the last
                 execution attempt, used for ``NodeExecutionInfo.execution_time``.
+            ctx: Optional run context. When supplied, ``nodes`` are ordered by
+                its ``completion_order`` (the true execution order) instead of
+                by set-iteration order. Failed nodes are absent from
+                ``completion_order`` -- ``mark_failed`` does not append -- so
+                they are appended afterwards in sorted order.
+            run_started_at: Optional ``loop.time()`` reading from the start of
+                the run, used for ``total_time``. ``total_time`` stays ``0.0``
+                when it is omitted.
+            skipped: Optional set of skipped node_ids. Reported through
+                ``metadata["skipped"]`` only: ``NodeExecutionInfo.status`` is a
+                closed literal with no ``"skipped"`` member, so skipped nodes
+                deliberately get no ``NodeExecutionInfo`` entry.
 
         Returns:
-            Populated FlowResult.
+            Populated FlowResult. ``summary`` is intentionally left empty --
+            ``AgentsFlow`` does not inherit ``SynthesisMixin``; synthesis stays
+            opt-in through ``synthesize_results``.
         """
+        # Deterministic node ordering (FEAT-447 G3). `completed | failed` is a
+        # set union, so iterating it directly discards execution order and
+        # varies with string hashing across processes. `ctx.completion_order`
+        # carries the true order; `mark_failed` does NOT append to it, so the
+        # residue (failures, and anything seeded by a resume) is appended in
+        # sorted order for stability. Without a ctx we still sort rather than
+        # iterate the union -- it costs nothing and removes the hash-order
+        # nondeterminism unconditionally.
+        terminal: set[str] = completed | failed
+        ordered: list[str] = []
+        if ctx is not None:
+            seen: set[str] = set()
+            for nid in ctx.completion_order:
+                if nid in terminal and nid not in seen:
+                    ordered.append(nid)
+                    seen.add(nid)
+            ordered.extend(sorted(terminal - seen))
+        else:
+            ordered = sorted(terminal)
+
         node_infos = []
-        for nid in completed | failed:
+        execution_log: list[dict[str, Any]] = []
+        for nid in ordered:
             node = nodes[nid]
             resp = results.get(nid)
             err = errors.get(nid)
@@ -995,6 +1011,15 @@ class AgentsFlow(PersistenceMixin):
                 error=str(err) if err else None,
             )
             node_infos.append(info)
+            execution_log.append(
+                {
+                    "node_id": info.node_id,
+                    "node_name": info.node_name,
+                    "status": info.status,
+                    "execution_time": info.execution_time,
+                    "error": info.error,
+                }
+            )
 
         # Identify leaf nodes: nodes with no outgoing edges to known nodes.
         # Explicit/definition modes use their edge lists; legacy programmatic
@@ -1013,18 +1038,15 @@ class AgentsFlow(PersistenceMixin):
                 # taken — executed nodes with no executed successor.
                 outgoing: dict[str, set[str]] = {}
                 for edge in edge_list:
-                    targets = (
-                        [edge.to] if isinstance(edge.to, str) else list(edge.to)
-                    )
+                    targets = [edge.to] if isinstance(edge.to, str) else list(edge.to)
                     outgoing.setdefault(edge.from_, set()).update(targets)
-                leaves = [
-                    nid for nid in results
-                    if not any(t in results for t in outgoing.get(nid, ()))
-                ]
+                leaves = [nid for nid in results if not any(t in results for t in outgoing.get(nid, ()))]
         else:
             # Leaf = node with empty successors set.
             leaves = [nid for nid, node in nodes.items() if not node.successors]
 
+        # node_ids that actually contributed to `output` (echoed in metadata).
+        output_leaves: list[str] = []
         if len(leaves) == 1 and leaves[0] in results:
             leaf_result = results[leaves[0]]
             # AgentNode.execute() returns a dict with an "output" key holding
@@ -1034,6 +1056,7 @@ class AgentsFlow(PersistenceMixin):
                 output: Any = leaf_result["output"]
             else:
                 output = leaf_result
+            output_leaves = [leaves[0]]
         else:
             # Multi-leaf fan-out: collect each leaf's scalar output.
             output_map: dict[str, Any] = {}
@@ -1042,11 +1065,49 @@ class AgentsFlow(PersistenceMixin):
                     lr = results[nid]
                     output_map[nid] = lr["output"] if isinstance(lr, dict) and "output" in lr else lr
             output = output_map
+            output_leaves = list(output_map)
 
         from ..core.types import FlowStatus
 
         status_str = determine_run_status(len(completed), len(failed))
         flow_status = FlowStatus(status_str)
+
+        # Run wall clock (FEAT-447 G2). The scheduler measures `run_started_at`
+        # on the event loop's monotonic clock, so it must be read back from the
+        # same clock -- mixing in time.time()/time.monotonic() would compare
+        # unrelated epochs.
+        total_time = 0.0
+        if run_started_at is not None:
+            try:
+                total_time = max(0.0, asyncio.get_running_loop().time() - run_started_at)
+            except RuntimeError:
+                # Called outside a running loop (only reachable from a direct
+                # synchronous call): the scheduler's epoch is unavailable, so
+                # leave total_time at its default rather than invent a figure.
+                self.logger.debug(
+                    "No running loop while aggregating %r; total_time left at 0.0",
+                    self.name,
+                )
+
+        # `mode` uses the flow's own internal vocabulary. Note this is a
+        # DIFFERENT axis from AgentCrew's metadata['mode']
+        # ('sequential'/'parallel'/'loop'), which describes an execution
+        # strategy rather than how the graph was declared.
+        if edges is not None:
+            mode = "explicit"
+        elif self._definition is not None:
+            mode = "definition"
+        else:
+            mode = "legacy"
+
+        metadata: dict[str, Any] = {
+            "mode": mode,
+            "node_count": len(nodes),
+            "completed_count": len(completed),
+            "failed_count": len(failed),
+            "skipped": sorted(skipped) if skipped else [],
+            "leaves": output_leaves,
+        }
 
         return FlowResult(
             output=output,
@@ -1054,6 +1115,9 @@ class AgentsFlow(PersistenceMixin):
             responses=dict(results),
             errors={k: str(v) for k, v in errors.items()},
             status=flow_status,
+            execution_log=execution_log,
+            total_time=total_time,
+            metadata=metadata,
         )
 
     async def run_flow(
@@ -1223,8 +1287,7 @@ class AgentsFlow(PersistenceMixin):
         """
         if self._checkpointer is None:
             raise ValueError(
-                f"AgentsFlow {self.name!r} has no active checkpointer; "
-                "suspend() requires checkpoint=True."
+                f"AgentsFlow {self.name!r} has no active checkpointer; " "suspend() requires checkpoint=True."
             )
         if self._active_ctx is None:
             raise ValueError(
@@ -1274,9 +1337,7 @@ class AgentsFlow(PersistenceMixin):
                 lease for ``flow_id``.
         """
         ephemeral_store = get_checkpoint_store(store)
-        durable: Optional[CheckpointStore] = (
-            get_checkpoint_store(durable_store) if durable_store is not None else None
-        )
+        durable: Optional[CheckpointStore] = get_checkpoint_store(durable_store) if durable_store is not None else None
 
         checkpoint: Optional[FlowCheckpoint] = None
         if durable is not None:
@@ -1294,11 +1355,7 @@ class AgentsFlow(PersistenceMixin):
         if checkpoint is None:
             raise CheckpointNotFoundError(
                 f"No checkpoint found for flow_id={flow_id!r}"
-                + (
-                    f", checkpoint_id={checkpoint_id}"
-                    if checkpoint_id is not None
-                    else " (no latest checkpoint)"
-                )
+                + (f", checkpoint_id={checkpoint_id}" if checkpoint_id is not None else " (no latest checkpoint)")
             )
 
         if checkpoint.lossy:
@@ -1345,14 +1402,10 @@ class AgentsFlow(PersistenceMixin):
         seed_ctx.shared_data.update(checkpoint.context.shared_data)
 
         decoded_results = {
-            node_id: serializer.from_safe(value)
-            for node_id, value in checkpoint.context.results.items()
+            node_id: serializer.from_safe(value) for node_id, value in checkpoint.context.results.items()
         }
         decoded_responses = (
-            {
-                node_id: serializer.from_safe(value)
-                for node_id, value in checkpoint.context.responses.items()
-            }
+            {node_id: serializer.from_safe(value) for node_id, value in checkpoint.context.responses.items()}
             if checkpoint.context.responses is not None
             else {}
         )
@@ -1406,8 +1459,7 @@ class AgentsFlow(PersistenceMixin):
             for edge in edges:
                 if edge.from_ not in nodes or edge.to not in nodes:
                     raise ValueError(
-                        f"Edge {edge.from_!r} → {edge.to!r} references a "
-                        f"node not added to flow {self.name!r}"
+                        f"Edge {edge.from_!r} → {edge.to!r} references a " f"node not added to flow {self.name!r}"
                     )
         else:
             # Build a synthetic edge list from node.successors / node.dependencies.
@@ -1419,7 +1471,7 @@ class AgentsFlow(PersistenceMixin):
 
         completion_queue: asyncio.Queue[CompletionEvent] = asyncio.Queue()
         attempts: dict[str, int] = {nid: 0 for nid in nodes}
-        tasks: dict[str, asyncio.Task] = {}   # type: ignore[type-arg]
+        tasks: dict[str, asyncio.Task] = {}  # type: ignore[type-arg]
         # Resume (FEAT-399): seed from ctx.completed_tasks/.results when the
         # caller pre-populated a FlowContext (AgentsFlow.resume()) — a no-op
         # (identical to the prior `set()`/`{}`) for every ordinary run, where
@@ -1434,7 +1486,7 @@ class AgentsFlow(PersistenceMixin):
         loop = asyncio.get_running_loop()
         run_started_at = loop.time()
         started_at: dict[str, float] = {}
-        durations: dict[str, float] = {}      # node_id → seconds (last attempt)
+        durations: dict[str, float] = {}  # node_id → seconds (last attempt)
 
         # Incoming-edge index (explicit mode joins + derived dependencies).
         incoming: dict[str, list[Any]] = {nid: [] for nid in nodes}
@@ -1460,8 +1512,7 @@ class AgentsFlow(PersistenceMixin):
             # cycle still raises — those edges have no predicate to bound
             # iteration.
             unique_sources = {
-                nid: {e.from_ for e in in_edges if e.condition != "on_condition"}
-                for nid, in_edges in incoming.items()
+                nid: {e.from_ for e in in_edges if e.condition != "on_condition"} for nid, in_edges in incoming.items()
             }
             in_degree = {nid: len(srcs) for nid, srcs in unique_sources.items()}
             succ_sets: dict[str, set[str]] = {}
@@ -1478,9 +1529,7 @@ class AgentsFlow(PersistenceMixin):
                     if in_degree[tgt] == 0:
                         frontier.append(tgt)
             if visited < len(nodes):
-                cyclic = sorted(
-                    nid for nid, deg in in_degree.items() if deg > 0
-                )
+                cyclic = sorted(nid for nid, deg in in_degree.items() if deg > 0)
                 raise ValueError(
                     f"Flow {self.name!r} contains a cycle: nodes {cyclic} "
                     "are never reachable from an entry node. Break the "
@@ -1593,8 +1642,7 @@ class AgentsFlow(PersistenceMixin):
                     _back_edge_ids.add(id(edge))
 
         _forward_in_edges: Dict[str, List[Any]] = {
-            nid: [e for e in in_edges if id(e) not in _back_edge_ids]
-            for nid, in_edges in incoming.items()
+            nid: [e for e in in_edges if id(e) not in _back_edge_ids] for nid, in_edges in incoming.items()
         }
 
         def _deps_for(node_id: str) -> DependencyResults:
@@ -1604,24 +1652,19 @@ class AgentsFlow(PersistenceMixin):
                 dep_ids |= set(nodes[node_id].dependencies)
             else:
                 dep_ids = set(nodes[node_id].dependencies)
-            return {
-                dep: str(results[dep])
-                for dep in dep_ids
-                if dep in results
-            }
+            return {dep: str(results[dep]) for dep in dep_ids if dep in results}
 
         def _spawn(node_id: str) -> None:
             nonlocal active_count
             node = nodes[node_id]
             deps = _deps_for(node_id)
             started_at[node_id] = loop.time()
-            tasks[node_id] = asyncio.create_task(
-                self._run_node(node, ctx, deps, completion_queue)
-            )
+            tasks[node_id] = asyncio.create_task(self._run_node(node, ctx, deps, completion_queue))
             active_count += 1
             self.logger.info("Dispatched node %r", node_id)
             self._notify_node_event(
-                "node_started", node_id,
+                "node_started",
+                node_id,
                 {"flow": self.name, "context": ctx},
             )
 
@@ -1656,7 +1699,9 @@ class AgentsFlow(PersistenceMixin):
                     except Exception as exc:  # noqa: BLE001 - predicate guard
                         self.logger.warning(
                             "Predicate callable failed for edge %r → %r: %s",
-                            edge.from_, edge.to, exc,
+                            edge.from_,
+                            edge.to,
+                            exc,
                         )
                         return False
                 try:
@@ -1708,10 +1753,7 @@ class AgentsFlow(PersistenceMixin):
                 for tgt, in_edges in _forward_in_edges.items():
                     if not in_edges:
                         continue  # entry node — dispatched at start
-                    if (
-                        tgt in completed or tgt in failed
-                        or tgt in skipped or tgt in tasks
-                    ):
+                    if tgt in completed or tgt in failed or tgt in skipped or tgt in tasks:
                         continue
                     if not all(_edge_resolved(e) for e in in_edges):
                         continue
@@ -1726,11 +1768,10 @@ class AgentsFlow(PersistenceMixin):
                             nodes[tgt].fsm.block()
                         except Exception:  # noqa: BLE001 - telemetry only
                             pass
-                        self.logger.info(
-                            "Node %r skipped (no incoming edge fired)", tgt
-                        )
+                        self.logger.info("Node %r skipped (no incoming edge fired)", tgt)
                         self._notify_node_event(
-                            "node_skipped", tgt,
+                            "node_skipped",
+                            tgt,
                             {"flow": self.name, "context": ctx},
                         )
                     progress = True
@@ -1768,15 +1809,15 @@ class AgentsFlow(PersistenceMixin):
                     tasks.pop(member, None)
                     old_node = nodes[member]
                     try:
-                        nodes[member] = old_node.model_copy(
-                            update={"fsm": AgentTaskMachine(agent_name=member)}
-                        )
+                        nodes[member] = old_node.model_copy(update={"fsm": AgentTaskMachine(agent_name=member)})
                     except Exception:  # noqa: BLE001 - fallback: keep old node
                         pass
                 self.logger.info(
-                    "Repair-loop retry: edge %r -> %r fired; reset %s and "
-                    "re-dispatched %r",
-                    src, tgt, sorted(members), tgt,
+                    "Repair-loop retry: edge %r -> %r fired; reset %s and " "re-dispatched %r",
+                    src,
+                    tgt,
+                    sorted(members),
+                    tgt,
                 )
                 _spawn(tgt)
                 return True
@@ -1784,7 +1825,8 @@ class AgentsFlow(PersistenceMixin):
 
         # Run-level bracket: flow_started precedes every node_started.
         self._notify_node_event(
-            "flow_started", "",
+            "flow_started",
+            "",
             {"flow": self.name, "context": ctx, "node_count": len(nodes)},
         )
 
@@ -1822,10 +1864,7 @@ class AgentsFlow(PersistenceMixin):
                 while progress:
                     progress = False
                     for nid, node in nodes.items():
-                        if (
-                            nid in completed or nid in failed
-                            or nid in skipped or nid in tasks
-                        ):
+                        if nid in completed or nid in failed or nid in skipped or nid in tasks:
                             continue
                         deps = node.dependencies
                         if deps and all(d in completed for d in deps):
@@ -1847,7 +1886,9 @@ class AgentsFlow(PersistenceMixin):
                     attempts[nid] += 1
                     self.logger.info(
                         "Retrying node %r (attempt %d/%d)",
-                        nid, attempts[nid], max_r,
+                        nid,
+                        attempts[nid],
+                        max_r,
                     )
                     # Replace the node with a fresh copy (new FSM in idle state)
                     # so that _run_node can call fsm.schedule() without hitting
@@ -1863,10 +1904,27 @@ class AgentsFlow(PersistenceMixin):
                 errors[nid] = event.error
                 failed.add(nid)
                 if isinstance(event.error, Exception):
-                    ctx.mark_failed(nid, event.error)
+                    # FEAT-447: `metadata=` (an existing parameter) fills
+                    # ctx.node_metadata, so a context inspected after the run
+                    # -- including a checkpointed/resumed one -- carries the
+                    # same fidelity as the FlowResult.
+                    ctx.mark_failed(
+                        nid,
+                        event.error,
+                        metadata=build_node_metadata(
+                            node_id=nid,
+                            agent=getattr(nodes[nid], "agent", None),
+                            response=None,
+                            output=None,
+                            execution_time=durations[nid],
+                            status="failed",
+                            error=str(event.error),
+                        ),
+                    )
                 self.logger.warning("Node %r failed: %s", nid, event.error)
                 self._notify_node_event(
-                    "node_failed", nid,
+                    "node_failed",
+                    nid,
                     {
                         "flow": self.name,
                         "context": ctx,
@@ -1878,10 +1936,32 @@ class AgentsFlow(PersistenceMixin):
             else:
                 results[nid] = event.result
                 completed.add(nid)
-                ctx.mark_completed(nid, result=event.result)
+                # FEAT-447: `response=` carries the raw envelope verbatim (NOT
+                # pre-unwrapped -- consumers read scalars through
+                # FlowResult.node_results / ctx-level readers), and `metadata=`
+                # fills ctx.node_metadata. Both parameters already existed;
+                # AgentsFlow simply never passed them. The NodeExecutionInfo is
+                # deliberately built here as well as in _aggregate_result --
+                # the two paths stay independent rather than one consuming the
+                # other's state.
+                ctx.mark_completed(
+                    nid,
+                    result=event.result,
+                    response=event.result,
+                    metadata=build_node_metadata(
+                        node_id=nid,
+                        agent=getattr(nodes[nid], "agent", None),
+                        response=event.result,
+                        output=event.result,
+                        execution_time=durations[nid],
+                        status="completed",
+                        error=None,
+                    ),
+                )
                 self.logger.info("Node %r completed", nid)
                 self._notify_node_event(
-                    "node_completed", nid,
+                    "node_completed",
+                    nid,
                     {
                         "flow": self.name,
                         "context": ctx,
@@ -1921,12 +2001,23 @@ class AgentsFlow(PersistenceMixin):
                         _spawn(tgt)
 
         aggregated = self._aggregate_result(
-            nodes, results, errors, completed, failed,
+            nodes,
+            results,
+            errors,
+            completed,
+            failed,
             edges=edges if explicit_mode else None,
             durations=durations,
+            # FEAT-447: hand the aggregator what the scheduler already
+            # measured -- true completion order, the run clock, and the
+            # skipped set -- instead of discarding it.
+            ctx=ctx,
+            run_started_at=run_started_at,
+            skipped=skipped,
         )
         self._notify_node_event(
-            "flow_completed", "",
+            "flow_completed",
+            "",
             {
                 "flow": self.name,
                 "context": ctx,
@@ -1981,9 +2072,7 @@ class DecisionNode(Node):
     def model_post_init(self, __context: Any) -> None:
         """Auto-create FSM and call parent hook."""
         if self.fsm is None:
-            object.__setattr__(
-                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
-            )
+            object.__setattr__(self, "fsm", AgentTaskMachine(agent_name=self.node_id))
 
     @property
     def name(self) -> str:
@@ -2057,9 +2146,7 @@ class InteractiveDecisionFlowNode(Node):
     def model_post_init(self, __context: Any) -> None:
         """Auto-create FSM and call parent hook."""
         if self.fsm is None:
-            object.__setattr__(
-                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
-            )
+            object.__setattr__(self, "fsm", AgentTaskMachine(agent_name=self.node_id))
 
     @property
     def name(self) -> str:
@@ -2136,9 +2223,7 @@ class SynthesisNode(Node):
     def model_post_init(self, __context: Any) -> None:
         """Auto-create FSM and call parent hook."""
         if self.fsm is None:
-            object.__setattr__(
-                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
-            )
+            object.__setattr__(self, "fsm", AgentTaskMachine(agent_name=self.node_id))
 
     @property
     def name(self) -> str:
