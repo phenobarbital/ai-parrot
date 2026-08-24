@@ -274,10 +274,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Extracted `_stream_with_limit` and `_build_auth_context` into a new
+`api/_upload_helpers.py`; `api/uploads.py` now imports them (no behavior
+change — full REST upload integration suite + `test_setup_form_api_rest.py`
+still pass, 23/23). Implemented `handle_file_upload` in `api/file_upload.py`
+covering: field/type resolution (404 for non-upload types), MIME (415) and
+size (413) enforcement via `_stream_with_limit`, single-cardinality
+multi-file rejection (400), blob persistence, SHA-256 checksum, inline
+`data_url` under `max_inline_size_bytes`, thumbnail generation for
+`image/*` content types via a lazily-cached app-level `ThumbnailService`
+(mirrors the `_get_blob_storage` lazy-singleton pattern), and
+`X-Parrot-Prior-Blob-Ref` cleanup. Added 11 new tests in
+`test_file_upload_handler.py` using the same aiohttp-test-client pattern as
+`test_upload_rest.py`. Basic chunked upload implemented per spec: chunks
+(tagged via `X-Parrot-Upload-Offset`/`X-Parrot-Upload-Length`) are each
+persisted as their own blob and reassembled via `blob_storage.get()` on the
+final chunk, tracked in a process-local `_CHUNK_BUFFERS` dict keyed by
+`(form_uid, field_uid)` — not covered by an automated test in this task
+(no test scaffold provided for it in the spec's Test Specification), but
+implemented per the "Basic chunked upload support" scope note.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- `thumbnail_url` is populated with the *blob_ref* returned by
+  `ThumbnailService.generate()`, not an HTTP-servable URL — no
+  thumbnail-serving route exists in this feature's module list (routes.py
+  only registers `/file-upload`, per TASK-2446). This matches how
+  `blob_ref` itself is a storage reference rather than a URL elsewhere in
+  the codebase. Flagging for spec/PR review in case a dedicated thumbnail
+  GET route is expected in a follow-up task.
+- Chunked-upload content-type/filename derivation uses
+  `X-Parrot-Upload-Content-Type` / `X-Parrot-Upload-Filename` header
+  fallbacks (not specified verbatim in the spec, which only names the
+  Offset/Length headers) since the reassembled body has no multipart part
+  to source these from.
