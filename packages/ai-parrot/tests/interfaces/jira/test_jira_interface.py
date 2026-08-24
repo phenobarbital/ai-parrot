@@ -211,3 +211,94 @@ class TestReadOnlySurface:
         a = JiraInterface.parse_issue(raw_issue, base_url=BASE)
         b = parse_mod.parse_issue(raw_issue, base_url=BASE)
         assert a.model_dump_json() == b.model_dump_json()
+
+
+class _FakeResultList(list):
+    """A `list` that also carries `nextPageToken`/`isLast`, mirroring
+    pycontribs' `ResultList` shape closely enough for these tests."""
+
+    nextPageToken = None
+    isLast = True
+
+
+class FakeEnhancedJIRA:
+    """Fake `jira.JIRA` exercising `projects()`, `issue()` and
+    `enhanced_search_issues()` — the JiraToolkit delegation seam
+    (TASK-2402)."""
+
+    def __init__(self, *, projects=None, issue=None, pages=None):
+        self._projects = projects or []
+        self._issue = issue
+        self.pages = list(pages or [])
+        self.enhanced_calls = []
+
+    def projects(self):
+        return self._projects
+
+    def issue(self, key, fields=None, expand=None):
+        return self._issue
+
+    def enhanced_search_issues(self, jql, *, maxResults, fields, expand, nextPageToken):
+        self.enhanced_calls.append({"fields": fields, "nextPageToken": nextPageToken})
+        idx = len(self.enhanced_calls) - 1
+        batch = self.pages[idx] if idx < len(self.pages) else []
+        return _FakeResultList(batch)
+
+
+class TestDelegationSeamAdditions:
+    """TASK-2402 additions: attach_client, list_projects,
+    fetch_issue_object, fetch_issues — the thin, object-returning
+    transport primitives JiraToolkit delegates through."""
+
+    def test_attach_client_bypasses_own_resolution(self):
+        iface = JiraInterface(auth_type="token_auth", token="t", verify_credentials=False)
+        fake = object()
+        iface.attach_client(fake)
+        assert asyncio.run(iface._ensure_client()) is fake
+
+    def test_attach_client_wins_even_in_oauth2_3lo_mode(self):
+        """The delegation seam JiraToolkit relies on: an attached client
+        always wins, bypassing this interface's own credential_resolver
+        resolution entirely — regardless of auth_type."""
+        iface = JiraInterface(auth_type="oauth2_3lo", verify_credentials=False)
+        fake = object()
+        iface.attach_client(fake)
+        assert asyncio.run(iface._ensure_client()) is fake
+
+    def test_list_projects_no_probe_on_empty(self):
+        """Unlike get_projects(), list_projects() never probes /myself —
+        JiraToolkit already owns its own probe/error-message construction."""
+        iface = JiraInterface(auth_type="token_auth", token="t", verify_credentials=False)
+        iface.attach_client(FakeEnhancedJIRA(projects=[]))
+        assert asyncio.run(iface.list_projects()) == []
+
+    def test_fetch_issue_object_returns_raw_object_unprojected(self):
+        iface = JiraInterface(auth_type="token_auth", token="t", verify_credentials=False)
+        sentinel = object()
+        iface.attach_client(FakeEnhancedJIRA(issue=sentinel))
+        result = asyncio.run(iface.fetch_issue_object("NAV-1"))
+        assert result is sentinel
+
+    def test_fetch_issues_empty_string_fields_degrades_to_none(self):
+        """Adversarial review finding: `fields=""` must degrade to `None`
+        (every field), matching JiraToolkit's original inline
+        `fields.split(',') if fields else None` — not to `['']`."""
+        client = FakeEnhancedJIRA(pages=[[]])
+        iface = JiraInterface(auth_type="token_auth", token="t", verify_credentials=False)
+        iface.attach_client(client)
+        asyncio.run(iface.fetch_issues("project = NAV", fields=""))
+        assert client.enhanced_calls[0]["fields"] is None
+
+    def test_fetch_issues_comma_string_fields_still_splits(self):
+        client = FakeEnhancedJIRA(pages=[[]])
+        iface = JiraInterface(auth_type="token_auth", token="t", verify_credentials=False)
+        iface.attach_client(client)
+        asyncio.run(iface.fetch_issues("project = NAV", fields="key,status"))
+        assert client.enhanced_calls[0]["fields"] == ["key", "status"]
+
+    def test_fetch_issues_list_fields_passthrough(self):
+        client = FakeEnhancedJIRA(pages=[[]])
+        iface = JiraInterface(auth_type="token_auth", token="t", verify_credentials=False)
+        iface.attach_client(client)
+        asyncio.run(iface.fetch_issues("project = NAV", fields=["key", "status"]))
+        assert client.enhanced_calls[0]["fields"] == ["key", "status"]

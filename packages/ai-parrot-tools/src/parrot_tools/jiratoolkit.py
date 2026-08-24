@@ -1103,10 +1103,21 @@ class JiraToolkit(AbstractToolkit):
         if self.__read_interface is None:
             from parrot.interfaces.jira import JiraInterface
 
+            # Deliberately NOT passing this toolkit's credential_resolver
+            # through: JiraInterface's own oauth2_3lo resolution calls
+            # `credential_resolver.resolve()` with zero arguments, while
+            # this toolkit's resolver contract requires `resolve(channel,
+            # user_id)` (see _pre_execute above) — an arity mismatch
+            # (TASK-2402 adversarial review finding). attach_client() below
+            # always wins when self.jira is already set, so the interface's
+            # own 3LO path is never meant to run for this delegation seam;
+            # leaving credential_resolver unset means that path fails with
+            # a clear JiraAuthError ("requires a credential_resolver")
+            # instead of a confusing TypeError if it is ever reached (e.g.
+            # a read method called directly, bypassing _pre_execute).
             self.__read_interface = JiraInterface(
                 server_url=self.server_url,
                 auth_type=self.auth_type,
-                credential_resolver=self.credential_resolver,
                 request_timeout=self.request_timeout,
                 verify_credentials=False,
             )
@@ -1297,9 +1308,20 @@ class JiraToolkit(AbstractToolkit):
         Works in Jira Cloud and typically in DC/Server too (depending on API version).
 
         Transport delegated to JiraInterface (FEAT-454, G1) — its
-        ``get_changelog`` mirrors this exact pagination loop verbatim.
+        ``get_changelog`` mirrors this exact pagination loop verbatim. A
+        ``JiraAuthError`` here is translated to this toolkit's own
+        exception type so callers never see the interface's error
+        taxonomy — this method has no try/except of its own (matching its
+        pre-refactor shape), and its only caller (``jira_get_issue``'s
+        ``include_history`` block) runs after that method's own
+        try/except has already exited.
         """
-        return await self._read_interface.get_changelog(issue, page_size=page_size)
+        from parrot.interfaces.jira import JiraAuthError
+
+        try:
+            return await self._read_interface.get_changelog(issue, page_size=page_size)
+        except JiraAuthError as exc:
+            raise JiraAuthenticationError(str(exc)) from exc
 
     # -----------------------------
     # Tools (public async methods)

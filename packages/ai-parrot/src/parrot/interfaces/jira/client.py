@@ -746,7 +746,15 @@ class JiraInterface:
             A list of raw pycontribs ``Issue`` objects, not projected.
         """
         client = await self._ensure_client()
-        field_list = fields.split(",") if isinstance(fields, str) else fields
+        # A truthiness check on the *string* case only — matches
+        # JiraToolkit's original inline `fields.split(',') if fields else
+        # None` exactly, so an empty string degrades to None (every field),
+        # not to `['']` (TASK-2402 adversarial review finding). A list is
+        # passed through unchanged for callers that already have one.
+        if isinstance(fields, str):
+            field_list = fields.split(",") if fields else None
+        else:
+            field_list = fields
 
         def _run_page(page_token: str | None, current_max: int):
             return client.enhanced_search_issues(
