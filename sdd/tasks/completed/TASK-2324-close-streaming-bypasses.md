@@ -145,10 +145,88 @@ class TestStreamExclusions:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Removed all four `exclude_list.append('/bots/*/stream/...')`
+calls from `handlers/stream.py::configure_routes` (the now-unused
+`from navigator_auth.conf import exclude_list` import was also removed);
+kept the four route registrations byte-identical (verified via a live
+`app.router.routes()` dump — all 4 routes still registered, same
+methods/paths). Did NOT add `@is_authenticated()` or any session/user
+read inside the four stream methods (`stream_sse`, `stream_ndjson`,
+`stream_chunked`, `stream_websocket`) — none of them currently use the
+caller's identity for any logic (they only read `bot_id` from the URL
+and `prompt`/kwargs from the body), and the task's own "Does NOT Exist"
+list says to add the decorator "ONLY if the integration test in
+TASK-2325 shows the middleware alone does not reject anonymous callers."
+Enforcement now comes entirely from navigator-auth's middleware once the
+route is no longer excluded (verified against
+`navigator_auth/middlewares/abstract.py:85`, which raises
+`web.HTTPUnauthorized`). Left this in place for TASK-2325 to prove/
+adjust with its integration suite rather than pre-emptively guessing at
+per-stream session-read requirements.
+`handlers/user.py::UserSocketManager.__init__`: `exclude_list.append(
+route_prefix)` is now gated behind
+`if not PARROT_SAAS_MODE and route_prefix not in exclude_list:`, mirroring
+the conditional-append pattern at `autonomous/orchestrator.py:363-365`.
+`PARROT_SAAS_MODE` is imported lazily inside `__init__` (not at module
+top) so tests can `monkeypatch.setattr(parrot.conf, "PARROT_SAAS_MODE",
+...)` before constructing the manager and have it observed immediately —
+same pattern as TASK-2322's `_saas_mode()` indirection.
+`pytest packages/ai-parrot-server/tests/unit/test_stream_auth.py -v` —
+4 passed (all from the Test Specification). Tests assert against
+`exclude_list` contents (never route behavior), per the Key Constraint,
+using an autouse fixture that snapshots/restores the shared, mutable
+`exclude_list` around each test to avoid cross-test pollution.
+Ruff: before/after diff against `dev` — stream.py flat at 14 errors
+(pre-existing, untouched by my edits); user.py flat at 59 (one
+transient new `RUF100` from a `# noqa: PLC0415` I added and then removed
+since that check isn't enabled in this project's ruff config); new test
+file clean after `ruff check --fix`.
+Confirmed NOT touched (per "NOT in scope"):
+`autonomous/orchestrator.py:363-365` (`/autonomous/admin`),
+`mcp/parrot_server.py` excludes, `services/whatsapp.py` excludes, and
+app.py's `/a2a`, `/.well-known/*`, `/api/messages`, `/api/msagentsdk/*`
+excludes — grep-verified zero changes to any of those files.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none — the "verify the four stream methods
+obtain session/user... add a read where needed" scope note was
+evaluated and found not-needed (no current logic depends on caller
+identity); documented above rather than adding speculative code.
 
-**Deviations from spec**: none
+---
+
+### Addendum (post-implementation code-review, before push)
+
+The FEAT-446 adversarial code review flagged (🟠 IMPORTANT, "plausible
+rather than proven") that closing `stream_websocket()`'s exclude-list
+entry might have made its pre-existing `Sec-WebSocket-Protocol: jwt,
+<token>` auth convention unreachable — added specifically because
+browsers can't set custom headers (e.g. `Authorization`) on a WS
+upgrade request. **Verified TRUE**, not just plausible: traced
+navigator-auth's `auth_middleware`/`verify_exceptions`
+(`.venv/.../navigator_auth/auth.py:833-1040`) and `IdP.get_payload()`
+(`backends/idp/__init__.py:255`) — the global middleware only reads
+the `Authorization` header or a session cookie; it has zero awareness
+of `Sec-WebSocket-Protocol`. Wrote a probe test confirming a WS request
+carrying ONLY a valid subprotocol JWT (no cookie, no Authorization
+header) got `401` before this fix — a genuine regression this task's
+own exclude-list removal introduced for that one auth path (browser
+clients with an existing session cookie were unaffected, since cookies
+ARE sent automatically on same-origin WS upgrades).
+
+Fixed with a new `_ws_subprotocol_preauth_middleware` on
+`StreamHandler`, registered via `app.middlewares.insert(0, ...)` in
+`configure_routes()` (guaranteed to run before navigator-auth's
+`auth_middleware` regardless of `AuthHandler.setup()` call order,
+since that method only ever *appends*). For the WS route only, it
+validates the subprotocol token with the exact check
+`stream_websocket()` already performed, and on success sets
+`request["authenticated"] = True` — the same signal navigator-auth's
+own `verify_exceptions()` already treats as "skip my check," so no
+navigator-auth internals were touched. Verified with 4 new integration
+tests in `test_saas_auth_hardening.py::TestWsSubprotocolPreauth`: valid
+subprotocol-only token now passes (no longer 401); no credentials at
+all still 401; an invalid subprotocol token still 401; other routes
+(e.g. `/stream/sse`) are unaffected by a stray subprotocol header.
+Ruff flat at 14 (dev baseline), zero new lint debt.

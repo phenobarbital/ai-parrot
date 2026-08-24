@@ -78,8 +78,16 @@ class UserSocketManager(WebSocketManager):
             **kwargs: Additional arguments passed to WebSocketManager
         """
         super().__init__(app, route_prefix=route_prefix, **kwargs)
-        # exclude from authentication middleware
-        exclude_list.append(route_prefix)
+        # FEAT-446 (TASK-2324): flag-gated exclusion from the auth
+        # middleware. Browser WebSocket clients can't always set an
+        # Authorization header on the WS upgrade request, so `/ws/user`
+        # stays excluded (open) in legacy mode; under
+        # `PARROT_SAAS_MODE=true` the exclusion is skipped and the route
+        # is closed to anonymous callers (first-class WS auth is deferred
+        # to S1 — spec §8 open question).
+        from parrot.conf import PARROT_SAAS_MODE
+        if not PARROT_SAAS_MODE and route_prefix not in exclude_list:
+            exclude_list.append(route_prefix)
         self.redis_url = redis_url or REDIS_SERVICES_URL
         self.redis: Optional[aioredis.Redis] = None
         self.pool: Optional[aioredis.ConnectionPool] = None

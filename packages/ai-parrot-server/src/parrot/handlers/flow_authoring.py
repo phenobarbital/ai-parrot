@@ -26,6 +26,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 from aiohttp import web
 from navconfig.logging import logging
 from navigator.views import BaseView
+from navigator_auth.decorators import is_authenticated, user_session
 from pydantic import ValidationError
 
 from parrot.bots.flows.authoring import (
@@ -42,6 +43,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from navigator.types import WebApp
 
 
+@is_authenticated()
+@user_session()
 class FlowAuthoringHandler(BaseView):
     """REST handler that authors a workflow from a natural-language request.
 
@@ -49,6 +52,12 @@ class FlowAuthoringHandler(BaseView):
         POST /api/v1/flows/authoring — submit a request (202 + job_id).
         GET  /api/v1/flows/authoring/{job_id} — poll status/progress/result.
         GET  /api/v1/flows/authoring — request schema + the component catalog.
+
+    FEAT-446: every HTTP method requires an authenticated session
+    (mirrors ``tool_catalog.py:231`` / ``special_nodes.py:74``). No tenant
+    resolution here — this handler has no tenant parameter today (spec
+    §3 Module 4 scopes the auth requirement only; PBAC policy for
+    ``flows:author`` is deferred to S5).
     """
 
     _logger_name = "Parrot.FlowAuthoringHandler"

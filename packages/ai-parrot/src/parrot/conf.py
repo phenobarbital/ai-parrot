@@ -97,6 +97,11 @@ ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
 ENABLE_STRUCTURED_OUTPUT_TRANSPORT = config.getboolean(
     "ENABLE_STRUCTURED_OUTPUT_TRANSPORT", fallback=False
 )
+# FEAT-446: SaaS multi-tenant hardening mode. When true, auth/tenant
+# resolution paths that otherwise fail open (PBAC init, tenant fallback
+# to "global") fail closed instead. Defaults to false to preserve legacy
+# single-tenant deployment behavior.
+PARROT_SAAS_MODE = config.getboolean("PARROT_SAAS_MODE", fallback=False)
 
 # Bot Model Table Configuration:
 PARROT_BOTS_TABLE = config.get('PARROT_BOTS_TABLE', fallback='ai_bots')

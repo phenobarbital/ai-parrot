@@ -146,10 +146,72 @@ class TestSetupPbacFailClosed:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Added `PARROT_SAAS_MODE` boolean flag (`config.getboolean`,
+fallback `False`) next to the other `ENABLE_*` flags in `conf.py`. In
+`pbac.py`, extracted a `_fail_open_or_closed(reason)` helper and routed
+all SIX `return None, None, None` fail-open sites through it (the task's
+Scope named three by line number as examples but said "every path that
+today returns (None, None, None)" — the codebase actually has six such
+sites: ImportError, missing/invalid policy dir, policy-load error,
+evaluator-load error, PDP construction error, PDP.setup(app) error). When
+`PARROT_SAAS_MODE=True`, each raises `RuntimeError` naming the original
+failure cause; when `False`, behavior is byte-for-byte unchanged
+(`(None, None, None)`). Docstring updated to document both modes.
+`setup_pbac`'s call signature at `app.py:343` was not touched (verified
+via grep, no fail-closed kwarg added — gated on the conf flag only, per
+Key Constraints). Added
+`packages/ai-parrot/tests/unit/auth/test_pbac_fail_closed.py` — 6 tests
+covering flag default/env-parsing and fail-open vs fail-closed for both
+the missing-policy-dir and ImportError paths.
+Verified no import cycle: `parrot.conf` has zero `parrot.*` imports.
+`ruff check --fix` applied to the new test file only (clean); `pbac.py`
+and `conf.py` already carried pre-existing, unrelated ruff findings
+(BLE001 broad-except, I001 import-sort, UP037/UP045 typing-style) before
+this task's edits — confirmed via before/after diff against `dev` — and
+were left untouched per the no-scope-creep rule; my added code reuses
+the same pre-existing style conventions as its surrounding function.
+`pytest packages/ai-parrot/tests/unit/auth/test_pbac_fail_closed.py -v`
+— 6 passed.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Note on running tests in this worktree: the shared venv's editable
+install resolves `parrot.*` back to the main repo's `packages/*/src`
+(not the worktree). Tests were run with `PYTHONPATH` prepended to the
+worktree's own `packages/*/src` directories so the worktree's code was
+actually exercised. The compiled Cython extensions
+(`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`) are
+gitignored build artifacts absent from the worktree checkout; they were
+copied over from the main repo (binary-compatible, untouched by this
+feature) purely to make imports resolve for local test runs — not part
+of the commit.
 
-**Deviations from spec**: none
+**Deviations from spec**: Fail-closed applied to all six fail-open
+return sites in `pbac.py` (only three were named as examples in the
+task's Scope/Acceptance-Criteria line numbers); this follows the
+Scope's own "every path that today returns (None, None, None)" language
+and Goal G5 ("setup_pbac() is fail-closed when PARROT_SAAS_MODE=true"),
+not a narrowing to exactly three.
+
+---
+
+### Addendum (post-implementation code-review, before push)
+
+The FEAT-446 adversarial code review found one IMPORTANT gap in this
+task's fail-closed guarantee: the per-agent (`policies/agents/`) and
+per-dataset (`policies/datasets/`) sub-policy loaders (added before
+this feature, untouched by the original six-site sweep above) still
+silently continued on a load failure regardless of `PARROT_SAAS_MODE`
+— they only `logger.warning(...)` and proceed without those policies,
+never routing through `_fail_open_or_closed()`. Under
+`PARROT_SAAS_MODE=true` this let a malformed per-agent/per-dataset
+policy file silently degrade instead of failing startup, inconsistent
+with the "fail-closed under the flag" guarantee this task's Acceptance
+Criteria advertises. Fixed both except-blocks to
+`raise RuntimeError(...) from exc` when `PARROT_SAAS_MODE` is true,
+matching `_fail_open_or_closed`'s message style, while leaving legacy
+(flag-off) behavior byte-for-byte unchanged. Added
+`TestSubPolicyLoadFailClosed` (3 tests) to
+`test_pbac_fail_closed.py`. Committed together with two other findings
+from the same review in `fix(saas-auth-hardening): close cross-tenant
+gaps found in code review`.

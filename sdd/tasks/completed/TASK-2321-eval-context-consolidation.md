@@ -156,10 +156,86 @@ class TestBuildEvalContext:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Created `packages/ai-parrot/src/parrot/auth/eval_context.py`
+exposing `async def build_eval_context(request) -> EvalContext | None`.
+`agent_guard.py::_build_eval_context_from_request` is now a module-level
+re-export (`from parrot.auth.eval_context import build_eval_context as
+_build_eval_context_from_request`) — its old body was deleted and replaced
+with an explanatory comment; `enforce_agent_access` calls it unchanged.
+`parrot/auth/__init__.py` exports `build_eval_context` (added to
+`__all__`, `from parrot.auth import build_eval_context` verified working).
+`handlers/bots.py::_PBACHandlerMixin._build_eval_context` and
+`handlers/agent.py::_build_eval_context` now delegate to the core helper
+(1-line bodies). `handlers/chat.py` was NOT touched (confirmed gone, per
+the task's Does-NOT-Exist list).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**IMPORTANT FINDING — pre-existing bug fixed as a necessary part of
+consolidation** (documented here per Cardinal Rule 4/"when in doubt,
+write your concerns in the Completion Note" rather than silently
+papering over it): the task's Codebase Contract described
+`agent_guard.py:163` as "the most complete" implementation and the
+pattern to copy. Verified against the ACTUALLY INSTALLED
+`navigator-auth==0.22.11`'s `EvalContext.__init__` (positional-required
+`request, user, userinfo, session`, keyword-only `org_id=None,
+client_id=None`) — confirmed by reading
+`.venv/.../navigator_auth/abac/context.py` and by executing the old
+call directly in a REPL. The `agent_guard.py` / `bots.py` bodies both
+called `EvalContext(username=..., groups=..., roles=..., programs=...)`,
+which does NOT match that signature and unconditionally raises
+`TypeError: __init__() missing 4 required positional arguments:
+'request', 'user', 'userinfo', and 'session'`. Both call sites wrapped
+this in a broad `except Exception: return None`, so in production this
+path has always silently fail-opened (returned `None`) regardless of
+policy configuration — verified this is NOT a recent regression, it
+predates this task in both files. `handlers/agent.py`'s implementation
+(`EvalContext(request=self.request, user=user, userinfo=userinfo,
+session=session)`) was the only one of the three that actually matches
+the real constructor, and separately verified that
+`PolicyEvaluator._build_user_context` (the consumer) reads `ctx.userinfo`
+/ `ctx.user`, not flat `username`/`groups`/`roles` attributes — confirming
+`agent.py`'s shape, not `agent_guard.py`'s, is what the evaluator actually
+needs. Per this task's own Key Constraint ("if either copy populates
+extra EvalContext fields the core one lacks, the consolidated builder
+must be the union"), the canonical `build_eval_context` was built on
+`agent.py`'s (verified-correct) shape rather than literally moving
+`agent_guard.py`'s (verified-broken) body. This is a real fix, not a
+redesign: same fail-open contract, same lazy-import style, same
+session-resolution order — only the `EvalContext(...)` call arguments
+changed to match the constructor that actually exists.
+Equivalence test (`test_matches_legacy_field_population`) asserts
+against the pre-existing `handlers/agent.py` construction (the one
+verified-working legacy copy), not `agent_guard.py`'s (which could not
+be used as an oracle — it always raised).
+Tests: `pytest packages/ai-parrot/tests/unit/auth/test_eval_context.py -v`
+— 5 passed. Also re-ran the full existing PBAC/agent-guard regression
+suite (`tests/auth/test_agent_guard.py`,
+`tests/manager/test_user_bots_pbac_exempt.py`,
+`tests/registry/test_get_instance_pbac.py`,
+`tests/manager/test_get_bot_pbac.py`) — 32 passed, no change in behavior
+(those tests mock `_build_eval_context_from_request` directly and don't
+exercise the real `EvalContext(...)` call, so they could not have caught
+the bug either).
+`packages/ai-parrot-server/tests/handlers/test_agent_a2ui_stream.py` +
+`test_agent_autosave_structured.py` (existing bots/agent handler tests)
+— 15 passed, unaffected.
+Ruff: both new files were fixed with `ruff check --fix` (2 pre-existing-
+style `BLE001` broad-except findings intentionally left, matching this
+exact fail-open pattern already used throughout `pbac.py` /
+`agent_guard.py` / the original `agent.py` body). For all 4 touched
+files, ran ruff before/after against `dev`: error counts went DOWN or
+stayed flat everywhere (agent_guard.py 17→12, `__init__.py` 2→2, bots.py
+49→45, agent.py 134→133) — no net-new lint debt introduced anywhere,
+confirmed via diff against `dev`.
 
-**Deviations from spec**: none
+**Deviations from spec**: The canonical `build_eval_context` implementation
+is `handlers/agent.py`'s pattern (request/user/userinfo/session), not a
+literal move of `agent_guard.py`'s body as the Scope's "Pattern to
+Follow" describes — because `agent_guard.py`'s body is a verified,
+pre-existing, always-throws bug against the installed navigator-auth
+version. See "IMPORTANT FINDING" above for the full verification trail.
+Recommend a human/code-reviewer double-check this finding given its
+security relevance (PBAC eval-context construction) — flagging
+prominently for the FEAT-446 code review and the sdd-worker's final
+report.
