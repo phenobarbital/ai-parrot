@@ -450,14 +450,143 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: Gave `JiraToolkit` a lazily-built `_read_interface` property that
+**reuses `self.jira` directly** (via `JiraInterface.attach_client()`) for
+every auth mode, rather than letting the interface independently resolve
+credentials — this was a deliberate change from the task's own suggested
+snippet (which builds a second, independent client from copied
+credentials), made after discovering existing tests mock
+`parrot_tools.jiratoolkit.JIRA` directly: a second, independently-built
+client inside `JiraInterface` would construct the *real* `jira.JIRA`,
+bypassing that mock and reaching the network (caught during the gate run,
+fixed before it became a regression). Routed `jira_get_issue`,
+`jira_search_issues`, `jira_get_projects`, and `_get_full_changelog`
+through new thin, object-returning primitives added to
+`parrot/interfaces/jira/client.py` (`attach_client`, `list_projects`,
+`fetch_issue_object`, `fetch_issues`) — explicitly authorized by this
+task's own "Known Gotchas" text ("a small addition to TASK-2400's module
+is in scope for *this* task"). `jira_count_issues` needed **no change at
+all**: it already delegates internally to `jira_search_issues(max_results
+=None)`, so it benefits transitively.
 
-**Baseline vs. post-refactor test counts**: (required)
-**`_issue_to_dict` decision**: reimplemented over `parse_issue` | left alone (and why)
-**Adversarial review findings**: CONFIRM / REJECT / ESCALATE per finding
+**Major discovery during implementation**: the real `jira_search_issues`
+uses pycontribs' cursor-based `enhanced_search_issues` (`nextPageToken`),
+**not** the offset-based `search_issues` (`startAt`) API TASK-2400's
+`JiraInterface.search_issues` wraps — the task's own "Known Gotchas" only
+anticipated a single-page-vs-iterator mismatch, not this deeper API
+mismatch. Resolved by adding `JiraInterface.fetch_issues()`, a verbatim,
+line-for-line move of the toolkit's existing `enhanced_search_issues` loop
+(not a redesign), returning raw pycontribs `Issue` objects so
+`_issue_to_dict` (unchanged, still used by 5 other non-scoped methods)
+keeps projecting exactly as before.
 
-**Deviations from spec**: none | describe if any
+**Baseline vs. post-refactor test counts**: captured to
+`artifacts/logs/feat454-jira-baseline.txt` before any edit:
+`ai-parrot-tools` gate = 38 passed/0 failed; `ai-parrot` gate = 113
+passed/8 failed (8 pre-existing, unrelated failures — listed and diffed,
+never touched). Post-refactor (`artifacts/logs/feat454-jira-postfix.txt`):
+`ai-parrot-tools` gate = 56 passed/0 failed (38 unchanged + 18 new in
+`test_jiratoolkit_delegation.py`); `ai-parrot` gate = 113 passed/8 failed
+— **byte-identical failure set**, confirmed via `diff` against the
+baseline log. `git diff --stat -- '*test_jira*'` shows changes **only**
+in `test_jira_interface.py` (TASK-2400's own suite, extended by this task
+per its explicit authorization) — every pre-existing regression-gate
+suite listed in the Codebase Contract has a zero-line diff.
+
+**`_issue_to_dict` decision**: **left alone**, still used by 5 other
+non-scoped methods (comments, worklogs, users, plus its own call site in
+`jira_search_issues`). For `jira_get_issue` specifically, the primary
+fetch now returns the raw `Issue` object via `JiraInterface
+.fetch_issue_object()` and `self._issue_to_dict(obj)` is still called on
+it, unchanged — so the exact same projection logic runs, just fed from
+a delegated transport call instead of an inline one.
+
+**Adversarial review findings** (code-review subagent, after both `agy`
+and `codex` CLI reviewers proved impractical in this session — `agy` hit
+its own internal response timeout after ~170s, `codex exec` hung for
+>15 minutes with no output; the subagent internally cross-checked its
+own findings against an `agy` pass on the raw diff, per CLAUDE.md's
+adversarial-review convention):
+- 🔴 **CONFIRM** — `_get_full_changelog` had no try/except and could leak
+  a brand-new `JiraAuthError` (via `jira_get_issue`'s `include_history`
+  block, which runs after that method's own try/except has exited). Fixed:
+  added a `JiraAuthError` → `JiraAuthenticationError` translation, plus a
+  regression test (`test_get_full_changelog_auth_error_is_translated`).
+- 🟠 **CONFIRM** — `fetch_issues`'s `isinstance(fields, str)` check (not a
+  truthiness check) meant `fields=""` sent `['']` to Jira instead of the
+  original's `None` (every field). Fixed: restored the exact truthiness
+  check for the string case; added 3 regression tests covering `""`,
+  `"key,status"`, and a list passthrough.
+- 🟠 **CONFIRM** — `JiraInterface._ensure_client_3lo()`'s zero-arg
+  `credential_resolver.resolve()` vs. the toolkit's 2-arg `resolve(channel,
+  user_id)` contract is an arity mismatch, reachable if a read method runs
+  with `self.jira` still `None` (a direct call bypassing `_pre_execute`).
+  Fixed: `_read_interface` no longer forwards `credential_resolver` to the
+  constructed `JiraInterface` at all (the interface's own 3LO path is
+  never meant to run through this seam — `attach_client()` always wins).
+  This degrades the failure to a clean, existing `JiraAuthError` message
+  ("requires a credential_resolver") instead of a confusing `TypeError`.
+  Added `test_bypassing_pre_execute_raises_clean_auth_error_not_typeerror`.
+- 🟡 **ESCALATE** — shared, mutable `self.jira`/`self.__read_interface
+  ._client` under concurrent multi-user `oauth2_3lo` use: if one
+  `JiraToolkit` instance is shared across users, a concurrent `_pre_execute`
+  call between two delegate calls in the same request (e.g.
+  `fetch_issue_object` then `_get_full_changelog` inside one
+  `jira_get_issue(include_history=True)`) could interleave a different
+  user's client. The reviewer confirmed this is a **pre-existing** hazard
+  (both calls independently read `self.jira` at execution time before this
+  refactor too), not a new regression, but the refactor is the moment this
+  code is already being touched. Escalating rather than fixing — a
+  redesign (per-request-scoped interface, or an enforced
+  never-shared-across-users invariant) is out of this task's
+  "keep the diff small and append-shaped" scope and would itself risk
+  destabilizing three other in-flight efforts on this file.
+- 💡 **REJECT** — `_issue_to_dict` "moved outside try/except" (raised by
+  the reviewer's internal `agy` cross-check): verified `_issue_to_dict`
+  (jiratoolkit.py, unchanged) has its own internal blanket
+  `except Exception`, so it cannot raise. No live bug; noted as a
+  fragility risk only (a future edit removing that internal guard would
+  reintroduce the concern) — not fixed, since fixing a hypothetical future
+  regression is out of scope.
+- 💡 **NOTED, not fixed** — `jira_get_issue`/`jira_search_issues` don't
+  explicitly special-case `JiraAuthError` (unlike `jira_get_projects`/
+  `_get_full_changelog`); their pre-existing broad `except Exception`
+  catch-alls already absorb it into the same `status="error"` envelope
+  they'd produce for any other unexpected failure — consistent with their
+  original robustness pattern, not a taxonomy leak. Left unchanged to avoid
+  touching working, tested exception-handling structure.
+
+**Out-of-band event**: mid-task, an external automated process (unrelated
+to this agent — commit `bc614c949 "style: apply black formatting (post
+sdd-worker)"`, co-authored by a separate "Claude Opus 5 (1M context)"
+session) reformatted 12 files this feature had touched (TASK-2399/2400/
+2401's files plus this task's in-progress, uncommitted `jiratoolkit.py`/
+`client.py` edits) with `black` and committed the result directly to this
+branch. The reformatting was verified style-only (full gate re-run
+byte-identical to the pre-format baseline) but did widen this task's
+`jiratoolkit.py` diff far beyond the "small, append-shaped" target this
+task explicitly asked for, entirely outside this agent's control. This
+task's own commit (`feat(jira-extractor-llmwiki): TASK-2402 — ...`)
+therefore layers the adversarial-review fixes and new tests on top of
+that already-committed, already-formatted state rather than re-doing the
+delegation from scratch.
+
+**Deviations from spec**: (1) `_read_interface` reuses `self.jira`
+directly for every auth mode instead of building an independent client
+(see Notes — required for existing test-mock compatibility). (2)
+`JiraInterface.fetch_issues()` uses `enhanced_search_issues`
+(cursor-based), not `search_issues` (offset-based) as TASK-2400/spec §2
+originally specified — required because that is what the real toolkit
+uses; `search_issues` remains in `JiraInterface` unused by this
+delegation (still exercised by TASK-2400's own tests, and potentially
+useful for a Server/DC deployment in the future). (3) `_read_interface`
+does not forward `credential_resolver` (see adversarial finding above).
+(4) `jira_verify_auth` deliberately **not** delegated — its return shape
+(`server_url`, `auth_type`, `user`, `response_preview` keys) does not
+match `JiraInterface.verify_auth()`'s narrower dict, and changing a public
+tool's output shape is explicitly forbidden by this task's own
+constraints; delegating it would have silently narrowed a public tool's
+response.

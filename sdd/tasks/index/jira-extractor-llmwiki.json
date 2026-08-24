@@ -96,7 +96,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M2",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -106,8 +106,8 @@
       "parallelism_notes": "Consumes TASK-2400's JiraInterface. Edits jiratoolkit.py, contested by three other in-flight efforts — must never be edited from a second worktree concurrently.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2402-jiratoolkit-delegation-refactor.md"
+      "completed_at": "2026-08-24T02:24:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2402-jiratoolkit-delegation-refactor.md"
     },
     {
       "id": "TASK-2403",
