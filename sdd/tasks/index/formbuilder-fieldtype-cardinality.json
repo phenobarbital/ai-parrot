@@ -32,7 +32,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Gates 2412-2415; touches core/schema.py, the file every sibling depends on.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2411-formfield-relation-aspect.md"
+      "completed_at": "2026-08-24T15:17:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2411-formfield-relation-aspect.md"
     },
     {
       "id": "TASK-2412",
