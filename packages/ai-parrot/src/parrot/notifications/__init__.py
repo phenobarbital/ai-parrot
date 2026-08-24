@@ -1024,6 +1024,26 @@ class NotificationMixin:
 
     # Convenience methods for specific providers
 
+    @staticmethod
+    def notification_succeeded(result: Optional[Dict[str, Any]]) -> bool:
+        """Report whether a notification result describes a successful send.
+
+        ``send_notification`` (and therefore every ``send_*`` convenience
+        method) reports provider failures as ``{"status": "error", ...}``
+        instead of raising, so a bare ``await`` *always* looks like it
+        worked. Callers that need a real success/failure signal must inspect
+        the returned status — this helper is that inspection, so no caller
+        has to re-derive the convention.
+
+        Args:
+            result: The dict returned by any ``send_*`` method. ``None`` is
+                accepted and treated as a failure.
+
+        Returns:
+            ``True`` only when the provider reported success.
+        """
+        return bool(result) and result.get("status") == "success"
+
     async def send_email(
         self,
         message: str,
@@ -1033,16 +1053,49 @@ class NotificationMixin:
         template: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """Convenience method for sending emails."""
-        return await self.send_notification(
-            message=message,
-            recipients=recipients,
-            provider=NotificationProvider.EMAIL,
-            subject=subject,
-            report=report,
-            template=template,
-            **kwargs
-        )
+        """Send an email notification. Never raises.
+
+        Convenience wrapper over :meth:`send_notification` pinned to the
+        email provider. Delivery problems are reported through the returned
+        dict (``status`` is ``"success"`` or ``"error"``), never as an
+        exception — including the failure modes ``send_notification``'s own
+        handler cannot express, such as an unrecognised provider name making
+        its own error path raise. Use :meth:`notification_succeeded` on the
+        result for a plain boolean.
+
+        Args:
+            message: Email body text, or an AgentResponse/AIMessage to
+                extract the body (and attachments) from.
+            recipients: One address or a list of addresses.
+            subject: Subject line.
+            report: Optional AgentResponse/AIMessage carrying output files
+                to attach.
+            template: Optional email template name.
+            **kwargs: Forwarded to :meth:`send_notification`.
+
+        Returns:
+            The notification result dict, with ``status`` set to
+            ``"success"`` or ``"error"`` (the latter carrying ``error``).
+        """
+        try:
+            return await self.send_notification(
+                message=message,
+                recipients=recipients,
+                provider=NotificationProvider.EMAIL,
+                subject=subject,
+                report=report,
+                template=template,
+                **kwargs
+            )
+        except Exception as exc:  # noqa: BLE001 - email delivery is best-effort
+            self.logger.error(
+                f"Failed to send email {subject!r}: {exc}", exc_info=True
+            )
+            return {
+                "status": "error",
+                "error": str(exc),
+                "provider": NotificationProvider.EMAIL.value,
+            }
 
     async def send_slack_message(
         self,

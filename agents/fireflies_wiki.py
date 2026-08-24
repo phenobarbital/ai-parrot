@@ -21,9 +21,6 @@ abstraction (never the Anthropic SDK directly). All three jobs are
 semi-mechanical — condensing already-written ``## Analysis`` blocks into
 bullets — so the cheapest capable model is the right one.
 
-NOTE: This file lives in ``agents/``, which is gitignored. Commit with
-``git add -f`` (same situation as agents/security_advisor.py).
-
 See ``docs/superpowers/specs/2026-08-23-fireflies-wiki-agent-design.md``.
 """
 
@@ -32,168 +29,61 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from typing import Any, Dict, List, Optional
 
-from navconfig import config
-from pydantic import BaseModel, Field
-
+from parrot.agents.conf import (
+    AUDIO_NOTES_FOLDER,
+    AUDIO_NOTES_WIKI_NAME,
+    AUDIO_NOTES_WIKI_STORAGE_DIR,
+    FIREFLIES_WIKI_ANALYSIS_LIMIT,
+    FIREFLIES_WIKI_DAILY_RECIPIENTS,
+    FIREFLIES_WIKI_DAILY_WINDOW_DAYS,
+    FIREFLIES_WIKI_DIGEST_HOUR,
+    FIREFLIES_WIKI_DIGEST_MINUTE,
+    FIREFLIES_WIKI_EXTRACT_ENTITIES,
+    FIREFLIES_WIKI_LLM,
+    FIREFLIES_WIKI_NAME,
+    FIREFLIES_WIKI_STORAGE_DIR,
+    FIREFLIES_WIKI_SYNC_HOUR,
+    FIREFLIES_WIKI_SYNC_LIMIT,
+    FIREFLIES_WIKI_SYNC_MINUTE,
+    FIREFLIES_WIKI_TZ,
+    FIREFLIES_WIKI_WEEKLY_DAY,
+    FIREFLIES_WIKI_WEEKLY_HOUR,
+    FIREFLIES_WIKI_WEEKLY_MINUTE,
+    FIREFLIES_WIKI_WEEKLY_RECIPIENTS,
+    FIREFLIES_WIKI_WEEKLY_WINDOW_DAYS,
+    WIKI_MODEL,
+    schedule_tzinfo,
+)
 from parrot.agents.obsidian import FirefliesObsidianAgent
+from parrot.integrations.telegram.context import get_current_telegram_chat_id
+from parrot.integrations.telegram.decorators import telegram_command
+
+# ``AudioNoteResult`` / ``AudioNoteStructure`` are re-exported unused:
+# the toolkit and its models moved to ``parrot_tools.audio_note_capture``
+# when they were extracted from this file, and this keeps the old import
+# path (``agents.fireflies_wiki.AudioNoteResult``) working.
+from parrot_tools.audio_note_capture import (  # noqa: F401
+    AudioNoteCaptureToolkit,
+    AudioNoteResult,
+    AudioNoteStructure,
+)
+
 from parrot.registry import register_agent
 from parrot.scheduler import ScheduleType, schedule
-from parrot_tools.audio_note_capture import AudioNoteCaptureToolkit
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Optional dependency: ai-parrot-integrations (Telegram)
-#
-# FEAT-452, Module 4. ``ai-parrot-integrations`` is a separate distribution
-# from the core this agent otherwise depends on — imported defensively (same
-# posture as ``_build_wiki_toolkit``'s optional planes) so the agent still
-# boots when the Telegram integration is not installed. ``/note`` and the
-# per-chat sticky mode are simply unavailable in that case.
-# ---------------------------------------------------------------------------
-try:
-    from parrot.integrations.telegram.context import get_current_telegram_chat_id
-    from parrot.integrations.telegram.decorators import telegram_command
-
-    _TELEGRAM_AVAILABLE = True
-except ImportError:
-    _TELEGRAM_AVAILABLE = False
-
-    def telegram_command(command: str, description: str = "", parse_mode: str = "keyword") -> Callable[..., Callable]:
-        """No-op fallback decorator when ``parrot.integrations.telegram`` is
-        not installed — preserves the decorated method unchanged."""
-
-        def _decorator(fn: Callable) -> Callable:
-            return fn
-
-        return _decorator
-
-    def get_current_telegram_chat_id() -> Optional[str]:
-        """Fallback used when the Telegram integration is not installed."""
-        return None
-
-
-# ---------------------------------------------------------------------------
 # Configuration
 #
-# Read at import time on purpose: ``@schedule`` evaluates its arguments at
-# decoration time, so the trigger values must be module-level constants.
-# Same constraint that makes agents/security_advisor.py use _ADVISORY_HOUR.
+# Every environment-backed setting lives in ``parrot.agents.conf`` (next to
+# FirefliesObsidianAgent), resolved there at import time through navconfig's
+# typed accessors. Import time is not incidental: ``@schedule`` evaluates its
+# arguments at decoration time, so the trigger values must already be plain
+# module-level constants.
 # ---------------------------------------------------------------------------
-
-
-def _int_env(key: str, default: int) -> int:
-    """Read an integer setting, falling back when unset or unparseable.
-
-    Args:
-        key: navconfig / environment variable name.
-        default: Value used when the variable is missing or not an int.
-
-    Returns:
-        The parsed integer, or ``default``.
-    """
-    raw = config.get(key)
-    if raw is None or str(raw).strip() == "":
-        return default
-    try:
-        return int(str(raw).strip())
-    except (TypeError, ValueError):
-        logger.warning("%s=%r is not an integer — falling back to %s", key, raw, default)
-        return default
-
-
-def _bool_env(key: str, default: bool = False) -> bool:
-    """Read a boolean setting from a truthy string.
-
-    Args:
-        key: navconfig / environment variable name.
-        default: Value used when the variable is missing.
-
-    Returns:
-        ``True`` when the value is one of ``1/true/yes/on`` (case-insensitive).
-    """
-    raw = config.get(key)
-    if raw is None or str(raw).strip() == "":
-        return default
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _list_env(key: str) -> List[str]:
-    """Read a comma-separated list setting.
-
-    Args:
-        key: navconfig / environment variable name.
-
-    Returns:
-        List of stripped, non-empty entries (empty list when unset).
-    """
-    raw = config.get(key)
-    if not raw:
-        return []
-    return [item.strip() for item in str(raw).split(",") if item.strip()]
-
-
-#: Timezone applied to all three cron triggers.
-_TZ: str = config.get("FIREFLIES_WIKI_TZ", fallback="UTC")
-
-
-def _schedule_tzinfo() -> timezone | ZoneInfo:
-    """Resolve :data:`_TZ` to a tzinfo, falling back to UTC.
-
-    The digest windows must be computed in the SAME timezone the cron
-    triggers fire in. Computing "today" in UTC while the job fires at
-    08:00 Asia/Tokyo would select the previous day's meetings — the
-    window would be silently shifted by one day.
-
-    Returns:
-        A ``ZoneInfo`` for :data:`_TZ`, or ``timezone.utc`` when the name
-        is unknown (missing tzdata, typo).
-    """
-    try:
-        return ZoneInfo(_TZ)
-    except (ZoneInfoNotFoundError, ValueError, KeyError):
-        logger.warning("FIREFLIES_WIKI_TZ=%r is not a known timezone — using UTC.", _TZ)
-        return timezone.utc
-
-
-#: Daily sync (Fireflies → Obsidian → wiki).
-_SYNC_HOUR: int = _int_env("FIREFLIES_WIKI_SYNC_HOUR", 7)
-_SYNC_MINUTE: int = _int_env("FIREFLIES_WIKI_SYNC_MINUTE", 0)
-
-#: Daily digest email.
-_DIGEST_HOUR: int = _int_env("FIREFLIES_WIKI_DIGEST_HOUR", 8)
-_DIGEST_MINUTE: int = _int_env("FIREFLIES_WIKI_DIGEST_MINUTE", 0)
-
-#: Weekly insights email.
-_WEEKLY_DAY: str = config.get("FIREFLIES_WIKI_WEEKLY_DAY", fallback="mon")
-_WEEKLY_HOUR: int = _int_env("FIREFLIES_WIKI_WEEKLY_HOUR", 9)
-_WEEKLY_MINUTE: int = _int_env("FIREFLIES_WIKI_WEEKLY_MINUTE", 0)
-
-#: Claude Haiku 4.5 — cheap and fast, ample 200K context for a week of
-#: meeting analyses. Resolved through LLMFactory ("anthropic" → AnthropicClient).
-_DEFAULT_LLM: str = "anthropic:claude-haiku-4-5"
-_LLM: str = config.get("FIREFLIES_WIKI_LLM", fallback=_DEFAULT_LLM)
-
-#: Wiki plane.
-_WIKI_NAME: str = config.get("FIREFLIES_WIKI_NAME", fallback="meetings")
-_WIKI_STORAGE_DIR: str = config.get(
-    "FIREFLIES_WIKI_STORAGE_DIR",
-    fallback=str(Path.home() / ".parrot" / "wikis" / "meetings"),
-)
-_EXTRACT_ENTITIES: bool = _bool_env("FIREFLIES_WIKI_EXTRACT_ENTITIES", False)
-
-#: Audio-notes wiki plane (FEAT-452 — separate from the meetings wiki so
-#: personal captures don't dilute meeting retrieval; see spec §2 "Two
-#: separate wiki toolkit instances").
-_AUDIO_NOTES_WIKI_NAME: str = config.get("AUDIO_NOTES_WIKI_NAME", fallback="notes")
-_AUDIO_NOTES_WIKI_STORAGE_DIR: str = config.get(
-    "AUDIO_NOTES_WIKI_STORAGE_DIR",
-    fallback=str(Path.home() / ".parrot" / "wikis" / "notes"),
-)
-_AUDIO_NOTES_FOLDER: str = config.get("AUDIO_NOTES_FOLDER", fallback="audio-notes")
 
 #: FEAT-452, Module 4 — best-effort system-prompt guidance nudging the LLM
 #: toward ``capture_audio_note`` on capture intent (the tool's own docstring
@@ -207,23 +97,6 @@ _AUDIO_NOTE_TOOL_GUIDANCE: str = (
     "capture_audio_note tool instead of answering. This applies whether "
     "the message arrived as a transcribed voice note or as typed text."
 )
-
-#: Run bounds.
-_SYNC_LIMIT: int = _int_env("FIREFLIES_WIKI_SYNC_LIMIT", 20)
-_ANALYSIS_LIMIT: int = _int_env("FIREFLIES_WIKI_ANALYSIS_LIMIT", 20)
-_DAILY_WINDOW_DAYS: int = _int_env("FIREFLIES_WIKI_DAILY_WINDOW_DAYS", 1)
-_WEEKLY_WINDOW_DAYS: int = _int_env("FIREFLIES_WIKI_WEEKLY_WINDOW_DAYS", 7)
-
-
-# ---------------------------------------------------------------------------
-# Audio-notes capture (FEAT-452, Module 3) — now in parrot_tools
-# ---------------------------------------------------------------------------
-# AudioNoteCaptureToolkit, AudioNoteStructure, AudioNoteResult and all
-# supporting helpers live in ``parrot_tools.audio_note_capture`` since
-# the extraction from this agent file.  Re-exported here for backwards
-# compatibility and for the tests that import via the agent module.
-# ---------------------------------------------------------------------------
-from parrot_tools.audio_note_capture import AudioNoteResult, AudioNoteStructure  # noqa: F401
 
 
 @register_agent(name="fireflies_wiki", at_startup=True)
@@ -281,26 +154,30 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             **kwargs: Forwarded to :class:`FirefliesObsidianAgent`. ``llm``
                 defaults to Claude Haiku 4.5 when the caller does not pin one.
         """
-        kwargs.setdefault("llm", _LLM)
+        kwargs.setdefault("llm", FIREFLIES_WIKI_LLM)
         kwargs.setdefault("instructions", _AUDIO_NOTE_TOOL_GUIDANCE)
         super().__init__(name=name, **kwargs)
 
-        self.wiki_name: str = wiki_name or _WIKI_NAME
-        self.wiki_storage_dir: Path = Path(wiki_storage_dir or _WIKI_STORAGE_DIR).expanduser()
+        self.wiki_name: str = wiki_name or FIREFLIES_WIKI_NAME
+        self.wiki_storage_dir: Path = Path(wiki_storage_dir or FIREFLIES_WIKI_STORAGE_DIR).expanduser()
+        # The configured defaults are module-level lists resolved once at
+        # import. Copy them so a caller mutating ``agent.daily_recipients``
+        # cannot write through to every other instance — the old
+        # ``_list_env()`` call built a fresh list per __init__.
         self.daily_recipients: List[str] = (
-            daily_recipients if daily_recipients is not None else _list_env("FIREFLIES_WIKI_DAILY_RECIPIENTS")
+            daily_recipients if daily_recipients is not None else list(FIREFLIES_WIKI_DAILY_RECIPIENTS)
         )
         self.weekly_recipients: List[str] = (
-            weekly_recipients if weekly_recipients is not None else _list_env("FIREFLIES_WIKI_WEEKLY_RECIPIENTS")
+            weekly_recipients if weekly_recipients is not None else list(FIREFLIES_WIKI_WEEKLY_RECIPIENTS)
         )
 
         #: Set in :meth:`configure`; ``None`` when the wiki plane is unavailable.
         self._wiki: Optional[Any] = None
 
         # --- Audio-notes wiki plane (FEAT-452) --------------------------
-        self.notes_wiki_name: str = notes_wiki_name or _AUDIO_NOTES_WIKI_NAME
-        self.notes_wiki_storage_dir: Path = Path(notes_wiki_storage_dir or _AUDIO_NOTES_WIKI_STORAGE_DIR).expanduser()
-        self.notes_folder: str = notes_folder or _AUDIO_NOTES_FOLDER
+        self.notes_wiki_name: str = notes_wiki_name or AUDIO_NOTES_WIKI_NAME
+        self.notes_wiki_storage_dir: Path = Path(notes_wiki_storage_dir or AUDIO_NOTES_WIKI_STORAGE_DIR).expanduser()
+        self.notes_folder: str = notes_folder or AUDIO_NOTES_FOLDER
 
         #: Set in :meth:`configure`; ``None`` when the notes plane is
         #: unavailable. A DISTINCT LLMWikiToolkit instance from ``self._wiki``
@@ -331,12 +208,28 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         ``self._wiki`` as ``None``, logs a warning, and lets the agent boot.
         Meetings still reach the Obsidian vault in that state.
 
+        The ``AudioNoteCaptureToolkit`` is registered in
+        :meth:`post_configure` — the sanctioned hook for wiring toolkits
+        that depend on resources initialised by ``configure()`` (the LLM
+        client, the Obsidian vault, the wiki planes).
+
         Args:
             app: Optional aiohttp application, forwarded to the parent.
         """
         await super().configure(app)
         self._wiki = await self._build_wiki_toolkit()
         self._notes_wiki = await self._build_notes_wiki_toolkit()
+
+    async def post_configure(self) -> None:
+        """Register the ``AudioNoteCaptureToolkit`` after base setup.
+
+        Runs after :meth:`configure` has attached the LLM client,
+        ``ObsidianToolkit``, and both wiki planes.  This is the
+        ``post_configure`` pattern — the recommended way to wire
+        additional toolkits that depend on agent resources that only
+        become available during ``configure()``.
+        """
+        await super().post_configure()
 
         # FEAT-452, Module 3 — register the audio-note capture tool.
         capture_toolkit = AudioNoteCaptureToolkit(
@@ -348,7 +241,8 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             wiki_name=self.notes_wiki_name,
         )
         self._capture_toolkit = capture_toolkit
-        self._initialize_tools([capture_toolkit])
+        tools = self.tool_manager.register_toolkit(capture_toolkit)
+        self.tools.extend(tools)
         self.logger.info(
             "Registered AudioNoteCaptureToolkit tools: %s",
             [t.name for t in capture_toolkit.get_tools()],
@@ -370,9 +264,8 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         Requires the invoking chat to be resolvable via
         ``get_current_telegram_chat_id()`` (wired by the ``telegram_chat_scope``
         wrapper around agent commands — FEAT-452 Module 1). Outside a scoped
-        Telegram command (or when the Telegram integration is not
-        installed) this replies with a clear message instead of raising or
-        arming a ``None`` key.
+        Telegram command this replies with a clear message instead of
+        raising or arming a ``None`` key.
 
         Args:
             _args: Unused — ``/note`` takes no arguments.
@@ -516,7 +409,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         Returns:
             A ``PageIndexToolkit``, or ``None`` when construction fails.
         """
-        model_spec = config.get("WIKI_MODEL") or _LLM
+        model_spec = WIKI_MODEL
         try:
             from parrot.clients.factory import LLMFactory
             from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
@@ -614,9 +507,9 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
     @schedule(
         schedule_type=ScheduleType.CRON,
-        hour=_SYNC_HOUR,
-        minute=_SYNC_MINUTE,
-        timezone=_TZ,
+        hour=FIREFLIES_WIKI_SYNC_HOUR,
+        minute=FIREFLIES_WIKI_SYNC_MINUTE,
+        timezone=FIREFLIES_WIKI_TZ,
     )
     async def sync_meetings_to_wiki(
         self,
@@ -659,14 +552,14 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         try:
             # --- Step 1: Fireflies → Obsidian -------------------------------
             report["sync"] = await self.sync_fireflies_transcripts(
-                limit=limit if limit is not None else _SYNC_LIMIT,
+                limit=limit if limit is not None else FIREFLIES_WIKI_SYNC_LIMIT,
                 skip_existing=True,
             )
 
             # --- Step 2: per-meeting LLM analysis ---------------------------
             report["analysis"] = await self.summarize_pending_transcripts(
                 granularity="standard",
-                limit=(analysis_limit if analysis_limit is not None else _ANALYSIS_LIMIT),
+                limit=(analysis_limit if analysis_limit is not None else FIREFLIES_WIKI_ANALYSIS_LIMIT),
             )
 
             # --- Step 3: Obsidian → GraphIndex LLM Wiki ---------------------
@@ -710,7 +603,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 self.wiki_name,
                 str(meetings_path),
                 incremental=True,
-                extract_entities=_EXTRACT_ENTITIES,
+                extract_entities=FIREFLIES_WIKI_EXTRACT_ENTITIES,
             )
             self.logger.info("Wiki ingest complete for %s", self.wiki_name)
             return {"ingested": True, "reason": None, "report": result}
@@ -724,9 +617,9 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
     @schedule(
         schedule_type=ScheduleType.CRON,
-        hour=_DIGEST_HOUR,
-        minute=_DIGEST_MINUTE,
-        timezone=_TZ,
+        hour=FIREFLIES_WIKI_DIGEST_HOUR,
+        minute=FIREFLIES_WIKI_DIGEST_MINUTE,
+        timezone=FIREFLIES_WIKI_TZ,
     )
     async def email_daily_meeting_digest(
         self,
@@ -750,7 +643,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             Dict with ``status``, ``emailed``, ``meetings`` and optionally
             ``reason`` / ``error``.
         """
-        window = days if days is not None else _DAILY_WINDOW_DAYS
+        window = days if days is not None else FIREFLIES_WIKI_DAILY_WINDOW_DAYS
         return await self._run_digest(
             window_days=window,
             recipients=recipients if recipients is not None else self.daily_recipients,
@@ -765,10 +658,10 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
     @schedule(
         schedule_type=ScheduleType.CRON,
-        day_of_week=_WEEKLY_DAY,
-        hour=_WEEKLY_HOUR,
-        minute=_WEEKLY_MINUTE,
-        timezone=_TZ,
+        day_of_week=FIREFLIES_WIKI_WEEKLY_DAY,
+        hour=FIREFLIES_WIKI_WEEKLY_HOUR,
+        minute=FIREFLIES_WIKI_WEEKLY_MINUTE,
+        timezone=FIREFLIES_WIKI_TZ,
     )
     async def email_weekly_insights(
         self,
@@ -791,7 +684,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             Dict with ``status``, ``emailed``, ``meetings`` and optionally
             ``reason`` / ``error``.
         """
-        window = days if days is not None else _WEEKLY_WINDOW_DAYS
+        window = days if days is not None else FIREFLIES_WIKI_WEEKLY_WINDOW_DAYS
         return await self._run_digest(
             window_days=window,
             recipients=(recipients if recipients is not None else self.weekly_recipients),
@@ -854,13 +747,22 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             body = await self._ask_llm(prompt_builder(analyses))
             subject = (
                 f"{subject_prefix} — "
-                f"{datetime.now(_schedule_tzinfo()).strftime('%Y-%m-%d')} "
+                f"{datetime.now(schedule_tzinfo()).strftime('%Y-%m-%d')} "
                 f"({len(analyses)} meeting{'s' if len(analyses) != 1 else ''})"
             )
-            outcome["emailed"] = await self._email(subject, body, recipients)
+            # ``send_email`` never raises and reports provider failures in
+            # its result dict, so the status must be read back — a bare
+            # ``await`` always looks like it succeeded.
+            result = await self.send_email(
+                message=body,
+                recipients=recipients,
+                subject=subject,
+            )
+            outcome["emailed"] = self.notification_succeeded(result)
             if not outcome["emailed"]:
                 outcome["status"] = "partial"
-                outcome["reason"] = "email delivery failed"
+                outcome["reason"] = (result or {}).get("error") or "email delivery failed"
+                self.logger.error("Could not send %r: %s", subject, outcome["reason"])
 
         except Exception as exc:  # noqa: BLE001 — scheduled job must not raise
             outcome["status"] = "error"
@@ -888,7 +790,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             Sorted note titles inside the window. Titles without a parseable
             ``YYYY-MM-DD`` prefix are ignored rather than raising.
         """
-        reference = (now or datetime.now(_schedule_tzinfo())).date()
+        reference = (now or datetime.now(schedule_tzinfo())).date()
         cutoff = reference - timedelta(days=days)
 
         selected: List[str] = []
@@ -946,38 +848,6 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         if hasattr(response, "message"):
             return str(response.message)
         return str(response)
-
-    async def _email(self, subject: str, body: str, recipients: List[str]) -> bool:
-        """Send one email; returns a success flag.
-
-        ``send_notification`` swallows provider errors and reports them as
-        ``{"status": "error", ...}`` instead of raising, so the returned
-        status must be inspected — a bare ``await`` always "succeeds".
-
-        Args:
-            subject: Email subject line.
-            body: Email body text.
-            recipients: Destination addresses.
-
-        Returns:
-            ``True`` only when the provider reported success.
-        """
-        try:
-            result = await self.send_notification(
-                message=body,
-                recipients=recipients,
-                provider="email",
-                subject=subject,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.logger.error("Could not send %r: %s", subject, exc)
-            return False
-
-        status = (result or {}).get("status")
-        if status != "success":
-            self.logger.error("Could not send %r: %s", subject, (result or {}).get("error", result))
-            return False
-        return True
 
     # ------------------------------------------------------------------
     # Prompt builders

@@ -164,7 +164,7 @@ class TestNotesInWindow:
         """
         from zoneinfo import ZoneInfo
 
-        monkeypatch.setattr(agent_module, "_schedule_tzinfo", lambda: ZoneInfo("Asia/Tokyo"))
+        monkeypatch.setattr(agent_module, "schedule_tzinfo", lambda: ZoneInfo("Asia/Tokyo"))
         agent._get_existing_meeting_titles = AsyncMock(return_value={"2026-08-23-tokyo-standup"})
 
         # 2026-08-23 08:00 Tokyo == 2026-08-22 23:00 UTC.
@@ -175,14 +175,12 @@ class TestNotesInWindow:
         expected = ["2026-08-23-tokyo-standup"] if tokyo_today.isoformat() == "2026-08-23" else []
         assert result == expected
 
-    def test_unknown_timezone_falls_back_to_utc(self, agent_module):
+    def test_unknown_timezone_falls_back_to_utc(self, monkeypatch):
         """A bogus timezone name degrades to UTC rather than raising."""
-        original = agent_module._TZ
-        try:
-            agent_module._TZ = "Not/AZone"
-            assert agent_module._schedule_tzinfo() is timezone.utc
-        finally:
-            agent_module._TZ = original
+        from parrot.agents import conf
+
+        monkeypatch.setattr(conf, "FIREFLIES_WIKI_TZ", "Not/AZone")
+        assert conf.schedule_tzinfo() is timezone.utc
 
     @pytest.mark.asyncio
     async def test_future_dated_notes_excluded(self, agent):
@@ -722,14 +720,20 @@ class TestNoteMode:
 
         assert any(c["command"] == "note" for c in cmds)
 
-    def test_agent_boots_without_telegram_integration(self, agent_module):
-        """The module-level fallback keeps the class importable/usable
-        even when parrot.integrations.telegram is not installed."""
-        # _TELEGRAM_AVAILABLE reflects whatever is actually installed in
-        # this test environment; the meaningful invariant is that the
-        # fallback symbols exist and are callable either way.
-        assert callable(agent_module.get_current_telegram_chat_id)
-        assert callable(agent_module.telegram_command)
+    def test_telegram_symbols_come_from_the_integration(self, agent_module):
+        """The agent imports the real Telegram helpers, with no local shim.
+
+        The optional-dependency ``try/except ImportError`` fallback was
+        removed deliberately: ``ai-parrot-integrations`` is a workspace
+        member, and ``context``/``decorators`` are pure-stdlib modules that
+        cannot fail to import once the distribution is present. This pins
+        that decision — a re-introduced local stub would fail here.
+        """
+        from parrot.integrations.telegram.context import get_current_telegram_chat_id
+        from parrot.integrations.telegram.decorators import telegram_command
+
+        assert agent_module.get_current_telegram_chat_id is get_current_telegram_chat_id
+        assert agent_module.telegram_command is telegram_command
 
 
 # ---------------------------------------------------------------------------
@@ -763,7 +767,7 @@ class TestVaultScoping:
         await agent._ingest_vault_into_wiki()
 
         _args, kwargs = wiki.ingest_obsidian_vault.call_args
-        assert kwargs["extract_entities"] == agent_module._EXTRACT_ENTITIES
+        assert kwargs["extract_entities"] == agent_module.FIREFLIES_WIKI_EXTRACT_ENTITIES
 
     @pytest.mark.asyncio
     async def test_missing_meetings_folder_reports_not_ingested(self, agent):
@@ -826,7 +830,8 @@ class TestDailyDigest:
         assert result["meetings"] == 1
         _, kwargs = agent.send_notification.call_args
         assert kwargs["recipients"] == ["daily@example.com"]
-        assert kwargs["provider"] == "email"
+        # send_email pins the provider as the enum member, not the raw string.
+        assert kwargs["provider"].value == "email"
         assert kwargs["message"] == "- Ship on Friday"
 
     @pytest.mark.asyncio
@@ -886,7 +891,7 @@ class TestWeeklyInsights:
 
 
 # ---------------------------------------------------------------------------
-# _email
+# send_email / notification_succeeded (NotificationMixin)
 # ---------------------------------------------------------------------------
 
 
@@ -894,25 +899,37 @@ class TestEmailHelper:
     """send_notification swallows provider errors — the status must be read."""
 
     @pytest.mark.asyncio
-    async def test_returns_false_on_error_status(self, agent):
+    async def test_error_status_is_not_a_success(self, agent):
         """A reported error status is a failure, despite the await succeeding."""
         agent.send_notification = AsyncMock(return_value={"status": "error", "error": "smtp refused"})
 
-        assert await agent._email("Subject", "Body", ["a@example.com"]) is False
+        result = await agent.send_email(message="Body", recipients=["a@example.com"], subject="Subject")
+
+        assert agent.notification_succeeded(result) is False
 
     @pytest.mark.asyncio
-    async def test_returns_false_on_exception(self, agent):
-        """A raising provider is caught and reported as failure."""
+    async def test_raising_provider_is_captured(self, agent):
+        """send_email never raises — a raising provider becomes an error dict."""
         agent.send_notification = AsyncMock(side_effect=RuntimeError("boom"))
 
-        assert await agent._email("Subject", "Body", ["a@example.com"]) is False
+        result = await agent.send_email(message="Body", recipients=["a@example.com"], subject="Subject")
+
+        assert result["status"] == "error"
+        assert "boom" in result["error"]
+        assert agent.notification_succeeded(result) is False
 
     @pytest.mark.asyncio
-    async def test_returns_true_on_success(self, agent):
-        """A success status is the only path that returns True."""
+    async def test_success_status_is_a_success(self, agent):
+        """A success status is the only path that counts as delivered."""
         agent.send_notification = AsyncMock(return_value={"status": "success"})
 
-        assert await agent._email("Subject", "Body", ["a@example.com"]) is True
+        result = await agent.send_email(message="Body", recipients=["a@example.com"], subject="Subject")
+
+        assert agent.notification_succeeded(result) is True
+
+    def test_missing_result_is_not_a_success(self, agent):
+        """A ``None`` result is treated as a failure, not an AttributeError."""
+        assert agent.notification_succeeded(None) is False
 
 
 # ---------------------------------------------------------------------------

@@ -175,8 +175,8 @@ evaluates its arguments at decoration time (the same constraint that makes
 | `FIREFLIES_WIKI_EXTRACT_ENTITIES` | `false` | Phase-2 LLM entity extraction |
 
 The digest windows are computed in **the same timezone the triggers fire
-in**, resolved by `_schedule_tzinfo()` (`ZoneInfo(_TZ)`, falling back to UTC
-on an unknown name). Computing "today" in UTC while the job fires at 08:00
+in**, resolved by `parrot.agents.conf.schedule_tzinfo()`
+(`ZoneInfo(FIREFLIES_WIKI_TZ)`, falling back to UTC on an unknown name). Computing "today" in UTC while the job fires at 08:00
 `Asia/Tokyo` would select the *previous* day's meetings — the window would be
 silently shifted by a day. The email subject line uses the same local date.
 
