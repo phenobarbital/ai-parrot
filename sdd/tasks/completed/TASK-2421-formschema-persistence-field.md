@@ -225,8 +225,31 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Added `persistence: FormPersistenceConfig | None = None` to
+`FormSchema` (after `is_public`), documented it in the class docstring,
+and added `_validate_persistence` (a new `@model_validator(mode="after")`,
+alongside the existing `_validate_unique_identity`/`_validate_metadata`)
+that skips entirely for document `asyncdb` targets (`mongo`/`arango`) and,
+for tabular targets, rejects any author-supplied flattened column that
+collides with `RESERVED_COLUMNS`; invalid/too-long flattened identifiers
+already raise via `column_names_for()`'s own `validate_identifier` calls.
+8 new unit tests in `tests/unit/test_formschema_persistence.py`, all
+passing; the pre-existing `-k schema` suite (218 tests) still passes
+except 2 pre-existing, unrelated failures (`test_field_schema_snippets_
+cover_all_types`, `test_endpoint_matches_schema`) confirmed to fail
+identically on the pre-task commit via `git stash`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The Codebase Contract flagged a likely circular
+import from `core/` importing `services/`. It materialized (via
+`core/persistence.py`'s top-level `services._identifiers` import
+transitively pulling `services/__init__.py` -> ... -> `core.schema`, not
+via the `mapper.py` import the contract anticipated). Fixed by deferring
+that one import in `core/persistence.py` to call time, matching the
+project's own existing lazy-import convention in
+`core/schema.py:_validate_metadata`. This touched `core/persistence.py`
+(a TASK-2417 file) in addition to the files TASK-2421 lists — necessary
+for the feature to import at all, and explicitly anticipated by the
+task's own contract note ("decide by running the import, not by
+guessing").

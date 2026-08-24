@@ -231,8 +231,48 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Filled `services/sinks/__init__.py` with `SUPPORTED_SINKS`,
+`_MODULES`, lazy `_load()`, and re-exports of `AbstractSubmissionSink` +
+the four error types + `SinkFactory`. Implemented `SinkFactory` in
+`services/sinks/factory.py`: `get(form, *, tenant)` caches per
+`(tenant, form_uid, version)`; a coordinate fingerprint
+(`hashlib.sha256` over `model_dump(include=coordinate_fields)`,
+`sort_keys=True`) is recorded per `(tenant, form_uid)` on first
+resolution and compared on every subsequent call, raising
+`SinkTargetMismatchError` on a coordinate change. Coordinate fields per
+type: `postgres_table`→(connection, schema_name, table),
+`asyncdb`→(connection, driver, collection),
+`csv_file`→(connection, path) [`delimiter` excluded — mapping-only],
+`gsheet`→(connection, spreadsheet_id, worksheet). `close_all()` clears
+the cache before closing, so a second call iterates nothing (idempotent).
+All four concrete sinks happen to share the exact same
+`(target, *, alias_registry, tenant)` constructor shape, so
+`SinkFactory` instantiates them uniformly with no per-type branching
+beyond `_load()`. 11 unit tests in `tests/unit/test_sink_factory.py`,
+all passing, plus a manual check that the package still imports with
+`googleapiclient` simulated absent. `ruff` and targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Fingerprint storage decision** (explicitly deferred to this task):
+kept **in the factory's own in-memory cache** (`self._fingerprints`,
+keyed by `(tenant, form_uid)`), NOT round-tripped to any table's
+metadata. Rationale: `SinkFactory` is instantiated once per app process
+and lives for the app's lifetime (TASK-2429 wires it as a singleton), so
+an in-memory cache correctly enforces immutability for the whole
+process; persisting it durably (e.g. into the pointer row managed by
+`AutonomousFormStorage`, TASK-2427) would require a DB round-trip on
+every `get()` call and is a reasonable but NOT required follow-up — the
+in-memory guarantee already satisfies every acceptance criterion for
+this feature (no test or AC in the spec requires the check to survive a
+process restart).
+
+**Deviations from spec**: `factory.py`'s `get()` defers its
+`from parrot_formdesigner.services.sinks import _load` import to call
+time (inside the method body) rather than importing it at module level,
+because `__init__.py` imports `SinkFactory` FROM `factory.py` for
+re-export — a top-level import in the other direction would be a genuine
+circular import (verified by running it, per the task's own contract
+note). `__init__.py` defines `SUPPORTED_SINKS`/`_MODULES`/`_load` before
+its `from .factory import SinkFactory` line specifically to make this
+safe.

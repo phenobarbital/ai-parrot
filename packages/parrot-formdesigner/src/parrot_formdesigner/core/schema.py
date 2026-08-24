@@ -20,6 +20,7 @@ from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints, PostDependency
 from .events import FormEventsConfig
 from .options import FieldOption, OptionsSource
+from .persistence import FormPersistenceConfig
 from .relations import RelationSpec
 from .types import FieldType, LocalizedString
 
@@ -404,6 +405,11 @@ class FormSchema(BaseModel):
             registers the form's public paths in navigator-auth's runtime
             exclude list; toggling to ``False`` or deleting the form unregisters
             them. (FEAT-241)
+        persistence: Optional per-form persistence declaration (FEAT-457).
+            When set, this form's submission data (and optionally its own
+            definition body) is written to the declared destination instead
+            of the generic shared storage. ``None`` (default) preserves
+            today's behaviour exactly — no breaking change.
     """
 
     form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -425,6 +431,8 @@ class FormSchema(BaseModel):
     published_version: str | None = None
     # FEAT-241 — Public Forms
     is_public: bool = False
+    # FEAT-457 — Autonomous FormSchema Persistence
+    persistence: FormPersistenceConfig | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections.
@@ -519,6 +527,49 @@ class FormSchema(BaseModel):
 
         return self
 
+    @model_validator(mode="after")
+    def _validate_persistence(self) -> FormSchema:
+        """Reject an author-supplied column that collides with a reserved
+        submission column, or that flattens to an invalid identifier
+        (FEAT-457).
+
+        Only applies when :attr:`persistence` is set AND the target is
+        tabular (``postgres_table``, ``csv_file``, ``gsheet``, or an
+        ``asyncdb`` target whose driver is NOT a document driver). Document
+        targets (``asyncdb`` with a document driver such as ``mongo`` or
+        ``arango``) store ``data`` nested — there is no column namespace to
+        collide with, so this check is skipped entirely.
+        """
+        if self.persistence is None:
+            return self
+
+        target = self.persistence.data
+        is_document_target = target.type == "asyncdb" and target.driver in {"mongo", "arango"}
+        if is_document_target:
+            return self
+
+        # Lazy import to avoid a hard dependency from core/ to services/
+        # (services/sinks/mapper.py imports core/schema.py — see TASK-2421's
+        # Codebase Contract note on the circular-import risk).
+        from ..services.sinks.mapper import RESERVED_COLUMNS, column_names_for
+
+        # column_names_for() raises ValueError itself for any flattened
+        # column name that fails validate_identifier (e.g. a GROUP path
+        # exceeding the 63-character Postgres identifier cap) — that
+        # propagation covers criterion (b) with no extra call needed here.
+        names = column_names_for(self)
+        author_supplied = names[len(RESERVED_COLUMNS) :]
+
+        for column in author_supplied:
+            if column in RESERVED_COLUMNS:
+                raise ValueError(
+                    f"Field/metadata column {column!r} collides with a "
+                    "reserved submission column "
+                    f"({sorted(RESERVED_COLUMNS)}) and cannot be used when "
+                    "persistence targets a tabular sink."
+                )
+
+        return self
 
 def derive_stable_identities(schema: FormSchema, form_uid: uuid.UUID) -> None:
     """Re-derive a schema's child identities from ``form_uid``, in place.

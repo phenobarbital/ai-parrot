@@ -215,8 +215,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `services/sink_aliases.py` with `SinkAliasRegistry`
+(`register`, `resolve_dsn`, `resolve_base_dir`, `resolve_credentials`,
+`is_allowed`, `contain`). All credential resolution delegates to
+`core/auth.py:_get_env` (navconfig-first, os.environ fallback) — no direct
+`os.environ` reads. `contain()` resolves real paths so a symlink cannot
+escape the base dir. 11 unit tests in `tests/unit/test_sink_aliases.py`,
+all passing, including a symlink-escape case and a check that no resolved
+credential appears in captured log output. `ruff` and targeted `mypy`
+clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

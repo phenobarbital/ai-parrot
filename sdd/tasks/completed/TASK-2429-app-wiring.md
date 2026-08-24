@@ -211,8 +211,44 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: The real function is `setup_form_api` (`api/routes.py:155`) —
+the task's own sketch used a fictitious `setup_form_routes` name, but the
+"Existing Signatures" section correctly pointed at the real one. Added
+`alias_registry: SinkAliasRegistry | None = None` as the LAST parameter
+(name/order/default of every existing parameter verified unchanged via
+`inspect.signature`). When provided: sets `app["form_sink_aliases"]`
+(the chosen, documented app-key name — no route ever writes to it),
+builds a `SinkFactory`, registers an `app.on_shutdown` hook calling
+`close_all()`, and passes `sink_factory=` into `FormAPIHandler`. When
+omitted (default), `sink_factory` stays `None` and the feature is fully
+inactive. Also stashes `app["form_api_handler"] = handler` (a new,
+purely additive app key — needed so the acceptance criteria/tests can
+observe the wired handler; nothing previously read or required its
+absence). Re-exported `SinkAliasRegistry` and `SinkFactory` from
+`services/__init__.py` (verified no circular import: `services/sinks`
+only reaches `core.persistence`/`core.schema`/`services.submissions`,
+all of which resolve fine through the already-fixed lazy-import paths).
+Documented the app-key name and the security-control rationale in both
+the module docstring and the `alias_registry` parameter's own docstring
+(for TASK-2431 to build on). 7 unit tests in
+`tests/unit/test_persistence_wiring.py` using a real `web.Application()`
++ mocked `FormRegistry`, covering: inactive-without-registry (both the
+missing app key and `None` factory), app-key exposure, factory
+injection, shutdown-hook invocation (via `app.freeze()` +
+`app.shutdown()`, mirroring aiohttp's own signal-freezing requirement),
+no allowlist-mutation route existing, and the new re-exports. Full
+package suite re-run: still exactly 40 pre-existing failures, zero
+regressions. `ruff`/`mypy` on `routes.py` and `services/__init__.py`
+clean except pre-existing `RUF022`/`I001` `__all__`/import-order
+findings that already existed before this task (that file groups
+imports/exports by feature-comment sections rather than strict
+alphabetical order, by established convention — not touched further to
+avoid unrelated scope creep).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none of substance — `app["form_api_handler"]`
+is an additive app key not explicitly named in the task's Scope bullets,
+but is required by the task's own Test Specification
+(`app["form_api_handler"]._sink_factory`) and is harmless/purely
+additive.
