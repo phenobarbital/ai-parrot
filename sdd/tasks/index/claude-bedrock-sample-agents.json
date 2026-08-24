@@ -23,7 +23,7 @@
       "assigned_to": "sdd-worker",
       "started_at": "2026-08-21T00:00:00Z",
       "completed_at": "2026-08-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-2293-claude-bedrock-agent-scripts.md"
+      "file": "sdd/tasks/completed/TASK-2293-claude-bedrock-agent-scripts.md"
     },
     {
       "id": "TASK-2294",
@@ -41,7 +41,7 @@
       "assigned_to": "sdd-worker",
       "started_at": "2026-08-21T00:00:00Z",
       "completed_at": "2026-08-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-2294-bedrock-mantle-agent-scripts.md"
+      "file": "sdd/tasks/completed/TASK-2294-bedrock-mantle-agent-scripts.md"
     },
     {
       "id": "TASK-2295",
@@ -59,7 +59,7 @@
       "assigned_to": "sdd-worker",
       "started_at": "2026-08-21T00:00:00Z",
       "completed_at": "2026-08-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-2295-bedrock-agents-readme.md"
+      "file": "sdd/tasks/completed/TASK-2295-bedrock-agents-readme.md"
     }
   ]
 }

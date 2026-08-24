@@ -28,7 +28,7 @@ sobre AI-Parrot.
 1. [Modelo mental: un adaptador de voz sobre el chat de texto](#1-modelo-mental)
 2. [El endpoint de voz](#2-el-endpoint-de-voz)
 3. [Enviar la nota de voz (request)](#3-enviar-la-nota-de-voz-request)
-4. [La respuesta (envelope + audio)](#4-la-respuesta-envelope--audio)
+4. [La respuesta (envelope + audio)](#4-la-respuesta-envelope-audio)
 5. [Reproducir la contestación por voz](#5-reproducir-la-contestación-por-voz)
 6. [Selectores opcionales por petición (backends STT/TTS, formato)](#6-selectores-opcionales-por-petición)
 7. [Degradación y manejo de errores](#7-degradación-y-manejo-de-errores)

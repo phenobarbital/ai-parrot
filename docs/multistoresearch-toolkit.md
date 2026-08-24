@@ -20,7 +20,7 @@ ranking AND a single merged, deduped, BM25-reranked top-k list.
 - [Origin Adapters](#origin-adapters)
 - [The Response Payload](#the-response-payload)
 - [FTS Capability Matrix](#fts-capability-matrix)
-- [Caveats & Known Limits](#caveats--known-limits)
+- [Caveats & Known Limits](#caveats-known-limits)
 - [Migration Note (FEAT-379)](#migration-note-feat-379)
 - [API Reference](#api-reference)
 

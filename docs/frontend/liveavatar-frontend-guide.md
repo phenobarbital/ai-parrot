@@ -33,7 +33,7 @@ El navegador es **únicamente espectador** (viewer) de una sala de LiveKit Cloud
 3. [Aclaración importante sobre "WebSockets"](#3-aclaración-importante-sobre-websockets)
 4. [Paso 1 — Arrancar la sesión de avatar (`/start`)](#4-paso-1--arrancar-la-sesión-de-avatar-start)
 5. [Paso 2 — Unirse a la sala y pintar el vídeo (LiveKit)](#5-paso-2--unirse-a-la-sala-y-pintar-el-vídeo-livekit)
-6. [Paso 3 — Conversar con el agente (`avatar: true`)](#6-paso-3--conversar-con-el-agente-avatar-true)
+6. [Paso 3 — Conversar con el agente (`avatar: true`)](#6-paso-3-conversar-con-el-agente-avatar-true)
 7. [Paso 4 — Cerrar la sesión (`/stop`)](#7-paso-4--cerrar-la-sesión-stop)
 8. [Opt-in por tenant y manejo de errores](#8-opt-in-por-tenant-y-manejo-de-errores)
 9. [Salidas estructuradas: siguen por el canal de siempre](#9-salidas-estructuradas)

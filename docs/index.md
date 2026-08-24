@@ -58,6 +58,15 @@ through a single async interface.
 
     [→ Open chapter](chapters/memory-knowledge.md)
 
+-   :material-graph-outline:{ .lg .middle } **Knowledge Graph & LLM Wiki**
+
+    ---
+
+    PageIndex tree retrieval, the GraphIndex typed knowledge graph, and
+    the agent-maintained LLM Wiki your assistants read *and* write.
+
+    [→ Open chapter](chapters/knowledge-graph.md)
+
 -   :material-tools:{ .lg .middle } **Tools, Loaders & RAG**
 
     ---
