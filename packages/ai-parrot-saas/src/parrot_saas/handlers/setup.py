@@ -33,6 +33,15 @@ from ..tenancy.middleware import (
 )
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
+from .coupons import (
+    APP_COUPON_ISSUER,
+    APP_COUPON_REPOSITORY,
+    CouponCollectionView,
+    CouponRedeemView,
+    OfferCollectionView,
+    OfferItemView,
+    setup_coupon_routes,
+)
 from .rules import (
     APP_RULE_REPOSITORY,
     RuleCollectionView,
@@ -277,9 +286,13 @@ def setup_saas_api(
             _app[APP_SECRET_STORE] = _store_holder["store"]
         return _store_holder["store"]
 
+    from ..coupons.issuer import CouponIssuer
+    from ..coupons.repository import CouponRepository
     from ..rules.repository import RuleRepository
 
     rule_repository = RuleRepository(resolved_dsn, schema=resolved_schema)
+    coupon_repository = CouponRepository(resolved_dsn, schema=resolved_schema)
+    coupon_issuer = CouponIssuer(coupon_repository)
 
     runtimes = TenantRuntimeCache(
         runtime_builder
@@ -294,6 +307,8 @@ def setup_saas_api(
     _app[APP_TENANT_RUNTIMES] = runtimes
     _app[APP_SECRET_STORE_FACTORY] = _secret_store
     _app[APP_RULE_REPOSITORY] = rule_repository
+    _app[APP_COUPON_REPOSITORY] = coupon_repository
+    _app[APP_COUPON_ISSUER] = coupon_issuer
 
     if review_sources is None:
         from ..reviews.mock import MockReviewSource
@@ -338,6 +353,10 @@ def setup_saas_api(
             RuleCollectionView,
             RuleEvaluateView,
             RuleItemView,
+            OfferCollectionView,
+            OfferItemView,
+            CouponCollectionView,
+            CouponRedeemView,
         )
 
     if install_middleware:
@@ -355,13 +374,14 @@ def setup_saas_api(
     setup_secret_routes(_app)
     setup_review_routes(_app)
     setup_rule_routes(_app)
+    setup_coupon_routes(_app)
 
     async def _on_startup(application: web.Application) -> None:
         """Create the SaaS schema if it does not exist."""
         from ..db.schema import ensure_schema
 
-        conn = await repository.connection()
-        await ensure_schema(conn, schema=resolved_schema)
+        async with repository.acquire() as conn:
+            await ensure_schema(conn, schema=resolved_schema)
 
     async def _on_cleanup(application: web.Application) -> None:
         """Release the runtime cache, repository and secret store."""
@@ -370,6 +390,7 @@ def setup_saas_api(
         await review_repository.aclose()
         await guest_repository.aclose()
         await rule_repository.aclose()
+        await coupon_repository.aclose()
         store = application.get(APP_SECRET_STORE)
         if store is not None and hasattr(store, "aclose"):
             await store.aclose()
@@ -387,6 +408,8 @@ def setup_saas_api(
 
 
 __all__ = (
+    "APP_COUPON_ISSUER",
+    "APP_COUPON_REPOSITORY",
     "APP_INGEST_SERVICE",
     "APP_RULE_REPOSITORY",
     "APP_REVIEW_SOURCES",

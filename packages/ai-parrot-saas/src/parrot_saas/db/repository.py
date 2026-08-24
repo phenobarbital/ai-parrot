@@ -21,13 +21,28 @@ The driver is ``asyncdb`` (the repository's convention — see
 driver exposes ``fetch_one(sentence, *args)`` / ``fetch_all(...)`` /
 ``execute(...)`` for parameterised queries; ``fetchrow``/``fetch`` have
 different signatures entirely and silently break when called with arguments.
+
+**Every operation borrows its own connection from a pool.** An earlier version
+held a single shared ``AsyncDB``, which does not survive concurrency: asyncpg
+guards each operation with ``_Atomic`` and raises ``InterfaceError: cannot
+perform operation: another operation is in progress`` the moment a second
+coroutine touches the same connection. Four concurrent reads on one connection
+produce one result and three errors — verified, and the reason
+``test_base_repository_concurrency.py`` exists.
+
+A pool is also what makes :meth:`BaseRepository.transaction` meaningful. A
+``SELECT ... FOR UPDATE`` only serialises writers if each holds its *own*
+connection; on a shared one the lock would be re-entered by the same session
+and the coupon issuer's budget check would let every caller through.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import re
-from typing import Any, Optional, Sequence
+from typing import Any, AsyncIterator, Optional, Sequence
 
-from asyncdb import AsyncDB
+from asyncdb import AsyncDB, AsyncPool
 from navconfig.logging import logging
 
 #: Schema and table names are interpolated into SQL — they cannot be bound as
@@ -72,10 +87,20 @@ class BaseRepository:
         logger: Module logger.
     """
 
-    def __init__(self, dsn: str, *, schema: str = "saas") -> None:
+    def __init__(
+        self,
+        dsn: str,
+        *,
+        schema: str = "saas",
+        min_size: int = 1,
+        max_size: int = 10,
+    ) -> None:
         self._dsn = dsn
         self._schema = check_identifier(schema, "schema")
-        self._conn: Optional[AsyncDB] = None
+        self._min_size = min_size
+        self._max_size = max_size
+        self._pool: Optional[AsyncPool] = None
+        self._pool_lock = asyncio.Lock()
         self.logger = logging.getLogger(
             f"parrot_saas.db.{type(self).__name__}"
         )
@@ -98,27 +123,101 @@ class BaseRepository:
         """
         return f"{self._schema}.{check_identifier(name, 'table')}"
 
+    async def pool(self) -> AsyncPool:
+        """Return the connection pool, creating it on first use.
+
+        Double-checked under a lock so a burst of concurrent requests creates
+        one pool rather than several.
+        """
+        if self._pool is not None and self._pool.is_connected():
+            return self._pool
+        async with self._pool_lock:
+            if self._pool is not None and self._pool.is_connected():
+                return self._pool
+            pool = AsyncPool(
+                "pg",
+                dsn=self._dsn,
+                min_size=self._min_size,
+                max_size=self._max_size,
+            )
+            await pool.connect()
+            self._pool = pool
+            return pool
+
+    @contextlib.asynccontextmanager
+    async def acquire(self) -> AsyncIterator[AsyncDB]:
+        """Borrow a connection for the duration of the block.
+
+        Use this when several statements must run on the *same* connection —
+        a transaction, a ``FOR UPDATE`` lock, a cursor. Single statements
+        should go through the tenant-scoped helpers instead, which borrow and
+        return a connection each.
+
+        Yields:
+            A connected ``AsyncDB``.
+        """
+        pool = await self.pool()
+        conn = await pool.acquire()
+        try:
+            yield conn
+        finally:
+            await pool.release(conn)
+
+    @contextlib.asynccontextmanager
+    async def transaction(self) -> AsyncIterator[AsyncDB]:
+        """Borrow a connection with a transaction already open.
+
+        Commits on a clean exit, rolls back on any exception. The driver
+        exposes ``transaction()`` / ``commit()`` / ``rollback()`` but *not* as
+        a context manager, and it stores the in-flight transaction on the
+        connection object — so hand-rolling this is how a forgotten rollback
+        leaks a half-applied write into the next borrower of that connection.
+
+        Yields:
+            A connected ``AsyncDB`` inside an open transaction.
+        """
+        async with self.acquire() as conn:
+            await conn.transaction()
+            try:
+                yield conn
+            except BaseException:
+                await conn.rollback()
+                raise
+            else:
+                await conn.commit()
+
     async def connection(self) -> AsyncDB:
-        """Return an open connection, opening one on first use."""
-        if self._conn is None:
-            self._conn = AsyncDB("pg", dsn=self._dsn)
-        if not self._conn.is_connected():
-            await self._conn.connection()
-        return self._conn
+        """Return a pooled connection **that the caller must release**.
+
+        Kept for the start-up path, which hands a raw connection to
+        ``ensure_schema``. Everything else should use :meth:`acquire`, which
+        cannot forget to give the connection back.
+
+        Returns:
+            A connected ``AsyncDB`` borrowed from the pool.
+        """
+        pool = await self.pool()
+        return await pool.acquire()
+
+    async def release(self, conn: AsyncDB) -> None:
+        """Return a connection taken with :meth:`connection` to the pool."""
+        if self._pool is not None:
+            await self._pool.release(conn)
 
     async def aclose(self) -> None:
-        """Close the connection if open."""
-        if self._conn is not None and self._conn.is_connected():
-            await self._conn.close()
-        self._conn = None
+        """Close the pool if open."""
+        if self._pool is not None:
+            with contextlib.suppress(Exception):
+                await self._pool.close()
+        self._pool = None
 
     async def __aenter__(self) -> "BaseRepository":
-        """Open the connection on context entry."""
-        await self.connection()
+        """Open the pool on context entry."""
+        await self.pool()
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
-        """Close the connection on context exit."""
+        """Close the pool on context exit."""
         await self.aclose()
 
     # -- tenant-scoped access ---------------------------------------------
@@ -160,8 +259,8 @@ class BaseRepository:
             TenantScopeError: If ``sql`` has no tenant predicate.
         """
         self._require_tenant_predicate(sql)
-        conn = await self.connection()
-        return await conn.fetch_one(sql, tenant_id, *params)
+        async with self.acquire() as conn:
+            return await conn.fetch_one(sql, tenant_id, *params)
 
     async def fetch_all(
         self, tenant_id: str, sql: str, *params: Any
@@ -180,8 +279,8 @@ class BaseRepository:
             TenantScopeError: If ``sql`` has no tenant predicate.
         """
         self._require_tenant_predicate(sql)
-        conn = await self.connection()
-        return await conn.fetch_all(sql, tenant_id, *params) or []
+        async with self.acquire() as conn:
+            return await conn.fetch_all(sql, tenant_id, *params) or []
 
     async def execute(self, tenant_id: str, sql: str, *params: Any) -> Any:
         """Run a tenant-scoped statement.
@@ -198,8 +297,8 @@ class BaseRepository:
             TenantScopeError: If ``sql`` has no tenant predicate.
         """
         self._require_tenant_predicate(sql)
-        conn = await self.connection()
-        return await conn.execute(sql, tenant_id, *params)
+        async with self.acquire() as conn:
+            return await conn.execute(sql, tenant_id, *params)
 
     # -- deliberate cross-tenant access ------------------------------------
     #
@@ -207,18 +306,18 @@ class BaseRepository:
 
     async def admin_fetch_one(self, sql: str, *params: Any) -> Optional[Any]:
         """Run a query that is deliberately not scoped to one tenant."""
-        conn = await self.connection()
-        return await conn.fetch_one(sql, *params)
+        async with self.acquire() as conn:
+            return await conn.fetch_one(sql, *params)
 
     async def admin_fetch_all(self, sql: str, *params: Any) -> Sequence[Any]:
         """Run a listing that deliberately spans tenants."""
-        conn = await self.connection()
-        return await conn.fetch_all(sql, *params) or []
+        async with self.acquire() as conn:
+            return await conn.fetch_all(sql, *params) or []
 
     async def admin_execute(self, sql: str, *params: Any) -> Any:
         """Run a statement that is deliberately not scoped to one tenant."""
-        conn = await self.connection()
-        return await conn.execute(sql, *params)
+        async with self.acquire() as conn:
+            return await conn.execute(sql, *params)
 
 
 __all__ = ("BaseRepository", "TenantScopeError", "check_identifier")

@@ -192,6 +192,106 @@ def _statements(schema: str) -> Sequence[str]:
             ON {schema}.rules (tenant_id, ruleset, priority DESC, rule_id)
             WHERE enabled
         """,
+        # -- coupon offers -------------------------------------------------
+        # What a tenant is willing to give away. ``code`` is what a rule's
+        # result payload names, so the rules engine and this table meet there.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.coupon_offers (
+            offer_id       uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id      text          NOT NULL
+                                         REFERENCES {schema}.tenants (tenant_id),
+            code           text          NOT NULL,
+            name           text          NOT NULL DEFAULT '',
+            description    text          NOT NULL DEFAULT '',
+            discount_type  text          NOT NULL DEFAULT 'percent',
+            discount_value numeric(10,2) NOT NULL DEFAULT 0,
+            currency       text          NOT NULL DEFAULT 'EUR',
+            valid_days     integer       NOT NULL DEFAULT 30,
+            max_per_guest  integer       NOT NULL DEFAULT 1,
+            budget_period  text          NOT NULL DEFAULT 'total',
+            max_coupons    integer       NOT NULL DEFAULT 0,
+            active         boolean       NOT NULL DEFAULT true,
+            terms          text          NOT NULL DEFAULT '',
+            created_at     timestamptz   NOT NULL DEFAULT now(),
+            updated_at     timestamptz   NOT NULL DEFAULT now(),
+            CONSTRAINT coupon_offers_code_uniq UNIQUE (tenant_id, code)
+        )
+        """,
+        # -- coupon budgets ------------------------------------------------
+        # The counter the issuer locks. A separate table rather than two more
+        # columns on the offer: ``SELECT ... FOR UPDATE`` locks a row, and
+        # locking the offer row would make editing an offer's wording contend
+        # with every issuance in flight.
+        #
+        # ``period_start`` is what makes "50 a month" work without a scheduler:
+        # the issuer computes the current period and upserts its row, so a new
+        # period starts itself the first time someone earns a coupon in it.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.coupon_budgets (
+            budget_id    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id    text        NOT NULL,
+            offer_id     uuid        NOT NULL
+                                     REFERENCES {schema}.coupon_offers (offer_id)
+                                     ON DELETE CASCADE,
+            period_start date        NOT NULL,
+            max_coupons  integer     NOT NULL DEFAULT 0,
+            issued_count integer     NOT NULL DEFAULT 0,
+            created_at   timestamptz NOT NULL DEFAULT now(),
+            CONSTRAINT coupon_budgets_period_uniq
+                UNIQUE (tenant_id, offer_id, period_start)
+        )
+        """,
+        # -- coupons -------------------------------------------------------
+        # ``UNIQUE (tenant_id, code)`` is what the generator retries against,
+        # and what stops two guests ever holding the same code.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.coupons (
+            coupon_id    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id    text        NOT NULL
+                                     REFERENCES {schema}.tenants (tenant_id),
+            offer_id     uuid        NOT NULL
+                                     REFERENCES {schema}.coupon_offers (offer_id),
+            code         text        NOT NULL,
+            guest_id     uuid        REFERENCES {schema}.guests (guest_id),
+            review_id    uuid        REFERENCES {schema}.reviews (review_id),
+            status       text        NOT NULL DEFAULT 'issued',
+            issued_at    timestamptz NOT NULL DEFAULT now(),
+            expires_at   timestamptz NOT NULL,
+            delivered_at timestamptz,
+            redeemed_at  timestamptz,
+            redeemed_by  text        NOT NULL DEFAULT '',
+            CONSTRAINT coupons_code_uniq UNIQUE (tenant_id, code)
+        )
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS coupons_guest_idx
+            ON {schema}.coupons (tenant_id, guest_id, offer_id)
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS coupons_status_idx
+            ON {schema}.coupons (tenant_id, status, issued_at DESC)
+        """,
+        # -- coupon events -------------------------------------------------
+        # An append-only trail. Money left the business when a coupon was
+        # redeemed, so "who, when, and on whose authority" has to outlive any
+        # status column that a later write could overwrite.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.coupon_events (
+            event_id   uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id  text        NOT NULL,
+            coupon_id  uuid        NOT NULL
+                                   REFERENCES {schema}.coupons (coupon_id)
+                                   ON DELETE CASCADE,
+            event      text        NOT NULL,
+            detail     jsonb       NOT NULL DEFAULT '{{}}'::jsonb,
+            actor      text        NOT NULL DEFAULT '',
+            created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS coupon_events_coupon_idx
+            ON {schema}.coupon_events (tenant_id, coupon_id, created_at)
+        """,
     )
 
 

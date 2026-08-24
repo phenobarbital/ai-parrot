@@ -333,6 +333,78 @@ async def test_a_wired_ruleset_can_decline(tenant) -> None:
 
 
 # ---------------------------------------------------------------------------
+# The coupon issuer, wired into the real graph
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_a_wired_issuer_mints_a_real_coupon(
+    tenant, test_dsn, unique_schema
+) -> None:
+    """The issuer has to fit its consumer, not just its own tests.
+
+    Every other path test seeds ``issued`` directly, so nothing would notice if
+    the node's call drifted from the issuer's signature — which is exactly the
+    mistake that hid in the eligibility node until a ruleset was wired in.
+    """
+    from asyncdb import AsyncDB
+
+    from parrot_saas.coupons.issuer import CouponIssuer
+    from parrot_saas.coupons.models import CouponOfferCreate
+    from parrot_saas.coupons.repository import CouponRepository
+    from parrot_saas.db.schema import ensure_schema
+    from parrot_saas.flows.community_manager.models import (
+        ContactCapture,
+        ContactChannel,
+        CouponDecision,
+    )
+
+    conn = AsyncDB("pg", dsn=test_dsn)
+    async with await conn.connection():
+        await ensure_schema(conn, schema=unique_schema)
+        await conn.execute(
+            f"INSERT INTO {unique_schema}.tenants (tenant_id, name) "
+            "VALUES ('bar-pepe', 'Bar Pepe')"
+        )
+
+    coupons = CouponRepository(test_dsn, schema=unique_schema)
+    try:
+        await coupons.create_offer(
+            "bar-pepe",
+            CouponOfferCreate(code="RECOVER20", discount_value=20, valid_days=30),
+        )
+        shared = {
+            "review": _review(),
+            "tenant_id": "bar-pepe",
+            "contact": ContactCapture(
+                contact_available=True,
+                channel=ContactChannel.EMAIL,
+                guest_id="",
+            ),
+            "eligibility": CouponDecision(
+                eligible=True, offer_code="RECOVER20", reason="detractor"
+            ),
+        }
+
+        result, executed = await _run(
+            tenant, shared, issuer=CouponIssuer(coupons)
+        )
+
+        assert topo.COUPON_ISSUE in executed
+        issued = result.responses[topo.COUPON_ISSUE]
+        assert issued.issued is True
+        assert issued.coupon_code.startswith("RECOVER20-")
+        # The summary is what an operator reads, so the code has to reach it.
+        assert result.responses[topo.CLOSE].coupon_code == issued.coupon_code
+        assert len(await coupons.list_coupons("bar-pepe")) == 1
+    finally:
+        await coupons.aclose()
+        conn = AsyncDB("pg", dsn=test_dsn)
+        async with await conn.connection():
+            await conn.execute(f"DROP SCHEMA IF EXISTS {unique_schema} CASCADE")
+
+
+# ---------------------------------------------------------------------------
 # Checkpointing stays available
 # ---------------------------------------------------------------------------
 
