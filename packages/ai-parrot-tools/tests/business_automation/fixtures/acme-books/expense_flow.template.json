@@ -1,0 +1,14 @@
+{
+  "name": "expense_flow",
+  "objective_template": "Register an expense for {{client}}",
+  "url_template": "http://acme-books.test/expenses/new",
+  "params": [
+    {"name": "client", "type": "string"},
+    {"name": "amount", "type": "string"}
+  ],
+  "steps_template": [
+    {"action": "navigate", "url": "{{url}}"},
+    {"action": "fill", "selector": "#client", "value": "{{client}}"},
+    {"action": "fill", "selector": "#amount", "value": "{{amount}}"}
+  ]
+}

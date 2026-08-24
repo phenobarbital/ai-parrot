@@ -8,6 +8,7 @@ can share this execution logic without duplication.
 All driver interactions use the ``AbstractDriver`` interface exclusively;
 no Selenium-specific imports live in this module.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,10 +17,11 @@ import logging
 import re as _re
 import time
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
+from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
 
 from .advanced_actions import exec_conditional, exec_loop
 from .drivers.abstract import AbstractDriver
@@ -29,8 +31,24 @@ from .models import (
     ScrapingStep,
 )
 from .plan import ScrapingPlan
+from .session_actions import (
+    CredentialResolverFn,
+    exec_authenticate,
+    exec_await_browser_event,
+    exec_await_human,
+    exec_await_keypress,
+    exec_get_cookies,
+    exec_set_cookies,
+    exec_upload_file,
+    exec_wait_for_download,
+)
 from .toolkit_models import DriverConfig
-from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
+
+if TYPE_CHECKING:
+    # Soft dependency (Decision D2), same pattern as session_actions.py:
+    # parrot.human.channels.base.HumanChannel is core, but this module must
+    # not force a hard runtime import just to type-hint an optional param.
+    from parrot.human.channels.base import HumanChannel
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +64,8 @@ async def execute_plan_steps(
     selectors: Optional[List[Dict[str, Any]]] = None,
     config: Optional[DriverConfig] = None,
     base_url: Optional[str] = None,
+    credential_resolver: Optional[CredentialResolverFn] = None,
+    channel: Optional["HumanChannel"] = None,
 ) -> ScrapingResult:
     """Execute a scraping plan's steps against a browser driver.
 
@@ -60,6 +80,15 @@ async def execute_plan_steps(
         selectors: Content extraction selectors (used when *plan* is ``None``).
         config: Driver configuration for delay/timeout settings.
         base_url: Fallback base URL for relative link resolution.
+        credential_resolver: Optional resolver forwarded to every
+            ``authenticate`` step's :func:`~.session_actions.exec_authenticate`
+            (Decision D2/G3 — broker-backed credentials, never literal
+            fields, when ``Authenticate.credential_provider`` is set).
+        channel: Optional :class:`HumanChannel` forwarded to every
+            ``await_human`` step's :func:`~.session_actions.exec_await_human`,
+            so a mid-plan pause actually reaches a person instead of
+            silently defaulting to ``channel=None`` (fail-closed on
+            ``condition_type="manual"``).
 
     Returns:
         ``ScrapingResult`` with extracted data and metadata.
@@ -88,10 +117,7 @@ async def execute_plan_steps(
 
     scraping_selectors: Optional[List[ScrapingSelector]] = None
     if raw_selectors:
-        scraping_selectors = [
-            ScrapingSelector(**sel) if isinstance(sel, dict) else sel
-            for sel in raw_selectors
-        ]
+        scraping_selectors = [ScrapingSelector(**sel) if isinstance(sel, dict) else sel for sel in raw_selectors]
 
     # ── Execute steps ─────────────────────────────────────────────────
     step_errors: List[Dict[str, Any]] = []
@@ -105,14 +131,24 @@ async def execute_plan_steps(
         logger.info("Executing step %d/%d: %s", idx + 1, len(scraping_steps), step_desc)
 
         try:
-            success = await _dispatch_step(driver, step, url, timeout, step_extracted)
+            success = await _dispatch_step(
+                driver,
+                step,
+                url,
+                timeout,
+                step_extracted,
+                credential_resolver=credential_resolver,
+                channel=channel,
+            )
         except Exception as exc:
             logger.error("Step %d failed: %s — %s", idx + 1, step_desc, exc)
-            step_errors.append({
-                "step_index": idx,
-                "action": step.action.get_action_type(),
-                "error": str(exc),
-            })
+            step_errors.append(
+                {
+                    "step_index": idx,
+                    "action": step.action.get_action_type(),
+                    "error": str(exc),
+                }
+            )
             # Critical actions abort the remaining plan
             action_type = step.action.get_action_type()
             if action_type in ("navigate", "authenticate"):
@@ -122,11 +158,13 @@ async def execute_plan_steps(
 
         if not success:
             logger.warning("Step %d returned failure: %s", idx + 1, step_desc)
-            step_errors.append({
-                "step_index": idx,
-                "action": step.action.get_action_type(),
-                "error": "step returned False",
-            })
+            step_errors.append(
+                {
+                    "step_index": idx,
+                    "action": step.action.get_action_type(),
+                    "error": "step returned False",
+                }
+            )
             action_type = step.action.get_action_type()
             if action_type in ("navigate", "authenticate"):
                 aborted = True
@@ -180,16 +218,14 @@ async def execute_plan_steps(
         },
         timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
         success=success,
-        error_message=(
-            f"{len(step_errors)} step(s) failed"
-            if has_errors else None
-        ),
+        error_message=(f"{len(step_errors)} step(s) failed" if has_errors else None),
     )
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # Private async polling helper
 # ═══════════════════════════════════════════════════════════════════════
+
 
 async def _wait_until(predicate: Any, timeout: int, poll: float = 0.25) -> None:
     """Poll *predicate* until it returns ``True`` or the timeout elapses.
@@ -216,9 +252,7 @@ async def _wait_until(predicate: Any, timeout: int, poll: float = 0.25) -> None:
         if result:
             return
         if loop.time() >= deadline:
-            raise asyncio.TimeoutError(
-                f"_wait_until timed out after {timeout}s"
-            )
+            raise asyncio.TimeoutError(f"_wait_until timed out after {timeout}s")
         await asyncio.sleep(poll)
 
 
@@ -226,12 +260,16 @@ async def _wait_until(predicate: Any, timeout: int, poll: float = 0.25) -> None:
 # Action dispatch
 # ═══════════════════════════════════════════════════════════════════════
 
+
 async def _dispatch_step(
     driver: AbstractDriver,
     step: ScrapingStep,
     base_url: str,
     timeout: int,
     step_extracted: Dict[str, Any],
+    *,
+    credential_resolver: Optional[CredentialResolverFn] = None,
+    channel: Optional["HumanChannel"] = None,
 ) -> bool:
     """Dispatch a single ``ScrapingStep`` to the appropriate action handler.
 
@@ -241,6 +279,10 @@ async def _dispatch_step(
         base_url: Base URL for resolving relative URLs.
         timeout: Default timeout in seconds.
         step_extracted: Shared dict collecting results from ``extract`` steps.
+        credential_resolver: Forwarded to ``authenticate`` steps (see
+            :func:`execute_plan_steps`).
+        channel: Forwarded to ``await_human`` steps (see
+            :func:`execute_plan_steps`).
 
     Returns:
         ``True`` if the step succeeded.
@@ -281,33 +323,55 @@ async def _dispatch_step(
     elif action_type == "loop":
         # Recursive closure: forwards each sub-step back through this same
         # dispatcher (enabling loop-within-loop) while preserving the shared
-        # ``step_extracted`` accumulator for nested ``extract`` actions.
+        # ``step_extracted`` accumulator for nested ``extract`` actions, and
+        # forwarding this call's own credential_resolver/channel so a nested
+        # authenticate/await_human step is never silently downgraded to
+        # ``None`` just because it is inside a loop.
         async def _dispatch(d, s, u, t, _caller_se):
             # Ignore the callee-supplied accumulator on purpose: we forward the
             # enclosing ``step_extracted`` so nested extracts share one dict.
-            return await _dispatch_step(d, s, u, t, step_extracted)
+            return await _dispatch_step(
+                d, s, u, t, step_extracted, credential_resolver=credential_resolver, channel=channel
+            )
 
         return await exec_loop(driver, action, _dispatch, base_url, timeout)
     elif action_type == "conditional":
+
         async def _dispatch(d, s, u, t, _caller_se):
             # Ignore the callee-supplied accumulator on purpose: we forward the
             # enclosing ``step_extracted`` so nested extracts share one dict.
-            return await _dispatch_step(d, s, u, t, step_extracted)
+            return await _dispatch_step(
+                d, s, u, t, step_extracted, credential_resolver=credential_resolver, channel=channel
+            )
 
         return await exec_conditional(driver, action, _dispatch, base_url, timeout)
-    elif action_type in (
-        "get_cookies", "set_cookies", "authenticate",
-        "await_human", "await_keypress", "await_browser_event",
-        "upload_file", "wait_for_download",
-    ):
-        # These advanced actions require the full WebScrapingTool context.
-        # Log a warning and return True to not block the pipeline.
-        logger.warning(
-            "Action '%s' requires the full WebScrapingTool; "
-            "skipping in standalone executor.",
-            action_type,
+    elif action_type == "authenticate":
+        # Recursive closure: forwards custom_steps (oauth/custom methods)
+        # back through this same dispatcher, exactly like loop/conditional.
+        async def _dispatch(d, s, u, t, _caller_se):
+            # Ignore the callee-supplied accumulator on purpose: we forward the
+            # enclosing ``step_extracted`` so nested extracts share one dict.
+            return await _dispatch_step(
+                d, s, u, t, step_extracted, credential_resolver=credential_resolver, channel=channel
+            )
+
+        return await exec_authenticate(
+            driver, action, _dispatch, credential_resolver=credential_resolver, timeout=timeout
         )
-        return True
+    elif action_type == "get_cookies":
+        return await _action_get_cookies(driver, action, step, step_extracted)
+    elif action_type == "set_cookies":
+        return await exec_set_cookies(driver, action)
+    elif action_type == "await_human":
+        return await exec_await_human(driver, action, channel=channel)
+    elif action_type == "await_keypress":
+        return await exec_await_keypress(driver, action)
+    elif action_type == "await_browser_event":
+        return await exec_await_browser_event(driver, action)
+    elif action_type == "upload_file":
+        return await exec_upload_file(driver, action)
+    elif action_type == "wait_for_download":
+        return await exec_wait_for_download(driver, action)
     else:
         logger.warning("Unknown action type: %s", action_type)
         return False
@@ -315,9 +379,8 @@ async def _dispatch_step(
 
 # ── Individual action handlers ────────────────────────────────────────
 
-async def _action_navigate(
-    driver: AbstractDriver, action: Any, base_url: str
-) -> bool:
+
+async def _action_navigate(driver: AbstractDriver, action: Any, base_url: str) -> bool:
     """Navigate to a URL."""
     target = urljoin(base_url, action.url) if base_url else action.url
     timeout = getattr(action, "timeout", None) or 30
@@ -325,9 +388,7 @@ async def _action_navigate(
     return True
 
 
-async def _action_wait(
-    driver: AbstractDriver, action: Any, default_timeout: int
-) -> bool:
+async def _action_wait(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
     """Wait for a condition."""
     wait_timeout = action.timeout or default_timeout
     condition_type = getattr(action, "condition_type", "simple")
@@ -345,13 +406,14 @@ async def _action_wait(
                 "(:contains / :-soup-contains / :has) that the native "
                 "CSS engine doesn't support; waiting on the stripped form %r "
                 "instead. To wait on text, anchor on a nearby id/class.",
-                condition, native_css,
+                condition,
+                native_css,
             )
         if not native_css.strip():
             logger.warning(
-                "wait selector %r reduced to empty after stripping; "
-                "falling back to plain sleep(%ds).",
-                condition, wait_timeout,
+                "wait selector %r reduced to empty after stripping; " "falling back to plain sleep(%ds).",
+                condition,
+                wait_timeout,
             )
             await asyncio.sleep(wait_timeout)
             return True
@@ -367,6 +429,7 @@ async def _action_wait(
         return True
 
     if condition_type == "title_contains":
+
         async def _title_contains() -> bool:
             title = await driver.evaluate("document.title")
             return condition in str(title)
@@ -379,9 +442,7 @@ async def _action_wait(
     return True
 
 
-async def _action_click(
-    driver: AbstractDriver, action: Any, default_timeout: int
-) -> bool:
+async def _action_click(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
     """Click an element.
 
     Handles the ``:-soup-contains`` text filter by falling back to a JS
@@ -397,21 +458,22 @@ async def _action_click(
         m = _SOUP_CONTAINS_TEXT_RE.search(selector)
         if m:
             js_text_filter = m.group(1)
-            css_prefix = selector[:m.start()].rstrip() or "*"
+            css_prefix = selector[: m.start()].rstrip() or "*"
             css_prefix = _strip_soup_only_pseudos(css_prefix) or "*"
             logger.warning(
-                "click selector %r uses text-contains; running as CSS "
-                "%r + JS textContent filter for %r",
-                selector, css_prefix, js_text_filter,
+                "click selector %r uses text-contains; running as CSS " "%r + JS textContent filter for %r",
+                selector,
+                css_prefix,
+                js_text_filter,
             )
             selector = css_prefix
         else:
             stripped = _strip_soup_only_pseudos(selector)
             if stripped != selector:
                 logger.warning(
-                    "click selector %r contains BS4-only pseudo-classes; "
-                    "stripped to %r for CSS.",
-                    selector, stripped,
+                    "click selector %r contains BS4-only pseudo-classes; " "stripped to %r for CSS.",
+                    selector,
+                    stripped,
                 )
                 selector = stripped
             if not selector.strip():
@@ -436,10 +498,7 @@ async def _action_click(
         )
         hit = await driver.execute_script(script, selector, js_text_filter)
         if not hit:
-            raise RuntimeError(
-                f"No element matching CSS {selector!r} contained text "
-                f"{js_text_filter!r}"
-            )
+            raise RuntimeError(f"No element matching CSS {selector!r} contained text " f"{js_text_filter!r}")
         return True
 
     if selector_type == "xpath":
@@ -453,9 +512,7 @@ async def _action_click(
     return True
 
 
-async def _action_fill(
-    driver: AbstractDriver, action: Any, default_timeout: int
-) -> bool:
+async def _action_fill(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
     """Fill an input field."""
     selector = action.selector
     value = action.value
@@ -482,10 +539,7 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
         return True
 
     if direction == "bottom":
-        height_script = (
-            "return Math.max(document.body.scrollHeight,"
-            " document.documentElement.scrollHeight);"
-        )
+        height_script = "return Math.max(document.body.scrollHeight," " document.documentElement.scrollHeight);"
         height = int(await driver.execute_script(height_script) or 0)
         if height <= 0:
             return True
@@ -563,6 +617,24 @@ async def _action_get_html(driver: AbstractDriver, action: Any) -> bool:
     return True
 
 
+async def _action_get_cookies(
+    driver: AbstractDriver,
+    action: Any,
+    step: ScrapingStep,
+    step_extracted: Dict[str, Any],
+) -> bool:
+    """Run a ``get_cookies`` step, storing the result in ``step_extracted``.
+
+    Mirrors :func:`_action_extract`'s key-naming convention (``extract_name``/
+    ``name``/step description) so downstream consumers of ``extracted_data``
+    find cookies the same way they find any other per-step extraction.
+    """
+    result = await exec_get_cookies(driver, action)
+    key = getattr(action, "extract_name", "") or getattr(action, "name", "") or step.description or "cookies"
+    step_extracted[key] = result.get("cookies", [])
+    return True
+
+
 async def _action_extract(
     driver: AbstractDriver,
     action: Any,
@@ -578,12 +650,7 @@ async def _action_extract(
     html = await driver.get_page_source()
     soup = BeautifulSoup(html, "html.parser")
 
-    key = (
-        getattr(action, "extract_name", "")
-        or getattr(action, "name", "")
-        or step.description
-        or "extracted_data"
-    )
+    key = getattr(action, "extract_name", "") or getattr(action, "name", "") or step.description or "extracted_data"
     if key == "extract":
         key = "extracted_data"
 
@@ -626,14 +693,18 @@ async def _action_extract(
         step_extracted[key] = seen
         logger.info(
             "Extract %r: appended %d new row(s) (total %d)",
-            key, len(new_value), len(seen),
+            key,
+            len(new_value),
+            len(seen),
         )
     else:
         step_extracted[key] = new_value
         count = len(new_value) if isinstance(new_value, list) else (1 if new_value is not None else 0)
         logger.info(
             "Extract %r: captured %s %s",
-            key, count, "rows" if fields else "values",
+            key,
+            count,
+            "rows" if fields else "values",
         )
     return True
 
@@ -664,21 +735,14 @@ async def _action_extract_jsonld(
     html = await driver.get_page_source()
     soup = BeautifulSoup(html, "html.parser")
 
-    key = (
-        getattr(action, "extract_name", "")
-        or getattr(action, "name", "")
-        or step.description
-        or "jsonld"
-    )
+    key = getattr(action, "extract_name", "") or getattr(action, "name", "") or step.description or "jsonld"
     # Guard: if key resolved to the action's class-name sentinel rather than a
     # user-specified value, normalise to the canonical default key.
     if key == "extract_jsonld":
         key = "jsonld"
 
     types_filter = getattr(action, "types", None)
-    allowed: Optional[set] = (
-        set(types_filter) if types_filter is not None else None
-    )
+    allowed: Optional[set] = set(types_filter) if types_filter is not None else None
     # Empty list → filter to nothing (parity with loader's _jsonld_types == []).
     if allowed is not None and not allowed:
         step_extracted.setdefault(key, [])
@@ -713,9 +777,7 @@ async def _action_extract_jsonld(
     existing = step_extracted.get(key)
     if isinstance(existing, list):
         merged = list(existing)
-        merged_sigs: set[tuple[str, str]] = {
-            (r["content_kind"], r["page_content"]) for r in existing
-        }
+        merged_sigs: set[tuple[str, str]] = {(r["content_kind"], r["page_content"]) for r in existing}
         for record in unique:
             sig = (record["content_kind"], record["page_content"])
             if sig not in merged_sigs:
@@ -725,12 +787,16 @@ async def _action_extract_jsonld(
         appended = len(merged) - len(existing)
         logger.info(
             "extract_jsonld %r: appended %d new item(s) (total %d)",
-            key, appended, len(merged),
+            key,
+            appended,
+            len(merged),
         )
     else:
         step_extracted[key] = unique
         logger.info(
-            "extract_jsonld %r: captured %d item(s)", key, len(unique),
+            "extract_jsonld %r: captured %d item(s)",
+            key,
+            len(unique),
         )
     return True
 
@@ -755,9 +821,9 @@ def _apply_field(row: Any, spec: Any) -> Any:
     if isinstance(spec, dict):
         sel = spec.get("selector")
         extract_type = spec.get("extract_type") or (
-            "text" if spec.get("attribute") in (None, "text") else
-            "html" if spec.get("attribute") == "html" else
-            "attribute"
+            "text"
+            if spec.get("attribute") in (None, "text")
+            else "html" if spec.get("attribute") == "html" else "attribute"
         )
         attribute = spec.get("attribute")
         if attribute in ("text", "html"):
@@ -814,9 +880,7 @@ async def _action_press_key(driver: AbstractDriver, action: Any) -> bool:
     return True
 
 
-async def _action_select(
-    driver: AbstractDriver, action: Any, default_timeout: int
-) -> bool:
+async def _action_select(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
     """Select from a dropdown.
 
     The ``by`` mode is taken from ``action.by`` when explicitly set;
@@ -827,15 +891,18 @@ async def _action_select(
     timeout = action.timeout or default_timeout
 
     by = getattr(action, "by", None) or (
-        "value" if getattr(action, "value", None)
-        else "text" if getattr(action, "text", None)
-        else "index" if getattr(action, "index", None) is not None
-        else "value"
+        "value"
+        if getattr(action, "value", None)
+        else (
+            "text"
+            if getattr(action, "text", None)
+            else "index" if getattr(action, "index", None) is not None else "value"
+        )
     )
     raw = (
-        action.value if by == "value"
-        else getattr(action, "text", None) if by == "text"
-        else str(getattr(action, "index", 0))
+        action.value
+        if by == "value"
+        else getattr(action, "text", None) if by == "text" else str(getattr(action, "index", 0))
     )
     if raw is None:
         logger.warning(
@@ -924,24 +991,16 @@ def _apply_selectors(
                     tree = etree.HTML(str(soup))
                     elements_xml = tree.xpath(sel.selector)
                     if sel.extract_type == "text":
-                        texts = [
-                            el.text_content() if hasattr(el, "text_content") else str(el)
-                            for el in elements_xml
-                        ]
+                        texts = [el.text_content() if hasattr(el, "text_content") else str(el) for el in elements_xml]
                         extracted[sel.name] = texts if sel.multiple else (texts[0] if texts else "")
                     elif sel.extract_type == "html":
                         htmls = [
-                            etree.tostring(el, encoding="unicode")
-                            if hasattr(el, "tag") else str(el)
+                            etree.tostring(el, encoding="unicode") if hasattr(el, "tag") else str(el)
                             for el in elements_xml
                         ]
                         extracted[sel.name] = htmls if sel.multiple else (htmls[0] if htmls else "")
                     elif sel.extract_type == "attribute" and sel.attribute:
-                        vals = [
-                            el.get(sel.attribute, "")
-                            if hasattr(el, "get") else ""
-                            for el in elements_xml
-                        ]
+                        vals = [el.get(sel.attribute, "") if hasattr(el, "get") else "" for el in elements_xml]
                         extracted[sel.name] = vals if sel.multiple else (vals[0] if vals else "")
                     continue
                 except ImportError:

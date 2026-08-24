@@ -1,9 +1,9 @@
 """Tests for FlowExecutor — FEAT-222 TASK-1452."""
+
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bs4 import BeautifulSoup
-
 from parrot_tools.scraping.flow_executor import FlowExecutor
 from parrot_tools.scraping.flow_models import FlowNode, ScrapingFlow
 from parrot_tools.scraping.models import ScrapingResult
@@ -13,6 +13,7 @@ EPS = "parrot_tools.scraping.flow_executor.execute_plan_steps"
 
 
 # ── Helpers / fixtures ────────────────────────────────────────────────
+
 
 def make_result(extracted=None, success=True, error=None, url="https://e.com"):
     return ScrapingResult(
@@ -27,6 +28,7 @@ def make_result(extracted=None, success=True, error=None, url="https://e.com"):
 
 def make_browser():
     """A mock Playwright Browser; each new_context() returns a fresh context."""
+
     def make_context():
         ctx = MagicMock()
         ctx.close = AsyncMock()
@@ -50,23 +52,24 @@ def simple_template(name, url_template="https://e.com/{{q}}", params=None):
         name=name,
         objective_template="obj",
         url_template=url_template,
-        params=params if params is not None else [
-            ParamSpec(name="q", type="string", required=False, default="x")
-        ],
+        params=params if params is not None else [ParamSpec(name="q", type="string", required=False, default="x")],
         steps_template=[{"action": "navigate", "url": "{{url}}"}],
     )
 
 
 # ── Linear flow ───────────────────────────────────────────────────────
 
+
 class TestLinearFlow:
     async def test_simple_linear(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"}),
-        ])
-        templates = {"plan-a": simple_template("plan-a"),
-                     "plan-b": simple_template("plan-b")}
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"}),
+            ],
+        )
+        templates = {"plan-a": simple_template("plan-a"), "plan-b": simple_template("plan-b")}
 
         calls = []
 
@@ -88,12 +91,16 @@ class TestLinearFlow:
 
 # ── Input resolution ──────────────────────────────────────────────────
 
+
 class TestInputResolution:
     async def test_data_passes_between_nodes(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"target": "A.product_url"}),
-        ])
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"target": "A.product_url"}),
+            ],
+        )
         templates = {
             "plan-a": simple_template("plan-a"),
             "plan-b": simple_template(
@@ -118,12 +125,14 @@ class TestInputResolution:
         assert seen_plans["plan-b"].url == "https://e.com/d?u=https://x.com/p"
 
     async def test_index_reference(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"q": "A.items[1]"}),
-        ])
-        templates = {"plan-a": simple_template("plan-a"),
-                     "plan-b": simple_template("plan-b")}
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"q": "A.items[1]"}),
+            ],
+        )
+        templates = {"plan-a": simple_template("plan-a"), "plan-b": simple_template("plan-b")}
         seen = {}
 
         async def fake(driver, plan, **kw):
@@ -141,14 +150,17 @@ class TestInputResolution:
 
 # ── Fan-out ───────────────────────────────────────────────────────────
 
+
 class TestFanOut:
     async def test_fan_out_clones_per_item(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"q": "A.urls[*]"}),
-        ])
-        templates = {"plan-a": simple_template("plan-a"),
-                     "plan-b": simple_template("plan-b")}
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"q": "A.urls[*]"}),
+            ],
+        )
+        templates = {"plan-a": simple_template("plan-a"), "plan-b": simple_template("plan-b")}
         b_urls = []
 
         async def fake(driver, plan, **kw):
@@ -162,21 +174,23 @@ class TestFanOut:
             result = await ex.run(flow)
 
         assert result.success
-        assert sorted(b_urls) == ["https://e.com/u1", "https://e.com/u2",
-                                  "https://e.com/u3"]
+        assert sorted(b_urls) == ["https://e.com/u1", "https://e.com/u2", "https://e.com/u3"]
         assert len(result.node_results["B"]["items"]) == 3
 
 
 # ── Error handling ────────────────────────────────────────────────────
 
+
 class TestErrorHandling:
     async def test_abort_on_error(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"},
-                     on_error="abort"),
-            FlowNode(id="C", plan_ref="plan-c", inputs={"x": "B.ok"}),
-        ])
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"}, on_error="abort"),
+                FlowNode(id="C", plan_ref="plan-c", inputs={"x": "B.ok"}),
+            ],
+        )
         templates = {n: simple_template(n) for n in ("plan-a", "plan-b", "plan-c")}
         calls = []
 
@@ -195,15 +209,16 @@ class TestErrorHandling:
         assert "plan-c" not in calls  # flow aborted before C
 
     async def test_skip_on_error_cascades(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"},
-                     on_error="skip"),
-            FlowNode(id="C", plan_ref="plan-c", inputs={"x": "B.ok"}),
-            FlowNode(id="D", plan_ref="plan-d"),
-        ])
-        templates = {n: simple_template(n)
-                     for n in ("plan-a", "plan-b", "plan-c", "plan-d")}
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"}, on_error="skip"),
+                FlowNode(id="C", plan_ref="plan-c", inputs={"x": "B.ok"}),
+                FlowNode(id="D", plan_ref="plan-d"),
+            ],
+        )
+        templates = {n: simple_template(n) for n in ("plan-a", "plan-b", "plan-c", "plan-d")}
         calls = []
 
         async def fake(driver, plan, **kw):
@@ -223,9 +238,12 @@ class TestErrorHandling:
         assert "plan-d" in calls
 
     async def test_retry_on_error(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a", on_error="retry", max_retries=3),
-        ])
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a", on_error="retry", max_retries=3),
+            ],
+        )
         templates = {"plan-a": simple_template("plan-a")}
         outcomes = [
             make_result(success=False, error="e1"),
@@ -247,9 +265,12 @@ class TestErrorHandling:
         assert calls["n"] == 3  # two failures + one success
 
     async def test_retry_exhausted_aborts(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a", on_error="retry", max_retries=2),
-        ])
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a", on_error="retry", max_retries=2),
+            ],
+        )
         templates = {"plan-a": simple_template("plan-a")}
 
         async def fake(driver, plan, **kw):
@@ -264,14 +285,17 @@ class TestErrorHandling:
 
 # ── Multi-session ─────────────────────────────────────────────────────
 
+
 class TestMultiSession:
     async def test_distinct_contexts_per_session(self):
-        flow = ScrapingFlow(name="f", nodes=[
-            FlowNode(id="A", plan_ref="plan-a", session="s1"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"}, session="s2"),
-        ])
-        templates = {"plan-a": simple_template("plan-a"),
-                     "plan-b": simple_template("plan-b")}
+        flow = ScrapingFlow(
+            name="f",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a", session="s1"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"x": "A.ok"}, session="s2"),
+            ],
+        )
+        templates = {"plan-a": simple_template("plan-a"), "plan-b": simple_template("plan-b")}
 
         async def fake(driver, plan, **kw):
             return make_result({"ok": plan.name})
@@ -306,11 +330,15 @@ class TestMultiSession:
 
 # ── Checkpoint & resume ───────────────────────────────────────────────
 
+
 class TestCheckpointResume:
     async def test_checkpoint_written(self, tmp_path):
-        flow = ScrapingFlow(name="cpflow", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-        ])
+        flow = ScrapingFlow(
+            name="cpflow",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+            ],
+        )
         templates = {"plan-a": simple_template("plan-a")}
 
         async def fake(driver, plan, **kw):
@@ -328,10 +356,13 @@ class TestCheckpointResume:
         assert cp.name.startswith("cpflow.") and cp.name.endswith(".checkpoint.json")
 
     async def test_resume_skips_completed(self, tmp_path):
-        flow = ScrapingFlow(name="cpflow2", nodes=[
-            FlowNode(id="A", plan_ref="plan-a"),
-            FlowNode(id="B", plan_ref="plan-b", inputs={"target": "A.product_url"}),
-        ])
+        flow = ScrapingFlow(
+            name="cpflow2",
+            nodes=[
+                FlowNode(id="A", plan_ref="plan-a"),
+                FlowNode(id="B", plan_ref="plan-b", inputs={"target": "A.product_url"}),
+            ],
+        )
         templates = {
             "plan-a": simple_template("plan-a"),
             "plan-b": simple_template(
@@ -365,3 +396,52 @@ class TestCheckpointResume:
         assert result.success
         assert resume_calls == ["plan-b"]  # A skipped (loaded from checkpoint)
         assert result.resumed_from == "B"
+
+
+# ── Credential resolver / HumanChannel forwarding (code-review remediation) ──
+
+
+class TestCredentialResolverAndChannelForwarding:
+    """FlowExecutor(credential_resolver=..., channel=...) must reach every
+    node's execute_plan_steps() call — before this remediation, FlowExecutor
+    had no such params at all, so BusinessAutomationToolkit's configured
+    CredentialBroker/HumanChannel were unreachable from a real run."""
+
+    async def test_forwards_credential_resolver_and_channel_to_execute_plan_steps(self):
+        flow = ScrapingFlow(name="f", nodes=[FlowNode(id="A", plan_ref="plan-a")])
+        templates = {"plan-a": simple_template("plan-a")}
+
+        captured = {}
+
+        async def fake(driver, plan, **kw):
+            captured.update(kw)
+            return make_result({"ok": True})
+
+        resolver = AsyncMock(return_value=("user", "pass"))
+        channel = object()
+        ex = FlowExecutor(make_browser(), templates=templates, credential_resolver=resolver, channel=channel)
+        with patch(EPS, new=AsyncMock(side_effect=fake)):
+            result = await ex.run(flow)
+
+        assert result.success
+        assert captured["credential_resolver"] is resolver
+        assert captured["channel"] is channel
+
+    async def test_defaults_to_none_when_not_supplied(self):
+        """Every pre-existing FlowExecutor caller never passes these kwargs
+        — they must still resolve to None, not raise."""
+        flow = ScrapingFlow(name="f", nodes=[FlowNode(id="A", plan_ref="plan-a")])
+        templates = {"plan-a": simple_template("plan-a")}
+
+        captured = {}
+
+        async def fake(driver, plan, **kw):
+            captured.update(kw)
+            return make_result({"ok": True})
+
+        ex = FlowExecutor(make_browser(), templates=templates)
+        with patch(EPS, new=AsyncMock(side_effect=fake)):
+            await ex.run(flow)
+
+        assert captured["credential_resolver"] is None
+        assert captured["channel"] is None

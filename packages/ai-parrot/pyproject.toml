@@ -250,8 +250,17 @@ wiki = [
     "ai-parrot[graphindex,wiki-languages,leiden]",
 ]
 
-# Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203
-# scheduler = ["apscheduler==3.11.2"]  # use ai-parrot-server[scheduler] instead
+# Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203.
+# FEAT-453 (Decision D1) deliberately, partially REVERSES that move: an
+# agent process needs to schedule reminders (e.g. the Spanish tax-calendar
+# callbacks in parrot/scheduler/inprocess.py) without taking a dependency
+# on the full server distribution. This is NOT a regression to "fix back" —
+# it is an intentional, documented exception. `AgentSchedulerManager` and
+# the rest of `_SERVER_CLASSES` in parrot/scheduler/__init__.py stay
+# satellite-only; only the new, distinctly-named `InProcessScheduler` lives
+# in core. Pinned to the exact version the satellite uses (apscheduler
+# ==3.11.2) to avoid a split-brain dependency between core and satellite.
+scheduler = ["apscheduler==3.11.2"]
 
 # Server layer — all server infrastructure via satellite (FEAT-203)
 server = [
@@ -264,6 +273,16 @@ server = [
 # Reddit API
 reddit = [
     "praw>=7.8.1",
+]
+
+# Jira ticket -> LLM Wiki ingest (FEAT-454). `jira` and `html2text`
+# previously only rode the `agents`/`agents-lite`/`mcp` extras, so
+# `pip install 'ai-parrot[jira]'` — the string the ingest path's own
+# error message tells users to run (parrot.interfaces.jira.client
+# .JiraDependencyError) — did not resolve on its own.
+jira = [
+    "jira==3.10.5",
+    "html2text==2025.4.15",
 ]
 
 # Sparse retrieval / BM25 (embeddings helper)

@@ -24,12 +24,44 @@ from typing import Optional, TYPE_CHECKING
 
 from aiohttp import web
 
+from parrot.conf import PARROT_SAAS_MODE
+
 if TYPE_CHECKING:
     from navigator_auth.abac.pdp import PDP
     from navigator_auth.abac.guardian import Guardian
     from navigator_auth.abac.policies.evaluator import PolicyEvaluator
 
 logger = logging.getLogger("parrot.auth.pbac")
+
+
+def _fail_open_or_closed(
+    reason: str,
+) -> "tuple[Optional[PDP], Optional[PolicyEvaluator], Optional[Guardian]]":
+    """Return the fail-open triple, or raise, depending on ``PARROT_SAAS_MODE``.
+
+    Centralizes the fail-open vs fail-closed decision so every failure path
+    in :func:`setup_pbac` behaves consistently: legacy deployments
+    (``PARROT_SAAS_MODE=false``) keep returning ``(None, None, None)``;
+    SaaS deployments (``PARROT_SAAS_MODE=true``) raise ``RuntimeError``
+    naming the original failure cause instead of silently degrading to an
+    unprotected default resolver.
+
+    Args:
+        reason: Human-readable description of the failure cause, included
+            verbatim in the raised ``RuntimeError`` message.
+
+    Returns:
+        ``(None, None, None)`` when ``PARROT_SAAS_MODE`` is false.
+
+    Raises:
+        RuntimeError: When ``PARROT_SAAS_MODE`` is true.
+    """
+    if PARROT_SAAS_MODE:
+        raise RuntimeError(
+            f"PBAC initialization failed with PARROT_SAAS_MODE=true "
+            f"(fail-closed): {reason}"
+        )
+    return None, None, None
 
 
 def setup_pbac(
@@ -53,10 +85,16 @@ def setup_pbac(
        - ABAC middleware
        - ``POST /api/v1/abac/check`` (and other ABAC endpoints)
 
-    Graceful degradation: if *policy_dir* does not exist or the imports
-    fail (navigator-auth not installed), the function logs a warning and
-    returns ``(None, None, None)``.  The application continues running
-    with the existing default resolver (fail-open).
+    Graceful degradation (legacy / ``PARROT_SAAS_MODE=false``): if
+    *policy_dir* does not exist, the imports fail (navigator-auth not
+    installed), or policy/PDP initialization raises, the function logs a
+    warning/error and returns ``(None, None, None)``.  The application
+    continues running with the existing default resolver (fail-open).
+
+    Fail-closed (``PARROT_SAAS_MODE=true``): the same failure conditions
+    instead raise ``RuntimeError`` (with the original failure cause in the
+    message) so a misconfigured SaaS deployment fails loudly at startup
+    instead of silently degrading to an unprotected default resolver.
 
     Args:
         app: The aiohttp ``web.Application`` to register PBAC into.
@@ -91,7 +129,7 @@ def setup_pbac(
             "navigator-auth ABAC module not available — PBAC disabled. (%s)",
             exc,
         )
-        return None, None, None
+        return _fail_open_or_closed(f"navigator-auth ABAC module not available: {exc}")
 
     # Resolve and validate policy directory
     policy_path = Path(policy_dir)
@@ -101,7 +139,9 @@ def setup_pbac(
             "PBAC disabled — using default resolver.",
             policy_dir,
         )
-        return None, None, None
+        return _fail_open_or_closed(
+            f"policy directory '{policy_dir}' not found or not a directory"
+        )
 
     # Determine default effect
     if default_effect is None:
@@ -137,7 +177,7 @@ def setup_pbac(
             policy_dir,
             exc,
         )
-        return None, None, None
+        return _fail_open_or_closed(f"error loading policies from '{policy_dir}': {exc}")
 
     # Load per-agent YAML policies from policies/agents/ subdirectory (if present)
     agents_subdir = policy_path / "agents"
@@ -158,6 +198,17 @@ def setup_pbac(
                 str(agents_subdir),
                 exc,
             )
+            # Code-review fix: this path used to silently degrade
+            # (continue without per-agent policies) regardless of
+            # PARROT_SAAS_MODE — inconsistent with the "fail-closed
+            # under the flag" guarantee the other failure paths in this
+            # function provide.
+            if PARROT_SAAS_MODE:
+                raise RuntimeError(
+                    "PBAC initialization failed with PARROT_SAAS_MODE=true "
+                    f"(fail-closed): error loading per-agent policies from "
+                    f"'{agents_subdir}': {exc}"
+                ) from exc
 
     # Load per-dataset YAML policies from policies/datasets/ subdirectory (if present)
     datasets_subdir = policy_path / "datasets"
@@ -178,6 +229,14 @@ def setup_pbac(
                 str(datasets_subdir),
                 exc,
             )
+            # Code-review fix: same fail-closed gap as the per-agent
+            # loader above.
+            if PARROT_SAAS_MODE:
+                raise RuntimeError(
+                    "PBAC initialization failed with PARROT_SAAS_MODE=true "
+                    f"(fail-closed): error loading per-dataset policies from "
+                    f"'{datasets_subdir}': {exc}"
+                ) from exc
 
     try:
         evaluator.load_policies(policies)
@@ -187,7 +246,7 @@ def setup_pbac(
             "PBAC disabled.",
             exc,
         )
-        return None, None, None
+        return _fail_open_or_closed(f"error loading policies into evaluator: {exc}")
 
     logger.info(
         "PBAC initialized: %d policies loaded from '%s' (cache TTL: %ds, default: %s)",
@@ -205,7 +264,7 @@ def setup_pbac(
         pdp = PDP(storage=yaml_storage)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("PBAC: failed to create PDP: %s. PBAC disabled.", exc)
-        return None, None, None
+        return _fail_open_or_closed(f"failed to create PDP: {exc}")
 
     # Attach our evaluator to the PDP so Guardian and the check endpoint
     # both use the same PolicyEvaluator instance.
@@ -226,7 +285,7 @@ def setup_pbac(
         pdp.setup(app)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error("PBAC: PDP.setup(app) failed: %s. PBAC disabled.", exc)
-        return None, None, None
+        return _fail_open_or_closed(f"PDP.setup(app) failed: {exc}")
 
     guardian = app.get("security")
     if guardian is None:

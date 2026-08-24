@@ -1,8 +1,10 @@
 from typing import Any, Dict, Optional
 import uuid
+from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp
 from navigator.applications.base import BaseApplication
+from navigator_auth.decorators import is_authenticated, user_session
 from navconfig.logging import logging
 from parrot.bots.flows.crew import AgentCrew
 from parrot.handlers.crew.models import (
@@ -10,8 +12,11 @@ from parrot.handlers.crew.models import (
     ExecutionMode,
 )
 from ..jobs import JobManager
+from ._tenancy import resolve_session_tenant
 
 
+@is_authenticated()
+@user_session()
 class CrewExecutionHandler(BaseView):
     """
     REST API Handler for running Crew execution and monitoring.
@@ -22,6 +27,12 @@ class CrewExecutionHandler(BaseView):
     - List Active/Completed Jobs (GET /api/v1/crews?mode=...)
     - Detailed Agent Status (GET /api/v1/crews/{job_id}/{crew_id})
     - Interact with Running Crews (POST /api/v1/crews/{job_id}/{crew_id}/ask)
+
+    FEAT-446: every HTTP method requires an authenticated session
+    (mirrors ``tool_catalog.py:231`` / ``special_nodes.py:74``); tenant
+    identity for execution is resolved from the session via
+    ``resolve_session_tenant`` (``handlers/crew/_tenancy.py``), never
+    trusted from the request body.
     """
     
     path: str = '/api/v1/crews'
@@ -91,24 +102,52 @@ class CrewExecutionHandler(BaseView):
             return self._active_crews[job_id]
         return None
 
+    @staticmethod
+    def _job_tenant(job: Any) -> str:
+        """Return the tenant a job belongs to (FEAT-446 code-review fix).
+
+        ``execute_crew()`` always stamps ``job.metadata['tenant']`` with
+        the session-resolved tenant, but jobs from before this feature
+        (or created by any other path) may lack it — treated as
+        ``"global"``, mirroring the established legacy-record convention
+        in ``saved_execution_service.py::_belongs_to``.
+
+        Args:
+            job: A ``Job`` instance from ``JobManager``.
+
+        Returns:
+            The job's tenant, or ``"global"`` if untracked.
+        """
+        return (job.metadata or {}).get('tenant') or 'global'
+
     async def get(self):
         """
         Handle GET requests:
         1. List active/completed jobs (query params: mode=active_jobs|completed_jobs)
         2. Get specific job/crew/agent details (path params)
+
+        Requires an authenticated session (FEAT-446). Job/crew lookups
+        and listings are scoped to the caller's session-resolved tenant
+        (code-review fix — the original FEAT-446 pass only tenant-scoped
+        ``execute_crew()``; job status/results/listing were left
+        reachable across tenants once anonymous access was closed).
         """
         match_params = self.match_parameters(self.request)
         job_id = match_params.get('job_id')
         crew_id = match_params.get('crew_id')
         agent_id = match_params.get('agent_id')
         qs = self.get_arguments(self.request)
+        tenant = await resolve_session_tenant(self.request, declared=qs.get('tenant'))
 
         # CASE 1: Path Parameters Present -> Detailed Status
         if job_id and crew_id:
             crew = await self._get_crew(job_id)
-            if not crew:
+            job = self.job_manager.get_job(job_id)
+            if not crew or (job is not None and self._job_tenant(job) != tenant):
                  # If not in memory but we have IDs, check if job is known to JobManager
                  # But we need the AgentCrew instance for agent-level details.
+                 # A tenant mismatch is reported identically to "not found"
+                 # so cross-tenant existence is never disclosed.
                 return self.error(
                     response={
                         "message": f"Crew execution context for job {job_id} not found (may be expired or restarted)"
@@ -168,7 +207,11 @@ class CrewExecutionHandler(BaseView):
             for j_id in list(self._active_crews.keys()):
                 crew = self._active_crews[j_id]
                 job = self.job_manager.get_job(j_id)
-                if job and job.status not in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                if (
+                    job
+                    and job.status not in [JobStatus.COMPLETED, JobStatus.FAILED]
+                    and self._job_tenant(job) == tenant
+                ):
                     active_jobs.append({
                         "job_id": job.job_id,
                         "crew_id": job.obj_id,
@@ -185,11 +228,19 @@ class CrewExecutionHandler(BaseView):
             sorted_jobs = []
             
             if hasattr(self.job_manager, 'list_jobs'):
-                all_jobs = self.job_manager.list_jobs(limit=100) 
-                sorted_jobs = [j for j in all_jobs if j.status in [JobStatus.COMPLETED, JobStatus.FAILED]]
+                all_jobs = self.job_manager.list_jobs(limit=100)
+                sorted_jobs = [
+                    j for j in all_jobs
+                    if j.status in [JobStatus.COMPLETED, JobStatus.FAILED]
+                    and self._job_tenant(j) == tenant
+                ]
             elif hasattr(self.job_manager, '_jobs'):
                 sorted_jobs = sorted(
-                   [j for j in self.job_manager._jobs.values() if j.status in [JobStatus.COMPLETED, JobStatus.FAILED]],
+                   [
+                       j for j in self.job_manager._jobs.values()
+                       if j.status in [JobStatus.COMPLETED, JobStatus.FAILED]
+                       and self._job_tenant(j) == tenant
+                   ],
                    key=lambda x: x.created_at,
                    reverse=True
                 )
@@ -227,15 +278,19 @@ class CrewExecutionHandler(BaseView):
         """
         Handle PATCH requests:
         1. Get Job Status (Legacy/Generic endpoint) via query param `job_id`
+
+        Requires an authenticated session (FEAT-446). Job status is
+        scoped to the caller's session-resolved tenant (code-review fix
+        — see ``get()``'s docstring for the same note).
         """
         match_params = self.match_parameters(self.request)
         # Check if this maps to a specific resource via path (though usually PATCH isn't used for GET semantics there)
         # We focus on the generic status retrieval pattern requested by user: "PATCH: returning the results from Crew"
-        
+
         try:
             qs = self.get_arguments(self.request)
             job_id = match_params.get('job_id') or qs.get('job_id')
-            
+
             data = {}
             if self.request.body_exists:
                 try:
@@ -252,9 +307,13 @@ class CrewExecutionHandler(BaseView):
                     status=400
                 )
 
+            tenant = await resolve_session_tenant(self.request)
+
             # Get job
             job = self.job_manager.get_job(job_id)
-            if not job:
+            if not job or self._job_tenant(job) != tenant:
+                # A tenant mismatch is reported identically to "not
+                # found" so cross-tenant existence is never disclosed.
                 return self.error(
                     response={"message": f"Job '{job_id}' not found"},
                     status=404
@@ -328,6 +387,11 @@ class CrewExecutionHandler(BaseView):
             # Ensure response_data itself is safely serialized
             safe_response = self._safe_serialize_result(response_data, path="response_data")
             return self.json_response(safe_response)
+        except web.HTTPError:
+            # FEAT-446 code-review fix: let resolve_session_tenant's
+            # 403/400 propagate instead of being swallowed into a
+            # generic 500 below.
+            raise
         except Exception as e:
             self.logger.error("Error getting job status: %s", e, exc_info=True)
             return self.error(
@@ -508,10 +572,14 @@ class CrewExecutionHandler(BaseView):
         """
         Handle PUT requests:
         1. Ask/Summary (Path params)
+
+        Requires an authenticated session (FEAT-446). The interaction
+        target is scoped to the caller's session-resolved tenant
+        (code-review fix — see ``get()``'s docstring for the same note).
         """
         match_params = self.match_parameters(self.request)
         action = match_params.get('action')
-        
+
         # Parse Body
         try:
             data = await self.request.json()
@@ -521,9 +589,16 @@ class CrewExecutionHandler(BaseView):
         if action:
             job_id = match_params.get('job_id')
             crew_id = match_params.get('crew_id')
-            
+
             if not job_id or not crew_id:
                 return self.error(status=400, response={"message": "Missing IDs"})
+
+            tenant = await resolve_session_tenant(self.request)
+            job = self.job_manager.get_job(job_id)
+            if job is not None and self._job_tenant(job) != tenant:
+                # A tenant mismatch is reported identically to "not
+                # found" so cross-tenant existence is never disclosed.
+                return self.error(status=404, response={"message": "Crew context not found"})
 
             crew = await self._get_crew(job_id)
             if not crew:
@@ -578,7 +653,15 @@ class CrewExecutionHandler(BaseView):
         return await self.execute_crew(data)
 
     async def execute_crew(self, data: Dict[str, Any]):
-        """Logic to initialize and run a crew execution job."""
+        """Logic to initialize and run a crew execution job.
+
+        Requires an authenticated session (FEAT-446). Tenant is resolved
+        from the session via ``resolve_session_tenant`` — this supersedes
+        the former "tenant is required" 400: the session resolves the
+        tenant even when the body omits it (or rejects with 403 when
+        unresolvable in SaaS mode). A ``tenant`` in the body is only
+        honored if it matches the resolved tenant (otherwise 400).
+        """
         try:
             crew_id = data.get('crew_id') or data.get('name')
             if not crew_id:
@@ -587,12 +670,11 @@ class CrewExecutionHandler(BaseView):
             query = data.get('query')
             if not query:
                 return self.error(response={"message": "query is required"}, status=400)
-            tenant = data.get('tenant')
-            if not tenant:
-                self.logger.warning(
-                    "Missing 'tenant' in crew execution request; rejecting to avoid defaulting to 'global'."
-                )
-                return self.error(response={"message": "tenant is required"}, status=400)
+            # FEAT-446: tenant comes from the session, never the body;
+            # `declared=` triggers a 400 on conflicting values.
+            tenant = await resolve_session_tenant(
+                self.request, declared=data.get('tenant')
+            )
 
             if not self.bot_manager:
                 return self.error(response={"message": "BotManager not available"}, status=500)
@@ -695,6 +777,11 @@ class CrewExecutionHandler(BaseView):
                 "execution_mode": selected_mode.value
             }, status=202)
 
+        except web.HTTPError:
+            # FEAT-446: let resolve_session_tenant's 403/400 (and any other
+            # deliberately-raised HTTP error) propagate instead of being
+            # swallowed into a generic 500 below.
+            raise
         except Exception as e:
             self.logger.error("Error creating job: %s", e, exc_info=True)
             return self.error(response={"message": f"Error: {str(e)}"}, status=500)

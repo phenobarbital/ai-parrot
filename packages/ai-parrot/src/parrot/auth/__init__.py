@@ -36,6 +36,9 @@ from .resolver import (
     PBACPermissionResolver,
 )
 from .pbac import setup_pbac
+# Canonical PBAC EvalContext builder (FEAT-446) — single source of truth
+# consolidated from the former agent_guard.py / handlers/{bots,agent}.py copies.
+from .eval_context import build_eval_context
 # UserInfoService + EmployeeProfile (FEAT-406) — curated structured user
 # attributes, feeding both PBAC EvalContext enrichment and UserinfoTool.
 from .userinfo import EmployeeProfile, UserInfoService
@@ -91,6 +94,8 @@ __all__ = [
     "PBACPermissionResolver",
     # PBAC setup
     "setup_pbac",
+    # Canonical PBAC EvalContext builder (FEAT-446)
+    "build_eval_context",
     # UserInfoService + EmployeeProfile (FEAT-406)
     "EmployeeProfile",
     "UserInfoService",

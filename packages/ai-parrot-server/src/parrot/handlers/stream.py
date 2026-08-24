@@ -4,7 +4,6 @@ import logging
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navigator.views import BaseHandler
-from navigator_auth.conf import exclude_list
 from parrot.bots import AbstractBot
 from parrot.models.responses import AIMessage
 
@@ -19,6 +18,17 @@ class StreamHandler(BaseHandler):
     - WebSockets
     - NDJSON
     - Chunked transfer encoding
+
+    FEAT-446: unlike the crew/flow-authoring handlers (which enforce auth
+    via the class-level ``@is_authenticated()`` decorator — see
+    ``handlers/crew/handler.py`` — a per-view mechanism), these routes
+    rely entirely on navigator-auth's GLOBAL auth middleware: closing
+    them was done by removing their ``exclude_list`` entries in
+    ``configure_routes()`` below, not by adding a decorator. The
+    WebSocket route additionally needs
+    ``_ws_subprotocol_preauth_middleware`` since the global middleware
+    doesn't understand the ``Sec-WebSocket-Protocol`` JWT convention WS
+    clients without a session cookie rely on.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -297,6 +307,60 @@ class StreamHandler(BaseHandler):
             return False
         return bool(payload)
 
+    @web.middleware
+    async def _ws_subprotocol_preauth_middleware(self, request: web.Request, handler):
+        """Pre-authenticate the WS route's ``Sec-WebSocket-Protocol`` JWT
+        (FEAT-446 code-review fix).
+
+        Browsers cannot set custom headers (e.g. ``Authorization``) on a
+        WebSocket upgrade request, so ``stream_websocket()`` has always
+        accepted a JWT via ``Sec-WebSocket-Protocol: jwt, <token>`` as an
+        alternative. Closing this route's navigator-auth exclusion
+        (TASK-2324) put navigator-auth's own ``auth_middleware`` in
+        front of every request — it only recognizes an ``Authorization``
+        header or a session cookie, has no notion of the subprotocol
+        convention, and rejects a WS-only client (no cookie, no
+        Authorization header) with 401 before ``stream_websocket()``'s
+        own check ever runs.
+
+        Registered ahead of navigator-auth's middleware via
+        ``app.middlewares.insert(0, ...)`` in ``configure_routes()``
+        (order-independent of when ``AuthHandler.setup()`` runs — insert
+        at index 0 always wins the front position at call time). For the
+        WS route only, validates the subprotocol token with the exact
+        same check ``stream_websocket()`` performs; on success it marks
+        ``request["authenticated"] = True``, which navigator-auth's
+        ``verify_exceptions()`` treats as "already authenticated" and
+        skips its own check — matching the pattern navigator-auth's own
+        ``auth_middleware`` uses for a valid ``Authorization`` header.
+        Every other route, and a WS request without a valid subprotocol
+        token, is untouched: normal Authorization-header/session-cookie
+        enforcement still applies (a browser client with a same-origin
+        session cookie authenticates that way instead, unaffected).
+
+        Args:
+            request: The incoming aiohttp request.
+            handler: The next handler/middleware in the chain.
+
+        Returns:
+            The downstream handler's response.
+        """
+        if (
+            request.method == 'GET'
+            and request.path.endswith('/stream/ws')
+            and 'Sec-WebSocket-Protocol' in request.headers
+        ):
+            parts = [
+                p.strip()
+                for p in request.headers['Sec-WebSocket-Protocol'].split(',')
+                if p.strip()
+            ]
+            if 'jwt' in parts:
+                parts.remove('jwt')
+                if parts and await self._validate_token(request, parts[0]):
+                    request['authenticated'] = True
+        return await handler(request)
+
     async def _handle_message(
         self,
         ws: web.WebSocketResponse,
@@ -380,16 +444,37 @@ class StreamHandler(BaseHandler):
                 self.logger.error("Error broadcasting to client: %s", e)
 
     def configure_routes(self, app: web.Application):
-        """Configure routes for streaming endpoints."""
+        """Configure routes for streaming endpoints.
+
+        FEAT-446 (TASK-2324): these four routes used to self-exclude from
+        navigator-auth's middleware (via ``exclude_list.append(...)``),
+        making every bot stream anonymous. The excludes are intentionally
+        removed — navigator-auth's auth middleware now enforces
+        authentication on all four routes (it raises
+        ``web.HTTPUnauthorized`` for unauthenticated callers; see
+        ``navigator_auth/middlewares/abstract.py``). This is a breaking
+        change by design (spec §7 "Known Risks / Gotchas").
+
+        Code-review fix: also registers
+        ``_ws_subprotocol_preauth_middleware`` ahead of navigator-auth's
+        own auth middleware, so the WS route's pre-existing
+        ``Sec-WebSocket-Protocol: jwt, <token>`` auth convention (for
+        clients that can't rely on a session cookie or an
+        ``Authorization`` header on a WS upgrade) still works now that
+        the route is no longer excluded — see that method's docstring.
+        """
         # sse endpoint
-        exclude_list.append('/bots/*/stream/sse')
         app.router.add_post('/bots/{bot_id}/stream/sse', self.stream_sse)
         # ndjson endpoint
-        exclude_list.append('/bots/*/stream/ndjson')
         app.router.add_post('/bots/{bot_id}/stream/ndjson', self.stream_ndjson)
         # chunked endpoint
-        exclude_list.append('/bots/*/stream/chunked')
         app.router.add_post('/bots/{bot_id}/stream/chunked', self.stream_chunked)
         # websocket endpoint
-        exclude_list.append('/bots/*/stream/ws')
         app.router.add_get('/bots/{bot_id}/stream/ws', self.stream_websocket)
+
+        # Code-review fix: insert at index 0 so this always runs before
+        # navigator-auth's auth_middleware, regardless of whether
+        # AuthHandler.setup(app) was called before or after this method
+        # (AuthHandler.setup() only ever appends to app.middlewares).
+        if self._ws_subprotocol_preauth_middleware not in app.middlewares:
+            app.middlewares.insert(0, self._ws_subprotocol_preauth_middleware)

@@ -12,20 +12,69 @@ Architecture::
                                                │
     WhatsApp ◄─ Go Bridge ◄─(POST /send)──────┘
 """
+
 import asyncio
 import json
 import logging
-from typing import Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
+
 import aiohttp
 from aiohttp import web
-from .bridge_config import WhatsAppBridgeConfig
+
+from ...models.outputs import OutputMode
+from ..parser import ParsedResponse, parse_response
+from .bridge_config import WhatsAppBridgeConfig, normalize_phone_number
 from .handler import WhatsAppUserSession
 from .utils import convert_markdown_to_whatsapp, split_message
-from ..parser import parse_response, ParsedResponse
-from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
+
+
+def _agent_exposes_submit_operation(agent: "AbstractBot") -> bool:
+    """Best-effort check: does *agent* have a registered ``BusinessAutomationToolkit``
+    with at least one ``OperationKind.SUBMIT`` operation?
+
+    Financial control (FEAT-453 TASK-2397): this decides whether an empty
+    WhatsApp ``allowed_numbers`` must fail closed. ``parrot_tools`` (the
+    ``ai-parrot-tools`` distribution) is not a declared dependency of
+    ``ai-parrot-integrations`` — importing it is deferred here and guarded
+    so a bot with no such toolkit installed is unaffected (returns
+    ``False``, preserving the existing permissive default).
+
+    Walks from the agent's ``ToolManager`` to each toolkit instance the
+    same way :meth:`~parrot.tools.manager.ToolManager.cleanup_toolkits`
+    already does (via ``ToolkitTool.bound_method.__self__``) rather than
+    inventing a new toolkit-introspection path.
+    """
+    try:
+        from parrot_tools.business_automation.models import OperationKind
+        from parrot_tools.business_automation.toolkit import BusinessAutomationToolkit
+    except ImportError:
+        return False
+
+    from ...tools.toolkit import ToolkitTool
+
+    tool_manager = getattr(agent, "tool_manager", None)
+    tools = getattr(tool_manager, "_tools", None)
+    if not tools:
+        return False
+
+    seen: set = set()
+    for tool in tools.values():
+        if not isinstance(tool, ToolkitTool):
+            continue
+        bound = getattr(tool, "bound_method", None)
+        toolkit = getattr(bound, "__self__", None)
+        if toolkit is None or id(toolkit) in seen:
+            continue
+        seen.add(id(toolkit))
+        if not isinstance(toolkit, BusinessAutomationToolkit):
+            continue
+        operations = getattr(toolkit, "_operations", None) or {}
+        if any(op.kind == OperationKind.SUBMIT for op in operations.values()):
+            return True
+    return False
 
 
 class WhatsAppBridgeWrapper:
@@ -57,6 +106,21 @@ class WhatsAppBridgeWrapper:
         config: WhatsAppBridgeConfig,
         app: web.Application,
     ) -> None:
+        # Fail-closed financial control (FEAT-453 TASK-2397): an empty
+        # allowlist is a convenience for a general assistant, but for an
+        # agent that can spend money / file tax-relevant records it means
+        # anyone who learns the number can instruct it. Refuse to wire up
+        # the webhook route at all rather than start open.
+        if not config.normalized_allowed_numbers and _agent_exposes_submit_operation(agent):
+            raise ValueError(
+                f"WhatsAppBridgeConfig(name={config.name!r}, "
+                f"chatbot_id={config.chatbot_id!r}) has an empty "
+                "allowed_numbers, but the bound agent exposes at least one "
+                "OperationKind.SUBMIT operation. Refusing to start "
+                "(fail-closed financial control) — set allowed_numbers to a "
+                "non-empty allowlist before exposing this agent over WhatsApp."
+            )
+
         self.agent = agent
         self.config = config
         self.app = app
@@ -69,9 +133,7 @@ class WhatsAppBridgeWrapper:
         safe_id = config.chatbot_id.replace(" ", "_").lower()
         self.route = config.webhook_path or f"/api/whatsapp/{safe_id}/webhook"
         app.router.add_post(self.route, self._handle_webhook)
-        self.logger.info(
-            f"Registered WhatsApp Bridge webhook at {self.route}"
-        )
+        self.logger.info(f"Registered WhatsApp Bridge webhook at {self.route}")
 
         # Exclude route from auth middleware
         if auth := app.get("auth"):
@@ -82,16 +144,16 @@ class WhatsAppBridgeWrapper:
         """Handle POST from the Go bridge with an incoming message."""
         self.logger.warning(
             "🔔 Webhook received: %s %s (from %s)",
-            request.method, request.path, request.remote,
+            request.method,
+            request.path,
+            request.remote,
         )
         try:
             data = await request.json()
             self.logger.info("📨 Webhook payload: %s", data)
         except json.JSONDecodeError:
             self.logger.error("❌ Invalid JSON in webhook payload")
-            return web.json_response(
-                {"error": "Invalid JSON"}, status=400
-            )
+            return web.json_response({"error": "Invalid JSON"}, status=400)
 
         # Fire-and-forget so the bridge doesn't time out
         asyncio.create_task(self._process_message(data))
@@ -118,13 +180,17 @@ class WhatsAppBridgeWrapper:
 
         self.logger.info(
             "📋 Message fields: from=%r, content=%r, type=%r, name=%r",
-            from_phone, content[:80] if content else content, msg_type, from_name,
+            from_phone,
+            content[:80] if content else content,
+            msg_type,
+            from_name,
         )
 
         if not from_phone or not content:
             self.logger.warning(
                 "⚠️ Dropping message: from_phone=%r, content=%r (empty)",
-                from_phone, content,
+                from_phone,
+                content,
             )
             return
 
@@ -132,7 +198,8 @@ class WhatsAppBridgeWrapper:
         if msg_type != "text":
             self.logger.warning(
                 "⚠️ Ignoring non-text message from %s (type: %s)",
-                from_phone, msg_type,
+                from_phone,
+                msg_type,
             )
             return
 
@@ -140,7 +207,8 @@ class WhatsAppBridgeWrapper:
         if not self._is_authorized(from_phone):
             self.logger.warning(
                 "🚫 Unauthorized message from %s (allowed: %s)",
-                from_phone, self.config.allowed_numbers,
+                from_phone,
+                self.config.allowed_numbers,
             )
             return
 
@@ -169,7 +237,9 @@ class WhatsAppBridgeWrapper:
         try:
             self.logger.warning(
                 "📱 Calling agent.ask() from %s (%s): '%s'",
-                from_name, from_phone, content[:80],
+                from_name,
+                from_phone,
+                content[:80],
             )
 
             # Call the agent
@@ -188,9 +258,7 @@ class WhatsAppBridgeWrapper:
 
             # Parse and send formatted response
             parsed = parse_response(response)
-            await self._send_parsed_response(
-                from_phone, parsed, server=from_server
-            )
+            await self._send_parsed_response(from_phone, parsed, server=from_server)
 
         except Exception as exc:
             self.logger.error(
@@ -199,16 +267,18 @@ class WhatsAppBridgeWrapper:
             )
             await self._send_text(
                 from_phone,
-                "Sorry, I encountered an error processing your request. "
-                "Please try again.",
+                "Sorry, I encountered an error processing your request. " "Please try again.",
                 server=from_server,
             )
 
     # ── Response Sending ─────────────────────────────────────────────
 
     async def _send_parsed_response(
-        self, phone: str, parsed: ParsedResponse,
-        *, server: str = "",
+        self,
+        phone: str,
+        parsed: ParsedResponse,
+        *,
+        server: str = "",
     ) -> None:
         """Format and send a parsed response via the bridge."""
         text_parts = []
@@ -227,18 +297,23 @@ class WhatsAppBridgeWrapper:
             full_text = "\n\n".join(text_parts)
             wa_text = convert_markdown_to_whatsapp(full_text)
 
-            for chunk in split_message(
-                wa_text, self.config.max_message_length
-            ):
+            for chunk in split_message(wa_text, self.config.max_message_length):
                 await self._send_text(phone, chunk, server=server)
 
     async def _send_text(
-        self, phone: str, message: str, *, server: str = "",
+        self,
+        phone: str,
+        message: str,
+        *,
+        server: str = "",
     ) -> bool:
         """Send a text message via the Go bridge's /send endpoint."""
         self.logger.info(
             "📤 Sending to %s (server=%s) via %s: '%s'",
-            phone, server or 'default', self.config.bridge_url, message[:100],
+            phone,
+            server or "default",
+            self.config.bridge_url,
+            message[:100],
         )
         payload = {"phone": phone, "message": message}
         if server:
@@ -254,20 +329,19 @@ class WhatsAppBridgeWrapper:
                         result = await resp.json()
                         if result.get("success"):
                             return True
-                        self.logger.error(
-                            f"Bridge error: {result.get('error')}"
-                        )
+                        self.logger.error(f"Bridge error: {result.get('error')}")
                         return False
-                    self.logger.error(
-                        f"Bridge returned status {resp.status}"
-                    )
+                    self.logger.error(f"Bridge returned status {resp.status}")
                     return False
         except Exception as exc:
             self.logger.error("Failed to send WhatsApp message: %s", exc)
             return False
 
     async def _send_help(
-        self, phone: str, *, server: str = "",
+        self,
+        phone: str,
+        *,
+        server: str = "",
     ) -> None:
         """Send available commands help text."""
         help_text = (
@@ -287,14 +361,19 @@ class WhatsAppBridgeWrapper:
     # ── Session & Auth ───────────────────────────────────────────────
 
     def _is_authorized(self, phone: str) -> bool:
-        """Check if a phone number is authorized."""
-        if not self.config.allowed_numbers:
-            return True
-        return phone in self.config.allowed_numbers
+        """Check if a phone number is authorized.
 
-    def _get_or_create_session(
-        self, phone_number: str
-    ) -> WhatsAppUserSession:
+        Both sides of the comparison are normalized to digits-only
+        (FEAT-453 TASK-2397) — a literal string compare against
+        ``allowed_numbers`` silently rejects a legitimate number formatted
+        with a leading ``+`` or internal spaces/dashes.
+        """
+        allowed = self.config.normalized_allowed_numbers
+        if not allowed:
+            return True
+        return normalize_phone_number(phone) in allowed
+
+    def _get_or_create_session(self, phone_number: str) -> WhatsAppUserSession:
         """Get or create a user session with conversation memory."""
         if phone_number not in self.sessions:
             from ...memory import InMemoryConversation

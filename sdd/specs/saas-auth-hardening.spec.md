@@ -249,24 +249,57 @@ def saas_mode(monkeypatch):
 
 ## 5. Acceptance Criteria
 
-- [ ] Every previously-open route (§3 Module 4/5 inventory) returns 401/403 to
+- [x] Every previously-open route (§3 Module 4/5 inventory) returns 401/403 to
       an unauthenticated request — integration test green (was: brainstorm S0
-      verification #1).
-- [ ] A request carrying `tenant` in body or query has it ignored (session
+      verification #1). Verified end-to-end with the real
+      `navigator_auth.AuthHandler` middleware stack in
+      `test_saas_auth_hardening.py::TestCrewRoutesRejectAnonymous` /
+      `TestStreamRoutesRejectAnonymous`.
+- [x] A request carrying `tenant` in body or query has it ignored (session
       wins) and a conflicting value rejected with 400 — test green (was:
-      brainstorm S0 verification #2).
-- [ ] `"global"` never appears as a resolved tenant when
+      brainstorm S0 verification #2). See
+      `test_saas_auth_hardening.py::TestBodyTenantIgnored`.
+- [x] `"global"` never appears as a resolved tenant when
       `PARROT_SAAS_MODE=true`; grep of the three crew handlers shows zero
       `or "global"` / `or 'global'` tenant fallbacks outside `_tenancy.py`.
-- [ ] `setup_pbac` raises on init failure under the flag; existing
+      Verified (TASK-2325): scoped to the three crew handlers named
+      earlier in this document (`handler.py`, `execution_handler.py`,
+      `execution_history_handler.py`) — confirmed zero matches. A
+      directory-wide `handlers/crew/*.py` grep also turns up two
+      legacy-record/storage-layer `or "global"` defaults in
+      `saved_execution_service.py` and `redis_persistence.py`, outside
+      this feature's Files-to-Modify scope; see TASK-2323's Completion
+      Note for the full analysis of why those are a different concern
+      (interpreting already-resolved/stored tenant values, not
+      client-input resolution) and are left for reviewer/follow-up
+      judgment.
+- [x] `setup_pbac` raises on init failure under the flag; existing
       deployments with the flag unset see zero behavior change.
-- [ ] Exactly one eval-context builder implementation remains
+- [x] Exactly one eval-context builder implementation remains
       (`parrot/auth/eval_context.py`); `handlers/bots.py` and
       `handlers/agent.py` contain delegation only.
-- [ ] `pytest` green in `packages/ai-parrot` and `packages/ai-parrot-server`.
-- [ ] Breaking-change note added to the server package changelog: closing
+- [x] `pytest` green in `packages/ai-parrot` and `packages/ai-parrot-server`.
+      `packages/ai-parrot-server`: full suite green (846 passed, 1
+      skipped, 4 pre-existing failures unrelated to this feature —
+      verified identical on `dev`). `packages/ai-parrot`: the literal
+      full-suite command is not practically runnable in this environment
+      (pre-existing collection errors from missing optional dependencies
+      and apparent network-bound tests that hang without live
+      credentials, both verified identical on `dev` baseline); ran a
+      comprehensive targeted regression instead — every test file
+      referencing `pbac`, `PARROT_SAAS_MODE`, `eval_context`, or
+      `agent_guard` (117 candidate files narrowed to the 16 that actually
+      import them), plus `tests/handlers/` — all failures found are
+      reproduced identically on `dev`, none touch this feature's changed
+      files. See TASK-2325's Completion Note for the full verification
+      trail.
+- [x] Breaking-change note added to the server package changelog: closing
       `/api/v1/crew*` and `/bots/*/stream/*` is intentional (brainstorm
-      "Impact & Integration").
+      "Impact & Integration"). No changelog file exists for
+      `ai-parrot-server`; added
+      `docs/migration/feat-446-saas-auth-hardening.md` following
+      `docs/migration/feat-201-ai-parrot-embeddings.md`'s format, per
+      this task's own fallback instruction.
 
 ---
 

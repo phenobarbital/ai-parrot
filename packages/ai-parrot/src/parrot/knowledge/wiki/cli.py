@@ -154,19 +154,14 @@ def _selected_namespaces(ns_opt: str | None) -> set[str] | None:
     """
     if ns_opt is None or ns_opt == "all":
         return None
-    return {
-        part.strip()
-        for part in ns_opt.split(",")
-        if part.strip() and part.strip() != "local"
-    }
+    return {part.strip() for part in ns_opt.split(",") if part.strip() and part.strip() != "local"}
 
 
 def _unknown_namespace(ns_opt: str, known: list[str]) -> click.ClickException:
     """Build the error raised for a ``--ns`` name that is not declared."""
     listing = ", ".join(sorted(known)) or "(none declared)"
     return click.ClickException(
-        f"Unknown namespace {ns_opt!r}. Known: {listing} "
-        "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
+        f"Unknown namespace {ns_opt!r}. Known: {listing} " "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
     )
 
 
@@ -215,9 +210,7 @@ def _federate(
         skip = next((s for s in skipped if s.name == name), None)
         if skip is not None:
             hint = f" Fix: {skip.hint}" if skip.hint else ""
-            raise click.ClickException(
-                f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}"
-            ) from exc
+            raise click.ClickException(f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}") from exc
         raise _unknown_namespace(name, list(declared)) from exc
 
 
@@ -262,8 +255,7 @@ def _write_id_for_ns(page_id: str, ns_opt: str | None) -> str:
     if namespace == target:
         return local_id
     raise click.ClickException(
-        f"Page id {page_id!r} belongs to namespace {namespace!r} — "
-        f"pass `--ns {namespace}` to write there."
+        f"Page id {page_id!r} belongs to namespace {namespace!r} — " f"pass `--ns {namespace}` to write there."
     )
 
 
@@ -323,9 +315,8 @@ def _echo_skips(store: BaseWikiStore, *, err: bool = False) -> None:
     """
     for skip in _collect_skips(store):
         hint = f" — {skip.hint}" if skip.hint else ""
-        click.echo(
-            f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err
-        )
+        click.echo(f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err)
+
 
 def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
@@ -486,8 +477,7 @@ def _resolve_read_store(
             )
         if ns_opt not in (None, "local"):
             raise click.ClickException(
-                "--store targets one pre-built store and never federates; "
-                "drop --store to read namespaces."
+                "--store targets one pre-built store and never federates; " "drop --store to read namespaces."
             )
         return create_wiki_store(storage_dir, backend=backend)
     root, config = _resolve_project(path_)
@@ -665,9 +655,7 @@ async def _prune_removed(
     """
     expected_files = {fs.record.concept_id for fs in scan.files}
     expected_dirs = {r.concept_id for r in scan.dir_records}
-    expected_uris = {
-        str((root / fs.rel_path).resolve()) for fs in scan.files
-    }
+    expected_uris = {str((root / fs.rel_path).resolve()) for fs in scan.files}
     root_prefix = str(root.resolve()) + os.sep
     removed = 0
 
@@ -683,9 +671,7 @@ async def _prune_removed(
             # Another corpus sharing this plane — not ours to prune.
             live_source_ids.add(entry.source_id)
             continue
-        for parent in PurePosixPath(
-            Path(entry.source_uri).relative_to(root.resolve()).as_posix()
-        ).parents:
+        for parent in PurePosixPath(Path(entry.source_uri).relative_to(root.resolve()).as_posix()).parents:
             emptied_dirs.add(f"dir:{parent if str(parent) != '.' else '.'}")
         await store.replace_source_slice(entry.source_id, [], [])
         await asyncio.to_thread(sources.remove_source, entry.source_id)
@@ -706,17 +692,9 @@ async def _prune_removed(
                 if await store.delete_page(cid):
                     surviving.discard(cid)
                     removed += 1
-        candidates = {
-            cid
-            for cid in surviving
-            if cid.startswith("dir:") and cid not in expected_dirs
-        }
+        candidates = {cid for cid in surviving if cid.startswith("dir:") and cid not in expected_dirs}
     else:
-        candidates = {
-            cid
-            for cid in surviving
-            if cid in emptied_dirs and cid not in expected_dirs
-        }
+        candidates = {cid for cid in surviving if cid in emptied_dirs and cid not in expected_dirs}
 
     # Deepest first, against a survivor set that shrinks as we go, so a
     # parent emptied by its own children going away is caught in ONE pass.
@@ -725,10 +703,7 @@ async def _prune_removed(
         if prefix in ("", "."):
             continue
         covered = f"{prefix}/"
-        if any(
-            other != cid and other.split(":", 1)[-1].startswith(covered)
-            for other in surviving
-        ):
+        if any(other != cid and other.split(":", 1)[-1].startswith(covered) for other in surviving):
             continue
         if await store.delete_page(cid):
             surviving.discard(cid)
@@ -1474,10 +1449,7 @@ def query(
     if show_body and rows[0].get("body"):
         click.echo(f"\n## {rows[0].get('title')}\n{rows[0]['body']}")
     _echo_skips(store)
-    click.echo(
-        "Next: `wikitoolkit page <id>` for a full page · "
-        "`wikitoolkit related <id>` for linked pages."
-    )
+    click.echo("Next: `wikitoolkit page <id>` for a full page · " "`wikitoolkit related <id>` for linked pages.")
 
 
 @wiki.command()
@@ -1688,8 +1660,7 @@ def _namespace_source(
     ]
     if len(given) != 1:
         raise click.ClickException(
-            "Give exactly one of --project / --store / --database / --vault "
-            f"(got: {', '.join(given) or 'none'})."
+            "Give exactly one of --project / --store / --database / --vault " f"(got: {', '.join(given) or 'none'})."
         )
 
 
@@ -1712,15 +1683,11 @@ def _global_registry_lock() -> Iterator[None]:
     home.mkdir(parents=True, exist_ok=True)
     with wiki_write_lock(home, timeout=REGISTRY_LOCK_WAIT_SECONDS) as acquired:
         if not acquired:
-            _cli_logger.warning(
-                "Could not take the %s lock; writing anyway.", home
-            )
+            _cli_logger.warning("Could not take the %s lock; writing anyway.", home)
         yield
 
 
-def _stored_namespace_path(
-    value: str | None, root: Path, is_global: bool
-) -> str | None:
+def _stored_namespace_path(value: str | None, root: Path, is_global: bool) -> str | None:
     """Normalise a user-typed namespace path into its stored form.
 
     Args:
@@ -1804,20 +1771,13 @@ def ns_list(path_: str | None, as_json: bool) -> None:
         click.echo(json.dumps(rows, indent=2, default=str))
         return
     if not rows:
-        click.echo(
-            "No namespaces declared. Add one with "
-            "`wikitoolkit ns add <name> --project <dir>`."
-        )
+        click.echo("No namespaces declared. Add one with " "`wikitoolkit ns add <name> --project <dir>`.")
         return
-    click.echo(
-        f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} "
-        f"{'built':<6} target"
-    )
+    click.echo(f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} " f"{'built':<6} target")
     for row in rows:
         built = "n/a" if row["built"] is None else ("yes" if row["built"] else "no")
         click.echo(
-            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} "
-            f"{row['origin']:<7} {built:<6} {row['target']}"
+            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} " f"{row['origin']:<7} {built:<6} {row['target']}"
         )
         if row["description"]:
             click.echo(f"{'':<16} {row['description']}")
@@ -1875,8 +1835,7 @@ def ns_list(path_: str | None, as_json: bool) -> None:
     "--global",
     "is_global",
     is_flag=True,
-    help="Write to the per-user registry (PARROT_HOME/wikis.json) "
-    "instead of this repo's wiki.json.",
+    help="Write to the per-user registry (PARROT_HOME/wikis.json) " "instead of this repo's wiki.json.",
 )
 def ns_add(
     name: str,
@@ -1952,16 +1911,11 @@ def ns_add(
             written = save_global_registry(registry)
     else:
         if name in config.namespaces:
-            raise click.ClickException(
-                f"Namespace {name!r} already exists in {config_path(root)}. "
-                "Remove it first."
-            )
+            raise click.ClickException(f"Namespace {name!r} already exists in {config_path(root)}. " "Remove it first.")
         config.namespaces[name] = entry
         written = save_project_config(root, config)
         if name in load_global_registry().namespaces:
-            click.echo(
-                f"Note: this repo entry shadows the global namespace {name!r}."
-            )
+            click.echo(f"Note: this repo entry shadows the global namespace {name!r}.")
 
     click.echo(f"Added namespace {name!r} ({entry.kind}) → {written}")
     built = _namespace_built(entry, base_dir)
@@ -1970,10 +1924,7 @@ def ns_add(
         if not target.is_absolute():
             target = base_dir / target
         flag = "--store" if entry.kind == "store" else "--path"
-        click.echo(
-            f"Namespace {name!r} has no plane yet — build it with "
-            f"`wikitoolkit build {flag} {target}`."
-        )
+        click.echo(f"Namespace {name!r} has no plane yet — build it with " f"`wikitoolkit build {flag} {target}`.")
 
 
 @ns.command("remove")
@@ -1991,17 +1942,13 @@ def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
         with _global_registry_lock():
             registry = load_global_registry()
             if name not in registry.namespaces:
-                raise click.ClickException(
-                    f"No namespace {name!r} in {global_registry_path()}."
-                )
+                raise click.ClickException(f"No namespace {name!r} in {global_registry_path()}.")
             del registry.namespaces[name]
             written = save_global_registry(registry)
     else:
         root, config = _resolve_project(path_)
         if name not in config.namespaces:
-            raise click.ClickException(
-                f"No namespace {name!r} in {config_path(root)}."
-            )
+            raise click.ClickException(f"No namespace {name!r} in {config_path(root)}.")
         del config.namespaces[name]
         written = save_project_config(root, config)
     click.echo(f"Removed namespace {name!r} from {written}")
@@ -2220,13 +2167,10 @@ def _resolve_write_store(
     """
     if ns_opt not in (None, "local"):
         if store_opt:
-            raise click.ClickException(
-                "--store and --ns target different planes; use one of them."
-            )
+            raise click.ClickException("--store and --ns target different planes; use one of them.")
         if ns_opt == "all" or "," in ns_opt:
             raise click.ClickException(
-                "A write targets exactly one namespace — "
-                f"`--ns {ns_opt}` is not a write target."
+                "A write targets exactly one namespace — " f"`--ns {ns_opt}` is not a write target."
             )
         root, config = _resolve_project(path_)
         declared = _declared_namespaces(config)
@@ -2244,9 +2188,7 @@ def _resolve_write_store(
                 )
             )
         except Exception as exc:  # surfaced as a clear CLI error
-            raise click.ClickException(
-                f"Could not open namespace {ns_opt!r} for writing: {exc}"
-            ) from exc
+            raise click.ClickException(f"Could not open namespace {ns_opt!r} for writing: {exc}") from exc
         return store, storage_dir, None, None
 
     store_override = store_opt
@@ -2458,9 +2400,7 @@ def remember(
     """
     import hashlib
 
-    store, storage_dir, root, config = _resolve_write_store(
-        path_, store_opt, backend_opt, ns_opt
-    )
+    store, storage_dir, root, config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     asserted_by = _authoring_identity(by)
     run_id = _authoring_run_id()
 
@@ -2508,8 +2448,7 @@ def remember(
             storage_dir,
             "REMEMBER",
             f"page_id: {page_id}, title: {resolved_title!r}, "
-            f"category: {category}, by: {asserted_by}"
-            + (f", run: {run_id}" if run_id else ""),
+            f"category: {category}, by: {asserted_by}" + (f", run: {run_id}" if run_id else ""),
         )
 
     commit_id: str | None = None
@@ -2593,9 +2532,7 @@ def note(
     """
     from datetime import datetime
 
-    store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt, ns_opt
-    )
+    store, storage_dir, _root, _config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     page_id = _write_id_for_ns(page_id, ns_opt)
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
@@ -2666,9 +2603,7 @@ def link(
     cross-namespace edges. With ``--ns <name>`` the edge is written into
     that namespace; ids may be given qualified with that same name.
     """
-    store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt, ns_opt
-    )
+    store, storage_dir, _root, _config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     pages = {}
     for label, cid in (
         ("src", _write_id_for_ns(src, ns_opt)),
@@ -3426,6 +3361,197 @@ def ingest(
         f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
     )
     _report_skipped(skipped)
+
+
+@wiki.command(name="ingest-jira")
+@click.option(
+    "--jql",
+    default=None,
+    help="JQL scope (default: JIRA_WIKI_JQL, or `project = <JIRA_DEFAULT_PROJECT>`).",
+)
+@click.option(
+    "--project",
+    "project_key",
+    default=None,
+    help="Shorthand for `project = <KEY>`.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Override the stored watermark (ISO-8601).",
+)
+@click.option(
+    "--issues-dir",
+    "issues_dir_opt",
+    default=None,
+    type=click.Path(file_okay=False),
+    help="Output directory (default: JIRA_WIKI_ISSUES_DIR or ${PARROT_HOME}/wikis/issues).",
+)
+@click.option(
+    "--build/--no-build",
+    "do_build",
+    default=True,
+    show_default=True,
+    help="Build the plane after emitting (FEAT-454, G10).",
+)
+@click.option(
+    "--enrich",
+    is_flag=True,
+    help="Opt-in LLM summary for thin descriptions — not implemented in v1.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Re-render every issue in scope, ignoring the stored watermark.",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    help="Report what would change; write nothing at all.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the SweepReport as JSON.",
+)
+@click.option("--quiet", "-q", is_flag=True, help="Only print the final summary line.")
+def ingest_jira(
+    jql: str | None,
+    project_key: str | None,
+    since: str | None,
+    issues_dir_opt: str | None,
+    do_build: bool,
+    enrich: bool,
+    force: bool,
+    dry_run: bool,
+    as_json: bool,
+    quiet: bool,
+) -> None:
+    """Extract Jira tickets into the `issues` markdown corpus and build it.
+
+    Deterministic and zero-LLM by default (FEAT-454): every frontmatter
+    field is a Jira field or a pure function of one, so two runs over
+    unchanged tickets produce byte-identical documents and write nothing.
+
+    Scope is JQL; each run fetches only issues updated since the last
+    successful watermark, so a daily cron stays cheap. Content below the
+    `<!-- jira-sync:end -->` marker in any document is preserved forever.
+    Builds the plane by default so it can never silently lag the files
+    (G10) — pass ``--no-build`` to emit documents only.
+
+    Register the corpus once as a namespace (see the runbook):
+
+        wikitoolkit ns add issues --store <issues-dir>/.parrot/wiki --global
+    """
+    if enrich:
+        raise click.ClickException("--enrich is not implemented in v1 (zero-LLM default path only).")
+    if jql and project_key:
+        raise click.UsageError("--jql and --project are mutually exclusive.")
+
+    # Lazy imports: `wikitoolkit --help` must never pay for `jira`
+    # (mirrors `build`'s vault_scan import at cli.py:1118-1121).
+    from parrot.interfaces.jira import JiraAuthError, JiraDependencyError, JiraInterface
+    from parrot.knowledge.wiki.jira_sync import resolve_issues_dir, sweep_jira_issues
+
+    if jql:
+        effective_jql = jql
+    elif project_key:
+        effective_jql = f"project = {project_key}"
+    else:
+        env_jql = _env_setting("JIRA_WIKI_JQL")
+        if env_jql:
+            effective_jql = env_jql
+        else:
+            default_project = _env_setting("JIRA_DEFAULT_PROJECT")
+            if default_project:
+                effective_jql = f"project = {default_project}"
+            else:
+                raise click.ClickException(
+                    "No JQL scope resolved. Provide --jql, or --project, or "
+                    "set JIRA_WIKI_JQL (or JIRA_DEFAULT_PROJECT) in the environment."
+                )
+
+    since_dt: datetime | None = None
+    if since is not None:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except ValueError as exc:
+            raise click.ClickException(f"--since must be ISO-8601 (got {since!r}): {exc}") from exc
+
+    issues_dir = resolve_issues_dir(issues_dir_opt or _env_setting("JIRA_WIKI_ISSUES_DIR"))
+
+    interface = JiraInterface()
+
+    try:
+        report = _run(
+            sweep_jira_issues(
+                interface,
+                issues_dir,
+                jql=effective_jql,
+                since=since_dt,
+                force=force,
+                dry_run=dry_run,
+            )
+        )
+    except JiraDependencyError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except JiraAuthError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    namespace_name = _env_setting("JIRA_WIKI_NAMESPACE") or "issues"
+
+    if do_build and not dry_run:
+        # vault_mode=True EXPLICITLY: the issues dir has no .obsidian/, and
+        # build's own auto-detect (cli.py:1124-1125) would pick repository
+        # mode and scan the markdown as source code. no_git=True: the
+        # corpus is not a git repo. no_export/no_graph default ON to keep
+        # a cron cheap — an operator can run `build` by hand for the extras.
+        build.callback(
+            path_=str(issues_dir),
+            name=namespace_name,
+            backend=None,
+            force=force,
+            no_git=True,
+            quiet=quiet,
+            no_export=True,
+            no_graph=True,
+            graph_kinds="module,document,overview",
+            vault_mode=True,
+        )
+
+    if as_json:
+        click.echo(report.model_dump_json(indent=2))
+    elif quiet:
+        click.echo(
+            f"Jira sweep: {report.fetched} fetched, {report.written} written, "
+            f"{report.unchanged} unchanged, {report.orphaned} orphaned, "
+            f"{len(report.errors)} error(s)."
+        )
+    else:
+        click.echo(f"Jira sweep against {issues_dir}:")
+        click.echo(f"  fetched:      {report.fetched}")
+        click.echo(f"  written:      {report.written}")
+        click.echo(f"  unchanged:    {report.unchanged}")
+        click.echo(f"  orphaned:     {report.orphaned}")
+        click.echo(f"  entity notes: {report.entity_notes}")
+        click.echo(f"  watermark advanced: {report.watermark_advanced}")
+        if report.unresolved_link_keys:
+            click.echo(
+                f"  WARNING: {len(report.unresolved_link_keys)} relation(s) point "
+                "outside the current JQL scope and were dropped as unresolved "
+                "wikilinks — widen the JQL to include them: "
+                f"{', '.join(report.unresolved_link_keys[:10])}"
+                + ("..." if len(report.unresolved_link_keys) > 10 else "")
+            )
+        if report.errors:
+            click.echo(f"  ERRORS: {len(report.errors)}")
+            for err in report.errors:
+                click.echo(f"    - {err}")
+
+    if report.errors:
+        raise SystemExit(1)
 
 
 @wiki.command(name="claude-hook", hidden=True)
