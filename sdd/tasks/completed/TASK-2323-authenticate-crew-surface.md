@@ -172,10 +172,118 @@ class TestCrewAuthRequired:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
 **Notes**:
 
-**Deviations from spec**: none
+**Decorator pattern — class-level, not per-method.** Verified
+`tool_catalog.py:231`/`special_nodes.py:74` decorate the CLASS
+(`@is_authenticated() @user_session() class Foo(BaseView)`), not each
+HTTP method individually. Read `navigator_auth.decorators._apply_decorator`
+source: class-level decoration auto-wraps every method named after an
+HTTP verb (`hdrs.METH_ALL` — get/put/post/patch/delete/etc.) on the
+class. Applied `@is_authenticated()` + `@user_session()` at the class
+level on all four handlers (`CrewHandler`, `CrewExecutionHandler`,
+`CrewExecutionHistoryHandler`, `FlowAuthoringHandler`), matching the
+established pattern exactly. Verified at runtime
+(`hasattr(Handler.method, '__wrapped__')`) that every listed method
+(`CrewHandler.get/put/delete`, `CrewExecutionHandler.get/patch/put/post`,
+`CrewExecutionHistoryHandler.get/post/delete`,
+`FlowAuthoringHandler.get/post`) is genuinely wrapped.
+
+**`CrewHandler.upload()` — not wrapped, and correctly so.** Verified
+`upload` is not named after an HTTP verb (`hdrs.METH_ALL`), so class-level
+decoration does not wrap it; grepped the whole repo and found zero call
+sites (`self.upload()` is never invoked — no `post()` method routes to
+it). Directly decorating a plain named method with
+`is_authenticated()`'s function-wrapper variant would be actively wrong
+(that variant expects `request` as a positional arg / `args[-1]`, not
+`self` with no other args — `self.upload()` would break it). Left
+`upload` undecorated with a docstring explaining why; documented as a
+corrected understanding of the task's Scope (which listed `upload` as
+one of the "public HTTP methods" to decorate) rather than guessed at.
+
+**Tenant extraction — done exactly at the four cited sites.**
+`handler.py::get()`/`delete()` — `qs.get('tenant') or "global"` →
+`await resolve_session_tenant(self.request, declared=qs.get('tenant'))`.
+`execution_handler.py::execute_crew()` — `data.get('tenant')` + 400-if-
+missing → resolver call; the old 400-if-missing branch is superseded
+(session resolves the tenant even when body omits it) — added
+`except web.HTTPError: raise` before the method's existing broad
+`except Exception` (which did NOT previously guard against HTTPError,
+unlike `handler.py`'s methods) so the resolver's 403/400 propagate
+instead of being swallowed into a generic 500; verified via grep this
+file had zero prior `from aiohttp import web` import, added it.
+`execution_history_handler.py::_get_tenant_user()` — per the task's
+own Key Constraint ("the resolver becomes the single source inside that
+helper"), the fix lives inside this one shared helper rather than at
+each of its three call sites (`get`/`post`/`delete`). The
+`require_tenant` parameter is now vestigial (kept for call-site
+compatibility — `post()`/`delete()` still pass `require_tenant=True`
+and still have their own `if not tenant: return 400` checks) since
+`resolve_session_tenant` never returns falsy — G3's "no global fallback
+in SaaS mode, ever" applies uniformly to reads and mutations, so the old
+read/write distinction is superseded. Documented this explicitly in the
+docstring rather than silently dropping the parameter or the now-dead
+checks (out of scope to remove them; they're harmless unreachable
+safety nets).
+`job.metadata['tenant'] = crew_def.tenant`
+(`execution_handler.py`) — confirmed (not changed) it transitively
+carries the session-resolved tenant, since `crew_def` now comes from
+`bot_manager.get_crew(crew_id, tenant=<resolved>)`.
+
+**IMPORTANT FINDING — AC2 literal text vs. Files-to-Modify scope
+conflict** (flagging per Cardinal Rule 4 rather than silently resolving
+either way): Acceptance Criterion 2 reads "grep shows zero `or
+"global"` / `or 'global'` tenant fallbacks in `handlers/crew/*.py`
+outside `_tenancy.py`" — a glob over the WHOLE `handlers/crew/`
+directory. Ran that exact grep after the fix: two occurrences remain,
+in `saved_execution_service.py:341`
+(`_belongs_to`: `record_tenant = record.get("tenant") or "global"`)
+and `redis_persistence.py:55`
+(`_normalize_tenant`: `return tenant or "global"`). Neither file is in
+this task's "Files to Create/Modify" table, neither is mentioned
+anywhere in the task's Context/Scope/Codebase Contract, and I have zero
+verified-imports/signatures coverage for them. Read both in context:
+`_belongs_to` normalizes a *legacy stored record's* tenant field for a
+data-equality comparison (interpreting old data, not resolving a
+caller's identity from client input); `_normalize_tenant` is a
+storage-key-generation default applied to a `tenant` parameter that,
+post this task's fix, is always already the session-resolved value by
+the time it reaches these two files — never raw client input anymore.
+Concluded these are NOT instances of the G2/G3 attack surface (client-
+controllable tenant defaulting), so did not touch them (Cardinal Rule 2
+File Fidelity — no Codebase Contract coverage to safely modify them
+under this task). Flagging explicitly for the code-reviewer and for
+TASK-2325 in case a negative test or a follow-up task is warranted for
+legacy-record/storage-default `"global"` semantics.
+
+**Tests**: no pre-existing HTTP-level unit tests for these four
+handlers were found (`grep -rl` for the four class names across
+`packages/ai-parrot-server/tests/` returns nothing beyond this
+feature's own new files) — the "existing crew handler tests | MODIFY"
+row in the Files table had nothing to modify; verified this rather than
+skipping silently. `pytest packages/ai-parrot-server/tests -k crew -v`
+— 16 passed, 1 skipped (two unrelated collection errors from a missing
+`fakeredis` dependency, confirmed pre-existing/environment-only via
+`pip show fakeredis` — not importable in this venv at all, unrelated to
+this change). Ran the broader
+`packages/ai-parrot-server/tests/handlers/` +
+`packages/ai-parrot-server/tests/unit/` suites (excluding 3 voice tests
+requiring unavailable hardware/model deps) — 462 passed, 1 skipped, no
+regressions. Ruff: before/after diff against `dev` for all four files —
+byte-identical error counts (handler.py 22/22, execution_handler.py
+37/37, execution_history_handler.py 24/24, flow_authoring.py 14/14) —
+zero new lint debt introduced. Live-verified `resolve_session_tenant`
+integration end-to-end (claim match → resolved tenant; mismatch →
+`web.HTTPBadRequest` with the expected reason).
+Full anonymous-caller-rejection integration testing (the actual proof
+these routes are closed) is TASK-2325's explicit charter, not
+re-verified here.
+
+**Deviations from spec**: (1) `CrewHandler.upload()` left undecorated —
+see finding above (unreachable, decorating it would be semantically
+wrong). (2) AC2's `handlers/crew/*.py`-wide grep finds two remaining
+`or "global"` occurrences outside the four files this task owns — see
+IMPORTANT FINDING above; assessed as out of the G2/G3 threat model and
+left untouched pending reviewer/TASK-2325 judgment.
