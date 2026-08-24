@@ -1,4 +1,5 @@
 """Tests for `parrot.interfaces.jira` models and `parse_issue` (FEAT-454, M1)."""
+
 import json
 import sys
 
@@ -96,6 +97,7 @@ class TestPurityAndOptionalDependency:
         import importlib
 
         import parrot.interfaces.jira as mod
+
         importlib.reload(mod)
         assert mod.JiraIssue is not None
 
@@ -111,9 +113,16 @@ class TestDefensiveParsing:
             parse_issue({"id": "1", "key": "NAV-1"}, base_url=BASE)
 
     def test_sparse_issue_yields_defaults_not_keyerror(self):
-        raw = {"id": "1", "key": "NAV-1", "fields": {
-            "project": {"key": "NAV"}, "issuetype": {"name": "Task"},
-            "status": {"name": "To Do"}, "summary": "s"}}
+        raw = {
+            "id": "1",
+            "key": "NAV-1",
+            "fields": {
+                "project": {"key": "NAV"},
+                "issuetype": {"name": "Task"},
+                "status": {"name": "To Do"},
+                "summary": "s",
+            },
+        }
         parsed = parse_issue(raw, base_url=BASE)
         assert parsed.labels == [] and parsed.links == []
         assert parsed.assignee is None and parsed.description_html is None

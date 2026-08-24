@@ -5,20 +5,35 @@ without changing any pre-existing member's value, and that the two known
 enumerating consumers (the migrate.py LLM classification prompt and the
 obsidian.py validation list) pick up the new values without regressing.
 """
+
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
 
 # Frozen snapshot of the vocabulary BEFORE FEAT-454. Any diff here is a
 # breaking change to YAML frontmatter parsing across every index.
 PRE_FEAT454: dict[str, str] = {
-    "SECTION": "Section", "POLICY": "Policy", "CONTROL": "Control",
-    "SAFEGUARD": "Safeguard", "EVIDENCE": "Evidence", "PLAYBOOK": "Playbook",
-    "PROCEDURE": "Procedure", "STANDARD": "Standard",
-    "FRAMEWORK": "Framework", "REGULATION": "Regulation",
-    "GUIDELINE": "Guideline", "SYMBOL": "Symbol", "RATIONALE": "Rationale",
-    "SKILL": "Skill", "CONCEPT_NODE": "Concept", "DOCUMENT_NODE": "Document",
-    "WIKI_SUMMARY": "Wiki Summary", "WIKI_ENTITY": "Wiki Entity",
-    "WIKI_COMPARISON": "Wiki Comparison", "WIKI_SYNTHESIS": "Wiki Synthesis",
-    "WIKI_OVERVIEW": "Wiki Overview", "RUN": "Run", "CLAIM": "Claim",
+    "SECTION": "Section",
+    "POLICY": "Policy",
+    "CONTROL": "Control",
+    "SAFEGUARD": "Safeguard",
+    "EVIDENCE": "Evidence",
+    "PLAYBOOK": "Playbook",
+    "PROCEDURE": "Procedure",
+    "STANDARD": "Standard",
+    "FRAMEWORK": "Framework",
+    "REGULATION": "Regulation",
+    "GUIDELINE": "Guideline",
+    "SYMBOL": "Symbol",
+    "RATIONALE": "Rationale",
+    "SKILL": "Skill",
+    "CONCEPT_NODE": "Concept",
+    "DOCUMENT_NODE": "Document",
+    "WIKI_SUMMARY": "Wiki Summary",
+    "WIKI_ENTITY": "Wiki Entity",
+    "WIKI_COMPARISON": "Wiki Comparison",
+    "WIKI_SYNTHESIS": "Wiki Synthesis",
+    "WIKI_OVERVIEW": "Wiki Overview",
+    "RUN": "Run",
+    "CLAIM": "Claim",
     "OTHER": "Other",
 }
 
@@ -50,6 +65,7 @@ class TestEnumeratingConsumers:
 
     def test_migrate_prompt_includes_new_values(self):
         from parrot.knowledge.pageindex.okf import migrate  # noqa: F401
+
         joined = ", ".join(t.value for t in ConceptType)
         for value in NEW_MEMBERS.values():
             assert value in joined

@@ -6,9 +6,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def isolated_parrot_home(
-    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def isolated_parrot_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point ``PARROT_HOME`` at a temp dir for every test (FEAT-450).
 
     The global namespace registry lives at ``PARROT_HOME/wikis.json``;

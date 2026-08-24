@@ -13,6 +13,7 @@ loaders, and wiki vault_scan."
 The ``jira`` distribution is an optional, lazily-imported dependency —
 importing this package must never require it to be installed.
 """
+
 from .client import JiraInterface
 from .errors import JiraAuthError, JiraDependencyError, JiraInterfaceError
 from .models import (

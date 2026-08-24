@@ -25,6 +25,7 @@ Notes:
 - Methods are async but the underlying jira client is sync, so calls run via asyncio.to_thread.
 - Each method returns JSON-serializable dicts/lists (using Issue.raw where possible).
 """
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Union, Literal, TypedDict
 import os
@@ -46,14 +47,13 @@ try:
     from jira import JIRA
     from jira.exceptions import JIRAError
 except ImportError as e:  # pragma: no cover - optional
-    raise ImportError(
-        "Please install the 'jira' package: pip install jira"
-    ) from e
+    raise ImportError("Please install the 'jira' package: pip install jira") from e
 
 
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
 # ---------------------------------------------------------------------------
+
 
 class JiraToolEnvelope(TypedDict, total=False):
     """Uniform return shape for all JiraToolkit read methods.
@@ -65,10 +65,13 @@ class JiraToolEnvelope(TypedDict, total=False):
         message: Human-readable detail; empty string on success.
         query: The key, JQL, or search string used in the call.
     """
+
     status: Literal["ok", "empty", "not_found", "error"]
     data: Any
     message: str
     query: Optional[str]
+
+
 from parrot.tools.manager import ToolManager
 from parrot.auth.exceptions import AuthorizationRequired
 from .toolkit import AbstractToolkit
@@ -94,6 +97,7 @@ class JiraAuthenticationError(RuntimeError):
 # Helpers
 # -----------------------------
 
+
 def _parse_csv(value: str) -> List[str]:
     """Parse a comma-separated string into a list, stripping whitespace."""
     if not value:
@@ -107,25 +111,15 @@ def _parse_csv(value: str) -> List[str]:
 STRUCTURED_OUTPUT_FIELD_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "properties": {
-        "include": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Whitelist of dot-paths to include"
-        },
+        "include": {"type": "array", "items": {"type": "string"}, "description": "Whitelist of dot-paths to include"},
         "mapping": {
             "type": "object",
             "description": "dest_key -> dot-path mapping",
-            "additionalProperties": {"type": "string"}
+            "additionalProperties": {"type": "string"},
         },
-        "model_path": {
-            "type": "string",
-            "description": "Dotted path to a Pydantic BaseModel subclass"
-        },
-        "strict": {
-            "type": "boolean",
-            "description": "If True, missing paths raise; otherwise they become None"
-        }
-    }
+        "model_path": {"type": "string", "description": "Dotted path to a Pydantic BaseModel subclass"},
+        "strict": {"type": "boolean", "description": "If True, missing paths raise; otherwise they become None"},
+    },
 }
 
 
@@ -141,10 +135,12 @@ class StructuredOutputOptions(BaseModel):
 
     If more than one is provided, precedence is: mapping > include > model_path (mapping/include are applied before model).
     """
+
     include: Optional[List[str]] = Field(default=None, description="Whitelist of dot-paths to include")
     mapping: Optional[Dict[str, str]] = Field(default=None, description="dest_key -> dot-path mapping")
     model_path: Optional[str] = Field(default=None, description="Dotted path to a Pydantic BaseModel subclass")
     strict: bool = Field(default=False, description="If True, missing paths raise; otherwise they become None")
+
 
 # =============================================================================
 # Field Presets for Efficiency
@@ -153,23 +149,21 @@ class StructuredOutputOptions(BaseModel):
 FIELD_PRESETS = {
     # Minimal fields for counting
     "count": "key,assignee,reporter,status,priority,issuetype,project,created",
-
     # Fields for listing/browsing
     "list": "key,summary,assignee,status,priority,issuetype,project,created,updated",
-
     # Fields for detailed analysis
     "analysis": (
         "key,summary,description,assignee,reporter,status,priority,issuetype,"
         "project,created,updated,resolutiondate,duedate,labels,components,"
         "timeoriginalestimate,timespent,customfield_10016"  # story points
     ),
-
     # All fields
     "all": "*all",
 }
 
 # Type hint for presets
 FieldPreset = Literal["count", "list", "analysis", "all"]
+
 
 class JiraInput(BaseModel):
     """Default input for Jira tools: holds auth + default project context.
@@ -200,23 +194,20 @@ class JiraInput(BaseModel):
 
 class GetIssueInput(BaseModel):
     """Input for getting a single issue."""
+
     issue: str = Field(description="Issue key or id, e.g., 'JRA-1330'")
     fields: Optional[str] = Field(default=None, description="Fields to fetch (comma-separated) or '*' ")
     expand: Optional[str] = Field(default=None, description="Entities to expand, e.g. 'renderedFields' ")
     include_history: bool = Field(default=False, description="Include the issue history")
-    history_page_size: Optional[int] = Field(
-        default=100,
-        description="number of items to be returned via changelog"
-    )
+    history_page_size: Optional[int] = Field(default=100, description="number of items to be returned via changelog")
     structured: Optional[StructuredOutputOptions] = Field(
-        default=None,
-        description="Optional structured output mapping",
-        json_schema_extra=STRUCTURED_OUTPUT_FIELD_SCHEMA
+        default=None, description="Optional structured output mapping", json_schema_extra=STRUCTURED_OUTPUT_FIELD_SCHEMA
     )
 
 
 class SearchIssuesInput(BaseModel):
     """Input for searching issues with JQL."""
+
     jql: str = Field(
         description=(
             "JQL query. Must include at least one filter clause (e.g. "
@@ -232,7 +223,7 @@ class SearchIssuesInput(BaseModel):
             "Max results to return. Set to None to fetch all matching issues. "
             "Jira supports up to 1000 per page. "
             "Default 100 is for browsing; use None for complete counts."
-        )
+        ),
     )
     fields: Optional[str] = Field(
         default=None,
@@ -242,16 +233,11 @@ class SearchIssuesInput(BaseModel):
             "'key,summary,assignee,status,created' for listings, "
             "'*all' or None for full details. "
             "Fewer fields = faster response and smaller context."
-        )
+        ),
     )
-    expand: Optional[str] = Field(
-        default=None,
-        description="Expand options (changelog, renderedFields, etc.)"
-    )
+    expand: Optional[str] = Field(default=None, description="Expand options (changelog, renderedFields, etc.)")
     structured: Optional[StructuredOutputOptions] = Field(
-        default=None,
-        description="Optional structured output mapping",
-        json_schema_extra=STRUCTURED_OUTPUT_FIELD_SCHEMA
+        default=None, description="Optional structured output mapping", json_schema_extra=STRUCTURED_OUTPUT_FIELD_SCHEMA
     )
     # Options for efficient handling
     json_result: bool = Field(
@@ -259,18 +245,17 @@ class SearchIssuesInput(BaseModel):
         description=(
             "Return results as a JSON object instead of a list of issues. "
             "Set True when you need to do aggregations, grouping, or complex analysis."
-        )
+        ),
     )
     store_as_dataframe: bool = Field(
         default=False,
         description=(
             "Store results in a shared DataFrame for analysis with PythonPandasTool. "
             "Set True when you need to do aggregations, grouping, or complex analysis."
-        )
+        ),
     )
     dataframe_name: Optional[str] = Field(
-        default=None,
-        description="Name for the stored DataFrame. Defaults to 'jira_issues'."
+        default=None, description="Name for the stored DataFrame. Defaults to 'jira_issues'."
     )
     summary_only: bool = Field(
         default=False,
@@ -278,23 +263,21 @@ class SearchIssuesInput(BaseModel):
             "Return only summary statistics (counts by assignee, status, etc.) "
             "instead of raw issues. Ideal for 'how many' or 'count by' queries. "
             "Drastically reduces context window usage."
-        )
+        ),
     )
 
 
 class CountIssuesInput(BaseModel):
     """Optimized input for counting issues - requests minimal fields."""
 
-    jql: str = Field(
-        description="JQL query to count issues"
-    )
+    jql: str = Field(description="JQL query to count issues")
     group_by: Optional[List[str]] = Field(
         default=None,
         description=(
             "Fields to group counts by. Options: "
             "'assignee', 'reporter', 'status', 'priority', 'issuetype', 'project'. "
             "Example: ['assignee', 'status'] for count by user and status."
-        )
+        ),
     )
 
 
@@ -314,66 +297,40 @@ class GetMyTicketsInput(BaseModel):
             "Optional status filter. Single status (e.g. 'In Progress') or a "
             "list (e.g. ['To Do', 'In Progress']). If omitted, Done/Closed/"
             "Resolved tickets are excluded unless include_closed=True."
-        )
+        ),
     )
-    project: Optional[str] = Field(
-        default=None,
-        description="Optional Jira project key filter (e.g. 'NAV')."
-    )
+    project: Optional[str] = Field(default=None, description="Optional Jira project key filter (e.g. 'NAV').")
     include_closed: bool = Field(
         default=False,
-        description=(
-            "When True, include Done/Closed/Resolved tickets. "
-            "Ignored if a ``status`` filter is provided."
-        )
+        description=("When True, include Done/Closed/Resolved tickets. " "Ignored if a ``status`` filter is provided."),
     )
-    max_results: Optional[int] = Field(
-        default=50,
-        description="Max tickets to return. Use None to fetch all matches."
-    )
-    order_by: Optional[str] = Field(
-        default="updated DESC",
-        description="JQL ORDER BY clause. Default: 'updated DESC'."
-    )
+    max_results: Optional[int] = Field(default=50, description="Max tickets to return. Use None to fetch all matches.")
+    order_by: Optional[str] = Field(default="updated DESC", description="JQL ORDER BY clause. Default: 'updated DESC'.")
     fields: Optional[str] = Field(
         default="key,summary,status,priority,issuetype,project,created,updated,duedate",
-        description="Comma-separated Jira fields to return."
+        description="Comma-separated Jira fields to return.",
     )
-    summary_only: bool = Field(
-        default=False,
-        description="Return grouped counts instead of raw tickets."
-    )
+    summary_only: bool = Field(default=False, description="Return grouped counts instead of raw tickets.")
 
 
 class AggregateJiraDataInput(BaseModel):
     """Input for aggregating stored Jira data."""
 
-    dataframe_name: str = Field(
-        default="jira_issues",
-        description="Name of the DataFrame to aggregate"
-    )
-    group_by: List[str] = Field(
-        description="Columns to group by, e.g. ['assignee_name', 'status']"
-    )
+    dataframe_name: str = Field(default="jira_issues", description="Name of the DataFrame to aggregate")
+    group_by: List[str] = Field(description="Columns to group by, e.g. ['assignee_name', 'status']")
     aggregations: Dict[str, str] = Field(
         default={"key": "count"},
         description=(
-            "Aggregations to perform. Format: {column: agg_func}. "
-            "Example: {'key': 'count', 'story_points': 'sum'}"
-        )
+            "Aggregations to perform. Format: {column: agg_func}. " "Example: {'key': 'count', 'story_points': 'sum'}"
+        ),
     )
-    sort_by: Optional[str] = Field(
-        default=None,
-        description="Column to sort results by"
-    )
-    ascending: bool = Field(
-        default=False,
-        description="Sort order"
-    )
+    sort_by: Optional[str] = Field(default=None, description="Column to sort results by")
+    ascending: bool = Field(default=False, description="Sort order")
 
 
 class TransitionIssueInput(BaseModel):
     """Input for transitioning an issue."""
+
     issue: str = Field(description="Issue key or id")
     transition: Union[str, int] = Field(description="Transition id or name (e.g., '5' or 'Done')")
     fields: Optional[Dict[str, Any]] = Field(default=None, description="Extra fields to set on transition")
@@ -383,6 +340,7 @@ class TransitionIssueInput(BaseModel):
 
 class TransitionToInput(BaseModel):
     """Input for walking an issue to a target status across a custom workflow."""
+
     issue: str = Field(description="Issue key or id (e.g., 'NAV-8350')")
     target_status: str = Field(
         description=(
@@ -392,82 +350,64 @@ class TransitionToInput(BaseModel):
         )
     )
     fields: Optional[Dict[str, Any]] = Field(default=None, description="Extra fields to set on the FINAL transition")
-    assignee: Optional[Dict[str, Any]] = Field(default=None, description="Assignee dict applied on the FINAL transition")
-    resolution: Optional[Dict[str, Any]] = Field(default=None, description="Resolution dict applied on the FINAL transition")
+    assignee: Optional[Dict[str, Any]] = Field(
+        default=None, description="Assignee dict applied on the FINAL transition"
+    )
+    resolution: Optional[Dict[str, Any]] = Field(
+        default=None, description="Resolution dict applied on the FINAL transition"
+    )
 
 
 class AddAttachmentInput(BaseModel):
     """Input for adding an attachment to an issue."""
+
     issue: str = Field(description="Issue key or id")
     attachment: str = Field(description="Path to attachment file on disk")
 
 
 class AssignIssueInput(BaseModel):
     """Input for assigning an issue to a user."""
+
     issue: str = Field(description="Issue key or id")
     assignee: str = Field(description="Account id or username (depends on Jira cloud/server)")
 
 
 class CreateIssueInput(BaseModel):
     """Input for creating a new issue."""
-    project: str = Field(
-        default="NAV",
-        description="Project key, e.g. 'NAV' or project id"
-    )
-    summary: str = Field(
-        description="Issue summary/title"
-    )
-    issuetype: str = Field(
-        default="Task",
-        description="Issue type, e.g. 'Task', 'Story', 'Bug', 'Epic', 'Sub-task'"
-    )
-    description: Optional[str] = Field(
-        default=None,
-        description="Issue description"
-    )
-    assignee: Optional[str] = Field(
-        default=None,
-        description="Assignee account ID or username"
-    )
+
+    project: str = Field(default="NAV", description="Project key, e.g. 'NAV' or project id")
+    summary: str = Field(description="Issue summary/title")
+    issuetype: str = Field(default="Task", description="Issue type, e.g. 'Task', 'Story', 'Bug', 'Epic', 'Sub-task'")
+    description: Optional[str] = Field(default=None, description="Issue description")
+    assignee: Optional[str] = Field(default=None, description="Assignee account ID or username")
     priority: Optional[Literal["Highest", "High", "Medium", "Low", "Lowest"]] = Field(
-        default=None,
-        description="Priority"
+        default=None, description="Priority"
     )
-    labels: Optional[List[str]] = Field(
-        default=None,
-        description="Labels list, e.g. ['backend', 'urgent']"
-    )
+    labels: Optional[List[str]] = Field(default=None, description="Labels list, e.g. ['backend', 'urgent']")
     components: Optional[List[str]] = Field(
         default=None,
-        description=(
-            "List of component IDs (not names). "
-            "Use jira_get_components(project) to find IDs first."
-        )
+        description=("List of component IDs (not names). " "Use jira_get_components(project) to find IDs first."),
     )
     due_date: Optional[str] = Field(
-        default=None,
-        description="Due date in YYYY-MM-DD format",
-        json_schema_extra={"x-exclude-form": True}
+        default=None, description="Due date in YYYY-MM-DD format", json_schema_extra={"x-exclude-form": True}
     )
     parent: Optional[str] = Field(
         default=None,
         description="Parent issue key for sub-tasks or stories under epics",
-        json_schema_extra={"x-exclude-form": True}
+        json_schema_extra={"x-exclude-form": True},
     )
-    original_estimate: Optional[str] = Field(
-        default=None,
-        description="Original time estimate, e.g. '8h', '2d', '30m'"
-    )
+    original_estimate: Optional[str] = Field(default=None, description="Original time estimate, e.g. '8h', '2d', '30m'")
     # Generic fields for any other issue data
     fields: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Additional fields dict for custom or less common fields",
-        json_schema_extra={"x-exclude-form": True}
+        json_schema_extra={"x-exclude-form": True},
     )
 
 
 class UpdateIssueInput(BaseModel):
     """Input for updating an existing issue."""
+
     issue: str = Field(description="Issue key or id")
     summary: Optional[str] = Field(default=None, description="New summary")
     description: Optional[str] = Field(default=None, description="New description")
@@ -475,36 +415,22 @@ class UpdateIssueInput(BaseModel):
 
     # New fields
     acceptance_criteria: Optional[str] = Field(
-        default=None,
-        description="Acceptance criteria text (often stored in a custom field)"
+        default=None, description="Acceptance criteria text (often stored in a custom field)"
     )
-    original_estimate: Optional[str] = Field(
-        default=None,
-        description="Original time estimate, e.g. '2h', '1d', '30m'"
-    )
+    original_estimate: Optional[str] = Field(default=None, description="Original time estimate, e.g. '2h', '1d', '30m'")
     time_tracking: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Time tracking dict, e.g. {'originalEstimate': '2h', 'remainingEstimate': '1h'}"
+        default=None, description="Time tracking dict, e.g. {'originalEstimate': '2h', 'remainingEstimate': '1h'}"
     )
     affected_versions: Optional[List[Dict[str, str]]] = Field(
-        default=None,
-        description="Affected versions list, e.g. [{'name': '1.0'}, {'name': '2.0'}]"
+        default=None, description="Affected versions list, e.g. [{'name': '1.0'}, {'name': '2.0'}]"
     )
-    due_date: Optional[str] = Field(
-        default=None,
-        description="Due date in YYYY-MM-DD format"
-    )
-    labels: Optional[List[str]] = Field(
-        default=None,
-        description="Labels list, e.g. ['backend', 'priority']"
-    )
+    due_date: Optional[str] = Field(default=None, description="Due date in YYYY-MM-DD format")
+    labels: Optional[List[str]] = Field(default=None, description="Labels list, e.g. ['backend', 'priority']")
     issuetype: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Issue type dict, e.g. {'name': 'Bug'} or {'id': '10001'}"
+        default=None, description="Issue type dict, e.g. {'name': 'Bug'} or {'id': '10001'}"
     )
     priority: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Priority dict, e.g. {'name': 'High'} or {'id': '2'}"
+        default=None, description="Priority dict, e.g. {'name': 'High'} or {'id': '2'}"
     )
 
     # Generic fields for any other updates
@@ -513,6 +439,7 @@ class UpdateIssueInput(BaseModel):
 
 class FindIssuesByAssigneeInput(BaseModel):
     """Input for finding issues assigned to a given user."""
+
     assignee: str = Field(description="Assignee identifier (e.g., 'admin' or accountId)")
     project: Optional[str] = Field(default=None, description="Restrict to project key")
     max_results: int = Field(default=50, description="Max results")
@@ -520,12 +447,14 @@ class FindIssuesByAssigneeInput(BaseModel):
 
 class GetTransitionsInput(BaseModel):
     """Input for getting available transitions for an issue."""
+
     issue: str = Field(description="Issue key or id")
     expand: Optional[str] = Field(default=None, description="Expand options, e.g. 'transitions.fields'")
 
 
 class AddCommentInput(BaseModel):
     """Input for adding a comment to an issue."""
+
     issue: str = Field(description="Issue key or id")
     body: str = Field(description="Comment body text")
     is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
@@ -540,6 +469,7 @@ class AddCommentInput(BaseModel):
 
 class AddWorklogInput(BaseModel):
     """Input for adding a worklog to an issue."""
+
     issue: str = Field(description="Issue key or id")
     time_spent: str = Field(description="Time spent, e.g. '2h', '30m'")
     comment: Optional[str] = Field(default=None, description="Worklog comment")
@@ -548,14 +478,15 @@ class AddWorklogInput(BaseModel):
 
 class GetIssueTypesInput(BaseModel):
     """Input for listing issue types."""
+
     project: Optional[str] = Field(
-        default=None,
-        description="Project key to filter by. If omitted, returns all available types."
+        default=None, description="Project key to filter by. If omitted, returns all available types."
     )
 
 
 class SearchUsersInput(BaseModel):
     """Input for searching users."""
+
     user: Optional[str] = Field(default=None, description="String to match usernames, name or email against.")
     start_at: int = Field(default=0, description="Index of the first user to return.")
     max_results: int = Field(default=50, description="Maximum number of users to return.")
@@ -566,67 +497,73 @@ class SearchUsersInput(BaseModel):
 
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
+
     pass
 
 
 class VerifyAuthInput(BaseModel):
     """Input for verifying Jira authentication."""
+
     pass
 
 
 class GetComponentsInput(BaseModel):
     """Input for listing project components."""
+
     project: Optional[str] = Field(
-        default=None,
-        description="Project key, e.g. 'NAV'. Falls back to default project if omitted."
+        default=None, description="Project key, e.g. 'NAV'. Falls back to default project if omitted."
     )
 
 
 class GetComponentByNameInput(BaseModel):
     """Input for finding a component by name."""
+
     name: str = Field(description="Component name to search for (case-insensitive match).")
-    project: Optional[str] = Field(
-        default=None,
-        description="Project key. Falls back to default project if omitted."
-    )
+    project: Optional[str] = Field(default=None, description="Project key. Falls back to default project if omitted.")
 
 
 class TicketIdInput(BaseModel):
     """Input for generic ticket operations."""
+
     issue: str = Field(description="Issue key or id")
 
 
 class FindUserInput(BaseModel):
     """Input for finding a user."""
+
     email: str = Field(description="User email address or query string")
 
 
 class TagInput(BaseModel):
     """Input for tag operations."""
+
     issue: str = Field(description="Issue key or id")
     tag: str = Field(description="Tag (label) name")
 
 
 class ChangeAssigneeInput(BaseModel):
     """Input for changing assignee."""
+
     issue: str = Field(description="Issue key or id")
     assignee: str = Field(description="New assignee (account ID or username)")
 
 
 class ListHistoryInput(BaseModel):
     """Input for listing history."""
-    issue: str = Field(description="Issue key or id")
 
+    issue: str = Field(description="Issue key or id")
 
 
 class ChangeReporterInput(BaseModel):
     """Input for changing the reporter of an issue."""
+
     issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
     email: str = Field(description="Email address of the new reporter")
 
 
 class AddComponentInput(BaseModel):
     """Input for adding a component to an issue by name."""
+
     issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
     component_name: str = Field(description="Component name (case-insensitive, e.g. 'Backend')")
     project: Optional[str] = Field(default=None, description="Project key. Falls back to default project if omitted.")
@@ -634,22 +571,25 @@ class AddComponentInput(BaseModel):
 
 class AddWatcherInput(BaseModel):
     """Input for adding a watcher to an issue."""
+
     issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
     email: str = Field(description="Email address of the user to add as watcher")
 
 
 class SetAcceptanceCriteriaInput(BaseModel):
     """Input for setting acceptance criteria on an issue."""
+
     issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
     criteria: List[str] = Field(description="List of acceptance criteria items (each item becomes a checklist entry)")
     custom_field: Optional[str] = Field(
         default=None,
-        description="Custom field ID for acceptance criteria (e.g. 'customfield_10021'). Auto-detected if omitted."
+        description="Custom field ID for acceptance criteria (e.g. 'customfield_10021'). Auto-detected if omitted.",
     )
 
 
 class ConfigureClientInput(BaseModel):
     """Input for re-configuring the Jira client."""
+
     username: Optional[str] = Field(default=None, description="New username (email)")
     password: Optional[str] = Field(default=None, description="New password or API token")
     token: Optional[str] = Field(default=None, description="New Personal Access Token")
@@ -796,9 +736,7 @@ class JiraToolkit(AbstractToolkit):
         # freezes the bot. Honored by pycontribs JIRA via the ``timeout``
         # kwarg (see JIRA.__init__).
         try:
-            self.request_timeout: float = float(
-                _cfg("JIRA_REQUEST_TIMEOUT", "30") or 30
-            )
+            self.request_timeout: float = float(_cfg("JIRA_REQUEST_TIMEOUT", "30") or 30)
         except (TypeError, ValueError):
             self.request_timeout = 30.0
         self.default_labels = _parse_csv(_cfg("JIRA_DEFAULT_LABELS", "") or "")
@@ -821,21 +759,18 @@ class JiraToolkit(AbstractToolkit):
         self.workflow_paths: Dict[str, List[str]] = {}
         _default_path = _cfg("JIRA_WORKFLOW_PATH")
         if _default_path:
-            self.workflow_paths[self._DEFAULT_WORKFLOW_KEY] = (
-                self._parse_workflow_path(_default_path)
-            )
+            self.workflow_paths[self._DEFAULT_WORKFLOW_KEY] = self._parse_workflow_path(_default_path)
         # Per-project env vars: scan os.environ for JIRA_WORKFLOW_PATH_<PROJECT>.
         _prefix = "JIRA_WORKFLOW_PATH_"
         for _env_key, _env_val in os.environ.items():
             if _env_key.startswith(_prefix) and _env_val:
-                _project = _env_key[len(_prefix):].upper()
+                _project = _env_key[len(_prefix) :].upper()
                 self.workflow_paths[_project] = self._parse_workflow_path(_env_val)
         # Programmatic override wins.
         for _project, _value in (workflow_paths or {}).items():
             _key = self._DEFAULT_WORKFLOW_KEY if not _project else str(_project).upper()
             self.workflow_paths[_key] = (
-                list(_value) if isinstance(_value, (list, tuple))
-                else self._parse_workflow_path(str(_value))
+                list(_value) if isinstance(_value, (list, tuple)) else self._parse_workflow_path(str(_value))
             )
 
         # Deferred authentication error, surfaced to the LLM at tool-call time
@@ -845,13 +780,15 @@ class JiraToolkit(AbstractToolkit):
         # time (oauth2_3lo).
         self._auth_error: Optional[str] = None
 
+        # Shared Jira read implementation (FEAT-454, G1) — lazily built by
+        # the ``_read_interface`` property below. ``None`` until first use.
+        self.__read_interface = None
+
         # OAuth 2.0 (3LO) per-user mode: defer client creation to _pre_execute.
         self.credential_resolver = credential_resolver
         if self.auth_type == "oauth2_3lo":
             if self.credential_resolver is None:
-                raise ValueError(
-                    "oauth2_3lo requires a credential_resolver"
-                )
+                raise ValueError("oauth2_3lo requires a credential_resolver")
             self.jira = None  # resolved per-call in _pre_execute
             # Per-user JIRA client cache: {"{channel}:{user_id}": (client, token_hash)}
             self._client_cache: Dict[str, tuple] = {}
@@ -874,9 +811,7 @@ class JiraToolkit(AbstractToolkit):
         # Explicit static mode (basic_auth / token_auth / oauth): a server URL
         # is mandatory.
         if not self.server_url:
-            raise ValueError(
-                "Jira server_url is required (e.g., https://your.atlassian.net)"
-            )
+            raise ValueError("Jira server_url is required (e.g., https://your.atlassian.net)")
         try:
             self._set_jira_client()
         except ValueError as exc:
@@ -914,8 +849,8 @@ class JiraToolkit(AbstractToolkit):
             probe = self._probe_auth_sync()
         except Exception as exc:  # noqa: BLE001 — a broken probe is not a verdict
             self.logger.warning(
-                "Could not verify Jira credentials (probe raised: %s); "
-                "continuing unverified.", exc,
+                "Could not verify Jira credentials (probe raised: %s); " "continuing unverified.",
+                exc,
             )
             return
         if probe.get("authenticated"):
@@ -925,13 +860,11 @@ class JiraToolkit(AbstractToolkit):
         # Seraph header flagged the session as anonymous (Jira Cloud's
         # silent bad-basic-auth downgrade). Anything else (unreachable
         # server, 5xx, proxy noise) is not a credential verdict.
-        definitive = status in (401, 403) or (
-            status is not None and 200 <= status < 300
-        )
+        definitive = status in (401, 403) or (status is not None and 200 <= status < 300)
         if not definitive:
             self.logger.warning(
-                "Could not verify Jira credentials (probe failed: %s); "
-                "continuing unverified.", probe.get("error"),
+                "Could not verify Jira credentials (probe failed: %s); " "continuing unverified.",
+                probe.get("error"),
             )
             return
         raise JiraAuthenticationError(
@@ -957,9 +890,7 @@ class JiraToolkit(AbstractToolkit):
         options: Dict[str, Any] = {
             "server": self.server_url,
             "verify": False,
-            'headers': {
-                'Accept-Encoding': 'gzip, deflate'
-            }
+            "headers": {"Accept-Encoding": "gzip, deflate"},
         }
 
         if self.auth_type == "basic_auth":
@@ -990,8 +921,14 @@ class JiraToolkit(AbstractToolkit):
                 "consumer_key": self.oauth_consumer_key,
                 "key_cert": key_cert,
             }
-            if not all([oauth_dict.get("access_token"), oauth_dict.get("access_token_secret"),
-                        oauth_dict.get("consumer_key"), oauth_dict.get("key_cert")]):
+            if not all(
+                [
+                    oauth_dict.get("access_token"),
+                    oauth_dict.get("access_token_secret"),
+                    oauth_dict.get("consumer_key"),
+                    oauth_dict.get("key_cert"),
+                ]
+            ):
                 raise ValueError("oauth requires consumer_key, key_cert, access_token, access_token_secret")
             return JIRA(
                 options=options,
@@ -1080,9 +1017,7 @@ class JiraToolkit(AbstractToolkit):
         token_set = await self.credential_resolver.resolve(channel, user_id)
         if token_set is None:
             try:
-                auth_url = await self.credential_resolver.get_auth_url(
-                    channel, user_id
-                )
+                auth_url = await self.credential_resolver.get_auth_url(channel, user_id)
             except NotImplementedError:
                 auth_url = None
             raise AuthorizationRequired(
@@ -1129,6 +1064,56 @@ class JiraToolkit(AbstractToolkit):
         self._tool_manager = manager
 
     # -----------------------------
+    # Shared Jira read interface (FEAT-454, M2 — TASK-2402)
+    # -----------------------------
+    @property
+    def _read_interface(self):
+        """Shared Jira read implementation (FEAT-454, G1).
+
+        Built once from this toolkit's already-resolved auth attributes so
+        there is exactly one credential resolution per toolkit instance —
+        no second ``_cfg``/env pass, no second navconfig lookup.
+        ``verify_credentials=False`` because the toolkit's own
+        ``__init__``/``_verify_static_credentials`` already probed the
+        static-mode credentials; probing again here would be redundant.
+
+        ``self.jira`` — the toolkit's own already-constructed client — is
+        re-attached via :meth:`JiraInterface.attach_client` on every access,
+        for every auth mode, rather than letting the interface build (and
+        cache) a second, independent client from the same credentials.
+        This matters for two reasons, not just ``oauth2_3lo``:
+
+        1. For ``oauth2_3lo``, the toolkit's own ``_pre_execute`` resolves a
+           fresh per-``(channel, user_id)`` client into ``self.jira`` before
+           every tool call — this interface's own ``credential_resolver
+           .resolve()`` has no such context, so the resolved client must be
+           reused, not re-resolved.
+        2. For static modes, tests construct a ``JiraToolkit`` with the
+           ``jira.JIRA`` class itself mocked (``patch("parrot_tools
+           .jiratoolkit.JIRA")``) — a second, independently-built client
+           inside ``JiraInterface`` would import and construct the *real*
+           ``jira.JIRA``, bypassing that mock entirely and reaching the
+           network. Reusing ``self.jira`` keeps exactly one client alive,
+           matching every existing test's mocking seam.
+
+        Returns:
+            The shared, lazily-constructed ``JiraInterface``, with
+            ``self.jira`` attached as its client.
+        """
+        if self.__read_interface is None:
+            from parrot.interfaces.jira import JiraInterface
+
+            self.__read_interface = JiraInterface(
+                server_url=self.server_url,
+                auth_type=self.auth_type,
+                credential_resolver=self.credential_resolver,
+                request_timeout=self.request_timeout,
+                verify_credentials=False,
+            )
+        self.__read_interface.attach_client(self.jira)
+        return self.__read_interface
+
+    # -----------------------------
     # Utility
     # -----------------------------
     def _issue_to_dict(self, issue_obj: Any) -> Dict[str, Any]:
@@ -1154,7 +1139,7 @@ class JiraToolkit(AbstractToolkit):
     def _get_by_path(self, data: Dict[str, Any], path: str, strict: bool = False) -> Any:
         """Get a value from a nested dict by dot-separated path. If strict and path not found, raises KeyError."""
         cur: Any = data
-        for part in path.split('.'):
+        for part in path.split("."):
             if isinstance(cur, dict) and part in cur:
                 cur = cur[part]
             elif strict:
@@ -1172,12 +1157,7 @@ class JiraToolkit(AbstractToolkit):
         """
 
         text = str(value)
-        escaped = (
-            text.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-        )
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
         return f'"{escaped}"'
 
     def _build_assignee_jql(
@@ -1221,8 +1201,7 @@ class JiraToolkit(AbstractToolkit):
             if order_match:
                 bounded = f"{bounded} {order_match.group(0).strip()}"
             self.logger.warning(
-                "Unbounded JQL received (%r); bounding with default project %s",
-                jql, self.default_project
+                "Unbounded JQL received (%r); bounding with default project %s", jql, self.default_project
             )
             return bounded
 
@@ -1239,7 +1218,7 @@ class JiraToolkit(AbstractToolkit):
             val = self._get_by_path(data, path, strict=strict)
             # Build nested structure mirroring the path
             cursor = out
-            parts = path.split('.')
+            parts = path.split(".")
             for i, p in enumerate(parts):
                 if i == len(parts) - 1:
                     cursor[p] = val
@@ -1273,8 +1252,7 @@ class JiraToolkit(AbstractToolkit):
         return payload
 
     def _ensure_structured(
-        self,
-        opts: Optional[Union[StructuredOutputOptions, Dict[str, Any]]]
+        self, opts: Optional[Union[StructuredOutputOptions, Dict[str, Any]]]
     ) -> Optional[StructuredOutputOptions]:
         """Ensure opts is a StructuredOutputOptions instance if provided as a dict."""
         if opts is None:
@@ -1296,17 +1274,19 @@ class JiraToolkit(AbstractToolkit):
             author = h.get("author") or {}
             for item in h.get("items") or []:
                 if item.get("field") == field_name:
-                    events.append({
-                        "created": created,
-                        "changed_by": {
-                            "accountId": author.get("accountId"),
-                            "displayName": author.get("displayName"),
-                        },
-                        "from": item.get("from"),
-                        "fromString": item.get("fromString"),
-                        "to": item.get("to"),
-                        "toString": item.get("toString"),
-                    })
+                    events.append(
+                        {
+                            "created": created,
+                            "changed_by": {
+                                "accountId": author.get("accountId"),
+                                "displayName": author.get("displayName"),
+                            },
+                            "from": item.get("from"),
+                            "fromString": item.get("fromString"),
+                            "to": item.get("to"),
+                            "toString": item.get("toString"),
+                        }
+                    )
         # ISO timestamps sort lexicographically OK
         events.sort(key=lambda e: e["created"] or "")
         return events
@@ -1315,41 +1295,11 @@ class JiraToolkit(AbstractToolkit):
         """
         Fetch full changelog via /issue/{key}/changelog pagination.
         Works in Jira Cloud and typically in DC/Server too (depending on API version).
+
+        Transport delegated to JiraInterface (FEAT-454, G1) — its
+        ``get_changelog`` mirrors this exact pagination loop verbatim.
         """
-        def _fetch_page(start_at: int):
-            # _get_json is provided by pycontribs/jira client (even though it's "internal")
-            return self.jira._get_json(  # noqa: SLF001 (if you lint for private usage)
-                f"issue/{issue}/changelog",
-                params={"startAt": start_at, "maxResults": page_size},
-            )
-
-        start_at = 0
-        all_entries = []
-
-        while True:
-            page = await asyncio.to_thread(_fetch_page, start_at)
-
-            # Jira Cloud v3 uses "values"; some responses use "histories"
-            values = page.get("values") or page.get("histories") or []
-            if not values:
-                break
-
-            all_entries.extend(values)
-
-            # Cloud v3 provides isLast/total/maxResults/startAt
-            is_last = page.get("isLast")
-            total = page.get("total")
-            max_results = page.get("maxResults", page_size)
-            cur_start = page.get("startAt", start_at)
-
-            if is_last is True:
-                break
-            if total is not None and (cur_start + max_results) >= total:
-                break
-
-            start_at = cur_start + max_results
-
-        return all_entries
+        return await self._read_interface.get_changelog(issue, page_size=page_size)
 
     # -----------------------------
     # Tools (public async methods)
@@ -1375,11 +1325,10 @@ class JiraToolkit(AbstractToolkit):
 
         If `structured` is provided, the output will be transformed according to the options.
         """
-        def _run():
-            return self.jira.issue(issue, fields=fields, expand=expand)
-
+        # Transport delegated to JiraInterface (FEAT-454, G1) — the exact
+        # same client.issue(...) call this method used to make directly.
         try:
-            obj = await asyncio.to_thread(_run)
+            obj = await self._read_interface.fetch_issue_object(issue, fields=fields, expand=expand)
         except JIRAError as exc:
             if getattr(exc, "status_code", None) == 404:
                 return {
@@ -1412,18 +1361,18 @@ class JiraToolkit(AbstractToolkit):
                 author = entry.get("author") or {}
                 items = []
                 for item in entry.get("items") or []:
-                    items.append({
-                        "field": item.get("field"),
-                        "fromString": item.get("fromString"),
-                        "toString": item.get("toString")
-                    })
+                    items.append(
+                        {
+                            "field": item.get("field"),
+                            "fromString": item.get("fromString"),
+                            "toString": item.get("toString"),
+                        }
+                    )
 
                 if items:
-                    history_events.append({
-                        "author": author.get("displayName"),
-                        "created": entry.get("created"),
-                        "items": items
-                    })
+                    history_events.append(
+                        {"author": author.get("displayName"), "created": entry.get("created"), "items": items}
+                    )
 
             raw["history"] = history_events
             raw["_changelog_count"] = len(changelog_entries)
@@ -1436,7 +1385,7 @@ class JiraToolkit(AbstractToolkit):
             "message": "",
         }
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(TransitionIssueInput)
     async def jira_transition_issue(
         self,
@@ -1463,14 +1412,33 @@ class JiraToolkit(AbstractToolkit):
         # Common aliases: maps a user-facing intent to transition names or
         # target statuses that may represent it across different workflows.
         TRANSITION_ALIASES: Dict[str, tuple] = {
-            "done": ("done", "close", "closed", "resolve", "resolved", "complete", "completed", "mark as done", "finish", "finished"),
-            "in progress": ("in progress", "in-progress", "start progress", "start", "begin", "begin work", "work on it"),
+            "done": (
+                "done",
+                "close",
+                "closed",
+                "resolve",
+                "resolved",
+                "complete",
+                "completed",
+                "mark as done",
+                "finish",
+                "finished",
+            ),
+            "in progress": (
+                "in progress",
+                "in-progress",
+                "start progress",
+                "start",
+                "begin",
+                "begin work",
+                "work on it",
+            ),
             "to do": ("to do", "todo", "reopen", "reopened", "back to to do"),
             "cancelled": ("cancelled", "canceled", "cancel", "wont do", "won't do", "won't fix", "wont fix"),
             "blocked": ("blocked", "block", "on hold"),
         }
         # Statuses that require an estimate
-        ESTIMATE_REQUIRED_TRANSITIONS = {'to do', 'todo', 'in progress', 'in-progress'}
+        ESTIMATE_REQUIRED_TRANSITIONS = {"to do", "todo", "in progress", "in-progress"}
         DEFAULT_ESTIMATE = "8h"
 
         # Check if this transition needs an estimate check
@@ -1490,10 +1458,7 @@ class JiraToolkit(AbstractToolkit):
             if not original_estimate:
                 # Set default 8h estimate before transitioning
                 self.logger.info(f"Setting default {DEFAULT_ESTIMATE} estimate for {issue} before transition")
-                await self.jira_update_issue(
-                    issue=issue,
-                    original_estimate=DEFAULT_ESTIMATE
-                )
+                await self.jira_update_issue(issue=issue, original_estimate=DEFAULT_ESTIMATE)
 
         # Build kwargs as accepted by pycontribs
         kwargs: Dict[str, Any] = {}
@@ -1533,7 +1498,9 @@ class JiraToolkit(AbstractToolkit):
             if resolved_transition is None:
                 for t in available:
                     t_name = (t.get("name") or "").lower().strip()
-                    t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
+                    t_status = (
+                        (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
+                    )
                     if any(a and (a in t_name or a in t_status) for a in aliases):
                         resolved_transition = t["id"]
                         self.logger.info(
@@ -1594,9 +1561,7 @@ class JiraToolkit(AbstractToolkit):
         return self.workflow_paths.get(self._DEFAULT_WORKFLOW_KEY)
 
     @staticmethod
-    def _path_steps(
-        path: Sequence[str], current: str, target: str
-    ) -> Optional[List[str]]:
+    def _path_steps(path: Sequence[str], current: str, target: str) -> Optional[List[str]]:
         """Ordered intermediate statuses to walk from *current* to *target*.
 
         Both endpoints must appear on *path* (case-insensitive). Returns the
@@ -1616,7 +1581,7 @@ class JiraToolkit(AbstractToolkit):
         if ci == ti:
             return []
         if ci < ti:
-            return list(path[ci + 1:ti + 1])
+            return list(path[ci + 1 : ti + 1])
         return list(reversed(path[ti:ci]))
 
     async def _current_status(self, issue: str) -> Optional[str]:
@@ -1629,7 +1594,7 @@ class JiraToolkit(AbstractToolkit):
         name = status.get("name") if isinstance(status, dict) else None
         return name
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(TransitionToInput)
     async def jira_transition_to(
         self,
@@ -1660,8 +1625,11 @@ class JiraToolkit(AbstractToolkit):
         if current is None:
             # Cannot read state — defer to the single-hop path for its error.
             return await self.jira_transition_issue(
-                issue, target_status, fields=fields,
-                assignee=assignee, resolution=resolution,
+                issue,
+                target_status,
+                fields=fields,
+                assignee=assignee,
+                resolution=resolution,
             )
 
         final_kwargs = {"fields": fields, "assignee": assignee, "resolution": resolution}
@@ -1669,7 +1637,8 @@ class JiraToolkit(AbstractToolkit):
         if current.lower().strip() == str(target_status).lower().strip():
             self.logger.info(
                 "Issue %s already in status %r; no transition needed.",
-                issue, current,
+                issue,
+                current,
             )
             return await self.jira_get_issue(issue)
 
@@ -1680,17 +1649,23 @@ class JiraToolkit(AbstractToolkit):
             # No declared path (or endpoints off-path) → single direct hop.
             if path is not None and steps is None:
                 self.logger.debug(
-                    "Workflow path for %s does not contain both %r and %r; "
-                    "attempting a direct transition.",
-                    issue, current, target_status,
+                    "Workflow path for %s does not contain both %r and %r; " "attempting a direct transition.",
+                    issue,
+                    current,
+                    target_status,
                 )
             return await self.jira_transition_issue(
-                issue, target_status, **final_kwargs,
+                issue,
+                target_status,
+                **final_kwargs,
             )
 
         self.logger.info(
             "Walking %s from %r to %r via %s.",
-            issue, current, target_status, " → ".join(steps),
+            issue,
+            current,
+            target_status,
+            " → ".join(steps),
         )
         result: Dict[str, Any] = {}
         for idx, status in enumerate(steps):
@@ -1698,7 +1673,9 @@ class JiraToolkit(AbstractToolkit):
             step_kwargs = final_kwargs if is_final else {}
             try:
                 result = await self.jira_transition_issue(
-                    issue, status, **step_kwargs,
+                    issue,
+                    status,
+                    **step_kwargs,
                 )
             except ValueError as exc:
                 raise ValueError(
@@ -1709,20 +1686,21 @@ class JiraToolkit(AbstractToolkit):
                 ) from exc
         return result
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(AddAttachmentInput)
     async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:
         """Add an attachment to an issue. Requires jira.write permission.
 
         Example: jira.add_attachment(issue=issue, attachment='/path/to/file.txt')
         """
+
         def _run():
             return self.jira.add_attachment(issue=issue, attachment=attachment)
 
         await asyncio.to_thread(_run)
         return {"ok": True, "issue": issue, "attachment": attachment}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(AssignIssueInput)
     async def jira_assign_issue(self, issue: str, assignee: str) -> Dict[str, Any]:
         """Assign an issue to a user. Requires jira.write permission.
@@ -1741,7 +1719,7 @@ class JiraToolkit(AbstractToolkit):
         await asyncio.to_thread(_run)
         return {"ok": True, "issue": issue, "assignee": account_id}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(CreateIssueInput)
     async def jira_create_issue(
         self,
@@ -1807,12 +1785,11 @@ class JiraToolkit(AbstractToolkit):
         if due_date is None and self.default_due_date_offset:
             try:
                 from datetime import timedelta
+
                 offset_days = int(self.default_due_date_offset)
                 due_date = (datetime.now() + timedelta(days=offset_days)).strftime("%Y-%m-%d")
             except (ValueError, TypeError):
-                self.logger.warning(
-                    "Invalid JIRA_DEFAULT_DUE_DATE_OFFSET: %s", self.default_due_date_offset
-                )
+                self.logger.warning("Invalid JIRA_DEFAULT_DUE_DATE_OFFSET: %s", self.default_due_date_offset)
         if original_estimate is None and self.default_estimate:
             original_estimate = self.default_estimate
 
@@ -1877,7 +1854,7 @@ class JiraToolkit(AbstractToolkit):
         data = self._issue_to_dict(obj)
         return {"ok": True, "id": data.get("id"), "key": data.get("key"), "issue": data}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(UpdateIssueInput)
     async def jira_update_issue(
         self,
@@ -1975,15 +1952,12 @@ class JiraToolkit(AbstractToolkit):
         return await self.jira_search_issues(jql=jql, max_results=max_results)
 
     @tool_schema(GetTransitionsInput)
-    async def jira_get_transitions(
-        self,
-        issue: str,
-        expand: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    async def jira_get_transitions(self, issue: str, expand: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get available transitions for an issue.
 
         Example: jira.jira_get_transitions('JRA-1330')
         """
+
         def _run():
             return self.jira.transitions(issue, expand=expand)
 
@@ -1991,7 +1965,7 @@ class JiraToolkit(AbstractToolkit):
         # transitions returns a list of dicts typically
         return transitions
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(AddCommentInput)
     async def jira_add_comment(
         self,
@@ -2010,6 +1984,7 @@ class JiraToolkit(AbstractToolkit):
                 attachments=['/path/to/screenshot.png']
             )
         """
+
         def _run():
             return self.jira.add_comment(issue, body)
 
@@ -2026,9 +2001,7 @@ class JiraToolkit(AbstractToolkit):
                     continue
 
                 def _upload(fp: str = file_path) -> Any:
-                    return self.jira.add_attachment(
-                        issue=issue, attachment=fp
-                    )
+                    return self.jira.add_attachment(issue=issue, attachment=fp)
 
                 try:
                     att = await asyncio.to_thread(_upload)
@@ -2046,37 +2019,29 @@ class JiraToolkit(AbstractToolkit):
 
         return result
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(AddWorklogInput)
     async def jira_add_worklog(
-        self,
-        issue: str,
-        time_spent: str,
-        comment: Optional[str] = None,
-        started: Optional[str] = None
+        self, issue: str, time_spent: str, comment: Optional[str] = None, started: Optional[str] = None
     ) -> Dict[str, Any]:
         """Add worklog to an issue. Requires jira.write permission.
 
         Example: jira.jira_add_worklog('JRA-1330', '1h 30m', 'Working on feature')
         """
+
         def _run():
-            return self.jira.add_worklog(
-                issue=issue,
-                timeSpent=time_spent,
-                comment=comment,
-                started=started
-            )
+            return self.jira.add_worklog(issue=issue, timeSpent=time_spent, comment=comment, started=started)
 
         worklog = await asyncio.to_thread(_run)
         # Worklog object typically has id, etc.
         val = self._issue_to_dict(worklog)
         # Ensure we return something useful even if raw is missing
-        if not val or not val.get('id'):
+        if not val or not val.get("id"):
             return {
                 "id": getattr(worklog, "id", None),
                 "issue": issue,
                 "timeSpent": time_spent,
-                "created": getattr(worklog, "created", None)
+                "created": getattr(worklog, "created", None),
             }
         return val
 
@@ -2086,6 +2051,7 @@ class JiraToolkit(AbstractToolkit):
 
         Example: jira.jira_get_issue_types(project='PROJ')
         """
+
         def _run():
             if project:
                 proj = self.jira.project(project)
@@ -2099,14 +2065,9 @@ class JiraToolkit(AbstractToolkit):
                 timeout=self.request_timeout + 5,
             )
         except asyncio.TimeoutError as exc:
-            raise TimeoutError(
-                f"Jira list issue_types timed out after {self.request_timeout + 5:.0f}s"
-            ) from exc
+            raise TimeoutError(f"Jira list issue_types timed out after {self.request_timeout + 5:.0f}s") from exc
         # types is list of IssueType objects
-        return [
-            {"id": t.id, "name": t.name, "description": getattr(t, "description", "")}
-            for t in types
-        ]
+        return [{"id": t.id, "name": t.name, "description": getattr(t, "description", "")} for t in types]
 
     async def _validate_issue_type(self, project: str, issuetype: str) -> str:
         """Return the canonical issue type name for ``project`` or raise.
@@ -2132,7 +2093,8 @@ class JiraToolkit(AbstractToolkit):
             # sends. Silent-best-effort validation only.
             self.logger.warning(
                 "Could not pre-validate issue type for project %s: %s",
-                project, exc,
+                project,
+                exc,
             )
             return issuetype
 
@@ -2170,11 +2132,7 @@ class JiraToolkit(AbstractToolkit):
         # :meth:`_init_jira_client_from_token`).
         client_options = getattr(self.jira, "_options", {}) or {}
         base = client_options.get("server") or self.server_url
-        api_path = (
-            "/rest/api/3/myself"
-            if self.auth_type == "oauth2_3lo"
-            else "/rest/api/2/myself"
-        )
+        api_path = "/rest/api/3/myself" if self.auth_type == "oauth2_3lo" else "/rest/api/2/myself"
         url = f"{base.rstrip('/')}{api_path}"
         session = getattr(self.jira, "_session", None)
         try:
@@ -2193,9 +2151,7 @@ class JiraToolkit(AbstractToolkit):
             # tell a definitive rejection apart from a transport failure.
             status = getattr(exc, "status_code", None)
             if status is None:
-                status = getattr(
-                    getattr(exc, "response", None), "status_code", None
-                )
+                status = getattr(getattr(exc, "response", None), "status_code", None)
             if status is not None:
                 result["status_code"] = status
             return result
@@ -2209,9 +2165,7 @@ class JiraToolkit(AbstractToolkit):
             }
 
         headers = dict(response.headers or {})
-        seraph = headers.get(self._SERAPH_HEADER) or headers.get(
-            self._SERAPH_HEADER.lower()
-        )
+        seraph = headers.get(self._SERAPH_HEADER) or headers.get(self._SERAPH_HEADER.lower())
         seraph_failed = bool(seraph) and seraph.upper() in self._SERAPH_FAIL_VALUES
         status = response.status_code
         is_http_ok = 200 <= status < 300
@@ -2226,7 +2180,9 @@ class JiraToolkit(AbstractToolkit):
         # auth state even when the tool's return value is not surfaced.
         self.logger.info(
             "Jira auth probe → status=%s seraph=%s url=%s",
-            status, seraph or "<absent>", url,
+            status,
+            seraph or "<absent>",
+            url,
         )
 
         result: Dict[str, Any] = {
@@ -2242,7 +2198,7 @@ class JiraToolkit(AbstractToolkit):
                 f"HTTP {status}"
                 + (f" — {seraph}" if seraph else "")
                 + ". Verify JIRA_USERNAME / JIRA_API_TOKEN (or JIRA_PASSWORD) "
-                  "and JIRA_INSTANCE."
+                "and JIRA_INSTANCE."
             )
             # Include a short body preview to help diagnose.
             text = getattr(response, "text", "") or ""
@@ -2270,11 +2226,17 @@ class JiraToolkit(AbstractToolkit):
             AuthorizationRequired: When the empty list is caused by failed
                 authentication (expired/revoked token, wrong username).
         """
-        def _run():
-            return self.jira.projects()
+        # Transport delegated to JiraInterface (FEAT-454, G1) — the exact
+        # same client.projects() call this method used to make directly.
+        # A JiraAuthError here (unresolved auth_type, direct call bypassing
+        # _pre_execute) is translated to this toolkit's own exception type
+        # so callers never see the interface's error taxonomy.
+        from parrot.interfaces.jira import JiraAuthError
 
-        projs = await asyncio.to_thread(_run)
-        project_list = [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
+        try:
+            project_list = await self._read_interface.list_projects()
+        except JiraAuthError as exc:
+            raise JiraAuthenticationError(str(exc)) from exc
 
         if project_list:
             return {
@@ -2345,9 +2307,7 @@ class JiraToolkit(AbstractToolkit):
         ]
 
     @tool_schema(GetComponentByNameInput)
-    async def jira_get_component_by_name(
-        self, name: str, project: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def jira_get_component_by_name(self, name: str, project: Optional[str] = None) -> Dict[str, Any]:
         """Find a component by name and return its details including the internal ID.
 
         Use this method to resolve a component name to its Jira internal ID
@@ -2416,7 +2376,7 @@ class JiraToolkit(AbstractToolkit):
                 maxResults=max_results,
                 includeActive=include_active,
                 includeInactive=include_inactive,
-                query=query
+                query=query,
             )
 
         try:
@@ -2448,17 +2408,11 @@ class JiraToolkit(AbstractToolkit):
             "message": "",
         }
 
-    def _store_dataframe(
-        self,
-        name: str,
-        df: pd.DataFrame,
-        metadata: Dict[str, Any]
-    ) -> str:
+    def _store_dataframe(self, name: str, df: pd.DataFrame, metadata: Dict[str, Any]) -> str:
         """Store DataFrame in ToolManager's shared context."""
         if self._tool_manager is None:
             self.logger.warning(
-                "No ToolManager set. DataFrame not shared. "
-                "Call set_tool_manager() to enable sharing."
+                "No ToolManager set. DataFrame not shared. " "Call set_tool_manager() to enable sharing."
             )
             return name
 
@@ -2481,7 +2435,7 @@ class JiraToolkit(AbstractToolkit):
 
         rows = []
         for issue in issues:
-            fields = issue.get('fields', {}) or {}
+            fields = issue.get("fields", {}) or {}
 
             # Safe extraction helpers
             def get_nested(obj, *keys, default=None):
@@ -2492,69 +2446,60 @@ class JiraToolkit(AbstractToolkit):
                 return obj if obj is not None else default
 
             row = {
-                'key': issue.get('key'),
-                'id': issue.get('id'),
-                'self': issue.get('self'),
-
+                "key": issue.get("key"),
+                "id": issue.get("id"),
+                "self": issue.get("self"),
                 # Summary & Description
-                'summary': fields.get('summary'),
-                'description': (fields.get('description') or '')[:500] if fields.get('description') else None,
-
+                "summary": fields.get("summary"),
+                "description": (fields.get("description") or "")[:500] if fields.get("description") else None,
                 # People
-                'assignee_id': get_nested(fields, 'assignee', 'accountId') or get_nested(fields, 'assignee', 'name'),
-                'assignee_name': get_nested(fields, 'assignee', 'displayName'),
-                'reporter_id': get_nested(fields, 'reporter', 'accountId') or get_nested(fields, 'reporter', 'name'),
-                'reporter_name': get_nested(fields, 'reporter', 'displayName'),
-
+                "assignee_id": get_nested(fields, "assignee", "accountId") or get_nested(fields, "assignee", "name"),
+                "assignee_name": get_nested(fields, "assignee", "displayName"),
+                "reporter_id": get_nested(fields, "reporter", "accountId") or get_nested(fields, "reporter", "name"),
+                "reporter_name": get_nested(fields, "reporter", "displayName"),
                 # Status & Priority
-                'status': get_nested(fields, 'status', 'name'),
-                'status_category': get_nested(fields, 'status', 'statusCategory', 'name'),
-                'priority': get_nested(fields, 'priority', 'name'),
-
+                "status": get_nested(fields, "status", "name"),
+                "status_category": get_nested(fields, "status", "statusCategory", "name"),
+                "priority": get_nested(fields, "priority", "name"),
                 # Type & Project
-                'issuetype': get_nested(fields, 'issuetype', 'name'),
-                'project_key': get_nested(fields, 'project', 'key'),
-                'project_name': get_nested(fields, 'project', 'name'),
-
+                "issuetype": get_nested(fields, "issuetype", "name"),
+                "project_key": get_nested(fields, "project", "key"),
+                "project_name": get_nested(fields, "project", "name"),
                 # Dates
-                'created': fields.get('created'),
-                'updated': fields.get('updated'),
-                'resolved': fields.get('resolutiondate'),
-                'due_date': fields.get('duedate'),
-
+                "created": fields.get("created"),
+                "updated": fields.get("updated"),
+                "resolved": fields.get("resolutiondate"),
+                "due_date": fields.get("duedate"),
                 # Estimates (story points field ID varies by instance)
-                'story_points': fields.get('customfield_10016'),
-                'time_estimate': fields.get('timeoriginalestimate'),
-                'time_spent': fields.get('timespent'),
-
+                "story_points": fields.get("customfield_10016"),
+                "time_estimate": fields.get("timeoriginalestimate"),
+                "time_spent": fields.get("timespent"),
                 # Collections
-                'labels': ','.join(fields.get('labels', [])) if fields.get('labels') else None,
-                'components': ','.join(
-                    [c.get('name', '') for c in (fields.get('components') or [])]
-                ) if fields.get('components') else None,
+                "labels": ",".join(fields.get("labels", [])) if fields.get("labels") else None,
+                "components": (
+                    ",".join([c.get("name", "") for c in (fields.get("components") or [])])
+                    if fields.get("components")
+                    else None
+                ),
             }
             rows.append(row)
 
         df = pd.DataFrame(rows)
 
         # Convert date columns
-        for col in ['created', 'updated', 'resolved', 'due_date']:
+        for col in ["created", "updated", "resolved", "due_date"]:
             if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
+                df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
 
         # Add derived columns for easy grouping
-        if 'created' in df.columns and df['created'].notna().any():
-            df['created_month'] = df['created'].dt.to_period('M').astype(str)
-            df['created_week'] = df['created'].dt.strftime('%Y-W%W')
+        if "created" in df.columns and df["created"].notna().any():
+            df["created_month"] = df["created"].dt.to_period("M").astype(str)
+            df["created_week"] = df["created"].dt.strftime("%Y-W%W")
 
         return df
 
     def _generate_summary(
-        self,
-        df: pd.DataFrame,
-        jql: str,
-        total: int,
-        group_by: Optional[List[str]] = None
+        self, df: pd.DataFrame, jql: str, total: int, group_by: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Generate summary statistics for LLM consumption."""
         summary = {
@@ -2567,7 +2512,7 @@ class JiraToolkit(AbstractToolkit):
             return summary
 
         # Default groupings
-        default_groups = ['assignee_name', 'status']
+        default_groups = ["assignee_name", "status"]
         groups_to_use = group_by or default_groups
 
         # Generate counts for each field
@@ -2580,19 +2525,16 @@ class JiraToolkit(AbstractToolkit):
                 summary[f"by_{field}"] = counts
 
         # Date range if available
-        if 'created' in df.columns and df['created'].notna().any():
+        if "created" in df.columns and df["created"].notna().any():
             summary["date_range"] = {
-                "oldest": df['created'].min().isoformat() if pd.notna(df['created'].min()) else None,
-                "newest": df['created'].max().isoformat() if pd.notna(df['created'].max()) else None,
+                "oldest": df["created"].min().isoformat() if pd.notna(df["created"].min()) else None,
+                "newest": df["created"].max().isoformat() if pd.notna(df["created"].max()) else None,
             }
 
         return summary
 
     def _resolve_fields(
-        self,
-        fields: Optional[str],
-        for_counting: bool = False,
-        group_by: Optional[List[str]] = None
+        self, fields: Optional[str], for_counting: bool = False, group_by: Optional[List[str]] = None
     ) -> Optional[str]:
         """
         Resolve fields parameter to actual field string.
@@ -2613,19 +2555,19 @@ class JiraToolkit(AbstractToolkit):
         # Auto-select for counting based on group_by
         if for_counting and group_by:
             field_map = {
-                'assignee': 'assignee',
-                'reporter': 'reporter',
-                'status': 'status',
-                'priority': 'priority',
-                'issuetype': 'issuetype',
-                'project': 'project',
-                'created_month': 'created',
+                "assignee": "assignee",
+                "reporter": "reporter",
+                "status": "status",
+                "priority": "priority",
+                "issuetype": "issuetype",
+                "project": "project",
+                "created_month": "created",
             }
-            needed = {'key'}
+            needed = {"key"}
             for g in group_by:
                 if g in field_map:
                     needed.add(field_map[g])
-            return ','.join(sorted(needed))
+            return ",".join(sorted(needed))
 
         # Default for counting without specific groups
         if for_counting:
@@ -2688,63 +2630,19 @@ class JiraToolkit(AbstractToolkit):
 
         jql = self._ensure_bounded_jql(jql)
 
-        self.logger.info(
-            f"Executing JQL: {jql} with max results {max_results}"
-        )
+        self.logger.info(f"Executing JQL: {jql} with max results {max_results}")
 
-        # Use enhanced_search_issues for Jira Cloud (uses nextPageToken pagination)
-        def _run_enhanced_search(page_token: Optional[str], current_max: int):
-            return self.jira.enhanced_search_issues(
-                jql,
-                maxResults=current_max,
-                fields=fields.split(',') if fields else None,
-                expand=expand,
-                nextPageToken=page_token
-            )
-
-        all_issues = []
-        fetched = 0
-        next_page_token: Optional[str] = None
-        is_last = False
-
-        # Pagination loop using nextPageToken
-        # If max_results is None, fetch all (loop until isLast=True)
+        # Transport delegated to JiraInterface (FEAT-454, G1) — its
+        # fetch_issues() mirrors this exact nextPageToken pagination loop
+        # verbatim, returning raw Issue objects for _issue_to_dict below
+        # (unchanged) to project, exactly as it did inline before.
         try:
-            while not is_last:
-                # Calculate how many we still need
-                # Use 100 per page if fetching all, otherwise remaining
-                if max_results is None:
-                    page_size = 100  # Reasonable page size for full fetch
-                else:
-                    remaining = max_results - fetched
-                    if remaining <= 0:
-                        break
-                    page_size = min(remaining, 100)
-
-                # Using asyncio.to_thread for the blocking call
-                result_list = await asyncio.to_thread(_run_enhanced_search, next_page_token, page_size)
-
-                # enhanced_search_issues returns a ResultList object
-                batch_issues = [self._issue_to_dict(i) for i in result_list]
-
-                # Get pagination info from ResultList
-                next_page_token = getattr(result_list, 'nextPageToken', None)
-                is_last = getattr(result_list, 'isLast', True)  # Default to True if missing
-
-                if not batch_issues:
-                    break
-
-                all_issues.extend(batch_issues)
-                fetched += len(batch_issues)
-
-                # If max_results is set and we've reached it, stop
-                if max_results is not None and fetched >= max_results:
-                    break
-
-                # If no more pages, stop
-                if is_last or next_page_token is None:
-                    break
-
+            issue_objects = await self._read_interface.fetch_issues(
+                jql,
+                fields=fields,
+                expand=expand,
+                max_results=max_results,
+            )
         except AuthorizationRequired:
             raise
         except Exception as exc:
@@ -2756,7 +2654,7 @@ class JiraToolkit(AbstractToolkit):
                 "message": str(exc),
             }
 
-        issues = all_issues
+        issues = [self._issue_to_dict(i) for i in issue_objects]
 
         # Total is not returned by enhanced_search_issues, use fetched count
         total = len(issues)
@@ -2811,7 +2709,7 @@ class JiraToolkit(AbstractToolkit):
                     "total": total,
                     "fetched_at": datetime.now().isoformat(),
                     "fields_requested": fields,
-                }
+                },
             )
             payload_df: Dict[str, Any] = {
                 "total": total,
@@ -2926,26 +2824,26 @@ class JiraToolkit(AbstractToolkit):
 
         # Determine which fields we actually need based on group_by
         field_mapping = {
-            'assignee': 'assignee',
-            'reporter': 'reporter',
-            'status': 'status',
-            'priority': 'priority',
-            'issuetype': 'issuetype',
-            'project': 'project',
-            'created_month': 'created',
-            'created_week': 'created',
+            "assignee": "assignee",
+            "reporter": "reporter",
+            "status": "status",
+            "priority": "priority",
+            "issuetype": "issuetype",
+            "project": "project",
+            "created_month": "created",
+            "created_week": "created",
         }
 
-        needed_fields = {'key'}  # Always need key for counting
+        needed_fields = {"key"}  # Always need key for counting
         if group_by:
             for g in group_by:
                 if g in field_mapping:
                     needed_fields.add(field_mapping[g])
         else:
             # Default: get common grouping fields
-            needed_fields.update(['assignee', 'status'])
+            needed_fields.update(["assignee", "status"])
 
-        fields_str = ','.join(needed_fields)
+        fields_str = ",".join(needed_fields)
 
         self.logger.info(f"Counting issues for JQL: {jql}")
 
@@ -2956,13 +2854,13 @@ class JiraToolkit(AbstractToolkit):
             max_results=None,  # Fetch all for accurate counts
             fields=fields_str,
             json_result=True,
-            store_as_dataframe=False
+            store_as_dataframe=False,
         )
 
         # search_result is an envelope: {'status': ..., 'data': {'total': int, 'issues': [...]}, ...}
-        _data = (search_result.get("data") or {})
-        total = _data.get('total', 0)
-        issues = _data.get('issues', [])
+        _data = search_result.get("data") or {}
+        total = _data.get("total", 0)
+        issues = _data.get("issues", [])
 
         result = {
             "total_count": total,
@@ -2985,27 +2883,24 @@ class JiraToolkit(AbstractToolkit):
 
         # Column mapping for user-friendly names
         column_mapping = {
-            'assignee': 'assignee_name',
-            'reporter': 'reporter_name',
-            'status': 'status',
-            'priority': 'priority',
-            'issuetype': 'issuetype',
-            'project': 'project_key',
-            'created_month': 'created_month',
-            'created_week': 'created_week',
+            "assignee": "assignee_name",
+            "reporter": "reporter_name",
+            "status": "status",
+            "priority": "priority",
+            "issuetype": "issuetype",
+            "project": "project_key",
+            "created_month": "created_month",
+            "created_week": "created_week",
         }
 
         # Generate counts
-        groups_to_count = group_by or ['assignee', 'status']
+        groups_to_count = group_by or ["assignee", "status"]
         for group_field in groups_to_count:
             col = column_mapping.get(group_field, group_field)
             if col in df.columns:
                 counts = df[col].value_counts(dropna=False).to_dict()
                 # Clean up NaN keys
-                counts = {
-                    ("Unassigned" if pd.isna(k) else k): v
-                    for k, v in counts.items()
-                }
+                counts = {("Unassigned" if pd.isna(k) else k): v for k, v in counts.items()}
                 result[f"by_{group_field}"] = counts
 
         # Multi-dimensional grouping if multiple fields
@@ -3013,9 +2908,9 @@ class JiraToolkit(AbstractToolkit):
             cols = [column_mapping.get(g, g) for g in group_by if column_mapping.get(g, g) in df.columns]
             if len(cols) > 1:
                 try:
-                    pivot = df.groupby(cols, dropna=False).size().reset_index(name='count')
+                    pivot = df.groupby(cols, dropna=False).size().reset_index(name="count")
                     # Convert to list of records for readability
-                    result["grouped"] = pivot.head(50).to_dict(orient='records')
+                    result["grouped"] = pivot.head(50).to_dict(orient="records")
                 except Exception as e:
                     self.logger.warning(f"Multi-group failed: {e}")
 
@@ -3029,9 +2924,7 @@ class JiraToolkit(AbstractToolkit):
         include_closed: bool = False,
         max_results: Optional[int] = 50,
         order_by: Optional[str] = "updated DESC",
-        fields: Optional[str] = (
-            "key,summary,status,priority,issuetype,project,created,updated,duedate"
-        ),
+        fields: Optional[str] = ("key,summary,status,priority,issuetype,project,created,updated,duedate"),
         summary_only: bool = False,
     ) -> Dict[str, Any]:
         """Retrieve the tickets assigned to the CURRENT (authenticated) Jira user.
@@ -3171,7 +3064,7 @@ class JiraToolkit(AbstractToolkit):
 
             # Flatten column names if MultiIndex
             if isinstance(agg_result.columns, pd.MultiIndex):
-                agg_result.columns = ['_'.join(col).strip('_') for col in agg_result.columns]
+                agg_result.columns = ["_".join(col).strip("_") for col in agg_result.columns]
 
             # Sort if requested
             if sort_by and sort_by in agg_result.columns:
@@ -3181,7 +3074,7 @@ class JiraToolkit(AbstractToolkit):
                 "success": True,
                 "row_count": len(agg_result),
                 "columns": list(agg_result.columns),
-                "data": agg_result.to_dict(orient='records'),
+                "data": agg_result.to_dict(orient="records"),
             }
         except Exception as e:
             raise ValueError(
@@ -3194,7 +3087,7 @@ class JiraToolkit(AbstractToolkit):
     # High-level edit helpers (resolve names/emails automatically)
     # -----------------------------------------------------------------
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(ChangeAssigneeInput)
     async def jira_set_assignee(self, issue: str, assignee: str) -> Dict[str, Any]:
         """Set the assignee of an issue by email or accountId.
@@ -3212,7 +3105,7 @@ class JiraToolkit(AbstractToolkit):
         )
         return {"ok": True, "issue": issue, "assignee": account_id}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(ChangeReporterInput)
     async def jira_set_reporter(self, issue: str, email: str) -> Dict[str, Any]:
         """Change the reporter of an issue by email.
@@ -3229,10 +3122,13 @@ class JiraToolkit(AbstractToolkit):
         )
         return {"ok": True, "issue": issue, "reporter": account_id}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(AddComponentInput)
     async def jira_add_component(
-        self, issue: str, component_name: str, project: Optional[str] = None,
+        self,
+        issue: str,
+        component_name: str,
+        project: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Add a component to an issue by name.
 
@@ -3273,7 +3169,7 @@ class JiraToolkit(AbstractToolkit):
             "issue": issue,
         }
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(AddWatcherInput)
     async def jira_add_watcher(self, issue: str, email: str) -> Dict[str, Any]:
         """Add a user to an issue's watchers list ("who's looking").
@@ -3291,7 +3187,7 @@ class JiraToolkit(AbstractToolkit):
         await asyncio.to_thread(_run)
         return {"ok": True, "issue": issue, "watcher": account_id}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(SetAcceptanceCriteriaInput)
     async def jira_set_acceptance_criteria(
         self,
@@ -3359,7 +3255,7 @@ class JiraToolkit(AbstractToolkit):
         # Fallback to first match
         return matches[0]["accountId"]
 
-    @requires_permission('jira.admin')
+    @requires_permission("jira.admin")
     @tool_schema(ConfigureClientInput)
     async def jira_configure_client(
         self,
@@ -3393,14 +3289,11 @@ class JiraToolkit(AbstractToolkit):
                 "message": "Jira client re-configured successfully.",
                 "server_url": self.server_url,
                 "auth_type": self.auth_type,
-                "username": self.username
+                "username": self.username,
             }
         except Exception as e:
             self.logger.error(f"Failed to re-configure Jira client: {e}")
-            return {
-                "ok": False,
-                "error": str(e)
-            }
+            return {"ok": False, "error": str(e)}
 
     # -----------------------------
     # New Methods
@@ -3418,13 +3311,13 @@ class JiraToolkit(AbstractToolkit):
         changelog = await self._get_full_changelog(issue)
         return self._extract_field_history(changelog, "assignee")
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(UpdateIssueInput)
     async def jira_update_ticket(self, **kwargs) -> Dict[str, Any]:
         """Update a ticket (alias for jira_update_issue). Requires jira.write permission."""
         return await self.jira_update_issue(**kwargs)
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(ChangeAssigneeInput)
     async def jira_change_assignee(self, issue: str, assignee: str) -> Dict[str, Any]:
         """Change the ticket to a new assignee. Requires jira.write permission."""
@@ -3452,7 +3345,7 @@ class JiraToolkit(AbstractToolkit):
             return (obj.get("data") or {}).get("fields", {}).get("labels", [])
         return []
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(TagInput)
     async def jira_add_tag(self, issue: str, tag: str) -> Dict[str, Any]:
         """Add a tag to a ticket. Requires jira.write permission."""
@@ -3466,7 +3359,7 @@ class JiraToolkit(AbstractToolkit):
         await self.jira_update_issue(issue=issue, labels=new_tags)
         return {"ok": True, "added": tag, "tags": new_tags}
 
-    @requires_permission('jira.write')
+    @requires_permission("jira.write")
     @tool_schema(TagInput)
     async def jira_remove_tag(self, issue: str, tag: str) -> Dict[str, Any]:
         """Remove a tag from a ticket. Requires jira.write permission."""
@@ -3479,6 +3372,7 @@ class JiraToolkit(AbstractToolkit):
         new_tags = [t for t in current_tags if t != tag]
         await self.jira_update_issue(issue=issue, labels=new_tags)
         return {"ok": True, "removed": tag, "tags": new_tags}
+
 
 __all__ = [
     "JiraToolkit",

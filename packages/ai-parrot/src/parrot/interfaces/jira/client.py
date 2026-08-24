@@ -20,6 +20,7 @@ because getting either wrong is silent and self-perpetuating:
 The ``jira`` (pycontribs) distribution is optional and lazily imported —
 importing this module must never require it to be installed.
 """
+
 import asyncio
 import logging
 import os
@@ -169,9 +170,7 @@ class JiraInterface:
         # No auth-type heuristic (jiratoolkit.py:767-775): an unresolved
         # auth_type leaves the interface unauthenticated.
         _configured_auth = auth_type or _cfg("JIRA_AUTH_TYPE")
-        self.auth_type: str | None = (
-            _configured_auth.lower() if _configured_auth else None
-        )
+        self.auth_type: str | None = _configured_auth.lower() if _configured_auth else None
 
         # oauth2_3lo resolves its server URL per-user at call time.
         self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
@@ -183,9 +182,7 @@ class JiraInterface:
         self.oauth_consumer_key = oauth_consumer_key or _cfg("JIRA_OAUTH_CONSUMER_KEY")
         self.oauth_key_cert = oauth_key_cert or _cfg("JIRA_OAUTH_KEY_CERT")
         self.oauth_access_token = oauth_access_token or _cfg("JIRA_OAUTH_ACCESS_TOKEN")
-        self.oauth_access_token_secret = (
-            oauth_access_token_secret or _cfg("JIRA_OAUTH_ACCESS_TOKEN_SECRET")
-        )
+        self.oauth_access_token_secret = oauth_access_token_secret or _cfg("JIRA_OAUTH_ACCESS_TOKEN_SECRET")
 
         self.credential_resolver = credential_resolver
         self.request_timeout = request_timeout
@@ -247,10 +244,7 @@ class JiraInterface:
                 "key_cert": key_cert,
             }
             if not all(oauth_dict.values()):
-                raise ValueError(
-                    "oauth requires consumer_key, key_cert, access_token, "
-                    "access_token_secret"
-                )
+                raise ValueError("oauth requires consumer_key, key_cert, access_token, " "access_token_secret")
             return jira_cls(options=options, oauth=oauth_dict, timeout=self.request_timeout)
 
         raise ValueError(f"Unsupported auth_type: {self.auth_type}")
@@ -290,6 +284,23 @@ class JiraInterface:
         at = getattr(token_set, "access_token", "") or ""
         return (at[:16] + at[-8:]) if len(at) > 24 else at
 
+    def attach_client(self, client: Any) -> None:
+        """Attach an already-resolved ``jira.JIRA`` client.
+
+        Bypasses this interface's own auth resolution entirely for every
+        subsequent call. This is the delegation seam ``JiraToolkit`` uses
+        (TASK-2402, G1) so ``oauth2_3lo``'s per-``(channel, user_id)``
+        token resolution — which this interface's own
+        ``credential_resolver.resolve()`` has no context to perform — is
+        resolved exactly once, inside the toolkit's own ``_pre_execute``,
+        and simply reused here rather than duplicated.
+
+        Args:
+            client: An already-constructed ``jira.JIRA`` client (or any
+                stand-in used by tests), or ``None`` to clear it.
+        """
+        self._client = client
+
     async def _ensure_client_3lo(self) -> Any:
         """Resolve (and cache) the per-user ``jira.JIRA`` client for 3LO.
 
@@ -298,10 +309,7 @@ class JiraInterface:
                 it cannot resolve a token set for the current identity.
         """
         if self.credential_resolver is None:
-            raise JiraAuthError(
-                "oauth2_3lo requires a credential_resolver to resolve a "
-                "per-user token set."
-            )
+            raise JiraAuthError("oauth2_3lo requires a credential_resolver to resolve a " "per-user token set.")
         token_set = await self.credential_resolver.resolve()
         if token_set is None:
             raise JiraAuthError(
@@ -341,16 +349,20 @@ class JiraInterface:
                 "oauth2_3lo) with matching credentials."
             )
 
-        if self.auth_type == "oauth2_3lo":
-            return await self._ensure_client_3lo()
-
+        # An already-attached client (see attach_client(), TASK-2402) always
+        # wins, for every auth mode including oauth2_3lo — this is the seam
+        # JiraToolkit's delegation uses so a per-user 3LO token, which this
+        # interface's own credential_resolver.resolve() cannot see (it has
+        # no (channel, user_id) context), is resolved exactly once, inside
+        # the toolkit's own _pre_execute, never duplicated here.
         if self._client is not None:
             return self._client
 
+        if self.auth_type == "oauth2_3lo":
+            return await self._ensure_client_3lo()
+
         if not self.server_url:
-            raise ValueError(
-                "Jira server_url is required (e.g., https://your.atlassian.net)"
-            )
+            raise ValueError("Jira server_url is required (e.g., https://your.atlassian.net)")
         self._client = await asyncio.to_thread(self._build_client)
         if self.verify_credentials and not self._verified:
             await self._verify_static_credentials()
@@ -377,11 +389,7 @@ class JiraInterface:
         client = self._client
         options = getattr(client, "_options", {}) or {}
         base = options.get("server") or self.server_url
-        api_path = (
-            "/rest/api/3/myself"
-            if self.auth_type == "oauth2_3lo"
-            else "/rest/api/2/myself"
-        )
+        api_path = "/rest/api/3/myself" if self.auth_type == "oauth2_3lo" else "/rest/api/2/myself"
         url = f"{base.rstrip('/')}{api_path}"
         session = getattr(client, "_session", None)
         if session is None:
@@ -410,9 +418,7 @@ class JiraInterface:
             "seraph_login_reason": seraph,
         }
         if not authenticated:
-            result["error"] = (
-                f"HTTP {status}" + (f" — {seraph}" if seraph else "")
-            )
+            result["error"] = f"HTTP {status}" + (f" — {seraph}" if seraph else "")
         return result
 
     async def _verify_static_credentials(self) -> None:
@@ -431,20 +437,18 @@ class JiraInterface:
             result = await asyncio.to_thread(self._probe_auth_sync)
         except Exception as exc:  # noqa: BLE001 — a broken probe is not a verdict
             self.logger.warning(
-                "Could not verify Jira credentials (probe raised: %s); "
-                "continuing unverified.", exc,
+                "Could not verify Jira credentials (probe raised: %s); " "continuing unverified.",
+                exc,
             )
             return
         if result.get("authenticated"):
             return
         status = result.get("status_code")
-        definitive = status in (401, 403) or (
-            status is not None and 200 <= status < 300
-        )
+        definitive = status in (401, 403) or (status is not None and 200 <= status < 300)
         if not definitive:
             self.logger.warning(
-                "Could not verify Jira credentials (probe failed: %s); "
-                "continuing unverified.", result.get("error"),
+                "Could not verify Jira credentials (probe failed: %s); " "continuing unverified.",
+                result.get("error"),
             )
             return
         raise JiraAuthError(
@@ -469,8 +473,7 @@ class JiraInterface:
             raise JiraAuthError(
                 "Jira authentication probe failed"
                 + (
-                    f" (status={result.get('status_code')}, "
-                    f"seraph={result.get('seraph_login_reason')})"
+                    f" (status={result.get('status_code')}, " f"seraph={result.get('seraph_login_reason')})"
                     if result.get("status_code") is not None
                     else ""
                 )
@@ -497,9 +500,7 @@ class JiraInterface:
     # Reads
     # ------------------------------------------------------------------
 
-    async def get_issue(
-        self, key: str, *, fields: str | None = None, expand: str | None = None
-    ) -> dict[str, Any]:
+    async def get_issue(self, key: str, *, fields: str | None = None, expand: str | None = None) -> dict[str, Any]:
         """Fetch a single raw issue payload by key.
 
         Args:
@@ -574,9 +575,7 @@ class JiraInterface:
             if start_at >= total:
                 return
 
-    async def get_changelog(
-        self, key: str, page_size: int = 100
-    ) -> list[dict[str, Any]]:
+    async def get_changelog(self, key: str, page_size: int = 100) -> list[dict[str, Any]]:
         """Fetch the full changelog for an issue, paging as needed.
 
         Mirrors ``JiraToolkit._get_full_changelog`` (`jiratoolkit.py:1314`).
@@ -636,9 +635,7 @@ class JiraInterface:
             return client.projects()
 
         projs = await asyncio.to_thread(_run)
-        project_list = [
-            {"id": p.id, "key": p.key, "name": p.name} for p in projs
-        ]
+        project_list = [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
         if project_list:
             return project_list
         await self._probe_myself()
@@ -663,6 +660,133 @@ class JiraInterface:
 
         links = await asyncio.to_thread(_run)
         return [getattr(link, "raw", None) or {} for link in links]
+
+    # ------------------------------------------------------------------
+    # JiraToolkit delegation seam (TASK-2402, G1) — thin, object-returning
+    # transport primitives. Unlike get_issue()/get_projects() above (which
+    # project straight to dicts for the sweep), these hand back raw
+    # pycontribs objects so JiraToolkit can keep applying its own existing
+    # projection (_issue_to_dict) unchanged, preserving byte-identical
+    # tool output.
+    # ------------------------------------------------------------------
+
+    async def list_projects(self) -> list[dict[str, Any]]:
+        """Raw ``client.projects()`` call — no empty-result auth probing.
+
+        Unlike :meth:`get_projects`, this never probes ``/myself`` on an
+        empty result — callers needing that guard (``JiraToolkit
+        .jira_get_projects``) already have their own probe and error
+        message and must keep using it unchanged.
+
+        Returns:
+            A list of ``{"id", "key", "name"}`` dicts.
+        """
+        client = await self._ensure_client()
+
+        def _run():
+            return client.projects()
+
+        projs = await asyncio.to_thread(_run)
+        return [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
+
+    async def fetch_issue_object(self, key: str, *, fields: str | None = None, expand: str | None = None) -> Any:
+        """Fetch and return the raw pycontribs ``Issue`` object — transport only.
+
+        Callers needing a dict apply their own projection (e.g.
+        ``JiraToolkit._issue_to_dict``, which is LLM-shaped and not
+        ``JiraIssue``-shaped) — this method does not project at all, so
+        that projection stays byte-identical wherever it already lives.
+
+        Args:
+            key: Issue key, e.g. ``"NAV-9372"``.
+            fields: Comma-separated field list, or ``None`` for the
+                client's default.
+            expand: Comma-separated expand list.
+
+        Returns:
+            The raw pycontribs ``Issue`` object.
+        """
+        client = await self._ensure_client()
+
+        def _run():
+            return client.issue(key, fields=fields, expand=expand)
+
+        return await asyncio.to_thread(_run)
+
+    async def fetch_issues(
+        self,
+        jql: str,
+        *,
+        fields: str | list[str] | None = None,
+        expand: str | None = None,
+        max_results: int | None = 100,
+        page_size: int = 100,
+    ) -> list[Any]:
+        """Fetch raw pycontribs ``Issue`` objects for ``jql`` — transport only.
+
+        Mirrors ``JiraToolkit.jira_search_issues``'s own pre-existing loop
+        verbatim (TASK-2402, G1): Jira Cloud's current search endpoint is
+        cursor- (``nextPageToken``-) based, not offset-based, so this uses
+        ``enhanced_search_issues`` rather than :meth:`search_issues`
+        above (which wraps the older, still-valid-for-Server/DC
+        ``startAt`` API). No auth probing on an empty result — callers
+        needing that guard have their own, and none of the tool paths
+        this feeds currently probe empty search results either.
+
+        Args:
+            jql: JQL scope.
+            fields: Comma-separated field string, a list of fields, or
+                ``None`` for every field.
+            expand: Comma-separated expand list.
+            max_results: Cap on the number of issues to fetch; ``None``
+                fetches every matching issue.
+            page_size: Page size per underlying call.
+
+        Returns:
+            A list of raw pycontribs ``Issue`` objects, not projected.
+        """
+        client = await self._ensure_client()
+        field_list = fields.split(",") if isinstance(fields, str) else fields
+
+        def _run_page(page_token: str | None, current_max: int):
+            return client.enhanced_search_issues(
+                jql,
+                maxResults=current_max,
+                fields=field_list,
+                expand=expand,
+                nextPageToken=page_token,
+            )
+
+        all_issues: list[Any] = []
+        fetched = 0
+        next_page_token: str | None = None
+        is_last = False
+        while not is_last:
+            if max_results is None:
+                size = page_size
+            else:
+                remaining = max_results - fetched
+                if remaining <= 0:
+                    break
+                size = min(remaining, page_size)
+
+            result_list = await asyncio.to_thread(_run_page, next_page_token, size)
+            batch = list(result_list)
+
+            next_page_token = getattr(result_list, "nextPageToken", None)
+            is_last = getattr(result_list, "isLast", True)
+
+            if not batch:
+                break
+            all_issues.extend(batch)
+            fetched += len(batch)
+
+            if max_results is not None and fetched >= max_results:
+                break
+            if is_last or next_page_token is None:
+                break
+
+        return all_issues
 
     async def resolve_ac_field_id(self) -> str | None:
         """Resolve the acceptance-criteria custom-field id.

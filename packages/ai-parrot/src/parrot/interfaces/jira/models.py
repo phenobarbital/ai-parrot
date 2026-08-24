@@ -11,6 +11,7 @@ Design notes:
 - ``JiraAttachmentRef`` / ``JiraRemoteLink`` are references only — nothing
   is ever downloaded (non-goal).
 """
+
 from datetime import datetime
 from enum import Enum
 

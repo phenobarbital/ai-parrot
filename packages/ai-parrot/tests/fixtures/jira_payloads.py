@@ -4,6 +4,7 @@ Plain functions, not pytest fixtures, so any test package can import them:
 ``from tests.fixtures.jira_payloads import raw_issue_payload``. Each package's
 conftest wraps them in fixtures.
 """
+
 from typing import Any
 
 
@@ -28,58 +29,65 @@ def raw_issue_payload() -> dict[str, Any]:
             "assignee": {
                 "accountId": "5f8a:abc-123",
                 "displayName": "Jesus Lara",
-                "emailAddress": "jlara@example.com",   # MUST be dropped
+                "emailAddress": "jlara@example.com",  # MUST be dropped
             },
             "reporter": {
                 "accountId": "5f8a:def-456",
                 "displayName": "Ana Ruiz",
-                "emailAddress": "aruiz@example.com",   # MUST be dropped
+                "emailAddress": "aruiz@example.com",  # MUST be dropped
             },
             "labels": ["multitenant", "forms"],
             "components": [{"name": "navigator-forms"}, {"name": "api"}],
             "parent": {"key": "NAV-9000"},
-            "customfield_10014": "NAV-8000",           # epic link
+            "customfield_10014": "NAV-8000",  # epic link
             "subtasks": [{"key": "NAV-9373"}, {"key": "NAV-9374"}],
             "issuelinks": [
-                {"type": {"name": "Blocks", "inward": "is blocked by",
-                          "outward": "blocks"},
-                 "outwardIssue": {"key": "NAV-9400"}},
-                {"type": {"name": "Duplicate", "inward": "is duplicated by",
-                          "outward": "duplicates"},
-                 "inwardIssue": {"key": "NAV-9111"}},
-                {"type": {"name": "Mitigates", "inward": "is mitigated by",
-                          "outward": "mitigates"},          # UNKNOWN type
-                 "outwardIssue": {"key": "NAV-9500"}},
+                {
+                    "type": {"name": "Blocks", "inward": "is blocked by", "outward": "blocks"},
+                    "outwardIssue": {"key": "NAV-9400"},
+                },
+                {
+                    "type": {"name": "Duplicate", "inward": "is duplicated by", "outward": "duplicates"},
+                    "inwardIssue": {"key": "NAV-9111"},
+                },
+                {
+                    "type": {"name": "Mitigates", "inward": "is mitigated by", "outward": "mitigates"},  # UNKNOWN type
+                    "outwardIssue": {"key": "NAV-9500"},
+                },
             ],
             "created": "2026-07-01T09:14:22.000+0000",
             "updated": "2026-08-20T16:02:07.000+0000",
             "resolutiondate": None,
             "attachment": [
-                {"filename": "trace.har", "size": 20481,
-                 "mimeType": "application/json",
-                 "content": "https://example.atlassian.net/secure/attachment/1/trace.har"},
+                {
+                    "filename": "trace.har",
+                    "size": 20481,
+                    "mimeType": "application/json",
+                    "content": "https://example.atlassian.net/secure/attachment/1/trace.har",
+                },
             ],
-            "customfield_10101": "Given a tenant in the URL, when the form "
-                                 "posts, then the tenant is preserved.",
+            "customfield_10101": "Given a tenant in the URL, when the form " "posts, then the tenant is preserved.",
         },
         "renderedFields": {
-            "description": "<p>The form <code>POST</code> drops "
-                           "<strong>tenant</strong>.</p>",
+            "description": "<p>The form <code>POST</code> drops " "<strong>tenant</strong>.</p>",
             "customfield_10101": "<p>Given a tenant in the URL...</p>",
         },
         "changelog": {
             "histories": [
-                {"created": "2026-08-20T16:02:07.000+0000",
-                 "author": {"accountId": "5f8a:abc-123",
-                            "displayName": "Jesus Lara",
-                            "emailAddress": "jlara@example.com"},
-                 "items": [{"field": "status", "fromString": "To Do",
-                            "toString": "In Progress"}]},
-                {"created": "2026-07-02T11:00:00.000+0000",
-                 "author": {"accountId": "5f8a:def-456",
-                            "displayName": "Ana Ruiz"},
-                 "items": [{"field": "priority", "fromString": "Medium",
-                            "toString": "High"}]},
+                {
+                    "created": "2026-08-20T16:02:07.000+0000",
+                    "author": {
+                        "accountId": "5f8a:abc-123",
+                        "displayName": "Jesus Lara",
+                        "emailAddress": "jlara@example.com",
+                    },
+                    "items": [{"field": "status", "fromString": "To Do", "toString": "In Progress"}],
+                },
+                {
+                    "created": "2026-07-02T11:00:00.000+0000",
+                    "author": {"accountId": "5f8a:def-456", "displayName": "Ana Ruiz"},
+                    "items": [{"field": "priority", "fromString": "Medium", "toString": "High"}],
+                },
             ]
         },
     }

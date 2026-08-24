@@ -18,6 +18,7 @@ edge itself: ``wikitoolkit build``'s ``scan_vault`` turns a resolved
 wikilink into a ``references`` edge and a ``#tag`` into a first-class tag
 page (`vault_scan.py:16-21`).
 """
+
 import hashlib
 import logging
 import re
@@ -35,10 +36,7 @@ logger = logging.getLogger(__name__)
 
 # Everything from this marker (at the start of a line) onward is the human's
 # forever — the extractor only ever owns the region above it.
-SYNC_MARKER: str = (
-    "<!-- jira-sync:end — everything below is yours; "
-    "the extractor never touches it -->"
-)
+SYNC_MARKER: str = "<!-- jira-sync:end — everything below is yours; " "the extractor never touches it -->"
 
 # Bumping this forces a full re-render even when `updated` is unchanged
 # (e.g. after a renderer bugfix) — consumed by the sweep (TASK-2403).
@@ -80,15 +78,15 @@ _ISSUE_FRONTMATTER_FIELD_ORDER: tuple[str, ...] = (
 # Frontmatter fields whose values are lists — sorted exactly once, here.
 # TASK-2399's parse_issue deliberately leaves Jira's native order intact.
 _LIST_FIELDS: frozenset[str] = frozenset(
-    {"labels", "components", "subtasks", "blocks", "blocked_by", "relates",
-     "duplicates", "repo_pages"}
+    {"labels", "components", "subtasks", "blocks", "blocked_by", "relates", "duplicates", "repo_pages"}
 )
 
 # Single fixed datetime shape used everywhere in this module's output.
 _DT_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 
 _SYNC_MARKER_RE = re.compile(
-    r"^" + re.escape(SYNC_MARKER), re.MULTILINE,
+    r"^" + re.escape(SYNC_MARKER),
+    re.MULTILINE,
 )
 
 # Filename-unsafe characters stripped/replaced by group_slug().
@@ -320,9 +318,7 @@ def _render_frontmatter(fm: IssueFrontmatter) -> str:
             value = {k: v for k, v in value.items() if v is not None}
         payload[field] = value
 
-    body = yaml.safe_dump(
-        payload, sort_keys=False, allow_unicode=True, default_flow_style=False
-    )
+    body = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True, default_flow_style=False)
     return f"---\n{body}---\n\n"
 
 
@@ -338,9 +334,7 @@ def _fmt_size(size_bytes: int | None) -> str:
     return f"{size_bytes / 1024:.1f} KB"
 
 
-def _render_body(
-    issue: JiraIssue, *, repo_pages: list[str] | None = None
-) -> str:
+def _render_body(issue: JiraIssue, *, repo_pages: list[str] | None = None) -> str:
     """Render the generated body (everything above the sync marker)."""
     lines: list[str] = []
     lines.append(f"# {issue.key} — {issue.summary}")
@@ -380,9 +374,7 @@ def _render_body(
         lines.append("## Status History")
         for event in issue.history:
             at = _fmt_dt(event.at)
-            lines.append(
-                f"- {at} — {event.field}: {event.from_value} → {event.to_value}"
-            )
+            lines.append(f"- {at} — {event.field}: {event.from_value} → {event.to_value}")
         lines.append("")
 
     if issue.attachments:

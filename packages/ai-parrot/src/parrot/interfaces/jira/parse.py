@@ -7,6 +7,7 @@ every Jira user object is routed through :func:`_person`, which reads only
 raw dict, so ``emailAddress`` (present on every raw Jira user object) can
 never reach a :class:`JiraPerson` instance.
 """
+
 import logging
 from datetime import datetime
 from typing import Any
@@ -118,7 +119,8 @@ def _issue_links(raw_links: list[dict[str, Any]] | None) -> list[JiraIssueLink]:
         if kind is None:
             logger.debug(
                 "Unknown Jira link type %r (%s); degrading to RELATES",
-                type_name, direction,
+                type_name,
+                direction,
             )
             kind = JiraIssueLinkKind.RELATES
         links.append(JiraIssueLink(kind=kind, target_key=target))
@@ -164,9 +166,7 @@ def _remote_links(
     refs: list[JiraRemoteLink] = []
     for entry in raw_remote_links or []:
         obj = entry.get("object") or {}
-        refs.append(
-            JiraRemoteLink(title=obj.get("title", ""), url=obj.get("url", ""))
-        )
+        refs.append(JiraRemoteLink(title=obj.get("title", ""), url=obj.get("url", "")))
     return refs
 
 
@@ -257,9 +257,7 @@ def parse_issue(
         # ValueError (not TypeError) is required by the spec/AC — a missing
         # or malformed 'fields' dict is a missing-required-data condition,
         # not a caller type error.
-        raise ValueError(  # noqa: TRY004
-            "Raw Jira issue payload is missing required field 'fields'"
-        )
+        raise ValueError("Raw Jira issue payload is missing required field 'fields'")  # noqa: TRY004
 
     key = raw.get("key")
     if not key:
@@ -271,46 +269,32 @@ def parse_issue(
     project = fields.get("project") or {}
     project_key = project.get("key")
     if not project_key:
-        raise ValueError(
-            "Raw Jira issue payload is missing required field 'fields.project.key'"
-        )
+        raise ValueError("Raw Jira issue payload is missing required field 'fields.project.key'")
 
     issuetype = (fields.get("issuetype") or {}).get("name")
     if not issuetype:
-        raise ValueError(
-            "Raw Jira issue payload is missing required field 'fields.issuetype.name'"
-        )
+        raise ValueError("Raw Jira issue payload is missing required field 'fields.issuetype.name'")
 
     status = (fields.get("status") or {}).get("name")
     if not status:
-        raise ValueError(
-            "Raw Jira issue payload is missing required field 'fields.status.name'"
-        )
+        raise ValueError("Raw Jira issue payload is missing required field 'fields.status.name'")
 
     summary = fields.get("summary")
     if not summary:
-        raise ValueError(
-            "Raw Jira issue payload is missing required field 'fields.summary'"
-        )
+        raise ValueError("Raw Jira issue payload is missing required field 'fields.summary'")
 
     rendered = raw.get("renderedFields") or {}
     description_html = rendered.get("description")
-    acceptance_criteria_html = (
-        rendered.get(ac_field_id) if ac_field_id else None
-    )
+    acceptance_criteria_html = rendered.get(ac_field_id) if ac_field_id else None
 
     resolution = (fields.get("resolution") or {}).get("name")
     priority = (fields.get("priority") or {}).get("name")
 
     epic_key, parent_key = _epic_and_parent(fields)
-    subtask_keys = [
-        st.get("key") for st in (fields.get("subtasks") or []) if st.get("key")
-    ]
+    subtask_keys = [st.get("key") for st in (fields.get("subtasks") or []) if st.get("key")]
 
     labels = list(fields.get("labels") or [])
-    components = [
-        c.get("name") for c in (fields.get("components") or []) if c.get("name")
-    ]
+    components = [c.get("name") for c in (fields.get("components") or []) if c.get("name")]
 
     url = f"{base_url.rstrip('/')}/browse/{key}"
 

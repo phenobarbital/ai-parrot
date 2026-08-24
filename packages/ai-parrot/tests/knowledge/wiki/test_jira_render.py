@@ -1,4 +1,5 @@
 """Tests for the deterministic Jira renderer (FEAT-454, M3)."""
+
 import inspect
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,8 +64,7 @@ class TestFrontmatterContract:
     def test_key_order_matches_declared_tuple(self, issue, frozen_now):
         text = render_issue_document(issue, fetched_at=frozen_now)
         block = text.split("---\n", 2)[1]
-        emitted = [ln.split(":", 1)[0] for ln in block.splitlines()
-                   if ln and not ln.startswith((" ", "-"))]
+        emitted = [ln.split(":", 1)[0] for ln in block.splitlines() if ln and not ln.startswith((" ", "-"))]
         order = list(jira_render._ISSUE_FRONTMATTER_FIELD_ORDER)
         assert emitted == [k for k in order if k in emitted]
 
@@ -97,20 +97,17 @@ class TestSyncMarkerPreservation:
     def test_preserves_human_tail_verbatim(self, issue, frozen_now):
         tail = f"{SYNC_MARKER}\n\n## My notes\n\nThis matters.\n\n   \t\n"
         existing = "---\nkey: NAV-9372\n---\n\nstale\n" + tail
-        out = render_issue_document(issue, fetched_at=frozen_now,
-                                    existing=existing)
+        out = render_issue_document(issue, fetched_at=frozen_now, existing=existing)
         assert out.endswith(tail)
 
     def test_trailing_whitespace_survives(self, issue, frozen_now):
         tail = f"{SYNC_MARKER}\n\nnote with trailing spaces   \n\n\n"
-        out = render_issue_document(issue, fetched_at=frozen_now,
-                                    existing="old\n" + tail)
+        out = render_issue_document(issue, fetched_at=frozen_now, existing="old\n" + tail)
         assert out.endswith(tail)
 
     def test_missing_marker_is_appended_and_nothing_lost(self, issue, frozen_now):
         handmade = "# Hand written\n\nSomeone's irreplaceable note.\n"
-        out = render_issue_document(issue, fetched_at=frozen_now,
-                                    existing=handmade)
+        out = render_issue_document(issue, fetched_at=frozen_now, existing=handmade)
         assert SYNC_MARKER in out
         assert "Someone's irreplaceable note." in out
 
@@ -148,8 +145,8 @@ class TestWikilinksAndTags:
     def test_repo_pages_are_never_wikilinks(self, issue, frozen_now):
         """Cross-namespace edges do not exist (cli.py:2665-2666)."""
         out = render_issue_document(
-            issue, fetched_at=frozen_now,
-            repo_pages=["repo::file:sdd/specs/jira-extractor-llmwiki.spec.md"])
+            issue, fetched_at=frozen_now, repo_pages=["repo::file:sdd/specs/jira-extractor-llmwiki.spec.md"]
+        )
         assert "[[repo::" not in out
         assert "repo::file:sdd/specs/jira-extractor-llmwiki.spec.md" in out
 
@@ -167,16 +164,16 @@ class TestHtmlConversion:
     def test_no_line_wrapping(self):
         html = "<p>" + ("word " * 200).strip() + "</p>"
         out = jira_render.html_to_markdown(html)
-        assert max(len(l) for l in out.splitlines()) > 100, \
-            "body_width must be 0 — default 78 wrapping is non-deterministic"
+        assert (
+            max(len(l) for l in out.splitlines()) > 100
+        ), "body_width must be 0 — default 78 wrapping is non-deterministic"
 
     def test_empty_and_none_degrade(self):
         assert jira_render.html_to_markdown(None) == ""
         assert jira_render.html_to_markdown("") == ""
 
     def test_links_and_code_survive(self):
-        out = jira_render.html_to_markdown(
-            '<p><a href="https://x/y">y</a> <pre>code()</pre></p>')
+        out = jira_render.html_to_markdown('<p><a href="https://x/y">y</a> <pre>code()</pre></p>')
         assert "https://x/y" in out and "code()" in out
 
 
@@ -185,15 +182,12 @@ class TestSlugsAndFilenames:
         assert issue_filename("NAV-9372") == "NAV-9372.md"
 
     def test_person_slug_stable_across_rename(self):
-        a = person_slug(JiraPerson(account_id="5f8a:abc-123",
-                                   display_name="Jesus Lara"))
-        b = person_slug(JiraPerson(account_id="5f8a:abc-123",
-                                   display_name="J. Lara Gonzalez"))
+        a = person_slug(JiraPerson(account_id="5f8a:abc-123", display_name="Jesus Lara"))
+        b = person_slug(JiraPerson(account_id="5f8a:abc-123", display_name="J. Lara Gonzalez"))
         assert a == b
 
     def test_person_slug_is_filename_safe(self):
-        slug = person_slug(JiraPerson(account_id="5f8a:abc/123",
-                                      display_name="X"))
+        slug = person_slug(JiraPerson(account_id="5f8a:abc/123", display_name="X"))
         assert not set(slug) & set('/\\:*?"<>| ')
 
     @pytest.mark.parametrize("name", ["navigator/forms", "multi tenant", "café"])
@@ -231,8 +225,15 @@ class TestSatelliteNotes:
 class TestPurity:
     def test_no_io_or_network_imports(self):
         src = inspect.getsource(jira_render)
-        for banned in ("import aiohttp", "import requests", "import httpx",
-                       "import jira", "from jira ", "open(", ".write_text("):
+        for banned in (
+            "import aiohttp",
+            "import requests",
+            "import httpx",
+            "import jira",
+            "from jira ",
+            "open(",
+            ".write_text(",
+        ):
             assert banned not in src, banned
 
     def test_render_takes_no_client(self):
