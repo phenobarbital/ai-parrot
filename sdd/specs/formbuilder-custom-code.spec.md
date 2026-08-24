@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-459
 **Date**: 2026-08-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: `parrot-formdesigner` 0.11.0
 
 **Source brainstorm**: `sdd/proposals/formbuilder-custom-code.brainstorm.md`
@@ -73,7 +73,10 @@ Each goal below is a locked constraint from brainstorm discovery Rounds 0–3
 - **G6 (C6)** — Run client code in a Web Worker with no DOM access.
 - **G7 (C7)** — Treat client code as authoritative only for client-only presentation
   concerns; re-run everything with a server counterpart server-side.
-- **G8 (C8)** — Store snippets as git-backed artifacts, approved through PR review.
+- **G8 (C8, revised — resolved OQ-1)** — Store snippets in a **hybrid dual-source**
+  model: platform-wide snippets are git-backed and approved by PR review; tenant-specific
+  snippets live in a versioned DB table and are approved in-app by a tenant admin. Both
+  sources feed the same registry and the same sandbox.
 - **G9 (C9)** — Apply a per-binding failure policy: abort (reject the submission) or
   continue (log and proceed).
 - **G10** — Introduce zero breaking changes. Every existing `@register_form_event`
@@ -88,9 +91,12 @@ Each goal below is a locked constraint from brainstorm discovery Rounds 0–3
 - **Field-level events.** `onFieldChange` / `onBlur` / `onCalculate` are NOT added
   (C2). Client-side reactivity is achieved through the Web Worker patch protocol
   against existing events, not through new server event names.
-- **Runtime DB-backed snippet authoring.** Rejected in brainstorm as Option C in favour
-  of git-backed storage (C8) — see `proposals/formbuilder-custom-code.brainstorm.md`
-  Option C. The multi-tenancy cost of that choice is tracked as §8 OQ-1.
+- **A single-source storage model.** OQ-1 resolved to a hybrid: neither pure-git
+  (brainstorm Option D as originally written) nor pure-DB (brainstorm Option C). Both
+  loaders ship in v1.
+- **Tenant snippets escalating to tiers 3–4 by default.** DB-sourced tenant snippets are
+  capped at tier 2 (`helpers`) unless a platform operator explicitly raises the cap for
+  that tenant. Tiers 3–4 remain a platform-operator concern.
 - **In-process restricted interpreters.** Rejected in brainstorm as Option A
   (`RestrictedPython` / `asteval`) — a sandbox escape would be full RCE in the form
   server process, and CPU/memory limits are unenforceable in a coroutine.
@@ -116,10 +122,39 @@ declaring artifact rather than a string of code:
    runs in the cheapest executor. Only a snippet that asks for network or toolkit
    access pays for a kernel boundary. **Cost scales with declared power, so the
    common case stays fast.**
-2. **The git commit is the approval gate (G4/C4).** Merged to `dev` = approved.
-   Signed commits, CI, blame, and rollback come free.
+2. **Approval is source-specific but always human (G4/C4).** For git-backed platform
+   snippets the merged commit *is* the gate — signed commits, CI, blame, and rollback
+   come free. For DB-backed tenant snippets a tenant admin publishes a draft through an
+   approval service that mirrors `FormVersionService.publish()`
+   (`services/form_version.py:306`). Neither source can execute unapproved code.
 3. **The Python and TS halves are siblings in one bundle**, generated from one intent,
-   so drift between them is a reviewable diff rather than a mystery bug.
+   and CI asserts they agree by running both against shared fixtures (resolved OQ-8).
+
+### Dual-source storage (resolved OQ-1)
+
+Snippets come from two sources that share every downstream component — one manifest
+model, one sandbox, one broker, one router:
+
+| Source | Scope | Approval gate | Tier cap | Changes at |
+|---|---|---|---|---|
+| **Git** | platform-wide (`tenant=None`) | merged PR | 1–4 | deploy time |
+| **DB** | one tenant | in-app publish by tenant admin | 1–2 by default | runtime |
+
+**Precedence falls out of the existing registry for free.** `get_form_event()`
+(`services/event_registry.py:149`) already resolves `(tenant, handler_ref)` first and
+falls back to `(None, handler_ref)`. Git snippets register globally (`tenant=None`);
+DB snippets register under their tenant slug. A tenant snippet therefore overrides a
+platform snippet of the same `handler_ref` with **no change to the registry or the
+dispatcher**.
+
+**Runtime updates need a resolver, not re-registration.** `_EVENT_REGISTRY` has no
+public unregister, and `register_form_event()` raises `ValueError` on a duplicate key
+(`event_registry.py:141`). A DB snippet that is edited and re-published therefore
+cannot re-register. The design instead registers **one stable resolver closure per
+`(tenant, handler_ref)`** at startup; on each dispatch the closure looks up the
+currently-published version through a read-through cache modelled on
+`FormRegistry._read_through()` (`services/registry.py:1035`). Re-publishing swaps the
+row; the registry entry never changes.
 
 **Critically, `event_dispatcher.dispatch()` is NOT modified.** The loader registers
 each snippet's async adapter under its `handler_ref` through the existing
@@ -160,23 +195,29 @@ require no container runtime. There is no silent degradation to a weaker boundar
 ### Component Diagram
 
 ```
-                        ┌──────────────── BUILD / CI (offline) ─────────────────┐
-                        │  LLM authoring → snippet bundle → PR → conformance     │
-                        │  gate → TS bundler → merge = approval (G4)             │
-                        └───────────────────────┬───────────────────────────────┘
-                                                │ git-backed artifacts (G8)
-                                                ▼
-  ┌─────────── SERVER BOOT ────────────┐
-  │  SnippetLoader                     │
-  │   walk dir → parse manifest        │
-  │   → verify source hash             │
-  │   → build async adapter            │
-  │   → register_form_event(ref) ──────┼──► _EVENT_REGISTRY  (event_registry.py:65)
-  └────────────────────────────────────┘         ▲
-                                                 │ UNMODIFIED lookup
-  ┌─────────── REQUEST PATH ───────────┐         │
-  │  FormAPIHandler                    │         │
-  │    └─► dispatch()  ────────────────┼─────────┘   (event_dispatcher.py:102)
+      ┌─────────── BUILD / CI (offline) ────────────┐   ┌──── RUNTIME (in-app) ─────┐
+      │ LLM authoring → bundle → PR → conformance    │   │ LLM drafts → tenant admin │
+      │ + equivalence gate → TS bundler → MERGE = ✅ │   │ publishes → DB row = ✅   │
+      └──────────────────┬──────────────────────────┘   └─────────────┬─────────────┘
+                         │ git artifacts (tenant=None)                │ DB rows (tenant=slug)
+                         ▼                                            ▼
+  ┌─────────── SERVER BOOT ─────────────────────────────────────────────────────────┐
+  │  GitSnippetLoader                      DbSnippetStore (+ ApprovalService)       │
+  │   walk dir → parse manifest             read-through cache, published version   │
+  │   → verify SHA-256 → adapter            → STABLE RESOLVER closure per           │
+  │   → register_form_event(ref,             (tenant, ref); re-publish swaps the    │
+  │        tenant=None) ──────────┐          row, NOT the registry entry            │
+  │                               │                    │                            │
+  │                               └──► _EVENT_REGISTRY ◄┘  (event_registry.py:65)   │
+  └─────────────────────────────────────────┬───────────────────────────────────────┘
+                                            ▲
+             get_form_event() precedence:   │  (tenant, ref) → (None, ref)
+             tenant DB snippet OVERRIDES    │  — existing behaviour, unmodified
+             platform git snippet           │     (event_registry.py:149)
+                                            │
+  ┌─────────── REQUEST PATH ───────────┐    │ UNMODIFIED lookup
+  │  FormAPIHandler                    │    │
+  │    └─► dispatch()  ────────────────┼────┘   (event_dispatcher.py:102)
   │          └─► SnippetAdapter                  │
   │                └─► ContextProjector  (strips live AuthContext → declared claims)
   │                      └─► TierRouter
@@ -251,9 +292,28 @@ class CapabilityManifest(BaseModel):
     max_memory_mb: int = Field(default=128, ge=16, le=2_048)
 
 
+class SnippetSource(StrEnum):
+    """Where a bundle came from. Determines its approval gate and tier cap."""
+    GIT = "git"   # platform-wide, tenant=None, approved by merged PR
+    DB = "db"     # tenant-scoped, approved in-app by a tenant admin
+
+
+class SnippetStatus(StrEnum):
+    """Lifecycle of a DB-sourced tenant snippet. GIT bundles are always PUBLISHED
+    by construction — an unmerged snippet does not exist on disk."""
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    REVOKED = "revoked"
+
+
 class SnippetBundle(BaseModel):
-    """One git-backed snippet: manifest + Python half + optional TS half."""
+    """One snippet from either source: manifest + Python half + optional TS half."""
     model_config = ConfigDict(extra="forbid")
+    source: SnippetSource
+    status: SnippetStatus = SnippetStatus.PUBLISHED
+    version: int = 1                      # DB snippets increment; git is always 1
+    approved_by: str | None = None        # tenant admin id (DB) or commit sha (git)
+    approved_at: datetime | None = None
     handler_ref: str = Field(
         ...,
         # Same pattern as FormEventBinding.handler_ref (core/events.py:69)
@@ -309,6 +369,67 @@ class FormEventBinding(BaseModel):
     required: bool = False  # existing, line 75 — STILL means "handler MISSING → 500"
     on_failure: Literal["abort", "continue"] = "continue"  # NEW — handler FAILED
 ```
+
+### Auth claim projection policy (resolved OQ-5)
+
+`AuthContext` (`services/auth_context.py:20`) carries four fields, and two of them are
+**live credentials**:
+
+| Field | Line | Crosses the sandbox boundary? |
+|---|---|---|
+| `scheme` | :39 | Yes, tier ≥ 2 — non-secret metadata |
+| `token` | :40 | **Never, at any tier** — bearer token / API key |
+| `headers` | :41 | **Never, at any tier** — pre-built credential headers |
+| `claims` | :42 | Only the subkeys named in `CapabilityManifest.auth_claims` |
+
+Per-tier policy:
+
+| Tier | Projected identity |
+|---|---|
+| 1 `pure` | Nothing. `claims={}`, no `scheme`. Payload and schema only. |
+| 2 `helpers` | `scheme` + manifest-declared subkeys of `claims`, drawn from a fixed safe set (`sub`, `tenant`, `roles`, `scope`, `email`, `preferred_username`) |
+| 3 `brokered` | Identical to tier 2 |
+| 4 `toolkit` | Identical to tier 2 |
+
+**The governing invariant: the projected identity set never grows with tier.** Higher
+tiers buy more *actions* — mediated by the host broker — never more *secrets*. A tier-4
+snippet is strictly more powerful than a tier-2 snippet in what it can ask the broker to
+do, and exactly equally ignorant of credentials.
+
+This is enforced **structurally, not by policy**: `SandboxContext` has no `token` and no
+`headers` field, so there is no code path that could serialise one. A future contributor
+cannot leak a credential by forgetting a filter — the field does not exist.
+
+### Client patch allowlist (resolved OQ-7)
+
+A Web Worker has no DOM (G6), so client logic returns **typed patch operations** that
+the host page applies. The host owns the allowlist; anything not on it is discarded and
+logged. Patches are operations over existing field UIDs — **never markup, never
+structure**.
+
+Permitted operations:
+
+| Operation | Effect |
+|---|---|
+| `set_visibility(field_uid, bool)` | Show or hide a field |
+| `set_required(field_uid, bool)` | Toggle the required marker |
+| `set_enabled(field_uid, bool)` | Enable or disable input |
+| `set_value(field_uid, value)` | Write a computed value — only for fields the schema marks computable |
+| `set_hint(field_uid, text)` | Inline help or validation message |
+| `narrow_options(field_uid, subset)` | Restrict a select to a **subset of its already-declared** options — never new ones |
+
+Structurally refused (the host has no handler for them):
+
+- The submit URL / `form.action`, and the CSRF token meta tag (`renderers/html5.py`)
+- `form_uid`, `form_id`, `tenant` — identity is server-owned
+- Adding or removing fields or sections — structure is server-owned
+- Any change to a field's `name` or `uid`, which would remap submitted data
+- Raw HTML or DOM injection — patches are typed operations, and no `innerHTML` path exists
+- Navigation, cookies, and storage access
+
+Because the server re-runs every rule with a server counterpart (G7/C7), a forged or
+malicious patch can at worst produce a *misleading UI*; it can never produce an invalid
+submission.
 
 **Design note on `on_failure` (resolved OQ-3):** `required` and `on_failure` describe
 two distinct conditions and are deliberately kept separate. `required=True` continues
@@ -377,112 +498,148 @@ class HostBroker:
 
 ## 3. Module Breakdown
 
-Modules map to the brainstorm's four parallel tracks. **Track 1 (M1–M3) is a hard
-sequential prerequisite** — everything else builds on its contracts.
+Sixteen modules across four tracks. **Track 1 (M1–M6) is a hard sequential
+prerequisite** — it defines the contracts and both loading paths everything else
+builds on.
 
-### Track 1 — Contracts & Loader
+### Track 1 — Contracts & Dual-Source Loading
 
 #### Module 1: Snippet & Manifest Models
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/core/snippets.py`
-- **Responsibility**: `CapabilityTier`, `BrokerAllowlist`, `CapabilityManifest`,
-  `SnippetBundle`, `SandboxContext`, `SandboxOutcome`, `AbortSignal`, and the typed
-  exceptions (`SnippetIntegrityError`, `SnippetTierUnavailableError`,
-  `CapabilityDenied`).
+- **Responsibility**: `CapabilityTier`, `SnippetSource`, `SnippetStatus`,
+  `BrokerAllowlist`, `CapabilityManifest`, `SnippetBundle`, `SandboxContext`,
+  `SandboxOutcome`, `AbortSignal`, plus typed exceptions (`SnippetIntegrityError`,
+  `SnippetTierUnavailableError`, `CapabilityDenied`, `SnippetNotApprovedError`).
 - **Depends on**: `core/events.py` (`FormEventName`, `EventResolution`).
 
 #### Module 2: `on_failure` Binding Extension
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/core/events.py`
 - **Responsibility**: Add `on_failure: Literal["abort","continue"] = "continue"` to
-  `FormEventBinding` (line 54). Update the class docstring to distinguish it from
-  `required`. Re-export unchanged from `core/__init__.py`.
+  `FormEventBinding` (line 54); document how it differs from `required`. Re-export
+  unchanged from `core/__init__.py`.
 - **Depends on**: nothing. **Must not alter** existing field semantics (G10).
 
-#### Module 3: Snippet Loader & Registry Adapter
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/snippet_loader.py`
-- **Responsibility**: Walk the git-backed snippet root, parse manifests, verify SHA-256
-  source hashes, build the async adapter closure per bundle, register each through
-  `register_form_event()`. Refuse to register tier 3/4 bundles when gVisor is absent.
+#### Module 3: Snippet Source Protocol & Resolver Adapter
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/snippets/base.py`
+- **Responsibility**: The `SnippetSourceProtocol` both loaders implement, and the
+  **stable resolver closure** registered once per `(tenant, handler_ref)` via
+  `register_form_event()`. The closure resolves the currently-published bundle at
+  dispatch time, which is what makes runtime DB updates possible without
+  re-registration (see §2 Dual-source storage). Also owns the shared adapter that
+  `dispatch()` sees as an ordinary handler.
 - **Depends on**: Module 1, `services/event_registry.py:73`.
+- **Note**: This module exists specifically so that OQ-1 can be revisited later at the
+  cost of one implementation, not an architecture.
+
+#### Module 4: Git Snippet Loader
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/snippets/git_loader.py`
+- **Responsibility**: Walk the git-backed snippet root, parse manifests, verify SHA-256
+  source hashes, emit `SnippetBundle(source=GIT, tenant=None)`. Refuse tier 3/4 bundles
+  when gVisor is absent.
+- **Depends on**: Modules 1, 3.
+
+#### Module 5: Tenant Snippet Store & Migration
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/snippets/db_store.py`
+  + `packages/parrot-formdesigner/migrations/007_snippet_store.sql`
+- **Responsibility**: Versioned per-tenant snippet table (`tenant`, `handler_ref`,
+  `event`, `manifest`, sources, hashes, `status`, `version`, `approved_by`,
+  `approved_at`); read-through cache modelled on `FormRegistry._read_through()`
+  (`services/registry.py:1035`); `on_startup`/`on_shutdown` hooks mirroring
+  `registry.py:711,750`. Enforces the tier-2 cap for DB snippets unless an operator
+  raised it for that tenant.
+- **Depends on**: Modules 1, 3.
+
+#### Module 6: Tenant Approval Service
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/snippets/approval.py`
+- **Responsibility**: Draft → published → revoked lifecycle for DB snippets, mirroring
+  `FormVersionService.publish()` / `.get_published()` / `.list_versions()`
+  (`services/form_version.py:306,431,480`). Records approver identity and timestamp;
+  refuses to publish a bundle that fails the conformance gate. **This is the C4 human
+  approval gate for the DB source.**
+- **Depends on**: Modules 1, 5, 15.
 
 ### Track 2 — Server Sandbox
 
-#### Module 4: Context Projector
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/sandbox/projector.py`
+#### Module 7: Context Projector
+- **Path**: `.../services/sandbox/projector.py`
 - **Responsibility**: Convert a live `FormEventContext` into a `SandboxContext`,
-  projecting `auth_context` down to manifest-declared `auth_claims` only. Reject
-  non-serialisable values loudly rather than silently dropping them.
-- **Depends on**: Module 1, `core/events.py:106`.
+  applying the per-tier claim policy from §2 (resolved OQ-5). `token` and `headers`
+  are structurally absent from the target model. Reject non-serialisable values loudly.
+- **Depends on**: Module 1, `core/events.py:106`, `services/auth_context.py:20`.
 
-#### Module 5: Worker Protocol
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/sandbox/protocol.py`
-- **Responsibility**: Framed request/response encoding between host and worker —
+#### Module 8: Worker Protocol
+- **Path**: `.../services/sandbox/protocol.py`
+- **Responsibility**: Length-prefixed JSON framing with a strict size cap —
   `SandboxContext` in; `SandboxOutcome`, `AbortSignal`, or `BrokerRequest` out.
-  Length-prefixed JSON with a strict size cap.
 - **Depends on**: Module 1.
 
-#### Module 6: Subprocess Worker Pool (tiers 1–2)
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/sandbox/pool.py`
+#### Module 9: Subprocess Worker Pool (tiers 1–2)
+- **Path**: `.../services/sandbox/pool.py`
 - **Responsibility**: `SubprocessWorkerPool` implementing `SandboxProvider`. Warm
-  `asyncio.subprocess` workers with no network namespace, wall/CPU/memory budgets,
-  recycling after N invocations, health checks, bounded acquire queue, cold-start path.
-- **Depends on**: Modules 1, 5; `parrot.eval.sandbox.base:166`.
+  `asyncio.subprocess` workers, no network namespace, wall/CPU/memory budgets,
+  recycling, health checks, bounded acquire queue, cold-start path. **All sizing knobs
+  configurable with documented defaults (resolved OQ-6).**
+- **Depends on**: Modules 1, 8; `parrot.eval.sandbox.base:166`.
 
-#### Module 7: gVisor Worker Pool (tiers 3–4)
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/sandbox/gvisor_pool.py`
+#### Module 10: gVisor Worker Pool (tiers 3–4)
+- **Path**: `.../services/sandbox/gvisor_pool.py`
 - **Responsibility**: `GVisorWorkerPool` implementing `SandboxProvider`, backed by
   `SandboxConfig` (`sandboxtool.py:24`). `is_available()` probes `runsc`; absence is a
   hard boot failure for tiers 3–4, never a silent downgrade.
-- **Depends on**: Modules 1, 5; `parrot_tools.sandboxtool`.
+- **Depends on**: Modules 1, 8; `parrot_tools.sandboxtool`.
 
-#### Module 8: Host Broker
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/sandbox/broker.py`
+#### Module 11: Host Broker
+- **Path**: `.../services/sandbox/broker.py`
 - **Responsibility**: Validate every `BrokerRequest` against the manifest allowlist and
-  perform the I/O in the trusted process using `aiohttp`. Emit a security log event and
-  raise `CapabilityDenied` on any undeclared request. Enforce a per-invocation call cap.
-- **Depends on**: Modules 1, 5.
+  perform the I/O in the trusted process with `aiohttp`. Emit a structured security log
+  event and raise `CapabilityDenied` on any undeclared request. Enforce a
+  per-invocation call cap.
+- **Depends on**: Modules 1, 8.
 
-#### Module 9: Tier Router & Snippet Adapter
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/services/sandbox/router.py`
-- **Responsibility**: Route a bundle to the cheapest satisfying executor; own the
-  end-to-end adapter that `dispatch()` sees as a plain handler — project context,
-  execute, validate the returned `EventResolution`, rehydrate `AbortSignal` into
-  `FormEventAbort`, and apply the `on_failure` policy.
-- **Depends on**: Modules 1, 2, 4, 5, 6, 7, 8.
+#### Module 12: Tier Router
+- **Path**: `.../services/sandbox/router.py`
+- **Responsibility**: Route a bundle to the cheapest satisfying executor; project
+  context, execute, validate the returned `EventResolution`, rehydrate `AbortSignal`
+  into `FormEventAbort`, apply the `on_failure` policy.
+- **Depends on**: Modules 1, 2, 7, 8, 9, 10, 11.
 
 ### Track 3 — Client Runtime
 
-#### Module 10: Web Worker Runtime & Patch Protocol
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/renderers/worker_bridge.py`
+#### Module 13: Web Worker Runtime & Patch Allowlist
+- **Path**: `.../renderers/worker_bridge.py`
 - **Responsibility**: Generate the Worker boot block injected into
-  `_LIFECYCLE_SCRIPT_TEMPLATE` (`renderers/html5.py:423`); define the `postMessage`
-  patch protocol and the host-side allowlist of patch operations (OQ-7). Preserve the
-  existing remote-fetch bridge untouched.
+  `_LIFECYCLE_SCRIPT_TEMPLATE` (`renderers/html5.py:423`); implement the `postMessage`
+  patch protocol and the **host-side allowlist from §2 (resolved OQ-7)** — six permitted
+  operations, everything else discarded and logged. Preserve the existing remote-fetch
+  bridge untouched.
 - **Depends on**: Module 1.
 
-#### Module 11: TS Bundler Integration
+#### Module 14: TS Bundler Integration
 - **Path**: `packages/parrot-formdesigner/scripts/build_snippet_bundles.py`
-- **Responsibility**: Build-time TS → JS compilation of client halves into worker-ready
-  bundles with content hashes. **Never invoked at request time.**
+- **Responsibility**: Build-time TS → JS compilation into worker-ready bundles with
+  content hashes. **Never invoked at request time.**
 - **Depends on**: Module 1.
 
 ### Track 4 — Authoring & CI
 
-#### Module 12: CI Tier-Conformance Gate
+#### Module 15: Conformance & Equivalence Gate
 - **Path**: `packages/parrot-formdesigner/scripts/check_snippet_conformance.py`
-- **Responsibility**: Static `ast` analysis asserting each snippet stays inside its
-  declared tier — no imports beyond `stdlib_modules`, no I/O at tiers 1–2, no broker
-  calls outside the allowlist, Python/TS halves agree on `handler_ref` and `event`,
-  hashes match sources.
+- **Responsibility**: Two gates. **(a) Tier conformance** — static `ast` analysis
+  asserting no imports beyond `stdlib_modules`, no I/O at tiers 1–2, no broker calls
+  outside the allowlist, hashes matching sources. **(b) Semantic equivalence
+  (resolved OQ-8)** — every bundle ships fixture cases; the gate executes the Python
+  half and the compiled JS half against the same fixtures and fails on divergent
+  output. Importable by Module 6 so DB publishes run the same checks as PRs.
 - **Depends on**: Module 1.
 
-#### Module 13: LLM Authoring Surface
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/tools/snippet_authoring.py`
-- **Responsibility**: Toolkit + prompts for generating conformant bundles from a natural
-  language rule: emit Python half, TS half, and manifest; run the conformance gate
-  locally before proposing; surface a plain-language capability summary for the approver.
-- **Depends on**: Modules 1, 12.
-
----
+#### Module 16: LLM Authoring Surface
+- **Path**: `.../tools/snippet_authoring.py`
+- **Responsibility**: Toolkit and prompts for generating conformant bundles from a
+  natural-language rule: emit the Python half, the TS half, the manifest, **and the
+  equivalence fixtures OQ-8 requires**; run the gate locally before proposing; surface
+  a plain-language capability summary for the approver. Targets both sources — a PR for
+  platform snippets, a draft row for tenant snippets.
+- **Depends on**: Modules 1, 15.
 
 ## 4. Test Specification
 
@@ -496,28 +653,43 @@ sequential prerequisite** — everything else builds on its contracts.
 | `test_on_failure_defaults_to_continue` | M2 | New field defaults to `"continue"` |
 | `test_required_semantics_unchanged` | M2 | `required=True` still means *missing* handler → `RuntimeError`, NOT failed handler (G10) |
 | `test_existing_bindings_deserialize` | M2 | Bindings serialised before this feature still parse |
-| `test_loader_rejects_hash_mismatch` | M3 | Edited source without manifest update → `SnippetIntegrityError` at load |
-| `test_loader_rejects_tier3_without_gvisor` | M3 | `SnippetTierUnavailableError` when `runsc` absent (OQ-4) |
-| `test_loader_duplicate_ref_raises` | M3 | Two bundles, one `handler_ref` → `ValueError` from the registry |
-| `test_projector_strips_live_auth_context` | M4 | `SandboxContext.claims` contains only declared `auth_claims`; live object never crosses |
-| `test_projector_rejects_unserialisable` | M4 | Non-JSON-serialisable payload fails loudly |
-| `test_protocol_enforces_size_cap` | M5 | Oversized frame rejected, not truncated |
-| `test_pool_recycles_after_n` | M6 | Worker retired after the configured invocation count |
-| `test_pool_kills_on_timeout` | M6 | Wall-clock budget exceeded → worker killed, failure surfaced |
-| `test_pool_bounded_queue_times_out` | M6 | Exhausted pool times out rather than waiting unboundedly |
-| `test_pool_replaces_unhealthy_worker` | M6 | Failed `health_check()` → destroy and replace |
-| `test_gvisor_pool_is_available_probe` | M7 | `is_available()` correctly reports a missing `runsc` |
-| `test_broker_denies_undeclared_host` | M8 | HTTP to a non-allowlisted host → `CapabilityDenied` + security log |
-| `test_broker_denies_undeclared_table` | M8 | Query outside `query_tables` denied |
-| `test_broker_enforces_call_cap` | M8 | Per-invocation broker call limit enforced |
-| `test_router_selects_cheapest_tier` | M9 | Tier 1 routes to subprocess pool, tier 3 to gVisor pool |
-| `test_router_abort_rehydrates_exception` | M9 | `AbortSignal` → `FormEventAbort` with reason/message/status intact |
-| `test_router_invalid_resolution_is_failure` | M9 | Malformed return → `on_failure` policy, never partially applied |
-| `test_router_on_failure_abort` | M9 | `on_failure="abort"` raises through `dispatch()` |
-| `test_router_on_failure_continue` | M9 | `on_failure="continue"` logs and returns an empty `EventResolution()` |
-| `test_worker_patch_allowlist` | M10 | Patch operations outside the host allowlist are discarded |
-| `test_conformance_rejects_undeclared_import` | M12 | Tier-1 snippet importing `socket` fails the gate |
-| `test_conformance_rejects_half_mismatch` | M12 | Python/TS halves disagreeing on `handler_ref` fails |
+| `test_git_loader_rejects_hash_mismatch` | M4 | Edited source without manifest update → `SnippetIntegrityError` at load |
+| `test_git_loader_rejects_tier3_without_gvisor` | M4 | `SnippetTierUnavailableError` when `runsc` absent (OQ-4) |
+| `test_git_loader_duplicate_ref_raises` | M4 | Two bundles, one `handler_ref` → `ValueError` from the registry |
+| `test_projector_strips_live_auth_context` | M7 | `SandboxContext.claims` contains only declared `auth_claims`; live object never crosses |
+| `test_projector_rejects_unserialisable` | M7 | Non-JSON-serialisable payload fails loudly |
+| `test_protocol_enforces_size_cap` | M8 | Oversized frame rejected, not truncated |
+| `test_pool_recycles_after_n` | M9 | Worker retired after the configured invocation count |
+| `test_pool_kills_on_timeout` | M9 | Wall-clock budget exceeded → worker killed, failure surfaced |
+| `test_pool_bounded_queue_times_out` | M9 | Exhausted pool times out rather than waiting unboundedly |
+| `test_pool_replaces_unhealthy_worker` | M9 | Failed `health_check()` → destroy and replace |
+| `test_gvisor_pool_is_available_probe` | M10 | `is_available()` correctly reports a missing `runsc` |
+| `test_broker_denies_undeclared_host` | M11 | HTTP to a non-allowlisted host → `CapabilityDenied` + security log |
+| `test_broker_denies_undeclared_table` | M11 | Query outside `query_tables` denied |
+| `test_broker_enforces_call_cap` | M11 | Per-invocation broker call limit enforced |
+| `test_router_selects_cheapest_tier` | M12 | Tier 1 routes to subprocess pool, tier 3 to gVisor pool |
+| `test_router_abort_rehydrates_exception` | M12 | `AbortSignal` → `FormEventAbort` with reason/message/status intact |
+| `test_router_invalid_resolution_is_failure` | M12 | Malformed return → `on_failure` policy, never partially applied |
+| `test_router_on_failure_abort` | M12 | `on_failure="abort"` raises through `dispatch()` |
+| `test_router_on_failure_continue` | M12 | `on_failure="continue"` logs and returns an empty `EventResolution()` |
+| `test_worker_patch_allowlist` | M13 | Patch operations outside the host allowlist are discarded |
+| `test_conformance_rejects_undeclared_import` | M15 | Tier-1 snippet importing `socket` fails the gate |
+| `test_conformance_rejects_half_mismatch` | M15 | Python/TS halves disagreeing on `handler_ref` fails |
+| `test_resolver_survives_republish` | M3 | Re-publishing a DB snippet swaps the row; the registry entry is untouched and no `ValueError` is raised |
+| `test_resolver_registers_once_per_key` | M3 | Exactly one `register_form_event()` call per `(tenant, handler_ref)` regardless of version count |
+| `test_db_store_read_through_cache` | M5 | Published version served from cache; invalidated on republish |
+| `test_db_snippet_capped_at_tier2` | M5 | A tenant bundle declaring tier 3 is rejected unless the operator raised that tenant's cap |
+| `test_approval_refuses_unconformant` | M6 | `publish()` rejects a bundle failing the conformance gate |
+| `test_approval_records_approver` | M6 | Published row carries `approved_by` and `approved_at` |
+| `test_draft_never_executes` | M6 | A `DRAFT` snippet is never resolved by the resolver closure |
+| `test_projector_never_emits_token` | M7 | `SandboxContext` model has no `token`/`headers` field; a live `AuthContext` cannot round-trip one |
+| `test_projector_tier1_has_no_claims` | M7 | Tier 1 receives `claims={}` and no `scheme` |
+| `test_projector_claims_are_allowlisted` | M7 | Only manifest-declared subkeys from the safe set are projected |
+| `test_projector_tier4_claims_equal_tier2` | M7 | The identity set does not grow with tier |
+| `test_patch_rejects_structure_change` | M13 | Add/remove field, rename `uid`, or action-URL patches are discarded and logged |
+| `test_patch_narrow_options_subset_only` | M13 | `narrow_options` accepts a subset of declared options and rejects new ones |
+| `test_equivalence_gate_detects_divergence` | M15 | Python and JS halves returning different results for a shared fixture fail the build |
+| `test_equivalence_gate_requires_fixtures` | M15 | A bundle shipping no fixture cases fails the gate |
 
 ### Integration Tests
 
@@ -527,7 +699,11 @@ sequential prerequisite** — everything else builds on its contracts.
 | `test_snippet_abort_produces_http_error` | Snippet aborting `onBeforeSubmit` yields the correct status + safe user message; `onError` is NOT fired |
 | `test_schema_overrides_applied_shallow` | Snippet-returned overrides flow through `apply_schema_overrides()` with shallow-merge semantics preserved |
 | `test_payload_replacement_on_before_submit` | Snippet-replaced payload reaches the persistence layer |
-| `test_legacy_handler_still_works` | A hand-written `@register_form_event` handler is unaffected by the loader (G10) |
+| `test_legacy_handler_still_works` | A hand-written `@register_form_event` handler is unaffected by either loader (G10) |
+| `test_tenant_db_snippet_overrides_git` | With both a global git snippet and a tenant DB snippet on one `handler_ref`, the tenant's runs — via the existing registry fallback, no dispatcher change |
+| `test_git_snippet_serves_other_tenants` | A tenant without an override still gets the platform git snippet |
+| `test_republish_takes_effect_without_restart` | Publishing a new DB version changes dispatch behaviour with no process restart and no re-registration |
+| `test_revoked_snippet_falls_back_to_git` | Revoking a tenant snippet restores the platform snippet for that tenant |
 | `test_tier3_brokered_http_end_to_end` | Tier-3 snippet performs an allowlisted call through the broker and receives the result |
 | `test_client_worker_patch_round_trip` | Rendered form boots the Worker, posts field values, receives and applies a patch |
 | `test_client_bypass_rejected_by_server` | Submitting with the client bypassed still fails server-side validation (G7) |
@@ -574,7 +750,9 @@ def fake_gvisor_absent(monkeypatch: pytest.MonkeyPatch) -> None:
 - [ ] **G5/C5** — Server-side Python runs only in pooled workers; no `exec`/`eval` of snippet source exists in the aiohttp process
 - [ ] **G6/C6** — Client code runs in a Web Worker with no DOM handle; patches are applied by the host through an allowlist
 - [ ] **G7/C7** — A tampered or disabled client cannot bypass any rule with a server counterpart
-- [ ] **G8/C8** — Snippets load exclusively from the git-backed tree; no runtime DB table stores executable code
+- [ ] **G8/C8 (hybrid)** — Both sources load into one registry: git snippets register globally, DB snippets per tenant; a tenant snippet overrides a platform snippet of the same `handler_ref` purely through the existing `get_form_event()` fallback
+- [ ] **G8b** — No DB snippet executes in `DRAFT` or `REVOKED` status; publishing records `approved_by` and `approved_at`
+- [ ] **G8c** — Re-publishing a DB snippet changes behaviour without a restart and without a second `register_form_event()` call
 - [ ] **G9/C9** — `on_failure="abort"` rejects the submission via `FormEventAbort`; `on_failure="continue"` logs and proceeds with an empty resolution
 - [ ] **G10** — `services/event_dispatcher.py` `dispatch()` is byte-for-byte unchanged; all pre-existing handlers and bindings pass their original tests
 
@@ -584,6 +762,11 @@ def fake_gvisor_absent(monkeypatch: pytest.MonkeyPatch) -> None:
 - [ ] Pool exhaustion produces a bounded timeout, never an unbounded wait
 - [ ] A denied capability request emits a structured security log event including tenant, `handler_ref`, and the denied request
 - [ ] CI conformance gate fails the build on any snippet that exceeds its declared tier
+- [ ] **Claim projection (OQ-5)** — `SandboxContext` has no `token`/`headers` field; tier 1 receives no identity at all; the projected claim set is identical for tiers 2, 3, and 4
+- [ ] **Pool tuning (OQ-6)** — Every pool sizing knob is configurable, ships a documented default, and a tuning runbook lands in `docs/`
+- [ ] **Patch allowlist (OQ-7)** — The host applies only the six allowlisted patch operations; everything else is discarded and logged
+- [ ] **Half equivalence (OQ-8)** — Every bundle ships equivalence fixtures; CI executes both halves against them and fails on divergence
+- [ ] DB-sourced tenant snippets are capped at tier 2 unless a platform operator explicitly raises that tenant's cap
 
 ---
 
@@ -725,6 +908,12 @@ def get_form_event(                                         # line 149
 
 def list_form_events(tenant: str | None = None) -> list[tuple[str | None, str]]: ...  # line 180
 
+def _clear_event_registry_for_tests() -> None: ...          # line 206 — TEST ONLY
+# CRITICAL: there is NO public unregister/override API. register_form_event() raises
+# ValueError when (tenant, handler_ref) is already present (line 141). This is why
+# M3 registers ONE stable resolver closure per key rather than re-registering
+# on every DB republish.
+
 # packages/parrot-formdesigner/src/parrot_formdesigner/services/event_dispatcher.py
 _VISIT_PRE_HOOKS: frozenset[str] = frozenset({"visit.onArrival"})   # line 61
 
@@ -801,6 +990,26 @@ _LIFECYCLE_SCRIPT_TEMPLATE = (...)                          # line 423 (used at 
 # Client bridge: EVENTS_CONFIG, emit(), bridge(); remote endpoint
 # '/api/v1/{tenant}/forms/{form_uid}/events/{eventName}'  (line 449; tenant-qualified per FEAT-421)
 
+# packages/parrot-formdesigner/src/parrot_formdesigner/services/auth_context.py
+class AuthContext(BaseModel):                               # line 20
+    scheme: Literal["none", "bearer", "api_key", "custom"]  # line 39 — safe metadata
+    token: str | None = None                                # line 40 — SECRET, never projected
+    headers: dict[str, str] = {}                            # line 41 — SECRET, never projected
+    claims: dict[str, Any] = {}                             # line 42 — selectively projectable
+
+# packages/parrot-formdesigner/src/parrot_formdesigner/services/registry.py
+class FormRegistry:                                         # line 240
+    async def on_startup(self, app: "web.Application") -> None: ...   # line 711
+    async def on_shutdown(self, app: "web.Application") -> None: ...  # line 750
+    async def _read_through(self, ...) -> ...: ...          # line 1035 — cache pattern for M5
+class FormStorage(ABC): ...                                 # line 63 — storage ABC precedent
+
+# packages/parrot-formdesigner/src/parrot_formdesigner/services/form_version.py
+class FormVersionService:                                   # line 251
+    async def publish(self, ...) -> ...: ...                # line 306 — approval pattern for M6
+    async def get_published(self, ...) -> ...: ...          # line 431
+    async def list_versions(self, ...) -> ...: ...          # line 480
+
 # packages/parrot-formdesigner/src/parrot_formdesigner/services/partial_saves.py
 class PartialSaveStore: ...                                 # line 24 — dispatches NO lifecycle events
 ```
@@ -819,6 +1028,12 @@ class PartialSaveStore: ...                                 # line 24 — dispat
 | `GVisorWorkerPool` | `SandboxConfig` | constructs config | `parrot_tools/sandboxtool.py:24` |
 | Worker boot block | `_LIFECYCLE_SCRIPT_TEMPLATE` | template extension | `renderers/html5.py:423` |
 | Snippet resolution | `FormSchema.events` | unchanged read | `core/schema.py:368` |
+| Tenant-over-platform precedence | `get_form_event()` | existing tenant→global fallback | `services/event_registry.py:149` |
+| `ContextProjector` | `AuthContext.claims` | reads `claims` only; never `token`/`headers` | `services/auth_context.py:39-42` |
+| `DbSnippetStore` | `FormRegistry._read_through()` | cache pattern precedent | `services/registry.py:1035` |
+| `DbSnippetStore` | `FormRegistry.on_startup/on_shutdown` | aiohttp lifecycle precedent | `services/registry.py:711,750` |
+| `SnippetApprovalService` | `FormVersionService.publish()` | publish/version pattern precedent | `services/form_version.py:306` |
+| `007_snippet_store.sql` | `migrations/` | next sequential migration (006 is latest) | `packages/parrot-formdesigner/migrations/` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -842,8 +1057,16 @@ Re-confirmed absent on 2026-08-24 across `packages/` (excluding `build/lib`):
   only does `fetch`-based remote bridging.
 - ~~A TypeScript build step in `parrot-formdesigner`~~ — does not exist; M11 creates it.
 - ~~`parrot.eval.sandbox` pooling implementation~~ — only `NoopSandboxProvider`
-  (`base.py:259`) exists. There is **no** real pooling provider to inherit from; M6/M7
+  (`base.py:259`) exists. There is **no** real pooling provider to inherit from; M9/M10
   are the first concrete implementations.
+- ~~`unregister_form_event` / `override_form_event`~~ — **do not exist**. The registry
+  exposes only `register_form_event`, `get_form_event`, `list_form_events`, and the
+  test-only `_clear_event_registry_for_tests()` (`event_registry.py:206`). Do not
+  attempt to mutate `_EVENT_REGISTRY` directly.
+- ~~A snippet table or migration~~ — does not exist. `migrations/` currently ends at
+  `006_backfill_element_uids.py`; M5 adds `007_snippet_store.sql`.
+- ~~`SnippetSource` / `SnippetStatus` / `SnippetApprovalService`~~ — do not exist; M1
+  and M6 create them.
 
 ### Verified Environment Facts
 
@@ -875,6 +1098,25 @@ Re-confirmed absent on 2026-08-24 across `packages/` (excluding `build/lib`):
 - Register snippets through `register_form_event()` rather than touching
   `_EVENT_REGISTRY` directly — the duplicate-ref guard is a feature, not an obstacle.
 
+### Pool sizing defaults (resolved OQ-6)
+
+Starting values, **all configurable**; a tuning runbook ships in `docs/`. These are
+defensible defaults chosen to fail safe under load, not measured against a traffic
+profile — the runbook explains how to tune each against real p95 numbers.
+
+| Knob | Default | Rationale |
+|---|---|---|
+| `tier12_pool_size` | 4 workers **per process** | Covers typical concurrent submits without holding much RSS. Under gunicorn `-w N` the real total is N × 4 — size against that, not this number |
+| `tier34_pool_size` | 2 workers per process | Tier 3–4 traffic is rare by design; containers are expensive to hold warm |
+| `recycle_after_invocations` | 500 | Bounds any slow state leak in a long-lived worker |
+| `recycle_after_seconds` | 3600 | Backstop for low-traffic workers that never hit the invocation count |
+| `acquire_queue_timeout_ms` | 2000 | Bounded wait, then `on_failure` policy. **Never unbounded** |
+| `max_queue_depth` | 32 | Beyond this, fail fast rather than accumulate latency |
+| `health_check_interval_s` | 30 | Detects poisoned workers between requests, not on the hot path |
+| `cold_start_timeout_ms` | 5000 | A pool miss must not hang a submit indefinitely |
+| Default `timeout_ms` (manifest) | 5000 | Per-snippet, overridable within `[1, 30_000]` |
+| Default `max_memory_mb` (manifest) | 128 | Per-snippet, overridable within `[16, 2048]` |
+
 ### Known Risks / Gotchas
 
 Derived from the brainstorm's edge-case table; each row is a behavior the
@@ -895,6 +1137,27 @@ implementation must produce.
 | Snippet edited without manifest update | SHA mismatch at load → refuse to register. Fail at **boot**, not at request time |
 | Two snippets claim one `handler_ref` | Existing `register_form_event()` `ValueError` surfaces as a boot failure |
 | Binding `required=True`, snippet missing | Existing FEAT-188 `RuntimeError`, unchanged |
+
+**Additional risks introduced by the hybrid source model (OQ-1):**
+
+- **The registry has no unregister.** `register_form_event()` raises `ValueError` on a
+  duplicate key (`event_registry.py:141`) and there is no public removal API — only
+  `_clear_event_registry_for_tests()` (:206). Any design that re-registers a DB snippet
+  on republish **will** break. Register the stable resolver closure exactly once per
+  `(tenant, handler_ref)`; version lookup happens inside the closure.
+- **Two trust models, one execution path.** A git snippet is gated by PR review; a DB
+  snippet by in-app publish. The sandbox does not distinguish them, so the *approval*
+  code is now security-critical in its own right — M6 must refuse to publish anything
+  that fails the M15 gate, and that check cannot be bypassed by a direct DB write.
+- **Executable code in a table is a high-value target.** A SQL injection anywhere in the
+  application escalates toward RCE via the snippet path. The tier-2 cap on DB snippets
+  is the primary mitigation; the sandbox is the second.
+- **Two audit trails.** Git history covers platform snippets; `approved_by`/`approved_at`
+  rows cover tenant snippets. Incident response needs both, and they must be
+  correlatable — log `source` on every dispatch.
+- **Cache coherence across processes.** The read-through cache is per-process. Under
+  multi-worker gunicorn, a republish must invalidate every worker's cache, not just the
+  one that served the publish request. See OQ-6's per-process multiplier note.
 
 **Additional risks specific to this spec:**
 
@@ -930,26 +1193,38 @@ runtime (ops) and a JS bundler (build-time).
 
 - **Default isolation unit**: `mixed`
 
-- **Phase 1 — sequential, single worktree.** Modules **M1, M2, M3** (Track 1) run in
-  dependency order in one worktree. They define the Pydantic contracts every other
-  track builds against, and M2 touches `core/events.py`, a file with cross-feature
-  exposure. These must stabilise and merge before anything else starts.
+- **Phase 1 — sequential, single worktree.** Modules **M1–M6** (Track 1) run in
+  dependency order in one worktree. They define the Pydantic contracts, both loading
+  paths, and the approval gate that every other track builds against. M2 touches
+  `core/events.py`, a file with cross-feature exposure, and M5 adds a migration —
+  both warrant a single serialized worktree. These must merge before Phase 2 starts.
+
+  Within Phase 1 there is one internal parallel opportunity: **M4 (git loader)** and
+  **M5+M6 (DB store + approval)** are independent once **M3 (source protocol)** lands.
+  If Phase 1 becomes the critical path, split those into two short-lived worktrees.
 
 - **Phase 2 — parallelizable across three worktrees** once Phase 1 merges:
-  - **Worktree A — Track 2 (server sandbox)**: M4, M5, M6, M7, M8, M9. All new files
-    under `services/sandbox/`. Internally sequential (M9 depends on M4–M8), but shares
-    no files with B or C.
-  - **Worktree B — Track 3 (client runtime)**: M10, M11. Touches
-    `renderers/html5.py` and build config only.
-  - **Worktree C — Track 4 (authoring & CI)**: M12, M13. Depends on Track 1's contracts,
-    not on Track 2 or 3. All new files under `scripts/` and `tools/`.
+  - **Worktree A — Track 2 (server sandbox)**: M7–M12. All new files under
+    `services/sandbox/`. Internally sequential (M12 depends on M7–M11), shares no files
+    with B or C.
+  - **Worktree B — Track 3 (client runtime)**: M13, M14. Touches `renderers/html5.py`
+    and build config only.
+  - **Worktree C — Track 4 (authoring & CI)**: M15, M16. Depends on Track 1's
+    contracts, not on Track 2 or 3.
 
-- **Rationale**: Forcing all thirteen modules sequentially would serialise roughly three
-  weeks of genuinely independent work for no isolation benefit — Tracks 2, 3, and 4
-  touch disjoint file sets. Conversely, starting all four tracks on day one would have
-  three tracks building against contracts still in flux, which is the more expensive
-  failure. Splitting at the Track-1 boundary buys the parallelism where it is real and
-  pays the sequencing cost only where the dependency is genuine.
+  **Ordering caveat introduced by OQ-1**: M6 (approval service) depends on M15
+  (conformance gate) to refuse unconformant publishes. Either land a minimal M15 stub
+  in Phase 1 and complete it in Worktree C, or accept that M6's gate-enforcement task
+  closes after Worktree C merges. The former is preferred — the stub is small and keeps
+  the security property true from the first commit.
+
+- **Rationale**: Forcing all sixteen modules sequentially would serialise weeks of
+  genuinely independent work — Tracks 2, 3, and 4 touch disjoint file sets. Starting all
+  four tracks on day one would have three tracks building against contracts still in
+  flux, the more expensive failure. Splitting at the Track-1 boundary buys parallelism
+  where it is real and pays sequencing cost only where the dependency is genuine. The
+  hybrid decision (OQ-1) grew Track 1 from three modules to six, which makes Phase 1
+  the critical path — hence the internal split option above.
 
 - **Cross-feature dependencies — coordinate before touching shared files:**
   - **`formbuilder-formschema-persistency` (FEAT-457, 15 tasks, in flight)** — the live
@@ -968,62 +1243,84 @@ runtime (ops) and a JS bundler (build-time).
 
 ## 8. Open Questions
 
-> Carried forward from `sdd/proposals/formbuilder-custom-code.brainstorm.md`.
-> Three were resolved during `/sdd-spec` clarification and are reflected in the
-> spec body; five remain open.
+> All questions carried from `sdd/proposals/formbuilder-custom-code.brainstorm.md`
+> are now **resolved**. Each resolution names where it is reflected in the spec body,
+> so the decision trail is auditable and no decision lives only in this section.
 
-**Resolved**
-
-- [x] **OQ-3** — How should the per-binding failure policy (C9) be expressed, given that
-  `required` currently means "handler *missing*" rather than "handler *failed*"?
-  — *Resolved during /sdd-spec*: **Add a new `on_failure: Literal["abort","continue"]
-  = "continue"` field** to `FormEventBinding`. Keep `required` semantics untouched.
-  The two conditions stay distinct; the change is additive and preserves G10.
-  *Reflected in*: §2 Data Models (`FormEventBinding` block + design note),
-  §3 Module 2, §4 `test_required_semantics_unchanged`, §5 G9/G10 criteria.
-- [x] **OQ-4** — gVisor is absent in this environment. Is `runsc` an acceptable
-  deployment prerequisite for tiers 3–4, or must those tiers run degraded on plain
-  Docker? — *Resolved during /sdd-spec*: **Hard prerequisite.** Tiers 3–4 refuse to
-  load at boot when `runsc` is unavailable. Tiers 1–2 are unaffected and need no
-  container runtime. No silent degradation to a weaker boundary.
-  *Reflected in*: §2 Overview, §3 Modules 3 and 7, §5 operational criteria,
+- [x] **OQ-1 (highest impact)** — Does git-backed storage survive the multi-tenant
+  requirement? — *Resolved 2026-08-24*: **Hybrid.** Platform-wide snippets stay
+  git-backed and PR-approved; tenant-specific snippets live in a versioned DB table
+  approved in-app by a tenant admin. Both feed one registry, one sandbox, one broker.
+  Precedence is free — `get_form_event()` already resolves `(tenant, ref)` before
+  `(None, ref)` (`event_registry.py:149`). DB snippets are capped at tier 2 unless an
+  operator raises that tenant's cap.
+  *Reflected in*: §1 G8 + Non-Goals, §2 Overview → "Dual-source storage" + Component
+  Diagram, §2 Data Models (`SnippetSource`, `SnippetStatus`), §3 Modules 3–6,
+  §4 dual-source unit + integration tests, §5 G8/G8b/G8c, §6 contract additions,
+  §7 "Additional risks introduced by the hybrid source model", Worktree Strategy Phase 1.
+- [x] **OQ-2** — Are partial-save events a deliberate v1 deferral? — *Resolved
+  2026-08-24*: **Confirmed deferral.** v1 ships the five existing `FormEventName`
+  members only. `PartialSaveStore` (`services/partial_saves.py:24`) dispatches no
+  events today, so adding `onBeforePartialSave` / `onAfterPartialSave` later is
+  additive and non-breaking.
+  *Reflected in*: §1 Goals G2 + Non-Goals, §6 "Does NOT Exist".
+- [x] **OQ-3** — How should the per-binding failure policy be expressed, given that
+  `required` means "handler *missing*"? — *Resolved during /sdd-spec*: **Add a new
+  `on_failure: Literal["abort","continue"] = "continue"` field.** `required` semantics
+  are untouched; the two conditions stay distinct; the change is additive (G10).
+  *Reflected in*: §2 Data Models + design note, §3 Module 2,
+  §4 `test_required_semantics_unchanged`, §5 G9/G10.
+- [x] **OQ-4** — Is gVisor an acceptable prerequisite for tiers 3–4? — *Resolved
+  during /sdd-spec*: **Hard prerequisite.** Tiers 3–4 refuse to load at boot when
+  `runsc` is unavailable; tiers 1–2 are unaffected and need no container runtime. No
+  silent degradation.
+  *Reflected in*: §2 Overview, §3 Modules 4 and 10, §5 operational criteria,
   §6 Verified Environment Facts, §7 External Dependencies.
-- [x] **v1 scope** — Should FEAT-459 cover all four tracks or a reduced slice?
-  — *Resolved during /sdd-spec*: **Full Option D — all four tracks, tiers 1–4.**
-  *Reflected in*: §3 (thirteen modules across four tracks), Worktree Strategy.
+- [x] **OQ-5** — Which `AuthContext` claims are safe at each tier? — *Resolved
+  2026-08-24*: **`token` and `headers` never cross the boundary at any tier** — they
+  are live credentials (`auth_context.py:40,41`). Tier 1 receives no identity at all.
+  Tiers 2–4 receive `scheme` plus manifest-declared subkeys of `claims` from a fixed
+  safe set (`sub`, `tenant`, `roles`, `scope`, `email`, `preferred_username`). The
+  governing invariant: **the projected identity set never grows with tier** — higher
+  tiers buy more brokered *actions*, never more *secrets*. Enforced structurally:
+  `SandboxContext` has no `token`/`headers` field, so no code path can serialise one.
+  *Reflected in*: §2 "Auth claim projection policy", §3 Module 7, §4 four projector
+  tests, §5 OQ-5 criterion, §6 `AuthContext` contract entry.
+- [x] **OQ-6** — How should the warm pools be sized? — *Resolved 2026-08-24*:
+  **Documented defaults, every knob configurable, plus a tuning runbook.** Ten knobs
+  with starting values chosen to fail safe under load rather than to match an assumed
+  traffic profile. Note the per-process multiplier: under gunicorn `-w N` the real pool
+  total is N × the configured size.
+  *Reflected in*: §3 Module 9, §5 OQ-6 criterion, §7 "Pool sizing defaults" table.
+- [x] **OQ-7** — Where is the line for client-authoritative logic? — *Resolved
+  2026-08-24*: **A six-operation host-side allowlist.** The Worker returns typed patch
+  operations — `set_visibility`, `set_required`, `set_enabled`, `set_value`,
+  `set_hint`, `narrow_options` — over existing field UIDs. Never markup, never
+  structure, never identity, never the action URL or CSRF token. Anything else is
+  discarded and logged. Because the server re-runs every rule with a counterpart
+  (G7/C7), a forged patch can at worst mislead the UI, never corrupt a submission.
+  *Reflected in*: §2 "Client patch allowlist", §3 Module 13, §4 three patch tests,
+  §5 OQ-7 criterion.
+- [x] **OQ-8** — What enforces that the Python and TS halves agree? — *Resolved
+  2026-08-24*: **CI equivalence tests over shared fixtures.** Every bundle ships fixture
+  cases; the gate executes both halves against them and fails the build on divergent
+  output. The LLM authoring surface must generate the fixtures alongside the code, and
+  the same gate is importable by the DB approval service so in-app publishes are held
+  to the PR standard.
+  *Reflected in*: §2 Overview point 3, §3 Modules 15 and 16, §4 two equivalence tests,
+  §5 OQ-8 criterion.
 
-**Open**
+### Decisions deferred to implementation
 
-- [ ] **OQ-1 (highest impact)** — Does git-backed storage (C8) survive contact with the
-  multi-tenant requirement? A merged PR per tenant rule means turnaround measured in
-  CI-and-review time, tenant logic visible to all repo readers, and isolation by
-  directory convention rather than row-level access control. Brainstorm Option C exists
-  precisely for this. The architecture here is deliberately structured so that a later
-  swap to DB-backed storage costs **only M3 (the loader)** — M1, M4–M9 all survive. The
-  answer should still be deliberate rather than discovered in production.
-  — *Owner: Jesus Lara*
-- [ ] **OQ-2** — Partial saves were named in the original brief but excluded by C2.
-  Confirm this is a deliberate v1 deferral rather than an oversight. `PartialSaveStore`
-  (`services/partial_saves.py:24`) currently dispatches no events, so adding them later
-  is additive and non-breaking. — *Owner: Jesus Lara*
-- [ ] **OQ-5** — Which `AuthContext` claims are safe to expose at each tier? The spec
-  establishes the mechanism (`CapabilityManifest.auth_claims` + `ContextProjector`); the
-  concrete per-tier claim allowlist still needs deciding. Blocks M4's default policy,
-  not its structure. — *Owner: Jesus Lara*
-- [ ] **OQ-6** — Warm pool sizing and recycling policy: workers per tier, invocations
-  before recycle, queue depth before a submit is failed rather than queued. Needs a
-  load-profile answer, not a guess. Note the per-process multiplier under multi-worker
-  gunicorn (see §7). — *Owner: Jesus Lara / ops*
-- [ ] **OQ-7** — Per C7, client code is authoritative for "client-only concerns". Where
-  exactly is that line? A Web Worker cannot touch the DOM, so purely-visual logic must
-  return patches the host applies — meaning the *host* decides what a patch may change.
-  That allowlist needs defining. Blocks M10's policy table, not its structure.
-  — *Owner: Jesus Lara*
-- [ ] **OQ-8** — When the LLM generates a Python/TS pair from one intent, what enforces
-  that they agree? CI equivalence tests over shared fixtures, generation from a single
-  intermediate representation, or accepted drift with the server as tiebreaker? M12
-  currently checks only `handler_ref`/`event` agreement, not semantic equivalence.
-  — *Owner: Jesus Lara*
+Not open questions — these are bounded choices a task may make and record:
+
+- The exact safe-claim set may be narrowed further per deployment; the spec fixes the
+  *maximum*, not a mandate to expose all six.
+- Whether M15's stub lands in Phase 1 or M6's gate-enforcement task closes after
+  Worktree C (see Worktree Strategy "Ordering caveat").
+- Cross-process cache invalidation mechanism for DB republishes under multi-worker
+  gunicorn (listen/notify, TTL, or explicit broadcast) — the requirement is fixed, the
+  mechanism is not.
 
 ---
 
@@ -1031,4 +1328,5 @@ runtime (ops) and a JS bundler (build-time).
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| 0.2 | 2026-08-24 | Jesus Lara | Resolved all six remaining open questions. **OQ-1 → hybrid dual-source storage** (git for platform, DB for tenant), which grew Track 1 from 3 to 6 modules and added the stable-resolver design forced by the registry having no unregister API. OQ-2 deferral confirmed. OQ-5 claim-projection policy (credentials never cross; identity set does not grow with tier). OQ-6 pool defaults + tuning runbook. OQ-7 six-operation patch allowlist. OQ-8 CI equivalence fixtures. Module count 13 → 16; contract extended with `AuthContext`, `FormRegistry`, `FormVersionService`, and registry-mutation facts. |
 | 0.1 | 2026-08-24 | Jesus Lara | Initial draft from `formbuilder-custom-code.brainstorm.md` (Option D). Resolved OQ-3 (`on_failure` field), OQ-4 (gVisor hard prerequisite), and v1 scope (full four-track, tiers 1–4). Codebase contract re-verified at commit `644b99c1f`; brainstorm line numbers for `FormEventsConfig` and `FormEventContext` corrected. |
