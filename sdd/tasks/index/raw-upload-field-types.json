@@ -50,7 +50,7 @@
       "feature_id": "FEAT-460",
       "feature": "raw-upload-field-types",
       "spec": "sdd/specs/raw-upload-field-types.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Depends on FileEnvelope (TASK-2442). Creates a new file (no conflicts), but called by the upload handler so must be ready first.",
       "assigned_to": null,
       "started_at": "2026-08-24T23:03:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2444-thumbnail-service.md"
+      "completed_at": "2026-08-24T23:08:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2444-thumbnail-service.md"
     },
     {
       "id": "TASK-2445",
