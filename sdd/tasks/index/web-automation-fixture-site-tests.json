@@ -14,14 +14,14 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "No dependencies; must land before TASK-2408/2409 which both consume this fixture.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T10:13:54+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2407-local-fixture-site.md",
       "verification": null
@@ -36,7 +36,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-2407"],
+      "depends_on": [
+        "TASK-2407"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs local_fixture_site (TASK-2407). TASK-2409 depends on this task's fake_broker fixture too.",
       "assigned_to": null,
@@ -55,7 +57,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "XL",
-      "depends_on": ["TASK-2407", "TASK-2408"],
+      "depends_on": [
+        "TASK-2407",
+        "TASK-2408"
+      ],
       "parallel": false,
       "parallelism_notes": "Hardest module — needs both the fixture site and the fake_broker/real-driver fixtures from the prior two tasks.",
       "assigned_to": null,
