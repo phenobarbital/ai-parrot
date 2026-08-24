@@ -184,10 +184,54 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: **Contract correction, verified by reading the actual code**: the
+spec's External Dependencies table and this task's own module docstring
+pattern reference say Calendar v3 is accessed via `google-api-python-client`
+— false. `packages/ai-parrot/src/parrot/interfaces/google.py`'s own
+module docstring literally states "Simplified async-only implementation
+using aiogoogle", and its imports confirm it (`from aiogoogle import
+Aiogoogle`, no `googleapiclient` import anywhere). The test scaffold's
+`mock_v3.events().insert(...)` shape matches `googleapiclient.discovery`'s
+sync, chained-resource style, not aiogoogle's per-call async discovery
+(`execute_api_call(service_name, api_name, method_chain, **kwargs)`,
+opening a fresh `async with Aiogoogle(...)` context per call).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Given this, promoted `get_calendar_client()` to return a new
+`CalendarClient` wrapper (added to `interfaces/google.py`, next to
+`GoogleClient`) with `insert_event`/`list_events`/`patch_event` methods
+that each delegate to the *existing* `GoogleClient.execute_api_call`
+plumbing (unchanged) — reusing the auth/scope/discovery machinery exactly
+as instructed, just not via `googleapiclient`. Verified via grep that
+`get_calendar_client()` has zero existing callers, so the signature
+promotion (`Dict[str, Any]` → `CalendarClient`) is safe.
 
-**Deviations from spec**: none | describe if any
+`GoogleCalendarToolkit(AbstractToolkit)` (auto_open=True, FEAT-391) exposes
+`create_event`/`list_events`/`update_event`, each returning a structured
+`CalendarEvent` (Pydantic model) rather than the raw API dict, per scope.
+`update_event` builds a PATCH body containing only the fields the caller
+actually supplied — verified by a dedicated test asserting the body
+contains *only* the changed field. `_require_tz_aware()` parses every
+`start`/`end` via `datetime.fromisoformat()` and rejects a missing
+`tzinfo`, satisfying "all datetimes are timezone-aware." My own 9 tests
+mock `CalendarClient` directly (not `googleapiclient`'s `mock_v3` shape) —
+zero network. Also found and worked around: existing `test_places.py` (3
+failures) and `packages/ai-parrot/tests/test_google_client.py` (1
+collection error, `ModuleNotFoundError: parrot.utils.types`) are both
+pre-existing and unrelated — confirmed via `git stash` before/after
+comparison, not touched. Full `tests/google/test_calendar.py` +
+`tests/scraping/` + `tests/business_automation/` suites (853 tests, plus
+the pre-existing places.py failures) re-run — zero regressions from this
+change. `ruff check`: the pre-existing unused-selenium-import findings in
+`interfaces/google.py` are untouched by this diff (confirmed via
+before/after `git stash` count comparison); the two new files are clean
+except the same `UP006`/`UP035`/`UP045` pyupgrade-style debt already
+established by this feature's other files.
+
+**Deviations from spec**: The `google-api-python-client` → `aiogoogle`
+correction above is the only substantive deviation, and it is a correction
+to a demonstrably stale contract, not a design choice — the acceptance
+criteria (usable client, valid insert/list/update bodies, timezone
+enforcement, zero network in tests) are satisfied identically regardless of
+which underlying Google API library is used.

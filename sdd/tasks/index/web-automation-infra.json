@@ -196,7 +196,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -204,8 +204,8 @@
       "parallelism_notes": "Touches only parrot_tools/google/ and interfaces/google.py — zero file overlap with every other task in this feature. The one genuinely parallelizable worktree candidate (spec Worktree Strategy).",
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2393-google-calendar-tools.md"
+      "completed_at": "2026-08-24T00:09:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2393-google-calendar-tools.md"
     },
     {
       "id": "TASK-2394",
