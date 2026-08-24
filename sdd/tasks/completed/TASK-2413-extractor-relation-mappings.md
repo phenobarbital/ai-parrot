@@ -164,10 +164,18 @@ def test_yaml_malformed_relation_raises():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Added `YamlExtractor._parse_relation()` (parses the `relation:`
+block into `RelationSpec`, raising `TypeError`/`ValueError` naming the
+field on malformed input) and mirrored it as
+`JsonSchemaExtractor._parse_relation()` for `x-relation`, following the
+`x-options-source` pattern. 8 new tests pass covering both directions,
+full round-trip of all `RelationSpec` fields (`key_field`, `display_field`,
+`on_delete`, `filters`), and malformed-input rejection. Existing
+yaml/jsonschema tests (102) still green; full unit suite shows identical
+failure set to baseline (no regressions). `ruff check` clean on all new
+lines (pre-existing findings elsewhere in both files, untouched by this
+diff, left as-is).
 
 **Deviations from spec**: none

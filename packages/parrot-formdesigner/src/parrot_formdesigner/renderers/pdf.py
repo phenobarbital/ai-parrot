@@ -34,51 +34,52 @@ from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
-
 logger = logging.getLogger(__name__)
 
 
 # AcroForm-unsupported FieldTypes — Q4 resolution.
-_UNSUPPORTED_TYPES = frozenset({
-    FieldType.FILE,
-    FieldType.IMAGE,
-    FieldType.ARRAY,
-    FieldType.GROUP,
-})
+_UNSUPPORTED_TYPES = frozenset(
+    {
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.ARRAY,
+        FieldType.GROUP,
+    }
+)
 
 # New field types that emit RenderWarning in PDF (rendered as placeholder textfields)
-_PDF_FALLBACK_NEW_TYPES = frozenset({
-    FieldType.SIGNATURE,
-    FieldType.REMOTE_RESPONSE,
-    FieldType.AVAILABILITY,
-    FieldType.TRANSFER_LIST,
-    FieldType.DYNAMIC_SELECT,
-    # Phase 3 — FEAT-170
-    FieldType.REST,
-    # FEAT-300 — formula fields (evaluator is FEAT-301)
-    FieldType.FORMULA,
-    # FEAT-448 (TASK-2337) — none of the twelve absorbed types is natively
-    # fillable as an AcroForm widget (no color/emoji/tree/signature/upload
-    # field kinds exist in the PDF form spec); all twelve render as
-    # placeholder textfields, same posture as SIGNATURE/REST above.
-    FieldType.SEARCH,
-    FieldType.MASKED,
-    FieldType.COLOR_PICKER,
-    FieldType.EMOJI,
-    FieldType.CRON,
-    FieldType.TREE_SELECT,
-    FieldType.SIGNATURE_PAD,
-    FieldType.CREDIT_CARD,
-    FieldType.IMAGE_DROPZONE,
-    FieldType.MULTI_UPLOAD,
-    FieldType.AI_CAPTURE,
-    FieldType.PLACE,
-})
+_PDF_FALLBACK_NEW_TYPES = frozenset(
+    {
+        FieldType.SIGNATURE,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+        FieldType.TRANSFER_LIST,
+        FieldType.DYNAMIC_SELECT,
+        # Phase 3 — FEAT-170
+        FieldType.REST,
+        # FEAT-300 — formula fields (evaluator is FEAT-301)
+        FieldType.FORMULA,
+        # FEAT-448 (TASK-2337) — none of the twelve absorbed types is natively
+        # fillable as an AcroForm widget (no color/emoji/tree/signature/upload
+        # field kinds exist in the PDF form spec); all twelve render as
+        # placeholder textfields, same posture as SIGNATURE/REST above.
+        FieldType.SEARCH,
+        FieldType.MASKED,
+        FieldType.COLOR_PICKER,
+        FieldType.EMOJI,
+        FieldType.CRON,
+        FieldType.TREE_SELECT,
+        FieldType.SIGNATURE_PAD,
+        FieldType.CREDIT_CARD,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.AI_CAPTURE,
+        FieldType.PLACE,
+    }
+)
 
 
-def _localize(
-    value: LocalizedString | None, locale: str, default: str = ""
-) -> str:
+def _localize(value: LocalizedString | None, locale: str, default: str = "") -> str:
     """Resolve a ``LocalizedString`` to a plain string."""
     if value is None:
         return default
@@ -139,7 +140,9 @@ class PdfRenderer(AbstractFormRenderer):
             def __init__(self_, renderer: "PdfRenderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 # PDF rendering is canvas-stateful; direct invocation via render()
                 # passes context via _render_field. This stub satisfies the protocol.
                 return None
@@ -169,6 +172,12 @@ class PdfRenderer(AbstractFormRenderer):
             ``RenderedForm`` carrying the PDF bytes,
             ``content_type="application/pdf"``, and a
             ``metadata["unsupported_fields"]`` list.
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         buffer = BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
@@ -184,9 +193,7 @@ class PdfRenderer(AbstractFormRenderer):
         cursor_y -= self.LINE_HEIGHT * 2
 
         for section in form.sections:
-            cursor_y = self._render_section(
-                c, section, cursor_y, locale, prefilled, unsupported, render_warnings
-            )
+            cursor_y = self._render_section(c, section, cursor_y, locale, prefilled, unsupported, render_warnings)
 
         # Trailing meta note for unsupported fields
         if unsupported:
@@ -222,9 +229,7 @@ class PdfRenderer(AbstractFormRenderer):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _maybe_new_page(
-        self, c: canvas.Canvas, cursor_y: float, needed: float
-    ) -> float:
+    def _maybe_new_page(self, c: canvas.Canvas, cursor_y: float, needed: float) -> float:
         """Start a new page if there isn't enough vertical room.
 
         Returns the (possibly reset) ``cursor_y`` to draw at.
@@ -249,9 +254,7 @@ class PdfRenderer(AbstractFormRenderer):
             render_warnings = []
         # Section header
         cursor_y = self._maybe_new_page(c, cursor_y, mm * 30)
-        section_title = _localize(
-            section.title, locale, default=section.section_id
-        )
+        section_title = _localize(section.title, locale, default=section.section_id)
         c.setFont("Helvetica-Bold", 11)
         c.drawString(self.MARGIN_X, cursor_y, section_title)
         cursor_y -= self.FIELD_GAP
@@ -266,13 +269,11 @@ class PdfRenderer(AbstractFormRenderer):
         for item in section.fields:
             if isinstance(item, FormSubsection):
                 cursor_y = self._render_subsection(
-                    c, section.section_id, item, cursor_y, locale, prefilled,
-                    unsupported, render_warnings
+                    c, section.section_id, item, cursor_y, locale, prefilled, unsupported, render_warnings
                 )
             else:
                 cursor_y = self._render_field(
-                    c, section.section_id, item, cursor_y, locale, prefilled,
-                    unsupported, render_warnings
+                    c, section.section_id, item, cursor_y, locale, prefilled, unsupported, render_warnings
                 )
 
         return cursor_y - self.SECTION_GAP
@@ -300,8 +301,7 @@ class PdfRenderer(AbstractFormRenderer):
 
         for field in subsection.fields:
             cursor_y = self._render_field(
-                c, section_id, field, cursor_y, locale, prefilled,
-                unsupported, render_warnings
+                c, section_id, field, cursor_y, locale, prefilled, unsupported, render_warnings
             )
         return cursor_y
 
@@ -330,11 +330,7 @@ class PdfRenderer(AbstractFormRenderer):
         c.drawString(self.MARGIN_X, cursor_y, label)
         cursor_y -= self.FIELD_HEIGHT
 
-        prefilled_value = (
-            str(prefilled[field.field_id])
-            if prefilled and field.field_id in prefilled
-            else ""
-        )
+        prefilled_value = str(prefilled[field.field_id]) if prefilled and field.field_id in prefilled else ""
 
         form = c.acroForm
         x = self.MARGIN_X
@@ -343,14 +339,15 @@ class PdfRenderer(AbstractFormRenderer):
         height = self.FIELD_HEIGHT
 
         if field.field_type in _UNSUPPORTED_TYPES:
-            unsupported.append({
-                "section_id": section_id,
-                "field_id": field.field_id,
-                "field_type": field.field_type.value,
-            })
+            unsupported.append(
+                {
+                    "section_id": section_id,
+                    "field_id": field.field_id,
+                    "field_type": field.field_type.value,
+                }
+            )
             logger.warning(
-                "PDF AcroForm: unsupported field type %s for %s.%s; "
-                "emitting flat textfield placeholder",
+                "PDF AcroForm: unsupported field type %s for %s.%s; " "emitting flat textfield placeholder",
                 field.field_type.value,
                 section_id,
                 field.field_id,
@@ -358,14 +355,20 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=f"{field.field_type.value} (not natively fillable)",
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value or "",
             )
         elif field.field_type == FieldType.BOOLEAN:
             form.checkbox(
                 name=field.field_id,
                 tooltip=label,
-                x=x, y=y, size=4 * mm,
+                x=x,
+                y=y,
+                size=4 * mm,
                 checked=bool(prefilled_value),
             )
         elif field.field_type == FieldType.SELECT:
@@ -379,7 +382,11 @@ class PdfRenderer(AbstractFormRenderer):
                 name=field.field_id,
                 tooltip=label,
                 options=options,
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=default_value,
             )
         elif field.field_type == FieldType.MULTI_SELECT:
@@ -388,9 +395,7 @@ class PdfRenderer(AbstractFormRenderer):
             # list-or-str and reconciles it against `options`. Fall back to
             # the first option value when nothing is prefilled to dodge the
             # same `lbextras` UnboundLocalError as SELECT above.
-            raw_prefill = (
-                prefilled.get(field.field_id) if prefilled else None
-            )
+            raw_prefill = prefilled.get(field.field_id) if prefilled else None
             if isinstance(raw_prefill, (list, tuple)) and raw_prefill:
                 default_value: Any = [str(v) for v in raw_prefill]
             else:
@@ -399,7 +404,11 @@ class PdfRenderer(AbstractFormRenderer):
                 name=field.field_id,
                 tooltip=label,
                 options=options,
-                x=x, y=y, width=width, height=height * 3, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height * 3,
+                fontSize=10,
                 fieldFlags="multiSelect",
                 value=default_value,
             )
@@ -408,8 +417,12 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=label,
-                x=x, y=y - height * 2, width=width, height=height * 3,
-                fontSize=10, fieldFlags="multiline",
+                x=x,
+                y=y - height * 2,
+                width=width,
+                height=height * 3,
+                fontSize=10,
+                fieldFlags="multiline",
                 value=prefilled_value,
             )
             cursor_y -= height * 2  # multiline takes 3x vertical space
@@ -417,7 +430,11 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=label,
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 fieldFlags="password",
                 value=prefilled_value,
             )
@@ -425,7 +442,11 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=label,
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 fieldFlags="hidden",
                 value=prefilled_value,
             )
@@ -435,7 +456,11 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=f"{label} (0–10)",
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value or "",
             )
         elif field.field_type in (FieldType.LIKERT, FieldType.RANKING):
@@ -445,7 +470,11 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=f"{label} ({scale_min}–{scale_max})",
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value or "",
             )
         elif field.field_type == FieldType.LOCATION:
@@ -453,29 +482,36 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=f"{label} (ISO country code)",
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value or "",
             )
         elif field.field_type == FieldType.TAGS:
             form.textfield(
                 name=field.field_id,
                 tooltip=f"{label} (comma-separated tags)",
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value or "",
             )
 
         elif field.field_type in _PDF_FALLBACK_NEW_TYPES:
             # Fallback: render as placeholder textfield + emit RenderWarning
-            render_warnings.append(RenderWarning(
-                field_id=field.field_id,
-                field_uid=field.field_uid,
-                field_type=field.field_type.value,
-                renderer="pdf",
-                reason=(
-                    f"unsupported {field.field_type.value} in pdf"
-                    " — rendered as placeholder"
-                ),
-            ))
+            render_warnings.append(
+                RenderWarning(
+                    field_id=field.field_id,
+                    field_uid=field.field_uid,
+                    field_type=field.field_type.value,
+                    renderer="pdf",
+                    reason=(f"unsupported {field.field_type.value} in pdf" " — rendered as placeholder"),
+                )
+            )
             logger.warning(
                 "PDF AcroForm: new field type %s for %s.%s rendered as placeholder",
                 field.field_type.value,
@@ -485,7 +521,11 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=f"{field.field_type.value} (not natively fillable in PDF)",
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value or "",
             )
 
@@ -501,7 +541,11 @@ class PdfRenderer(AbstractFormRenderer):
             form.textfield(
                 name=field.field_id,
                 tooltip=tooltip,
-                x=x, y=y, width=width, height=height, fontSize=10,
+                x=x,
+                y=y,
+                width=width,
+                height=height,
+                fontSize=10,
                 value=prefilled_value,
             )
 
@@ -516,9 +560,7 @@ class PdfRenderer(AbstractFormRenderer):
             label = (
                 option.label
                 if isinstance(option.label, str)
-                else option.label.get("en", option.value)
-                if isinstance(option.label, dict)
-                else option.value
+                else option.label.get("en", option.value) if isinstance(option.label, dict) else option.value
             )
             out.append((str(label), option.value))
         return out

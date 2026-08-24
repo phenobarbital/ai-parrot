@@ -321,7 +321,9 @@ class JsonSchemaRenderer(AbstractFormRenderer):
             def __init__(self_, renderer: "JsonSchemaRenderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return {"type": _TYPE_MAP.get(field.field_type, "string"), "x-field-type": field.field_type.value}
 
         renderer_inst = _JsonSchemaFieldRenderer(self)
@@ -511,6 +513,13 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         if ft == FieldType.DYNAMIC_SELECT and field.options_source:
             prop["x-options-source"] = field.options_source.model_dump()
 
+        # Relation metadata (FEAT-456) — unconditional on any field_type the
+        # TASK-2411 combination validator allowed (not gated on DYNAMIC_SELECT).
+        # The ONLY renderer that surfaces this; the other six document it as
+        # an intentional no-op.
+        if field.relation:
+            prop["x-relation"] = field.relation.model_dump(exclude_none=True)
+
         # Options: enum for SELECT/MULTI_SELECT
         if ft == FieldType.SELECT and field.options:
             prop["enum"] = [opt.value for opt in field.options]
@@ -608,9 +617,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 # the consumer substitutes with the real tenant slug before
                 # issuing the upload request (see docs/migration/
                 # feat-421-forms-tenant-in-url.md).
-                "upload_url_template": (
-                    "/api/v1/{tenant}/forms/{form_id}/fields/{field_id}/upload"
-                ),
+                "upload_url_template": ("/api/v1/{tenant}/forms/{form_id}/fields/{field_id}/upload"),
                 "additional_args": all_args,
                 "public_args": public_args,
             }

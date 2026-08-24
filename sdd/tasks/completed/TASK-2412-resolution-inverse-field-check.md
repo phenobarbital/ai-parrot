@@ -153,10 +153,16 @@ def test_inverse_field_missing_raises():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Added `_check_embed_inverse_fields(form)` in `core/resolution.py`,
+invoked from `resolve_rule_references()`, walking each embed-mode field's
+`item_template` via the existing `walk_fields()` helper and raising
+`ValueError` naming the owning `field_id` when `inverse_field` is not
+found in the template tree. 5 new unit tests pass; full core suite (164
+tests) green; full unit suite shows identical failure set to baseline
+(no regressions). `ruff check` clean on touched lines (one pre-existing
+unrelated import-order finding in resolution.py, untouched by this diff,
+left as-is).
 
 **Deviations from spec**: none
