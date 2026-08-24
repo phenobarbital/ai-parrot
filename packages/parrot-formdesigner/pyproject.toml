@@ -53,6 +53,9 @@ ai-parrot = [
 redis = [
     "redis>=4.5",
 ]
+gsheet = [
+    "google-api-python-client>=2.151.0",
+]
 test = [
     "pypdf>=6.0",
     "jsonschema>=4.0",
