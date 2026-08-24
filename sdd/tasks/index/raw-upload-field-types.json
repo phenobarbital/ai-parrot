@@ -14,7 +14,7 @@
       "feature_id": "FEAT-460",
       "feature": "raw-upload-field-types",
       "spec": "sdd/specs/raw-upload-field-types.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational model — everything depends on it. Must be completed first.",
       "assigned_to": null,
       "started_at": "2026-08-24T23:03:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2442-file-envelope-model.md"
+      "completed_at": "2026-08-24T23:05:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2442-file-envelope-model.md"
     },
     {
       "id": "TASK-2443",
