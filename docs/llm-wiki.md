@@ -2,7 +2,7 @@
 
 > A worked pattern that composes **PageIndex + GraphIndex + Ontology** into a
 > single knowledge repository an agent compiles, queries, and **contributes to**.
-> Runnable example: [`examples/knowledge_wiki/`](../examples/knowledge_wiki/).
+> Runnable example: [`examples/knowledge_wiki/`](https://github.com/phenobarbital/ai-parrot/tree/main/examples/knowledge_wiki/).
 
 ## The idea
 
@@ -56,7 +56,7 @@ it up when an ArangoDB-backed stack is supplied.
 ## Wiring it together
 
 The example keeps all glue inline in
-[`examples/knowledge_wiki/wiki.py`](../examples/knowledge_wiki/wiki.py):
+[`examples/knowledge_wiki/wiki.py`](https://github.com/phenobarbital/ai-parrot/blob/main/examples/knowledge_wiki/wiki.py):
 
 - `build_pageindex_toolkit(...)` / `seed_wiki_from_raw(...)` — compile sources
   into pages.

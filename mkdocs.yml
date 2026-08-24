@@ -157,6 +157,18 @@ nav:
       - Dataset Manager Design: datasetmanager_design.md
       - Company Info: company_info.md
       - User Profile: user-profile.md
+  - Knowledge Graph:
+      - Overview: chapters/knowledge-graph.md
+      - PageIndex: pageindex.md
+      - GraphIndex: graphindex.md
+      - LLM Wiki:
+          - What It Is: llm-wiki.md
+          - Complete Guide: guides/llm-wiki-guide.md
+          - WikiToolkit for Claude Code: wiki-claude-code.md
+      - Jira Knowledge Base:
+          - Jira Ticket Extractor: guides/jira-ticket-extractor.md
+          - Issues Namespace Runbook: runbooks/jira-issues-namespace.md
+          - Agent Integration: guides/jira-wiki-agent-integration.md
   - Tools, Loaders & RAG:
       - Overview: chapters/tools-rag.md
       - Tools Reference: tools.md

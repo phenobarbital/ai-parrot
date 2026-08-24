@@ -36,6 +36,8 @@ facts, documents, embeddings used by RAG).
 
 ## Read next
 
+- [Knowledge Graph & LLM Wiki chapter](knowledge-graph.md) — PageIndex,
+  GraphIndex and the agent-maintained wiki built on top of them.
 - [LLM Wiki — an agent-maintained knowledge repository](../llm-wiki.md)
 - [Execution Memory](../EXECUTION_MEMORY.md)
 - [Local Knowledge Base](../local_kb.md)

@@ -70,8 +70,10 @@ take an optional `namespace` argument, and `wiki_status` reports
 namespaces at startup, so an assistant gets them with no extra
 configuration. Foreign planes are always opened read-only.
 
-See [the CLI guide](../documentation/parrot-wiki-cli.md#namespaces-multi-wiki-federation)
-for the registries, the four namespace kinds, and write routing.
+See [Namespaces — Multi-Wiki Federation](guides/llm-wiki-guide.md#namespaces-multi-wiki-federation)
+for the registries, the four namespace kinds, and write routing. The full
+command-by-command reference lives in
+[`documentation/parrot-wiki-cli.md`](https://github.com/phenobarbital/ai-parrot/blob/main/documentation/parrot-wiki-cli.md).
 
 ## `parrot claude install`
 
