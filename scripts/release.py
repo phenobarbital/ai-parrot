@@ -143,6 +143,22 @@ PACKAGES: list[Package] = [
              ("packages/navrules/pyproject.toml", "toml"),
              ("packages/navrules/rust/Cargo.toml", "toml")],
             "packages/navrules", aliases=["rules"]),
+    # parrot_codec is a maturin/PyO3 crate: pyproject.toml and Cargo.toml
+    # repeat the same number and must move together. NOTE: its Cargo.lock is
+    # deliberately NOT listed — the "toml" handler rewrites the FIRST
+    # `^version = ` line, which in a lockfile is the lockfile *format*
+    # version (`version = 4`), not the crate's. Cargo refreshes the lock at
+    # build time anyway (maturin does not pass --locked), the same way
+    # navrules' lock harmlessly lags its Cargo.toml.
+    #
+    # Omitting this package is what stranded parrot_codec at 0.1.0 while
+    # every sibling advanced: PyPI refuses new files on a release older than
+    # 14 days, so once 0.1.0 aged out, each build matrix leg produced wheels
+    # that could never upload and the 400 failed the whole deploy step.
+    Package("parrot-codec",
+            [("packages/ai-parrot/src/parrot/codec-rs/pyproject.toml", "toml"),
+             ("packages/ai-parrot/src/parrot/codec-rs/Cargo.toml", "toml")],
+            "packages/ai-parrot/src/parrot/codec-rs", aliases=["codec"]),
 ]
 
 CORE = PACKAGES[0]
