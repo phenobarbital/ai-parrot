@@ -405,8 +405,67 @@ class WikiProjectConfig(BaseModel):
         return (self.storage_path(root) / "pages").exists()
 
 
+def _navconfig() -> Any | None:
+    """Return navconfig's ``config``, importing it for its side effect.
+
+    ``navconfig`` is what copies ``env/.env`` into ``os.environ``: a
+    process that never imports it sees none of those values. Reading
+    ``os.environ`` alone was therefore silently wrong outside the CLI —
+    a wiki configured against a remote ArangoDB resolved to
+    ``127.0.0.1:8529`` in any script that imported this module without
+    (transitively) importing navconfig, and the resulting connection
+    error named the loopback address, not the missing loader.
+
+    Kept a lazy, tolerant import: this module is deliberately
+    dependency-light so the Claude Code PreToolUse hook can import it
+    cheaply, and navconfig is not needed to read ``wiki.json``.
+
+    Returns:
+        navconfig's ``config`` object, or ``None`` when navconfig is not
+        importable (callers then fall back to their own defaults).
+    """
+    try:
+        from navconfig import config as nav_config
+    except Exception:  # noqa: BLE001 — a broken env file must not break the hook
+        # Deliberately broad: navconfig raises more than ImportError when
+        # its env files are missing or malformed, and this module is on the
+        # PreToolUse hook's import path.
+        logger.debug("navconfig unavailable; reading os.environ only")
+        return None
+    return nav_config
+
+
+def _env_credential(key: str, default: Any) -> Any:
+    """Resolve one credential key: ``os.environ``, then navconfig, then default.
+
+    ``os.environ`` wins so an explicit ``export`` (or a test's
+    ``monkeypatch.setenv`` / ``delenv``) always overrides what the env
+    files say. navconfig is consulted second — importing it is also what
+    makes ``env/.env`` reach ``os.environ`` in the first place.
+
+    Args:
+        key: Full variable name, e.g. ``"ARANGODB_HOST"``.
+        default: Returned when neither source has the key.
+
+    Returns:
+        The resolved value, or ``default``.
+    """
+    value = os.environ.get(key)
+    if value is not None:
+        return value
+    nav_config = _navconfig()
+    if nav_config is not None:
+        # navconfig's `get` may return None for a missing key even with a
+        # fallback argument, so coalesce explicitly (same guard as
+        # graphindex/loader.py).
+        value = nav_config.get(key)
+        if value is not None:
+            return value
+    return default
+
+
 def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
-    """Resolve ArangoDB connection params from environment variables.
+    """Resolve ArangoDB connection params from the environment.
 
     Credentials are never hardcoded in ``wiki.json`` — only the env var
     prefix (:attr:`WikiProjectConfig.arango_credentials_env`, default
@@ -414,21 +473,26 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
     mirrors the established ``ARANGODB_*`` convention used elsewhere in
     the codebase (e.g. ``graphindex/loader.py``).
 
+    Each variable resolves through :func:`_env_credential`:
+    ``os.environ`` first, then navconfig (which is what loads
+    ``env/.env``), then the built-in default.
+
     Args:
         config: Project config carrying the ArangoDB backend settings.
 
     Returns:
         Connection params dict for ``AsyncDB("arangodb", params=...)``:
         ``host``, ``port``, ``protocol``, ``username``, ``password``,
-        ``database``.
+        ``database``. Types are normalised regardless of source — every
+        field a ``str`` except the ``int`` port.
     """
     prefix = config.arango_credentials_env
     return {
-        "host": os.environ.get(f"{prefix}_HOST", "127.0.0.1"),
-        "port": int(os.environ.get(f"{prefix}_PORT", "8529")),
-        "protocol": os.environ.get(f"{prefix}_PROTOCOL", "http"),
-        "username": os.environ.get(f"{prefix}_USERNAME", "root"),
-        "password": os.environ.get(f"{prefix}_PASSWORD", ""),
+        "host": str(_env_credential(f"{prefix}_HOST", "127.0.0.1")),
+        "port": int(_env_credential(f"{prefix}_PORT", 8529)),
+        "protocol": str(_env_credential(f"{prefix}_PROTOCOL", "http")),
+        "username": str(_env_credential(f"{prefix}_USERNAME", "root")),
+        "password": str(_env_credential(f"{prefix}_PASSWORD", "")),
         "database": config.arango_database or f"wiki_{config.wiki_name}",
     }
 

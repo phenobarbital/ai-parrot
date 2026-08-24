@@ -617,3 +617,136 @@ class TestRecordDocumentMetadata:
             loader="MarkdownLoader",
         )
         assert mgr.list_sources() == []
+
+class TestBulkManifestOperations:
+    """The batch API behind the build pipeline's manifest phase.
+
+    Each of these has a per-file twin above; the contract is that the
+    batch version produces the SAME rows in one statement, because on a
+    server-hosted manifest the per-file version costs a round trip each.
+    """
+
+    @pytest.fixture
+    def files(self, sources_dir: Path) -> list[Path]:
+        made = []
+        for i in range(5):
+            f = sources_dir / f"doc{i}.md"
+            f.write_text(f"# Doc {i}\n\nbody {i}")
+            made.append(f)
+        return made
+
+    def test_add_sources_matches_add_source_row_for_row(self, sources_dir, files):
+        batch_mgr = SourceCollectionManager(sources_dir / "batch")
+        single_mgr = SourceCollectionManager(sources_dir / "single")
+
+        batched = batch_mgr.add_sources(files)
+        singles = [single_mgr.add_source(f) for f in files]
+
+        assert [e.source_uri for e in batched] == [e.source_uri for e in singles]
+        assert [e.file_hash for e in batched] == [e.file_hash for e in singles]
+        assert [e.mtime for e in batched] == [e.mtime for e in singles]
+        assert [e.status for e in batched] == [e.status for e in singles]
+        # Ids are derived from the URI, so they must agree too.
+        assert [e.source_id for e in batched] == [e.source_id for e in singles]
+
+    def test_add_sources_persists_every_row(self, sources_dir, files):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        mgr.add_sources(files)
+        assert len(mgr.list_sources()) == len(files)
+
+    def test_add_sources_reuses_ids_and_keeps_ingested_at(self, sources_dir, files):
+        """Re-registering a changed file must not re-date it or drop its
+        page list — the build pipeline registers stale files through here."""
+        mgr = SourceCollectionManager(sources_dir / "m")
+        first = mgr.add_sources(files)
+        mgr.mark_ingested_many({e.source_id: [f"page-{i}"] for i, e in enumerate(first)})
+        files[0].write_text("# Doc 0\n\nCHANGED")
+
+        second = mgr.add_sources(files)
+
+        assert [e.source_id for e in second] == [e.source_id for e in first]
+        assert second[0].ingested_at == first[0].ingested_at
+        assert second[0].pages_generated == ["page-0"]
+        assert second[0].file_hash != first[0].file_hash
+
+    def test_add_sources_raises_on_a_missing_path(self, sources_dir, files):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        with pytest.raises(FileNotFoundError, match="ghost.md"):
+            mgr.add_sources([*files, sources_dir / "ghost.md"])
+
+    def test_add_sources_empty_is_a_noop(self, sources_dir):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        assert mgr.add_sources([]) == []
+        assert mgr.list_sources() == []
+
+    def test_find_entries_by_uris_returns_only_tracked(self, sources_dir, files):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        mgr.add_sources(files[:3])
+
+        found = mgr.find_entries_by_uris([str(f.resolve()) for f in files])
+
+        assert set(found) == {str(f.resolve()) for f in files[:3]}
+        assert all(e.source_uri in found for e in found.values())
+
+    def test_find_entries_by_uris_chunks_past_the_sqlite_limit(self, sources_dir):
+        """More URIs than sqlite's bind-parameter ceiling must not raise."""
+        from parrot.knowledge.wiki.sources import _SQLITE_IN_CHUNK
+
+        mgr = SourceCollectionManager(sources_dir / "m")
+        many = []
+        for i in range(_SQLITE_IN_CHUNK + 7):
+            f = sources_dir / f"bulk{i}.md"
+            f.write_text(str(i))
+            many.append(f)
+        mgr.add_sources(many)
+
+        found = mgr.find_entries_by_uris([str(f.resolve()) for f in many])
+
+        assert len(found) == len(many)
+
+    def test_find_entries_by_ids_round_trips(self, sources_dir, files):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        entries = mgr.add_sources(files)
+
+        found = mgr.find_entries_by_ids([e.source_id for e in entries] + ["nope"])
+
+        assert set(found) == {e.source_id for e in entries}
+
+    def test_mark_ingested_many_matches_mark_ingested(self, sources_dir, files):
+        batch_mgr = SourceCollectionManager(sources_dir / "batch")
+        single_mgr = SourceCollectionManager(sources_dir / "single")
+        batched = batch_mgr.add_sources(files)
+        for f in files:
+            single_mgr.add_source(f)
+
+        batch_mgr.mark_ingested_many({e.source_id: [f"p{i}"] for i, e in enumerate(batched)})
+        for i, e in enumerate(batched):
+            single_mgr.mark_ingested(e.source_id, [f"p{i}"])
+
+        for e in batched:
+            a = batch_mgr.get_source(e.source_id)
+            b = single_mgr.get_source(e.source_id)
+            assert a.pages_generated == b.pages_generated
+            assert a.status == b.status
+            assert a.file_hash == b.file_hash
+
+    def test_mark_ingested_many_skips_unknown_ids(self, sources_dir, files):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        entries = mgr.add_sources(files[:1])
+
+        mgr.mark_ingested_many({entries[0].source_id: ["p0"], "ghost-id": ["p1"]})
+
+        assert mgr.get_source(entries[0].source_id).pages_generated == ["p0"]
+        assert mgr.get_source("ghost-id") is None
+
+    def test_entry_is_stale_agrees_with_is_stale(self, sources_dir, files):
+        mgr = SourceCollectionManager(sources_dir / "m")
+        entries = mgr.add_sources(files)
+        fresh = entries[0]
+        files[1].write_text("# changed")
+        changed_id = entries[1].source_id
+        files[2].unlink()
+
+        assert mgr.entry_is_stale(fresh) is mgr.is_stale(fresh.source_id) is False
+        assert mgr.entry_is_stale(mgr.get_source(changed_id)) is mgr.is_stale(changed_id) is True
+        assert mgr.entry_is_stale(entries[2]) is True, "a deleted file is stale"
