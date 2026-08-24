@@ -160,7 +160,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "§4 Integration Tests",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -171,8 +171,8 @@
       "parallelism_notes": "Exercises the whole feature end to end, including the TASK-2402 toolkit regression gate; needs every implementation task landed.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2405-jira-wiki-integration-tests.md"
+      "completed_at": "2026-08-24T02:50:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2405-jira-wiki-integration-tests.md"
     },
     {
       "id": "TASK-2406",
