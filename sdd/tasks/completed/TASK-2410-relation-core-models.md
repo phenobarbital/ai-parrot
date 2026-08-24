@@ -164,10 +164,12 @@ def test_extra_forbidden():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Created `EntityRef` and `RelationSpec` in `core/relations.py`
+exactly per spec §2, with `extra="forbid"` on both and a model-validator
+enforcing embed-mode requires `inverse_field` and `cardinality="many"`.
+11 unit tests pass (`pytest packages/parrot-formdesigner/tests/unit/core/test_relations.py -v`);
+`ruff check` clean.
 
 **Deviations from spec**: none

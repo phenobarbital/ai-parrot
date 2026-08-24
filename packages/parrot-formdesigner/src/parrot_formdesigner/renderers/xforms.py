@@ -36,7 +36,6 @@ from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -79,38 +78,38 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.GROUP: ("group", None),
     FieldType.ARRAY: ("repeat", None),
     # New field types (FEAT-167)
-    FieldType.SIGNATURE: ("input", "string"),        # fallback: plain text
-    FieldType.DYNAMIC_SELECT: ("select1", "string"), # <xf:select1> like SELECT
-    FieldType.TRANSFER_LIST: ("select", "string"),   # <xf:select> multi-value
+    FieldType.SIGNATURE: ("input", "string"),  # fallback: plain text
+    FieldType.DYNAMIC_SELECT: ("select1", "string"),  # <xf:select1> like SELECT
+    FieldType.TRANSFER_LIST: ("select", "string"),  # <xf:select> multi-value
     FieldType.REMOTE_RESPONSE: ("input", "string"),  # fallback: plain text
-    FieldType.AVAILABILITY: ("input", "string"),     # fallback: plain text
-    FieldType.LOCATION: ("select1", "string"),       # <xf:select1> country list
-    FieldType.TAGS: ("input", "string"),             # <xf:input> comma-separated
-    FieldType.NPS: ("range", "integer"),             # <xf:range> 0–10
-    FieldType.LIKERT: ("select1", "string"),         # <xf:select1> scale
-    FieldType.RANKING: ("range", "integer"),         # <xf:range>
+    FieldType.AVAILABILITY: ("input", "string"),  # fallback: plain text
+    FieldType.LOCATION: ("select1", "string"),  # <xf:select1> country list
+    FieldType.TAGS: ("input", "string"),  # <xf:input> comma-separated
+    FieldType.NPS: ("range", "integer"),  # <xf:range> 0–10
+    FieldType.LIKERT: ("select1", "string"),  # <xf:select1> scale
+    FieldType.RANKING: ("range", "integer"),  # <xf:range>
     # Phase 3 — FEAT-170
-    FieldType.REST: ("input", "string"),             # fallback: plain text
+    FieldType.REST: ("input", "string"),  # fallback: plain text
     # FEAT-300 — formula fields (evaluator is FEAT-301; render as read-only input)
-    FieldType.FORMULA: ("input", "string"),          # fallback: plain text placeholder
+    FieldType.FORMULA: ("input", "string"),  # fallback: plain text placeholder
     # FEAT-448 (TASK-2337) — the twelve absorbed types. Plain scalar strings
     # (search/masked/color_picker/emoji/cron) are native <xf:input>, same
     # posture as COLOR/TAGS above. tree_select approximates TRANSFER_LIST's
     # multi-value <xf:select>. The remaining six have no XForms element that
     # represents their shape — plain text fallback, same posture as
     # SIGNATURE/REST above.
-    FieldType.SEARCH: ("input", "string"),           # native: <xf:input>
-    FieldType.MASKED: ("input", "string"),           # native: <xf:input>
-    FieldType.COLOR_PICKER: ("input", "string"),     # native: <xf:input>, like COLOR
-    FieldType.EMOJI: ("input", "string"),            # native: <xf:input>
-    FieldType.CRON: ("input", "string"),             # native: <xf:input>
-    FieldType.TREE_SELECT: ("select", "string"),     # native: <xf:select>, like TRANSFER_LIST
-    FieldType.SIGNATURE_PAD: ("input", "string"),    # fallback: plain text
-    FieldType.CREDIT_CARD: ("input", "string"),      # fallback: plain text — never editable
-    FieldType.IMAGE_DROPZONE: ("input", "string"),   # fallback: plain text
-    FieldType.MULTI_UPLOAD: ("input", "string"),     # fallback: plain text
-    FieldType.AI_CAPTURE: ("input", "string"),       # fallback: plain text
-    FieldType.PLACE: ("input", "string"),            # fallback: plain text — no cascading bind support
+    FieldType.SEARCH: ("input", "string"),  # native: <xf:input>
+    FieldType.MASKED: ("input", "string"),  # native: <xf:input>
+    FieldType.COLOR_PICKER: ("input", "string"),  # native: <xf:input>, like COLOR
+    FieldType.EMOJI: ("input", "string"),  # native: <xf:input>
+    FieldType.CRON: ("input", "string"),  # native: <xf:input>
+    FieldType.TREE_SELECT: ("select", "string"),  # native: <xf:select>, like TRANSFER_LIST
+    FieldType.SIGNATURE_PAD: ("input", "string"),  # fallback: plain text
+    FieldType.CREDIT_CARD: ("input", "string"),  # fallback: plain text — never editable
+    FieldType.IMAGE_DROPZONE: ("input", "string"),  # fallback: plain text
+    FieldType.MULTI_UPLOAD: ("input", "string"),  # fallback: plain text
+    FieldType.AI_CAPTURE: ("input", "string"),  # fallback: plain text
+    FieldType.PLACE: ("input", "string"),  # fallback: plain text — no cascading bind support
 }
 
 
@@ -167,9 +166,7 @@ def _relevant_xpath(rule: DependencyRule | None) -> str | None:
         return None
     cond = rule.conditions[0]
     if cond.operator != ConditionOperator.EQ:
-        logger.debug(
-            "Skipping `relevant` for non-eq operator: %s", cond.operator
-        )
+        logger.debug("Skipping `relevant` for non-eq operator: %s", cond.operator)
         return None
     val = cond.value
     if isinstance(val, str):
@@ -207,7 +204,9 @@ class XFormsRenderer(AbstractFormRenderer):
             def __init__(self_, renderer: "XFormsRenderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 # XForms rendering is document-level stateful; this stub satisfies protocol.
                 return _FIELD_TO_XFORMS.get(field.field_type)
 
@@ -234,6 +233,12 @@ class XFormsRenderer(AbstractFormRenderer):
 
         Returns:
             ``RenderedForm`` carrying the XML bytes and ``application/xml``.
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         root = etree.Element(_qn("model"), nsmap=NSMAP)
 
@@ -273,9 +278,7 @@ class XFormsRenderer(AbstractFormRenderer):
         for section in form.sections:
             wrapper.append(self._build_ui_group(section, locale))
 
-        xml_bytes = etree.tostring(
-            wrapper, pretty_print=True, xml_declaration=True, encoding="UTF-8"
-        )
+        xml_bytes = etree.tostring(wrapper, pretty_print=True, xml_declaration=True, encoding="UTF-8")
         return RenderedForm(content=xml_bytes, content_type="application/xml")
 
     # ------------------------------------------------------------------
@@ -335,9 +338,7 @@ class XFormsRenderer(AbstractFormRenderer):
             for child in field.children:
                 self._collect_binds(binds, nodeset, child)
 
-    def _build_ui_group(
-        self, section: FormSection, locale: str
-    ) -> etree._Element:
+    def _build_ui_group(self, section: FormSection, locale: str) -> etree._Element:
         """Build the ``<xf:group>`` UI element for ``section``."""
         group = etree.Element(_qn("group"), attrib={"id": section.section_id})
         title = _localize(section.title, locale, default=section.section_id)
@@ -356,9 +357,7 @@ class XFormsRenderer(AbstractFormRenderer):
                 group.append(self._build_ui_control(section.section_id, item, locale))
         return group
 
-    def _build_ui_control(
-        self, path: str, field: FormField, locale: str
-    ) -> etree._Element:
+    def _build_ui_control(self, path: str, field: FormField, locale: str) -> etree._Element:
         """Build the XForms UI element for ``field``."""
         local, _ = _FIELD_TO_XFORMS.get(field.field_type, ("input", None))
         ref = f"{path}/{field.field_id}"
@@ -375,9 +374,10 @@ class XFormsRenderer(AbstractFormRenderer):
             hint.text = _localize(field.placeholder, locale)
 
         # SELECT / MULTI_SELECT / DYNAMIC_SELECT / LIKERT / LOCATION options
-        if field.field_type in (
-            FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT, FieldType.LIKERT
-        ) and field.options:
+        if (
+            field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT, FieldType.LIKERT)
+            and field.options
+        ):
             for option in field.options:
                 self._add_xf_item(el, option, locale)
 
@@ -390,6 +390,7 @@ class XFormsRenderer(AbstractFormRenderer):
             for i in range(scale_min, scale_max + 1):
                 lbl_text = str(anchor_labels.get(i, i))
                 from ..core.options import FieldOption
+
                 _opt = FieldOption(value=str(i), label=lbl_text)
                 self._add_xf_item(el, _opt, locale)
 

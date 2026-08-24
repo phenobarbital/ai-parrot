@@ -65,15 +65,17 @@ _INPUT_TYPE_MAP: dict[FieldType, str] = {
 # in this renderer. Rendered as a disabled, clearly-labelled placeholder
 # (never a control that looks functional and is not — spec AC6/AC3) and
 # recorded with a RenderWarning, the same posture as FORMULA above.
-_HTML5_FALLBACK_TYPES: frozenset[FieldType] = frozenset({
-    FieldType.IMAGE_DROPZONE,
-    FieldType.MULTI_UPLOAD,
-    FieldType.AI_CAPTURE,
-    # credit_card's accepted shape ({brand, last4, name, expiry}) is never
-    # rendered as an editable input in any channel (spec §4) — read-only
-    # display only, never a generated card widget.
-    FieldType.CREDIT_CARD,
-})
+_HTML5_FALLBACK_TYPES: frozenset[FieldType] = frozenset(
+    {
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.AI_CAPTURE,
+        # credit_card's accepted shape ({brand, last4, name, expiry}) is never
+        # rendered as an editable input in any channel (spec §4) — read-only
+        # display only, never a generated card widget.
+        FieldType.CREDIT_CARD,
+    }
+)
 
 _HTML5_FALLBACK_LABELS: dict[FieldType, str] = {
     FieldType.IMAGE_DROPZONE: "image upload",
@@ -137,9 +139,7 @@ class HTML5Renderer(AbstractFormRenderer):
         if template_dir:
             loader = jinja2.FileSystemLoader(str(Path(template_dir)))
         else:
-            loader = jinja2.PackageLoader(
-                "parrot_formdesigner.renderers", "templates"
-            )
+            loader = jinja2.PackageLoader("parrot_formdesigner.renderers", "templates")
         self._env = jinja2.Environment(
             loader=loader,
             autoescape=True,
@@ -163,42 +163,54 @@ class HTML5Renderer(AbstractFormRenderer):
                 self_._r = renderer
                 self_._multiple = multiple
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_select(field, prefilled, locale, multiple=self_._multiple)
 
         class _TextAreaRenderer:
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_textarea(field, prefilled, locale)
 
         class _CheckboxRenderer:
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_checkbox(field, prefilled)
 
         class _InputRenderer:
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_input(field, prefilled, locale)
 
         class _GroupRenderer:
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 # Groups are rendered via _render_field_html with children context
                 return None
 
         class _NoInputRenderer:
             """Renderer for field types that produce no interactive input (e.g. ARRAY)."""
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return ""
 
         class _TagsRenderer:
@@ -207,7 +219,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_tags(field, prefilled, locale)
 
         class _NpsRenderer:
@@ -216,7 +230,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_nps(field, prefilled)
 
         class _ScaleRenderer:
@@ -225,7 +241,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_scale(field, prefilled)
 
         class _SignatureRenderer:
@@ -234,7 +252,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_signature(field)
 
         class _DynamicSelectRenderer:
@@ -243,7 +263,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_dynamic_select(field, prefilled, locale)
 
         class _TransferListRenderer:
@@ -252,7 +274,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_transfer_list(field, prefilled, locale)
 
         class _ReadOnlyDivRenderer:
@@ -261,7 +285,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_readonly_div(field)
 
         class _AvailabilityRenderer:
@@ -270,7 +296,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_availability(field)
 
         class _LocationRenderer:
@@ -279,7 +307,9 @@ class HTML5Renderer(AbstractFormRenderer):
             def __init__(self_, renderer: "HTML5Renderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._render_location(field, prefilled, locale)
 
         input_renderer = _InputRenderer(self)
@@ -344,6 +374,12 @@ class HTML5Renderer(AbstractFormRenderer):
 
         Returns:
             RenderedForm with HTML string as content and content_type="text/html".
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates
+            (SELECT/MULTI_SELECT/ARRAY), byte-identical to the same field
+            without ``relation``. Only ``JsonSchemaRenderer`` surfaces it.
         """
         style = style or StyleSchema()
         prefilled = prefilled or {}
@@ -369,25 +405,28 @@ class HTML5Renderer(AbstractFormRenderer):
         warnings: list[RenderWarning] = []
         for _field in form.iter_all_fields():
             if _field.field_type == FieldType.FORMULA:
-                warnings.append(RenderWarning(
-                    field_id=_field.field_id,
-                    field_uid=_field.field_uid,
-                    field_type=FieldType.FORMULA.value,
-                    renderer="html5",
-                    reason="formula evaluation not available (FEAT-301) — rendered as read-only placeholder",
-                ))
+                warnings.append(
+                    RenderWarning(
+                        field_id=_field.field_id,
+                        field_uid=_field.field_uid,
+                        field_type=FieldType.FORMULA.value,
+                        renderer="html5",
+                        reason="formula evaluation not available (FEAT-301) — rendered as read-only placeholder",
+                    )
+                )
             # FEAT-448 (TASK-2337) — recorded fallback posture (spec §4/AC6).
             elif _field.field_type in _HTML5_FALLBACK_TYPES:
-                warnings.append(RenderWarning(
-                    field_id=_field.field_id,
-                    field_uid=_field.field_uid,
-                    field_type=_field.field_type.value,
-                    renderer="html5",
-                    reason=(
-                        f"unsupported {_field.field_type.value} in html5"
-                        " — rendered as disabled placeholder"
-                    ),
-                ))
+                warnings.append(
+                    RenderWarning(
+                        field_id=_field.field_id,
+                        field_uid=_field.field_uid,
+                        field_type=_field.field_type.value,
+                        renderer="html5",
+                        reason=(
+                            f"unsupported {_field.field_type.value} in html5" " — rendered as disabled placeholder"
+                        ),
+                    )
+                )
 
         template = self._env.get_template("form.html.j2")
         rendered_html = template.render(
@@ -571,8 +610,7 @@ class HTML5Renderer(AbstractFormRenderer):
 
         events_config = events.model_dump(exclude_none=True)
         script = (
-            self._LIFECYCLE_SCRIPT_TEMPLATE
-            .replace("__FORM_ID__", json.dumps(form.form_id))
+            self._LIFECYCLE_SCRIPT_TEMPLATE.replace("__FORM_ID__", json.dumps(form.form_id))
             # FEAT-389 (code-review fix): the remote-event dispatch URL below
             # must hit the {form_uid}-keyed route (api/routes.py renamed it
             # from {form_id}) or extract_form_uid() 400s on the slug — a
@@ -589,8 +627,9 @@ class HTML5Renderer(AbstractFormRenderer):
             # renderer (create/edit/patch/update all construct FormSchema
             # with an explicit tenant=), so it is a reliable source here —
             # the same invariant handlers.py's _assert_form_tenant relies on.
-            .replace("__TENANT__", json.dumps(form.tenant or ""))
-            .replace("__EVENTS_CONFIG__", json.dumps(events_config))
+            .replace("__TENANT__", json.dumps(form.tenant or "")).replace(
+                "__EVENTS_CONFIG__", json.dumps(events_config)
+            )
         )
 
         return prefix + html_str + script
@@ -642,9 +681,7 @@ class HTML5Renderer(AbstractFormRenderer):
         render_as = (field.meta or {}).get("render_as", "")
 
         parts = [
-            f'<div class="form-field form-field--{field.field_type.value}{size_class}'
-            f' mb-4"'
-            f'{depends_attr}>',
+            f'<div class="form-field form-field--{field.field_type.value}{size_class}' f' mb-4"' f"{depends_attr}>",
         ]
 
         ft = field.field_type
@@ -660,8 +697,7 @@ class HTML5Renderer(AbstractFormRenderer):
                 extras=["fenced-code-blocks", "tables", "break-on-newline"],
             )
             parts.append(
-                f'<div class="form-field__display text-gray-700" id="{field.field_id}">'
-                f'{display_content}</div>'
+                f'<div class="form-field__display text-gray-700" id="{field.field_id}">' f"{display_content}</div>"
             )
 
         # Subsection headers: render as heading divider, not fieldset
@@ -674,7 +710,7 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.SELECT:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -686,7 +722,7 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.MULTI_SELECT:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -695,7 +731,7 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.TEXT_AREA:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -704,8 +740,8 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.BOOLEAN:
             parts.append(
                 f'<label class="form-field__checkbox-label inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">'
-                f'{self._render_checkbox(field, value)}'
-                f' {label_text}</label>'
+                f"{self._render_checkbox(field, value)}"
+                f" {label_text}</label>"
             )
 
         elif ft == FieldType.GROUP:
@@ -716,13 +752,11 @@ class HTML5Renderer(AbstractFormRenderer):
             if field.children:
                 for child in field.children:
                     parts.append(self._render_field_html(child, prefilled, errors, style, locale))
-            parts.append('</fieldset>')
+            parts.append("</fieldset>")
 
         # New field types (FEAT-167) dispatch
         elif ft == FieldType.SIGNATURE:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_signature(field))
@@ -730,30 +764,24 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.DYNAMIC_SELECT:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_dynamic_select(field, value, locale))
 
         elif ft == FieldType.TRANSFER_LIST:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_transfer_list(field, value, locale))
 
         elif ft == FieldType.REMOTE_RESPONSE:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             parts.append(self._render_readonly_div(field))
 
         elif ft == FieldType.AVAILABILITY:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_availability(field))
@@ -761,7 +789,7 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.LOCATION:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -770,33 +798,27 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.TAGS:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_tags(field, value, locale))
 
         elif ft == FieldType.NPS:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_nps(field, value))
 
         elif ft in (FieldType.LIKERT, FieldType.RANKING):
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_scale(field, value))
 
         # Phase 3 — FEAT-170
         elif ft == FieldType.REST:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_rest_uploader(field))
@@ -812,9 +834,7 @@ class HTML5Renderer(AbstractFormRenderer):
             # else: fallback — no audio renderer registered, render nothing
         # FEAT-300 — FORMULA: read-only placeholder (evaluator is FEAT-301)
         elif ft == FieldType.FORMULA:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_formula_placeholder(field))
@@ -833,7 +853,7 @@ class HTML5Renderer(AbstractFormRenderer):
         ):
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -842,7 +862,7 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.TREE_SELECT:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -851,25 +871,19 @@ class HTML5Renderer(AbstractFormRenderer):
         elif ft == FieldType.SIGNATURE_PAD:
             # Same value shape as SIGNATURE (a PNG data-URL string) — reuse
             # the same canvas + hidden-input renderer.
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_signature(field))
 
         elif ft == FieldType.PLACE:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_place(field, value, locale))
 
         elif ft in _HTML5_FALLBACK_TYPES:
-            parts.append(
-                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
-            )
+            parts.append(f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_unsupported_placeholder(field, _HTML5_FALLBACK_LABELS[ft]))
@@ -877,7 +891,7 @@ class HTML5Renderer(AbstractFormRenderer):
         else:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
-                f'{label_text}</label>'
+                f"{label_text}</label>"
             )
             if description:
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
@@ -886,7 +900,7 @@ class HTML5Renderer(AbstractFormRenderer):
         if error:
             parts.append(f'<span class="form-field__error text-sm text-red-600 mt-1 block" role="alert">{error}</span>')
 
-        parts.append('</div>')
+        parts.append("</div>")
         return "\n".join(parts)
 
     def _render_signature(self, field: FormField) -> str:
@@ -982,12 +996,12 @@ class HTML5Renderer(AbstractFormRenderer):
             f'<div class="flex-1">'
             f'<label class="text-xs text-gray-500 mb-1 block">Available</label>'
             f'<select id="{field.field_id}_available" multiple class="{tw}">'
-            f'{available_html}</select></div>'
+            f"{available_html}</select></div>"
             f'<div class="flex-1">'
             f'<label class="text-xs text-gray-500 mb-1 block">Selected</label>'
             f'<select id="{field.field_id}" name="{field.field_id}" multiple class="{tw}">'
-            f'{selected_html}</select></div>'
-            f'</div>'
+            f"{selected_html}</select></div>"
+            f"</div>"
         )
 
     def _render_readonly_div(self, field: FormField) -> str:
@@ -1004,7 +1018,7 @@ class HTML5Renderer(AbstractFormRenderer):
             f'class="form-field__remote-response block w-full rounded-md border border-gray-200 '
             f'px-3 py-2 text-sm text-gray-500 bg-gray-50" '
             f'data-remote-response="true" aria-live="polite">'
-            f'(Loading...)</div>'
+            f"(Loading...)</div>"
         )
 
     def _render_availability(self, field: FormField) -> str:
@@ -1023,7 +1037,7 @@ class HTML5Renderer(AbstractFormRenderer):
             f'data-availability="true">'
             f'<input type="date" name="{field.field_id}_start" class="mr-2" placeholder="Start">'
             f'<input type="date" name="{field.field_id}_end" placeholder="End">'
-            f'</div>'
+            f"</div>"
         )
 
     def _render_location(self, field: FormField, value: Any, locale: str) -> str:
@@ -1054,15 +1068,20 @@ class HTML5Renderer(AbstractFormRenderer):
 
         try:
             import pycountry
+
             countries = sorted(pycountry.countries, key=lambda c: c.name)
             for country in countries:
                 sel = " selected" if country.alpha_2 == selected else ""
-                options_html.append(
-                    f'<option value="{country.alpha_2}"{sel}>{html.escape(country.name)}</option>'
-                )
+                options_html.append(f'<option value="{country.alpha_2}"{sel}>{html.escape(country.name)}</option>')
         except ImportError:
-            _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"), ("ES", "Spain"),
-                         ("VE", "Venezuela"), ("MX", "Mexico"), ("CA", "Canada")]
+            _FALLBACK = [
+                ("US", "United States"),
+                ("GB", "United Kingdom"),
+                ("ES", "Spain"),
+                ("VE", "Venezuela"),
+                ("MX", "Mexico"),
+                ("CA", "Canada"),
+            ]
             for code, name in _FALLBACK:
                 sel = " selected" if code == selected else ""
                 options_html.append(f'<option value="{code}"{sel}>{name}</option>')
@@ -1107,15 +1126,20 @@ class HTML5Renderer(AbstractFormRenderer):
         country_options: list[str] = ['<option value="" disabled selected>Select country...</option>']
         try:
             import pycountry
+
             countries = sorted(pycountry.countries, key=lambda c: c.name)
             for country in countries:
                 sel = " selected" if country.alpha_2 == selected_country else ""
-                country_options.append(
-                    f'<option value="{country.alpha_2}"{sel}>{html.escape(country.name)}</option>'
-                )
+                country_options.append(f'<option value="{country.alpha_2}"{sel}>{html.escape(country.name)}</option>')
         except ImportError:
-            _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"), ("ES", "Spain"),
-                         ("VE", "Venezuela"), ("MX", "Mexico"), ("CA", "Canada")]
+            _FALLBACK = [
+                ("US", "United States"),
+                ("GB", "United Kingdom"),
+                ("ES", "Spain"),
+                ("VE", "Venezuela"),
+                ("MX", "Mexico"),
+                ("CA", "Canada"),
+            ]
             for code, name in _FALLBACK:
                 sel = " selected" if code == selected_country else ""
                 country_options.append(f'<option value="{code}"{sel}>{name}</option>')
@@ -1146,15 +1170,12 @@ class HTML5Renderer(AbstractFormRenderer):
         return (
             f'<div class="form-field__place" data-place="true" data-place-field="{field.field_id}">'
             f'<select id="{country_id}" name="{field.field_id}[country]" class="{tw}" '
-            f'data-place-level="country"{required_attr}>\n'
-            + "\n".join(country_options) + "\n</select>"
+            f'data-place-level="country"{required_attr}>\n' + "\n".join(country_options) + "\n</select>"
             f'<select id="{state_id}" name="{field.field_id}[state]" class="{tw}" '
-            f'data-place-level="state" data-cascade-parent="{country_id}">\n'
-            + "\n".join(state_options) + "\n</select>"
+            f'data-place-level="state" data-cascade-parent="{country_id}">\n' + "\n".join(state_options) + "\n</select>"
             f'<select id="{city_id}" name="{field.field_id}[city]" class="{tw}" '
-            f'data-place-level="city" data-cascade-parent="{state_id}">\n'
-            + "\n".join(city_options) + "\n</select>"
-            f'</div>'
+            f'data-place-level="city" data-cascade-parent="{state_id}">\n' + "\n".join(city_options) + "\n</select>"
+            f"</div>"
         )
 
     def _render_tree_select(self, field: FormField, value: Any, locale: str) -> str:
@@ -1184,7 +1205,7 @@ class HTML5Renderer(AbstractFormRenderer):
             f'id="{field.field_id}"',
             f'name="{field.field_id}"',
             f'class="{tw}"',
-            'multiple',
+            "multiple",
             'data-tree-select="true"',
         ]
         if field.required:
@@ -1202,9 +1223,7 @@ class HTML5Renderer(AbstractFormRenderer):
                 opt_label = _resolve(opt.label, locale) or opt.value
                 disabled_attr = " disabled" if opt.disabled else ""
                 sel = " selected" if opt.value in selected_values else ""
-                options_html.append(
-                    f'<option value="{opt.value}"{sel}{disabled_attr}>{opt_label}</option>'
-                )
+                options_html.append(f'<option value="{opt.value}"{sel}{disabled_attr}>{opt_label}</option>')
 
         return f'<select {" ".join(attrs)}>\n' + "\n".join(options_html) + "\n</select>"
 
@@ -1286,8 +1305,7 @@ class HTML5Renderer(AbstractFormRenderer):
         """
         selected = str(value) if value is not None else ""
         parts: list[str] = [
-            '<div class="form-field__nps flex gap-1 flex-wrap" role="radiogroup" '
-            'aria-label="NPS 0 to 10">'
+            '<div class="form-field__nps flex gap-1 flex-wrap" role="radiogroup" ' 'aria-label="NPS 0 to 10">'
         ]
         for i in range(11):
             checked = " checked" if str(i) == selected else ""
@@ -1296,9 +1314,9 @@ class HTML5Renderer(AbstractFormRenderer):
                 f'<label class="form-field__nps-item flex flex-col items-center cursor-pointer">'
                 f'<input type="radio" name="{field.field_id}" value="{i}"{checked}{req}>'
                 f'<span class="text-xs">{i}</span>'
-                f'</label>'
+                f"</label>"
             )
-        parts.append('</div>')
+        parts.append("</div>")
         return "\n".join(parts)
 
     def _render_scale(self, field: FormField, value: Any) -> str:
@@ -1313,17 +1331,13 @@ class HTML5Renderer(AbstractFormRenderer):
         """
         c = field.constraints
         scale_min = c.scale_min if c and c.scale_min is not None else 0
-        scale_max = c.scale_max if c and c.scale_max is not None else (
-            4 if field.field_type == FieldType.LIKERT else 5
-        )
+        scale_max = c.scale_max if c and c.scale_max is not None else (4 if field.field_type == FieldType.LIKERT else 5)
         current = str(value) if value is not None else str(scale_min)
         anchor_labels = {}
         if c and c.anchor_labels:
             anchor_labels = c.anchor_labels
 
-        parts: list[str] = [
-            '<div class="form-field__scale flex gap-1 flex-wrap" role="radiogroup">'
-        ]
+        parts: list[str] = ['<div class="form-field__scale flex gap-1 flex-wrap" role="radiogroup">']
         for i in range(scale_min, scale_max + 1):
             checked = " checked" if str(i) == current else ""
             req = " required" if field.required and i == scale_min else ""
@@ -1331,12 +1345,12 @@ class HTML5Renderer(AbstractFormRenderer):
             label_extra = f' title="{html.escape(str(anchor), quote=True)}"' if anchor else ""
             parts.append(
                 f'<label class="form-field__scale-item flex flex-col items-center cursor-pointer"'
-                f'{label_extra}>'
+                f"{label_extra}>"
                 f'<input type="radio" name="{field.field_id}" value="{i}"{checked}{req}>'
                 f'<span class="text-xs">{i}</span>'
-                f'</label>'
+                f"</label>"
             )
-        parts.append('</div>')
+        parts.append("</div>")
         return "\n".join(parts)
 
     def _render_rest_uploader(self, field: FormField) -> str:
@@ -1372,9 +1386,7 @@ class HTML5Renderer(AbstractFormRenderer):
         # the upload request. This is a required frontend contract update
         # (see docs/migration/feat-421-forms-tenant-in-url.md); this
         # function has no `form`/`tenant` in scope to substitute it here.
-        upload_url = (
-            f"/api/v1/{{tenant}}/forms/{{form_id}}/fields/{field.field_id}/upload"
-        )
+        upload_url = f"/api/v1/{{tenant}}/forms/{{form_id}}/fields/{field.field_id}/upload"
         required_attr = " required" if field.required else ""
         accept_attr = f' accept="{mime_types}"' if mime_types else ""
 
@@ -1390,17 +1402,17 @@ class HTML5Renderer(AbstractFormRenderer):
             f'data-rest-uploader="true">'
             f'<input type="file" '
             f'name="{field.field_id}_file"'
-            f'{accept_attr}'
-            f'{required_attr}'
+            f"{accept_attr}"
+            f"{required_attr}"
             f' class="form-field__rest-file block w-full text-sm">'
-            f'{public_args_html}'
+            f"{public_args_html}"
             f'<input type="hidden" name="{field.field_id}.answer" '
             f'id="{field.field_id}_answer">'
             f'<input type="hidden" name="{field.field_id}.blob_ref" '
             f'id="{field.field_id}_blob_ref">'
             f'<span class="rest-status text-xs text-gray-500 mt-1 block" '
             f'aria-live="polite"></span>'
-            f'</div>'
+            f"</div>"
         )
 
     def _render_rest_public_args(self, field: FormField) -> str:
@@ -1453,15 +1465,11 @@ class HTML5Renderer(AbstractFormRenderer):
                     f'class="parrot-rest-arg" '
                     f'data-arg-name="{safe_name}" '
                     f'data-data-type="{html.escape(str(arg.get("data_type", "string")), quote=True)}"'
-                    f'{arg_required}'
-                    f'{checked}>'
+                    f"{arg_required}"
+                    f"{checked}>"
                 )
             else:
-                value_attr = (
-                    f' value="{html.escape(str(default), quote=True)}"'
-                    if default is not None
-                    else ""
-                )
+                value_attr = f' value="{html.escape(str(default), quote=True)}"' if default is not None else ""
                 control = (
                     f'<input type="{input_type}" '
                     f'name="{safe_name}" '
@@ -1469,15 +1477,15 @@ class HTML5Renderer(AbstractFormRenderer):
                     f'class="parrot-rest-arg form-field__rest-arg" '
                     f'data-arg-name="{safe_name}" '
                     f'data-data-type="{html.escape(str(arg.get("data_type", "string")), quote=True)}"'
-                    f'{value_attr}'
-                    f'{arg_required}>'
+                    f"{value_attr}"
+                    f"{arg_required}>"
                 )
 
             parts.append(
                 f'<label class="form-field__rest-arg-label block text-xs '
                 f'text-gray-700 mt-2" for="{input_id}">{label_text}'
-                f'{control}'
-                f'</label>'
+                f"{control}"
+                f"</label>"
             )
 
         return "".join(parts)
@@ -1504,6 +1512,7 @@ class HTML5Renderer(AbstractFormRenderer):
             HTML string for the audio recorder widget.
         """
         from .fields.audio import AudioFieldRenderer as _AudioFieldRenderer
+
         renderer = _AudioFieldRenderer()
         # We use asyncio to run the coroutine synchronously because the
         # AudioFieldRenderer.render() is pure string manipulation (no I/O).
@@ -1511,9 +1520,7 @@ class HTML5Renderer(AbstractFormRenderer):
         import concurrent.futures
 
         async def _render_coro() -> str:
-            return await renderer.render(
-                field, locale=locale, prefilled=value, error=error
-            )
+            return await renderer.render(field, locale=locale, prefilled=value, error=error)
 
         try:
             loop = asyncio.get_running_loop()
@@ -1545,6 +1552,7 @@ class HTML5Renderer(AbstractFormRenderer):
         depends_attr = ""
         if subsection.depends_on:
             import html as _html
+
             safe_json = _html.escape(json.dumps(subsection.depends_on.model_dump(mode="json")), quote=True)
             depends_attr = f' data-depends-on="{safe_json}"'
 
@@ -1553,20 +1561,14 @@ class HTML5Renderer(AbstractFormRenderer):
             f' id="subsection-{subsection.subsection_id}"{depends_attr}>',
         ]
         if title:
-            parts.append(
-                f'<h3 class="form-subsection__title text-base font-semibold text-gray-800">'
-                f'{title}</h3>'
-            )
+            parts.append(f'<h3 class="form-subsection__title text-base font-semibold text-gray-800">' f"{title}</h3>")
         if description:
-            parts.append(
-                f'<p class="form-subsection__description text-sm text-gray-500">'
-                f'{description}</p>'
-            )
+            parts.append(f'<p class="form-subsection__description text-sm text-gray-500">' f"{description}</p>")
         parts.append('<div class="form-subsection__fields space-y-4">')
         for field in subsection.fields:
             parts.append(self._render_field_html(field, prefilled, errors, style, locale))
-        parts.append('</div>')
-        parts.append('</div>')
+        parts.append("</div>")
+        parts.append("</div>")
         return "\n".join(parts)
 
     def _render_input(
@@ -1634,10 +1636,7 @@ class HTML5Renderer(AbstractFormRenderer):
         Returns:
             HTML checkbox input string.
         """
-        tw = (
-            "h-4 w-4 rounded border-gray-300 text-blue-600 "
-            "focus:ring-blue-500"
-        )
+        tw = "h-4 w-4 rounded border-gray-300 text-blue-600 " "focus:ring-blue-500"
         attrs: list[str] = [
             'type="checkbox"',
             f'id="{field.field_id}"',
@@ -1740,9 +1739,7 @@ class HTML5Renderer(AbstractFormRenderer):
                     sel = " selected" if opt.value in selected_values else ""
                 else:
                     sel = " selected" if opt.value == selected_single else ""
-                options_html.append(
-                    f'<option value="{opt.value}"{sel}{disabled_attr}>{opt_label}</option>'
-                )
+                options_html.append(f'<option value="{opt.value}"{sel}{disabled_attr}>{opt_label}</option>')
 
         options_str = "\n".join(options_html)
         return f'<select {" ".join(attrs)}>\n{options_str}\n</select>'
@@ -1776,7 +1773,7 @@ class HTML5Renderer(AbstractFormRenderer):
                     f'<label class="form-field__radio-label inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">'
                     f'<input type="radio" name="{field.field_id}" '
                     f'value="{opt.value}" class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"'
-                    f'{checked}{disabled}{required}>'
+                    f"{checked}{disabled}{required}>"
                     f" {opt_label}</label>"
                 )
 

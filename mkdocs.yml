@@ -244,6 +244,7 @@ nav:
           - FormDesigner - Audio Renderer: formdesigner-audio-renderer.md
           - FormDesigner - Conditional Sections: formdesigner-conditional-sections.md
           - FormDesigner - Autonomous Persistence: formdesigner-autonomous-persistence.md
+          - FormDesigner - Relational Fields: formdesigner-relational-fields.md
   - Prompts:
       - PromptBuilder Guide: prompts/promptbuilder.md
       - Layers Reference: prompts/layers-reference.md
