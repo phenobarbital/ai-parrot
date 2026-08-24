@@ -10,6 +10,9 @@ edge kinds for ``RelationType``.
 
 FEAT-240: Added ``RelationType.EXTENDS`` for Odoo model inheritance edges.
 
+FEAT-454: Added ``ConceptType.ISSUE``, ``.PERSON`` and ``.PROJECT`` for the
+Jira ticket extractor's `issues` wiki namespace. Purely additive.
+
 Design notes:
 - ``ConceptType`` values for existing members MUST remain identical strings
   (e.g. ``"Section"``, ``"Policy"``) to avoid breaking YAML frontmatter parsing.
@@ -66,6 +69,11 @@ class ConceptType(str, Enum):
     # --- Work-lineage types (graph-knowledge-persistence) ---
     RUN = "Run"
     CLAIM = "Claim"
+
+    # --- Jira / work-tracking types (FEAT-454) ---
+    ISSUE = "Issue"
+    PERSON = "Person"
+    PROJECT = "Project"
 
     # --- Open-vocabulary fallback (FEAT-216) ---
     # bundle.py maps unknown foreign OKF ``type`` values here on import;
