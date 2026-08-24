@@ -9,12 +9,8 @@ from parrot_formdesigner.services.validators import FormValidator
 
 pytestmark = pytest.mark.asyncio
 
-ONE = RelationSpec(
-    cardinality="one", target=EntityRef(namespace="odoo", entity="res.partner")
-)
-MANY = RelationSpec(
-    cardinality="many", target=EntityRef(namespace="db", entity="public.tags")
-)
+ONE = RelationSpec(cardinality="one", target=EntityRef(namespace="odoo", entity="res.partner"))
+MANY = RelationSpec(cardinality="many", target=EntityRef(namespace="db", entity="public.tags"))
 EMBED = RelationSpec(
     cardinality="many",
     mode="embed",
@@ -25,16 +21,12 @@ EMBED = RelationSpec(
 
 @pytest.fixture
 def customer():
-    return FormField(
-        field_id="customer", field_type=FieldType.SELECT, label="Customer", relation=ONE
-    )
+    return FormField(field_id="customer", field_type=FieldType.SELECT, label="Customer", relation=ONE)
 
 
 @pytest.fixture
 def tags():
-    return FormField(
-        field_id="tags", field_type=FieldType.MULTI_SELECT, label="Tags", relation=MANY
-    )
+    return FormField(field_id="tags", field_type=FieldType.MULTI_SELECT, label="Tags", relation=MANY)
 
 
 async def test_one_accepts_scalar_str(customer):
@@ -94,9 +86,7 @@ async def test_embed_mode_uses_existing_array_recursion():
     )
     # A plain list of rows validates via the pre-existing ARRAY path — no
     # relation-specific rejection is applied to embed mode.
-    errors = await FormValidator().validate_field(
-        lines, [{"order_id": "o1", "qty": 3}]
-    )
+    errors = await FormValidator().validate_field(lines, [{"order_id": "o1", "qty": 3}])
     assert errors == []
 
 

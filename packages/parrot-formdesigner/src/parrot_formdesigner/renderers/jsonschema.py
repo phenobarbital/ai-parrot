@@ -321,7 +321,9 @@ class JsonSchemaRenderer(AbstractFormRenderer):
             def __init__(self_, renderer: "JsonSchemaRenderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return {"type": _TYPE_MAP.get(field.field_type, "string"), "x-field-type": field.field_type.value}
 
         renderer_inst = _JsonSchemaFieldRenderer(self)
@@ -615,9 +617,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 # the consumer substitutes with the real tenant slug before
                 # issuing the upload request (see docs/migration/
                 # feat-421-forms-tenant-in-url.md).
-                "upload_url_template": (
-                    "/api/v1/{tenant}/forms/{form_id}/fields/{field_id}/upload"
-                ),
+                "upload_url_template": ("/api/v1/{tenant}/forms/{form_id}/fields/{field_id}/upload"),
                 "additional_args": all_args,
                 "public_args": public_args,
             }

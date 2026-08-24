@@ -33,8 +33,7 @@ def test_yaml_relation_block_parses():
 
 
 def test_yaml_relation_absent_defaults_none():
-    form = YamlExtractor().extract(
-        """
+    form = YamlExtractor().extract("""
 form_id: t
 title: T
 sections:
@@ -43,8 +42,7 @@ sections:
       - field_id: name
         field_type: text
         label: Name
-"""
-    )
+""")
     field = form.sections[0].fields[0]
     assert field.relation is None
 
@@ -82,9 +80,7 @@ def test_yaml_malformed_relation_raises():
 
 
 def test_yaml_relation_missing_target_raises():
-    bad = YAML_FORM.replace(
-        "target: {namespace: odoo, entity: res.partner}", "target: not-a-mapping"
-    )
+    bad = YAML_FORM.replace("target: {namespace: odoo, entity: res.partner}", "target: not-a-mapping")
     with pytest.raises(Exception, match="customer"):
         YamlExtractor().extract(bad)
 

@@ -30,9 +30,7 @@ def _embed_form(inverse: str) -> FormSchema:
             target=EntityRef(namespace="db", entity="public.lines"),
         ),
     )
-    return FormSchema(
-        form_id="t", title="T", sections=[FormSection(section_id="s", fields=[lines])]
-    )
+    return FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[lines])])
 
 
 def test_inverse_field_exists_passes():

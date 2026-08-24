@@ -54,10 +54,7 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
     by_fid: dict[str, FormField] = {}
     for f in form.iter_fields_recursive():
         if f.field_id in by_fid:
-            raise ValueError(
-                f"Cannot resolve rules: duplicate field_id {f.field_id!r} "
-                f"in form {form.form_id!r}"
-            )
+            raise ValueError(f"Cannot resolve rules: duplicate field_id {f.field_id!r} " f"in form {form.form_id!r}")
         by_fid[f.field_id] = f
     known_uids = {str(f.field_uid) for f in by_fid.values()}
 
@@ -72,14 +69,10 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
             parsed = None
         if parsed is not None:
             if parsed not in known_uids:
-                raise ValueError(
-                    f"Field {owner!r}: {kind} references unknown field_uid {ref!r}"
-                )
+                raise ValueError(f"Field {owner!r}: {kind} references unknown field_uid {ref!r}")
             return parsed
         if ref not in by_fid:
-            raise ValueError(
-                f"Field {owner!r}: {kind} references unknown field_id {ref!r}"
-            )
+            raise ValueError(f"Field {owner!r}: {kind} references unknown field_id {ref!r}")
         return str(by_fid[ref].field_uid)
 
     def _resolve_condition(cond: FieldCondition, owner: str) -> None:
@@ -93,10 +86,7 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
             # here would let a dangling/foreign reference smuggle straight
             # past resolution (code review finding, FEAT-393).
             if str(cond.field_uid) not in known_uids:
-                raise ValueError(
-                    f"Field {owner!r}: condition references unknown field_uid "
-                    f"{cond.field_uid!r}"
-                )
+                raise ValueError(f"Field {owner!r}: condition references unknown field_uid " f"{cond.field_uid!r}")
             return
         cond.field_uid = uuid.UUID(_uid_for(cond.field_id or "", owner, "condition"))
 
@@ -118,9 +108,7 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
         if f.depends_on:
             _resolve_rule(f.depends_on, f.field_id)
             for op in f.depends_on.operations or []:
-                op.operands = [
-                    _uid_for(o, f.field_id, "operation operand") for o in op.operands
-                ]
+                op.operands = [_uid_for(o, f.field_id, "operation operand") for o in op.operands]
                 op.target = _uid_for(op.target, f.field_id, "operation target")
         for post in f.post_depends or []:
             post.target = _uid_for(post.target, f.field_id, "post_depends target")
@@ -128,12 +116,9 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
                 _resolve_condition(c, f.field_id)
             if post.operation:
                 post.operation.operands = [
-                    _uid_for(o, f.field_id, "post operation operand")
-                    for o in post.operation.operands
+                    _uid_for(o, f.field_id, "post operation operand") for o in post.operation.operands
                 ]
-                post.operation.target = _uid_for(
-                    post.operation.target, f.field_id, "post operation target"
-                )
+                post.operation.target = _uid_for(post.operation.target, f.field_id, "post operation target")
 
     # Section rules need resolving too. They were skipped here for as long as
     # nothing evaluated them; now that RuleEvaluator gates a section's fields
@@ -144,10 +129,7 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
             continue
         _resolve_rule(section.depends_on, section.section_id)
         for op in section.depends_on.operations or []:
-            op.operands = [
-                _uid_for(o, section.section_id, "operation operand")
-                for o in op.operands
-            ]
+            op.operands = [_uid_for(o, section.section_id, "operation operand") for o in op.operands]
             op.target = _uid_for(op.target, section.section_id, "operation target")
 
     return form
@@ -175,9 +157,7 @@ def _check_embed_inverse_fields(form: FormSchema) -> None:
         if relation is None or relation.mode != "embed":
             continue
         template_field_ids = (
-            {t.field_id for t in walk_fields([f.item_template])}
-            if f.item_template is not None
-            else set()
+            {t.field_id for t in walk_fields([f.item_template])} if f.item_template is not None else set()
         )
         if relation.inverse_field not in template_field_ids:
             raise ValueError(
@@ -187,9 +167,7 @@ def _check_embed_inverse_fields(form: FormSchema) -> None:
             )
 
 
-def find_field_by_uid(
-    form: FormSchema, field_uid: uuid.UUID
-) -> tuple[FormField, FormSection] | None:
+def find_field_by_uid(form: FormSchema, field_uid: uuid.UUID) -> tuple[FormField, FormSection] | None:
     """Form-wide, subsection- and nesting-aware field lookup by UID.
 
     The canonical replacement for ``api/operations.py``'s ``_field_index``
@@ -211,9 +189,7 @@ def find_field_by_uid(
     return None
 
 
-def resolve_answer(
-    form: FormSchema, field_uid: uuid.UUID, answers: dict[str, Any]
-) -> Any:
+def resolve_answer(form: FormSchema, field_uid: uuid.UUID, answers: dict[str, Any]) -> Any:
     """Read an answer value for a UID-referenced field from a
     ``field_id``-keyed answers dict.
 

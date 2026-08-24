@@ -232,11 +232,7 @@ class JsonSchemaExtractor:
         options: list[FieldOption] | None = None
         if "enum" in prop:
             field_type = FieldType.SELECT
-            options = [
-                FieldOption(value=str(v), label=str(v))
-                for v in prop["enum"]
-                if v is not None
-            ]
+            options = [FieldOption(value=str(v), label=str(v)) for v in prop["enum"] if v is not None]
 
         # Handle x-options-source → OptionsSource (FEAT-167)
         options_source: OptionsSource | None = None
@@ -309,9 +305,7 @@ class JsonSchemaExtractor:
                     try:
                         parsed_posts.append(PostDependency.model_validate(pd_data))
                     except Exception:  # noqa: BLE001
-                        logger.warning(
-                            "Could not reconstruct a post_depends entry for field '%s'", name
-                        )
+                        logger.warning("Could not reconstruct a post_depends entry for field '%s'", name)
             post_depends = parsed_posts or None
 
         return FormField(
@@ -331,9 +325,7 @@ class JsonSchemaExtractor:
             post_depends=post_depends,
         )
 
-    def _parse_relation(
-        self, x_relation: dict[str, Any], field_id: str
-    ) -> RelationSpec:
+    def _parse_relation(self, x_relation: dict[str, Any], field_id: str) -> RelationSpec:
         """Parse an ``x-relation`` extension dict into a ``RelationSpec``
         (FEAT-456). Mirrors the ``x-options-source`` handling above.
 
@@ -353,17 +345,12 @@ class JsonSchemaExtractor:
         raw = dict(x_relation)
         target_raw = raw.pop("target", None)
         if not isinstance(target_raw, dict):
-            raise TypeError(
-                f"Field {field_id!r}: x-relation.target must be a mapping "
-                "with 'namespace' and 'entity'"
-            )
+            raise TypeError(f"Field {field_id!r}: x-relation.target must be a mapping " "with 'namespace' and 'entity'")
         try:
             target = EntityRef(**target_raw)
             return RelationSpec(target=target, **raw)
         except Exception as exc:
-            raise ValueError(
-                f"Field {field_id!r}: invalid x-relation block: {exc}"
-            ) from exc
+            raise ValueError(f"Field {field_id!r}: invalid x-relation block: {exc}") from exc
 
     def _map_type(self, prop: dict[str, Any]) -> FieldType:
         """Map a JSON Schema property to a FieldType.
@@ -392,8 +379,8 @@ class JsonSchemaExtractor:
                 return FieldType(declared)
             except ValueError:
                 logger.warning(
-                    "x-field-type '%s' is not a known FieldType; falling back "
-                    "to format/type inference", declared,
+                    "x-field-type '%s' is not a known FieldType; falling back " "to format/type inference",
+                    declared,
                 )
 
         if fmt and fmt in _FORMAT_MAP:

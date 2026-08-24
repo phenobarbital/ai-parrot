@@ -102,27 +102,21 @@ def test_embed_requires_array_with_template():
             field_id="lines",
             field_type=FieldType.ARRAY,
             label="Lines",
-            relation=_rel(
-                "many", mode="embed", target=DB_LINES, inverse_field="order_id"
-            ),
+            relation=_rel("many", mode="embed", target=DB_LINES, inverse_field="order_id"),
         )
     # and with item_template it passes:
     item = FormField(
         field_id="line",
         field_type=FieldType.GROUP,
         label="Line",
-        children=[
-            FormField(field_id="order_id", field_type=FieldType.HIDDEN, label="oid")
-        ],
+        children=[FormField(field_id="order_id", field_type=FieldType.HIDDEN, label="oid")],
     )
     f = FormField(
         field_id="lines",
         field_type=FieldType.ARRAY,
         label="Lines",
         item_template=item,
-        relation=_rel(
-            "many", mode="embed", target=DB_LINES, inverse_field="order_id"
-        ),
+        relation=_rel("many", mode="embed", target=DB_LINES, inverse_field="order_id"),
     )
     assert f.relation.mode == "embed"
 
@@ -133,9 +127,7 @@ def test_embed_wrong_field_type_rejected():
             field_id="lines",
             field_type=FieldType.SELECT,
             label="Lines",
-            relation=_rel(
-                "many", mode="embed", target=DB_LINES, inverse_field="order_id"
-            ),
+            relation=_rel("many", mode="embed", target=DB_LINES, inverse_field="order_id"),
         )
 
 

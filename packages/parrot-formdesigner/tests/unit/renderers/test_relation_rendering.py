@@ -13,18 +13,12 @@ from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
 
 pytestmark = pytest.mark.asyncio
 
-REL = RelationSpec(
-    cardinality="one", target=EntityRef(namespace="odoo", entity="res.partner")
-)
+REL = RelationSpec(cardinality="one", target=EntityRef(namespace="odoo", entity="res.partner"))
 
 
 def _form_with_relation() -> FormSchema:
-    f = FormField(
-        field_id="customer", field_type=FieldType.SELECT, label="Customer", relation=REL
-    )
-    return FormSchema(
-        form_id="t", title="T", sections=[FormSection(section_id="s", fields=[f])]
-    )
+    f = FormField(field_id="customer", field_type=FieldType.SELECT, label="Customer", relation=REL)
+    return FormSchema(form_id="t", title="T", sections=[FormSection(section_id="s", fields=[f])])
 
 
 def _form_without_relation(with_relation_form: FormSchema) -> FormSchema:

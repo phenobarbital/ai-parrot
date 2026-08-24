@@ -36,9 +36,7 @@ logger = logging.getLogger(__name__)
 _SKIP_FIELD_TYPES: frozenset[FieldType] = frozenset({FieldType.HIDDEN})
 
 # Field types that carry options (SELECT / MULTI_SELECT).
-_SELECT_TYPES: frozenset[FieldType] = frozenset(
-    {FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT}
-)
+_SELECT_TYPES: frozenset[FieldType] = frozenset({FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT})
 
 # FEAT-236 voice-capability taxonomy (spec §2 pillar 2). Field types not listed
 # in either set default to VoiceMode.VOICE (narrate + spoken/typed answer).
@@ -154,17 +152,13 @@ def build_audio_synthesizer(
         from parrot.voice.tts.models import TTSConfig
         from parrot.voice.tts.synthesizer import VoiceSynthesizer
     except ImportError as exc:
-        logger.warning(
-            "parrot.voice TTS stack unavailable (%s); audio runs text-only", exc
-        )
+        logger.warning("parrot.voice TTS stack unavailable (%s); audio runs text-only", exc)
         return None
 
     backend = config.tts_backend if config is not None else "supertonic"
     voice = config.tts_voice if config is not None else None
     mime_format = config.tts_mime_format if config is not None else "audio/wav"
-    return VoiceSynthesizer(
-        TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
-    )
+    return VoiceSynthesizer(TTSConfig(backend=backend, voice=voice, mime_format=mime_format))
 
 
 async def synthesize_with_fallback(
@@ -196,9 +190,7 @@ async def synthesize_with_fallback(
         from parrot.voice.tts.models import TTSConfig
         from parrot.voice.tts.synthesizer import VoiceSynthesizer
     except ImportError as exc:
-        logger.warning(
-            "parrot.voice TTS stack unavailable (%s); text-only synthesis", exc
-        )
+        logger.warning("parrot.voice TTS stack unavailable (%s); text-only synthesis", exc)
         return None
 
     preferred = config.tts_backend if config is not None else "supertonic"
@@ -208,9 +200,7 @@ async def synthesize_with_fallback(
     # Preferred backend first, then Google as a fallback (deduplicated).
     backends = [preferred] + [b for b in ("google",) if b != preferred]
     for backend in backends:
-        synth = VoiceSynthesizer(
-            TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
-        )
+        synth = VoiceSynthesizer(TTSConfig(backend=backend, voice=voice, mime_format=mime_format))
         try:
             result = await synth.synthesize(text, language=language)
             return result.audio
@@ -449,9 +439,7 @@ class AudioFormRenderer(AbstractFormRenderer):
         # Serialize to dict; exclude audio_prompt bytes from JSON output.
         # mode="json" so field_uid (FEAT-393) and any other UUID values
         # serialize as strings instead of raw uuid.UUID objects.
-        manifest_dict = manifest.model_dump(
-            mode="json", exclude={"questions": {"__all__": {"audio_prompt"}}}
-        )
+        manifest_dict = manifest.model_dump(mode="json", exclude={"questions": {"__all__": {"audio_prompt"}}})
 
         return RenderedForm(
             content=manifest_dict,
@@ -485,8 +473,6 @@ class AudioFormRenderer(AbstractFormRenderer):
                 # model_copy preserves the FEAT-236 voice fields.
                 result.append(q.model_copy(update={"audio_prompt": synthesis.audio}))
             except Exception as exc:
-                self.logger.warning(
-                    "TTS synthesis failed for field %s: %s", q.field_id, exc
-                )
+                self.logger.warning("TTS synthesis failed for field %s: %s", q.field_id, exc)
                 result.append(q)
         return result

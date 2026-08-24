@@ -138,13 +138,9 @@ async def test_only_jsonschema_output_differs_from_non_relational_baseline():
     # Pin every UID so the comparison is genuinely about `relation`, not
     # incidental uuid4 differences between the two independently-extracted
     # forms (renderers embed field_uid/section_uid/form_uid in their output).
-    without_rel = without_rel.model_copy(
-        update={"form_uid": with_rel.form_uid}, deep=True
-    )
+    without_rel = without_rel.model_copy(update={"form_uid": with_rel.form_uid}, deep=True)
     without_rel.sections[0].section_uid = with_rel.sections[0].section_uid
-    for wr_field, rel_field in zip(
-        without_rel.sections[0].fields, with_rel.sections[0].fields, strict=True
-    ):
+    for wr_field, rel_field in zip(without_rel.sections[0].fields, with_rel.sections[0].fields, strict=True):
         wr_field.field_uid = rel_field.field_uid
         if wr_field.item_template is not None:
             wr_field.item_template.field_uid = rel_field.item_template.field_uid

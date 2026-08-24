@@ -103,7 +103,6 @@ class RelationSpec(BaseModel):
                 )
             if self.cardinality != "many":
                 raise ValueError(
-                    "RelationSpec: mode='embed' requires cardinality='many' "
-                    f"(got cardinality={self.cardinality!r})."
+                    "RelationSpec: mode='embed' requires cardinality='many' " f"(got cardinality={self.cardinality!r})."
                 )
         return self

@@ -75,28 +75,30 @@ _FIELD_TYPE_MAPPING: dict[FieldType, str] = {
 
 
 # Field types that produce RenderWarning in Adaptive Card (no native AC equivalent)
-_AC_FALLBACK_TYPES = frozenset({
-    FieldType.SIGNATURE,
-    FieldType.REMOTE_RESPONSE,
-    FieldType.AVAILABILITY,
-    # Phase 3 — FEAT-170
-    FieldType.REST,
-    # FEAT-300 — formula fields (evaluator is FEAT-301)
-    FieldType.FORMULA,
-    # FEAT-448 (TASK-2337) — no Adaptive Card element represents a
-    # hierarchical tree, a signature capture, a structured card object, a
-    # (multi-)file uploader or an unconstrained third-party payload;
-    # credit_card is additionally never rendered as an editable widget
-    # (spec §4) — text-placeholder fallback for all seven, same posture as
-    # SIGNATURE/REST above.
-    FieldType.TREE_SELECT,
-    FieldType.SIGNATURE_PAD,
-    FieldType.CREDIT_CARD,
-    FieldType.IMAGE_DROPZONE,
-    FieldType.MULTI_UPLOAD,
-    FieldType.AI_CAPTURE,
-    FieldType.PLACE,
-})
+_AC_FALLBACK_TYPES = frozenset(
+    {
+        FieldType.SIGNATURE,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+        # Phase 3 — FEAT-170
+        FieldType.REST,
+        # FEAT-300 — formula fields (evaluator is FEAT-301)
+        FieldType.FORMULA,
+        # FEAT-448 (TASK-2337) — no Adaptive Card element represents a
+        # hierarchical tree, a signature capture, a structured card object, a
+        # (multi-)file uploader or an unconstrained third-party payload;
+        # credit_card is additionally never rendered as an editable widget
+        # (spec §4) — text-placeholder fallback for all seven, same posture as
+        # SIGNATURE/REST above.
+        FieldType.TREE_SELECT,
+        FieldType.SIGNATURE_PAD,
+        FieldType.CREDIT_CARD,
+        FieldType.IMAGE_DROPZONE,
+        FieldType.MULTI_UPLOAD,
+        FieldType.AI_CAPTURE,
+        FieldType.PLACE,
+    }
+)
 
 
 class AdaptiveCardRenderer(AbstractFormRenderer):
@@ -152,7 +154,9 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             def __init__(self_, renderer: "AdaptiveCardRenderer") -> None:
                 self_._r = renderer
 
-            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+            async def render(
+                self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None
+            ) -> Any:
                 return self_._r._build_input_element(field, prefilled, locale)
 
         renderer_inst = _ACInputRenderer(self)
@@ -200,13 +204,15 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         # Form description if present
         if form.description:
-            body.append({
-                "type": "TextBlock",
-                "text": _resolve(form.description, locale),
-                "isSubtle": True,
-                "wrap": True,
-                "spacing": "Small",
-            })
+            body.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(form.description, locale),
+                    "isSubtle": True,
+                    "wrap": True,
+                    "spacing": "Small",
+                }
+            )
 
         # Render all sections
         for i, section in enumerate(form.sections):
@@ -230,16 +236,18 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         for section in form.sections:
             for field in section.fields:
                 if field.field_type in _AC_FALLBACK_TYPES:
-                    warnings.append(RenderWarning(
-                        field_id=field.field_id,
-                        field_uid=field.field_uid,
-                        field_type=field.field_type.value,
-                        renderer="adaptive_card",
-                        reason=(
-                            f"unsupported {field.field_type.value} in adaptive_card"
-                            " — rendered as text placeholder"
-                        ),
-                    ))
+                    warnings.append(
+                        RenderWarning(
+                            field_id=field.field_id,
+                            field_uid=field.field_uid,
+                            field_type=field.field_type.value,
+                            renderer="adaptive_card",
+                            reason=(
+                                f"unsupported {field.field_type.value} in adaptive_card"
+                                " — rendered as text placeholder"
+                            ),
+                        )
+                    )
 
         return RenderedForm(
             content=card,
@@ -291,11 +299,13 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         # Progress indicator for multi-section forms
         if total > 1:
             section_title = _resolve(section.title, locale) if section.title else None
-            body.append(self._build_progress_indicator(
-                current=section_index + 1,
-                total=total,
-                section_title=section_title,
-            ))
+            body.append(
+                self._build_progress_indicator(
+                    current=section_index + 1,
+                    total=total,
+                    section_title=section_title,
+                )
+            )
 
         # Section body
         body.extend(self._build_section_body(section, prefilled, errors, locale))
@@ -340,21 +350,25 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         body.append(self._build_header("Confirm Submission", size="Medium"))
         form_title = _resolve(form.title, locale)
-        body.append({
-            "type": "TextBlock",
-            "text": form_title,
-            "weight": "Bolder",
-            "size": "Large",
-            "wrap": True,
-        })
+        body.append(
+            {
+                "type": "TextBlock",
+                "text": form_title,
+                "weight": "Bolder",
+                "size": "Large",
+                "wrap": True,
+            }
+        )
 
         if summary_text:
-            body.append({
-                "type": "Container",
-                "style": "emphasis",
-                "items": [{"type": "TextBlock", "text": summary_text, "wrap": True}],
-                "spacing": "Medium",
-            })
+            body.append(
+                {
+                    "type": "Container",
+                    "style": "emphasis",
+                    "items": [{"type": "TextBlock", "text": summary_text, "wrap": True}],
+                    "spacing": "Medium",
+                }
+            )
 
         # Data as FactSet per section
         for section in form.sections:
@@ -363,29 +377,41 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 value = form_data.get(field.field_id)
                 if value is not None:
                     label = _resolve(field.label, locale)
-                    facts.append({
-                        "title": f"{label}:",
-                        "value": self._format_value(field, value, locale),
-                    })
+                    facts.append(
+                        {
+                            "title": f"{label}:",
+                            "value": self._format_value(field, value, locale),
+                        }
+                    )
             if facts:
                 section_title = _resolve(section.title, locale) or ""
                 if section_title:
-                    body.append({
-                        "type": "TextBlock",
-                        "text": section_title,
-                        "weight": "Bolder",
-                        "spacing": "Medium",
-                        "separator": True,
-                    })
+                    body.append(
+                        {
+                            "type": "TextBlock",
+                            "text": section_title,
+                            "weight": "Bolder",
+                            "spacing": "Medium",
+                            "separator": True,
+                        }
+                    )
                 body.append({"type": "FactSet", "facts": facts})
 
         actions = [
-            {"type": "Action.Submit", "title": "Confirm", "style": "positive",
-             "data": {"_action": "confirm", **form_data}},
-            {"type": "Action.Submit", "title": "Edit",
-             "data": {"_action": "edit", **form_data}},
-            {"type": "Action.Submit", "title": "Cancel", "style": "destructive",
-             "data": {"_action": "cancel"}, "associatedInputs": "none"},
+            {
+                "type": "Action.Submit",
+                "title": "Confirm",
+                "style": "positive",
+                "data": {"_action": "confirm", **form_data},
+            },
+            {"type": "Action.Submit", "title": "Edit", "data": {"_action": "edit", **form_data}},
+            {
+                "type": "Action.Submit",
+                "title": "Cancel",
+                "style": "destructive",
+                "data": {"_action": "cancel"},
+                "associatedInputs": "none",
+            },
         ]
 
         card = self._wrap_card(body, actions)
@@ -426,20 +452,24 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         ]
 
         for error in errors:
-            body.append({
-                "type": "TextBlock",
-                "text": f"- {error}",
-                "color": "Attention",
-                "wrap": True,
-            })
+            body.append(
+                {
+                    "type": "TextBlock",
+                    "text": f"- {error}",
+                    "color": "Attention",
+                    "wrap": True,
+                }
+            )
 
         actions = []
         if retry_action:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Try Again",
-                "data": {"_action": "retry"},
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": "Try Again",
+                    "data": {"_action": "retry"},
+                }
+            )
 
         card = self._wrap_card(body, actions)
         return RenderedForm(content=card, content_type=self.CONTENT_TYPE)
@@ -526,15 +556,20 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 {
                     "type": "Column",
                     "width": "auto",
-                    "items": [{"type": "TextBlock", "text": progress_text,
-                               "fontType": "Monospace", "size": "Small"}],
+                    "items": [{"type": "TextBlock", "text": progress_text, "fontType": "Monospace", "size": "Small"}],
                 },
                 {
                     "type": "Column",
                     "width": "stretch",
-                    "items": [{"type": "TextBlock", "text": step_text,
-                               "size": "Small", "isSubtle": True,
-                               "horizontalAlignment": "Right"}],
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": step_text,
+                            "size": "Small",
+                            "isSubtle": True,
+                            "horizontalAlignment": "Right",
+                        }
+                    ],
                 },
             ],
             "spacing": "Small",
@@ -562,21 +597,25 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         if section.title:
             section_title = _resolve(section.title, locale)
-            elements.append({
-                "type": "TextBlock",
-                "text": section_title,
-                "weight": "Bolder",
-                "spacing": "Medium",
-            })
+            elements.append(
+                {
+                    "type": "TextBlock",
+                    "text": section_title,
+                    "weight": "Bolder",
+                    "spacing": "Medium",
+                }
+            )
 
         if section.description:
-            elements.append({
-                "type": "TextBlock",
-                "text": _resolve(section.description, locale),
-                "isSubtle": True,
-                "wrap": True,
-                "spacing": "Small",
-            })
+            elements.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(section.description, locale),
+                    "isSubtle": True,
+                    "wrap": True,
+                    "spacing": "Small",
+                }
+            )
 
         for item in section.fields:
             if isinstance(item, FormSubsection):
@@ -597,32 +636,38 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         items: list[dict[str, Any]] = []
 
         if subsection.title:
-            items.append({
-                "type": "TextBlock",
-                "text": _resolve(subsection.title, locale),
-                "weight": "Bolder",
-                "size": "Default",
-                "spacing": "Medium",
-                "separator": True,
-            })
+            items.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(subsection.title, locale),
+                    "weight": "Bolder",
+                    "size": "Default",
+                    "spacing": "Medium",
+                    "separator": True,
+                }
+            )
         if subsection.description:
-            items.append({
-                "type": "TextBlock",
-                "text": _resolve(subsection.description, locale),
-                "isSubtle": True,
-                "wrap": True,
-                "size": "Small",
-                "spacing": "None",
-            })
+            items.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(subsection.description, locale),
+                    "isSubtle": True,
+                    "wrap": True,
+                    "size": "Small",
+                    "spacing": "None",
+                }
+            )
 
         for field in subsection.fields:
             items.extend(self._build_field(field, prefilled, errors, locale))
 
-        return [{
-            "type": "Container",
-            "items": items,
-            "spacing": "Medium",
-        }]
+        return [
+            {
+                "type": "Container",
+                "items": items,
+                "spacing": "Medium",
+            }
+        ]
 
     def _build_field(
         self,
@@ -651,24 +696,28 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         if field.required:
             label_text += " *"
 
-        elements.append({
-            "type": "TextBlock",
-            "text": label_text,
-            "weight": "Bolder",
-            "size": "Default",
-            "spacing": "Medium",
-        })
+        elements.append(
+            {
+                "type": "TextBlock",
+                "text": label_text,
+                "weight": "Bolder",
+                "size": "Default",
+                "spacing": "Medium",
+            }
+        )
 
         # Description
         if field.description:
-            elements.append({
-                "type": "TextBlock",
-                "text": _resolve(field.description, locale),
-                "isSubtle": True,
-                "size": "Small",
-                "wrap": True,
-                "spacing": "None",
-            })
+            elements.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(field.description, locale),
+                    "isSubtle": True,
+                    "size": "Small",
+                    "wrap": True,
+                    "spacing": "None",
+                }
+            )
 
         # Input element
         input_elem = self._build_input_element(field, value, locale)
@@ -677,13 +726,15 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         # Error message
         if error:
-            elements.append({
-                "type": "TextBlock",
-                "text": f"Error: {error}",
-                "color": "Attention",
-                "size": "Small",
-                "spacing": "None",
-            })
+            elements.append(
+                {
+                    "type": "TextBlock",
+                    "text": f"Error: {error}",
+                    "color": "Attention",
+                    "size": "Small",
+                    "spacing": "None",
+                }
+            )
 
         return elements
 
@@ -715,10 +766,20 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         # same posture as TEXT/COLOR above (no dedicated Adaptive Card
         # element exists for search, masking, color-swatch, emoji-picker or
         # cron-builder UI).
-        if ft in (FieldType.TEXT, FieldType.EMAIL, FieldType.URL, FieldType.PHONE,
-                  FieldType.COLOR, FieldType.HIDDEN, FieldType.PASSWORD,
-                  FieldType.SEARCH, FieldType.MASKED, FieldType.COLOR_PICKER,
-                  FieldType.EMOJI, FieldType.CRON):
+        if ft in (
+            FieldType.TEXT,
+            FieldType.EMAIL,
+            FieldType.URL,
+            FieldType.PHONE,
+            FieldType.COLOR,
+            FieldType.HIDDEN,
+            FieldType.PASSWORD,
+            FieldType.SEARCH,
+            FieldType.MASKED,
+            FieldType.COLOR_PICKER,
+            FieldType.EMOJI,
+            FieldType.CRON,
+        ):
             elem: dict[str, Any] = {
                 **base,
                 "type": "Input.Text",
@@ -867,12 +928,12 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             choices: list[dict[str, str]] = []
             try:
                 import pycountry
+
                 countries = sorted(pycountry.countries, key=lambda c: c.name)
                 for c in countries:
                     choices.append({"title": c.name, "value": c.alpha_2})
             except ImportError:
-                _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"),
-                             ("ES", "Spain"), ("VE", "Venezuela")]
+                _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"), ("ES", "Spain"), ("VE", "Venezuela")]
                 for code, name in _FALLBACK:
                     choices.append({"title": name, "value": code})
             elem = {
@@ -1006,13 +1067,15 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             },
         ]
         if show_cancel:
-            actions.append({
-                "type": "Action.Submit",
-                "title": cancel_label,
-                "style": "destructive",
-                "data": {"_action": "cancel"},
-                "associatedInputs": "none",
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": cancel_label,
+                    "style": "destructive",
+                    "data": {"_action": "cancel"},
+                    "associatedInputs": "none",
+                }
+            )
         return actions
 
     def _build_wizard_actions(
@@ -1040,44 +1103,54 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         actions: list[dict[str, Any]] = []
 
         if not is_first and show_back:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Back",
-                "data": {"_action": "back"},
-                "associatedInputs": "none",
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": "Back",
+                    "data": {"_action": "back"},
+                    "associatedInputs": "none",
+                }
+            )
 
         if show_skip:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Skip",
-                "data": {"_action": "skip"},
-                "associatedInputs": "none",
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": "Skip",
+                    "data": {"_action": "skip"},
+                    "associatedInputs": "none",
+                }
+            )
 
         if show_cancel:
-            actions.append({
-                "type": "Action.Submit",
-                "title": cancel_label,
-                "style": "destructive",
-                "data": {"_action": "cancel"},
-                "associatedInputs": "none",
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": cancel_label,
+                    "style": "destructive",
+                    "data": {"_action": "cancel"},
+                    "associatedInputs": "none",
+                }
+            )
 
         if is_last:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Submit",
-                "style": "positive",
-                "data": {"_action": "submit"},
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": "Submit",
+                    "style": "positive",
+                    "data": {"_action": "submit"},
+                }
+            )
         else:
-            actions.append({
-                "type": "Action.Submit",
-                "title": "Next",
-                "style": "positive",
-                "data": {"_action": "next"},
-            })
+            actions.append(
+                {
+                    "type": "Action.Submit",
+                    "title": "Next",
+                    "style": "positive",
+                    "data": {"_action": "next"},
+                }
+            )
 
         return actions
 
