@@ -50,7 +50,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2419-sink-abc-capabilities.md"
+      "completed_at": "2026-08-24T15:49:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2419-sink-abc-capabilities.md"
     },
     {
       "id": "TASK-2420",

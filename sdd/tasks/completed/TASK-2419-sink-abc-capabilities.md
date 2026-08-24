@@ -243,8 +243,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Created `services/sinks/__init__.py` (placeholder marker for
+TASK-2426) and `services/sinks/base.py` with `SinkError`,
+`SinkUnavailableError` (503), `SinkNotCapableError` (501),
+`SinkTargetMismatchError` (422) — each docstring names its HTTP mapping —
+plus `AbstractSubmissionSink` (abstract `capabilities`, `ensure_target`,
+`write`; non-abstract `read`/`list_revisions` defaulting to
+`SinkNotCapableError`; non-abstract `close()` no-op; `require(capability)`
+shared enforcement helper). 10 unit tests in `tests/unit/test_sink_base.py`
+using a `WriteOnlySink` fake, all passing. `ruff` (after auto-fixing 5
+`from __future__ import annotations`-safe quote/return-style nits) and
+targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
