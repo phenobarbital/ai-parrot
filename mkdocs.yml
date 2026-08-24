@@ -243,6 +243,7 @@ nav:
           - Interactive Artifacts API: interactive_artifacts_api.md
           - FormDesigner - Audio Renderer: formdesigner-audio-renderer.md
           - FormDesigner - Conditional Sections: formdesigner-conditional-sections.md
+          - FormDesigner - Relational Fields: formdesigner-relational-fields.md
   - Prompts:
       - PromptBuilder Guide: prompts/promptbuilder.md
       - Layers Reference: prompts/layers-reference.md

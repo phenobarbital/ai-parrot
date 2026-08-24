@@ -193,10 +193,17 @@ def test_backcompat_no_relation_roundtrip():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Added `FormField.relation: RelationSpec | None`, `is_relational`
+property, and a `mode="after"` model-validator enforcing the spec §2
+combination table (reference/one → SELECT|DYNAMIC_SELECT|TREE_SELECT;
+reference/many → MULTI_SELECT|TAGS|TRANSFER_LIST; embed → ARRAY +
+item_template). Exported `EntityRef`/`RelationSpec` from `core/__init__.py`.
+13 new unit tests pass; full unit suite shows no new failures vs baseline
+(32 pre-existing failures unrelated to this change, verified by diffing
+failure sets before/after). `ruff check` clean on all touched/new lines
+(pre-existing lint findings in schema.py/`__init__.py` predate this task
+and were left untouched, out of scope).
 
 **Deviations from spec**: none

@@ -25,6 +25,7 @@ from .events import (
     VisitEventName,
 )
 from .options import FieldOption, OptionsSource
+from .relations import EntityRef, RelationSpec
 from .resolution import find_field_by_uid, resolve_answer, resolve_rule_references
 from .schema import (
     BUILTIN_METADATA_SOURCE_NAMES,
@@ -69,6 +70,9 @@ __all__ = [
     # Options
     "FieldOption",
     "OptionsSource",
+    # Relations (FEAT-456)
+    "EntityRef",
+    "RelationSpec",
     # Resolution (FEAT-393, Module 3)
     "resolve_rule_references",
     "find_field_by_uid",

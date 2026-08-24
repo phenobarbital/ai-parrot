@@ -158,10 +158,46 @@ async def test_persisted_schema_backcompat():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Added `docs/formdesigner-relational-fields.md` (added to
+`mkdocs.yml` nav under FormDesigner), a `[Unreleased]` CHANGELOG entry
+noting the one-directional forward-compat caveat, and
+`tests/integration/test_relational_forms.py` (3 tests):
+`test_relational_form_end_to_end` (YAML with all 3 relation kinds →
+extract → resolve → render html+jsonschema → validate good/bad
+submissions), `test_only_jsonschema_output_differs_from_non_relational_baseline`
+(HTML5 byte-identical between the relational and non-relational YAML,
+UIDs pinned via `model_copy`), and `test_persisted_schema_backcompat`
+(raw pre-FEAT-456 dict loads/renders/validates unchanged). Corrected the
+task's test skeleton: `ValidationResult` has no `.valid` attribute —
+used the real `.is_valid` (verified against `services/validators.py:96`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Walked spec §5 acceptance criteria as the closing task:
+- `EntityRef`/`RelationSpec` exports, combination-table enforcement
+  naming `field_id`, embed-mode reuse of ARRAY+item_template, no new
+  FieldType members, `controls/builtin.py`/`core/types.py`/`core/options.py`
+  untouched (verified via `git diff --stat dev...HEAD` — empty),
+  `OptionsSource` still exactly 7 fields — all MET (TASK-2410/2411).
+- Pre-feature schema round-trip unchanged — MET (integration test).
+- Renderer no-op byte-identical (HTML5 + AdaptiveCard tested directly;
+  the other four only carry the documented no-op note per spec's own
+  test table, which names only HTML5/AdaptiveCard for the regression
+  test) — MET per spec §4 test table.
+- `x-relation` emission + round-trip, YAML `relation:` parsing,
+  `FormValidator` shape rejection both directions with no I/O, embed
+  `inverse_field` rejection at resolution boundary — all MET
+  (TASK-2412/2413/2414/2415, each independently verified against
+  baseline with zero regressions).
+- `ruff check` clean on every file this feature touched or created.
+- **NOT fully met**: "All unit + integration tests pass" — the full
+  `pytest packages/parrot-formdesigner/tests/` run shows 40 pre-existing
+  failures (test_controls_registry, test_core_models, test_venue_service,
+  test_api_feat300, etc.) that predate this feature entirely — confirmed
+  via `git stash` + re-run showing an IDENTICAL failure set before and
+  after every one of this feature's 6 tasks. This is a pre-existing repo
+  gap, not something FEAT-456 introduced or is positioned to fix; flagging
+  here rather than silently declaring the criterion met.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in implementation. Test-skeleton fix noted
+above (`.is_valid` vs the spec draft's `.valid`).
