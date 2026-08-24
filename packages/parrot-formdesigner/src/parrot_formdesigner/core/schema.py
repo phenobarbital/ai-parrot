@@ -20,7 +20,17 @@ from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints, PostDependency
 from .events import FormEventsConfig
 from .options import FieldOption, OptionsSource
+from .relations import RelationSpec
 from .types import FieldType, LocalizedString
+
+# Legal (field_type) sets for each (mode, cardinality) combination of
+# FormField.relation — spec §2 "Canonical combinations" table (FEAT-456).
+_RELATION_REFERENCE_ONE_TYPES = frozenset(
+    {FieldType.SELECT, FieldType.DYNAMIC_SELECT, FieldType.TREE_SELECT}
+)
+_RELATION_REFERENCE_MANY_TYPES = frozenset(
+    {FieldType.MULTI_SELECT, FieldType.TAGS, FieldType.TRANSFER_LIST}
+)
 
 
 class FormType(str, Enum):
@@ -72,6 +82,11 @@ class FormField(BaseModel):
             effects. Validated by :class:`~parrot_formdesigner.services.FormValidator`.
         children: Child fields for GROUP type fields.
         item_template: Template for items in ARRAY type fields.
+        relation: Relational semantics of this field's value (FEAT-456),
+            orthogonal to ``field_type`` — e.g. a Many2one reference, a
+            Many2many reference, or a One2many embedded-rows relation.
+            ``None`` (default) means the field carries no relational
+            meaning; existing renderers and consumers are unaffected.
         meta: Arbitrary metadata for renderer-specific extensions.
     """
 
@@ -93,7 +108,56 @@ class FormField(BaseModel):
     post_depends: list[PostDependency] | None = None
     children: list[FormField] | None = None
     item_template: FormField | None = None
+    relation: RelationSpec | None = None
     meta: dict[str, Any] | None = None
+
+    @property
+    def is_relational(self) -> bool:
+        """Whether this field carries relational semantics (FEAT-456)."""
+        return self.relation is not None
+
+    @model_validator(mode="after")
+    def _validate_relation_combination(self) -> FormField:
+        """Enforce the legal (field_type x cardinality x mode) table.
+
+        See spec §2 "Canonical combinations" (FEAT-456). Only runs when
+        ``relation`` is set — ``relation=None`` is always legal and leaves
+        every other field untouched.
+        """
+        relation = self.relation
+        if relation is None:
+            return self
+
+        if relation.mode == "reference":
+            if relation.cardinality == "one":
+                if self.field_type not in _RELATION_REFERENCE_ONE_TYPES:
+                    raise ValueError(
+                        f"Field '{self.field_id}': relation mode='reference', "
+                        "cardinality='one' requires field_type in "
+                        f"{sorted(t.value for t in _RELATION_REFERENCE_ONE_TYPES)} "
+                        f"(got {self.field_type.value!r})"
+                    )
+            else:  # cardinality == "many"
+                if self.field_type not in _RELATION_REFERENCE_MANY_TYPES:
+                    raise ValueError(
+                        f"Field '{self.field_id}': relation mode='reference', "
+                        "cardinality='many' requires field_type in "
+                        f"{sorted(t.value for t in _RELATION_REFERENCE_MANY_TYPES)} "
+                        f"(got {self.field_type.value!r})"
+                    )
+        else:  # mode == "embed"
+            if self.field_type != FieldType.ARRAY:
+                raise ValueError(
+                    f"Field '{self.field_id}': relation mode='embed' requires "
+                    f"field_type=ARRAY (got {self.field_type.value!r})"
+                )
+            if self.item_template is None:
+                raise ValueError(
+                    f"Field '{self.field_id}': relation mode='embed' requires "
+                    "item_template to be set"
+                )
+
+        return self
 
 
 # Required for self-referential model resolution (also resolves PostDependency forward ref)
