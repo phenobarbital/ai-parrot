@@ -60,18 +60,25 @@ from parrot_formdesigner.core.types import FieldType  # core/types.py:16
 ### Existing Signatures to Use
 ```python
 # parrot_formdesigner/services/validators.py
-# _coerce_value method — FILE/IMAGE have NO dedicated branch.
-# They fall through to `return value` at line 607.
-# IMAGE_DROPZONE validated at lines 742-754
-# MULTI_UPLOAD validated at lines 756-764
-# MIME side-channel: lines 326-329 check {field_id}__mime in all_data
-
-# The _coerce_value method signature (approximate location):
-def _coerce_value(self, field: FormField, value: Any, all_data: dict) -> Any:
+# CORRECTED (contract was stale — verified against the actual file at
+# implementation time): the real signature takes (value, field) — NOT
+# (field, value, all_data) — and has no all_data parameter. all_data is
+# only in scope in the caller, validate_field(), where the MIME
+# side-channel check actually lives (lines 326-329).
+def _coerce_value(self, value: Any, field: FormField) -> Any:
     ...
 
-# The _validate_by_type method signature:
-def _validate_by_type(self, field: FormField, value: Any, errors: list) -> None:
+# FILE/IMAGE have NO dedicated branch — they fall through to
+# `return value` at line 607 (confirmed).
+# IMAGE_DROPZONE coerce branch: lines 558-561 (confirmed)
+# MULTI_UPLOAD coerce branch: lines 563-566 (confirmed)
+# IMAGE_DROPZONE validated at lines 742-754 (confirmed)
+# MULTI_UPLOAD validated at lines 756-764 (confirmed)
+# MIME side-channel: lines 326-329 in validate_field(), checks
+# {field_id}__mime in all_data (confirmed)
+
+# The _validate_by_type method signature (confirmed):
+def _validate_by_type(self, value: Any, field: FormField, label: str) -> list[str]:
     ...
 ```
 
