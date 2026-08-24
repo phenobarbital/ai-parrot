@@ -3,6 +3,11 @@ name: Build and publish AI-Parrot packages
 on:
   release:
     types: [created]
+  # Manual trigger for exercising the build matrix from a branch without
+  # cutting a release. NOTE: the `deploy` job is gated on
+  # `if: github.event_name == 'release'`, so a dispatched run builds and
+  # uploads artifacts but never publishes to PyPI.
+  workflow_dispatch:
 
 jobs:
   build-core:
