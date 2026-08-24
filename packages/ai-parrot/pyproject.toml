@@ -266,6 +266,16 @@ reddit = [
     "praw>=7.8.1",
 ]
 
+# Jira ticket -> LLM Wiki ingest (FEAT-454). `jira` and `html2text`
+# previously only rode the `agents`/`agents-lite`/`mcp` extras, so
+# `pip install 'ai-parrot[jira]'` — the string the ingest path's own
+# error message tells users to run (parrot.interfaces.jira.client
+# .JiraDependencyError) — did not resolve on its own.
+jira = [
+    "jira==3.10.5",
+    "html2text==2025.4.15",
+]
+
 # Sparse retrieval / BM25 (embeddings helper)
 retrieval = [
     "rank_bm25==0.2.2",
