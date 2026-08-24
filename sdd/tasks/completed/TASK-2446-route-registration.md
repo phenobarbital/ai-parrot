@@ -120,10 +120,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Added `from . import file_upload as file_upload_module` import and
+registered `POST {tp}/forms/{form_uid}/fields/{field_uid}/file-upload`
+wrapped with `_wrap_auth`, placed immediately after the existing REST
+upload route. Verified `import parrot_formdesigner.api.routes` succeeds
+and `tests/unit/api/` (135/136 passing) shows no new failures — the one
+failure (`test_form_controls_payload_shape`) is pre-existing, confirmed by
+reproducing it on the pre-change file via `git stash`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
