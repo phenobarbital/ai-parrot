@@ -257,8 +257,44 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `AutonomousFormStorage(FormStorage)` wrapping an
+inner `FormStorage`. `save()` passes straight through when
+`form.persistence.definition` is unset; otherwise it writes the FULL
+`form.model_dump_json()` body to the resolved definition-target path
+(via `SinkAliasRegistry.contain`) and saves a stripped POINTER
+(`sections=[]`, everything else — `title`, `persistence`, `tenant`,
+etc. — preserved) through the inner storage, so `list_forms()` (which
+reads `title`/`description` straight off the inner storage's own stored
+row) lists pointer-indexed forms identically to ordinary ones with zero
+inner-storage changes. `load()`/`load_by_slug()` load the pointer via
+the inner storage first and, only when it declares a definition target,
+hydrate by reading and fully re-validating the body file back into a
+`FormSchema` — giving a byte-identical round trip. `load_by_slug`
+implemented explicitly (mandatory per the ABC-vs-caller trap flagged in
+the contract). `delete()` loads the pointer first to find (and remove)
+any body file, then delegates the row delete to the inner storage.
+`list_versions`/`promote`/`close` delegate directly. All blocking file
+I/O offloaded via `asyncio.to_thread`. Hydration read failures propagate
+uncaught (verified: `FormRegistry._read_through` already fail-softs
+broadly). 10 unit tests in `tests/unit/test_autonomous_form_storage.py`
+using an in-memory `FormStorage` test double (implementing
+`load_by_slug`), covering ABC compliance, save/load-by-uid,
+save/load-by-slug, delete-removes-body, full-body-content, pointer-row
+shape, ordinary-form pass-through, list_forms inclusion, and a
+missing-body-propagates-for-registry-to-catch case. Manually verified
+`git diff --stat dev...HEAD -- .../services/registry.py` is empty.
+`ruff` and targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**source_ref decision**: stored as a nested key
+(`_autonomous_source_ref`) inside the pointer's own `FormSchema.meta`
+free-form bag — the existing extension point for exactly this kind of
+storage-owned, opaque data — rather than adding a new column to
+`PostgresFormStorage`'s DDL (which has none, per the contract's own
+"Does NOT Exist" note) or a new `FormSchema` field (out of TASK-2421's
+locked-in single-field scope).
+
+**Deviations from spec**: none — followed the "decorate, delegate,
+hydrate" pattern from the task's own sketch exactly; `FormRegistry` was
+never touched.
