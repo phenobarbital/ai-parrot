@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-456
 **Date**: 2026-08-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.11.0
 
 ---
@@ -533,20 +533,20 @@ No new dependencies.
 - [x] Persisted-schema migration acceptable? — *Resolved in brainstorm*:
       yes, permitted — though Option C requires none (optional field,
       default None).
-- [ ] Should `PydanticExtractor`/`ToolExtractor` infer relations from type
+- [x] Should `PydanticExtractor`/`ToolExtractor` infer relations from type
       hints (e.g. a field typed as another model) in a later phase? —
-      *Owner: Jesus Lara* (deferred; does not block v1)
-- [ ] `EntityRef` namespace catalog (`odoo`, `db`, `api`, `formdesigner`):
+      *Owner: Jesus Lara* (deferred; does not block v1): yes, infer
+- [x] `EntityRef` namespace catalog (`odoo`, `db`, `api`, `formdesigner`):
       free documentation or exported constants? — *Owner: Jesus Lara*
       (spec default: documented conventions only, field stays `str`;
-      revisit if consumers proliferate)
-- [ ] Should HTML5Renderer emit `data-relation-*` attributes (like
+      revisit if consumers proliferate): yes, namespace catalog.
+- [x] Should HTML5Renderer emit `data-relation-*` attributes (like
       `data-depends-on`) already in v1, or wait for the autocomplete
       feature? — *Owner: Jesus Lara* (spec default: no — byte-identical
-      criterion holds; revisit with the autocomplete feature)
-- [ ] `on_delete` semantics (restrict/cascade/set_null): enforcement or
+      criterion holds; revisit with the autocomplete feature): yes
+- [x] `on_delete` semantics (restrict/cascade/set_null): enforcement or
       passthrough hint? — *Owner: Jesus Lara* (spec default: passthrough
-      hint only in v1, consumers interpret; field exists in RelationSpec)
+      hint only in v1, consumers interpret; field exists in RelationSpec): evaluate during build
 
 ---
 
