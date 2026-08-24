@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-460
 **Date**: 2026-08-25
 **Author**: Jesus Lara / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.10.0
 
 ---
@@ -56,6 +56,7 @@ file was uploaded or its size without re-downloading the blob.
 7. Provide optional server-side thumbnail generation for image uploads.
 8. Enable uploading any MIME type by default, controlled by the existing
    `constraints.allowed_mime_types` field.
+9. Provide basic chunked upload support for large files.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -64,8 +65,9 @@ file was uploaded or its size without re-downloading the blob.
 - **Creating new FieldType enum values**: No `DOCUMENT` or `MEDIA_UPLOAD` types —
   the existing types are enriched, not replaced. (Rejected in brainstorm Option C —
   see `sdd/proposals/raw-upload-field-types.brainstorm.md`.)
-- **Chunked/resumable uploads (tus protocol)**: V1 uses single-request multipart.
-  Resumable uploads are a future enhancement.
+- **Full tus protocol compliance**: V1 includes basic chunked upload support but
+  does not implement the full tus protocol (checksums, concatenation, expiration).
+  Full tus compliance is a future enhancement.
 - **Client-side thumbnail generation**: Thumbnails are generated server-side.
 - **Metadata-only sidecar store**: Metadata lives IN the field value (FileEnvelope),
   not in an external table. (Rejected in brainstorm Option D.)
@@ -172,7 +174,7 @@ class FileEnvelope(BaseModel):
         thumbnail_url: URL to a server-generated thumbnail (images only).
             None for non-image files or when generation fails.
         checksum: SHA-256 integrity hash (e.g. "sha256:abcdef...").
-            None when checksum computation is skipped.
+            Always computed server-side from the received content.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -194,7 +196,7 @@ class FieldConstraints(BaseModel):
         default=None, ge=0,
         description="Maximum file size for inline data_url inclusion. "
                     "Files above this threshold get blob_ref only. "
-                    "Default (None) uses the system default of 5242880 (5MB)."
+                    "Default (None) uses the system default of 10485760 (10MB)."
     )
 ```
 
@@ -224,17 +226,18 @@ async def handle_file_upload(request: web.Request) -> web.Response:
 class ThumbnailService:
     """Server-side thumbnail generator for image uploads.
 
-    Uses Pillow to resize images to a configurable max dimension
-    (default 200×200), outputs JPEG. Persists thumbnails to blob
-    storage and returns a relative URL.
+    Uses Pillow to resize images to 150×150 max, outputs WebP
+    (quality 80). Persists thumbnails to blob storage and returns
+    a relative URL.
     """
 
     def __init__(
         self,
         blob_storage: AbstractBlobStorage,
-        max_width: int = 200,
-        max_height: int = 200,
+        max_width: int = 150,
+        max_height: int = 150,
         quality: int = 80,
+        output_format: str = "WEBP",
     ) -> None: ...
 
     async def generate(
@@ -260,14 +263,19 @@ class ThumbnailService:
 ### Module 2: FieldConstraints Extension
 - **Path**: `parrot_formdesigner/core/constraints.py`
 - **Responsibility**: Add `max_inline_size_bytes` field to `FieldConstraints`.
-  System default constant `DEFAULT_MAX_INLINE_SIZE = 5_242_880`.
+  System default constant `DEFAULT_MAX_INLINE_SIZE = 10_485_760` (10MB).
 - **Depends on**: None (append-only change)
 
 ### Module 3: File Upload Handler
 - **Path**: `parrot_formdesigner/api/file_upload.py`
 - **Responsibility**: `handle_file_upload` request handler — multipart parsing,
   MIME detection, size enforcement, blob storage, data_url encoding, FileEnvelope
-  construction. Supports multiple file parts per request.
+  construction. Supports multiple file parts per request. Includes basic chunked
+  upload support: the endpoint accepts `X-Parrot-Upload-Offset` and
+  `X-Parrot-Upload-Length` headers for clients that split large files into
+  sequential chunks. Chunks are buffered in blob storage and assembled on the
+  final chunk (when offset + chunk size == total length). Single-request multipart
+  remains the primary path; chunked is the fallback for files over ~50MB.
 - **Depends on**: Module 1, Module 2, `blob_storage.py`, `resolution.py`, `tenant.py`
 
 ### Module 4: Route Registration
@@ -279,8 +287,9 @@ class ThumbnailService:
 ### Module 5: Thumbnail Service
 - **Path**: `parrot_formdesigner/services/thumbnail.py`
 - **Responsibility**: Server-side thumbnail generation for image uploads using
-  Pillow. Resize to configurable dimensions, persist to blob storage, return
-  thumbnail blob_ref that the upload handler converts to a URL.
+  Pillow. Resize to 150×150 max, output WebP (quality 80). Persist to blob
+  storage and return thumbnail blob_ref that the upload handler converts to a URL.
+  Runs in `asyncio.to_thread()` to avoid blocking the event loop.
 - **Depends on**: Module 1, `blob_storage.py`, `Pillow`
 
 ### Module 6: Validator Updates (Dual-Read Coercer)
@@ -637,12 +646,12 @@ class AbstractBlobStorage(ABC):
 
 ## 8. Open Questions
 
-- [ ] What is the default value for `max_inline_size_bytes`? Proposed: 5242880 (5MB). — *Owner: Jesus*
-- [ ] Should `checksum` be computed server-side (always) or client-side (optional, verified server-side)? — *Owner: Jesus*
-- [ ] Thumbnail dimensions and format — 200×200 JPEG? Configurable? — *Owner: Jesus*
-- [ ] Should the `/file-upload` endpoint support chunked/resumable uploads (tus protocol), or is single-request multipart sufficient for V1? — *Owner: Jesus*
-- [ ] How should the frontend migration work? Feature flag? Gradual rollout per field type? — *Owner: Frontend team*
-- [ ] Should `data_url` be stored in the submission DB or reconstructed on-demand from blob_ref? Storing it doubles storage for files under the threshold. — *Owner: Jesus*
+- [x] What is the default value for `max_inline_size_bytes`? **Resolved: 10485760 (10 MB).** — *Owner: Jesus*
+- [x] Should `checksum` be computed server-side (always) or client-side (optional, verified server-side)? **Resolved: Always computed server-side (SHA-256). Client never sends a checksum.** — *Owner: Jesus*
+- [x] Thumbnail dimensions and format — 200×200 JPEG? Configurable? **Resolved: 150×150 max, WebP output, quality 80. Not configurable in V1.** — *Owner: Jesus*
+- [x] Should the `/file-upload` endpoint support chunked/resumable uploads (tus protocol), or is single-request multipart sufficient for V1? **Resolved: Basic chunked upload support in V1 via `X-Parrot-Upload-Offset` / `X-Parrot-Upload-Length` headers. Full tus protocol compliance is a non-goal.** — *Owner: Jesus*
+- [x] How should the frontend migration work? Feature flag? Gradual rollout per field type? **Resolved: No feature flag. Backend always returns FileEnvelope; frontend adopts when ready (dual-read coercer guarantees backward compatibility).** — *Owner: Frontend team*
+- [x] Should `data_url` be stored in the submission DB or reconstructed on-demand from blob_ref? Storing it doubles storage for files under the threshold. **Resolved: Store `data_url` in the submission DB. Simplicity and read-speed outweigh the storage cost for files ≤ 10 MB.** — *Owner: Jesus*
 
 ---
 
@@ -651,3 +660,4 @@ class AbstractBlobStorage(ABC):
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-25 | Jesus Lara / Claude | Initial draft from brainstorm Option B |
+| 0.2 | 2026-08-25 | Jesus Lara / Claude | Resolved all 6 open questions; updated defaults (10 MB inline threshold, 150×150 WebP thumbnails, server-side SHA-256 checksum, basic chunked upload support, no feature flag, data_url stored in DB) |
