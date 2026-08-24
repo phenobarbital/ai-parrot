@@ -54,7 +54,7 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "XL",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallel": false,
       "parallelism_notes": "Hardest module — needs both the fixture site and the fake_broker/real-driver fixtures from the prior two tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T11:05:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2409-resume-and-submit-gate-e2e-tests.md",
       "verification": null
