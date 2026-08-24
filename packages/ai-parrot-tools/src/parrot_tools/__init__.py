@@ -10,6 +10,7 @@ Manual additions are also supported — the script preserves manual entries.
 from .version import __version__, __title__, __description__
 
 TOOL_REGISTRY: dict[str, str] = {
+    "audio_note_capture": "parrot_tools.audio_note_capture.AudioNoteCaptureToolkit",
     "arango_db_search": "parrot_tools.arangodbsearch.ArangoDBSearchTool",
     "arxiv": "parrot_tools.arxiv_tool.ArxivTool",
     "cloud_watch": "parrot_tools.aws.cloudwatch.CloudWatchToolkit",
