@@ -12,6 +12,7 @@ Output:
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any
 
 from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
@@ -44,7 +45,8 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.GROUP: "object",
     FieldType.ARRAY: "array",
     # New field types (FEAT-167)
-    FieldType.SIGNATURE: "object",
+    # FEAT-448 (TASK-2336): SIGNATURE is a PNG data-URL string, not an object.
+    FieldType.SIGNATURE: "string",
     FieldType.DYNAMIC_SELECT: "string",
     FieldType.TRANSFER_LIST: "array",
     FieldType.REMOTE_RESPONSE: "object",
@@ -58,7 +60,54 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.REST: "object",
     # FEAT-300 — formula fields (evaluator is FEAT-301)
     FieldType.FORMULA: "number",
+    # FEAT-448 (TASK-2337) — the twelve absorbed types (spec §4). Type
+    # follows the value shape each control actually emits, not a native-vs-
+    # fallback UI posture (JSON Schema has no rendering concept).
+    FieldType.SEARCH: "string",
+    FieldType.MASKED: "string",
+    FieldType.COLOR_PICKER: "string",
+    FieldType.EMOJI: "string",
+    FieldType.CRON: "string",
+    FieldType.TREE_SELECT: "array",  # single-select scalar via _UNION_SHAPES
+    FieldType.SIGNATURE_PAD: "string",
+    FieldType.CREDIT_CARD: "object",
+    FieldType.IMAGE_DROPZONE: "object",  # array form via _UNION_SHAPES
+    FieldType.MULTI_UPLOAD: "array",
+    FieldType.AI_CAPTURE: "object",  # genuinely unconstrained via _UNION_SHAPES
+    FieldType.PLACE: "object",
 }
+
+# FEAT-448 codex F4/F5/F6 — types whose accepted value is a UNION.
+#
+# `_TYPE_MAP` holds ONE JSON Schema type keyword per FieldType, which cannot
+# express "string or array". The first pass papered over that in code comments
+# — "object covers the common single-file case", "'object' is the common case,
+# not a contract" — while publishing the narrow shape as if it were the
+# contract. That is precisely the divergence this feature exists to end: the
+# client asserts against this catalog (TASK-2338), so a published shape
+# narrower than the validator's means correct submissions are rejected by our
+# own contract. A comment does not reach the client.
+#
+# These fragments REPLACE the shape entirely rather than merging into it.
+_UNION_SHAPES: dict[FieldType, dict[str, Any]] = {
+    # validators.py accepts list[str] (multi) or a scalar node value (single)
+    FieldType.TREE_SELECT: {
+        "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+    },
+    # validators.py accepts one {name,type,size,dataUrl} or a list of them
+    FieldType.IMAGE_DROPZONE: {
+        "oneOf": [
+            {"type": "object"},
+            {"type": "array", "items": {"type": "object"}},
+        ],
+    },
+    # A third-party API's response. Its shape is explicitly not ours to define
+    # (spec §4 Non-Goals), so publish NO constraint — an empty schema, which is
+    # JSON Schema for "anything". Publishing `object` rejected server-valid
+    # arrays and scalars.
+    FieldType.AI_CAPTURE: {},
+}
+
 
 # FieldType → JSON Schema "format" keyword (where applicable)
 _FORMAT_MAP: dict[FieldType, str] = {
@@ -82,7 +131,121 @@ _FORMAT_MAP: dict[FieldType, str] = {
     FieldType.REST: "rest",
     # FEAT-300 — formula fields
     FieldType.FORMULA: "formula",
+    # FEAT-448 (TASK-2337)
+    FieldType.SEARCH: "search",
+    FieldType.MASKED: "masked",
+    FieldType.COLOR_PICKER: "color-picker",
+    FieldType.EMOJI: "emoji",
+    FieldType.CRON: "cron",
+    FieldType.TREE_SELECT: "tree-select",
+    FieldType.SIGNATURE_PAD: "signature-pad",
+    FieldType.CREDIT_CARD: "credit-card",
+    FieldType.IMAGE_DROPZONE: "image-dropzone",
+    FieldType.MULTI_UPLOAD: "multi-upload",
+    FieldType.AI_CAPTURE: "ai-capture",
+    FieldType.PLACE: "place",
 }
+
+# FieldType → structural JSON Schema extras (items/properties/required) that
+# depend only on the type, never on a specific FormField instance. Shared by
+# _field_to_property() (per-field rendering, below) and type_level_value_shape()
+# (TASK-2338 — the type-only contract published in the /api/v1/form-controls
+# catalog). Keeping exactly one dict here is the point: a ratchet that
+# compared the catalog to a second hand-maintained shape list would just be
+# the third list that drifts (spec §5.5).
+_STRUCTURAL_EXTRAS: dict[FieldType, dict[str, Any]] = {
+    # AVAILABILITY — array of slot objects
+    FieldType.AVAILABILITY: {
+        "items": {
+            "type": "object",
+            "properties": {
+                "start": {"type": "string", "format": "date-time"},
+                "end": {"type": "string", "format": "date-time"},
+            },
+        },
+    },
+    # TAGS — array of strings
+    FieldType.TAGS: {"items": {"type": "string"}},
+    # TRANSFER_LIST — array of string values
+    FieldType.TRANSFER_LIST: {"items": {"type": "string"}},
+    # FEAT-448 (TASK-2337) — TREE_SELECT: array of node values (single
+    # selection also yields the node value per spec §4, but the schema
+    # declares the multi-select shape as the structural contract).
+    FieldType.TREE_SELECT: {"items": {"type": "string"}},
+    # FEAT-448 (TASK-2337) — MULTI_UPLOAD: array of REST-like upload
+    # envelopes (spec §4). Registered and typed, not further wired — the
+    # singular-vs-list mismatch with _validate_rest_field is fieldsync
+    # FEAT-514's blocker, not this renderer's.
+    FieldType.MULTI_UPLOAD: {
+        "items": {
+            "type": "object",
+            "properties": {
+                "answer": {},
+                "blob_ref": {"type": ["string", "null"]},
+                "display": {"type": "string"},
+            },
+        },
+    },
+    # FEAT-448 (TASK-2337) — CREDIT_CARD: server-accepted shape only (spec
+    # §4, TASK-2334) — brand/last4/name/expiry. cvv and the full PAN are
+    # never part of this contract; the validator rejects them.
+    FieldType.CREDIT_CARD: {
+        "properties": {
+            "brand": {"type": "string"},
+            "last4": {"type": "string", "pattern": r"^\d{4}$"},
+            "name": {"type": "string"},
+            "expiry": {"type": "string"},
+        },
+        "required": ["brand", "last4", "name", "expiry"],
+    },
+    # FEAT-448 (TASK-2337) — PLACE: {country, state, city} — country is
+    # required and ISO 3166 alpha-2 (mirrors LOCATION's contract); state/city
+    # are optional and unconstrained (spec §3).
+    FieldType.PLACE: {
+        "properties": {
+            "country": {"type": "string", "minLength": 2, "maxLength": 2},
+            "state": {"type": ["string", "null"]},
+            "city": {"type": ["string", "null"]},
+        },
+        "required": ["country"],
+    },
+}
+
+
+def type_level_value_shape(field_type: FieldType) -> dict[str, Any]:
+    """Return the type-only JSON Schema value-shape contract for a FieldType.
+
+    FEAT-448 (TASK-2338): this is the single source of truth published in
+    the ``GET /api/v1/form-controls`` catalog's ``value_shape`` field
+    (``controls/builtin.py``) — a client asserts a submitted value against
+    this shape without maintaining its own copy. It reuses exactly the same
+    ``_TYPE_MAP`` / ``_FORMAT_MAP`` / ``_STRUCTURAL_EXTRAS`` that
+    ``_field_to_property()`` uses for per-field rendering, so there is no
+    second list to drift out of sync.
+
+    Unlike ``_field_to_property()``, this is type-level only: it carries no
+    per-field data (constraints, options, labels) since the catalog
+    describes a *type*, not a specific field instance.
+
+    Args:
+        field_type: The FieldType to describe.
+
+    Returns:
+        A JSON Schema fragment: at minimum ``{"type": ...}``, plus
+        ``"format"`` where applicable, plus any structural extras
+        (``items``/``properties``/``required``) for types whose value shape
+        is more than a bare scalar.
+    """
+    if field_type in _UNION_SHAPES:
+        # A union cannot be narrowed to one `type` keyword; publish it whole.
+        return deepcopy(_UNION_SHAPES[field_type])
+
+    shape: dict[str, Any] = {"type": _TYPE_MAP.get(field_type, "string")}
+    if field_type in _FORMAT_MAP:
+        shape["format"] = _FORMAT_MAP[field_type]
+    if field_type in _STRUCTURAL_EXTRAS:
+        shape.update(deepcopy(_STRUCTURAL_EXTRAS[field_type]))
+    return shape
 
 
 def _resolve(value: LocalizedString | None, locale: str = "en") -> str:
@@ -338,30 +501,11 @@ class JsonSchemaRenderer(AbstractFormRenderer):
             if "maximum" not in prop:
                 prop["maximum"] = 5 if ft == FieldType.RANKING else 4
 
-        # SIGNATURE — object with svg + png keys
-        if ft == FieldType.SIGNATURE:
-            prop["properties"] = {
-                "svg": {"type": "string"},
-                "png": {"type": "string"},
-            }
-
-        # AVAILABILITY — array of slot objects
-        if ft == FieldType.AVAILABILITY:
-            prop["items"] = {
-                "type": "object",
-                "properties": {
-                    "start": {"type": "string", "format": "date-time"},
-                    "end": {"type": "string", "format": "date-time"},
-                },
-            }
-
-        # TAGS — array of strings
-        if ft == FieldType.TAGS:
-            prop["items"] = {"type": "string"}
-
-        # TRANSFER_LIST — array of string values
-        if ft == FieldType.TRANSFER_LIST:
-            prop["items"] = {"type": "string"}
+        # Structural extras (items/properties/required) that depend only on
+        # the FieldType, not on any per-instance data — see _STRUCTURAL_EXTRAS
+        # below. Deep-copied so mutating `prop` never corrupts the shared dict.
+        if ft in _STRUCTURAL_EXTRAS:
+            prop.update(deepcopy(_STRUCTURAL_EXTRAS[ft]))
 
         # DYNAMIC_SELECT — options source required; enum not pre-set
         if ft == FieldType.DYNAMIC_SELECT and field.options_source:

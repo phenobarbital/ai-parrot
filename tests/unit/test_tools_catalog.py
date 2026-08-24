@@ -51,15 +51,23 @@ for _stub_name in _STUBS:
         sys.modules[_stub_name] = _mod
 
 _WT_ROOT = Path(__file__).resolve().parents[2]
-_TC_SRC = (
-    _WT_ROOT
-    / "packages"
-    / "ai-parrot"
-    / "src"
-    / "parrot"
-    / "handlers"
-    / "tools_catalog.py"
-)
+def _parrot_source(relative: str) -> Path:
+    """Locate a ``parrot.*`` source file across the uv workspace packages.
+
+    Modules migrate between distributions — ``parrot.handlers`` and
+    ``parrot.manager`` now ship from ai-parrot-server, not from core — so
+    resolve by finding the file instead of hardcoding a package name.
+    """
+    for _pkg in sorted((_WT_ROOT / "packages").iterdir()):
+        _candidate = _pkg / "src" / relative
+        if _candidate.is_file():
+            return _candidate
+    raise FileNotFoundError(
+        f"{{relative!r}} not found under any packages/*/src in the workspace"
+    )
+
+
+_TC_SRC = _parrot_source("parrot/handlers/tools_catalog.py")
 _MOD_NAME = "parrot.handlers.tools_catalog"
 
 if _MOD_NAME not in sys.modules:

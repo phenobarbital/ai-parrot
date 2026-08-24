@@ -43,19 +43,25 @@ def _make_client():
     client._tool_manager.tools = {}
     from datamodel.parsers.json import JSONContent
     client._json = JSONContent()
+    # __new__ skips __init__, which is where AbstractClient sets up the
+    # per-loop client cache (FEAT-112). Without these, the legacy
+    # `client.client = None` reset path raises AttributeError.
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
     return client
 
 
 @pytest.fixture
-def mock_groq_client():
+def mock_groq_client(bind_sdk_client):
     """GroqClient with mocked SDK."""
     client = _make_client()
-    client.client = MagicMock()
-    client.client.chat = MagicMock()
-    client.client.chat.completions = MagicMock()
-    client.client.chat.completions.create = AsyncMock(
+    sdk = MagicMock()
+    sdk.chat = MagicMock()
+    sdk.chat.completions = MagicMock()
+    sdk.chat.completions.create = AsyncMock(
         return_value=_make_mock_response()
     )
+    bind_sdk_client(client, sdk)
     return client
 
 

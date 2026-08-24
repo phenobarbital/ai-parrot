@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +17,14 @@ from parrot_formdesigner.controls.registry import (
     register_field_control,
 )
 from parrot_formdesigner.core.types import FieldType
+
+
+# TASK-2337 (FEAT-448): the twelve types absorbed from the client catalog.
+_TASK2337_TYPES = [
+    "search", "masked", "color_picker", "emoji", "cron", "tree_select",
+    "signature_pad", "credit_card", "image_dropzone", "multi_upload",
+    "ai_capture", "place",
+]
 
 
 @pytest.fixture(autouse=True)
@@ -214,3 +224,121 @@ def test_controls_new_type_render_hints():
     assert controls["nps"].render_hint == "rating"
     assert controls["likert"].render_hint == "rating"
     assert controls["ranking"].render_hint == "rating"
+
+
+# TASK-2338 (FEAT-448): the shared catalog fixture, and the ratchet that
+# reads it. See spec §5.5/AC7.
+#
+# AC1/AC2 ("a test fails if a FieldType value is missing from / the catalog
+# names a type not in FieldType") are already covered above by
+# `test_builtin_seeds_every_field_type` (bidirectional set equality between
+# `get_controls()` and `FieldType`) and, at the HTTP layer, by
+# `tests/integration/test_form_controls_contract.py::test_endpoint_covers_every_field_type`.
+# The tests below cover what TASK-2338 actually adds: the `value_shape`
+# contract per type, and the committed-snapshot staleness ratchet (AC3/AC4).
+
+
+def test_value_shape_present_for_every_field_type():
+    """Every FieldType's control entry publishes a non-empty value_shape."""
+    sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+    importlib.import_module("parrot_formdesigner.controls.builtin")
+    # codex F4/F5/F6 — a published shape is not always a single `type`.
+    # Two kinds are legitimately different, and both are deliberate:
+    #   * a UNION (`oneOf`) where the validator accepts more than one shape;
+    #   * the EMPTY schema, JSON Schema for "anything", for a value whose
+    #     shape is explicitly not ours to define.
+    # The empty case is an allow-list of exactly one so it cannot spread by
+    # accident — an unconstrained contract must be argued for, once, per type.
+    _UNCONSTRAINED_BY_DESIGN = {"ai_capture"}
+    for c in get_controls():
+        if c.type in _UNCONSTRAINED_BY_DESIGN:
+            assert c.value_shape == {}, (
+                f"{c.type} is declared unconstrained; its value_shape must be "
+                f"the empty schema, got {c.value_shape!r}"
+            )
+            continue
+        assert c.value_shape, f"{c.type} has an empty value_shape"
+        assert "type" in c.value_shape or "oneOf" in c.value_shape, (
+            f"{c.type}'s value_shape has neither 'type' nor 'oneOf'"
+        )
+
+
+@pytest.mark.parametrize("type_id", _TASK2337_TYPES)
+def test_value_shape_matches_jsonschema_renderer(type_id: str):
+    """The catalog's value_shape for each TASK-2337 type is EXACTLY what
+    JsonSchemaRenderer.type_level_value_shape() computes — the anti-drift
+    property the task exists to guarantee (spec §5.5): the catalog is not a
+    second hand-maintained copy, it reads the JSON Schema renderer's own
+    _TYPE_MAP/_FORMAT_MAP/_STRUCTURAL_EXTRAS.
+    """
+    from parrot_formdesigner.core.types import FieldType
+    from parrot_formdesigner.renderers.jsonschema import type_level_value_shape
+
+    sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+    importlib.import_module("parrot_formdesigner.controls.builtin")
+    by_type = {c.type: c for c in get_controls()}
+
+    ft = FieldType(type_id)
+    assert by_type[type_id].value_shape == type_level_value_shape(ft)
+
+
+def test_credit_card_value_shape_excludes_cvv_and_number():
+    """credit_card's published contract never advertises cvv/number keys —
+    the catalog must not invite a client to send what the validator
+    rejects (spec §4, TASK-2334)."""
+    sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+    importlib.import_module("parrot_formdesigner.controls.builtin")
+    by_type = {c.type: c for c in get_controls()}
+    cc_shape = by_type["credit_card"].value_shape
+    assert set(cc_shape["properties"].keys()) == {"brand", "last4", "name", "expiry"}
+    assert "cvv" not in cc_shape["properties"]
+    assert "number" not in cc_shape["properties"]
+
+
+def _load_snapshot_script():
+    """Load scripts/generate_form_controls_snapshot.py via its file path.
+
+    ``scripts/`` is a plain directory of standalone scripts, not a Python
+    package (mirrors the pattern in tests/unit/test_migrations_form_uid.py
+    for migrations/003_migrate_form_data.py).
+    """
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "generate_form_controls_snapshot.py"
+    )
+    spec = importlib.util.spec_from_file_location("generate_form_controls_snapshot", script_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["generate_form_controls_snapshot"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_form_controls_snapshot_is_fresh():
+    """The committed snapshot matches the live catalog exactly (AC3/AC4).
+
+    If this fails, the catalog changed (a FieldType was added/removed, or a
+    control's metadata/value_shape changed) without regenerating the
+    snapshot. Run `python scripts/generate_form_controls_snapshot.py` and
+    commit the result.
+    """
+    gen = _load_snapshot_script()
+    fresh_text = gen.render_snapshot_text(gen.compute_snapshot())
+    assert gen.SNAPSHOT_PATH.exists(), (
+        f"{gen.SNAPSHOT_PATH} does not exist — run "
+        "`python scripts/generate_form_controls_snapshot.py` once to create it."
+    )
+    committed_text = gen.SNAPSHOT_PATH.read_text()
+    assert committed_text == fresh_text, (
+        f"{gen.SNAPSHOT_PATH} is stale. Run "
+        "`python scripts/generate_form_controls_snapshot.py` to regenerate it."
+    )
+
+
+def test_form_controls_snapshot_covers_every_field_type():
+    """The committed snapshot itself satisfies AC1/AC2 — no live server
+    needed to check it (spec §5.5: "a committed snapshot ... in CI without
+    a running server")."""
+    gen = _load_snapshot_script()
+    snapshot = gen.compute_snapshot()
+    types_in_snapshot = {c["type"] for c in snapshot["controls"]}
+    assert types_in_snapshot == {ft.value for ft in FieldType}

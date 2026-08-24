@@ -44,6 +44,43 @@ class TestVoiceBotExport:
         assert "VoiceBot" in parrot.bots.__all__
 
 
+class TestVoiceBotLazyExport:
+    """The export must not be EAGER (regression guard).
+
+    An eager `from .voice import VoiceBot` in `parrot/bots/__init__.py`
+    drags `parrot.clients.live` -> `from google import genai` into every
+    importer of `parrot.bots`, turning the optional `google-genai` dep into
+    a hard requirement of the agent REPL and the agentd daemon. AST-based
+    for the same reason as the rest of this module.
+    """
+
+    BOTS_INIT = (
+        Path(__file__).resolve().parents[2]
+        / "src" / "parrot" / "bots" / "__init__.py"
+    )
+
+    def _tree(self) -> ast.Module:
+        return ast.parse(self.BOTS_INIT.read_text())
+
+    def test_no_module_level_voice_import(self):
+        for node in self._tree().body:
+            if isinstance(node, ast.ImportFrom):
+                assert node.module != "voice", (
+                    "parrot/bots/__init__.py imports .voice at module level; "
+                    "that makes google-genai a hard dependency of parrot.bots"
+                )
+
+    def test_defines_module_getattr(self):
+        names = {
+            node.name
+            for node in self._tree().body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        assert "__getattr__" in names, (
+            "lazy exports require a PEP 562 module-level __getattr__"
+        )
+
+
 class TestVoiceBotSttOnly:
     def test_ask_stream_has_stt_only_param(self):
         src = _get_method_source("ask_stream")

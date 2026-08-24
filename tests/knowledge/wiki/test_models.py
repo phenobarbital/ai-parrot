@@ -2,11 +2,11 @@
 
 import pytest
 from parrot.knowledge.wiki.models import (
-    WikiPageCategory,
-    WikiConfig,
     SourceManifestEntry,
-    WikiSearchResult,
+    WikiConfig,
     WikiLintReport,
+    WikiPageCategory,
+    WikiSearchResult,
 )
 
 
@@ -99,9 +99,7 @@ class TestWikiConfig:
     def test_charter_path_accepts_explicit_path(self, tmp_path):
         """FEAT-402: WikiConfig.charter_path accepts an explicit Path."""
         charter_path = tmp_path / "charter.yaml"
-        config = WikiConfig(
-            wiki_name="test", storage_dir=tmp_path, charter_path=charter_path
-        )
+        config = WikiConfig(wiki_name="test", storage_dir=tmp_path, charter_path=charter_path)
         assert config.charter_path == charter_path
 
 
@@ -151,6 +149,24 @@ class TestSourceManifestEntry:
         data = entry.model_dump()
         assert data["pages_generated"] == ["p1", "p2", "p3"]
 
+    def test_document_metadata_fields_default_none(self):
+        """FEAT-451: doc_metadata/content_type/loader default to None."""
+        entry = self._make_entry()
+        assert entry.doc_metadata is None
+        assert entry.content_type is None
+        assert entry.loader is None
+
+    def test_document_metadata_fields_constructible(self):
+        """FEAT-451: doc_metadata/content_type/loader accept values."""
+        entry = self._make_entry(
+            doc_metadata={"author": "Legal", "page_count": 42},
+            content_type="application/pdf",
+            loader="MarkdownLoader",
+        )
+        assert entry.doc_metadata == {"author": "Legal", "page_count": 42}
+        assert entry.content_type == "application/pdf"
+        assert entry.loader == "MarkdownLoader"
+
 
 class TestWikiSearchResult:
     """Tests for WikiSearchResult model."""
@@ -193,9 +209,7 @@ class TestWikiSearchResult:
 
     def test_snippet_defaults_empty(self):
         """snippet defaults to empty string when omitted."""
-        r = WikiSearchResult(
-            node_id="n1", title="T", score=0.5, source="graphindex"
-        )
+        r = WikiSearchResult(node_id="n1", title="T", score=0.5, source="graphindex")
         assert r.snippet == ""
 
 

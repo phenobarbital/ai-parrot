@@ -36,17 +36,23 @@ def _make_client():
     # Mock the internal JSON helper
     from datamodel.parsers.json import JSONContent
     client._json = JSONContent()
+    # __new__ skips __init__, which is where AbstractClient sets up the
+    # per-loop client cache (FEAT-112). Without these, the legacy
+    # `client.client = None` reset path raises AttributeError.
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
     return client
 
 
 @pytest.fixture
-def mock_claude_client():
+def mock_claude_client(bind_sdk_client):
     """AnthropicClient instance with mocked SDK."""
     client = _make_client()
-    client.client = MagicMock()
-    client.client.messages.create = AsyncMock(
+    sdk = MagicMock()
+    sdk.messages.create = AsyncMock(
         return_value=_make_mock_response()
     )
+    bind_sdk_client(client, sdk)
     return client
 
 

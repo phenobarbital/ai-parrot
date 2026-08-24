@@ -53,3 +53,18 @@ class FieldType(str, Enum):
     AUDIO = "audio"
     # FEAT-300 — formula fields (inert stub; evaluator in FEAT-301)
     FORMULA = "formula"
+    # FEAT-448 — absorbed from navigator-svelte's client-only catalog
+    SEARCH = "search"
+    MASKED = "masked"
+    COLOR_PICKER = "color_picker"
+    EMOJI = "emoji"
+    CRON = "cron"
+    TREE_SELECT = "tree_select"
+    SIGNATURE_PAD = "signature_pad"
+    CREDIT_CARD = "credit_card"
+    IMAGE_DROPZONE = "image_dropzone"
+    MULTI_UPLOAD = "multi_upload"
+    AI_CAPTURE = "ai_capture"
+    # FEAT-448 — the granular Country/State/City cascade; LOCATION (the
+    # country picker) is untouched and stays exactly what it is.
+    PLACE = "place"

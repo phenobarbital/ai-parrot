@@ -13,6 +13,7 @@ in ``parrot.models.crew`` (wired up in TASK-920).
 
 ``AgentResult`` stays in ``parrot.models.crew`` for any remaining consumers.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 # ResponseType alias — mirrors the one in parrot.models.crew
 try:
     from parrot.models.responses import AIMessage, AgentResponse  # noqa: F401
+
     ResponseType = Any  # Union[AIMessage, AgentResponse, Any] but avoids heavy import
 except ImportError:
     ResponseType = Any
@@ -204,12 +206,14 @@ class NodeResult:
         if isinstance(self.result, dict):
             try:
                 from datamodel.parsers.json import json_encoder  # type: ignore[import]
+
                 content = (
                     f"\nKeys: {', '.join(str(k) for k in self.result.keys())}\n"
                     f"Content:\n{json_encoder(self.result)}\n            "
                 )
             except ImportError:
                 import json
+
                 content = (
                     f"\nKeys: {', '.join(str(k) for k in self.result.keys())}\n"
                     f"Content:\n{json.dumps(self.result, default=str)}\n            "
@@ -219,9 +223,11 @@ class NodeResult:
         if isinstance(self.result, list):
             try:
                 from datamodel.parsers.json import json_encoder  # type: ignore[import]
+
                 sample = json_encoder(self.result[:10]) if self.result else "[]"
             except ImportError:
                 import json
+
                 sample = json.dumps(self.result[:10], default=str) if self.result else "[]"
             item_types = set(type(item).__name__ for item in self.result[:100])
             content = (
@@ -238,6 +244,7 @@ class NodeResult:
 # ---------------------------------------------------------------------------
 # Helpers (copied/adapted from parrot.models.crew)
 # ---------------------------------------------------------------------------
+
 
 def determine_run_status(
     success_count: int,
@@ -366,7 +373,32 @@ class FlowResult:
     """
 
     output: Any
-    """Final output from the workflow."""
+    """Final output from the workflow.
+
+    **Shape contract (normative, FEAT-447 G4).** ``output`` is deliberately
+    polymorphic, and its shape is decided by how many *leaf* nodes the run
+    actually executed (see ``AgentsFlow._aggregate_result``):
+
+    * **Exactly one executed leaf** -> the leaf's own **scalar** output (the
+      node's answer, already unwrapped from its envelope). This is the common
+      case: a linear or converging graph, and every ``AgentCrew`` run.
+    * **A fan-out (two or more executed leaves)** -> a
+      ``dict[node_id, Any]`` mapping each leaf's node_id to its scalar output.
+    * **No executed leaf** (an empty graph, or every leaf failed/skipped) ->
+      an **empty dict** ``{}``, since that case takes the fan-out branch with
+      nothing to collect. Long-standing behaviour, documented here rather
+      than changed: normalising it to ``None`` would be a breaking change to
+      an existing field's contract. Check ``status`` /
+      ``metadata["leaves"]`` — not the truthiness of ``output`` — to tell
+      "produced nothing" from "produced a falsy value".
+
+    Consumers that must not branch on shape should read
+    :attr:`node_results` instead, which is *always* a
+    ``dict[node_id, scalar]`` for every node, not just the leaves.
+
+    This polymorphism is intentional and pinned by tests; it is not a bug to
+    "fix", and there is no plural ``outputs`` field.
+    """
 
     responses: Dict[str, Any] = field(default_factory=dict)
     """Mapping of node IDs → raw response objects."""
@@ -412,22 +444,28 @@ class FlowResult:
         return str(self.output) if self.output is not None else ""
 
     def __repr__(self) -> str:
-        return (
-            f"FlowResult(status={self.status!r}, "
-            f"nodes={len(self.nodes)}, "
-            f"time={self.total_time:.2f}s)"
-        )
+        return f"FlowResult(status={self.status!r}, " f"nodes={len(self.nodes)}, " f"time={self.total_time:.2f}s)"
 
     # ── Primary computed properties ───────────────────────────────────────
 
     @property
     def content(self) -> Optional[Any]:
-        """Alias for ``output`` (OutputFormatter compatibility)."""
+        """Alias for ``output`` (OutputFormatter compatibility).
+
+        Inherits :attr:`output`'s shape contract verbatim: a **scalar** when
+        the run had a single executed leaf, a ``dict[node_id, Any]`` on a
+        fan-out, ``None`` when nothing produced a result.
+        """
         return self.output
 
     @property
     def final_result(self) -> Optional[Any]:
-        """Compatibility alias for previous API."""
+        """Compatibility alias for previous API.
+
+        Inherits :attr:`output`'s shape contract verbatim: a **scalar** when
+        the run had a single executed leaf, a ``dict[node_id, Any]`` on a
+        fan-out, ``None`` when nothing produced a result.
+        """
         return self.output
 
     @property
@@ -437,11 +475,32 @@ class FlowResult:
 
     @property
     def node_results(self) -> Dict[str, Any]:
-        """Map node IDs to their output values extracted from responses."""
+        """Map node IDs to their scalar output values.
+
+        Handles both response shapes the two executors store in
+        ``responses``, so callers get a scalar answer either way (FEAT-447 G4):
+
+        * ``AgentCrew`` stores ``AgentResponse`` objects -> read ``.output``.
+        * ``AgentsFlow`` stores the ``AgentNode.execute()`` envelope dict
+          (``{"response", "output", "execution_time", "prompt"}``) -> read
+          the ``"output"`` key. Before FEAT-447 these fell through to the
+          ``else`` branch and callers received the whole envelope.
+
+        Anything else is returned as-is, and ``None`` stays ``None``. This is
+        a read-only projection: ``self.responses`` is never mutated.
+
+        Returns:
+            Mapping of node_id -> scalar output. Never an envelope dict.
+        """
         result: Dict[str, Any] = {}
         for node_id, resp in self.responses.items():
             if resp is None:
                 result[node_id] = None
+            # The envelope check must be explicit: a dict has no `.output`
+            # attribute, so it would otherwise fall through to `else` and
+            # leak the whole mapping to the caller.
+            elif isinstance(resp, dict) and "output" in resp:
+                result[node_id] = resp["output"]
             elif hasattr(resp, "output"):
                 result[node_id] = resp.output
             else:
@@ -513,14 +572,8 @@ class FlowResult:
             "content": self.content,
             "node_results": self.node_results,
             "agent_results": self.agent_results,  # backward compat
-            "nodes": [
-                n.to_dict() if isinstance(n, NodeExecutionInfo) else n
-                for n in self.nodes
-            ],
-            "agents": [  # backward compat
-                n.to_dict() if isinstance(n, NodeExecutionInfo) else n
-                for n in self.nodes
-            ],
+            "nodes": [n.to_dict() if isinstance(n, NodeExecutionInfo) else n for n in self.nodes],
+            "agents": [n.to_dict() if isinstance(n, NodeExecutionInfo) else n for n in self.nodes],  # backward compat
             "errors": self.errors,
             "execution_log": self.execution_log,
             "total_time": self.total_time,
@@ -544,10 +597,7 @@ class FlowResult:
         Returns:
             Dictionary containing all essential fields.
         """
-        serialised_nodes = [
-            n.to_dict() if isinstance(n, NodeExecutionInfo) else n
-            for n in self.nodes
-        ]
+        serialised_nodes = [n.to_dict() if isinstance(n, NodeExecutionInfo) else n for n in self.nodes]
 
         serialised_responses: Dict[str, Any] = {}
         for node_id, resp in self.responses.items():
@@ -616,6 +666,48 @@ def _normalise_status(
     return mapping.get(status.lower(), "pending")
 
 
+#: Maximum number of envelope layers ``_unwrap_response`` will peel. Real
+#: envelopes are one level deep (``AgentNode.execute()``); the cap only exists
+#: so a self-referential or maliciously nested mapping cannot recurse forever.
+_MAX_UNWRAP_DEPTH: int = 5
+
+
+def _unwrap_response(response: Optional[Any], _depth: int = 0) -> Optional[Any]:
+    """Normalise a node/agent return value to its metadata-bearing object.
+
+    ``AgentNode.execute()`` returns an *envelope* dict
+    (``{"response", "output", "execution_time", "prompt"}`` --
+    ``core/node.py``) rather than the ``AgentResponse`` itself, while
+    ``AgentCrew`` passes the ``AgentResponse`` directly. This helper collapses
+    the former to the latter and leaves the latter untouched, so
+    :func:`build_node_metadata` sees a single shape from both executors and
+    the two cannot drift apart again (FEAT-447 G5).
+
+    A mapping is treated as an envelope **only** when it carries a
+    ``"response"`` key; a plain ``{"output": ...}`` dict is returned unchanged.
+    The function is intentionally total: it never raises, and on anything
+    unexpected it returns its input unchanged so ``build_node_metadata``
+    degrades exactly as it did before FEAT-447.
+
+    Args:
+        response: Any node/agent return value (envelope dict,
+            ``AgentResponse``, ``AIMessage``, ``str``, ``None``, or an
+            arbitrary user object).
+        _depth: Internal recursion guard; callers should not pass it.
+
+    Returns:
+        The metadata-bearing object, or ``response`` unchanged.
+    """
+    if _depth >= _MAX_UNWRAP_DEPTH:
+        return response
+    try:
+        if isinstance(response, dict) and "response" in response:
+            return _unwrap_response(response["response"], _depth + 1)
+    except Exception:  # noqa: BLE001 — defensive: arbitrary user objects
+        return response
+    return response
+
+
 def build_node_metadata(
     node_id: str,
     agent: Optional[Any],
@@ -630,11 +722,17 @@ def build_node_metadata(
     Mirrors ``build_agent_metadata()`` from ``parrot.models.crew`` but
     returns a ``NodeExecutionInfo`` instead of ``AgentExecutionInfo``.
 
+    ``response`` is first normalised through :func:`_unwrap_response`, so both
+    the bare ``AgentResponse`` an ``AgentCrew`` passes and the envelope dict an
+    ``AgentNode`` returns yield the same metadata (FEAT-447 G1/G5).
+
     Args:
         node_id: Unique identifier for this node instance.
-        agent: The agent object (used to extract name/provider/model).
-        response: Raw response object from the agent.
-        output: Extracted output value.
+        agent: The agent object (used to extract name/provider/model/client).
+        response: Raw response object from the agent, or the envelope dict
+            returned by ``AgentNode.execute()``.
+        output: Extracted output value. Passed through untouched -- it is
+            *not* unwrapped, so ``NodeExecutionInfo`` semantics are unchanged.
         execution_time: Wall-clock time for the execution.
         status: Status string (normalised to allowed literals).
         error: Error message if execution failed.
@@ -642,6 +740,11 @@ def build_node_metadata(
     Returns:
         Populated ``NodeExecutionInfo`` instance.
     """
+    # FEAT-447: collapse an AgentNode envelope to its AgentResponse *before*
+    # the isinstance ladder below; crew's bare AgentResponse passes through
+    # unchanged, so crew behaviour is bit-identical.
+    response = _unwrap_response(response)
+
     model: Optional[str] = None
     provider: Optional[str] = None
     usage: Optional[Dict[str, Any]] = None
@@ -652,16 +755,10 @@ def build_node_metadata(
         from parrot.models.responses import AIMessage, AgentResponse
 
         if isinstance(response, AgentResponse):
-            ai_message = (
-                response.response if isinstance(response.response, AIMessage) else None
-            )
+            ai_message = response.response if isinstance(response.response, AIMessage) else None
             model = getattr(response, "model", None) or getattr(ai_message, "model", None)
             provider = getattr(response, "provider", None) or getattr(ai_message, "provider", None)
-            raw_tc = (
-                getattr(response, "tool_calls", None)
-                or getattr(ai_message, "tool_calls", None)
-                or []
-            )
+            raw_tc = getattr(response, "tool_calls", None) or getattr(ai_message, "tool_calls", None) or []
             tool_calls = _serialise_tool_calls(raw_tc)
             if output is None:
                 output = response.output or getattr(ai_message, "output", None)
@@ -688,10 +785,17 @@ def build_node_metadata(
             provider = getattr(response, "provider", None)
 
     # Fall back to agent attributes
+    client: Optional[str] = None
     if agent is not None:
         provider = provider or getattr(agent, "use_llm", None) or getattr(agent, "provider", None)
         if client_obj := getattr(agent, "llm", None) or getattr(agent, "_llm", None):
             model = model or getattr(client_obj, "model", None)
+            # FEAT-447: revive the declared-but-never-assigned `client` field.
+            # `agent.llm` is normally an AbstractClient instance; before
+            # `configure()` it can still hold the raw config (a str/dict), and
+            # a bare type name there would be noise rather than information.
+            if not isinstance(client_obj, (str, bytes, dict, list, tuple)):
+                client = type(client_obj).__name__
 
     node_name = getattr(agent, "name", node_id) if agent is not None else node_id
 
@@ -704,5 +808,6 @@ def build_node_metadata(
         tool_calls=tool_calls,
         status=_normalise_status(status),
         error=error,
+        client=client,
         usage=usage,
     )

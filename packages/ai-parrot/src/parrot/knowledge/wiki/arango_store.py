@@ -166,11 +166,14 @@ class ArangoDBWikiStore(BaseWikiStore):
         database: str = "",
         wiki_name: str = "",
         text_analyzer: str = "text_en",
+        *,
+        read_only: bool = False,
     ) -> None:
         self._params = arango_params
         self._wiki_name = wiki_name
         self._database = database or f"wiki_{wiki_name or 'codebase'}"
         self._text_analyzer = text_analyzer
+        self._read_only = read_only
         self._db: Optional[Any] = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
@@ -180,6 +183,22 @@ class ArangoDBWikiStore(BaseWikiStore):
     def database(self) -> str:
         """Name of the ArangoDB database this store connects to."""
         return self._database
+
+    @property
+    def read_only(self) -> bool:
+        """Whether this store was opened strictly for reading."""
+        return self._read_only
+
+    def _assert_writable(self) -> None:
+        """Refuse a write on a store opened with ``read_only=True``.
+
+        Raises:
+            PermissionError: When the store is read-only.
+        """
+        if self._read_only:
+            raise PermissionError(
+                f"read-only wiki store: arangodb database {self._database!r}"
+            )
 
     @property
     def _view_name(self) -> str:
@@ -234,11 +253,25 @@ class ArangoDBWikiStore(BaseWikiStore):
         ``asyncio.Lock`` plus an ``_initialized`` flag). The target
         database is created automatically by the driver's own
         ``connection()`` on first connect.
+
+        With ``read_only=True`` (a federated namespace, FEAT-450) this
+        **verifies instead of provisioning**: nothing is created, and a
+        database or page collection that does not exist raises
+        :class:`FileNotFoundError` so the caller can report the
+        namespace as unbuilt rather than silently standing up an empty
+        one on someone else's server.
+
+        Raises:
+            FileNotFoundError: ``read_only`` and the plane does not exist.
         """
         if self._initialized:
             return
         async with self._init_lock:
             if self._initialized:
+                return
+            if self._read_only:
+                await self._connect_existing()
+                self._initialized = True
                 return
             self._db = AsyncDB(
                 "arangodb", params={**self._params, "database": self._database}
@@ -257,6 +290,42 @@ class ArangoDBWikiStore(BaseWikiStore):
 
             await self._create_pages_view()
             self._initialized = True
+
+    async def _connect_existing(self) -> None:
+        """Connect to an already-built plane without creating anything.
+
+        Connecting straight to the target database would create it (the
+        driver's ``connection()`` provisions on demand), so existence is
+        checked from the ``_system`` database first.
+
+        Raises:
+            FileNotFoundError: The database or its pages collection is
+                absent — the plane was never built.
+        """
+        probe = AsyncDB(
+            "arangodb", params={**self._params, "database": "_system"}
+        )
+        await probe.connection()
+        try:
+            databases = await probe.list_databases()
+        except AttributeError:  # pragma: no cover - driver without the helper
+            databases = None
+        finally:
+            await probe.close()
+        if databases is not None and self._database not in set(databases):
+            raise FileNotFoundError(
+                f"ArangoDB database {self._database!r} does not exist"
+            )
+
+        self._db = AsyncDB(
+            "arangodb", params={**self._params, "database": self._database}
+        )
+        await self._db.connection()
+        if not await self._db.collection_exists(PAGES_COLLECTION):
+            raise FileNotFoundError(
+                f"ArangoDB database {self._database!r} has no"
+                f" {PAGES_COLLECTION} collection — the wiki was never built"
+            )
 
     @property
     def _view_properties(self) -> dict[str, Any]:
@@ -398,6 +467,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         """
         if not pages:
             return 0
+        self._assert_writable()
         await self._ensure_init()
         now = _now_iso()
         docs = [
@@ -445,6 +515,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         """
         if not edges:
             return 0
+        self._assert_writable()
         await self._ensure_init()
         docs = []
         for e in edges:
@@ -493,6 +564,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         Returns:
             ``{"pages_deleted": N, "pages_written": M, "edges_written": K}``
         """
+        self._assert_writable()
         await self._ensure_init()
         edges = edges or []
         new_ids = {page.concept_id for page in pages}
@@ -563,6 +635,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         Returns:
             ``True`` when a page document was actually deleted.
         """
+        self._assert_writable()
         await self._ensure_init()
         key = document_key(concept_id)
         deleted_rows = await self._query(
@@ -594,6 +667,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             vector: Embedding as a list of floats.
             model: Identifier of the embedding model used.
         """
+        self._assert_writable()
         await self._ensure_init()
         key = document_key(concept_id)
         doc = {

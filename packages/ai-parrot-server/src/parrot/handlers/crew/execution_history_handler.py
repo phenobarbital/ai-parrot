@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
+from navigator_auth.decorators import is_authenticated, user_session
 from navconfig.logging import logging
 
 from parrot.bots.flows.core.storage.backends import get_result_storage
@@ -27,8 +28,11 @@ from parrot.handlers.crew.saved_execution_service import (
     SavedExecutionService,
     SchedulerUnavailableError,
 )
+from ._tenancy import resolve_session_tenant
 
 
+@is_authenticated()
+@user_session()
 class CrewExecutionHistoryHandler(BaseView):
     """REST API Handler for saved crew execution history, replay, and scheduling.
 
@@ -36,6 +40,12 @@ class CrewExecutionHistoryHandler(BaseView):
     (storage reads, crew resolution, scheduler calls) lives in the service;
     this handler only parses requests, calls the service, and maps
     exceptions to HTTP responses.
+
+    FEAT-446: every HTTP method requires an authenticated session
+    (mirrors ``tool_catalog.py:231`` / ``special_nodes.py:74``); tenant
+    identity is resolved from the session via ``resolve_session_tenant``
+    (``handlers/crew/_tenancy.py``), the single source inside
+    ``_get_tenant_user`` — never trusted from body/query directly.
     """
 
     path: str = '/api/v1/crew/executions'
@@ -118,17 +128,26 @@ class CrewExecutionHistoryHandler(BaseView):
         """Extract ``(tenant, user_id)`` from an authenticated session and/or
         query args or JSON body.
 
+        FEAT-446: ``resolve_session_tenant`` (``handlers/crew/_tenancy.py``)
+        is the single source of tenant truth here — it resolves from the
+        authenticated session (explicit ``tenant_id`` claim, then
+        ``programs[0]``), raising 403 when unresolvable under
+        ``PARROT_SAAS_MODE=true`` or falling back to ``"global"`` in legacy
+        mode. Any ``tenant`` in ``source`` (query args or JSON body) is
+        passed through as ``declared=`` for the 400-on-mismatch check only
+        — it is never itself the source of truth. This applies uniformly
+        to reads and mutations per spec Goal G3 (no ``"global"`` fallback
+        in SaaS mode, ever) — ``require_tenant`` is kept for call-site
+        compatibility (``post()``/``delete()``'s post-call ``if not
+        tenant`` 400 checks) but is now unreachable dead code: the resolver
+        never returns a falsy tenant.
+
         Args:
             source: Either query args (``self.get_arguments()``) or a parsed
                 JSON body dict.
-            require_tenant: When ``False`` (GET/list — read-only), ``tenant``
-                defaults to ``"global"`` (matching ``CrewHandler.get()``'s
-                convention). When ``True`` (POST replay/schedule, DELETE —
-                mutating actions), ``tenant`` is returned as-is (possibly
-                ``None``/empty) — callers MUST reject the request with 400
-                if it's falsy, matching ``CrewExecutionHandler
-                .execute_crew()``'s stricter "tenant is required" convention
-                for state-changing calls.
+            require_tenant: Vestigial (see above) — no longer changes
+                resolution behavior; kept only so existing call sites don't
+                need to change.
 
         Returns:
             A ``(tenant, user_id)`` tuple. ``user_id`` prefers the
@@ -139,9 +158,9 @@ class CrewExecutionHistoryHandler(BaseView):
         """
         session_user_id = await self._get_authenticated_user_id()
         user_id = session_user_id or source.get('user_id')
-        tenant = source.get('tenant')
-        if not require_tenant:
-            tenant = tenant or 'global'
+        tenant = await resolve_session_tenant(
+            self.request, declared=source.get('tenant')
+        )
         return tenant, user_id
 
     # ------------------------------------------------------------------

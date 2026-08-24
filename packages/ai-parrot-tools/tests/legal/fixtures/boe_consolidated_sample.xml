@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Trimmed excerpt of the real BOE datos abiertos "legislacion-consolidada"
+  API response for BOE-A-2015-10566 (Ley 40/2015, de 1 de octubre, de
+  Regimen Juridico del Sector Publico), fetched during TASK-2372's
+  Codebase Contract verification. Structure, attributes and article text
+  are verbatim from the live API (https://www.boe.es/datosabiertos/api/
+  legislacion-consolidada/id/BOE-A-2015-10566), trimmed to a handful of
+  <bloque> elements and <analisis> entries to keep the fixture small.
+
+  "Articulo 50" is a real, hand-verifiable 3-version amendment chain:
+    v0 (n=0): original wording, in force from 2016-10-02 (Ley 40/2015 itself)
+    v1 (n=1): amended by Real Decreto-ley 36/2020, in force from 2021-01-01
+    v2 (n=2): amended by Ley 22/2021, in force from 2022-01-01 (currently in force)
+
+  The "Articulo 999" block is a CONSTRUCTED (non-verbatim) addition — see
+  TASK-2372's Completion Note ("BOE segmentation finding") for why: a
+  full-article suppression with an empty resulting version was not found
+  within the 3 real norms sampled (BOE-A-2015-10566, BOE-A-2018-16673
+  [LOPDGDD], BOE-A-1889-4763 [Codigo Civil, first ~750KB]). It follows the
+  authentic BOE nota_pie annotation convention to exercise the
+  kind="supresion" code path (spec Section 2, ArticleVersion.kind).
+-->
+<response>
+  <status>
+    <code>200</code>
+    <text>ok</text>
+  </status>
+  <data>
+    <metadatos>
+      <identificador>BOE-A-2015-10566</identificador>
+      <rango codigo="1300">Ley</rango>
+      <fecha_disposicion>20151001</fecha_disposicion>
+      <titulo>Ley 40/2015, de 1 de octubre, de Régimen Jurídico del Sector Público.</titulo>
+      <fecha_publicacion>20151002</fecha_publicacion>
+    </metadatos>
+    <analisis>
+      <referencias>
+        <anteriores>
+          <anterior>
+            <id_norma>BOE-A-2014-9467</id_norma>
+            <relacion codigo="210">DEROGA</relacion>
+            <texto>Arts. 12 a 15 y disposición adicional 6 de la Ley 15/2014, de 16 de septiembre</texto>
+          </anterior>
+          <anterior>
+            <id_norma>BOE-A-2002-25180</id_norma>
+            <relacion codigo="210">DEROGA</relacion>
+            <texto>Arts. 44 a 46 y MODIFICA el art. 34.2 de la Ley 50/2002, de 26 de diciembre</texto>
+          </anterior>
+        </anteriores>
+        <posteriores>
+          <posterior>
+            <id_norma>BOE-A-2020-17340</id_norma>
+            <relacion codigo="270">SE MODIFICA</relacion>
+            <texto>los arts. 48.8, 50.2, la disposición adicional 7.2 y SE AÑADE las adicionales 28 y 29, por Real Decreto-ley 36/2020, de 30 de diciembre</texto>
+          </posterior>
+          <posterior>
+            <id_norma>BOE-A-2021-21653</id_norma>
+            <relacion codigo="270">SE MODIFICA</relacion>
+            <texto>los arts. 50.2, 122.3, 128.1, 129 y la disposición adicional 4, por Ley 22/2021, de 28 de diciembre</texto>
+          </posterior>
+        </posteriores>
+      </referencias>
+    </analisis>
+    <texto>
+      <bloque id="a1" tipo="precepto" titulo="Artículo 1">
+        <version id_norma="BOE-A-2015-10566" fecha_publicacion="20151002" fecha_vigencia="20161002">
+          <p class="articulo">Artículo 1. Objeto.</p>
+          <p class="parrafo">La presente Ley establece y regula las bases del régimen jurídico de las Administraciones Públicas, los principios del sistema de responsabilidad de las Administraciones Públicas y de la potestad sancionadora, así como la organización y funcionamiento de la Administración General del Estado y de su sector público institucional para el desarrollo de sus actividades.</p>
+        </version>
+      </bloque>
+      <bloque id="a50" tipo="precepto" titulo="Artículo 50">
+        <version id_norma="BOE-A-2015-10566" fecha_publicacion="20151002" fecha_vigencia="20161002">
+          <p class="articulo">Artículo 50. Trámites preceptivos para la suscripción de convenios y sus efectos.</p>
+          <p class="parrafo">1. Sin perjuicio de las especialidades que la legislación autonómica pueda prever, será necesario que el convenio se acompañe de una memoria justificativa donde se analice su necesidad y oportunidad, su impacto económico, el carácter no contractual de la actividad en cuestión, así como el cumplimiento de lo previsto en esta Ley.</p>
+          <p class="parrafo">2. Los convenios que suscriba la Administración General del Estado o sus organismos públicos y entidades de derecho público vinculados o dependientes se acompañarán además del informe de su servicio jurídico y de la autorización previa del Ministerio de Hacienda y Administraciones Públicas para su firma, modificación, prórroga y resolución por mutuo acuerdo entre las partes.</p>
+        </version>
+        <version id_norma="BOE-A-2020-17340" fecha_publicacion="20201231" fecha_vigencia="20210101">
+          <p class="articulo">Artículo 50. Trámites preceptivos para la suscripción de convenios y sus efectos.</p>
+          <p class="parrafo">1. Sin perjuicio de las especialidades que la legislación autonómica pueda prever, será necesario que el convenio se acompañe de una memoria justificativa donde se analice su necesidad y oportunidad, su impacto económico, el carácter no contractual de la actividad en cuestión, así como el cumplimiento de lo previsto en esta Ley.</p>
+          <p class="parrafo">2. Los convenios que suscriba la Administración General del Estado o sus organismos públicos y entidades de derecho público vinculados o dependientes se acompañarán además del informe de su servicio jurídico, que deberá emitirse en un plazo máximo de siete días hábiles desde su solicitud, y de la autorización previa del Ministerio de Hacienda para su firma, modificación, prórroga y resolución por mutuo acuerdo entre las partes, que se entenderá otorgada si en el plazo de siete días hábiles desde su solicitud no ha sido emitida.</p>
+          <blockquote>
+            <p class="nota_pie">Se modifica el apartado 2 por la disposición final 2.2 del Real Decreto-ley 36/2020, de 30 de diciembre. <a class="refPost">Ref. BOE-A-2020-17340#df-2</a></p>
+          </blockquote>
+        </version>
+        <version id_norma="BOE-A-2021-21653" fecha_publicacion="20211229" fecha_vigencia="20220101">
+          <p class="articulo">Artículo 50. Trámites preceptivos para la suscripción de convenios y sus efectos.</p>
+          <p class="parrafo">1. Sin perjuicio de las especialidades que la legislación autonómica pueda prever, será necesario que el convenio se acompañe de una memoria justificativa donde se analice su necesidad y oportunidad, su impacto económico, el carácter no contractual de la actividad en cuestión, así como el cumplimiento de lo previsto en esta Ley.</p>
+          <p class="parrafo">2. Los convenios que suscriba la Administración General del Estado o sus organismos públicos y entidades de derecho público vinculados o dependientes se acompañarán además del informe de su servicio jurídico, que deberá emitirse en un plazo máximo de siete días hábiles desde su solicitud, y de la autorización previa del Ministerio de Hacienda y Función Pública para su firma, modificación, prórroga y resolución por mutuo acuerdo entre las partes.</p>
+          <blockquote>
+            <p class="nota_pie">Se modifica el apartado 2 por la disposición final 27.1 de la Ley 22/2021, de 28 de diciembre. <a class="refPost">Ref. BOE-A-2021-21653#df-27</a></p>
+            <p class="nota_pie">Se modifica el apartado 2 por la disposición final 2.2 del Real Decreto-ley 36/2020, de 30 de diciembre. <a class="refPost">Ref. BOE-A-2020-17340#df-2</a></p>
+          </blockquote>
+        </version>
+      </bloque>
+      <bloque id="a999" tipo="precepto" titulo="Artículo 999">
+        <version id_norma="BOE-A-2015-10566" fecha_publicacion="20151002" fecha_vigencia="20161002">
+          <p class="articulo">Artículo 999. Disposición transitoria de prueba.</p>
+          <p class="parrafo">Texto original de la disposición transitoria de prueba, vigente desde la entrada en vigor de la Ley.</p>
+        </version>
+        <version id_norma="BOE-A-2020-17340" fecha_publicacion="20201231" fecha_vigencia="20210101">
+          <blockquote>
+            <p class="nota_pie">Se suprime por la disposición final 2.9 del Real Decreto-ley 36/2020, de 30 de diciembre. <a class="refPost">Ref. BOE-A-2020-17340#df-2</a></p>
+          </blockquote>
+        </version>
+      </bloque>
+    </texto>
+  </data>
+</response>

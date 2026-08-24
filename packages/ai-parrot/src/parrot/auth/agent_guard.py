@@ -18,6 +18,7 @@ from typing import Optional
 
 from aiohttp import web
 
+from parrot.auth.eval_context import build_eval_context as _build_eval_context_from_request
 from parrot.auth.models import PolicyRuleConfig
 
 logger = logging.getLogger("parrot.auth.agent_guard")
@@ -160,48 +161,12 @@ def parse_bot_permissions(
     return parsed
 
 
-async def _build_eval_context_from_request(request: web.Request) -> object:
-    """Build a navigator-auth ``EvalContext`` from an aiohttp request.
-
-    Reads the authenticated session from ``request.session`` (populated by
-    Guardian middleware) and constructs a minimal ``EvalContext`` suitable
-    for ``PolicyEvaluator.check_access()``.
-
-    This mirrors the pattern in ``parrot/handlers/bots.py:_build_eval_context``.
-
-    Args:
-        request: The incoming aiohttp request with a Guardian-populated session.
-
-    Returns:
-        An ``EvalContext`` instance, or ``None`` if the session is unavailable.
-
-    Raises:
-        ImportError: If navigator-auth is not installed (caller handles this).
-    """
-    from navigator_auth.abac.context import EvalContext  # noqa: PLC0415
-    try:
-        from navigator_auth.conf import AUTH_SESSION_OBJECT as _AUTH_SESSION  # noqa: PLC0415
-    except ImportError:
-        _AUTH_SESSION = "userinfo"
-
-    session = getattr(request, "session", None)
-    if session is None:
-        try:
-            from navigator_session import get_session  # noqa: PLC0415
-            session = await get_session(request)
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.debug(
-                "agent_guard: could not retrieve session (fail-open): %s", exc
-            )
-            return None
-
-    userinfo = session.get(_AUTH_SESSION, {}) if session else {}
-    return EvalContext(
-        username=userinfo.get("username", ""),
-        groups=set(userinfo.get("groups", [])),
-        roles=set(userinfo.get("roles", [])),
-        programs=userinfo.get("programs", []),
-    )
+### `_build_eval_context_from_request` moved to `parrot.auth.eval_context`
+# (FEAT-446 TASK-2321). Re-exported above via the module-level import so
+# every existing caller in this module (and any external caller relying on
+# `parrot.auth.agent_guard._build_eval_context_from_request`) keeps working
+# unchanged. See `parrot/auth/eval_context.py::build_eval_context` for the
+# canonical implementation and docstring.
 
 
 async def enforce_agent_access(

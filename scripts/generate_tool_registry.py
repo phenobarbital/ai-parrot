@@ -37,6 +37,12 @@ LOADERS_INIT = LOADERS_PKG_DIR / "__init__.py"
 TOOL_BASE_CLASSES = frozenset({
     "AbstractTool", "AbstractToolkit", "ToolkitTool", "ToolResult",
     "ToolManager", "ToolkitRegistry",
+    # Cooperative mixin, not a usable standalone toolkit: it fails
+    # `issubclass(cls, AbstractToolkit)`, so registering it would make
+    # `ToolManager.load_tool("base_research")` report success while
+    # registering zero tools. It matches the "Toolkit" suffix convention,
+    # so it must be excluded explicitly here (FEAT-426 / TASK-2243).
+    "BaseResearchToolkit",
 })
 LOADER_BASE_CLASSES = frozenset({
     "AbstractLoader", "BaseLoader", "BasePDF", "BaseVideoLoader",

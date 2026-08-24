@@ -5,6 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from parrot.mcp.oauth2_config import MCPOAuth2Config, MCPOAuth2GrantType
 from parrot.mcp.client import MCPClientConfig
 
+# `mock.patch`/`monkeypatch.setattr` resolve dotted string targets with
+# pkgutil.resolve_name, which only walks attributes — it does NOT import
+# submodules. Locally these resolved by accident because something else had
+# already imported them; on CI nothing had, so patching died with
+# "module ... has no attribute ...". Import them explicitly so the target
+# resolves the same way in both environments.
+import parrot.mcp.oauth2_storage  # noqa: F401
+
 
 class TestOAuth2TransportSetup:
     """Tests for OAuth2 provider setup in HttpMCPSession."""

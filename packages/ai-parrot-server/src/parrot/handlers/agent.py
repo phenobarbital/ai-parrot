@@ -45,6 +45,8 @@ from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+# Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
+from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
 # FEAT-204: HumanInteractionInterrupt lives in core.exceptions (no parrot.human dependency)
 from parrot.core.exceptions import HumanInteractionInterrupt
 if TYPE_CHECKING:
@@ -415,35 +417,14 @@ class AgentTalk(BaseView):
     async def _build_eval_context(self) -> Any:
         """Build an EvalContext from the current request session.
 
+        Delegates to the canonical
+        ``parrot.auth.eval_context.build_eval_context`` helper (FEAT-446).
+
         Returns an :class:`~navigator_auth.abac.context.EvalContext` or
         ``None`` if the session is unavailable or EvalContext cannot be
         imported.
         """
-        try:
-            from navigator_auth.abac.context import EvalContext
-            from navigator_auth.conf import AUTH_SESSION_OBJECT
-        except ImportError:
-            return None
-
-        try:
-            session = self.request.session if hasattr(self.request, 'session') else None
-            if session is None:
-                session = await get_session(self.request)
-            if session is None:
-                return None
-            userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
-            user = session.decode('user') if hasattr(session, 'decode') else None
-            if user is None and isinstance(userinfo, dict) and userinfo:
-                user = userinfo
-            return EvalContext(
-                request=self.request,
-                user=user,
-                userinfo=userinfo,
-                session=session,
-            )
-        except Exception as exc:
-            self.logger.warning("PBAC: Failed to build EvalContext: %s", exc)
-            return None
+        return await _core_build_eval_context(self.request)
 
     def _get_output_format(
         self,

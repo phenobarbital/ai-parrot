@@ -87,10 +87,14 @@ def _make_anthropic_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
-    client.client = MagicMock()
-    client.client.messages.create = AsyncMock(
+    sdk = MagicMock()
+    sdk.messages.create = AsyncMock(
         return_value=_make_anthropic_response(response_text)
     )
+    # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
+    client._test_sdk = sdk
     return client
 
 
@@ -105,10 +109,14 @@ def _make_openai_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
-    client.client = MagicMock()
-    client.client.chat.completions.create = AsyncMock(
+    sdk = MagicMock()
+    sdk.chat.completions.create = AsyncMock(
         return_value=_make_openai_response(response_text)
     )
+    # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
+    client._test_sdk = sdk
     return client
 
 
@@ -123,12 +131,16 @@ def _make_google_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
-    client.client = MagicMock()
-    client.client.aio = MagicMock()
-    client.client.aio.models = MagicMock()
-    client.client.aio.models.generate_content = AsyncMock(
+    sdk = MagicMock()
+    sdk.aio = MagicMock()
+    sdk.aio.models = MagicMock()
+    sdk.aio.models.generate_content = AsyncMock(
         return_value=_make_google_response(response_text)
     )
+    # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
+    client._test_sdk = sdk
     return client
 
 
@@ -143,10 +155,14 @@ def _make_groq_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
-    client.client = MagicMock()
-    client.client.chat.completions.create = AsyncMock(
+    sdk = MagicMock()
+    sdk.chat.completions.create = AsyncMock(
         return_value=_make_openai_response(response_text)
     )
+    # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
+    client._test_sdk = sdk
     return client
 
 
@@ -202,10 +218,14 @@ def _make_localllm_client(response_text: str = '{"name": "John", "age": 30}'):
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
     _init_json(client)
-    client.client = MagicMock()
-    client.client.chat.completions.create = AsyncMock(
+    sdk = MagicMock()
+    sdk.chat.completions.create = AsyncMock(
         return_value=_make_openai_response(response_text)
     )
+    # __new__ skips __init__ (FEAT-112 per-loop cache lives there).
+    client._clients_by_loop = {}
+    client._locks_by_loop = {}
+    client._test_sdk = sdk
     return client
 
 
@@ -214,7 +234,7 @@ def _make_localllm_client(response_text: str = '{"name": "John", "age": 30}'):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(params=["anthropic", "openai", "google", "groq", "grok", "localllm"])
-def mock_client(request):
+def mock_client(request, bind_sdk_client):
     """Parametrized fixture — returns a mocked client for each provider."""
     factory = {
         "anthropic": _make_anthropic_client,
@@ -224,14 +244,19 @@ def mock_client(request):
         "grok": _make_grok_client,
         "localllm": _make_localllm_client,
     }
-    return factory[request.param]()
+    client = factory[request.param]()
+    sdk = getattr(client, "_test_sdk", None)
+    if sdk is not None:  # grok already binds through get_client()
+        bind_sdk_client(client, sdk)
+    return client
 
 
 @pytest.fixture(params=["google", "groq"])
-def two_call_client(request):
+def two_call_client(request, bind_sdk_client):
     """Fixture for clients that use the two-call strategy."""
     if request.param == "google":
         client = _make_google_client()
+        bind_sdk_client(client, client._test_sdk)
         # Return two responses
         responses = [
             _make_google_response("John is 30 years old"),
@@ -246,6 +271,7 @@ def two_call_client(request):
         return client
     else:  # groq
         client = _make_groq_client()
+        bind_sdk_client(client, client._test_sdk)
         responses = [
             _make_openai_response("John is 30 years old"),
             _make_openai_response('{"name": "John", "age": 30}'),

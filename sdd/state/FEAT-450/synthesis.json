@@ -1,0 +1,820 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-450",
+  "mode": "enrichment",
+  "summary_oneline": "Add named namespaces to wikitoolkit via a FederatedWikiStore (ns::id, explicit + broadcast routing) reusing the existing BaseWikiStore contract, merge helpers and single-store tool/MCP bindings. Delta 1 adds an `obsidian` namespace kind (vault plane at <vault>/.parrot/wiki, ns add --vault) plus the _prune_removed scoping and .parrot-exclusion fixes it requires.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_resolve_read_store",
+      "lines": "199-251",
+      "role": "single-store read resolver (--store/WIKI_STORE) \u2014 becomes the federation entry point",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_store_options / query / page / related / status",
+      "lines": "255-272, 1075-1288",
+      "role": "read commands that gain --ns",
+      "evidence": [
+        "F002",
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_resolve_write_store",
+      "lines": "1488-1493",
+      "role": "authoring resolver (writes stay local)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "BaseWikiStore",
+      "lines": "289-385",
+      "role": "contract the federated store implements",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "create_wiki_store",
+      "lines": "1217-1274",
+      "role": "factory used to open each namespace",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+      "symbol": "SQLiteWikiStore._connect / _connect_readonly",
+      "lines": "514-655",
+      "role": "write-first open with _migrate; read-only ladder to expose as explicit flag",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/search.py",
+      "symbol": "WikiCombinedSearch._merge_groups / _apply_weight / _store_row_to_wiki",
+      "lines": "229-268, 473-530",
+      "role": "per-group min-max + weight + dedup merge reused for broadcast",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/context.py",
+      "symbol": "_ID_PREFIX_RE / pack_results",
+      "lines": "27-30, 105-190",
+      "role": "id-prefix parsing that must skip a leading ns::",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/repo_scan.py",
+      "symbol": "file_concept_id / dir_concept_id",
+      "lines": "249-256",
+      "role": "repo-relative ids that collide across namespaces",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+      "symbol": "WikiProjectConfig / find_project_root / load_project_config",
+      "lines": "125-366",
+      "role": "config model gaining namespaces + global registry loader",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py",
+      "symbol": "WikiQueryInput / WikiPageInput / WikiRelatedInput / create_wiki_tools",
+      "lines": "23-64, 399-428",
+      "role": "tool inputs gaining optional namespace; factory bound to one store",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py",
+      "symbol": "create_wiki_mcp_server",
+      "lines": "66-146",
+      "role": "MCP store injection point",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py",
+      "symbol": "LLMWikiToolkit._config_for / list_wikis",
+      "lines": "499-516, 1205-1228",
+      "role": "explicit multi-wiki dispatch placeholder",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py",
+      "symbol": "ArangoDBWikiStore.__init__",
+      "lines": "160-175",
+      "role": "per-database isolation = arangodb namespace",
+      "evidence": [
+        "F015"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/hook.py",
+      "symbol": "build_nudge",
+      "lines": "175-215",
+      "role": "unaffected consumer of WikiProjectConfig",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/vault_scan.py",
+      "symbol": "scan_vault, is_obsidian_vault, VAULT_EXCLUDE_DIRS",
+      "lines": "50, 55, 111",
+      "role": "vault -> RepoScan with the same file:/dir: ids and contains pages as repo_scan; the vault namespace kind needs no new scanner",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "build (--vault/--no-vault)",
+      "lines": "759-815, 842",
+      "role": "auto-detects .obsidian/ and routes to scan_vault; `build --path <vault>` already builds a vault plane",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py",
+      "symbol": "VaultIngestInput, VaultIngestTool",
+      "lines": "49, 288, 360-368",
+      "role": "shared-store vault ingest into the project's own plane; calls _prune_removed",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+      "symbol": "_prune_removed",
+      "lines": "390-423",
+      "role": "store-wide page/source prune; must become scan-root/namespace scoped (D4.4)",
+      "evidence": [
+        "F017",
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+      "symbol": "vault_dir, resolve_vault_dir",
+      "lines": "177-186, 245-285",
+      "role": "existing vault pointer for the MCP ObsidianToolkit; kept, not promoted to a namespace (D4.3)",
+      "evidence": [
+        "F017"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/wiki/bookkeeper.py",
+      "symbol": "WikiBookkeeper.LOG_FILENAME, log_operation",
+      "lines": "45, 201",
+      "role": "writes index.md/log.md into the storage dir -> self-ingestion if the plane lives inside the vault",
+      "evidence": [
+        "F017"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Every consumer talks only to BaseWikiStore; a federated implementation must satisfy all 15 abstract methods (or raise NotImplementedError explicitly for lint/dump ones)",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "federation.py must be a full BaseWikiStore, not a search-only helper"
+    },
+    {
+      "statement": "SQLiteWikiStore opens write-first and runs _migrate; read-only is only an error fallback",
+      "evidence": [
+        "F004"
+      ],
+      "implication": "an explicit read_only constructor flag is required so foreign namespaces are never migrated/mutated"
+    },
+    {
+      "statement": "Raw FTS scores are -bm25 and corpus-relative; callers normalise",
+      "evidence": [
+        "F003",
+        "F005"
+      ],
+      "implication": "broadcast must min-max per namespace before merging (reuse _apply_weight / _normalize_scores)"
+    },
+    {
+      "statement": "concept_id is repo-relative (file:/dir:) and collides across repos; only _ID_PREFIX_RE and cli._prune_removed parse prefixes",
+      "evidence": [
+        "F010"
+      ],
+      "implication": "ns:: prefixing at the federation boundary is safe; _ID_PREFIX_RE must tolerate a leading <ns>::"
+    },
+    {
+      "statement": "project.py must stay stdlib+pydantic for the PreToolUse hook",
+      "evidence": [
+        "F009",
+        "F013"
+      ],
+      "implication": "WikiNamespaceConfig and the ~/.parrot/wikis.json loader must not import store/search modules"
+    },
+    {
+      "statement": "--path-scoped invocations must never be redirected by ambient env (existing test)",
+      "evidence": [
+        "F002",
+        "F012"
+      ],
+      "implication": "namespace resolution must keep the --store > --path > env precedence and add --ns on top"
+    },
+    {
+      "statement": "MultiStoreSearchToolkit (FEAT-379) already federates origin kinds at the agent level with origin attribution",
+      "evidence": [
+        "F001"
+      ],
+      "implication": "stay at the wikitoolkit/store level; do not duplicate agent-level origin merging; ParrotWikiOrigin can later wrap a federated store"
+    },
+    {
+      "statement": "FEAT-449 uses GraphIndex namespaces named legal:core / legal:civil",
+      "evidence": [
+        "F001"
+      ],
+      "implication": "namespace names must allow ':' inside them (hence '::' separator) so a wiki namespace can mirror a GraphIndex namespace name"
+    },
+    {
+      "statement": "Recent wiki commits do not touch resolution/ids/merge code",
+      "evidence": [
+        "F014"
+      ],
+      "implication": "low conflict risk; rebase over b5893f4e4 cli.py changes only"
+    },
+    {
+      "statement": "_prune_removed deletes every file:/dir: page and every source URI outside the current scan, store-wide, and VaultIngestTool calls it against the project's own store \u2014 repo scan + vault in one plane annihilate each other on alternating builds (on top of the F010 id collision)",
+      "evidence": [
+        "F017",
+        "F010"
+      ],
+      "implication": "the vault gets its own plane behind a namespace; _prune_removed gains an explicit scope argument (D4.4)"
+    },
+    {
+      "statement": "scan_vault rglobs *.md filtering only VAULT_EXCLUDE_DIRS (no exclude argument, never reads config.exclude_dirs) while WikiBookkeeper writes index.md/log.md into the storage dir",
+      "evidence": [
+        "F017"
+      ],
+      "implication": "D4.2 (plane inside the vault) requires .parrot in VAULT_EXCLUDE_DIRS, or scan_vault honouring config.exclude_dirs"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {
+        "item": "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py \u2014 FederatedWikiStore(BaseWikiStore)",
+        "role": "{name: store} + local name; reads fan out (asyncio.gather), ids prefixed ns::, merge via per-namespace min-max + dedup; get_page/neighbors route by prefix (unprefixed \u2192 local); writes delegate to local only; stats per namespace; unbuilt/unreachable namespaces skipped with a note"
+      },
+      {
+        "item": "project.py \u2014 WikiNamespaceConfig + WikiProjectConfig.namespaces + load_global_registry(~/.parrot/wikis.json) + resolve_namespaces()",
+        "role": "merged map (repo overrides global) \u2192 opened read-only stores"
+      },
+      {
+        "item": "cli.py \u2014 --ns option on query/page/related/status; `wikitoolkit ns list|add|remove`",
+        "role": "explicit + broadcast routing; `ns add --global` writes the user registry"
+      },
+      {
+        "item": "tools.py \u2014 optional namespace field on WikiQueryInput/WikiPageInput/WikiRelatedInput; wiki_status lists namespaces",
+        "role": "MCP/agent parity"
+      },
+      {
+        "item": "docs \u2014 parrot-wiki-cli.md 'Namespaces' section; wiki-claude-code.md note",
+        "role": "operator guidance"
+      },
+      {
+        "item": "tests/knowledge/wiki/test_federation.py + test_cli.py --ns cases",
+        "role": "id round-trip, merge, write routing, read-only guarantee, skip-on-missing, precedence"
+      },
+      {
+        "item": "project.py \u2014 WikiNamespaceConfig.vault (obsidian namespace kind) + cli.py `ns add --vault <path>`",
+        "role": "delta 1: a vault registers as {\"vault\": <path>} and resolves to <vault>/.parrot/wiki (sqlite, read-only for reads); built by the existing vault-aware `wikitoolkit build --path <vault>` \u2014 no new build path; registration probes (<path>/.obsidian).is_dir() inline to keep project.py dependency-light; unbuilt planes skipped with a build hint"
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "symbol": "_resolve_read_store",
+        "change": "return FederatedWikiStore when namespaces resolve (and --store not given); accept ns selector",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "symbol": "_resolve_write_store",
+        "change": "accept --ns <name>; resolve that single namespace (repo map, then global registry) and open it read-write; reject 'all'",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "symbol": "SQLiteWikiStore.__init__/_connect",
+        "change": "add read_only: bool flag routing straight to _connect_readonly and skipping mkdir/_migrate",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/context.py",
+        "symbol": "_ID_PREFIX_RE",
+        "change": "strip optional leading <ns>:: before kind prefix",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py",
+        "symbol": "create_wiki_mcp_server",
+        "change": "open namespaces and inject federated store at the create_wiki_store/create_wiki_tools call",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py",
+        "symbol": "Wiki*Input / create_wiki_tools",
+        "change": "optional namespace argument threaded to the federated store",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "symbol": "status",
+        "change": "per-namespace block (plane stats + staleness where a SourceCollectionManager is available)",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py",
+        "symbol": "LLMWikiToolkit._config_for / list_wikis",
+        "change": "OPTIONAL: accept an injected federated store and enumerate namespaces; otherwise untouched",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "symbol": "_prune_removed",
+        "change": "delta 1 (D4.4): take the scan scope explicitly (scan root / namespace) and prune only that scope's pages and sources; callers build (cli.py:842) and VaultIngestTool (tools.py:367)",
+        "evidence": [
+          "F017",
+          "F010"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/vault_scan.py",
+        "symbol": "VAULT_EXCLUDE_DIRS",
+        "change": "delta 1: add .parrot (or honour config.exclude_dirs) so a vault-hosted plane's index.md/log.md are not re-ingested on rebuild",
+        "evidence": [
+          "F017"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+        "symbol": "WikiNamespaceConfig",
+        "change": "delta 1 (D4.1/D4.2): `vault` kind, mutually exclusive with path/store/database, resolving to <vault>/.parrot/wiki on the sqlite backend",
+        "evidence": [
+          "F017",
+          "F009"
+        ]
+      }
+    ],
+    "untouched": [
+      "repo_scan.py id builders and the build/upsert/ingest pipelines (each namespace is built by its own project)",
+      "claude_code/hook.py (single-root nudge)",
+      "SQLite schema, ArangoDB/InMemory backends' internals",
+      "MultiStoreSearchToolkit (FEAT-379) and FEAT-449 GraphIndex namespaces",
+      "Automatic/LLM intent routing (IntentRouterMixin) \u2014 v2 follow-up",
+      "Cross-namespace edges and broadcast/multi-target writes \u2014 v2 follow-up (v1 writes target exactly one namespace)",
+      "RRF ranking \u2014 v2 follow-up",
+      "vault_dir / resolve_vault_dir semantics \u2014 still the MCP ObsidianToolkit pointer, never auto-promoted to a namespace (D4.3)",
+      "FEAT-392 (llmwiki-obsidian-plugin): vault -> PageIndex/GraphIndex is a different plane",
+      "Obsidian write-back (remember/note -> vault notes via ObsidianToolkit) and vault<->code cross-namespace edges: v2"
+    ],
+    "patterns": [
+      {
+        "pattern": "_resolve_read_store precedence (--store > --path > env > project) with ClickException on missing store",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "pattern": "_merge_groups/_apply_weight per-group min-max + dedup by node_id",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "pattern": "create_wiki_store backend switch with lazy backend imports",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "pattern": "CliRunner tests building temp repos with build then query/page/related --store",
+        "evidence": [
+          "F012"
+        ]
+      },
+      {
+        "pattern": "Graceful per-origin degradation (log + note, never fail the whole search) from MultiStoreSearchToolkit",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "pattern": "delta 1: a vault is an ordinary wiki project \u2014 `wikitoolkit build --path <vault>` auto-detects .obsidian/ and routes to scan_vault, so namespaces reuse it instead of adding a build path",
+        "evidence": [
+          "F017"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Foreign wiki.db mutated/migrated by a read",
+        "impact": "silent schema drift in a sibling repo",
+        "mitigation": "explicit read_only flag + test that asserts no write/migration",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "risk": "Large planes (ai-parrot wiki.db \u2248311 MB) \u00d7 N namespaces per query",
+        "impact": "latency on broadcast",
+        "mitigation": "SQLite opens lazily; gather concurrently; limit per-namespace top_k; WAL read-only",
+        "evidence": [
+          "F004",
+          "F003"
+        ]
+      },
+      {
+        "risk": "ns:: appearing in ids confuses existing stub rendering / CLAUDE.md examples",
+        "impact": "cosmetic noise, broken title elision",
+        "mitigation": "_ID_PREFIX_RE update + local namespace stays unprefixed",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "risk": "Global registry loader pulling heavy imports into the hook path",
+        "impact": "hook latency",
+        "mitigation": "keep loader stdlib+pydantic; open stores only in cli/mcp",
+        "evidence": [
+          "F009",
+          "F013"
+        ]
+      },
+      {
+        "risk": "ArangoDB namespace unreachable",
+        "impact": "broadcast stalls on network",
+        "mitigation": "per-namespace timeout + skip with note (initialize() eagerly, like --backend arangodb path)",
+        "evidence": [
+          "F002",
+          "F015"
+        ]
+      },
+      {
+        "risk": "delta 1: .parrot/ inside a synced vault (Dropbox / iCloud / Obsidian Sync) carrying wiki.db + WAL between machines",
+        "impact": "SQLite corruption mid-write on a synced plane",
+        "mitigation": "document it; the plane is derived and rebuildable via `build --path <vault>`; users who sync can exclude .parrot/ or register the vault with an explicit store",
+        "evidence": [
+          "F017"
+        ]
+      },
+      {
+        "risk": "delta 1: scoping _prune_removed wrongly",
+        "impact": "a plane silently stops pruning deletions and drifts from its source tree",
+        "mitigation": "two-root regression test (one root's prune leaves the other's pages intact) plus an assertion that a normal single-root build still prunes",
+        "evidence": [
+          "F017"
+        ]
+      }
+    ],
+    "scope_confidence": "high"
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Read commands resolve exactly one store via _resolve_read_store (cli.py:199-251) with --store/WIKI_STORE precedence",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of function body and docstring"
+    },
+    {
+      "id": "C2",
+      "statement": "BaseWikiStore (store.py:289-385) is the only surface consumers use; create_wiki_store builds sqlite/memory/arangodb",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "abstract methods and factory read directly"
+    },
+    {
+      "id": "C3",
+      "statement": "SQLiteWikiStore._connect runs _migrate on open; read-only mode engages only on a readonly-env error",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "lines 565/573-576 read directly"
+    },
+    {
+      "id": "C4",
+      "statement": "_merge_groups/_apply_weight implement per-group min-max + weight + dedup and are reusable for cross-namespace merging",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high",
+      "reasoning": "function bodies read directly"
+    },
+    {
+      "id": "C5",
+      "statement": "LLMWikiToolkit reserves an explicit multi-wiki dispatch point (_config_for) and says multi-wiki is a future iteration",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "docstring text read directly"
+    },
+    {
+      "id": "C6",
+      "statement": "Tools and MCP server bind six tools to a single store; no namespace in tool inputs",
+      "evidence": [
+        "F007",
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "input models and factory read directly"
+    },
+    {
+      "id": "C7",
+      "statement": "concept_ids are repo-relative and collide across repos; only _ID_PREFIX_RE and cli._prune_removed parse prefixes",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "high",
+      "reasoning": "id builders read; grep over the wiki package"
+    },
+    {
+      "id": "C8",
+      "statement": "No KnowledgeRouter exists in source; FEAT-449's reference is unverified design text",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over packages/ returned no class; FEAT-449 marks it VERIFY"
+    },
+    {
+      "id": "C9",
+      "statement": "MultiStoreSearchToolkit federates origin kinds at agent level and does not provide wikitoolkit multi-plane access",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "medium",
+      "reasoning": "toolkit outline + brainstorm read; full adapter code not read line-by-line"
+    },
+    {
+      "id": "C10",
+      "statement": "ArangoDB namespaces map onto the existing database constructor argument",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "constructor read directly"
+    },
+    {
+      "id": "C11",
+      "statement": "A ns:: separator is unambiguous against existing single-colon kind prefixes and inner-colon ids",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred from the regex and its comment; no exhaustive id corpus scan"
+    },
+    {
+      "id": "C12",
+      "statement": "Per-namespace staleness in status requires one SourceCollectionManager per sqlite namespace",
+      "evidence": [
+        "F011",
+        "F002"
+      ],
+      "confidence": "medium",
+      "reasoning": "status code read; manager-per-store shape inferred"
+    },
+    {
+      "id": "C13",
+      "statement": "Recent commits do not conflict with the touched areas",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high",
+      "reasoning": "git log over the package for 45 days"
+    },
+    {
+      "id": "C14",
+      "statement": "The hook is unaffected by a namespaces field provided project.py stays dependency-light",
+      "evidence": [
+        "F009",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "hook only calls is_built/storage_path"
+    },
+    {
+      "id": "C15",
+      "statement": "scan_vault emits the same RepoScan shape/ids as repo_scan, so a vault namespace needs no new scanner or build path",
+      "evidence": [
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "module docstring + build --vault branch read"
+    },
+    {
+      "id": "C16",
+      "statement": "_prune_removed is store-wide and VaultIngestTool calls it on the project's own store, so repo + vault in one plane destroys both",
+      "evidence": [
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "both bodies read (cli.py:390-423, tools.py:367)"
+    },
+    {
+      "id": "C17",
+      "statement": "A plane at <vault>/.parrot/wiki self-ingests unless .parrot is excluded from the vault scan",
+      "evidence": [
+        "F017"
+      ],
+      "confidence": "high",
+      "reasoning": "VAULT_EXCLUDE_DIRS (50) + bookkeeper log.md path (201) read"
+    },
+    {
+      "id": "C18",
+      "statement": "Registering a vault needs only an .obsidian/ probe in project.py, keeping the hook path dependency-light",
+      "evidence": [
+        "F017",
+        "F009"
+      ],
+      "confidence": "medium",
+      "reasoning": "is_obsidian_vault is a one-line is_dir() check but its module imports parrot.interfaces.obsidian \u2014 the probe must be inlined, not imported"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "How do entries reach the global registry ~/.parrot/wikis.json \u2014 only via explicit `wikitoolkit ns add --global`, or should `wikitoolkit build` self-register every built project?",
+      "blocks_claims": [
+        "C12"
+      ],
+      "plausible_answers": [
+        "manual only (`ns add --global`) \u2014 explicit, no surprises (recommended for v1)",
+        "build self-registers under its wiki_name, `ns add` for non-repo brains",
+        "both, with `build --no-register` opt-out"
+      ],
+      "ask_user": true,
+      "user_answer": "only via `wikitoolkit ns add` (--global for the user registry); build never self-registers",
+      "resolved_at": "2026-08-23T00:30:08Z"
+    },
+    {
+      "id": "U2",
+      "question": "Is `remember/note/link --ns <foreign>` allowed in v1 (opens that namespace read-write), or are writes to non-local namespaces refused?",
+      "blocks_claims": [
+        "C3"
+      ],
+      "plausible_answers": [
+        "refuse in v1 \u2014 writes always local; foreign stores opened read-only (recommended)",
+        "allow with an explicit --ns, opening that single store read-write"
+      ],
+      "ask_user": true,
+      "user_answer": "yes, required in v1: an explicit --ns <name> on remember/note/link opens that single namespace read-write; default writes go local; --ns all is never a write target; reads of foreign namespaces stay read-only",
+      "resolved_at": "2026-08-23T00:30:08Z"
+    },
+    {
+      "id": "U3",
+      "question": "In broadcast output, should the local namespace's ids stay unprefixed (file:x) while foreign ones carry ns:: \u2014 or should every id be prefixed uniformly when namespaces are configured?",
+      "blocks_claims": [
+        "C11"
+      ],
+      "plausible_answers": [
+        "local unprefixed, foreign prefixed \u2014 keeps existing CLAUDE.md/hook examples valid (recommended)",
+        "uniform prefix for all when \u22651 namespace is configured"
+      ],
+      "ask_user": true,
+      "user_answer": "yes: local namespace ids stay unprefixed (file:x); only foreign ids carry ns::",
+      "resolved_at": "2026-08-23T00:30:08Z"
+    },
+    {
+      "id": "D4.1",
+      "question": "Is Obsidian a namespace kind or a second corpus inside the local plane?",
+      "blocks_claims": [
+        "C15",
+        "C16"
+      ],
+      "plausible_answers": [
+        "namespace kind (vault gets its own plane)",
+        "second corpus in the local plane"
+      ],
+      "ask_user": true,
+      "user_answer": "namespace kind: {\"vault\": \"<path>\"}, routed like every other namespace",
+      "resolved_at": "2026-08-23T12:00:00Z"
+    },
+    {
+      "id": "D4.2",
+      "question": "Where does a vault namespace's wiki plane live?",
+      "blocks_claims": [
+        "C15",
+        "C17"
+      ],
+      "plausible_answers": [
+        "inside the vault (<vault>/.parrot/wiki)",
+        "under the host repo (.parrot/wiki/ns/<name>)",
+        "explicit store path, no default"
+      ],
+      "ask_user": true,
+      "user_answer": "inside the vault \u2014 <vault>/.parrot/wiki/wiki.db, built by `wikitoolkit build --path <vault>`; accepted cost: .parrot/ inside a possibly-synced vault | Delta 2 (user, 2026-08-23): the vault kind resolves via load_project_config(<vault>) exactly like the path kind \u2014 the vault's own wiki.json decides storage_dir/backend/caps; defaults to <vault>/.parrot/wiki sqlite when absent.",
+      "resolved_at": "2026-08-23T12:00:00Z"
+    },
+    {
+      "id": "D4.3",
+      "question": "Does an existing vault_dir auto-register as a namespace?",
+      "blocks_claims": [
+        "C18"
+      ],
+      "plausible_answers": [
+        "no \u2014 ns add --vault only (consistent with U1)",
+        "yes \u2014 implicit namespace for back-compat"
+      ],
+      "ask_user": true,
+      "user_answer": "no; vault_dir keeps its MCP ObsidianToolkit job",
+      "resolved_at": "2026-08-23T12:00:00Z"
+    },
+    {
+      "id": "D4.4",
+      "question": "Where does the _prune_removed blast-radius fix belong?",
+      "blocks_claims": [
+        "C16"
+      ],
+      "plausible_answers": [
+        "inside FEAT-450",
+        "separate hotfix on dev",
+        "document as unsupported"
+      ],
+      "ask_user": true,
+      "user_answer": "inside FEAT-450 \u2014 v1 already namespace-scopes writes",
+      "resolved_at": "2026-08-23T12:00:00Z"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization and reuse points are high-confidence; the three architectural decisions and U1-U3 are all resolved by the user \u2014 no open question remains."
+  },
+  "overall_confidence": "high",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016",
+      "F017"
+    ],
+    "findings_unused": [],
+    "notes": "F016 backs the v2 follow-up only. Unknowns U1-U3 each carry a recommended default so /sdd-spec can proceed without blocking. Delta 1 (2026-08-23, post-synthesis, pre-approval): obsidian namespace kind \u2014 one new finding F017 (verified against source, research phase not re-run); D4.1-D4.4 answered by the user."
+  }
+}

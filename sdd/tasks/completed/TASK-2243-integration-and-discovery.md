@@ -316,3 +316,30 @@ every PR in this repo, not just this one.
 pre-existing generator bug documented above — the entries themselves are
 verified correct and generator-shaped. `--check` does not exit 0 for
 reasons entirely unrelated to and outside this task's scope.
+
+---
+
+### Follow-up addendum (2026-08-24)
+
+The `--check` blocker documented above has been **resolved upstream**,
+closing the recommendation this task left for the PR reviewer. **FEAT-427
+— fix-generate-tool-registry-annassign** (TASK-2245) added `ast.AnnAssign`
+handling to `_assign_target_and_value()` in
+`scripts/generate_tool_registry.py`, used by both `read_existing_registry()`
+and `update_init_file()`, exactly as recommended. It is merged to `dev`
+(`d279f72c4`).
+
+Re-verified against current `dev` HEAD:
+```
+$ python scripts/generate_tool_registry.py --check
+All registries are up to date.
+$ echo $?
+0
+```
+
+This was a separate feature/task, not a reopening of TASK-2243 — the
+hand-added registry entries from this task were correct and are now
+covered by the working generator. The last unchecked acceptance criterion
+is satisfied as of FEAT-427; this task's own status remains
+`done-with-issues` as a historical record of what was true at completion
+time (2026-08-17), per SDD convention of not rewriting past task state.

@@ -2,6 +2,11 @@ version: 2
 updates:
 - package-ecosystem: pip
   directory: "/"
+  # Dependency bumps must enter through the integration branch, not through
+  # main. Without this, every bump lands on main (the repo default branch)
+  # and has to be synced back down — which is what broke the
+  # `main is an ancestor of dev` invariant (FEAT-187).
+  target-branch: dev
   schedule:
     interval: daily
   open-pull-requests-limit: 10

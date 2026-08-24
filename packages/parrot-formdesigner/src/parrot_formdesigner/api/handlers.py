@@ -87,6 +87,7 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
             content_type="application/json",
         )
 
+
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
@@ -168,13 +169,9 @@ class FormAPIHandler:
         # Pre-construct tools once (avoid per-request instantiation overhead)
         from ..tools.create_form import CreateFormTool
         from ..tools.database_form import DatabaseFormTool
-        self._create_tool = CreateFormTool(
-            client=self._get_llm_client(),
-            registry=self.registry
-        )
-        self._db_tool = DatabaseFormTool(
-            registry=self.registry
-        )
+
+        self._create_tool = CreateFormTool(client=self._get_llm_client(), registry=self.registry)
+        self._db_tool = DatabaseFormTool(registry=self.registry)
 
         # FEAT-300 — form version service (lazy-init so tests can override)
         self._version_service: "FormVersionService | None" = None
@@ -199,6 +196,7 @@ class FormAPIHandler:
             return self._client
         try:
             from parrot.clients.google import GoogleGenAIClient
+
             self._client = GoogleGenAIClient()
         except Exception as exc:
             self.logger.warning("Failed to create default GoogleGenAIClient: %s", exc)
@@ -334,8 +332,7 @@ class FormAPIHandler:
         """
         if form.tenant != tenant:
             self.logger.warning(
-                "Cross-tenant form access blocked: form_uid=%s form.tenant=%s "
-                "declared=%s",
+                "Cross-tenant form access blocked: form_uid=%s form.tenant=%s " "declared=%s",
                 form.form_uid,
                 form.tenant,
                 tenant,
@@ -387,6 +384,74 @@ class FormAPIHandler:
         return AuthContext(scheme="none")
 
     # ------------------------------------------------------------------
+    # Store-context helpers (FEAT-440 spec §3 Module 5)
+    # ------------------------------------------------------------------
+
+    def _extract_visit_context(
+        self, form: FormSchema, body: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Split an optional caller-supplied ``visit_context`` out of the request body.
+
+        The render/validate handlers accept a store context from the caller
+        and forward it to ``FormValidator.validate()`` as ``visit_context``.
+        This package only ACCEPTS what it is handed — assembling the
+        context (which store a visit belongs to) is FieldSync's job, not
+        this one's (spec §1 Non-Goals).
+
+        The wire shape reserves a top-level ``"visit_context"`` key in the
+        SAME JSON body already used for submitted answers, so existing
+        callers that never send it are unaffected — ``data`` comes back
+        unchanged when the key is absent. A caller that wants store-gated
+        rules to fire adds one field:
+        ``{"field_a": "...", "visit_context": {"store_groups": [...]}}``.
+
+        Collision guard (code-review finding, FEAT-440): nothing in
+        ``core/schema.py`` reserves ``"visit_context"`` as a ``field_id`` —
+        a hand-authored form (e.g. via ``create_blank_form``) could
+        legally name a real field ``visit_context``, and that field's
+        submitted answer would otherwise be silently intercepted and
+        stripped before ever reaching ``validate()``/storage, with no
+        error surfaced to the caller. Rather than reserving the name
+        globally (a bigger, cross-cutting schema change), this checks
+        THIS form's own fields at extraction time: if it actually has one
+        named ``visit_context``, the key is left alone as an ordinary
+        answer and no context is extracted for this request — logged so
+        the reason store-gated rules never fire for that form is
+        traceable, not silent.
+
+        Args:
+            form: The form the request targets — checked for a real
+                ``field_id == "visit_context"`` collision.
+            body: The parsed JSON request body (answers, optionally plus a
+                ``visit_context`` key).
+
+        Returns:
+            ``(data, visit_context)`` — ``data`` is ``body`` with any
+            ``visit_context`` key removed (or ``body`` unchanged when
+            absent, not a dict, or reserved by a real field on ``form``).
+            ``visit_context`` is the extracted dict, or ``None`` when not
+            supplied/applicable. Absent context means no context: a rule
+            referencing a store the caller did not describe does not fire
+            — failing closed is deliberate (spec §3 Module 5).
+        """
+        raw = body.get("visit_context") if isinstance(body, dict) else None
+        if not isinstance(raw, dict):
+            return body, None
+
+        if any(f.field_id == "visit_context" for f in form.iter_all_fields()):
+            self.logger.warning(
+                "Form %s has a real field named 'visit_context' — the reserved "
+                "store-context envelope key is disabled for this form; its "
+                "answer is preserved and no visit_context will be applied.",
+                form.form_id,
+            )
+            return body, None
+
+        data = dict(body)
+        del data["visit_context"]
+        return data, raw
+
+    # ------------------------------------------------------------------
     # Partial-save helpers
     # ------------------------------------------------------------------
 
@@ -407,9 +472,7 @@ class FormAPIHandler:
             session_id = str(_sid) if _sid else None
         return session_id
 
-    def _find_field(
-        self, form: FormSchema, field_id: str
-    ) -> "FormField | None":
+    def _find_field(self, form: FormSchema, field_id: str) -> "FormField | None":
         """Find a FormField by field_id, searching all sections.
 
         Args:
@@ -425,9 +488,7 @@ class FormAPIHandler:
                     return field
         return None
 
-    def _remap_partial_to_field_ids(
-        self, form: FormSchema | None, partial: PartialFormData
-    ) -> PartialFormData:
+    def _remap_partial_to_field_ids(self, form: FormSchema | None, partial: PartialFormData) -> PartialFormData:
         """Map Redis-persisted ``field_uid`` keys back to CURRENT ``field_id``s.
 
         ``PartialSaveStore`` persists ``partial.data`` keyed by ``field_uid``
@@ -488,18 +549,14 @@ class FormAPIHandler:
             503 — partial save service not configured or Redis unavailable.
         """
         if self._partial_store is None:
-            return JSONResponse(
-                {"error": "Partial save service not configured"}, status=503
-            )
+            return JSONResponse({"error": "Partial save service not configured"}, status=503)
 
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
-            return JSONResponse(
-                {"error": "Session ID required"}, status=400
-            )
+            return JSONResponse({"error": "Session ID required"}, status=400)
 
         try:
             body = await request.json()
@@ -509,9 +566,7 @@ class FormAPIHandler:
         answers: dict = body.get("answers", {})
 
         if not isinstance(answers, dict):
-            return JSONResponse(
-                {"error": "'answers' must be a JSON object"}, status=400
-            )
+            return JSONResponse({"error": "'answers' must be a JSON object"}, status=400)
 
         if not answers:
             # PartialSaveStore's PartialFormData.form_id field is still str
@@ -531,9 +586,7 @@ class FormAPIHandler:
 
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(form, tenant)
 
         # Resolve each incoming field_id to its field_uid BEFORE storing —
@@ -558,12 +611,8 @@ class FormAPIHandler:
         try:
             partial = await self._partial_store.save(str(form_uid), session_id, uid_answers)
         except Exception as exc:
-            self.logger.warning(
-                "PartialSaveStore.save failed for %s/%s: %s", form_uid, session_id, exc
-            )
-            return JSONResponse(
-                {"error": "Partial save service unavailable"}, status=503
-            )
+            self.logger.warning("PartialSaveStore.save failed for %s/%s: %s", form_uid, session_id, exc)
+            return JSONResponse({"error": "Partial save service unavailable"}, status=503)
 
         # Attach field_errors to the PartialFormData using model_copy
         if field_errors:
@@ -571,9 +620,7 @@ class FormAPIHandler:
             # Persist updated partial (with field_errors) back to Redis so that
             # GET /partial returns the last validation state.
             try:
-                await self._partial_store._redis_set(
-                    await self._partial_store._get_redis(), partial
-                )
+                await self._partial_store._redis_set(await self._partial_store._get_redis(), partial)
             except Exception as exc:
                 self.logger.warning(
                     "PartialSaveStore: failed to persist field_errors for %s/%s: %s",
@@ -587,9 +634,7 @@ class FormAPIHandler:
         # was deleted are dropped silently.
         partial = self._remap_partial_to_field_ids(form, partial)
 
-        return JSONResponse(
-            partial.model_dump(mode="json"), status=200
-        )
+        return JSONResponse(partial.model_dump(mode="json"), status=200)
 
     async def get_partial(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/partial — Retrieve cached partial answers.
@@ -604,28 +649,20 @@ class FormAPIHandler:
             503 — partial save service not configured.
         """
         if self._partial_store is None:
-            return JSONResponse(
-                {"error": "Partial save service not configured"}, status=503
-            )
+            return JSONResponse({"error": "Partial save service not configured"}, status=503)
 
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
-            return JSONResponse(
-                {"error": "Session ID required"}, status=400
-            )
+            return JSONResponse({"error": "Session ID required"}, status=400)
 
         try:
             partial = await self._partial_store.get(str(form_uid), session_id)
         except Exception as exc:
-            self.logger.warning(
-                "PartialSaveStore.get failed for %s/%s: %s", form_uid, session_id, exc
-            )
-            return JSONResponse(
-                {"error": "Partial save service unavailable"}, status=503
-            )
+            self.logger.warning("PartialSaveStore.get failed for %s/%s: %s", form_uid, session_id, exc)
+            return JSONResponse({"error": "Partial save service unavailable"}, status=503)
 
         if partial is None:
             return JSONResponse(
@@ -639,9 +676,7 @@ class FormAPIHandler:
         form = await self.registry.get(form_uid, tenant=tenant)
         partial = self._remap_partial_to_field_ids(form, partial)
 
-        return JSONResponse(
-            partial.model_dump(mode="json"), status=200
-        )
+        return JSONResponse(partial.model_dump(mode="json"), status=200)
 
     async def delete_partial(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_id}/partial — Clear cached partial answers.
@@ -655,17 +690,13 @@ class FormAPIHandler:
             503 — partial save service not configured.
         """
         if self._partial_store is None:
-            return JSONResponse(
-                {"error": "Partial save service not configured"}, status=503
-            )
+            return JSONResponse({"error": "Partial save service not configured"}, status=503)
 
         form_uid = extract_form_uid(request)
 
         session_id = self._extract_session_id(request)
         if not session_id:
-            return JSONResponse(
-                {"error": "Session ID required"}, status=400
-            )
+            return JSONResponse({"error": "Session ID required"}, status=400)
 
         try:
             await self._partial_store.delete(str(form_uid), session_id)
@@ -708,15 +739,21 @@ class FormAPIHandler:
                 return JSONResponse({"forms": []})
             self._assert_form_tenant(form, tenant)
             ts = form.created_at
-            return JSONResponse({"forms": [{
-                "form_uid": form.form_uid,
-                "form_id": form.form_id,
-                "title": _loc_to_str(form.title),
-                "description": _loc_to_str(form.description),
-                "version": form.version,
-                "source": "memory",
-                "created_at": ts.isoformat() if ts is not None else None,
-            }]})
+            return JSONResponse(
+                {
+                    "forms": [
+                        {
+                            "form_uid": form.form_uid,
+                            "form_id": form.form_id,
+                            "title": _loc_to_str(form.title),
+                            "description": _loc_to_str(form.description),
+                            "version": form.version,
+                            "source": "memory",
+                            "created_at": ts.isoformat() if ts is not None else None,
+                        }
+                    ]
+                }
+            )
 
         in_memory = await self.registry.list_forms(tenant=tenant)
         descriptors: dict[str, dict] = {}
@@ -830,9 +867,7 @@ class FormAPIHandler:
         if self._form_has_remote_binding(form):
             session_id = self._extract_session_id(request)
             if session_id:
-                response.headers["X-Form-CSRF-Token"] = issue_form_csrf_token(
-                    session_id, form_uid
-                )
+                response.headers["X-Form-CSRF-Token"] = issue_form_csrf_token(session_id, form_uid)
         return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
@@ -902,32 +937,20 @@ class FormAPIHandler:
 
         # 1. Validate event_name against the FormEventName Literal
         if event_name not in get_args(FormEventName):
-            return JSONResponse(
-                {"error": f"Unknown event '{event_name}'"}, status=400
-            )
+            return JSONResponse({"error": f"Unknown event '{event_name}'"}, status=400)
 
         # 2. Load form
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(form, tenant)
 
         # 3. CSRF validation
         session_id = self._extract_session_id(request)
-        token = request.headers.get("X-CSRF-Token") or request.headers.get(
-            "X-Form-CSRF-Token"
-        )
-        if (
-            not session_id
-            or not token
-            or not validate_form_csrf_token(session_id, form_uid, token)
-        ):
-            return JSONResponse(
-                {"error": "CSRF token invalid or missing"}, status=403
-            )
+        token = request.headers.get("X-CSRF-Token") or request.headers.get("X-Form-CSRF-Token")
+        if not session_id or not token or not validate_form_csrf_token(session_id, form_uid, token):
+            return JSONResponse({"error": "CSRF token invalid or missing"}, status=403)
 
         # 4. Parse body
         try:
@@ -979,11 +1002,12 @@ class FormAPIHandler:
         # mounted tenant="public".
         enforce_membership_unless_public(request, form, tenant)
         try:
-            data = await request.json()
+            body = await request.json()
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        result = await self.validator.validate(form, data)
+        data, visit_context = self._extract_visit_context(form, body)
+        result = await self.validator.validate(form, data, visit_context=visit_context)
         status = 200 if result.is_valid else 422
         return JSONResponse(
             {"is_valid": result.is_valid, "errors": result.errors},
@@ -1017,6 +1041,7 @@ class FormAPIHandler:
             return JSONResponse({"error": "title is required"}, status=400)
 
         from ..tools.create_form import _slugify
+
         form_id = body.get("form_id") or _slugify(_loc_to_str(title))
 
         tenant = self._get_tenant(request)
@@ -1033,15 +1058,11 @@ class FormAPIHandler:
 
         persist = self.registry.has_storage
         try:
-            await self.registry.register(
-                form, persist=persist, overwrite=False, tenant=tenant
-            )
+            await self.registry.register(form, persist=persist, overwrite=False, tenant=tenant)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status=409)
 
-        self.logger.info(
-            "Created blank form form_uid=%s (slug=%s)", form.form_uid, form.form_id
-        )
+        self.logger.info("Created blank form form_uid=%s (slug=%s)", form.form_uid, form.form_id)
         prefix = request.app.get("_form_prefix", "")
         return JSONResponse(
             {
@@ -1076,6 +1097,7 @@ class FormAPIHandler:
 
         tenant = self._get_tenant(request)
         from ..tools.create_form import CreateFormTool
+
         create_tool = CreateFormTool(
             client=self._get_llm_client(),
             registry=self.registry,
@@ -1098,12 +1120,14 @@ class FormAPIHandler:
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
-        return JSONResponse({
-            "form_uid": form_uid,
-            "form_id": form_data.get("form_id"),
-            "title": title,
-            "url": f"{prefix}/{tenant}/forms/{form_uid}",
-        })
+        return JSONResponse(
+            {
+                "form_uid": form_uid,
+                "form_id": form_data.get("form_id"),
+                "title": title,
+                "url": f"{prefix}/{tenant}/forms/{form_uid}",
+            }
+        )
 
     async def edit_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_uid}/edit — Edit a form using natural language.
@@ -1124,9 +1148,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(existing, tenant)
 
         try:
@@ -1139,6 +1161,7 @@ class FormAPIHandler:
             return JSONResponse({"error": "prompt is required"}, status=400)
 
         from ..tools.create_form import CreateFormTool
+
         create_tool = CreateFormTool(
             client=self._get_llm_client(),
             registry=self.registry,
@@ -1168,12 +1191,14 @@ class FormAPIHandler:
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
-        return JSONResponse({
-            "form_uid": updated_form_uid,
-            "form_id": form_data.get("form_id"),
-            "title": title,
-            "url": f"{prefix}/{tenant}/forms/{updated_form_uid}",
-        })
+        return JSONResponse(
+            {
+                "form_uid": updated_form_uid,
+                "form_id": form_data.get("form_id"),
+                "title": title,
+                "url": f"{prefix}/{tenant}/forms/{updated_form_uid}",
+            }
+        )
 
     async def clone_form(self, request: web.Request) -> web.Response:
         """POST /api/v1/{tenant}/forms/{form_uid}/clone — Clone a form under a new slug.
@@ -1218,9 +1243,7 @@ class FormAPIHandler:
 
         patch = body.get("patch") or None
         if patch is not None and not isinstance(patch, dict):
-            return JSONResponse(
-                {"error": "patch must be a JSON object"}, status=400
-            )
+            return JSONResponse({"error": "patch must be a JSON object"}, status=400)
         assert_body_tenant_matches(body, tenant)
 
         try:
@@ -1231,9 +1254,7 @@ class FormAPIHandler:
                 tenant=tenant,
             )
         except KeyError:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         except FormAlreadyExistsError as exc:
             return JSONResponse({"error": str(exc)}, status=409)
         except ValueError as exc:
@@ -1241,7 +1262,9 @@ class FormAPIHandler:
 
         self.logger.info(
             "Cloned form form_uid=%s -> form_uid=%s (slug=%s)",
-            form_uid, clone.form_uid, clone.form_id,
+            form_uid,
+            clone.form_uid,
+            clone.form_id,
         )
         return JSONResponse(clone.model_dump(mode="json"), status=201)
 
@@ -1262,9 +1285,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(existing, tenant)
 
         try:
@@ -1273,9 +1294,7 @@ class FormAPIHandler:
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         if not isinstance(body, dict) or str(body.get("form_uid")) != str(form_uid):
-            return JSONResponse(
-                {"error": "form_uid in URL and body must match"}, status=400
-            )
+            return JSONResponse({"error": "form_uid in URL and body must match"}, status=400)
         assert_body_tenant_matches(body, tenant)
 
         body["version"] = _bump_version(existing.version)
@@ -1305,9 +1324,7 @@ class FormAPIHandler:
 
         persist = self.registry.has_storage
         try:
-            await self.registry.register(
-                form, persist=persist, overwrite=True, tenant=tenant
-            )
+            await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         except FormAlreadyExistsError as exc:
             # PUT may rename form_id (slug) — register() rejects the rename
             # if the target slug is already owned by a DIFFERENT form_uid
@@ -1315,9 +1332,7 @@ class FormAPIHandler:
             # unconditionally, not just when overwrite=False, so a rename
             # can no longer silently steal another form's slug).
             return JSONResponse({"error": str(exc)}, status=409)
-        self.logger.info(
-            "PUT form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version
-        )
+        self.logger.info("PUT form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version)
         return JSONResponse(form.model_dump(mode="json", exclude_none=True))
 
     async def patch_form(self, request: web.Request) -> web.Response:
@@ -1336,9 +1351,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(existing, tenant)
 
         try:
@@ -1347,9 +1360,7 @@ class FormAPIHandler:
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         if not body:
-            return JSONResponse(
-                {"error": "PATCH body must not be empty"}, status=400
-            )
+            return JSONResponse({"error": "PATCH body must not be empty"}, status=400)
         assert_body_tenant_matches(body, tenant)
 
         existing_dict = existing.model_dump()
@@ -1381,9 +1392,7 @@ class FormAPIHandler:
 
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
-        self.logger.info(
-            "PATCH form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version
-        )
+        self.logger.info("PATCH form_uid=%s (slug=%s) → version %s", form_uid, form.form_id, form.version)
         return JSONResponse(form.model_dump(mode="json", exclude_none=True))
 
     async def delete_form(self, request: web.Request) -> web.Response:
@@ -1401,9 +1410,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_uid, tenant=tenant)
         if existing is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(existing, tenant)
 
         # Spec invariant (FEAT-300 §8, Vision IQ parity): a form with ≥1
@@ -1414,12 +1421,7 @@ class FormAPIHandler:
         version_svc = self._get_version_service()
         if not await version_svc.can_delete(form_uid, tenant=tenant):
             return web.json_response(
-                {
-                    "error": (
-                        f"Form '{form_uid}' has responses and cannot be deleted. "
-                        "Deactivate it instead."
-                    )
-                },
+                {"error": (f"Form '{form_uid}' has responses and cannot be deleted. " "Deactivate it instead.")},
                 status=409,
             )
 
@@ -1430,9 +1432,7 @@ class FormAPIHandler:
             try:
                 await storage.delete(form_uid, tenant=existing.tenant)
             except Exception as exc:
-                self.logger.warning(
-                    "FormStorage.delete failed for %s: %s", form_uid, exc
-                )
+                self.logger.warning("FormStorage.delete failed for %s: %s", form_uid, exc)
 
         self.logger.info("DELETE form_uid=%s", form_uid)
         return web.Response(status=204)
@@ -1466,9 +1466,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
         if form is None:
-            return JSONResponse(
-                {"error": f"Form '{form_uid}' not found"}, status=404
-            )
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
         self._assert_form_tenant(form, tenant)
         # FEAT-421 review fix: see get_form's comment — this route is also
         # mounted tenant="public" (a public form's submission must remain
@@ -1476,9 +1474,14 @@ class FormAPIHandler:
         enforce_membership_unless_public(request, form, tenant)
 
         try:
-            data = await request.json()
+            body = await request.json()
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        # Split off an optional caller-supplied store context before it can
+        # be treated as an answer field by the merge/lifecycle steps below
+        # (spec §3 Module 5) — `data` is pure answers from here on.
+        data, visit_context = self._extract_visit_context(form, body)
 
         # lifecycle: outer envelope for onError dispatch on any exception.
         # FormEventAbort from onBeforeSubmit is caught INSIDE and handled
@@ -1543,7 +1546,7 @@ class FormAPIHandler:
                 )
 
             # Validate submission data against form schema
-            result = await self.validator.validate(form, data)
+            result = await self.validator.validate(form, data, visit_context=visit_context)
             if not result.is_valid:
                 _validation_exc = ValueError(f"Validation failed: {result.errors}")
                 # dispatch onError (best-effort) before the early 422 return
@@ -1599,9 +1602,7 @@ class FormAPIHandler:
                             error=exc,
                         )
                     except Exception as _meta_exc:
-                        self.logger.exception(
-                            "onError handler raised during metadata: %s", _meta_exc
-                        )
+                        self.logger.exception("onError handler raised during metadata: %s", _meta_exc)
                     return JSONResponse(
                         {"is_valid": False, "errors": {"_metadata": str(exc)}},
                         status=422,
@@ -1624,11 +1625,7 @@ class FormAPIHandler:
             forwarded = False
             forward_status = None
             forward_error = None
-            if (
-                form.submit is not None
-                and form.submit.action_type == "endpoint"
-                and self._forwarder is not None
-            ):
+            if form.submit is not None and form.submit.action_type == "endpoint" and self._forwarder is not None:
                 fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
                 forwarded = fwd_result.success
                 forward_status = fwd_result.status_code
@@ -1667,13 +1664,15 @@ class FormAPIHandler:
                 payload=submission.data,
             )
 
-            return JSONResponse({
-                "submission_id": submission.submission_id,
-                "is_valid": True,
-                "forwarded": forwarded,
-                "forward_status": forward_status,
-                "forward_error": forward_error,
-            })
+            return JSONResponse(
+                {
+                    "submission_id": submission.submission_id,
+                    "is_valid": True,
+                    "forwarded": forwarded,
+                    "forward_status": forward_status,
+                    "forward_error": forward_error,
+                }
+            )
 
         except FormEventAbort:
             # Already handled above — re-raise so it surfaces correctly
@@ -1699,9 +1698,7 @@ class FormAPIHandler:
             if _user_message:
                 # Surface friendly message in the request for outer error handlers
                 request["_lifecycle_user_message"] = _user_message
-            self.logger.exception(
-                "submit_data failed for form %r: %s", form_uid, exc
-            )
+            self.logger.exception("submit_data failed for form %r: %s", form_uid, exc)
             raise
 
     async def load_from_db(self, request: web.Request) -> web.Response:
@@ -1749,6 +1746,7 @@ class FormAPIHandler:
         service = str(body.get("service", "networkninja"))
         tenant = self._get_tenant(request)
         from ..tools.database_form import DatabaseFormTool
+
         db_tool = DatabaseFormTool(registry=self.registry, tenant=tenant)
         # persist=True: an import that only ever reached the in-memory registry
         # is invisible to every table-backed reader (the caller's very next
@@ -1756,9 +1754,7 @@ class FormAPIHandler:
         # importer had just reported loading. Safe only because import identity
         # is now deterministic — with the former uuid4 this path silently
         # created db-form-X-Y-2, -3, -4, one duplicate per import.
-        result = await db_tool.execute(
-            service=service, formid=formid, orgid=orgid, persist=True
-        )
+        result = await db_tool.execute(service=service, formid=formid, orgid=orgid, persist=True)
 
         if not result.success:
             error_msg = result.metadata.get("error", "Failed to load form from database")
@@ -1781,18 +1777,19 @@ class FormAPIHandler:
         report_data = result.metadata.get("import_report")
         if report_data:
             from ..tools.services.networkninja import ImportDiffReport
-            self._import_reports[(tenant, form_uid)] = (
-                ImportDiffReport.model_validate(report_data)
-            )
+
+            self._import_reports[(tenant, form_uid)] = ImportDiffReport.model_validate(report_data)
 
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
-        return JSONResponse({
-            "form_uid": form_uid,
-            "form_id": form_id,
-            "title": title,
-            "url": f"{prefix}/{tenant}/forms/{form_uid}",
-        })
+        return JSONResponse(
+            {
+                "form_uid": form_uid,
+                "form_id": form_id,
+                "title": title,
+                "url": f"{prefix}/{tenant}/forms/{form_uid}",
+            }
+        )
 
     # ------------------------------------------------------------------
     # FEAT-300 helpers — version service + question bank
@@ -1819,9 +1816,8 @@ class FormAPIHandler:
         """
         if self._version_service is None:
             from ..services.form_version import FormVersionService
-            self._version_service = FormVersionService(
-                self.registry, storage=self.registry.storage
-            )
+
+            self._version_service = FormVersionService(self.registry, storage=self.registry.storage)
         return self._version_service
 
     def _make_question_bank(self, tenant: str) -> "QuestionBankService":
@@ -1840,6 +1836,7 @@ class FormAPIHandler:
         """
         if tenant not in self._question_banks:
             from ..services.question_bank import QuestionBankService
+
             self._question_banks[tenant] = QuestionBankService(
                 storage=self.registry.storage,  # type: ignore[arg-type]
                 tenant=tenant,
@@ -1892,9 +1889,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         svc = self._make_question_bank(tenant)
         fields = await svc.list_fields()
-        return web.json_response(
-            {"fields": [f.model_dump(mode="json") for f in fields]}
-        )
+        return web.json_response({"fields": [f.model_dump(mode="json") for f in fields]})
 
     async def create_field(self, request: web.Request) -> web.Response:
         """POST /api/v1/fields — Add a field definition to the question bank.
@@ -1913,6 +1908,7 @@ class FormAPIHandler:
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
         from ..core.schema import FormField
+
         try:
             field_def = FormField.model_validate(body)
         except ValidationError as exc:
@@ -1956,19 +1952,21 @@ class FormAPIHandler:
         meta_list = await svc.list_versions(form_uid, tenant=tenant)
         current_version = form.published_version or form.version
 
-        return web.json_response({
-            "form_uid": str(form_uid),
-            "versions": [
-                {
-                    "version": m.version,
-                    "published_at": m.published_at.isoformat(),
-                    "published_by": None,
-                    "is_current": m.version == current_version,
-                    "is_published": m.is_published,
-                }
-                for m in meta_list
-            ],
-        })
+        return web.json_response(
+            {
+                "form_uid": str(form_uid),
+                "versions": [
+                    {
+                        "version": m.version,
+                        "published_at": m.published_at.isoformat(),
+                        "published_by": None,
+                        "is_current": m.version == current_version,
+                        "is_published": m.is_published,
+                    }
+                    for m in meta_list
+                ],
+            }
+        )
 
     async def get_version(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_uid}/versions/{version} — Retrieve a stored snapshot.
@@ -2056,9 +2054,7 @@ class FormAPIHandler:
         program_id = 0
 
         try:
-            ctx = await self._rbac_service.resolve(
-                user_id, program_id=program_id, tenant=tenant
-            )
+            ctx = await self._rbac_service.resolve(user_id, program_id=program_id, tenant=tenant)
             allowed = ctx.has_permission(codename)
         except Exception as exc:  # noqa: BLE001
             self.logger.debug(
@@ -2072,21 +2068,25 @@ class FormAPIHandler:
         if allowed:
             self.logger.debug(
                 "_rbac_shadow_gate: ALLOW user=%s codename=%s tenant=%s",
-                user_id, codename, tenant,
+                user_id,
+                codename,
+                tenant,
             )
         else:
             if self.rbac_enforcing:
                 self.logger.warning(
                     "_rbac_shadow_gate: DENY (enforcing) user=%s codename=%s tenant=%s",
-                    user_id, codename, tenant,
+                    user_id,
+                    codename,
+                    tenant,
                 )
-                raise web.HTTPForbidden(
-                    reason=f"Permission denied: {codename}"
-                )
+                raise web.HTTPForbidden(reason=f"Permission denied: {codename}")
             else:
                 self.logger.debug(
                     "_rbac_shadow_gate: WOULD-DENY (shadow) user=%s codename=%s tenant=%s",
-                    user_id, codename, tenant,
+                    user_id,
+                    codename,
+                    tenant,
                 )
 
     # ------------------------------------------------------------------
@@ -2108,15 +2108,11 @@ class FormAPIHandler:
             501: OrgGraphService not configured.
         """
         if self._org_graph_service is None:
-            return JSONResponse(
-                {"error": "OrgGraphService not configured"}, status=501
-            )
+            return JSONResponse({"error": "OrgGraphService not configured"}, status=501)
 
         org_id = self._get_org_id(request)
         if org_id is None:
-            return JSONResponse(
-                {"error": "org_id not found in session"}, status=400
-            )
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
 
         tenant = self._session_tenant(request)
         try:
@@ -2151,9 +2147,7 @@ class FormAPIHandler:
             501: ProjectService not configured.
         """
         if self._project_service is None:
-            return JSONResponse(
-                {"error": "ProjectService not configured"}, status=501
-            )
+            return JSONResponse({"error": "ProjectService not configured"}, status=501)
 
         try:
             body = await request.json()
@@ -2162,9 +2156,7 @@ class FormAPIHandler:
 
         accounting_code = body.get("accounting_code")
         if not accounting_code:
-            return JSONResponse(
-                {"error": "accounting_code is required"}, status=400
-            )
+            return JSONResponse({"error": "accounting_code is required"}, status=400)
 
         client_id = body.get("client_id")
         if client_id is None:
@@ -2173,18 +2165,14 @@ class FormAPIHandler:
         try:
             client_id_int = int(client_id)
         except (TypeError, ValueError):
-            return JSONResponse(
-                {"error": "client_id must be an integer"}, status=400
-            )
+            return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
         # C-4 (write isolation): org_id comes from the authenticated session,
         # NEVER from the request body — a caller cannot create a project under
         # another tenant's org.
         org_id = self._get_org_id(request)
         if org_id is None:
-            return JSONResponse(
-                {"error": "org_id not found in session"}, status=400
-            )
+            return JSONResponse({"error": "org_id not found in session"}, status=400)
 
         tenant = self._session_tenant(request)
         try:
@@ -2224,17 +2212,13 @@ class FormAPIHandler:
             501: ProjectService not configured.
         """
         if self._project_service is None:
-            return JSONResponse(
-                {"error": "ProjectService not configured"}, status=501
-            )
+            return JSONResponse({"error": "ProjectService not configured"}, status=501)
 
         project_id_str = request.match_info.get("project_id", "")
         try:
             project_id = int(project_id_str)
         except (ValueError, TypeError):
-            return JSONResponse(
-                {"error": f"Invalid project_id: {project_id_str!r}"}, status=400
-            )
+            return JSONResponse({"error": f"Invalid project_id: {project_id_str!r}"}, status=400)
 
         try:
             body = await request.json()
@@ -2247,9 +2231,7 @@ class FormAPIHandler:
 
         tenant = self._session_tenant(request)
         try:
-            mapping = await self._project_service.map_to_workday(
-                project_id, str(workday_code), tenant=tenant
-            )
+            mapping = await self._project_service.map_to_workday(project_id, str(workday_code), tenant=tenant)
         except Exception as exc:
             from ..services.project_service import ProjectNotFoundError
 
@@ -2283,9 +2265,7 @@ class FormAPIHandler:
             501: RBACService not configured.
         """
         if self._rbac_service is None:
-            return JSONResponse(
-                {"error": "RBACService not configured"}, status=501
-            )
+            return JSONResponse({"error": "RBACService not configured"}, status=501)
 
         user_id = request.match_info.get("user_id", "")
         if not user_id:
@@ -2325,9 +2305,7 @@ class FormAPIHandler:
         caller = getattr(request, "user", None)
         caller_id = str(getattr(caller, "id", "anonymous")) if caller else "anonymous"
         try:
-            caller_ctx = await self._rbac_service.resolve(
-                caller_id, program_id=int(program_id), tenant=tenant
-            )
+            caller_ctx = await self._rbac_service.resolve(caller_id, program_id=int(program_id), tenant=tenant)
             if not caller_ctx.has_permission("manage_roles"):
                 return JSONResponse(
                     {"error": "Permission denied: manage_roles required"},
@@ -2336,7 +2314,8 @@ class FormAPIHandler:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
                 "assign_user_role: privilege check failed for %s: %s",
-                caller_id, exc,
+                caller_id,
+                exc,
             )
             return JSONResponse(
                 {"error": "Permission denied: manage_roles required"},
@@ -2376,9 +2355,7 @@ class FormAPIHandler:
             501: WorkdayIdentitySyncAdapter not configured.
         """
         if self._workday_adapter is None:
-            return JSONResponse(
-                {"error": "WorkdayIdentitySyncAdapter not configured"}, status=501
-            )
+            return JSONResponse({"error": "WorkdayIdentitySyncAdapter not configured"}, status=501)
 
         try:
             body = await request.json()
@@ -2392,16 +2369,12 @@ class FormAPIHandler:
         if not user_id:
             return JSONResponse({"error": "user_id is required"}, status=400)
         if action not in ("provision", "deprovision"):
-            return JSONResponse(
-                {"error": "action must be 'provision' or 'deprovision'"}, status=400
-            )
+            return JSONResponse({"error": "action must be 'provision' or 'deprovision'"}, status=400)
         if org_id is None:
             return JSONResponse({"error": "org_id is required"}, status=400)
 
         try:
-            result = await self._workday_adapter.sync_user(
-                str(user_id), action=action, org_id=int(org_id)
-            )
+            result = await self._workday_adapter.sync_user(str(user_id), action=action, org_id=int(org_id))
         except Exception as exc:
             self.logger.exception("sync_workday_identities failed: %s", exc)
             return JSONResponse({"error": "Internal server error"}, status=500)
@@ -2433,9 +2406,7 @@ class FormAPIHandler:
 
         tenant = self._session_tenant(request)
         try:
-            sites = await self._venue_service.list_sites(
-                store_id=store_id, org_id=org_id, tenant=tenant
-            )
+            sites = await self._venue_service.list_sites(store_id=store_id, org_id=org_id, tenant=tenant)
         except Exception as exc:
             self.logger.exception("list_sites failed: %s", exc)
             return JSONResponse({"error": "Internal server error"}, status=500)
@@ -2516,9 +2487,7 @@ class FormAPIHandler:
         try:
             site_id = int(site_id_str)
         except (ValueError, TypeError):
-            return JSONResponse(
-                {"error": f"Invalid site_id: {site_id_str!r}"}, status=400
-            )
+            return JSONResponse({"error": f"Invalid site_id: {site_id_str!r}"}, status=400)
 
         org_id = self._get_org_id(request)
         if org_id is None:
@@ -2526,16 +2495,12 @@ class FormAPIHandler:
 
         tenant = self._session_tenant(request)
         try:
-            locations = await self._venue_service.list_locations(
-                site_id=site_id, org_id=org_id, tenant=tenant
-            )
+            locations = await self._venue_service.list_locations(site_id=site_id, org_id=org_id, tenant=tenant)
         except Exception as exc:
             self.logger.exception("list_locations failed: %s", exc)
             return JSONResponse({"error": "Internal server error"}, status=500)
 
-        return JSONResponse(
-            [loc.model_dump(mode="json") for loc in locations], status=200
-        )
+        return JSONResponse([loc.model_dump(mode="json") for loc in locations], status=200)
 
     async def create_location(self, request: web.Request) -> web.Response:
         """POST /api/v1/org/sites/{site_id}/locations — Create a location.
@@ -2566,9 +2531,7 @@ class FormAPIHandler:
         try:
             site_id = int(site_id_str)
         except (ValueError, TypeError):
-            return JSONResponse(
-                {"error": f"Invalid site_id: {site_id_str!r}"}, status=400
-            )
+            return JSONResponse({"error": f"Invalid site_id: {site_id_str!r}"}, status=400)
 
         try:
             body = await request.json()
@@ -2630,9 +2593,7 @@ class FormAPIHandler:
         try:
             location_id = int(location_id_str)
         except (ValueError, TypeError):
-            return JSONResponse(
-                {"error": f"Invalid location_id: {location_id_str!r}"}, status=400
-            )
+            return JSONResponse({"error": f"Invalid location_id: {location_id_str!r}"}, status=400)
 
         org_id = self._get_org_id(request)
         if org_id is None:
@@ -2640,9 +2601,7 @@ class FormAPIHandler:
 
         tenant = self._session_tenant(request)
         try:
-            location = await self._venue_service.get_location(
-                location_id, org_id=org_id, tenant=tenant
-            )
+            location = await self._venue_service.get_location(location_id, org_id=org_id, tenant=tenant)
         except Exception as exc:
             from ..services.venue_service import LocationNotFoundError
 
@@ -2652,4 +2611,3 @@ class FormAPIHandler:
             return JSONResponse({"error": "Internal server error"}, status=500)
 
         return JSONResponse(location.model_dump(mode="json"), status=200)
-

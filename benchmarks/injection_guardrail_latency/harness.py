@@ -49,7 +49,13 @@ from pathlib import Path
 from typing import Any
 
 from . import corpus as corpus_mod
-from .detectors import ALL_TIERS, DEFAULT_CLASSIFIER, DEFAULT_EMBEDDER, build_detector
+from .detectors import (
+    ALL_TIERS,
+    DEFAULT_CLASSIFIER,
+    DEFAULT_EMBEDDER,
+    MAX_LENGTH,
+    build_detector,
+)
 from .metrics import (
     current_rss_mb,
     effective_latency_ms,
@@ -139,6 +145,7 @@ def run_tier(
     intra_op_threads: int,
     n_warmup: int,
     n_repeats: int,
+    max_length: int = MAX_LENGTH,
 ) -> dict[str, Any]:
     """Benchmark one tier end to end.
 
@@ -153,6 +160,9 @@ def run_tier(
         intra_op_threads: ORT/torch thread cap.
         n_warmup: Warm-up calls discarded before timing.
         n_repeats: Timed passes over the whole corpus.
+        max_length: Tokenizer truncation length for the ``clf-*`` tiers;
+            forwarded identically to both the torch and ONNX backends so
+            the parity gate stays meaningful.
 
     Returns:
         A result dict. ``error`` is populated (and the metric fields left
@@ -180,6 +190,7 @@ def run_tier(
             embedder_id=embedder_id,
             onnx_dir=onnx_dir,
             intra_op_threads=intra_op_threads,
+            max_length=max_length,
         )
     except Exception as exc:  # noqa: BLE001 - per-tier degradation
         result["error"] = f"build_failed: {exc}"
@@ -452,8 +463,17 @@ def _run_isolated(tier: str, argv_common: list[str]) -> dict[str, Any]:
         sys.executable, "-m", "benchmarks.injection_guardrail_latency.harness",
         "--tiers", tier, "--child-result-json", str(child_out), *argv_common,
     ]
+    # Pin the child's cwd to the repo root (derived from this file's own
+    # path, not os.getcwd()). Importing `parrot.security.prompt_injection`
+    # in _preimport_framework() can trigger a cwd-changing side effect from
+    # a transitively-imported settings/config loader; inheriting a changed
+    # cwd here would make `-m benchmarks...` resolve a DIFFERENT copy of
+    # this package (e.g. a separate checkout/worktree) than the one this
+    # process is actually running from — silently benchmarking stale code.
+    # Reproduced and root-caused during FEAT-439 (code-review finding).
+    repo_root = Path(__file__).resolve().parents[2]
     logger.info("[%s] spawning isolated child …", tier)
-    completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    completed = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=repo_root)
     if completed.returncode != 0:
         logger.error("[%s] child exited %d:\n%s", tier, completed.returncode, completed.stderr[-2000:])
         return {"tier": tier, "error": f"child_exit_{completed.returncode}", "scores": None}
@@ -490,6 +510,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--warmup", type=int, default=WARMUP_RUNS)
     parser.add_argument("--repeats", type=int, default=MIN_REPEATS, help="Timed passes over the corpus")
     parser.add_argument("--intra-op-threads", type=int, default=2, help="ORT/torch thread cap (0 = library default)")
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=MAX_LENGTH,
+        help=(
+            "Tokenizer truncation length for the clf-* tiers (default matches "
+            "the guardrail's hot-path truncation). Both torch and ONNX "
+            "backends receive the same value, or the parity gate is meaningless."
+        ),
+    )
     parser.add_argument("--clf-threshold", type=float, default=PRODUCTION_THRESHOLDS["clf"])
     parser.add_argument("--isolate", action="store_true", help="Run each tier in its own process (clean RSS)")
     parser.add_argument(
@@ -505,6 +535,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--child-result-json", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
+
+    # Resolve to absolute paths BEFORE any import below can trigger a
+    # cwd-changing side effect (see the `cwd=` comment in `_run_isolated`
+    # for the root cause). A relative `--onnx-dir`/`--output-dir` must be
+    # evaluated against the cwd the user actually invoked this command
+    # from — resolving now, before that cwd can silently change out from
+    # under a later `Path.exists()`/`.mkdir()` call, makes both paths
+    # immune to it regardless of what happens later in this process.
+    if args.onnx_dir is not None:
+        args.onnx_dir = args.onnx_dir.resolve()
+    if args.output_dir is not None:
+        args.output_dir = args.output_dir.resolve()
+    if args.reanalyse is not None:
+        args.reanalyse = args.reanalyse.resolve()
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -534,6 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         "--repeats", str(args.repeats),
         "--intra-op-threads", str(args.intra_op_threads),
         "--clf-threshold", str(args.clf_threshold),
+        "--max-length", str(args.max_length),
     ]
 
     results: list[dict[str, Any]] = []
@@ -550,6 +595,7 @@ def main(argv: list[str] | None = None) -> int:
             intra_op_threads=args.intra_op_threads,
             n_warmup=args.warmup,
             n_repeats=args.repeats,
+            max_length=args.max_length,
         ))
 
     payload: dict[str, Any] = {
@@ -559,6 +605,7 @@ def main(argv: list[str] | None = None) -> int:
             "embedder": args.embedder,
             "intra_op_threads": args.intra_op_threads,
             "clf_threshold": args.clf_threshold,
+            "max_length": args.max_length,
             "repeats": args.repeats,
             "warmup": args.warmup,
             "isolated": bool(args.isolate),

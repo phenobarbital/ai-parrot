@@ -58,6 +58,14 @@ class FieldControlMetadata(BaseModel):
         supported_operations: List of :class:`DependencyOperation` ``op`` values
             that make semantic sense for this control type (e.g. arithmetic ops
             only for numeric types).  Empty list = all ops applicable.  Optional.
+        value_shape: The type-only JSON Schema value-shape contract (FEAT-448
+            TASK-2338) — e.g. ``{"type": "string", "format": "signature"}`` or
+            ``{"type": "object", "properties": {...}, "required": [...]}``.
+            For ``FieldType`` entries this is sourced from
+            ``renderers.jsonschema.type_level_value_shape()`` so the catalog
+            and the JSON Schema renderer can never drift apart — the whole
+            point of publishing this contract at all (spec §5.5). Optional —
+            defaults to ``{}`` for extension types that don't provide one.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -75,6 +83,8 @@ class FieldControlMetadata(BaseModel):
     supported_operators: list[str] = []
     supported_effects: list[str] = []
     supported_operations: list[str] = []
+    # Value-shape contract (FEAT-448 TASK-2338) — optional with a safe default
+    value_shape: dict[str, Any] = {}
 
 
 # Module-level registry — preserves registration order for stable iteration.
@@ -95,6 +105,7 @@ def register_field_control(
     supported_operators: list[str] | None = None,
     supported_effects: list[str] | None = None,
     supported_operations: list[str] | None = None,
+    value_shape: dict[str, Any] | None = None,
 ) -> None:
     """Register (or overwrite) a control entry in the toolbar registry.
 
@@ -117,6 +128,8 @@ def register_field_control(
             ``None`` (default) and ``[]`` both mean "all effects applicable".
         supported_operations: ``DependencyOperation.op`` values that make sense
             for this type.  ``None`` (default) and ``[]`` both mean "all ops".
+        value_shape: The type-only JSON Schema value-shape contract (FEAT-448
+            TASK-2338). ``None`` (default) means ``{}`` — no contract published.
     """
     type_id = field_type.value if isinstance(field_type, FieldType) else field_type
     if type_id in _REGISTRY:
@@ -136,6 +149,7 @@ def register_field_control(
         supported_operators=supported_operators or [],
         supported_effects=supported_effects or [],
         supported_operations=supported_operations or [],
+        value_shape=value_shape or {},
     )
 
 

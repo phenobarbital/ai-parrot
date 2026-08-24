@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.26.1",
+    "ai-parrot>=0.27.0",
     "PyGithub>=2.1",
     "ddgs>=9.5.2",
 ]
@@ -95,8 +95,15 @@ research = [
     "wbgapi>=1.0", "sdmx1>=2.27", "habanero>=2.3,<2.4",
     "biopython>=1.80", "arxiv>=3.0.0",
 ]
+# FEAT-453: BusinessAutomationToolkit's bank-statement Excel ingestion
+# (business_automation/ingest.py) imports pandas and ai-parrot-loaders'
+# ExcelLoader at module level — previously undeclared anywhere (worked only
+# because the uv workspace editable-installs every sibling package
+# together; a standalone `pip install ai-parrot-tools[...]` without this
+# extra would fail on `import parrot_tools.business_automation.ingest`).
+business_automation = ["pandas>=2.0", "ai-parrot-loaders"]
 all = [
-    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research,business_automation]"
 ]
 
 [project.urls]
@@ -123,3 +130,5 @@ include = ["parrot_tools*"]
 
 [tool.uv.sources]
 ai-parrot = { workspace = true }
+# FEAT-453: business_automation extra (ingest.py's ExcelLoader import).
+ai-parrot-loaders = { workspace = true }

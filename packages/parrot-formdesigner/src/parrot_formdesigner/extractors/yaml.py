@@ -74,6 +74,7 @@ _LEGACY_FIELD_TYPE_MAP: dict[str, FieldType] = {
     "remote_response": FieldType.REMOTE_RESPONSE,
     "availability": FieldType.AVAILABILITY,
     "location": FieldType.LOCATION,
+    "place": FieldType.PLACE,
     "tags": FieldType.TAGS,
     "nps": FieldType.NPS,
     "likert": FieldType.LIKERT,
@@ -81,6 +82,16 @@ _LEGACY_FIELD_TYPE_MAP: dict[str, FieldType] = {
     # Phase 3 — FEAT-170
     "rest": FieldType.REST,
 }
+
+# FEAT-448 codex F3 — every FieldType is addressable by its own value.
+# The hand-written map above kept only the aliases and the types someone
+# remembered; `field_type: search` silently produced a TEXT field. Deriving
+# the base mapping from the enum means a new type is reachable from YAML the
+# moment it exists, and the literals above survive only as ALIASES (hyphenated
+# spellings and legacy names), which is the one thing a derived map cannot
+# know. Enum values win nothing here — they are identical where they overlap —
+# but the merge order keeps the aliases authoritative if that ever changes.
+_LEGACY_FIELD_TYPE_MAP = {**{ft.value: ft for ft in FieldType}, **_LEGACY_FIELD_TYPE_MAP}
 
 # Map legacy validation rule names to FieldConstraints attributes
 _LEGACY_VALIDATION_MAP = {

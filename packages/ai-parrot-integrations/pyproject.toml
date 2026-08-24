@@ -32,11 +32,17 @@ dependencies = [
 
 [project.optional-dependencies]
 # FEAT-422 — Agent CLI Daemon. Marker extra: rich/prompt_toolkit/click/
-# pydantic/pyyaml all come from ai-parrot core already; this extra exists
-# so the core CLI's missing-module error can name a concrete `pip install`
-# target. Scheduler support is via the separate optional `ai-parrot-server`
-# install (lazily imported, degrades with a warning when absent).
+# pydantic/pyyaml all come from ai-parrot core already, so this extra is
+# deliberately empty — it exists only so the core CLI's missing-DISTRIBUTION
+# error can name a concrete `pip install` target. It can never fix an
+# ImportError raised from *inside* an installed agentd (see
+# `LazyGroup._is_missing_target` in parrot/cli/__init__.py).
 agentd = []
+# Optional `schedules.*` RPC support for the daemon. Without it
+# `AgentDaemon._start_scheduler()` degrades to SCHEDULER_UNAVAILABLE (1003).
+agentd-scheduler = [
+    "ai-parrot-server[scheduler]",
+]
 slack = [
     "slack-sdk>=3.27",
     "slack-bolt>=1.18",
@@ -102,6 +108,18 @@ messaging = [
     "ai-parrot-integrations[msteams]",
     "ai-parrot-integrations[whatsapp]",
 ]
+# FEAT-453 code-review remediation: WhatsAppBridgeWrapper's fail-closed
+# financial control (bridge_wrapper.py::_agent_exposes_submit_operation)
+# detects a bound BusinessAutomationToolkit by importing
+# parrot_tools.business_automation, deferred and guarded by
+# try/except ImportError so ai-parrot-tools stays optional for every
+# other WhatsApp deployment. Intentionally NOT part of `all` (like
+# `liveavatar`/`msagentsdk`) — ai-parrot-tools is a large distribution
+# with dozens of unrelated extras; only opt in when actually running a
+# BusinessAutomationToolkit-backed agent over WhatsApp.
+business-automation = [
+    "ai-parrot-tools",
+]
 all = [
     "ai-parrot-integrations[messaging]",
     "ai-parrot-integrations[matrix]",
@@ -141,3 +159,5 @@ override-dependencies = ["emoji==1.7.0"]
 [tool.uv.sources]
 ai-parrot = { workspace = true }
 parrot-formdesigner = { workspace = true }
+# FEAT-453: business-automation extra (bridge_wrapper.py's fail-closed check).
+ai-parrot-tools = { workspace = true }

@@ -298,7 +298,7 @@ class QueryResponse(BaseModel):
 
     @model_validator(mode="after")
     def _dedupe_sql_from_explanation(self) -> "QueryResponse":
-        """Strip redundant ```sql ... ``` fences from ``explanation``.
+        r"""Strip redundant ```sql ... ``` fences from ``explanation``.
 
         Gemini (and other LLMs that don't honour the structured-output
         contract strictly) sometimes emit the SQL in **both** ``query`` and

@@ -99,3 +99,68 @@ async def pg_toolkit_with_fixture_table(pg_dsn):
         await conn.execute(DROP_SQL)
     finally:
         await conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Loop-local SDK client binding for tests (FEAT-112)
+#
+# `AbstractClient.client` became a loop-local property whose setter rejects
+# non-None assignment: the SDK client must come back from `get_client()` and
+# is cached per event loop in `_clients_by_loop`.
+#
+# The client fixtures below build their instances with `cls.__new__(cls)` to
+# skip `__init__`, so there is no per-loop cache to populate, and they are
+# sync, so there is no running loop whose id could key one. Both reasons rule
+# out writing the cache directly — and `client` is a data descriptor on the
+# class, so an instance attribute cannot shadow it either.
+#
+# Binding at the class level (undone by monkeypatch) is what is left, plus
+# neutralising `_ensure_client()` so `invoke()` does not try to build a real
+# SDK client on the way through.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def bind_sdk_client(monkeypatch):
+    """Return a helper that binds a mock SDK client onto an AbstractClient.
+
+    Usage::
+
+        @pytest.fixture
+        def mock_groq_client(bind_sdk_client):
+            client = _make_client()
+            sdk = MagicMock()
+            sdk.chat.completions.create = AsyncMock(return_value=...)
+            bind_sdk_client(client, sdk)
+            return client
+
+    After binding, ``client.client`` returns ``sdk``, so existing test bodies
+    that reach through ``client.client...`` keep working unchanged.
+    """
+    from unittest.mock import AsyncMock
+
+    def _bind(client, sdk):
+        # Mirror the real property's contract: reading returns the bound SDK,
+        # assigning None resets it (legacy semantics), assigning anything else
+        # raises exactly as AbstractClient does.
+        state = {"sdk": sdk}
+
+        def _get(_self):
+            return state["sdk"]
+
+        def _set(_self, value):
+            if value is not None:
+                raise AttributeError(
+                    "AbstractClient.client is now a loop-local property. "
+                    "Do not assign directly — return the client from get_client()."
+                )
+            state["sdk"] = None
+
+        monkeypatch.setattr(type(client), "client", property(_get, _set))
+        monkeypatch.setattr(
+            client, "get_client", AsyncMock(return_value=sdk), raising=False
+        )
+        monkeypatch.setattr(
+            client, "_ensure_client", AsyncMock(return_value=sdk), raising=False
+        )
+        return sdk
+
+    return _bind

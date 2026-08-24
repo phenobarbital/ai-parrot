@@ -41,6 +41,26 @@ def _fake_store():
     return store
 
 
+def _two_dataset_descriptor():
+    """Two sections over DIFFERENT datasets, plus a chained third step.
+
+    `feat326_breakdown` consumes the first step's `output_key` (`days`), the
+    shape `narrative_facts` uses — `publish_recipe` must exclude it from
+    `data_sources`, so a stray `dataset_sql` entry for it has nothing to
+    attach to.
+    """
+    return SectionDescriptor(
+        template="budget.html",
+        mode="data-splice",
+        sections=[
+            SectionSpec(name="feat326_totals", target="/days", datasets=["proj", "other"],
+                        shape="mapping"),
+            SectionSpec(name="feat326_breakdown", target="/divs", datasets=["days"],
+                        shape="records"),
+        ],
+    )
+
+
 @pytest.fixture
 def agent(tmp_path):
     return _AuthoringAgent(
@@ -181,3 +201,57 @@ class TestPublishRecipeLayout:
         result = await agent.publish_recipe("r-gap", descriptor)
         assert isinstance(result, GapReport)
         store.save.assert_not_called()
+
+
+class TestPublishRecipeDatasetSQL:
+    """`descriptor.dataset_sql` → `DataSourceSpec.sql` carry-through.
+
+    Without this, a recipe over a `TableSource` publishes fine but every
+    replay aborts at the `data` stage: that source rejects any fetch with no
+    explicit SQL (no `SELECT *` on a database table).
+    """
+
+    _SQL = "SELECT a, b FROM troc.t ORDER BY a"
+
+    async def test_dataset_sql_lands_on_data_source(self, agent):
+        descriptor = _covered_descriptor().model_copy(
+            update={"dataset_sql": {"proj": self._SQL}}
+        )
+        recipe = await agent.publish_recipe("r-sql", descriptor)
+        assert isinstance(recipe, InfographicRecipe)
+        assert [ds.alias for ds in recipe.data_sources] == ["proj"]
+        assert recipe.data_sources[0].sql == self._SQL
+
+    async def test_absent_dataset_sql_leaves_sql_none(self, agent):
+        """Regression: identical to pre-feature behaviour."""
+        recipe = await agent.publish_recipe("r-nosql", _covered_descriptor())
+        assert recipe.data_sources[0].sql is None
+
+    async def test_sql_applied_only_to_its_own_alias(self, agent):
+        descriptor = _two_dataset_descriptor().model_copy(
+            update={"dataset_sql": {"proj": self._SQL}}
+        )
+        recipe = await agent.publish_recipe("r-sql-one", descriptor)
+        by_alias = {ds.alias: ds for ds in recipe.data_sources}
+        assert set(by_alias) == {"proj", "other"}
+        assert by_alias["proj"].sql == self._SQL
+        assert by_alias["other"].sql is None
+
+    async def test_sql_for_a_chained_output_key_is_inert(self, agent):
+        """A `dataset_sql` entry naming a prior step's output_key changes nothing."""
+        descriptor = _two_dataset_descriptor().model_copy(
+            update={"dataset_sql": {"days": self._SQL}}
+        )
+        recipe = await agent.publish_recipe("r-sql-chained", descriptor)
+        assert "days" not in {ds.alias for ds in recipe.data_sources}
+        assert all(ds.sql is None for ds in recipe.data_sources)
+
+    async def test_sql_survives_the_store_round_trip(self, agent):
+        """The runner reads `ds.sql` off the RELOADED recipe, not the returned one."""
+        descriptor = _covered_descriptor().model_copy(
+            update={"dataset_sql": {"proj": self._SQL}}
+        )
+        await agent.publish_recipe("r-sql-rt", descriptor)
+        stored = await agent._require_recipe_store().get("r-sql-rt")
+        assert stored.data_sources[0].sql == self._SQL
+        assert stored.section_descriptor.dataset_sql == {"proj": self._SQL}

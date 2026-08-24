@@ -1,0 +1,413 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is an additive capability with three fixed design decisions; research must confirm the reuse claims from the prior conversation with line-level citations and check overlap with in-flight FEAT-449 / KnowledgeRouter / multistore brainstorm.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Locate the existing KnowledgeRouter (FEAT-200) that FEAT-449 cites as having namespaced concept_id \u2014 overlap check",
+      "type": "wiki_query",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "question": "KnowledgeRouter namespaced concept_id routing knowledge bases"
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Find the multistoresearchtool-parrotwiki brainstorm and any other prior art on multi-store / federated wiki search",
+      "type": "wiki_query",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "question": "multi store search tool parrot wiki federated search"
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Read the multistore brainstorm to see whether it already designed namespace federation",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "sdd/proposals/multistoresearchtool-parrotwiki.brainstorm.md",
+        "lines": [
+          1,
+          80
+        ]
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Read FEAT-449 legal wiki design sections mentioning router/namespaces to avoid conflicting designs",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "KnowledgeRouter|namespace|router",
+        "path": "sdd/state/FEAT-449/source.md",
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Confirm --store/WIKI_STORE single-store read path and its precedence rules",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "lines": [
+          590,
+          680
+        ]
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Confirm BaseWikiStore contract (all abstract methods) and create_wiki_store factory signature",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "lines": [
+          289,
+          385
+        ]
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Confirm create_wiki_store backends and kwargs",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "lines": [
+          1217,
+          1274
+        ]
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Confirm SQLiteWikiStore._connect runs _migrate on open and the read-only ladder exists",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "lines": [
+          485,
+          600
+        ]
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Confirm _merge_groups/_apply_weight reusable for cross-namespace merge",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/search.py",
+        "lines": [
+          229,
+          270
+        ]
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Confirm merge helpers",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/search.py",
+        "lines": [
+          473,
+          530
+        ]
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "Confirm LLMWikiToolkit multi-wiki TODO",
+      "type": "read",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py",
+        "lines": [
+          1205,
+          1230
+        ]
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Confirm tool input models and create_wiki_tools single-store binding",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/tools.py",
+        "lines": [
+          20,
+          135
+        ]
+      }
+    },
+    {
+      "id": "Q013",
+      "intent": "Confirm MCP server binds one store + vault tools",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py",
+        "lines": [
+          75,
+          150
+        ]
+      }
+    },
+    {
+      "id": "Q014",
+      "intent": "Confirm WikiProjectConfig fields, find_project_root, load/save config",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+        "lines": [
+          125,
+          366
+        ]
+      }
+    },
+    {
+      "id": "Q015",
+      "intent": "Confirm _ID_PREFIX_RE and how pack_results derives ids",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/context.py",
+        "lines": [
+          25,
+          130
+        ]
+      }
+    },
+    {
+      "id": "Q016",
+      "intent": "Confirm concept_id builders file:/dir:",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/repo_scan.py",
+        "lines": [
+          240,
+          260
+        ]
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "Find every consumer that parses concept_id prefixes (must learn ns::)",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "_ID_PREFIX_RE|startswith\\(\"file:\"\\)|startswith\\('file:'\\)|split\\(\":\"",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "include": "*.py",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q018",
+      "intent": "Find all consumers of create_wiki_tools / create_wiki_mcp_server / WikiQueryTool",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "create_wiki_tools|create_wiki_mcp_server|WikiQueryTool\\(",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q019",
+      "intent": "Locate KnowledgeRouter implementation in source",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "class KnowledgeRouter|KnowledgeRouter\\(",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q020",
+      "intent": "Read status command to see what must be extended per namespace",
+      "type": "read",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "lines": [
+          1241,
+          1291
+        ]
+      }
+    },
+    {
+      "id": "Q021",
+      "intent": "Existing CLI tests for --store/WIKI_STORE (pattern to extend)",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "store_opt|WIKI_STORE|--store",
+        "path": "tests/knowledge/wiki",
+        "include": "*.py",
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q022",
+      "intent": "Confirm hook resolves a single root (unaffected by namespaces)",
+      "type": "read",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/hook.py",
+        "lines": [
+          170,
+          215
+        ]
+      }
+    },
+    {
+      "id": "Q023",
+      "intent": "Recent activity on the wiki package (conflict risk with in-flight work)",
+      "type": "git_log",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "since": "45.days.ago",
+        "max_results": 25
+      }
+    },
+    {
+      "id": "Q024",
+      "intent": "Confirm ArangoDB spec lists cross-repo shared graphs as a goal",
+      "type": "read",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "sdd/specs/wikitoolkit-arangodb-backend.spec.md",
+        "lines": [
+          18,
+          34
+        ]
+      }
+    },
+    {
+      "id": "Q025",
+      "intent": "Confirm ArangoDBWikiStore database naming / per-wiki isolation",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "database|wiki_\\{",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q026",
+      "intent": "Locate IntentRouterMixin for the v2 follow-up reference",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "class IntentRouterMixin",
+        "path": "packages",
+        "include": "*.py",
+        "max_results": 5
+      }
+    },
+    {
+      "id": "Q027",
+      "intent": "Docs section on --store to extend with namespaces",
+      "type": "read",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "documentation/parrot-wiki-cli.md",
+        "lines": [
+          420,
+          455
+        ]
+      }
+    },
+    {
+      "id": "Q028",
+      "intent": "WikiStatusTool / status surface to extend",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "class WikiStatusTool|async def stats",
+        "path": "packages/ai-parrot/src/parrot/knowledge/wiki",
+        "include": "*.py",
+        "max_results": 10
+      }
+    }
+  ],
+  "expected_findings": [
+    "single-store read path confirmed",
+    "BaseWikiStore contract surface",
+    "merge helpers reusable",
+    "id prefix parsing sites",
+    "tool/MCP binding sites",
+    "overlap or not with KnowledgeRouter and multistore brainstorm",
+    "no conflicting in-flight wiki work"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "wikitoolkit",
+        "FederatedWikiStore",
+        "ns::id",
+        "WikiProjectConfig",
+        "~/.parrot/wikis.json",
+        "--ns",
+        "IntentRouterMixin"
+      ],
+      "verbs": [
+        "register",
+        "route",
+        "broadcast",
+        "federate"
+      ],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {
+      "files_read": 20,
+      "grep_calls": 9,
+      "git_calls": 1
+    }
+  }
+}

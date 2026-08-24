@@ -460,6 +460,15 @@ search (`grep`/`rg`/`find`/`cat` via Bash):
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
+Ids may come back qualified as `<namespace>::<id>` (e.g.
+`asyncdb::file:pool.py`) when federated namespaces are configured
+(FEAT-450) — local pages stay unprefixed. Pass a qualified id verbatim
+to `page` / `related`; narrow a read with `--ns <name>|all|local`, and
+see `wikitoolkit ns list` for what is registered. One such namespace is
+`issues` — the Jira ticket corpus (FEAT-454); see
+`docs/runbooks/jira-issues-namespace.md` for setup, the daily sweep, and
+how to query it.
+
 These same operations are also exposed as native MCP tools —
 `wiki_query`, `wiki_page`, `wiki_related`, `wiki_remember`, `wiki_note`,
 `wiki_status` — via the `wikitoolkit` MCP stdio server registered in
