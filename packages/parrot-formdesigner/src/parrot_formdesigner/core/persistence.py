@@ -19,7 +19,21 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from parrot_formdesigner.services._identifiers import validate_identifier
+
+def _validate_identifier(value: str, *, kind: str) -> str:
+    """Lazily delegate to ``services._identifiers.validate_identifier``.
+
+    A top-level ``from parrot_formdesigner.services._identifiers import
+    validate_identifier`` would trigger ``services/__init__.py``, which
+    eagerly imports modules that import ``core.schema`` — and
+    ``core/schema.py`` imports THIS module at its own top level (FEAT-457,
+    TASK-2421), closing a circular-import loop. Deferring the import to
+    call time (the same pattern already used by
+    ``core/schema.py:_validate_metadata``) breaks the cycle.
+    """
+    from parrot_formdesigner.services._identifiers import validate_identifier
+
+    return validate_identifier(value, kind=kind)
 
 
 def _reject_path_traversal(value: str) -> str:
@@ -85,12 +99,12 @@ class PostgresTableTarget(BaseModel):
     @field_validator("schema_name")
     @classmethod
     def _validate_schema_name(cls, value: str) -> str:
-        return validate_identifier(value, kind="schema_name")
+        return _validate_identifier(value, kind="schema_name")
 
     @field_validator("table")
     @classmethod
     def _validate_table(cls, value: str) -> str:
-        return validate_identifier(value, kind="table")
+        return _validate_identifier(value, kind="table")
 
 
 class AsyncDBTarget(BaseModel):
@@ -116,7 +130,7 @@ class AsyncDBTarget(BaseModel):
     @field_validator("collection")
     @classmethod
     def _validate_collection(cls, value: str) -> str:
-        return validate_identifier(value, kind="collection")
+        return _validate_identifier(value, kind="collection")
 
 
 class CsvFileTarget(BaseModel):
