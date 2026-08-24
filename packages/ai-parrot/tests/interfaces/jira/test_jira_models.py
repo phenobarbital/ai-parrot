@@ -82,9 +82,7 @@ class TestParseIssueProjection:
         """Remote links live on their own endpoint (never in `fields`), so
         they are fetched separately (`JiraInterface.get_remote_links`) and
         passed in explicitly — this is `parse_issue`'s side of that wiring."""
-        parsed = parse_issue(
-            raw_issue, base_url=BASE, ac_field_id="customfield_10101", raw_remote_links=remote_links
-        )
+        parsed = parse_issue(raw_issue, base_url=BASE, ac_field_id="customfield_10101", raw_remote_links=remote_links)
         (rl,) = parsed.remote_links
         assert isinstance(rl, JiraRemoteLink)
         assert rl.title == "Runbook"

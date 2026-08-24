@@ -87,9 +87,7 @@ class FakeJiraInterface:
 
     @staticmethod
     def parse_issue(raw, *, base_url=BASE, ac_field_id=None, raw_remote_links=None):
-        return parse_issue(
-            raw, base_url=base_url, ac_field_id=ac_field_id, raw_remote_links=raw_remote_links
-        )
+        return parse_issue(raw, base_url=base_url, ac_field_id=ac_field_id, raw_remote_links=raw_remote_links)
 
 
 def _sweep(iface, d, **kw) -> SweepReport:
