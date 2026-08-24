@@ -287,3 +287,40 @@ wrong). (2) AC2's `handlers/crew/*.py`-wide grep finds two remaining
 `or "global"` occurrences outside the four files this task owns — see
 IMPORTANT FINDING above; assessed as out of the G2/G3 threat model and
 left untouched pending reviewer/TASK-2325 judgment.
+
+---
+
+### Addendum (post-implementation code-review, before push)
+
+The FEAT-446 adversarial code review (dispatched from TASK-2325) found
+two CRITICAL gaps in the code this task wrote, both now fixed:
+
+1. **`CrewHandler.put()`** (crew create/update) was still reading
+   `tenant = crew_def.tenant` straight from the parsed request body —
+   this task's own tenant-extraction fix only covered `get()`/`delete()`
+   per its literal Codebase Contract (`handler.py:412,512`), and `put()`
+   was never named. A caller of any tenant could create, overwrite, or
+   delete another tenant's crew by setting `"tenant"` in the PUT body.
+   Fixed to call `resolve_session_tenant(self.request,
+   declared=data.get('tenant'))` exactly like `get()`/`delete()`, and to
+   set `crew_def.tenant` to the resolved value before it's used for
+   lookup or persisted.
+2. **`CrewExecutionHandler.get()`/`patch()`/`put()`** (job/crew detail,
+   active/completed job listings, status polling, ask/summary
+   interaction) had NO tenant check at all — this task's Codebase
+   Contract only named `execute_crew()` (`execution_handler.py:590`),
+   so the read/interact surface on the very same handler went
+   unscoped. Any authenticated caller, of any tenant, could poll or
+   interact with another tenant's job given its `job_id`. Fixed by
+   adding a `_job_tenant()` helper and checking it against the
+   session-resolved tenant on every read/interact path, reporting a
+   mismatch identically to "not found" (404) so cross-tenant existence
+   is never disclosed.
+
+Both fixes, plus a related pbac.py sub-policy fail-closed gap found in
+the same review, are committed together in
+`fix(saas-auth-hardening): close cross-tenant gaps found in code
+review`, with new regression tests
+(`TestCrewPutTenantIsolation`, `TestExecutionHandlerTenantIsolation` in
+`test_saas_auth_hardening.py`) proving both. Full trail in
+TASK-2325's Completion Note addendum.

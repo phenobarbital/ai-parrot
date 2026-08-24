@@ -260,3 +260,128 @@ resolve locally — never committed.
 **Deviations from spec**: none beyond what's documented above (the AC3
 grep-scope clarification is a documentation resolution, not a deviation
 — the spec text itself already matched the implementation).
+
+---
+
+### Addendum — adversarial code review + post-review fixes (before push)
+
+Per the sdd-worker completion protocol, dispatched the `code-reviewer`
+agent with a neutral brief (diff vs `dev`, the spec's acceptance
+criteria, changed-files stat — no reasoning or conclusions supplied).
+It in turn ran an independent adversarial pass via `codex exec review
+--base dev` and cross-checked its own findings against it. Full
+verdict: "Approved with notes — one CRITICAL cross-tenant write bug
+must be fixed before this ships." Findings and disposition:
+
+**🔴 CRITICAL — fixed before push:**
+1. `CrewHandler.put()` (crew create/update) trusted
+   `tenant = crew_def.tenant` from the request body — the one HTTP
+   method on the four-handler surface this feature's own tenant-
+   extraction sweep (TASK-2323) missed, because its Codebase Contract
+   only named `get()`/`delete()`. A caller of any tenant could create,
+   overwrite, or delete another tenant's crew via the body's `tenant`
+   field. **CONFIRMED independently** (traced `bot_manager.get_crew`/
+   `add_crew`/`remove_crew` in `manager.py` — all keyed off whatever
+   `crew_def.tenant` said, no session cross-check) — matches the
+   adversarial codex pass's own P1 finding (confidence 0.91).
+2. `CrewExecutionHandler.get()`/`patch()`/`put()` (job/crew detail, job
+   listings, status polling, ask/summary interaction) had no tenant
+   check at all — only `execute_crew()` (POST) resolved a tenant.
+   `_active_crews` (a process-global class-level dict) and the
+   `JobManager` job store have no tenancy concept, so once anonymous
+   access was closed by this feature, any *authenticated* caller of
+   *any* tenant could still poll/interact with any other tenant's job
+   given its `job_id`. **CONFIRMED independently** (grepped
+   `handlers/jobs/*.py` for "tenant" — zero references before the fix).
+   The adversarial codex pass did NOT independently surface this one —
+   noted as a disagreement between the two reviews in the code-reviewer
+   agent's report, but retained as CRITICAL on the primary reviewer's
+   own direct evidence (no `resolve_session_tenant` call in any of the
+   three methods).
+
+Both fixed in `packages/ai-parrot-server/src/parrot/handlers/crew/
+handler.py` and `execution_handler.py`: `put()` now resolves tenant via
+`resolve_session_tenant(self.request, declared=data.get('tenant'))`
+exactly like `get()`/`delete()`; the execution handler gained a
+`_job_tenant()` helper (treats a job's missing tenant metadata as
+`"global"`, mirroring `saved_execution_service.py`'s established
+legacy-record convention) checked on every read/interact path, with
+cross-tenant mismatches reported as `404` (identical to a genuinely
+missing job, so existence is never disclosed). Added `except
+web.HTTPError: raise` before `patch()`'s broad `except Exception` (it
+lacked the guard `get()`/`put()`/`execute_crew()` already had, which
+would otherwise have swallowed the new 403/400 into a generic 500).
+
+**🟠 IMPORTANT — fixed before push:**
+3. `setup_pbac()`'s per-agent/per-dataset sub-policy loaders
+   (`pbac.py`) silently continued on failure regardless of
+   `PARROT_SAAS_MODE`, inconsistent with every other failure path in
+   that function's fail-closed guarantee. **CONFIRMED** — independently
+   found by both reviews (codex P2, confidence high). Fixed: both
+   except-blocks now `raise RuntimeError(...) from exc` under
+   `PARROT_SAAS_MODE=true`, legacy behavior unchanged.
+
+**🟠 IMPORTANT — noted, not fixed (documented, deferred):**
+4. `stream_websocket()`'s bespoke `Sec-WebSocket-Protocol: jwt,
+   <token>` pre-handshake auth may now be unreachable for clients
+   carrying only that token (no `Authorization` header/session cookie),
+   since the global auth middleware — no longer excluded from this
+   route since TASK-2324 — would reject such a request with 401 before
+   `stream_websocket()`'s own subprotocol check ever runs. The
+   reviewer flagged this as "plausible rather than proven" (no live WS
+   handshake could be executed in the review). **ESCALATE** — genuine
+   uncertainty requiring a live WS client test this worker cannot
+   safely fabricate; flagging for human/QA follow-up rather than
+   guessing at a fix. No test currently exercises the "credentialed via
+   subprotocol-only" success path, so a regression here would go
+   undetected either way.
+5. `flow_authoring.py::_get_job_status()` has no per-user/tenant
+   ownership check — **REJECT as a FEAT-446 defect**: this is
+   explicitly documented as out-of-scope in the handler's own docstring
+   and matches the spec's Module 4 scoping decision (`flows:author`
+   PBAC policy deferred to S5). Retained as a legitimate fast-follow
+   note, not a fix for this feature.
+
+**🟡 SUGGESTIONS — noted for the PR, not fixed:** `_active_crews`'s
+unbounded process-global growth (any future tenant-scoping work should
+key it by `(tenant, job_id)` rather than bolt a check onto a flat
+dict); the migration doc's "Tenant identity" section now already
+reflects uniform coverage after the CRITICAL fixes above (no longer
+needs the caveat the reviewer suggested); a cross-reference comment
+between `stream.py`'s middleware-based enforcement and the handlers'
+decorator-based enforcement would help future maintainers (not added —
+cosmetic, low value relative to effort remaining).
+
+**AI-hallucination check (reviewer-verified, not just self-reported):**
+the reviewer independently re-verified, against the actually-installed
+`navigator_auth` package (not by trusting this worker's commit
+history), both (a) that the old `agent_guard.py`/`bots.py` `EvalContext`
+construction really was broken (TypeError, masked by broad excepts) and
+the new `parrot/auth/eval_context.py` is correct, and (b) that
+`@is_authenticated()`'s class-level decoration mechanics and
+`CrewHandler.upload()`'s dead-code status are exactly as this worker's
+task-completion notes described. No fabricated APIs or invented
+conventions found anywhere in the diff.
+
+New regression tests added for all three CRITICAL/IMPORTANT fixes:
+`TestCrewPutTenantIsolation` (3 tests),
+`TestExecutionHandlerTenantIsolation` (6 tests) in
+`test_saas_auth_hardening.py`; `TestSubPolicyLoadFailClosed` (3 tests)
+in `test_pbac_fail_closed.py`. Full suite re-run after fixes: 45 passed
+in `packages/ai-parrot-server/tests/integration/
+test_saas_auth_hardening.py` + the other FEAT-446 unit suites; 14
+passed in the `ai-parrot` pbac/eval_context suites; 544 passed / 3
+pre-existing-unrelated-failed / 1 skipped across
+`packages/ai-parrot-server/tests/{handlers,unit,integration}/`
+(same 3 a2a-vertical + namespace-import failures verified against
+`dev` throughout this feature, unrelated to any of these fixes); 308
+passed / 9 pre-existing-unrelated-failed across the targeted
+`ai-parrot` auth/pbac regression set. Ruff: before/after diff against
+`dev` for `handler.py` (22/22) and `execution_handler.py` (37/37) —
+byte-identical, zero new lint debt from the fixes; both touched test
+files clean.
+
+Fixes committed as `fix(saas-auth-hardening): close cross-tenant gaps
+found in code review` (code) — this SDD-state commit follows
+separately, per the worktree's established code-then-state commit
+pattern.

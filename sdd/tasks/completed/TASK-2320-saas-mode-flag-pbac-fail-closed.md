@@ -192,3 +192,26 @@ task's Scope/Acceptance-Criteria line numbers); this follows the
 Scope's own "every path that today returns (None, None, None)" language
 and Goal G5 ("setup_pbac() is fail-closed when PARROT_SAAS_MODE=true"),
 not a narrowing to exactly three.
+
+---
+
+### Addendum (post-implementation code-review, before push)
+
+The FEAT-446 adversarial code review found one IMPORTANT gap in this
+task's fail-closed guarantee: the per-agent (`policies/agents/`) and
+per-dataset (`policies/datasets/`) sub-policy loaders (added before
+this feature, untouched by the original six-site sweep above) still
+silently continued on a load failure regardless of `PARROT_SAAS_MODE`
+— they only `logger.warning(...)` and proceed without those policies,
+never routing through `_fail_open_or_closed()`. Under
+`PARROT_SAAS_MODE=true` this let a malformed per-agent/per-dataset
+policy file silently degrade instead of failing startup, inconsistent
+with the "fail-closed under the flag" guarantee this task's Acceptance
+Criteria advertises. Fixed both except-blocks to
+`raise RuntimeError(...) from exc` when `PARROT_SAAS_MODE` is true,
+matching `_fail_open_or_closed`'s message style, while leaving legacy
+(flag-off) behavior byte-for-byte unchanged. Added
+`TestSubPolicyLoadFailClosed` (3 tests) to
+`test_pbac_fail_closed.py`. Committed together with two other findings
+from the same review in `fix(saas-auth-hardening): close cross-tenant
+gaps found in code review`.
