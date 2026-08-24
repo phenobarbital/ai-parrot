@@ -264,8 +264,31 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `PostgresTableSink` (full capability set). DDL
+templated on `FormSubmissionStorage`'s DDL/ALTER precedent: idempotent
+`CREATE TABLE IF NOT EXISTS` for the reserved columns, additive
+`ADD COLUMN IF NOT EXISTS` per new form field via
+`information_schema.columns` introspection, raising
+`SinkTargetMismatchError` on an incompatible existing column type (a small
+local `FieldType -> (ddl_type, compatible information_schema types)` map).
+`_insert_sql`/`write()` use `$n::text::jsonb` for `context` and any
+ARRAY-typed form column. Pool is lazily created via `asyncpg.create_pool`
+(lazy runtime import, mirroring `PostgresFormStorage`), or injected
+directly for tests; connection/query failures map to
+`SinkUnavailableError`. `read`/`list_revisions` reconstruct a
+`FormSubmission` by folding non-reserved columns back into `data`.
+11 unit tests in `tests/unit/test_postgres_table_sink.py` using a fake
+pool/conn double that records executed SQL and simulates
+`information_schema.columns`/`fetchrow`/`fetch` — covering DDL shape, no
+`DROP`/`RENAME` anywhere, `::text::jsonb` usage, additive column addition,
+no-op on field removal, connection-failure mapping, type-mismatch
+detection, and a write/read round trip. `ruff` and targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Duplicated a small local
+`_walk_field_types`/`_field_types_for` traversal in this file instead of
+importing `services/sinks/mapper.py`'s private walker, to keep this
+sink's file self-contained per the task's own file boundary (only
+`column_names_for` and `flatten_submission` are the mapper's public
+surface per the Codebase Contract).
