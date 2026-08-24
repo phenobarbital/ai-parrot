@@ -6,6 +6,29 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ### Added
 
+- **FEAT-456 — Relational Field Cardinality**: a new orthogonal
+  `FormField.relation: RelationSpec | None` aspect expresses Many2one,
+  Many2many, and One2many semantics without new `FieldType` enum members
+  or `OptionsSource` changes.
+  - New `core/relations.py`: `EntityRef` (target entity identity) and
+    `RelationSpec` (`cardinality`, `mode`, `display_field`,
+    `inverse_field`, `on_delete` passthrough hint, `filters`), both
+    exported from `parrot_formdesigner.core`.
+  - `FormField` enforces the legal (field_type × cardinality × mode)
+    combination table and exposes `FormField.is_relational`.
+  - One2many reuses the existing `ARRAY` + `item_template` machinery
+    (embed mode); `inverse_field` existence is checked at the
+    `resolve_rule_references()` resolution boundary.
+  - YAML `relation:` block and JSON Schema `x-relation` extension parse
+    and round-trip symmetrically (extractors + `JsonSchemaRenderer`).
+  - `FormValidator` shape-validates reference-mode submissions (scalar ID
+    for `cardinality="one"`, list of IDs for `"many"`) — no existence
+    checks, no I/O.
+  - **Forward-compatibility caveat**: `relation` defaults to `None` and
+    persisted pre-FEAT-456 schemas round-trip unchanged, but a
+    pre-FEAT-456 reader will REJECT any schema carrying a `relation` key
+    (`extra="forbid"`) — forward compatibility is one-directional.
+  - See `docs/formdesigner-relational-fields.md` for full documentation.
 - **FEAT-188 — Form Lifecycle Events**: declarative interceptor hooks
   (`onBeforeOpen`, `onSchemaLoaded`, `onBeforeSubmit`, `onAfterSubmit`,
   `onError`) per form. Register async handlers via
