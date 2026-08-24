@@ -286,7 +286,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -298,8 +298,8 @@
       "parallelism_notes": "Deliberately NOT split across the sink tasks: the 13 scenarios in spec section 4 cross sinks, handler and registry. Split per sink, each agent would write half an end-to-end and none would test exclusivity - the central acceptance criterion of the feature.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2430-integration-suite.md"
+      "completed_at": "2026-08-24T17:11:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2430-integration-suite.md"
     },
     {
       "id": "TASK-2431",

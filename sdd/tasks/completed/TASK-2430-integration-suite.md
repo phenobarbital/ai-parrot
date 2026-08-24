@@ -209,8 +209,59 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Created `tests/fixtures/persistence.py` (`alias_registry`,
+`survey_form_postgres` with a GROUP and an ARRAY field,
+`survey_form_csv`, `fake_pool` recording executed SQL — mirroring
+TASK-2422's own fake-pool double) plus a `tests/integration/conftest.py`
+re-exporting them (avoids a ruff F811 false-positive that direct
+per-test-module imports of same-named fixtures trigger). Implemented all
+13 named scenarios from spec section 4 in
+`tests/integration/test_autonomous_persistence.py`, running entirely
+without a live database: Postgres scenarios use a REAL
+`PostgresTableSink` wired to `fake_pool`; CSV scenarios use a REAL
+`CsvFileSink` writing into `tmp_path`; the submit-path is exercised
+through the REAL `FormAPIHandler.submit_data()` (mocked registry/
+validator only, per `test_submit_merge.py`'s established style) — a
+`_SingleSinkFactory` test double stands in for the real `SinkFactory`
+only because the real factory offers no pool-injection hook (out of
+scope to add). Exclusivity and backwards-compatibility are asserted on
+the `FormSubmissionStorage.store` mock call itself, never inferred from
+state, per the task's own key constraint. `test_new_field_adds_column`/
+`test_removed_field_leaves_column` reuse the SAME cached sink across two
+`submit_data()` calls with different form field sets, proving additive
+`ensure_target()` re-evaluation on a live submit path (not just a direct
+sink unit test). `test_autonomous_form_still_listed` exercises
+`FormRegistry` + `AutonomousFormStorage` + an in-memory `FormStorage`
+double together. `test_forwarder_still_runs_with_persistence` proves
+both the forward call and the sink write happen. Full package suite
+re-run: still exactly the same 40 pre-existing failures before and after
+(10 new passed + 3 new xfailed, zero regressions). `ruff` clean on all
+three new files; `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec** (both explicitly sanctioned by the task's own
+"NOT in scope: New production code — ... report it rather than patching
+production here" instruction; no production code was touched):
+1. **`test_read_on_csv_form_returns_501` / `test_read_on_postgres_form_returns_200`**
+   marked `xfail(strict=True)`. Confirmed via `grep` (again, independently
+   of TASK-2428's own finding): `FormAPIHandler` has NO `get_submission`/
+   `list_revisions` HTTP endpoint anywhere in this codebase. There is
+   nothing to call or gate on capabilities. A follow-up task must add
+   these endpoints before this scenario pair can be implemented for real.
+2. **`test_unknown_alias_rejected_at_registration`** marked
+   `xfail(strict=True)`. Confirmed via `grep`/read: no production code
+   path — not `FormSchema` validation (TASK-2421 only checks reserved-
+   column collisions and identifier validity, never alias existence), not
+   `FormRegistry.register()`, not anywhere else — validates a
+   `persistence.data.connection` alias against the `SinkAliasRegistry`
+   allowlist at registration time. The test asserts the DESIRED behavior
+   (`pytest.raises(ValueError)`) and genuinely fails today, confirming the
+   gap; it will need a small, separately-scoped production task (most
+   naturally as a `FormSchema`/`FormRegistry.register()` validation hook)
+   to close.
+
+All three gaps are pre-existing holes in the task chain (present before
+this task started), not introduced by this task, and are now precisely
+documented with failing (`xfail`) tests rather than silently skipped or
+worked around with new production code.
