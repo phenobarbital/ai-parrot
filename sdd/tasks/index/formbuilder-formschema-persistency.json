@@ -14,14 +14,14 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task - everything else imports from it. Must land first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2417-persistence-config-models.md"
     },
@@ -32,14 +32,14 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Independent of TASK-2417: this module resolves alias strings and does not import the persistence models. Marked parallel=false per the spec's per-spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2418-sink-alias-registry.md"
     },
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -59,7 +59,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2419-sink-abc-capabilities.md"
     },
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -79,7 +79,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2420-submission-mapper.md"
     },
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,7 +100,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2421-formschema-persistence-field.md"
     },
@@ -111,7 +111,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": false,
       "parallelism_notes": "Logically independent of the other sink backends (TASK-2422/2423/2424/2425): each creates its own module and none registers itself - TASK-2426 owns `services/sinks/__init__.py` exclusively, so these four share no file. Still marked parallel=false because the spec's Worktree Strategy mandates per-spec isolation and the ABC + mapper contract is still settling while these are written.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2422-postgres-table-sink.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,7 +144,7 @@
       "parallel": false,
       "parallelism_notes": "Logically independent of the other sink backends (TASK-2422/2423/2424/2425): each creates its own module and none registers itself - TASK-2426 owns `services/sinks/__init__.py` exclusively, so these four share no file. Still marked parallel=false because the spec's Worktree Strategy mandates per-spec isolation and the ABC + mapper contract is still settling while these are written.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2423-asyncdb-sink.md"
     },
@@ -155,7 +155,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,7 +166,7 @@
       "parallel": false,
       "parallelism_notes": "Logically independent of the other sink backends (TASK-2422/2423/2424/2425): each creates its own module and none registers itself - TASK-2426 owns `services/sinks/__init__.py` exclusively, so these four share no file. Still marked parallel=false because the spec's Worktree Strategy mandates per-spec isolation and the ABC + mapper contract is still settling while these are written.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2424-csv-file-sink.md"
     },
@@ -177,7 +177,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -188,7 +188,7 @@
       "parallel": false,
       "parallelism_notes": "Logically independent of the other sink backends (TASK-2422/2423/2424/2425): each creates its own module and none registers itself - TASK-2426 owns `services/sinks/__init__.py` exclusively, so these four share no file. Still marked parallel=false because the spec's Worktree Strategy mandates per-spec isolation and the ABC + mapper contract is still settling while these are written.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2425-gsheet-sink.md"
     },
@@ -199,7 +199,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -211,7 +211,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2426-sink-dispatch-factory.md"
     },
@@ -222,7 +222,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -232,7 +232,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2427-autonomous-form-storage.md"
     },
@@ -243,7 +243,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -254,7 +254,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2428-submit-path-integration.md"
     },
@@ -265,7 +265,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -275,7 +275,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2429-app-wiring.md"
     },
@@ -286,7 +286,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -297,7 +297,7 @@
       "parallel": false,
       "parallelism_notes": "Deliberately NOT split across the sink tasks: the 13 scenarios in spec section 4 cross sinks, handler and registry. Split per sink, each agent would write half an end-to-end and none would test exclusivity - the central acceptance criterion of the feature.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2430-integration-suite.md"
     },
@@ -308,7 +308,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -318,7 +318,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2431-docs-and-packaging.md"
     }
