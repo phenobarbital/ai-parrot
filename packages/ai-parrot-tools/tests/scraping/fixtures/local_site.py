@@ -88,6 +88,23 @@ async def _handle_dashboard(request: web.Request) -> web.Response:
     )
 
 
+async def _handle_upload_get(request: web.Request) -> web.Response:
+    """Render a real ``<input type="file">`` form for a real browser to
+    interact with (added in FEAT-455 TASK-2408 — TASK-2407 only built the
+    ``POST`` handler; a real driver needs a page with an actual file input
+    to target, not just an API endpoint)."""
+    return web.Response(
+        text=(
+            "<html><body><h1>acme-books upload</h1>"
+            '<form method="post" action="/upload" enctype="multipart/form-data">'
+            '<input type="file" id="file-input" name="file" />'
+            '<button type="submit">Upload</button>'
+            "</form></body></html>"
+        ),
+        content_type="text/html",
+    )
+
+
 async def _handle_upload(request: web.Request) -> web.Response:
     data = await request.post()
     field = data.get("file")
@@ -123,6 +140,7 @@ def build_app() -> web.Application:
     app.router.add_get("/login", _handle_login_get)
     app.router.add_post("/login", _handle_login_post)
     app.router.add_get("/dashboard", _handle_dashboard)
+    app.router.add_get("/upload", _handle_upload_get)
     app.router.add_post("/upload", _handle_upload)
     app.router.add_get("/download/{name}", _handle_download)
     app.router.add_get("/cookie-check", _handle_cookie_check)
