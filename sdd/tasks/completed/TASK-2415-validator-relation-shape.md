@@ -172,10 +172,19 @@ async def test_many_rejects_scalar(tags):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-24
+**Notes**: Added `FormValidator._validate_relation_shape()` and called it
+from `validate_field()` for `field.relation.mode == "reference"`, running
+BEFORE type coercion (coercion is deliberately lossy for the
+SELECT/MULTI_SELECT-family types and would mask shape mismatches).
+`cardinality="one"` rejects list/dict, requires scalar str/int;
+`cardinality="many"` requires a list of scalar str/int, rejecting scalars
+and lists containing dict/list. No I/O in the new branch. 11 new tests
+pass, including one proving embed-mode relations take no new code path
+(guarded on `mode == "reference"`). Full validator-related suite (84
+tests) and full unit suite show identical results to baseline (no
+regressions). `ruff check` clean on new lines (14 pre-existing findings
+elsewhere in validators.py, untouched by this diff, left as-is).
 
 **Deviations from spec**: none

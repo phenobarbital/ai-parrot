@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-458
 **Date**: 2026-08-24
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.12.0
 
 ---
@@ -71,6 +71,10 @@ after the fact.
 - **G7** — Cover **both** storage paths: the generic `FormSubmissionStorage` table
   and FEAT-457's autonomous sinks, so the feature is not silently half-working for
   forms that declare `persistence:`.
+- **G8** — Let a lifecycle handler see what the endpoint sees: under `keep`,
+  `onAfterSubmit` receives the same merged view the forwarder sends.
+- **G9** — Make the rendered JSON Schema state the policy: under `reject`, the
+  JSON Schema renderer emits `additionalProperties: false`.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -204,7 +208,7 @@ FormValidator.validate ──────────────► ValidationR
 | `enrich_submission` (`services/metadata_enricher.py:47`) | unchanged | `extra_flat` → `data` merge stays put. Distinct concept. |
 | `services/sinks/mapper.py` (**FEAT-457, planned**) | modifies | `extra_data` added to `RESERVED_COLUMNS`; emitted by `flatten_submission`, `nest_submission`, and `column_names_for`. |
 | `api/audio_ws.py:1115` `_finish_session` | unchanged | Manifest-keyed answers; extras cannot arise. `extra_data` stays `None`. |
-| `renderers/jsonschema.py` | deferred | Emits no `additionalProperties` today; policy mirroring is an open question (§8). |
+| `renderers/jsonschema.py` | modifies | Emits no `additionalProperties` today; under `reject` it now emits `additionalProperties: false` so the rendered schema states the policy (resolved — Module 10). |
 | `navigator.form_data` (DB) | migrates | One nullable JSONB column, metadata-only on existing rows. No backfill. |
 
 ### Data Models
@@ -308,7 +312,9 @@ def enforce_extras_cap(
 - **Responsibility**: `MAX_EXTRA_KEYS`, `MAX_EXTRA_BYTES`, `ExtrasCapExceeded`,
   `compute_extra_data()`, `enforce_extras_cap()`. Pure functions, no I/O, no
   policy reading — so the hardest logic in this feature is testable with no form,
-  no handler, and no database.
+  no handler, and no database. The caps are **module-level constants only** —
+  resolved: no per-form override and no `FormAPIHandler` constructor knob, so
+  there is exactly one place to change them.
 - **Depends on**: nothing.
 
 ### Module 3: `ValidationResult.extra_data` + validator diff
@@ -339,7 +345,9 @@ def enforce_extras_cap(
   `enforce_extras_cap()`, then attach to the `FormSubmission` at `:1572`; on
   `ExtrasCapExceeded` → `422` naming the exceeded limit. `drop` → discard, with a
   debug log recording the dropped key count (the observability today's path
-  lacks). Update the `submit_data` docstring flow list (`:1443-1454`).
+  lacks). Under `keep`, also pass the merged view to the `onAfterSubmit` dispatch
+  (`:1664`, currently `payload=submission.data`) so a lifecycle handler sees what
+  the endpoint sees. Update the `submit_data` docstring flow list (`:1443-1454`).
 - **Depends on**: Modules 1, 2, 3, 4, and FEAT-457/TASK-2428 merged.
 
 ### Module 6: Dry-run `validate` endpoint honours `reject`
@@ -368,13 +376,26 @@ def enforce_extras_cap(
   `FormSubmissionStorage` entirely.
 - **Depends on**: Module 4 (for the field), FEAT-457/TASK-2420 + TASK-2421 merged.
 
+### Module 10: JSON Schema renderer states the policy
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/renderers/jsonschema.py`
+- **Responsibility**: When `form.unknown_fields is REJECT`, emit
+  `additionalProperties: false` on the rendered schema so a client generating a
+  payload from it cannot produce a submission the server will refuse. `drop` and
+  `keep` emit nothing (unchanged output), keeping the change invisible to every
+  existing form.
+- **Depends on**: Module 1.
+- **Note**: FEAT-456/TASK-2414 also edits this file (`x-relation` emission) — a
+  textual conflict is likely, a semantic one is not.
+
 ### Module 9: Documentation
 - **Path**: `packages/parrot-formdesigner/docs/` (follow the package's existing
   layout) and the frontend docs generator input if `unknown_fields` is
   client-visible (`scripts/gen_frontend_docs.py`).
 - **Responsibility**: Document the three policies, the caps, the storage/wire
   asymmetry, the `/partial` asymmetry, and the fact that `extra_data` holds
-  unvalidated caller-controlled data.
+  unvalidated caller-controlled data. Resolved: `unknown_fields` is **not**
+  surfaced to clients via `scripts/gen_frontend_docs.py` in this scope — the only
+  client-visible consequence is Module 10's `additionalProperties`.
 - **Depends on**: Modules 1–8.
 
 ---
@@ -534,6 +555,14 @@ def oversized_extras():
       for a `reject` form receiving undeclared keys.
 - [ ] **AC20 — The drop is no longer silent.** Under `drop`, a debug log records
       how many undeclared keys were discarded.
+- [ ] **AC21 — `onAfterSubmit` sees the merged view.** Under `keep`, the
+      `onAfterSubmit` payload equals `{**submission.data, **extra_data}`; under
+      `drop` it equals `submission.data` exactly.
+- [ ] **AC22 — Rendered schema states `reject`.** A `reject` form renders JSON
+      Schema with `additionalProperties: false`; `drop` and `keep` forms render
+      byte-identically to today.
+- [ ] **AC23 — `extra_data` is `None`, never `{}`.** A `keep` form that received
+      no undeclared keys stores `extra_data IS NULL`.
 
 ---
 
@@ -827,8 +856,10 @@ class SinkFactory: ...                                 # spec :387
   `onError` best-effort *before* the early `422` and preserves the status code.
   Reuse that shape rather than inventing a new failure style.
 - **Reserved error-key convention.** `validate()` already uses `__circular__`
-  (`:158`) and `__rules__` (`:164`) for form-level errors. Follow that shape for
-  the `reject` error key (exact choice is an open question, §8).
+  (`:158`) and `__rules__` (`:164`) for form-level errors. Resolved: keep that
+  existing convention — `reject` reports under a reserved `__unknown__` key whose
+  value is the list of offending key names, which also satisfies AC7. Do NOT
+  invent a per-offending-key error shape.
 
 ### Known Risks / Gotchas
 
@@ -869,9 +900,9 @@ class SinkFactory: ...                                 # spec :387
 - **The storage/wire asymmetry will look like a bug to a future reader.** Split at
   rest, flat-merged on the wire, by design. It needs a comment at
   `api/handlers.py:1629` or someone will "fix" it.
-- **`NULL` vs `{}`** for a `keep` form that received no extras is unresolved (§8);
-  the tests above assume `None`. Settle it before Module 4 lands, since it is a
-  storage semantic, not a detail.
+- **`NULL`, never `{}`**, for a `keep` form that received no extras (resolved,
+  AC23). `extra_data` is `None` in that case; an empty dict would falsely imply a
+  capture attempt.
 
 ### External Dependencies
 
@@ -988,30 +1019,30 @@ No new third-party dependency is introduced. Caps are `len()` and
 
 ### Unresolved
 
-- [ ] **`NULL` vs `{}` for a `keep` form that received no extras.** `NULL`
+- [x] **`NULL` vs `{}` for a `keep` form that received no extras.** `NULL`
       conflates "none arrived" with "policy off"; `{}` distinguishes them at the
       cost of a row-level lie about a capture attempt. Tests above assume `None`
-      — settle before Module 4 lands. — *Owner: Jesus*
-- [ ] **Error-key convention for `reject`.** Follow the existing form-level
+      — settle before Module 4 lands. — *Owner: Jesus*: None is preferable.
+- [x] **Error-key convention for `reject`.** Follow the existing form-level
       reserved keys `__circular__` (`validators.py:158`) and `__rules__` (`:164`)
       with a `__unknown__` entry, or report per-offending-key so a client can map
-      errors onto its own inputs? — *Owner: Jesus*
-- [ ] **Should `onAfterSubmit` see the extras?** It currently receives
+      errors onto its own inputs? — *Owner: Jesus*: leave the existing behavior
+- [x] **Should `onAfterSubmit` see the extras?** It currently receives
       `payload=submission.data` (`api/handlers.py:1664`). Passing the merged view
       is consistent with the forwarder; passing `data` alone is consistent with
-      "answers only". — *Owner: Jesus*
-- [ ] **Are the caps per-form overridable, or a single global constant?** The spec
+      "answers only". — *Owner: Jesus*: yes
+- [x] **Are the caps per-form overridable, or a single global constant?** The spec
       assumes module-level constants with an optional `FormAPIHandler` override;
-      a per-form override would be a second schema field. — *Owner: Jesus*
-- [ ] **Should the JSON Schema renderer emit `additionalProperties: false` under
+      a per-form override would be a second schema field. — *Owner: Jesus*: no, module-level constants
+- [x] **Should the JSON Schema renderer emit `additionalProperties: false` under
       `reject`?** It emits nothing about extra keys today. Cheap alignment, but it
-      changes rendered output for existing consumers. — *Owner: Jesus*
-- [ ] **Retention for captured extras.** Anonymous caller-controlled JSON in a
+      changes rendered output for existing consumers. — *Owner: Jesus*: yes
+- [x] **Retention for captured extras.** Anonymous caller-controlled JSON in a
       public-form column invites a purge/TTL story. Stated as a Non-Goal here —
-      confirm it stays a follow-up rather than a v1 requirement. — *Owner: Jesus*
-- [ ] **Is `unknown_fields` client-visible?** If the rendered form or the
+      confirm it stays a follow-up rather than a v1 requirement. — *Owner: Jesus*: follow-up
+- [x] **Is `unknown_fields` client-visible?** If the rendered form or the
       frontend docs (`scripts/gen_frontend_docs.py`) should expose the policy so a
-      client knows whether its extras will be kept, Module 9 grows. — *Owner: Jesus*
+      client knows whether its extras will be kept, Module 9 grows. — *Owner: Jesus*: No on this scope
 
 ---
 
@@ -1020,3 +1051,4 @@ No new third-party dependency is introduced. Caps are `len()` and
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-24 | Jesus | Initial draft from `sdd/proposals/formdesigner-unknown-fields-capture.brainstorm.md` (Option A); FEAT-457 sequencing, sink coverage, caps (256/256 KiB) and target version resolved during /sdd-spec |
+| 0.2 | 2026-08-24 | Jesus | Approved. All 7 open questions resolved; body reconciled during /sdd-task: renderer `additionalProperties` moved from deferred to in-scope (new Module 10), `onAfterSubmit` receives the merged view (G8), caps are module-level constants only, `reject` reports under a reserved `__unknown__` key, `extra_data` is `None` never `{}`, policy not surfaced in frontend docs. Added AC21–AC23. |

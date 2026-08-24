@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-24T14:51:38Z",
-  "completed_at": null,
+  "completed_at": "2026-08-24T15:59:50+00:00",
   "tasks": [
     {
       "id": "TASK-2410",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation task — everything else imports these models.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2410-relation-core-models.md"
+      "completed_at": "2026-08-24T15:13:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2410-relation-core-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2411",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Gates 2412-2415; touches core/schema.py, the file every sibling depends on.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2411-formfield-relation-aspect.md"
+      "completed_at": "2026-08-24T15:17:23+00:00",
+      "file": "sdd/tasks/completed/TASK-2411-formfield-relation-aspect.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2412",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Disjoint files from 2413/2414/2415 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2412-resolution-inverse-field-check.md"
+      "completed_at": "2026-08-24T15:19:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2412-resolution-inverse-field-check.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2413",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Disjoint files from 2412/2414/2415 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2413-extractor-relation-mappings.md"
+      "completed_at": "2026-08-24T15:23:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2413-extractor-relation-mappings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2414",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Round-trip test needs 2413 merged to fully pass; core emission is independent. Sequential per-spec isolation chosen.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2414-jsonschema-renderer-x-relation.md"
+      "completed_at": "2026-08-24T15:27:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2414-jsonschema-renderer-x-relation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2415",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Disjoint files from 2412/2413/2414 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2415-validator-relation-shape.md"
+      "completed_at": "2026-08-24T15:30:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2415-validator-relation-shape.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2416",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -145,8 +151,9 @@
       "parallelism_notes": "Closing task — requires every other task merged; walks the spec §5 checklist.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2416-relation-docs-and-integration.md"
+      "completed_at": "2026-08-24T15:36:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2416-relation-docs-and-integration.md",
+      "verification": "verified"
     }
   ]
 }
