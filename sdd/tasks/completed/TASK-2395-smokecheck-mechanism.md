@@ -168,10 +168,56 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Implemented `SmokeCheck` (Pydantic model: `operation`, `cron`,
+`alert_channel`) and `register_smoke()` in a new `smoke.py`. Enforcement
+of "READ-only" happens strictly at *registration* time — `register_smoke()`
+looks up `toolkit._operations[check.operation]` (intra-package access,
+same subsystem as `BusinessAutomationToolkit`) and raises `ValueError`
+before ever calling `scheduler.add_cron()` if the operation is unregistered
+or not `OperationKind.READ` (verified by a dedicated test that no job is
+scheduled after a refused registration). `run_smoke_check()` runs the
+operation via `toolkit.run_operation()`, polls the toolkit's own
+`_runs[run_id]` record (bounded by `poll_timeout`, default 30s) for
+completion since `run_operation` executes in a background `asyncio.Task`,
+and alerts over the optional `HumanChannel` only on a non-`"done"` outcome
+— a passing check never touches the channel. `_extract_failure_detail()`
+best-effort resolves the failing node id and error message from either the
+background-task exception path or a `FlowResult.node_results` entry
+reporting `success=False`, so alerts are actionable (names the operation,
+the specific failing node, and the error — not just "it failed").
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Test scaffold correction**: the task's own Test Specification calls
+`scheduler.run_once("dashboard_ping")` — no such method exists on
+`InProcessScheduler` (TASK-2394's actual, delivered interface is
+`start`/`stop`/`add_cron` only, matching the spec's own New Public
+Interfaces section). Rather than retroactively adding a method to
+`parrot/scheduler/inprocess.py` (a file not in this task's list, and whose
+interface TASK-2394 already delivered exactly as specified), my own tests
+directly `await`  the registered job's callback
+(`scheduler._jobs[job_id].func()`) to simulate one cron fire — a real
+invocation of the actual registered closure, not a call to
+`run_smoke_check()` bypassing registration. 9 new tests pass (refuses
+SUBMIT/unregistered operations, does not schedule on refusal, pass is
+silent, failure alerts with operation+node+error all present in the
+message, direct `run_smoke_check()` call, no-channel-does-not-raise,
+registration-time failure alerting). Per the same, now-consistent pattern
+established by every business_automation test since TASK-2390, all tests
+mock `FlowExecutor.run()` rather than exercising a real local fixture
+site — the `local_fixture_site`/`aiohttp_server`-based integration fixture
+the spec's Test Data section describes was never built by any of the
+`session_actions`/`business_automation` tasks in this feature; noting this
+as a feature-wide integration-test gap, not something newly introduced
+here. Full `tests/business_automation/` (54 tests) +
+`tests/scraping/` + `tests/google/` suites (872 tests) re-run — only the
+same 2 groups of pre-existing, unrelated failures (`CrawlEngine`/FEAT-013,
+`test_places.py`), zero regressions. `ruff check` clean except the same
+`UP006`/`UP035`/`UP045` pyupgrade-style debt already established by this
+feature's other files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The `scheduler.run_once()` test-scaffold
+correction above is the only deviation, and it is forced by TASK-2394's
+already-delivered (and itself spec-faithful) `InProcessScheduler`
+interface — not a design choice available to reconsider at this task's
+scope.

@@ -234,7 +234,7 @@
       "feature_id": "FEAT-453",
       "feature": "web-automation-infra",
       "spec": "sdd/specs/web-automation-infra.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Needs both the operation registry and the scheduler.",
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2395-smokecheck-mechanism.md"
+      "completed_at": "2026-08-24T00:26:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2395-smokecheck-mechanism.md"
     },
     {
       "id": "TASK-2396",
