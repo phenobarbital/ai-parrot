@@ -1,0 +1,10 @@
+{
+  "name": "clients_flow",
+  "objective_template": "List clients",
+  "url_template": "http://acme-books.test/clients",
+  "params": [],
+  "steps_template": [
+    {"action": "navigate", "url": "{{url}}"},
+    {"action": "get_text", "selector": ".client-row"}
+  ]
+}

@@ -4,15 +4,19 @@ ScrapingPlan & PlanRegistryEntry Models.
 Pydantic v2 models for declarative scraping plans and registry index entries.
 ScrapingPlan is a value object — immutable once saved to disk.
 """
+
 from __future__ import annotations
 
 import hashlib
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, Field, computed_field
+
+if TYPE_CHECKING:
+    from .models import BrowserAction
 
 
 def _normalize_url(url: str) -> str:
@@ -107,6 +111,53 @@ class ScrapingPlan(BaseModel):
 
         if not self.fingerprint:
             self.fingerprint = _compute_fingerprint(self.normalized_url)
+
+    def validate_steps(self, *, strict: bool = True) -> List[BrowserAction]:
+        """Parse ``self.steps`` into typed :class:`BrowserAction` instances.
+
+        Opt-in: never called automatically (construction/deserialization
+        does not validate), so no existing caller of the untyped ``steps: List[
+        Dict[str, Any]]`` field breaks. Intended to be called explicitly
+        before a driver is created (FEAT-453, Module 3, Goal G2), so a
+        malformed plan fails before the browser opens rather than half-way
+        through an accounting workflow.
+
+        Args:
+            strict: If ``True`` (default), raises on the first invalid step.
+                If ``False``, collects every step's error and raises once
+                with all of them — a lint-style report over an entire plans
+                directory.
+
+        Returns:
+            The typed actions, in step order.
+
+        Raises:
+            ValueError: One or more steps are invalid. The message names
+                the step index and the underlying Pydantic validation error
+                (which itself names the offending field, e.g. a missing
+                required field or an unrecognized ``action`` value).
+        """
+        from pydantic import ValidationError
+
+        from .models import BrowserActionTypeAdapter
+
+        actions: List[BrowserAction] = []
+        errors: List[str] = []
+
+        for idx, raw_step in enumerate(self.steps):
+            try:
+                action = BrowserActionTypeAdapter.validate_python(raw_step)
+            except ValidationError as exc:
+                errors.append(f"step {idx}: {exc}")
+                if strict:
+                    raise ValueError(errors[-1]) from exc
+                continue
+            actions.append(action)
+
+        if errors:
+            raise ValueError(f"{len(errors)} invalid step(s):\n" + "\n".join(errors))
+
+        return actions
 
 
 class PlanRegistryEntry(BaseModel):

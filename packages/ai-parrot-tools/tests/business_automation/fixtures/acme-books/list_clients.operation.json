@@ -1,0 +1,6 @@
+{
+  "name": "list_clients",
+  "description": "List every registered client (no legal effect — never gated)",
+  "kind": "read",
+  "flow_ref": "clients_flow"
+}

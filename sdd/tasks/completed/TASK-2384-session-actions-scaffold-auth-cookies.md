@@ -236,10 +236,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Created `session_actions.py` mirroring `advanced_actions.py`'s
+structural shape (module-level `async def exec_*` functions, module logger,
+`DispatchStepFn` type alias). Implemented `exec_authenticate` supporting all
+four `Authenticate.method` values: `form` (fill selectors + submit, with
+`enter_on_username` multi-step support), `basic` (HTTP Basic Auth via
+credentials embedded in the current URL — driver-agnostic, no header
+injection needed), and `oauth`/`custom` (dispatch `custom_steps` recursively
+through `dispatch_step_fn`, since neither has a generic form-based flow).
+Added an optional `credential_resolver` hook (unused by default, wired by
+TASK-2389). Implemented `exec_get_cookies`/`exec_set_cookies` via
+`driver.execute_script` against `document.cookie`, since neither
+`AbstractDriver` nor its concrete drivers (`PlaywrightDriver`,
+`SeleniumDriver`) expose cookie-specific methods (verified by grep — this
+matches the Codebase Contract's "Does NOT Exist" note). 16 unit tests added
+and passing; `ruff check` clean except for the same `UP006`/`UP035`/`UP045`
+pyupgrade-style findings already present in the `advanced_actions.py`
+pattern file this task mirrors (pre-existing repo-wide style debt, not
+introduced by this task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The `GetCookies.domain` filter cannot be honoured
+precisely through `document.cookie` (no domain metadata is exposed to page
+JS) — logged as a debug note rather than silently ignored. This is an
+inherent limitation of the driver-agnostic (no page/context access) design
+mandated by the Codebase Contract, not a scope shortcut.

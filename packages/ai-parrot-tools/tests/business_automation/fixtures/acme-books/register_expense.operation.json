@@ -1,0 +1,7 @@
+{
+  "name": "register_expense",
+  "description": "Register an expense against a client (legal effect — gated)",
+  "kind": "submit",
+  "flow_ref": "expense_flow",
+  "confirm_prompt": "Register expense with: {params}"
+}

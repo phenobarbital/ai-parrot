@@ -2,17 +2,19 @@
 Browser Action System for AI-Parrot WebScrapingTool
 Object-oriented action hierarchy for LLM-directed browser automation
 """
+
 from __future__ import annotations
 from typing import Optional, List, Dict, Any, Union, Literal, Annotated
 from abc import ABC
 import time
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 from bs4 import BeautifulSoup
 
 
 class BrowserAction(BaseModel, ABC):
     """Base class for all browser actions"""
+
     name: str = Field(default="", description="Optional name for this action")
     # add a generic action field so the key exists on all models
     action: str = Field(default="", description="Action opcode used for union discrimination")
@@ -36,7 +38,8 @@ class BrowserAction(BaseModel, ABC):
 
 class Navigate(BrowserAction):
     """Navigate to a URL"""
-    name: str = 'navigate'
+
+    name: str = "navigate"
     action: Literal["navigate"] = "navigate"
     url: str = Field(description="Target URL to navigate to")
     description: str = Field(default="Navigate to a URL", description="navigating to a specific URL")
@@ -44,55 +47,63 @@ class Navigate(BrowserAction):
 
 class Click(BrowserAction):
     """Click on a web page element"""
+
     name: str = "click"
     action: Literal["click"] = "click"
     selector: str = Field(description="CSS or XPATH selector to identify the target element")
     description: str = Field(default="Click on an element", description="clicking on a specific element")
     selector_type: Literal["css", "xpath", "text"] = Field(
         default="css",
-        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath, 'text' for text matching"
+        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath, 'text' for text matching",
     )
-    click_type: Literal["single", "double", "right"] = Field(
-        default="single",
-        description="Type of click action"
-    )
+    click_type: Literal["single", "double", "right"] = Field(default="single", description="Type of click action")
     wait_after_click: Optional[str] = Field(
-        default=None,
-        description="Optional CSS selector of element to wait for after clicking"
+        default=None, description="Optional CSS selector of element to wait for after clicking"
     )
     wait_timeout: int = Field(default=2, description="Timeout for post-click wait (seconds)")
     no_wait: bool = Field(default=False, description="Skip any waiting after click")
 
+
 class Fill(BrowserAction):
     """Fill text into an input field"""
-    name: str = 'fill'
-    action: Literal['fill'] = 'fill'
+
+    name: str = "fill"
+    action: Literal["fill"] = "fill"
     description: str = Field(default="Fill an input field", description="Filling a specific input field")
     selector: str = Field(description="CSS selector to identify the input field")
     value: str = Field(description="Text to enter into the field")
     clear_first: bool = Field(default=True, description="Clear existing content before filling")
     press_enter: bool = Field(default=False, description="Press Enter after filling")
 
+
 class Hover(BrowserAction):
     """Move the mouse over an area/element"""
-    name: str = 'hover'
-    action: Literal['hover'] = 'hover'
+
+    name: str = "hover"
+    action: Literal["hover"] = "hover"
     description: str = Field(default="Hover over element", description="Moving the mouse over a specific element")
     selector: str = Field(description="CSS or XPATH selector to identify the target element")
     selector_type: Literal["css", "xpath", "text"] = Field(
         default="css",
-        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath, 'text' for text matching"
+        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath, 'text' for text matching",
     )
+
 
 class Type(BrowserAction):
     """Send keystrokes to the page or an element"""
-    name: str = 'type'
-    action: Literal['type'] = 'type'
-    description: str = Field(default="Type keystrokes", description="Sending keystrokes to the page or a specific element")
+
+    name: str = "type"
+    action: Literal["type"] = "type"
+    description: str = Field(
+        default="Type keystrokes", description="Sending keystrokes to the page or a specific element"
+    )
     text: str = Field(description="Text to type")
-    selector: Optional[str] = Field(default=None, description="CSS selector to identify the input field (if None, types on current focus)")
+    selector: Optional[str] = Field(
+        default=None, description="CSS selector to identify the input field (if None, types on current focus)"
+    )
     delay: int = Field(default=0, description="Time to wait between key presses in milliseconds")
     clear_first: bool = Field(default=False, description="Clear existing content before typing")
+
 
 class FieldSpec(BaseModel):
     """One sub-selector for a row-of-fields ``Extract`` step.
@@ -101,6 +112,7 @@ class FieldSpec(BaseModel):
     ``selector``. Use this to describe the columns of a repeating block
     (e.g. for each plan card: name, price, data, CTA).
     """
+
     selector: str = Field(description="CSS or XPath selector relative to the row element")
     selector_type: Literal["css", "xpath"] = Field(default="css")
     extract_type: Literal["text", "html", "attribute"] = Field(
@@ -158,19 +170,21 @@ class Extract(BrowserAction):
        runs RELATIVE to its row. Result: a list of dicts keyed by field
        names, written to ``extracted_data[extract_name or name]``.
     """
-    name: str = 'extract'
-    action: Literal['extract'] = 'extract'
+
+    name: str = "extract"
+    action: Literal["extract"] = "extract"
     description: str = Field(default="Extract data from the page", description="Extracting data from the page")
     selector: str = Field(description="CSS or XPath selector to identify the element(s) to extract")
     selector_type: Literal["css", "xpath"] = Field(
-        default="css",
-        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
+        default="css", description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
     )
     extract_type: Literal["html", "text", "attribute"] = Field(
         default="text",
         description="What to extract when fields is not set: 'text' (default), 'html', or 'attribute'",
     )
-    attribute: Optional[str] = Field(default=None, description="Attribute name to extract if extract_type is 'attribute'")
+    attribute: Optional[str] = Field(
+        default=None, description="Attribute name to extract if extract_type is 'attribute'"
+    )
     multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
     extract_name: str = Field(
         default="",
@@ -188,6 +202,7 @@ class Extract(BrowserAction):
             "mode on the parent — field-level settings take precedence."
         ),
     )
+
 
 class ExtractJsonLd(BrowserAction):
     """Extract structured data from JSON-LD blocks on the current page.
@@ -229,85 +244,68 @@ class ExtractJsonLd(BrowserAction):
 
 class Submit(BrowserAction):
     """Click on a submit button or submit a form"""
-    name: str = 'submit'
-    action: Literal['submit'] = 'submit'
+
+    name: str = "submit"
+    action: Literal["submit"] = "submit"
     description: str = Field(default="Submit form", description="Clicking on a submit button or submitting a form")
     selector: str = Field(description="CSS or XPATH selector to identify the form or submit button")
     wait_after_submit: Optional[str] = Field(
-        default=None,
-        description="Optional CSS selector to wait for after submission"
+        default=None, description="Optional CSS selector to wait for after submission"
     )
     wait_timeout: int = Field(default=5, description="Timeout for post-submit wait (seconds)")
 
+
 class Select(BrowserAction):
-    """ Select an option from a dropdown/select element."""
-    name: str = 'select'
-    action: Literal['select'] = 'select'
+    """Select an option from a dropdown/select element."""
+
+    name: str = "select"
+    action: Literal["select"] = "select"
     description: str = Field(
-        default="Select dropdown option",
-        description="Selecting an option from a dropdown/select element"
+        default="Select dropdown option", description="Selecting an option from a dropdown/select element"
     )
     selector: str = Field(description="CSS selector to identify the select element")
-    value: Optional[str] = Field(
-        default=None,
-        description="Value attribute of the option to select"
+    value: Optional[str] = Field(default=None, description="Value attribute of the option to select")
+    text: Optional[str] = Field(default=None, description="Visible text of the option to select")
+    index: Optional[int] = Field(default=None, description="Index of the option to select (0-based)")
+    by: Literal["value", "text", "index"] = Field(
+        default="value",
+        description="Selection method: 'value' (by value attribute), 'text' (by visible text), or 'index' (by position)",
     )
-    text: Optional[str] = Field(
-        default=None,
-        description="Visible text of the option to select"
-    )
-    index: Optional[int] = Field(
-        default=None,
-        description="Index of the option to select (0-based)"
-    )
-    by: Literal['value', 'text', 'index'] = Field(
-        default='value',
-        description="Selection method: 'value' (by value attribute), 'text' (by visible text), or 'index' (by position)"
-    )
-    blur_after: bool = Field(
-        default=True,
-        description="Trigger blur/change events after selection (lose focus)"
-    )
+    blur_after: bool = Field(default=True, description="Trigger blur/change events after selection (lose focus)")
     wait_after_select: Optional[str] = Field(
-        default=None,
-        description="Optional CSS selector to wait for after selecting"
+        default=None, description="Optional CSS selector to wait for after selecting"
     )
-    wait_timeout: int = Field(
-        default=2,
-        description="Timeout for post-select wait (seconds)"
-    )
+    wait_timeout: int = Field(default=2, description="Timeout for post-select wait (seconds)")
 
-    @field_validator('value', 'text', 'index')
+    @field_validator("value", "text", "index")
     @classmethod
     def validate_selection_params(cls, v, info):
         """Ensure at least one selection parameter is provided"""
-        if info.data.get('by') == 'value' and not info.data.get('value'):
+        if info.data.get("by") == "value" and not info.data.get("value"):
             raise ValueError("'value' must be provided when by='value'")
-        if info.data.get('by') == 'text' and not info.data.get('text'):
+        if info.data.get("by") == "text" and not info.data.get("text"):
             raise ValueError("'text' must be provided when by='text'")
-        if info.data.get('by') == 'index' and info.data.get('index') is None:
+        if info.data.get("by") == "index" and info.data.get("index") is None:
             raise ValueError("'index' must be provided when by='index'")
         return v
 
 
 class Evaluate(BrowserAction):
     """Execute JavaScript code in the browser context"""
-    name: str = 'evaluate'
-    action: Literal['evaluate'] = 'evaluate'
+
+    name: str = "evaluate"
+    action: Literal["evaluate"] = "evaluate"
     description: str = Field(default="Evaluate JavaScript", description="Executing custom JavaScript code")
     script: Optional[str] = Field(default=None, description="JavaScript code to execute")
     script_file: Optional[str] = Field(default=None, description="Path to JavaScript file to load and execute")
     args: List[Any] = Field(default_factory=list, description="Arguments to pass to the script")
-    return_value: bool = Field(
-        default=True,
-        description="Whether to return the script's result"
-    )
+    return_value: bool = Field(default=True, description="Whether to return the script's result")
 
-    @field_validator('script', 'script_file')
+    @field_validator("script", "script_file")
     @classmethod
     def validate_script_source(cls, v, info):
         """Ensure either script or script_file is provided, but not both"""
-        script = info.data.get('script')
+        script = info.data.get("script")
         if script and v:
             raise ValueError("Provide either 'script' or 'script_file', not both")
         return v
@@ -315,8 +313,9 @@ class Evaluate(BrowserAction):
 
 class PressKey(BrowserAction):
     """Press keyboard keys"""
-    name: str = 'press_key'
-    action: Literal['press_key'] = 'press_key'
+
+    name: str = "press_key"
+    action: Literal["press_key"] = "press_key"
     description: str = Field(default="Press keyboard keys", description="Pressing specified keyboard keys")
     keys: List[str] = Field(description="List of keys to press (e.g., ['Tab', 'Enter', 'Escape'])")
     sequential: bool = Field(default=True, description="Press keys sequentially or as a combination")
@@ -325,25 +324,30 @@ class PressKey(BrowserAction):
 
 class Refresh(BrowserAction):
     """Reload the current web page"""
-    name: str = 'refresh'
-    action: Literal['refresh'] = 'refresh'
+
+    name: str = "refresh"
+    action: Literal["refresh"] = "refresh"
     description: str = Field(default="Refresh the page", description="Reloading the current page")
     hard: bool = Field(default=False, description="Perform hard refresh (clear cache)")
 
 
 class Back(BrowserAction):
     """Navigate back to the previous page"""
-    name: str = 'back'
-    action: Literal['back'] = 'back'
+
+    name: str = "back"
+    action: Literal["back"] = "back"
     description: str = Field(default="Go back in history", description="Navigating back in browser history")
     steps: int = Field(default=1, description="Number of steps to go back in history")
 
 
 class Scroll(BrowserAction):
     """Scroll the page or an element"""
-    name: str = 'scroll'
-    action: Literal['scroll'] = 'scroll'
-    description: str = Field(default="Scroll the page or an element", description="Scrolling the page or a specific element")
+
+    name: str = "scroll"
+    action: Literal["scroll"] = "scroll"
+    description: str = Field(
+        default="Scroll the page or an element", description="Scrolling the page or a specific element"
+    )
     direction: Literal["up", "down", "top", "bottom"] = Field(
         default="down",
         description=(
@@ -376,6 +380,7 @@ class Scroll(BrowserAction):
         if isinstance(v, str):
             if v.strip().lower() in {"up", "down", "top", "bottom"}:
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "Scroll.amount=%r is a directional word; ignoring "
                     "(use the `direction` field for top/bottom jumps).",
@@ -387,8 +392,9 @@ class Scroll(BrowserAction):
 
 class GetCookies(BrowserAction):
     """Extract and evaluate cookies"""
-    name: str = 'get_cookies'
-    action: Literal['get_cookies'] = 'get_cookies'
+
+    name: str = "get_cookies"
+    action: Literal["get_cookies"] = "get_cookies"
     description: str = Field(default="Get cookies", description="Extracting cookies from the browser")
     names: Optional[List[str]] = Field(default=None, description="Specific cookie names to retrieve (None = all)")
     domain: Optional[str] = Field(default=None, description="Filter cookies by domain")
@@ -396,8 +402,9 @@ class GetCookies(BrowserAction):
 
 class SetCookies(BrowserAction):
     """Set cookies on the current page or domain"""
-    name: str = 'set_cookies'
-    action: Literal['set_cookies'] = 'set_cookies'
+
+    name: str = "set_cookies"
+    action: Literal["set_cookies"] = "set_cookies"
     description: str = Field(default="Set cookies", description="Setting cookies in the browser")
     cookies: List[Dict[str, Any]] = Field(
         description="List of cookie objects with 'name', 'value', and optional 'domain', 'path', 'secure', etc."
@@ -410,8 +417,9 @@ class Wait(BrowserAction):
     Accepts ``condition`` (canonical) or ``selector`` (LLM-friendly alias)
     — they mean the same thing when ``condition_type='selector'``.
     """
-    name: str = 'wait'
-    action: Literal['wait'] = 'wait'
+
+    name: str = "wait"
+    action: Literal["wait"] = "wait"
     description: str = Field(default="Wait for a condition", description="Waiting for a specific condition")
     condition: Optional[str] = Field(
         default=None,
@@ -423,8 +431,7 @@ class Wait(BrowserAction):
         ),
     )
     condition_type: Literal["simple", "selector", "url_contains", "url_is", "title_contains", "custom"] = Field(
-        default="selector",
-        description="Type of condition to wait for"
+        default="selector", description="Type of condition to wait for"
     )
 
     @model_validator(mode="before")
@@ -443,9 +450,9 @@ class Wait(BrowserAction):
                 if data.get("condition_type") in (None, "simple"):
                     data["condition_type"] = "selector"
         return data
+
     custom_script: Optional[str] = Field(
-        default=None,
-        description="JavaScript that returns true when condition is met (for custom type)"
+        default=None, description="JavaScript that returns true when condition is met (for custom type)"
     )
     timeout: int = Field(
         default=15,
@@ -466,10 +473,11 @@ class Wait(BrowserAction):
         """
         if isinstance(v, (int, float)) and v >= 1000:
             import logging
+
             logging.getLogger(__name__).warning(
-                "Wait.timeout=%s looks like milliseconds; converting to %ds. "
-                "Timeouts must be expressed in seconds.",
-                v, int(v) // 1000,
+                "Wait.timeout=%s looks like milliseconds; converting to %ds. " "Timeouts must be expressed in seconds.",
+                v,
+                int(v) // 1000,
             )
             return int(v) // 1000
         return v
@@ -477,133 +485,142 @@ class Wait(BrowserAction):
 
 class Authenticate(BrowserAction):
     """Handle authentication flows"""
-    name: str = 'authenticate'
-    action: Literal['authenticate'] = 'authenticate'
+
+    name: str = "authenticate"
+    action: Literal["authenticate"] = "authenticate"
     description: str = Field(default="Authenticate user", description="Performing user authentication")
     method: Literal["form", "basic", "oauth", "custom"] = Field(default="form", description="Authentication method")
     username: Optional[str] = Field(default=None, description="Username/email")
     password: Optional[str] = Field(default=None, description="Password")
+    credential_provider: Optional[str] = Field(
+        default=None,
+        description=(
+            "Provider identifier resolved through a CredentialBroker "
+            "(e.g. 'hooba') instead of reading the literal username/password "
+            "fields. When set, credential resolution is broker-only — a "
+            "missing resolver, a resolver failure, or a broker miss all "
+            "fail the step closed rather than falling back to the literal "
+            "fields (FEAT-453 Module 4, Goal G3: no credentials in plan JSON)."
+        ),
+    )
     username_selector: str = Field(default="#username", description="CSS selector for username field")
     enter_on_username: bool = Field(
-        default=False,
-        description="Press Enter after filling username (for multi-step logins)"
+        default=False, description="Press Enter after filling username (for multi-step logins)"
     )
     password_selector: str = Field(default="#password", description="CSS selector for password field")
     submit_selector: str = Field(
-        default='input[type="submit"], button[type="submit"]',
-        description="CSS selector for submit button"
+        default='input[type="submit"], button[type="submit"]', description="CSS selector for submit button"
     )
     custom_steps: Optional[List[BrowserAction]] = Field(
-        default=None,
-        description="Custom action sequence for complex authentication"
+        default=None, description="Custom action sequence for complex authentication"
     )
-    token: Optional[str] = Field(
-        default=None,
-        description="The bearer token value (for 'bearer' method)"
-    )
+    token: Optional[str] = Field(default=None, description="The bearer token value (for 'bearer' method)")
     header_name: str = Field(
         default="Authorization",
-        description="The name of the HTTP header to set, e.g., 'Authorization' or 'X-API-Key' (for 'bearer' method)"
+        description="The name of the HTTP header to set, e.g., 'Authorization' or 'X-API-Key' (for 'bearer' method)",
     )
     header_value_format: str = Field(
         default="Bearer {}",
-        description="Format for the header value, where '{}' will be replaced by the token (for 'bearer' method)"
+        description="Format for the header value, where '{}' will be replaced by the token (for 'bearer' method)",
     )
 
 
 class AwaitHuman(BrowserAction):
     """Pause and wait for human intervention"""
-    name: str = 'await_human'
-    action: Literal['await_human'] = 'await_human'
+
+    name: str = "await_human"
+    action: Literal["await_human"] = "await_human"
     description: str = Field(default="Wait for human intervention", description="Waiting for user to complete a task")
     target: Optional[str] = Field(
-        default=None,
-        description="Target or condition value (e.g., CSS selector) to detect completion"
+        default=None, description="Target or condition value (e.g., CSS selector) to detect completion"
     )
     condition_type: Literal["selector", "url_contains", "title_contains", "manual"] = Field(
-        default="selector",
-        description="Condition type that indicates human completed their task"
+        default="selector", description="Condition type that indicates human completed their task"
     )
-    message: str = Field(
-        default="Waiting for human intervention...",
-        description="Message to display while waiting"
-    )
+    message: str = Field(default="Waiting for human intervention...", description="Message to display while waiting")
     timeout: int = Field(default=300, description="Maximum wait time (default: 5 minutes)")
 
 
 class AwaitKeyPress(BrowserAction):
     """Wait for human to press a key in console"""
-    name: str = 'await_keypress'
-    action: Literal['await_keypress'] = 'await_keypress'
+
+    name: str = "await_keypress"
+    action: Literal["await_keypress"] = "await_keypress"
     description: str = Field(default="Wait for key press", description="Waiting for user to press a key")
-    expected_key: Optional[str] = Field(
-        default=None,
-        description="Specific key to wait for (None = any key)"
-    )
-    message: str = Field(
-        default="Press any key to continue...",
-        description="Message to display to user"
-    )
+    expected_key: Optional[str] = Field(default=None, description="Specific key to wait for (None = any key)")
+    message: str = Field(default="Press any key to continue...", description="Message to display to user")
     timeout: int = Field(default=300, description="Maximum wait time (default: 5 minutes)")
+
 
 class AwaitBrowserEvent(BrowserAction):
     """Wait for human interaction in the browser"""
-    name: str = 'await_browser_event'
-    action: Literal['await_browser_event'] = 'await_browser_event'
+
+    name: str = "await_browser_event"
+    action: Literal["await_browser_event"] = "await_browser_event"
     target: Optional[Union[str, Dict[str, Any]]] = Field(
-        default=None,
-        description="Target or condition value to detect completion (e.g., key combo, local storage key)"
+        default=None, description="Target or condition value to detect completion (e.g., key combo, local storage key)"
     )
     description: str = Field(
-        default="Wait for browser event",
-        description="Waiting for user to trigger a browser event"
+        default="Wait for browser event", description="Waiting for user to trigger a browser event"
     )
     wait_condition: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Condition to detect human completion (e.g., key combo, button or local storage key)"
+        description="Condition to detect human completion (e.g., key combo, button or local storage key)",
     )
     timeout: int = Field(default=300, description="Maximum wait time (default: 5 minutes)")
 
     def get_action_type(self) -> str:
         return "await_browser_event"
 
+
 class GetText(BrowserAction):
     """Extract pure text content from elements matching selector"""
-    name: str = 'get_text'
-    action: Literal['get_text'] = 'get_text'
+
+    name: str = "get_text"
+    action: Literal["get_text"] = "get_text"
     description: str = Field(default="Extract text content", description="Extracting text from elements")
     selector: str = Field(description="CSS selector to identify elements to extract text from")
     multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
     extract_name: str = Field(default="extracted_text", description="Name for the extracted data in results")
 
+
 class Screenshot(BrowserAction):
     """Take a screenshot of the page or a specific element"""
-    name: str = 'screenshot'
-    action: Literal['screenshot'] = 'screenshot'
+
+    name: str = "screenshot"
+    action: Literal["screenshot"] = "screenshot"
     description: str = Field(default="Take screenshot", description="Taking a screenshot")
-    selector: Optional[str] = Field(default=None, description="CSS selector of element to screenshot (None = full page)")
+    selector: Optional[str] = Field(
+        default=None, description="CSS selector of element to screenshot (None = full page)"
+    )
     full_page: bool = Field(default=True, description="Capture full scrollable page")
-    output_path: Optional[str] = Field(default=None, description="Directory path to save screenshot (e.g., 'screenshots/') ")
-    output_name: Optional[str] = Field(default=None, description="Filename for the screenshot (e.g., 'page.png'). If None, a timestamped name will be used.")
+    output_path: Optional[str] = Field(
+        default=None, description="Directory path to save screenshot (e.g., 'screenshots/') "
+    )
+    output_name: Optional[str] = Field(
+        default=None,
+        description="Filename for the screenshot (e.g., 'page.png'). If None, a timestamped name will be used.",
+    )
     return_base64: bool = Field(default=False, description="Return screenshot as base64 string in results")
 
     def get_filename(self) -> str:
         """Generate a filename for the screenshot"""
         if self.output_name:
-            if not self.output_name.lower().endswith('.png'):  # pylint: disable=E1101 # noqa
+            if not self.output_name.lower().endswith(".png"):  # pylint: disable=E1101 # noqa
                 return f"{self.output_name}.png"
             return self.output_name
         return f"screenshot_{int(time.time())}.png"
 
+
 class GetHTML(BrowserAction):
     """Extract complete HTML content from elements matching selector"""
-    name: str = 'get_html'
-    action: Literal['get_html'] = 'get_html'
+
+    name: str = "get_html"
+    action: Literal["get_html"] = "get_html"
     description: str = Field(default="Extract HTML content", description="Extracting HTML from elements")
     selector: str = Field(description="CSS or XPath selector to identify elements to extract HTML from")
     selector_type: Literal["css", "xpath"] = Field(
-        default="css",
-        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
+        default="css", description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
     )
     multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
     extract_name: str = Field(default="extracted_html", description="Name for the extracted data in results")
@@ -611,116 +628,145 @@ class GetHTML(BrowserAction):
 
 class WaitForDownload(BrowserAction):
     """Wait for a file download to complete"""
-    name: str = 'wait_for_download'
-    action: Literal['wait_for_download'] = 'wait_for_download'
+
+    name: str = "wait_for_download"
+    action: Literal["wait_for_download"] = "wait_for_download"
     description: str = Field(default="Wait for download", description="Waiting for file download to complete")
     filename_pattern: Optional[str] = Field(
-        default=None,
-        description="Filename pattern to match (e.g., '*.pdf', 'report*.xlsx'). None = any file"
+        default=None, description="Filename pattern to match (e.g., '*.pdf', 'report*.xlsx'). None = any file"
     )
     download_path: Optional[str] = Field(
-        default=None,
-        description="Directory to monitor for downloads (None = browser default download directory)"
+        default=None, description="Directory to monitor for downloads (None = browser default download directory)"
     )
     timeout: int = Field(default=60, description="Maximum time to wait for download (seconds)")
     move_to: Optional[str] = Field(
-        default=None,
-        description="Optional path to move the downloaded file after completion"
+        default=None, description="Optional path to move the downloaded file after completion"
     )
     delete_after: bool = Field(default=False, description="Delete the file after successful download detection")
 
 
 class UploadFile(BrowserAction):
     """Upload a file to a file input element"""
-    name: str = 'upload_file'
-    action: Literal['upload_file'] = 'upload_file'
+
+    name: str = "upload_file"
+    action: Literal["upload_file"] = "upload_file"
     description: str = Field(default="Upload file", description="Uploading a file to an input element")
     selector: str = Field(description="CSS selector for the file input element")
     file_path: str = Field(description="Absolute or relative path to the file to upload")
     wait_after_upload: Optional[str] = Field(
-        default=None,
-        description="Optional CSS selector to wait for after upload (e.g., confirmation message)"
+        default=None, description="Optional CSS selector to wait for after upload (e.g., confirmation message)"
     )
     wait_timeout: int = Field(default=10, description="Timeout for post-upload wait (seconds)")
     multiple_files: bool = Field(default=False, description="Whether uploading multiple files")
-    file_paths: Optional[List[str]] = Field(
-        default=None,
-        description="List of file paths for multiple file upload"
-    )
+    file_paths: Optional[List[str]] = Field(default=None, description="List of file paths for multiple file upload")
+
 
 class Conditional(BrowserAction):
     """Execute actions conditionally based on a JavaScript expression"""
-    name: str = 'conditional'
-    action: Literal['conditional'] = 'conditional'
-    description: str = Field(default="Conditional action execution", description="Executing actions based on a condition")
+
+    name: str = "conditional"
+    action: Literal["conditional"] = "conditional"
+    description: str = Field(
+        default="Conditional action execution", description="Executing actions based on a condition"
+    )
     target: Optional[str] = Field(
-        default=None,
-        description="Target or condition value (e.g., XPATH or CSS selector) to detect completion"
+        default=None, description="Target or condition value (e.g., XPATH or CSS selector) to detect completion"
     )
-    target_type: Literal["css", "xpath"] = Field(
-        default="css",
-        description="Type of target selector"
-    )
+    target_type: Literal["css", "xpath"] = Field(default="css", description="Type of target selector")
     condition_type: Literal["text_contains", "exists", "not_exists", "text_equals", "attribute_equals"] = Field(
-        default="text_contains",
-        description="Condition type that determines how to evaluate the target"
+        default="text_contains", description="Condition type that determines how to evaluate the target"
     )
     expected_value: str = Field(description="Value that evaluates to true or false")
     timeout: int = Field(default=5, description="Maximum time to wait for condition evaluation (seconds)")
     actions_if_true: Optional[List["ActionList"]] = Field(
-        default=None,
-        description="List of actions to execute if condition is true"
+        default=None, description="List of actions to execute if condition is true"
     )
     actions_if_false: Optional[List["ActionList"]] = Field(
-        default=None,
-        description="List of actions to execute if condition is false"
+        default=None, description="List of actions to execute if condition is false"
     )
+
 
 class Loop(BrowserAction):
     """Repeat a sequence of actions multiple times"""
+
     name: str = "loop"
     action: Literal["loop"] = "loop"
     description: str = Field(default="Loop over actions", description="Repeating a set of actions")
     actions: List["ActionList"] = Field(description="List of actions to execute in each iteration")
     iterations: Optional[int] = Field(default=None, description="Number of times to repeat (None = until condition)")
     condition: Optional[str] = Field(
-        default=None,
-        description="JavaScript condition to evaluate; loop continues while true"
+        default=None, description="JavaScript condition to evaluate; loop continues while true"
     )
     values: Optional[List[Any]] = Field(
         default=None,
-        description="List of values to iterate over. When provided, iterations is automatically set to len(values)"
+        description="List of values to iterate over. When provided, iterations is automatically set to len(values)",
     )
     value_name: Optional[str] = Field(
-        default="value",
-        description="Name of the variable to hold the current value in each iteration"
+        default="value", description="Name of the variable to hold the current value in each iteration"
     )
     break_on_error: bool = Field(default=True, description="Stop loop if any action fails")
     max_iterations: int = Field(default=100, description="Safety limit for condition-based loops")
     start_index: int = Field(
-        default=0,
-        description="Starting index for iteration counter (default: 0 for 0-based indexing)"
+        default=0, description="Starting index for iteration counter (default: 0 for 0-based indexing)"
     )
     do_replace: bool = Field(
-        default=True,
-        description="Whether to replace {{index}} and {{index_1}} in action parameters"
+        default=True, description="Whether to replace {{index}} and {{index_1}} in action parameters"
     )
+
 
 ActionList = Annotated[
     Union[
-        Navigate, Click, Hover, Fill, Type, Select, Evaluate, PressKey, Refresh, Back, Scroll,
-        GetCookies, SetCookies, Wait, Authenticate,
-        AwaitHuman, AwaitKeyPress, AwaitBrowserEvent,
-        GetText, GetHTML, Extract, ExtractJsonLd, Submit, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
+        Navigate,
+        Click,
+        Hover,
+        Fill,
+        Type,
+        Select,
+        Evaluate,
+        PressKey,
+        Refresh,
+        Back,
+        Scroll,
+        GetCookies,
+        SetCookies,
+        Wait,
+        Authenticate,
+        AwaitHuman,
+        AwaitKeyPress,
+        AwaitBrowserEvent,
+        GetText,
+        GetHTML,
+        Extract,
+        ExtractJsonLd,
+        Submit,
+        WaitForDownload,
+        UploadFile,
+        Screenshot,
+        Loop,
+        Conditional,
     ],
-    Field(discriminator='action')
+    Field(discriminator="action"),
 ]
+
+# Public alias (FEAT-453 Module 3, G2) — the SAME discriminated union used
+# above for Loop/Conditional's nested ``actions``, exposed under a clearer
+# public name for ScrapingPlan.validate_steps(). Deliberately not a second,
+# duplicate Union member list: a new BrowserAction subclass only needs to be
+# added to ActionList once, and both call sites stay in sync automatically.
+BrowserActionUnion = ActionList
 
 
 # Update Forward References (required for Loop containing BrowserAction)
 Authenticate.model_rebuild()
 Loop.model_rebuild()
 Conditional.model_rebuild()
+
+#: Reusable TypeAdapter for validating a raw step dict against
+#: BrowserActionUnion without constructing an intermediate model. Built
+#: after the model_rebuild() calls above so the forward-ref-bearing members
+#: (Authenticate.custom_steps, Loop.actions, Conditional.actions_if_*) have
+#: a fully resolved schema before the adapter is constructed.
+BrowserActionTypeAdapter: TypeAdapter[Any] = TypeAdapter(BrowserActionUnion)
 
 # Map action types to classes
 ACTION_MAP = {
@@ -751,8 +797,9 @@ ACTION_MAP = {
     "wait_for_download": WaitForDownload,
     "upload_file": UploadFile,
     "screenshot": Screenshot,
-    "conditional": Conditional
-} # :contentReference[oaicite:4]{index=4}
+    "conditional": Conditional,
+}  # :contentReference[oaicite:4]{index=4}
+
 
 @dataclass
 class ScrapingStep:
@@ -768,6 +815,7 @@ class ScrapingStep:
             'description': 'Consumer Affairs home'
         },
     """
+
     action: BrowserAction
     description: str = field(default="")
 
@@ -780,29 +828,24 @@ class ScrapingStep:
         # remove attributes "name" and "description" from data since they are top-level keys
         data.pop("name", None)
         data.pop("description", None)
-        return {
-            'action': name,
-            **data
-        }
+        return {"action": name, **data}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ScrapingStep':
+    def from_dict(cls, data: Dict[str, Any]) -> "ScrapingStep":
         """Create ScrapingStep from dictionary"""
-        action_type = data.get('action')
-        action_data = {k: v for k, v in data.items() if k != 'action'}
+        action_type = data.get("action")
+        action_data = {k: v for k, v in data.items() if k != "action"}
 
         action_class = ACTION_MAP.get(action_type)
         if not action_class:
-            raise ValueError(
-                f"Unknown action type: {action_type}"
-            )
+            raise ValueError(f"Unknown action type: {action_type}")
 
         action = action_class(**action_data)
         obj = cls(action=action)
-        obj.description = data.get('description', action.description)
-        if action_type == 'loop' and 'actions' in data:
+        obj.description = data.get("description", action.description)
+        if action_type == "loop" and "actions" in data:
             # Recursively convert nested actions
-            obj.action.actions = [cls.from_dict(a).action for a in data['actions'] if isinstance(a, dict)]
+            obj.action.actions = [cls.from_dict(a).action for a in data["actions"] if isinstance(a, dict)]
         return obj
 
 
@@ -814,26 +857,56 @@ def create_action(action_type: str, **kwargs) -> BrowserAction:
     """
     action_class = ACTION_MAP.get(action_type)
     if not action_class:
-        raise ValueError(
-            f"Unknown action type: {action_type}"
-        )
+        raise ValueError(f"Unknown action type: {action_type}")
 
     return action_class(**kwargs)
+
+
+def lint_literal_credentials(steps: List[Dict[str, Any]]) -> List[str]:
+    """Flag any ``authenticate`` step in *steps* carrying a literal password.
+
+    A plans-directory lint (FEAT-453 Module 4, Goal G3): credentials must
+    never enter plan JSON — the external, private plans directory (Module 6)
+    is a file the engine merely reads, so a literal password there is a
+    secret at rest. Intended to be run over every plan file in that
+    directory before it is loaded.
+
+    Args:
+        steps: Raw step dicts, as stored in ``ScrapingPlan.steps`` (untyped
+            at rest — this lint does not require ``validate_steps()``).
+
+    Returns:
+        One warning message per offending step (step index named, never the
+        credential value itself). An empty list means the plan is clean.
+    """
+    warnings: List[str] = []
+    for idx, raw_step in enumerate(steps):
+        if not isinstance(raw_step, dict) or raw_step.get("action") != "authenticate":
+            continue
+        if raw_step.get("password"):
+            warnings.append(
+                f"step {idx}: Authenticate carries a literal 'password' — "
+                "use credential_provider (CredentialBroker) instead"
+            )
+    return warnings
 
 
 @dataclass
 class ScrapingSelector:
     """Defines what content to extract from a page"""
+
     name: str  # Friendly name for the content
     selector: str  # CSS selector, XPath, or 'body' for full content
-    selector_type: Literal['css', 'xpath', 'tag'] = 'css'
-    extract_type: Literal['text', 'html', 'attribute'] = 'text'
+    selector_type: Literal["css", "xpath", "tag"] = "css"
+    extract_type: Literal["text", "html", "attribute"] = "text"
     attribute: Optional[str] = None  # For attribute extraction
     multiple: bool = False  # Whether to extract all matching elements
+
 
 @dataclass
 class ScrapingResult:
     """Stores results from a single page scrape"""
+
     url: str
     content: str  # Raw HTML content
     bs_soup: BeautifulSoup  # Parsed BeautifulSoup object

@@ -217,10 +217,49 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Added `exec_await_human`, `exec_await_keypress`, and
+`exec_await_browser_event` to `session_actions.py`, adapted from the legacy
+`tool.py` implementations to the driver-agnostic `AbstractDriver` interface
+(`execute_script`/`evaluate` in place of `self.driver`/`self.page` branches).
+`exec_await_human` preserves all four `condition_type` values; `manual`
+fails closed immediately (no polling, no blocking) when `channel=None`, and
+with a channel present sends a `HumanInteraction` via
+`channel.send_interaction()` then waits (bounded by `timeout`) for any
+response delivered through a locally-registered
+`channel.register_response_handler()` callback. The three DOM-based
+condition types (`selector`/`url_contains`/`title_contains`) poll as before
+but also call `channel.send_notification()` when a channel is supplied, so
+the operator learns the browser is waiting (Decision D2). `HumanChannel` is
+imported only under `TYPE_CHECKING` (core `parrot.human.channels.base`, not
+the integrations satellite) so `session_actions` still imports cleanly on a
+core-only install; `HumanInteraction` is imported lazily inside the
+`manual`-path function, only when actually needed. `exec_await_keypress`
+corrects a latent bug in the legacy source it was lifted from — `tool.py`
+read `action.key`, but the `AwaitKeyPress` model's real field is
+`expected_key` (verified via `read` since the task's contract only listed
+line numbers, not the field name); using `action.expected_key` throughout.
+31/31 tests pass across both TASK-2384 and TASK-2385 test files; full
+`packages/ai-parrot-tools/tests/scraping/` suite run for regressions — the
+only 7 failures are pre-existing and unrelated (`CrawlEngine`/FEAT-013 not
+installed in this environment; confirmed via `git stash` against the
+pre-task tree). `ruff check` clean except for the same `UP006`/`UP035`/
+`UP045` pyupgrade-style debt already present in `advanced_actions.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The "manual + channel present" response-wait
+mechanism (registering a temporary local response handler + waiting on an
+`asyncio.Event`) is a reasonable, scope-bounded engineering decision — it
+was not fully specified by the task (only "fails closed without a channel"
+is in the Acceptance Criteria and Test Specification) and it deliberately
+does NOT build a bespoke gate/decision model (Decision D2 forbids that).
+It uses only the `HumanChannel` methods already in this task's Codebase
+Contract (`send_interaction`, `register_response_handler`) plus a one-time
+`grep`/`read` verification of the `HumanInteraction` Pydantic model (not
+itself contracted at this task's scope) to confirm `HumanInteraction(question=...,
+timeout=...)` is a valid, minimal construction. Flagging this for review:
+if a channel is shared with a `HumanInteractionManager` elsewhere in the
+same process, this function's `register_response_handler` call will
+overwrite that manager's registration for the duration of the wait — a
+channel-sharing hazard worth resolving explicitly when TASK-2390's
+`ConfirmationGuard`/`HumanInteractionManager` wiring lands.

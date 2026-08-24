@@ -211,10 +211,80 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Reactivated the `scheduler` extra in `packages/ai-parrot/pyproject.toml`
+(pinned `apscheduler==3.11.2`, matching the satellite's version) with a
+comment explaining the FEAT-453/Decision D1 reversal and warning future
+readers not to "fix" it back — did not touch `parrot/scheduler/__init__.py`
+at all (out of this task's file list; its `_SERVER_CLASSES`/`__getattr__`
+delegation is untouched, verified by direct introspection). Created
+`InProcessScheduler` (`start`/`stop`/`add_cron`) in a brand-new sibling
+module `parrot/scheduler/inprocess.py`. Also implemented `TaxDeadline` +
+`schedule_tax_reminder()` (generic callback, not a hardcoded calendar
+call — see Deviations) and `notify_tax_deadline()` for the reminder
+callbacks, plus `sweep_checkpoint_retention()` for the Decision D3
+90-day archive-and-alert sweep (moves aged files to an `archive/`
+subdirectory — 0700 — and alerts a `HumanChannel` when anything is
+archived; never deletes).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Two real bugs found and fixed during implementation** (verified via a
+standalone script — see below): (1) `AsyncIOScheduler.add_job(...,
+replace_existing=True)` only dedupes reliably once the scheduler is
+*running* — its pre-start "pending jobs" queue does not check for id
+collisions the same way the live jobstore does, so re-registering the same
+`add_cron` name before `start()` silently produced two jobs. Fixed by
+having `add_cron()` track its own `name -> job` map and explicitly
+`remove_job()` any prior job for that name before re-adding. (2)
+`AsyncIOScheduler.shutdown()` schedules its actual work via `call_soon`
+rather than completing synchronously, so gating `stop()`'s idempotency on
+`self._scheduler.running` raced a second call into a `SchedulerNotRunningError`
+(logged, not raised, by asyncio's callback machinery — but noisy and
+non-deterministic). Fixed by tracking `self._running` as our own
+independent state flag.
 
-**Deviations from spec**: none | describe if any
+**Test execution note**: `pytest packages/ai-parrot/tests/scheduler/test_inprocess.py`
+could not be run to completion in this worktree — `packages/ai-parrot/tests/conftest.py`'s
+autouse `_reset_injection_engine_singleton` fixture pulls in
+`parrot.bots`/`parrot.tools.manager`/`parrot.auth`, which transitively
+imports `parrot.utils.types` and `parrot.utils.parsers.toml` — both
+Cython extensions (`.pyx` sources compiled to `.so`/`.cpp`). The compiled
+`.so` artifacts exist in the main repo checkout but are build outputs, not
+tracked by git, and are not present in this git worktree (confirmed: this
+affects `packages/ai-parrot/tests/scheduler/test_scheduler_callbacks.py`
+too — a pre-existing, unrelated test file — with the identical error, and
+copying just one `.so` cascades to the next missing one). This is a
+pre-existing, environment/build-provisioning gap in the FEAT-145 worktree
+model for Cython-backed packages, not a code defect, and out of scope for
+any FEAT-453 task. Worked around it by writing a standalone async script
+(bypassing `packages/ai-parrot/tests/conftest.py` entirely — my module
+itself imports cleanly with only `apscheduler` + a `TYPE_CHECKING`-only
+`parrot.human` reference) that exercises every scenario in
+`test_inprocess.py` line-for-line (cron registration/validation/replacement/
+firing, start/stop idempotency, tax-reminder scheduling + lead-day
+computation + callback invocation, notify-with/without-channel, and the
+full retention-sweep suite including permissions and alerting) — all
+passed. All shadowing-regression assertions (`TestNoShadowing`) were also
+verified directly via module introspection (no test-runner needed for
+those). Full `packages/ai-parrot-tools/tests/scraping/` + `business_automation/`
++ `google/` suites (866 tests, run to confirm the `pyproject.toml` change
+causes no regressions there) re-run: only the same pre-existing,
+unrelated failures (`CrawlEngine`/FEAT-013, `test_places.py`'s
+`ToolResult`/dict mismatch). `ruff check` clean except the same
+`UP006`/`UP017`/`UP035`/`UP045` pyupgrade-style debt already established
+by this feature's other files.
+
+**Deviations from spec**: (1) `schedule_tax_reminder()` takes a generic
+`on_reminder: Callable[[TaxDeadline], Awaitable[None]]` callback rather than
+directly constructing/calling a `GoogleCalendarToolkit` — verified via
+`grep` that `ai-parrot-tools` (which owns `GoogleCalendarToolkit`, from
+TASK-2393) depends on core `ai-parrot`, never the reverse; importing it at
+runtime from this core module would be a reverse/circular package
+dependency. `GoogleCalendarToolkit`/`HumanChannel` are referenced only
+under `TYPE_CHECKING` for documentation/type-hint purposes. The caller
+(whoever assembles the final agent, per spec §2's public/private seam)
+composes the closure that actually calls `create_event`/`send_notification`.
+(2) No real Spanish tax deadlines are hardcoded anywhere — `TaxDeadline`
+instances are supplied by the caller, consistent with the spec's own
+explicit risk note that FEAT-449 (legal-norms-graph-boe) is adjacent, not
+authoritative, for filing deadlines.

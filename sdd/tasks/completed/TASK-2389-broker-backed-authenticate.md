@@ -175,10 +175,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Added `Authenticate.credential_provider: Optional[str]` to
+models.py. Restructured `exec_authenticate`'s credential-resolution block in
+session_actions.py into two distinct paths: (1) when
+`action.credential_provider` is set, resolution is **broker-only** — a
+missing `credential_resolver`, a resolver exception, a `None` result
+(broker miss), or an incomplete `(username, password)` tuple all fail the
+step closed, and the literal `username`/`password` fields are never read;
+(2) when unset, the pre-existing TASK-2384 soft-override behavior is
+preserved unchanged (resolver is optional, a `None` result or missing
+resolver falls back to literals) — this kept all 16 of TASK-2384's original
+`test_session_actions_auth.py` tests passing without modification. Added
+`lint_literal_credentials(steps: List[Dict]) -> List[str]` to models.py — a
+plans-directory lint flagging any `authenticate` step dict carrying a
+literal `password` (never the value itself, only the step index). Verified
+the audit-ledger side effect via a real `CredentialBroker(audit_ledger=...)`
++ a minimal test-only `CredentialResolver` (mirrors `StaticCredentialResolver`)
+rather than reimplementing broker/ledger logic, per the task's explicit
+instruction. 10 new tests pass; the 16 pre-existing `test_session_actions_auth.py`
+tests still pass unchanged (verified explicitly); full
+`packages/ai-parrot-tools/tests/scraping/` suite (799 tests) re-run — same 7
+pre-existing, unrelated `CrawlEngine`/FEAT-013 failures, zero regressions.
+`ruff check`: no new categories; count deltas (+1 UP006 dict, +3 UP006 list,
++1 UP045) are proportional to the new code added and match this file's
+pre-existing `typing.List`/`Dict`/`Optional` convention.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The test scaffold's `fake_broker`/`missing_broker`
+fixtures were not literally provided (only referenced by name) — built a
+real `CredentialBroker` wired with `AuditLedger`-compatible mocks and small
+`CredentialResolver` subclasses (`_StaticResolver`, `_MissingResolver`)
+mirroring the existing `StaticCredentialResolver`/miss-signal shape, plus a
+`_BrokerWrapper.as_resolver()` adapter matching the `CredentialResolverFn`
+signature `session_actions.py` expects. This exercises the real
+`CredentialBroker.resolve()` → `NeedsAuth`/`ResolvedCredential` → audit-ledger
+path end-to-end, per "verify it in a test rather than reimplementing it."

@@ -185,10 +185,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: While verifying the Codebase Contract, discovered that a
+discriminated union covering all 27 (actually 28 — a minor pre-existing
+miscount in the contract) `BrowserAction` subclasses already existed as
+`ActionList` (models.py, used for `Loop.actions`/`Conditional.actions_if_*`
+nested steps). Rather than duplicating an identical `Union[...]` member
+list (a drift hazard — a new action type would need updating in two
+places), added `BrowserActionUnion = ActionList` as a clearly-named public
+alias, plus a module-level `BrowserActionTypeAdapter = TypeAdapter(
+BrowserActionUnion)` constructed *after* the existing `.model_rebuild()`
+calls (so `Authenticate.custom_steps`/`Loop.actions`/`Conditional.actions_if_*`
+forward refs are fully resolved first). Implemented
+`ScrapingPlan.validate_steps(*, strict=True) -> List[BrowserAction]` in
+plan.py, parsing each raw step dict via `BrowserActionTypeAdapter.validate_python()`
+and wrapping any `pydantic.ValidationError` in a `ValueError` that names the
+step index; `strict=False` collects every step's error into one combined
+`ValueError` instead of raising on the first. `BrowserAction` is imported
+under `TYPE_CHECKING` only (plan.py has no existing import from `.models`,
+and none is needed at runtime since `from __future__ import annotations`
+already postpones annotation evaluation). 8 new tests pass (valid plan,
+multi-step, unknown action, missing required field, non-validating
+construction, strict vs. non-strict error collection, empty steps). Full
+`packages/ai-parrot-tools/tests/scraping/` suite (789 tests) re-run: same 7
+pre-existing, unrelated `CrawlEngine`/FEAT-013 failures, zero regressions.
+`ruff check`: no new categories introduced; the only count change is +3
+`UP006` (this file's pre-existing convention of `typing.List`/`Dict`, which
+my new code matches for consistency).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task said "Add a discriminated union... this
+task creates it" and the Codebase Contract's "Does NOT Exist" section
+claimed no such union existed — true only for the specific names
+`BrowserActionUnion`/`AnyBrowserAction`. A functionally-identical one
+(`ActionList`) already existed under a different name for a different call
+site. Reusing it via a public alias (rather than a second, drift-prone
+Union list) is a deliberate, disclosed judgment call favoring DRY over a
+literal from-scratch creation — the acceptance criteria ("returns typed
+BrowserAction instances", "unknown action raises naming the index",
+"missing required field raises", "construction does not validate",
+"strict=False collects all errors") are all satisfied identically either
+way.
