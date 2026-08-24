@@ -8,12 +8,12 @@ from asyncdb.exceptions import NoDataFound
 from navigator_auth.decorators import user_session
 try:
     from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
-    from navigator_auth.abac.context import EvalContext as _EvalContext
-    from navigator_auth.conf import AUTH_SESSION_OBJECT as _AUTH_SESSION
     _PBAC_AVAILABLE = True
 except ImportError:
-    _ResourceType = _EvalContext = _AUTH_SESSION = None
+    _ResourceType = None
     _PBAC_AVAILABLE = False
+# Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
+from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
 
 from navigator.views import (
     ModelView,
@@ -68,7 +68,8 @@ class _PBACHandlerMixin:
     async def _build_eval_context(self):
         """Build an ``EvalContext`` from the current request session.
 
-        Follows the pattern from ``agent.py:_build_eval_context()``.
+        Delegates to the canonical
+        ``parrot.auth.eval_context.build_eval_context`` helper (FEAT-446).
         Returns ``None`` if PBAC is not available or the session cannot
         be read (fail-open callers must handle ``None``).
 
@@ -77,23 +78,7 @@ class _PBACHandlerMixin:
         """
         if not _PBAC_AVAILABLE:
             return None
-        try:
-            session = getattr(self.request, 'session', None)
-            if session is None:
-                try:
-                    from navigator_session import get_session  # noqa: PLC0415
-                    session = await get_session(self.request)
-                except Exception:  # pylint: disable=broad-except
-                    return None
-            userinfo = session.get(_AUTH_SESSION, {}) if session else {}
-            return _EvalContext(
-                username=userinfo.get('username', ''),
-                groups=set(userinfo.get('groups', [])),
-                roles=set(userinfo.get('roles', [])),
-                programs=userinfo.get('programs', []),
-            )
-        except Exception:  # pylint: disable=broad-except
-            return None
+        return await _core_build_eval_context(self.request)
 
 
 _AGENT_SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
