@@ -111,13 +111,31 @@ async def test_fetch_page_aiohttp_happy_path(aiohttp_server):
 - ~~a `local_fixture_site` fixture anywhere in the repo today~~ — confirmed
   absent via `grep -rn "local_fixture_site" packages/*/tests/`; net-new.
 - ~~a shared `conftest.py` under `packages/ai-parrot-tools/tests/scraping/`
-  exporting fixtures automatically to other test directories~~ — verify
-  this before assuming: if TASK-2408/2409's test files live in a
-  *different* test directory (e.g. `tests/business_automation/`), they
-  will need an explicit import of this fixture module, not automatic
-  pytest fixture discovery across package boundaries. Confirm pytest's
-  actual conftest discovery rules for this repo's layout before writing
-  TASK-2408/2409's imports.
+  exporting fixtures automatically to other test directories~~ — **verified
+  and resolved during implementation**: no `conftest.py` exists in
+  `tests/scraping/`. `packages/ai-parrot-tools/tests/__init__.py` and
+  `tests/scraping/__init__.py` both exist, but `packages/ai-parrot-tools/
+  __init__.py` does NOT — so pytest's prepend-import-mode rootdir walk
+  stops at `packages/ai-parrot-tools/`, making `tests` (not
+  `parrot_tools_tests`, the placeholder in this task's own Test
+  Specification scaffold) the importable top-level package name. Since
+  `tests` collides across every sibling package in this monorepo (each
+  ships its own `tests/__init__.py` — the exact collision already observed
+  during FEAT-453's own work when running `business_automation` and
+  `whatsapp` tests together), cross-package `from tests.scraping...`
+  imports are NOT used anywhere in this codebase. The established,
+  already-precedented sharing mechanism instead is a plain **relative
+  import within the same package** — `tests/business_automation/
+  test_submit_gate.py:11` does `from .conftest import SpyConfirmationGuard`.
+  `local_fixture_site` is decorated `@pytest.fixture` directly in
+  `fixtures/local_site.py`; `test_local_fixture_site.py` (same package,
+  `tests.scraping`) does `from .fixtures.local_site import local_fixture_site`
+  — pytest resolves a fixture by name in the test module's globals, so this
+  import alone makes it usable, no `conftest.py` needed. **TASK-2408/2409
+  should follow this exact relative-import pattern**, not the
+  `parrot_tools_tests.scraping...` placeholder from this task's own
+  original Test Specification scaffold (which was flagged as unverified
+  there and is now known to be wrong).
 
 ---
 
@@ -150,6 +168,24 @@ fixture, not production code).
 - `packages/ai-parrot-tools/tests/business_automation/fixtures/acme-books/`
   — the existing anonymized-fixtures directory convention (FEAT-453
   TASK-2391) to match in spirit (never Hooba, always "acme-books"-style).
+
+### Known Gotcha Discovered During Implementation
+
+**`aiohttp.ClientSession`'s default `CookieJar` rejects cookies for
+IP-address hosts** (RFC 6265's "public suffix"/host-format restriction).
+`aiohttp_server`/`TestServer` binds to `127.0.0.1` by default, so a plain
+`aiohttp.ClientSession()` silently drops every cookie this fixture sets —
+`/login` "succeeds" but the follow-up `/dashboard` request comes back
+`401` as if never logged in. Fixed in every test that needs cookie
+persistence by constructing the session as
+`aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True))`. This
+is exactly the class of defect a mocked-driver test can never surface —
+first concrete evidence justifying this whole feature's existence. Future
+real-browser tests (TASK-2408/2409) should not hit this same issue since
+real browsers (Playwright/Chromium) do not apply this RFC 6265 host-format
+restriction to loopback addresses the same way `aiohttp.CookieJar` does —
+but confirm this empirically when TASK-2408 is implemented rather than
+assuming it.
 
 ---
 
@@ -236,10 +272,66 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous, via /sdd-start)
+**Date**: 2026-08-24
+**Notes**: Implemented `build_app()` + the `@pytest.fixture async def
+local_fixture_site(aiohttp_server)` fixture in
+`fixtures/local_site.py`, serving all five routes exactly as scoped:
+`/login` (GET renders a form, POST validates `testuser`/`testpass123`,
+issues an opaque `uuid4`-token session cookie keyed into an in-memory
+`app["sessions"]` dict, redirects via `web.HTTPFound` on success, re-renders
+the form with an "Error: ..." message on failure), `/dashboard`
+(cookie-gated, 401 without a valid session, renders "Welcome, {username}"),
+`/upload` (multipart via `request.post()`, echoes filename + byte count as
+JSON), `/download/{name}` (fixed, deterministic byte content +
+`Content-Disposition: attachment`), `/cookie-check` (echoes the raw
+`Cookie` request header as plain text). Chose a plain opaque
+session-token cookie over cryptographic signing — the task's own scope
+said "signed" loosely; a real signing library isn't otherwise used
+anywhere in this repo's test fixtures, and an opaque server-side-mapped
+token is sufficient to prove "session survives navigation" without adding
+a new dependency for a test-only fixture. `test_local_fixture_site.py`
+covers all 5 routes plus a `TestNoThirdPartyContact` sanity guard
+asserting the bound host is a loopback address — 11 tests, all passing.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Two genuine findings during implementation** (both fully documented
+above in the Codebase Contract / Implementation Notes sections, not
+repeated here in full):
+1. **Import path correction**: the task's own Test Specification scaffold
+   guessed `parrot_tools_tests.scraping.fixtures.local_site` — verified
+   wrong. The correct, already-precedented pattern is a plain relative
+   import (`from .fixtures.local_site import local_fixture_site`), matching
+   `tests/business_automation/test_submit_gate.py`'s own
+   `from .conftest import SpyConfirmationGuard`. No `conftest.py` was
+   needed or added (not in this task's file list, and unnecessary — the
+   fixture is `@pytest.fixture`-decorated directly in `fixtures/local_site.py`
+   and resolved by pytest via a normal import into the test module's
+   namespace).
+2. **`aiohttp.ClientSession`'s default `CookieJar` silently drops cookies
+   for IP-address hosts** (RFC 6265 host-format restriction) —
+   `aiohttp_server` binds to `127.0.0.1`, so the initial test
+   implementation's `/login` → `/dashboard` flow returned 401 even on a
+   correct login. Fixed by using
+   `aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True))` in
+   every test needing cookie persistence. This is exactly the class of
+   real-environment defect a mocked-driver test can never surface — the
+   first concrete evidence justifying this feature's real-HTTP-server
+   approach. Flagged for TASK-2408/2409 to confirm empirically whether
+   real Playwright/Chromium browser contexts have the same restriction
+   (expected: no, browsers don't apply this the same way aiohttp's client
+   does, but this should be verified rather than assumed).
 
-**Deviations from spec**: none | describe if any
+Full `packages/ai-parrot-tools/tests/scraping/` suite re-run (818 tests):
+zero regressions, same 7 pre-existing/unrelated `CrawlEngine`/FEAT-013
+failures already established throughout FEAT-453. `ruff check` clean on
+all 3 new files (no pre-existing debt to preserve — these are brand-new
+files, so modern `X | None`/`dict`/`list` style was used throughout,
+unlike FEAT-453's `Optional`/`Dict`/`List` convention which existed only
+to match already-established surrounding code in files that predated it).
+
+**Deviations from spec**: None of substance. "Signed session cookie"
+(scope wording) was implemented as an opaque, server-side-mapped token
+rather than a cryptographically signed one — see rationale above; this is
+an implementation-detail interpretation, not a scope change (the
+observable behavior — "dashboard requires a valid session established by
+login" — is exactly as specified and tested).
