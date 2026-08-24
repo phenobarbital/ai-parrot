@@ -511,6 +511,13 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         if ft == FieldType.DYNAMIC_SELECT and field.options_source:
             prop["x-options-source"] = field.options_source.model_dump()
 
+        # Relation metadata (FEAT-456) — unconditional on any field_type the
+        # TASK-2411 combination validator allowed (not gated on DYNAMIC_SELECT).
+        # The ONLY renderer that surfaces this; the other six document it as
+        # an intentional no-op.
+        if field.relation:
+            prop["x-relation"] = field.relation.model_dump(exclude_none=True)
+
         # Options: enum for SELECT/MULTI_SELECT
         if ft == FieldType.SELECT and field.options:
             prop["enum"] = [opt.value for opt in field.options]

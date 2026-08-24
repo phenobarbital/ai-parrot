@@ -169,6 +169,12 @@ class PdfRenderer(AbstractFormRenderer):
             ``RenderedForm`` carrying the PDF bytes,
             ``content_type="application/pdf"``, and a
             ``metadata["unsupported_fields"]`` list.
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         buffer = BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)

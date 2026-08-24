@@ -181,6 +181,12 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
 
         Returns:
             RenderedForm with Adaptive Card dict as content.
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         style = style or StyleSchema()
         prefilled = prefilled or {}

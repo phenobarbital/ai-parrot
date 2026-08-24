@@ -234,6 +234,12 @@ class XFormsRenderer(AbstractFormRenderer):
 
         Returns:
             ``RenderedForm`` carrying the XML bytes and ``application/xml``.
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         root = etree.Element(_qn("model"), nsmap=NSMAP)
 

@@ -344,6 +344,12 @@ class HTML5Renderer(AbstractFormRenderer):
 
         Returns:
             RenderedForm with HTML string as content and content_type="text/html".
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates
+            (SELECT/MULTI_SELECT/ARRAY), byte-identical to the same field
+            without ``relation``. Only ``JsonSchemaRenderer`` surfaces it.
         """
         style = style or StyleSchema()
         prefilled = prefilled or {}

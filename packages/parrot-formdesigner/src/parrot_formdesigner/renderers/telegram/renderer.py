@@ -249,6 +249,12 @@ class TelegramRenderer(AbstractFormRenderer):
 
         Returns:
             RenderedForm with TelegramFormPayload as content.
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         # Determine effective mode
         if mode == TelegramRenderMode.AUTO:

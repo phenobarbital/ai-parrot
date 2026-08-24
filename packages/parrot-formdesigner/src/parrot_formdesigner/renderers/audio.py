@@ -413,6 +413,12 @@ class AudioFormRenderer(AbstractFormRenderer):
         Returns:
             RenderedForm with content as a dict (AudioFormManifest.model_dump())
             and content_type="application/json".
+
+        Note:
+            ``FormField.relation`` (FEAT-456) is intentionally ignored — a
+            relational field renders exactly as its ``field_type`` dictates,
+            byte-identical to the same field without ``relation``. Only
+            ``JsonSchemaRenderer`` surfaces it.
         """
         questions = self.split_into_questions(form, locale=locale)
 
