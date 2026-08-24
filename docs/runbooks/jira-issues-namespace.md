@@ -182,7 +182,11 @@ wikitoolkit ingest-jira --force
 | `errors` | Non-empty means the run is `"partial"` — the watermark was **not** advanced |
 
 A non-empty `unresolved_link_keys` is not a bug — it is the signal to
-widen `JIRA_WIKI_JQL` if that relation matters for the corpus. A
+widen `JIRA_WIKI_JQL` if that relation matters for the corpus. It is also
+the first place a **truncated fetch** shows up: if the list names tickets
+that are plainly inside the declared scope, the run did not fetch the
+whole scope — check `fetched` against
+`client.approximate_issue_count(jql)` before widening anything. A
 `"partial"` run means exactly what it says: something failed mid-sweep,
 the watermark was deliberately left untouched so the next run does not
 trust an incomplete pass, and `ingest-jira` exits non-zero.
@@ -239,6 +243,7 @@ ticket prose and customer names must never enter git history.
 | `query --ns issues` finds nothing after a successful sweep | The namespace was never registered — `ns add` is a required one-time step | Run the `ns add` command above |
 | `unresolved_link_keys` is non-empty | A ticket links outside the JQL scope; the edge is dropped but the key is still in the frontmatter | Widen `JIRA_WIKI_JQL` if the relation matters |
 | A large `orphaned` count | Tickets moved project, were renamed, or the JQL narrowed | Review; documents are never auto-deleted |
+| `fetched` stops at exactly 100 (or whatever the page size is), with many `unresolved_link_keys` | Fixed: Jira Cloud retired the offset-based `/search` endpoint, so paging by `startAt` returned one page and no `total`, and `JiraInterface.search_issues` read the missing `total` as "exhausted". It now follows `nextPageToken` on Cloud (`/search/jql`) and keeps the `startAt` loop for Server/DC | Upgrade, then **backfill with `--force`**: the truncated run stored an `"ok"` watermark, so a plain incremental run will not go back for the tickets it never saw |
 | Acceptance-criteria section missing from a ticket | The AC custom field did not resolve (no `JIRA_WIKI_AC_FIELD` and no by-name match) | Set `JIRA_WIKI_AC_FIELD` to the exact custom field id |
 | `related` does not reach a repo spec | Cross-namespace edges do not exist by design | Use `query` across namespaces instead of `related` |
 

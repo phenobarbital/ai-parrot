@@ -30,13 +30,28 @@ def _patch_sweep(monkeypatch, report_factory=None, capture=None):
     """Patch the sweep the CLI imports lazily inside the command body."""
     from parrot.knowledge.wiki.jira_sync import SweepReport
 
-    async def fake_sweep(interface, issues_dir, *, jql, since=None, force=False, dry_run=False):
+    async def fake_sweep(
+        interface,
+        issues_dir,
+        *,
+        jql,
+        since=None,
+        force=False,
+        dry_run=False,
+        concurrency=None,
+        enforce_scope_count=False,
+        progress=None,
+        progress_every=0,
+    ):
         if capture is not None:
             capture["jql"] = jql
             capture["since"] = since
             capture["force"] = force
             capture["dry_run"] = dry_run
             capture["issues_dir"] = issues_dir
+            capture["concurrency"] = concurrency
+            capture["enforce_scope_count"] = enforce_scope_count
+            capture["progress_every"] = progress_every
         if report_factory is not None:
             return report_factory()
         return SweepReport()

@@ -27,6 +27,36 @@ class FakeJIRA:
         return self._fields
 
 
+class FakeCloudJIRA:
+    """Stand-in for a Jira **Cloud** client: offset search is refused and
+    only the cursor-based `/search/jql` endpoint pages
+    (`jira/client.py:3629-3640`, 3692-3760)."""
+
+    _is_cloud = True
+
+    def __init__(self, pages, *, omit_is_last=False):
+        self.pages, self.calls = list(pages), []
+        self.omit_is_last = omit_is_last
+
+    def search_issues(self, jql, startAt=0, **kw):  # pragma: no cover - guard
+        raise AssertionError("Cloud must never use the offset `search` API")
+
+    def enhanced_search_issues(self, jql, nextPageToken=None, maxResults=100, **kw):
+        self.calls.append((jql, nextPageToken, maxResults))
+        idx = int(nextPageToken.split("-")[1]) if nextPageToken else 0
+        issues = self.pages[idx] if idx < len(self.pages) else []
+        is_last = idx >= len(self.pages) - 1
+        page = {"issues": issues}
+        if not is_last:
+            page["nextPageToken"] = f"tok-{idx + 1}"
+        if not self.omit_is_last:
+            page["isLast"] = is_last
+        return page
+
+    def fields(self):
+        return []
+
+
 class TestLazyDependency:
     def test_missing_jira_raises_actionable_error(self, monkeypatch):
         real_import = builtins.__import__
@@ -117,6 +147,55 @@ class TestSearchPagination:
         assert len(asyncio.run(collect())) == 140
         assert [c[1] for c in iface._client.calls] == [0, 100, 140] or [c[1] for c in iface._client.calls] == [0, 100]
 
+    def test_missing_total_pages_until_short_page(self, raw_issue):
+        """No `total` in the payload must not be read as "done"."""
+
+        class NoTotalJIRA(FakeJIRA):
+            def search_issues(self, jql, startAt=0, maxResults=100, **kw):
+                page = super().search_issues(jql, startAt=startAt, maxResults=maxResults, **kw)
+                page.pop("total")
+                return page
+
+        iface = JiraInterface(server_url=BASE, auth_type="token_auth", token="t", verify_credentials=False)
+        iface._client = NoTotalJIRA([[raw_issue] * 100, [raw_issue] * 12])
+
+        async def collect():
+            return [r async for r in iface.search_issues("project = NAV")]
+
+        assert len(asyncio.run(collect())) == 112
+
+    def test_server_capped_page_size_keeps_paging(self, raw_issue):
+        """A Server/DC instance may cap `maxResults` below the requested
+        page size — a short page is not proof of exhaustion while `total`
+        says otherwise."""
+
+        class CappedJIRA:
+            """Serves 50 issues per call regardless of `maxResults`."""
+
+            def __init__(self, total):
+                self.total, self.calls = total, []
+
+            def search_issues(self, jql, startAt=0, maxResults=100, **kw):
+                self.calls.append(startAt)
+                remaining = max(self.total - startAt, 0)
+                return {
+                    "issues": [raw_issue] * min(50, remaining),
+                    "total": self.total,
+                    "startAt": startAt,
+                }
+
+            def fields(self):
+                return []
+
+        iface = JiraInterface(server_url=BASE, auth_type="token_auth", token="t", verify_credentials=False)
+        iface._client = CappedJIRA(120)
+
+        async def collect():
+            return [r async for r in iface.search_issues("project = NAV")]
+
+        assert len(asyncio.run(collect())) == 120
+        assert iface._client.calls == [0, 50, 100]
+
     def test_empty_first_page_probes_auth(self):
         iface = JiraInterface(server_url=BASE, auth_type="token_auth", token="t", verify_credentials=False)
         iface._client = FakeJIRA([[]])
@@ -149,6 +228,62 @@ class TestSearchPagination:
 
         with pytest.raises(JiraAuthError, match="AUTHENTICATED_FAILED"):
             asyncio.run(collect())
+
+
+class TestCloudSearchPagination:
+    """Jira Cloud is cursor-paginated: the offset loop stopped dead after
+    the first page because `/search/jql` returns no `total` (the
+    "only 100 tickets" `ingest-jira` bug)."""
+
+    def _collect(self, iface):
+        async def collect():
+            return [r async for r in iface.search_issues("project = NAV")]
+
+        return asyncio.run(collect())
+
+    def _iface(self, client):
+        iface = JiraInterface(server_url=BASE, auth_type="token_auth", token="t", verify_credentials=False)
+        iface._client = client
+        return iface
+
+    def test_follows_next_page_token_until_last(self, raw_issue):
+        pages = [[raw_issue] * 100, [raw_issue] * 100, [raw_issue] * 17]
+        iface = self._iface(FakeCloudJIRA(pages))
+
+        assert len(self._collect(iface)) == 217
+        assert [c[1] for c in iface._client.calls] == [None, "tok-1", "tok-2"]
+
+    def test_stops_on_absent_token_when_is_last_missing(self, raw_issue):
+        """`isLast` is not guaranteed — an absent `nextPageToken` ends it."""
+        pages = [[raw_issue] * 100, [raw_issue] * 5]
+        iface = self._iface(FakeCloudJIRA(pages, omit_is_last=True))
+
+        assert len(self._collect(iface)) == 105
+        assert [c[1] for c in iface._client.calls] == [None, "tok-1"]
+
+    def test_repeated_token_does_not_loop_forever(self, raw_issue):
+        class StuckCloudJIRA(FakeCloudJIRA):
+            def enhanced_search_issues(self, jql, nextPageToken=None, maxResults=100, **kw):
+                self.calls.append((jql, nextPageToken, maxResults))
+                return {"issues": [raw_issue], "nextPageToken": "stuck"}
+
+        iface = self._iface(StuckCloudJIRA([]))
+
+        assert len(self._collect(iface)) == 2
+        assert len(iface._client.calls) == 2
+
+    def test_empty_first_page_probes_auth(self):
+        iface = self._iface(FakeCloudJIRA([[]]))
+        probed = {"n": 0}
+
+        async def probe():
+            probed["n"] += 1
+            return {"accountId": "x"}
+
+        iface._probe_myself = probe
+
+        assert self._collect(iface) == []
+        assert probed["n"] == 1, "an empty page MUST probe /myself"
 
 
 class TestAcceptanceCriteriaField:

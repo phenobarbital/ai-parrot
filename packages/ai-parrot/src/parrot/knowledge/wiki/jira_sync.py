@@ -22,10 +22,12 @@ No LLM call is possible on this path: :func:`sweep_jira_issues` accepts no
 client and no model config.
 """
 
+import asyncio
 import hashlib
 import logging
 import os
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -61,6 +63,24 @@ _ENTITY_SUBDIRS = ("people", "projects", "components", "labels")
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 
+# Concurrent per-issue reads. Each issue costs two round trips (its share
+# of a search page, plus its own /remotelink call), and the second one is
+# what dominates a backfill — 0.37s/issue measured sequentially, i.e. ~57
+# minutes for a ~9300-ticket project. 8 stays inside `requests`' default
+# `pool_maxsize=10`; anything higher should pair with
+# `JiraInterface.configure_connection_pool`.
+DEFAULT_SWEEP_CONCURRENCY = 8
+
+# `--backfill`'s preset: a one-shot manual load can afford to be more
+# aggressive than a daily cron.
+BACKFILL_SWEEP_CONCURRENCY = 16
+
+# A full sweep that fetched less than this fraction of Jira's own
+# approximate count for the scope is reported as a shortfall — the canary
+# for a truncated fetch (the Cloud cursor-pagination bug). Generous on
+# purpose: the count is documented as approximate.
+SCOPE_SHORTFALL_RATIO = 0.9
+
 
 class JiraScopeState(BaseModel):
     """Per-JQL-fingerprint watermark and run bookkeeping."""
@@ -91,6 +111,8 @@ class SweepReport(BaseModel):
     entity_notes: int = 0
     unresolved_link_keys: list[str] = Field(default_factory=list)
     watermark_advanced: bool = False
+    approx_scope_count: int | None = None
+    warnings: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
 
@@ -301,6 +323,10 @@ async def sweep_jira_issues(
     since: datetime | None = None,
     force: bool = False,
     dry_run: bool = False,
+    concurrency: int = DEFAULT_SWEEP_CONCURRENCY,
+    enforce_scope_count: bool = False,
+    progress: Callable[[int], None] | None = None,
+    progress_every: int = 0,
 ) -> SweepReport:
     """Sweep ``jql`` into ``issues_dir``: fetch, render, write, report.
 
@@ -317,12 +343,46 @@ async def sweep_jira_issues(
             (still respects byte-identical unchanged detection).
         dry_run: Report what would change; write nothing at all — not the
             documents, not the entity notes, not the state file.
+        concurrency: Issues fetched (and parsed) concurrently. ``1``
+            reproduces the strictly sequential sweep. Render order never
+            affects the result: every document is rendered from its own
+            issue, and the aggregates are order-independent (a max, and
+            sets keyed by entity).
+        enforce_scope_count: On a full sweep, treat a fetch that came up
+            materially short of Jira's approximate count for the scope as
+            an *error* — so the watermark is not advanced over a corpus
+            that was never fully fetched. Off by default: the count is
+            approximate, so it is a warning unless a caller (``--backfill``)
+            asks for the stricter contract.
+        progress: Optional callback invoked with the running ``fetched``
+            count, for long backfills.
+        progress_every: Invoke ``progress`` every N issues (``0`` disables).
 
     Returns:
         A :class:`SweepReport` summarizing the run.
     """
+    concurrency = max(1, concurrency)
+    if concurrency > 1:
+        # Sized once, before any fan-out: `requests`' default pool is 10.
+        # getattr-guarded because `interface` is a duck-typed seam here
+        # (see `_check_and_mark_unreachable`) — a stand-in that only
+        # implements the read surface stays valid.
+        size_pool = getattr(interface, "configure_connection_pool", None)
+        if size_pool is not None:
+            await size_pool(concurrency)
+
+    kwargs = {
+        "jql": jql,
+        "since": since,
+        "force": force,
+        "concurrency": concurrency,
+        "enforce_scope_count": enforce_scope_count,
+        "progress": progress,
+        "progress_every": progress_every,
+    }
+
     if dry_run:
-        return await _run_sweep(interface, issues_dir, jql=jql, since=since, force=force, dry_run=True)
+        return await _run_sweep(interface, issues_dir, dry_run=True, **kwargs)
 
     with wiki_write_lock(issues_dir / ".parrot") as acquired:
         if not acquired:
@@ -332,7 +392,7 @@ async def sweep_jira_issues(
                 "directory — refusing to run two writers concurrently."
             )
             return report
-        return await _run_sweep(interface, issues_dir, jql=jql, since=since, force=force, dry_run=False)
+        return await _run_sweep(interface, issues_dir, dry_run=False, **kwargs)
 
 
 async def _run_sweep(
@@ -343,6 +403,10 @@ async def _run_sweep(
     since: datetime | None,
     force: bool,
     dry_run: bool,
+    concurrency: int = DEFAULT_SWEEP_CONCURRENCY,
+    enforce_scope_count: bool = False,
+    progress: Callable[[int], None] | None = None,
+    progress_every: int = 0,
 ) -> SweepReport:
     """The actual sweep body, run under the write lock (or not, for dry_run)."""
     report = SweepReport()
@@ -390,77 +454,140 @@ async def _run_sweep(
     components: dict[str, set[str]] = {}
     labels: dict[str, set[str]] = {}
 
-    try:
-        async for raw in interface.search_issues(effective_jql, expand="renderedFields,changelog"):
-            report.fetched += 1
-            # Remote links live on their own endpoint (never in `fields`),
-            # so they need one extra per-issue call — adversarial-review
-            # finding: this was previously never wired up at all, silently
-            # hardcoding remote_links=[] for every ticket despite the spec's
-            # "attachments and remote links are recorded as references"
-            # non-goal note and JiraInterface.get_remote_links existing
-            # since TASK-2400 for exactly this purpose.
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _resolve(raw: dict) -> object:
+        """Do the per-issue *network* work: remote links, then parse.
+
+        Remote links live on their own endpoint (never in `fields`), so
+        they need one extra per-issue call — adversarial-review finding:
+        this was previously never wired up at all, silently hardcoding
+        remote_links=[] for every ticket despite the spec's "attachments
+        and remote links are recorded as references" non-goal note and
+        JiraInterface.get_remote_links existing since TASK-2400 for
+        exactly this purpose. That extra round trip is also what dominates
+        a backfill's wall clock, which is why it runs `concurrency`-wide.
+        """
+        async with semaphore:
             raw_key = raw.get("key")
             raw_remote_links = await interface.get_remote_links(raw_key) if raw_key else []
-            issue = interface.parse_issue(
+            return interface.parse_issue(
                 raw,
                 base_url=interface.server_url,
                 ac_field_id=ac_field_id,
                 raw_remote_links=raw_remote_links,
             )
-            fetched_keys.add(issue.key)
 
-            if issue.updated_at is not None and (max_updated is None or issue.updated_at > max_updated):
-                max_updated = issue.updated_at
+    def _apply(issue) -> None:
+        """Accumulate + render one resolved issue. Runs without awaiting,
+        so no two of these ever interleave — the aggregates below need no
+        locking, and completion order cannot affect the outcome (a max,
+        and sets keyed by entity)."""
+        nonlocal max_updated
+        report.fetched += 1
+        fetched_keys.add(issue.key)
 
-            if issue.assignee is not None:
-                slug = person_slug(issue.assignee)
-                people.setdefault(slug, (issue.assignee, set()))[1].add(issue.key)
-            if issue.reporter is not None:
-                slug = person_slug(issue.reporter)
-                people.setdefault(slug, (issue.reporter, set()))[1].add(issue.key)
-            projects.setdefault(issue.project_key, set()).add(issue.key)
-            for component in issue.components:
-                components.setdefault(component, set()).add(issue.key)
-            for label in issue.labels:
-                labels.setdefault(label, set()).add(issue.key)
+        if issue.updated_at is not None and (max_updated is None or issue.updated_at > max_updated):
+            max_updated = issue.updated_at
 
-            if issue.epic_key:
-                referenced_keys.add(issue.epic_key)
-            if issue.parent_key:
-                referenced_keys.add(issue.parent_key)
-            referenced_keys.update(issue.subtask_keys)
-            referenced_keys.update(link.target_key for link in issue.links)
+        if issue.assignee is not None:
+            slug = person_slug(issue.assignee)
+            people.setdefault(slug, (issue.assignee, set()))[1].add(issue.key)
+        if issue.reporter is not None:
+            slug = person_slug(issue.reporter)
+            people.setdefault(slug, (issue.reporter, set()))[1].add(issue.key)
+        projects.setdefault(issue.project_key, set()).add(issue.key)
+        for component in issue.components:
+            components.setdefault(component, set()).add(issue.key)
+        for label in issue.labels:
+            labels.setdefault(label, set()).add(issue.key)
 
-            path = issues_dir / issue_filename(issue.key)
-            existing_text = path.read_text(encoding="utf-8") if path.exists() else None
+        if issue.epic_key:
+            referenced_keys.add(issue.epic_key)
+        if issue.parent_key:
+            referenced_keys.add(issue.parent_key)
+        referenced_keys.update(issue.subtask_keys)
+        referenced_keys.update(link.target_key for link in issue.links)
 
-            # Compare against a render stamped with the EXISTING file's own
-            # fetched_at (when parseable) rather than the fresh wall-clock
-            # one — otherwise every re-render would look "changed" purely
-            # because sync.fetched_at advanced, defeating G2's
-            # byte-determinism guarantee (adversarial-review finding).
-            unchanged = False
-            if existing_text is not None and not version_stale:
-                existing_fetched_at = _existing_fetched_at(existing_text)
-                comparison_fetched_at = existing_fetched_at if existing_fetched_at is not None else fetched_at
-                comparison_text = render_issue_document(issue, fetched_at=comparison_fetched_at, existing=existing_text)
-                unchanged = comparison_text == existing_text
+        path = issues_dir / issue_filename(issue.key)
+        existing_text = path.read_text(encoding="utf-8") if path.exists() else None
 
-            if unchanged:
-                report.unchanged += 1
-            else:
-                new_text = render_issue_document(issue, fetched_at=fetched_at, existing=existing_text)
-                if not dry_run:
-                    path.write_text(new_text, encoding="utf-8")
-                report.written += 1
+        # Compare against a render stamped with the EXISTING file's own
+        # fetched_at (when parseable) rather than the fresh wall-clock
+        # one — otherwise every re-render would look "changed" purely
+        # because sync.fetched_at advanced, defeating G2's
+        # byte-determinism guarantee (adversarial-review finding).
+        unchanged = False
+        if existing_text is not None and not version_stale:
+            existing_fetched_at = _existing_fetched_at(existing_text)
+            comparison_fetched_at = existing_fetched_at if existing_fetched_at is not None else fetched_at
+            comparison_text = render_issue_document(issue, fetched_at=comparison_fetched_at, existing=existing_text)
+            unchanged = comparison_text == existing_text
+
+        if unchanged:
+            report.unchanged += 1
+        else:
+            new_text = render_issue_document(issue, fetched_at=fetched_at, existing=existing_text)
+            if not dry_run:
+                path.write_text(new_text, encoding="utf-8")
+            report.written += 1
+
+        if progress is not None and progress_every > 0 and report.fetched % progress_every == 0:
+            progress(report.fetched)
+
+    pending: set[asyncio.Task] = set()
+    try:
+        async for raw in interface.search_issues(effective_jql, expand="renderedFields,changelog"):
+            pending.add(asyncio.create_task(_resolve(raw)))
+            # Keep at most one page-sized wave of tasks alive: the
+            # semaphore bounds concurrent *requests*, this bounds resident
+            # parsed issues, so a 9k-ticket scope never buys memory for
+            # 9k documents at once.
+            if len(pending) >= concurrency * 2:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    _apply(task.result())
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                _apply(task.result())
     except Exception as exc:  # noqa: BLE001 — record and stop; never advance on failure
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         report.errors.append(str(exc))
         new_scope.last_run_status = "partial"
         if not dry_run:
             state.scopes[fp] = new_scope
             save_sync_state(issues_dir, state)
         return report
+
+    # --- Completeness canary (full sweeps only) ------------------------
+    # Runs BEFORE orphan detection on purpose: a truncated fetch makes
+    # every unfetched ticket look like an orphan, so a short sweep must be
+    # caught here rather than probing thousands of healthy tickets for
+    # unreachability.
+    if is_full_sweep:
+        # Duck-typed seam again: no counter, no canary.
+        counter = getattr(interface, "approximate_issue_count", None)
+        approx = await counter(effective_jql) if counter is not None else None
+        report.approx_scope_count = approx
+        if approx is not None and approx > 0 and report.fetched < approx * SCOPE_SHORTFALL_RATIO:
+            message = (
+                f"Fetched {report.fetched} issue(s) for a scope Jira sizes at "
+                f"~{approx}. A shortfall this large means the scope was not "
+                "fully fetched — truncated pagination, a server-side cap, or a "
+                "permission-filtered result set — so this corpus is incomplete."
+            )
+            if enforce_scope_count:
+                report.errors.append(message)
+                new_scope.last_run_status = "partial"
+                if not dry_run:
+                    state.scopes[fp] = new_scope
+                    save_sync_state(issues_dir, state)
+                return report
+            report.warnings.append(message)
 
     # --- Orphans + unreachable tickets (full sweeps only) ---------------
     if is_full_sweep:

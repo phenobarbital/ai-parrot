@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wikitoolkit ingest-jira` fetched only the first page (FEAT-454
+  follow-up).** Jira Cloud retired the offset-based `/search` endpoint:
+  pycontribs now redirects `search_issues(startAt=0)` to the cursor-based
+  `enhanced_search_issues` and raises for any `startAt > 0`, and that
+  response carries no `total`. `JiraInterface.search_issues` read the
+  missing `total` as "scope exhausted" and stopped after exactly one page
+  (100 issues), which also produced spurious `unresolved_link_keys`
+  warnings for in-scope tickets it had never fetched. It now paginates by
+  `nextPageToken` on Cloud and keeps the `startAt` loop for Server/DC,
+  where a missing `total` pages on until a short page instead of
+  truncating. Operators who ran a truncated sweep must backfill with
+  `ingest-jira --force` — the truncated run stored an `"ok"` watermark.
+
 ---
 
 ## [0.27.0] — 2026-08-24

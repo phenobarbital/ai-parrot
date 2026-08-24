@@ -3405,6 +3405,33 @@ def ingest(
     help="Re-render every issue in scope, ignoring the stored watermark.",
 )
 @click.option(
+    "--backfill",
+    is_flag=True,
+    help=(
+        "One-shot full load of the scope. A preset: implies --force, raises "
+        "the default concurrency, prints progress, and FAILS the run (leaving "
+        "the watermark untouched) if the fetch came up short of Jira's own "
+        "count for the scope."
+    ),
+)
+@click.option(
+    "--concurrency",
+    "concurrency_opt",
+    default=None,
+    type=click.IntRange(1, 64),
+    help=(
+        "Issues fetched concurrently (default: JIRA_WIKI_CONCURRENCY, else 8; "
+        "16 under --backfill). 1 sweeps strictly sequentially."
+    ),
+)
+@click.option(
+    "--progress-every",
+    "progress_every_opt",
+    default=None,
+    type=click.IntRange(0, 100000),
+    help="Print a progress line every N issues (0 disables; default 100 under --backfill).",
+)
+@click.option(
     "--dry-run",
     "dry_run",
     is_flag=True,
@@ -3425,6 +3452,9 @@ def ingest_jira(
     do_build: bool,
     enrich: bool,
     force: bool,
+    backfill: bool,
+    concurrency_opt: int | None,
+    progress_every_opt: int | None,
     dry_run: bool,
     as_json: bool,
     quiet: bool,
@@ -3441,6 +3471,12 @@ def ingest_jira(
     Builds the plane by default so it can never silently lag the files
     (G10) — pass ``--no-build`` to emit documents only.
 
+    Each issue costs two round trips (its share of a search page plus its
+    own remote-links call), so the sweep resolves ``--concurrency`` issues
+    at a time. For the initial load of a scope use ``--backfill``, which
+    presets that for a one-shot run and refuses to record a watermark over
+    a corpus that came up short.
+
     Register the corpus once as a namespace (see the runbook):
 
         wikitoolkit ns add issues --store <issues-dir>/.parrot/wiki --global
@@ -3453,7 +3489,12 @@ def ingest_jira(
     # Lazy imports: `wikitoolkit --help` must never pay for `jira`
     # (mirrors `build`'s vault_scan import at cli.py:1118-1121).
     from parrot.interfaces.jira import JiraAuthError, JiraDependencyError, JiraInterface
-    from parrot.knowledge.wiki.jira_sync import resolve_issues_dir, sweep_jira_issues
+    from parrot.knowledge.wiki.jira_sync import (
+        BACKFILL_SWEEP_CONCURRENCY,
+        DEFAULT_SWEEP_CONCURRENCY,
+        resolve_issues_dir,
+        sweep_jira_issues,
+    )
 
     if jql:
         effective_jql = jql
@@ -3482,6 +3523,31 @@ def ingest_jira(
 
     issues_dir = resolve_issues_dir(issues_dir_opt or _env_setting("JIRA_WIKI_ISSUES_DIR"))
 
+    # --backfill is a preset, not a separate code path: an explicit
+    # --concurrency / --progress-every still wins over what it presets.
+    env_concurrency = _env_setting("JIRA_WIKI_CONCURRENCY")
+    if concurrency_opt is not None:
+        concurrency = concurrency_opt
+    elif env_concurrency:
+        try:
+            concurrency = int(env_concurrency)
+        except ValueError as exc:
+            raise click.ClickException(f"JIRA_WIKI_CONCURRENCY must be an integer (got {env_concurrency!r}): {exc}") from exc
+    elif backfill:
+        concurrency = BACKFILL_SWEEP_CONCURRENCY
+    else:
+        concurrency = DEFAULT_SWEEP_CONCURRENCY
+
+    if progress_every_opt is not None:
+        progress_every = progress_every_opt
+    elif backfill and not quiet and not as_json:
+        progress_every = 100
+    else:
+        progress_every = 0
+
+    def _progress(count: int) -> None:
+        click.echo(f"  ... {count} issue(s) swept", err=True)
+
     interface = JiraInterface()
 
     try:
@@ -3491,8 +3557,12 @@ def ingest_jira(
                 issues_dir,
                 jql=effective_jql,
                 since=since_dt,
-                force=force,
+                force=force or backfill,
                 dry_run=dry_run,
+                concurrency=concurrency,
+                enforce_scope_count=backfill,
+                progress=_progress if progress_every else None,
+                progress_every=progress_every,
             )
         )
     except JiraDependencyError as exc:
@@ -3512,7 +3582,7 @@ def ingest_jira(
             path_=str(issues_dir),
             name=namespace_name,
             backend=None,
-            force=force,
+            force=force or backfill,
             no_git=True,
             quiet=quiet,
             no_export=True,
@@ -3536,7 +3606,11 @@ def ingest_jira(
         click.echo(f"  unchanged:    {report.unchanged}")
         click.echo(f"  orphaned:     {report.orphaned}")
         click.echo(f"  entity notes: {report.entity_notes}")
+        if report.approx_scope_count is not None:
+            click.echo(f"  scope size (Jira's approximate count): ~{report.approx_scope_count}")
         click.echo(f"  watermark advanced: {report.watermark_advanced}")
+        for warning in report.warnings:
+            click.echo(f"  WARNING: {warning}")
         if report.unresolved_link_keys:
             click.echo(
                 f"  WARNING: {len(report.unresolved_link_keys)} relation(s) point "
