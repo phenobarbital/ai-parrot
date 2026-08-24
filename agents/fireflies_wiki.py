@@ -21,6 +21,11 @@ abstraction (never the Anthropic SDK directly). All three jobs are
 semi-mechanical — condensing already-written ``## Analysis`` blocks into
 bullets — so the cheapest capable model is the right one.
 
+NOTE: This file lives in ``agents/``, which is gitignored (``.gitignore``
+rule ``/agents/``). It is tracked only because it was force-added, so every
+commit touching it needs ``git add -f`` — same situation as
+agents/security_advisor.py.
+
 See ``docs/superpowers/specs/2026-08-23-fireflies-wiki-agent-design.md``.
 """
 
