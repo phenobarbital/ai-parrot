@@ -86,10 +86,11 @@ server, Claude hook, installer, federation) go through it.
 
 - Missing overlay → effective config **is** the base (never an error).
 - `wikitoolkit build` generates the missing overlay for the active env using
-  templated derivation: `local` → `{"backend": "sqlite"}`; `dev` → mirrors the
-  base Arango settings; `prod` (and other named envs) → base Arango settings
-  with the database name suffixed (`wiki_ai-parrot_prod`), `credentials_env`
-  unchanged (navconfig already resolves different credentials per `ENV`).
+  templated derivation: `local` → `{"backend": "sqlite"}`; every other env
+  (`dev`, `prod`, …) → the base Arango settings verbatim — **same database
+  name**, same `credentials_env`. Environment separation comes entirely from
+  navconfig resolving different host/credentials per `ENV`
+  (`env/prod/.env` points at the prod ArangoDB server).
 - `status` prints the active env, the overlay file used (or "base fallback"),
   and the resolved backend/database.
 - New `wikitoolkit sync push|pull` copies authored knowledge (pages with
@@ -101,9 +102,9 @@ server, Claude hook, installer, federation) go through it.
 ✅ **Pros:**
 - Matches the user's chosen model exactly (fallback-to-base + build-time
   generation came from discovery answers).
-- Committed base stays canonical for the team; `wiki.local.json` can be
-  gitignored for personal setups while `wiki.prod.json` is committed and
-  reviewed.
+- Committed base stays canonical for the team; overlays are individually
+  committable — this repo commits `wiki.local.json` so the no-VPN sqlite
+  default is shared, while another repo could gitignore it.
 - Diffable, explicit files — easy to answer "what does prod use?" without
   running anything.
 - Zero migration: repos without overlays behave exactly as today.
@@ -249,9 +250,8 @@ cross-namespace copy inside the already-existing `FederatedWikiStore`.
   `.parrot/wiki.prod.json` via env-templated derivation were explicit
   decisions that only make sense with per-env files.
 - It keeps the committed base reviewable (unlike C, where structure hides in
-  untracked `.env` files) while still letting `wiki.local.json` be a
-  personal, gitignored file (unlike B, where local tweaks dirty the shared
-  file).
+  untracked `.env` files) and keeps per-env values in separate, individually
+  committable files (unlike B, where local tweaks dirty the shared file).
 - It composes cleanly with FEAT-450 instead of bending it (unlike D):
   environments select *infrastructure for the primary plane*; namespaces
   remain *additional corpora*. Overlays may also override namespace entries
@@ -277,12 +277,14 @@ cross-namespace copy inside the already-existing `FederatedWikiStore`.
   they point; if unreachable, each is skipped with the existing one-line
   `(namespace 'x' skipped: ...)` note and a short connect timeout.
 - **`ENV=prod wikitoolkit build`**: navconfig loads `env/prod/.env`
-  (credentials), the wiki layer loads `.parrot/wiki.prod.json` (plane). If
-  the overlay does not exist, build **creates it** from the env template
-  (prod → arango, database `wiki_{wiki_name}_prod`, same `credentials_env`),
-  prints what it generated, then builds against it. `ENV=dev` behaves the
-  same with the dev template (mirrors base Arango settings). Read-only
-  commands never generate files — they fall back to base silently.
+  (credentials — which point at the prod ArangoDB **server**), the wiki
+  layer loads `.parrot/wiki.prod.json` (plane). If the overlay does not
+  exist, build **creates it** from the env template (non-local envs → base
+  Arango settings verbatim: same database name, same `credentials_env`),
+  prints what it generated, then builds against it. Read-only commands never
+  generate files — they fall back to base silently. `ENV=dev` remains a full
+  read-write plane from any machine (sole-writer discipline is social, not
+  enforced).
 - **`WIKI_ENV=prod`** overrides `ENV` for the wiki layer only (escape hatch
   when navconfig env and wiki plane must differ).
 - **`wikitoolkit status`** gains an environment header: active env, overlay
@@ -291,14 +293,18 @@ cross-namespace copy inside the already-existing `FederatedWikiStore`.
 - **`wikitoolkit sync push [--env dev] [--dry-run]`** uploads local authored
   knowledge — memory pages (`origin="memory"`), attributed notes, and
   `asserted` edges — to the shared plane of the named env (default `dev`).
-  **`wikitoolkit sync pull [--env dev] [--dry-run]`** downloads the same
-  record classes from the shared plane into the local sqlite plane. Both
-  print a per-category summary (created / updated / skipped-older) and log
-  to the bookkeeper audit trail.
+  **`wikitoolkit sync pull [--env dev] [--dry-run] [--all]`** downloads the
+  same record classes from the shared plane into the local sqlite plane —
+  by default **excluding records authored by the local identity**
+  (`asserted_by` match), so your own local memories stay authoritative and
+  only teammates' knowledge flows in; `--all` overrides to pure LWW. Both
+  print a per-category summary (created / updated / skipped-older /
+  skipped-own) and log to the bookkeeper audit trail.
 - Existing repos with only `.parrot/wiki.json` and no overlays: behavior is
   unchanged until an overlay exists (except that unset `ENV` now means the
-  *local* overlay is looked up first — for this repo that overlay will be
-  committed as sqlite, delivering the no-VPN default).
+  *local* overlay is looked up first — for this repo that overlay **is
+  committed** as `{"backend": "sqlite"}`, delivering the no-VPN default to
+  the whole team).
 
 ### Internal Behavior
 
@@ -316,16 +322,21 @@ cross-namespace copy inside the already-existing `FederatedWikiStore`.
   `--backend`/`--store` flag > overlay value / `WIKI_STORE_BACKEND` > base
   `wiki.json` — `build` included (closing the `cli.py:352` TODO).
 - **Overlay generation** (build only): `derive_env_overlay(base, env)`
-  produces `local` → `{"backend": "sqlite"}`; `dev` → base's Arango
-  settings verbatim; other envs → base Arango settings with database
-  `wiki_{wiki_name}_{env}`. Written via the same atomic-write pattern as
-  `save_global_registry`.
+  produces `local` → `{"backend": "sqlite"}`; every other env → base's
+  Arango settings verbatim (same database name — per-env separation lives in
+  the credentials navconfig resolves, not in the name). Written via the same
+  atomic-write pattern as `save_global_registry`.
 - **Sync engine** (new module, e.g. `wiki/sync.py`): opens the local plane
   (env `local`) and the remote plane (target env's overlay +
   `resolve_arango_params` under that env's credentials); selects syncable
   records — pages with `origin="memory"` (and authored notes), `asserted`
   edges touching them; compares by `concept_id` + `updated_at`
-  (last-write-wins; equal/older → skip); upserts via the existing
+  (last-write-wins; equal/older → skip); `pull` additionally filters out
+  records whose `asserted_by` matches the local identity unless `--all`;
+  **notes merge append-if-absent**: each attributed, dated note is
+  identity-hashed (author + date + text) and treated as a member of an
+  append-only set — sync adds notes the other side lacks (ordered by date)
+  and never rewrites existing note text; upserts via the existing
   `upsert_pages` / `add_edges` store APIs; every applied change logged via
   `bookkeeper.log_operation` (`SYNC_PUSH` / `SYNC_PULL`).
 - **Schema delta for LWW**: `WikiPageRecord` gains `updated_at`
@@ -349,6 +360,9 @@ cross-namespace copy inside the already-existing `FederatedWikiStore`.
   same deterministic `mem-*` hash): last-write-wins by `updated_at`;
   the loser's content is still recoverable from the audit trail. Deletes are
   NOT propagated in v1 (no tombstones) — documented limitation.
+- Notes appended on BOTH sides of the same page: append-if-absent merge means
+  both survive (union of note sets, date-ordered) — a page body containing
+  notes is never a LWW casualty.
 - Hook/MCP paths (`claude_code/hook.py`, `mcp_server.py`) resolve env from
   process environment only — no interactive prompts, no file generation.
 - `WIKI_ENV`/`ENV` values are validated with the same charset rule as
@@ -383,12 +397,12 @@ cross-namespace copy inside the already-existing `FederatedWikiStore`.
 | `wiki/cli.py` | modifies | `_resolve_project`/`_open_store`/`_resolve_read_store`/`_resolve_write_store` route through effective config; `build` gains overlay generation; new `sync` group; `status` env header; closes `cli.py:352` TODO |
 | `wiki/store.py` | modifies | `WikiPageRecord.updated_at`; sqlite persistence of the stamp |
 | `wiki/arango_store.py` | modifies | persist/return `updated_at` |
-| `wiki/sync.py` | new | push/pull engine (memories, notes, asserted edges; LWW) |
+| `wiki/sync.py` | new | push/pull engine (memories, notes, asserted edges; LWW; author-filtered pull; append-if-absent note merge) |
 | `wiki/toolkit.py` | modifies | `remember()` (and note/link writers) stamp `updated_at` |
 | `wiki/federation.py` | depends on | opens namespaces from the *effective* config; skip machinery reused for offline local mode |
 | `wiki/mcp_server.py`, `wiki/claude_code/hook.py`, `wiki/claude_code/installer.py` | modifies | swap `load_project_config` → `load_effective_config` (env from process env) |
 | `wiki/bookkeeper.py` | depends on | `SYNC_PUSH`/`SYNC_PULL` operation logging |
-| `.parrot/wiki.json` (this repo) | modifies | add committed `wiki.local.json` (sqlite) + keep base pointing at team dev Arango; decide gitignore policy for `wiki.local.json` |
+| `.parrot/wiki.json` (this repo) | modifies | base keeps team dev Arango; **commit** `.parrot/wiki.local.json` = `{"backend": "sqlite"}` so the no-VPN default is shared |
 | `docs/runbooks/jira-issues-namespace.md` + wiki docs | modifies | document env model + sync workflow |
 
 No breaking changes for repos without overlays; no new external dependencies.
@@ -541,25 +555,26 @@ from parrot.knowledge.wiki.project import (
 
 ## Open Questions
 
-- [ ] Gitignore policy: is `.parrot/wiki.local.json` committed (team default:
-  sqlite for everyone) or gitignored (personal)? Recommendation: commit it
-  for this repo so the no-VPN default is shared; keep `wiki.prod.json`
-  committed and reviewed. — *Owner: Jesus*
-- [ ] Derived database naming for generated overlays: proposal is `dev` →
-  mirror base (`wiki_ai-parrot`), other envs → `wiki_{wiki_name}_{env}`.
-  Confirm prod DB name convention with whoever owns the prod ArangoDB. —
-  *Owner: Jesus*
-- [ ] `sync pull` scope: pull ALL remote memories/notes, or only records not
-  authored by the local `asserted_by` identity? (Affects whether pull can
-  overwrite your own newer local edits — LWW protects, but filtering by
-  author is safer.) — *Owner: Jesus*
-- [ ] Should `ENV=dev` (explicit) keep writing to the SHARED dev ArangoDB
-  from local machines (current behavior via base config), or should team
-  members build only via CI and treat dev-Arango as pull-only? — *Owner: Jesus*
-- [ ] Note-sync fidelity: notes attach to page bodies of possibly-ingest
-  pages; concept ids from repo scans are deterministic, but confirm note
-  extraction/merge strategy (append-if-absent vs body-diff) during spec. —
-  *Owner: implementer (spec phase)*
+- [x] Gitignore policy for `.parrot/wiki.local.json` — *Owner: Jesus*: COMMIT
+  it (`{"backend": "sqlite"}`) so every teammate gets the no-VPN sqlite
+  default out of the box; `wiki.prod.json` also committed and reviewed.
+  Personal deviations remain possible via `WIKI_ENV` or uncommitted local
+  edits.
+- [x] Derived database naming for generated overlays — *Owner: Jesus*: SAME
+  database name in every env (`wiki_ai-parrot`); environment separation
+  comes from the different ArangoDB server/credentials navconfig resolves
+  from `env/{ENV}/.env`, not from the database name. No `_prod` suffixing.
+- [x] `sync pull` scope — *Owner: Jesus*: exclude records authored by the
+  local identity by default (own local memories stay authoritative;
+  teammates' knowledge flows in); `--all` flag overrides to pure LWW.
+- [x] `ENV=dev` writes to the shared dev ArangoDB — *Owner: Jesus*: keep it —
+  `ENV=dev` remains a full read-write plane from any machine (current
+  behavior); sole-writer discipline is social, not enforced. `sync push`
+  covers the common knowledge-sharing case.
+- [x] Note-sync fidelity — *Owner: Jesus*: append-if-absent — notes are an
+  append-only set keyed by identity hash (author + date + text); sync adds
+  missing notes (date-ordered) and never rewrites bodies, so no note can be
+  dropped by a merge.
 - [x] Sync direction model — *Owner: Jesus*: explicit `sync push` / `sync pull`
   subcommands, deterministic direction, LWW per record.
 - [x] Sync content — *Owner: Jesus*: memories + notes/asserted links; NOT full
