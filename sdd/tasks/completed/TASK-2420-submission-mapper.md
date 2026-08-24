@@ -286,8 +286,19 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `services/sinks/mapper.py` with `RESERVED_COLUMNS`
+(frozenset, 16 members), `flatten_submission()` (GROUP -> `parent__child`
+recursion, ARRAY -> single `json.dumps` column, declared metadata keys
+promoted, reserved columns always emitted, path length validated via
+`validate_identifier`), `nest_submission()` (reserved fields + `data`
+nested via a shallow copy — never mutates `submission.data`), and
+`column_names_for()` (deterministic, reserved-first ordering). The walker
+handles `FormSubsection` transparently and does not expand ARRAY
+`item_template` into columns (single JSON column per the spec). 10 unit
+tests in `tests/unit/test_submission_mapper.py`, all passing, including a
+deep-GROUP path that exceeds the 63-char identifier cap. `ruff` and
+targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

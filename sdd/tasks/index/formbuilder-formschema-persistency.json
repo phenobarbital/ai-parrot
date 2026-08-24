@@ -70,7 +70,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Sequential: extends or imports code produced by an earlier task in this spec.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2420-submission-mapper.md"
+      "completed_at": "2026-08-24T15:52:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2420-submission-mapper.md"
     },
     {
       "id": "TASK-2421",
