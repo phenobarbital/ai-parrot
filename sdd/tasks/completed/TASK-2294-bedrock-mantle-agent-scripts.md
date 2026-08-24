@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-437 — AWS Bedrock Sample Agents
 **Spec**: `sdd/specs/claude-bedrock-sample-agents.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2293
@@ -318,8 +318,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: not recorded at completion time
+**Date**: not recorded (index marked `done`; task file was never updated)
+**Notes**: Reconciled retroactively on 2026-08-24 during an `sdd/tasks/active/`
+cleanup. The task index (`sdd/tasks/index/claude-bedrock-sample-agents.json`)
+already carried status `done`, but this file was left in `active/` as an
+unfilled template. Declared deliverables were verified present on disk:
 
-**Deviations from spec**: none | describe if any
+- `examples/agents/aws/agent_deepseek_v32.py` — present
+- `examples/agents/aws/agent_minimax_m25.py` — present
+
+No original completion note exists, so the implementation details, deviations,
+and test evidence for this task were never captured and are not reconstructed
+here.
+
+**Deviations from spec**: unknown — not recorded at completion time.
