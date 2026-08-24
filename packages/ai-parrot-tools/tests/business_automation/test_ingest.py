@@ -167,9 +167,7 @@ class TestResumeWithoutDuplicates:
     async def test_listener_ignores_a_different_digest(self, three_row_xlsx, xlsx_a):
         bundle = await build_import_plan(three_row_xlsx, period="2026-Q1")
         other_bundle = await build_import_plan(xlsx_a, period="2026-Q1")
-        listener = make_import_progress_listener(
-            "register_expense", other_bundle.import_run.statement_digest
-        )
+        listener = make_import_progress_listener("register_expense", other_bundle.import_run.statement_digest)
 
         # A node id from a DIFFERENT statement's plan must never mark this
         # statement's rows as completed.
@@ -219,9 +217,7 @@ class TestResumeWithoutDuplicates:
             "reconciled": True,
         }
 
-    async def test_manifest_survives_rebuild_without_losing_completions(
-        self, three_row_xlsx, checkpoint_dir
-    ):
+    async def test_manifest_survives_rebuild_without_losing_completions(self, three_row_xlsx, checkpoint_dir):
         bundle = await build_import_plan(three_row_xlsx, period="2026-Q1")
         digest = bundle.import_run.statement_digest
         listener = make_import_progress_listener("register_expense", digest)

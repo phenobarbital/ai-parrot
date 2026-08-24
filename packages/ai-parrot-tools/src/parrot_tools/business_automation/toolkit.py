@@ -81,8 +81,7 @@ def _credential_resolver_from_broker(broker: "CredentialBroker", user_id: str) -
             result = await broker.resolve(action.credential_provider, _BROKER_INVOCATION_CHANNEL, user_id)
         except Exception:
             logger.exception(
-                "CredentialBroker.resolve() raised for provider=%r; failing "
-                "the authenticate step closed",
+                "CredentialBroker.resolve() raised for provider=%r; failing " "the authenticate step closed",
                 action.credential_provider,
             )
             return None

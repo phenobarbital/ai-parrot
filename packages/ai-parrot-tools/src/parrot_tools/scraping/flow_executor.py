@@ -6,6 +6,7 @@ template binding (:class:`TemplatePlan`), session/page management
 (``execute_plan_steps``), data-dependency input resolution, fan-out, per-node
 error policies, and checkpoint persistence/resumption (FEAT-222, Module 8).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -98,9 +99,7 @@ class FlowExecutor:
     # ── Input resolution ─────────────────────────────────────────────
 
     @staticmethod
-    def _resolve_input(
-        ref: str, node_results: Dict[str, ScrapingResult]
-    ) -> Tuple[Any, bool]:
+    def _resolve_input(ref: str, node_results: Dict[str, ScrapingResult]) -> Tuple[Any, bool]:
         """Resolve a single ``"node_id.field[...]"`` reference.
 
         Returns:
@@ -115,10 +114,7 @@ class FlowExecutor:
             raise ValueError(f"Invalid input reference (no field): '{ref}'")
 
         if node_id not in node_results:
-            raise ValueError(
-                f"Input reference '{ref}' points to node '{node_id}' which has "
-                "no recorded result"
-            )
+            raise ValueError(f"Input reference '{ref}' points to node '{node_id}' which has " "no recorded result")
         source = node_results[node_id]
 
         match = _FIELD_REF_RE.match(field_ref)
@@ -135,10 +131,7 @@ class FlowExecutor:
         # Numeric index.
         idx = int(index_token)
         if not isinstance(base, list):
-            raise ValueError(
-                f"Reference '{ref}' uses an index but field '{field_name}' is "
-                f"not a list"
-            )
+            raise ValueError(f"Reference '{ref}' uses an index but field '{field_name}' is " f"not a list")
         return base[idx], False
 
     def _resolve_node_inputs(
@@ -158,9 +151,7 @@ class FlowExecutor:
             value, is_fanout = self._resolve_input(ref, node_results)
             if is_fanout:
                 if fanout_key is not None:
-                    raise ValueError(
-                        f"Node '{node.id}' declares more than one fan-out input"
-                    )
+                    raise ValueError(f"Node '{node.id}' declares more than one fan-out input")
                 fanout_key = param
                 fanout_items = value
             else:
@@ -169,9 +160,7 @@ class FlowExecutor:
 
     # ── Plan resolution ──────────────────────────────────────────────
 
-    async def _resolve_plan(
-        self, node: FlowNode, params: Dict[str, Any]
-    ) -> ScrapingPlan:
+    async def _resolve_plan(self, node: FlowNode, params: Dict[str, Any]) -> ScrapingPlan:
         """Resolve *node*'s ``plan_ref`` into a concrete :class:`ScrapingPlan`.
 
         Prefers a registered :class:`TemplatePlan` (bound with *params*);
@@ -183,13 +172,10 @@ class FlowExecutor:
         if self._registry is not None:
             entry = self._registry.get_by_name(node.plan_ref)
             if entry is not None:
-                return await load_plan_from_disk(
-                    self._registry.plans_dir / entry.path
-                )
+                return await load_plan_from_disk(self._registry.plans_dir / entry.path)
 
         raise ValueError(
-            f"Cannot resolve plan_ref '{node.plan_ref}' for node '{node.id}': "
-            "not found in templates or registry"
+            f"Cannot resolve plan_ref '{node.plan_ref}' for node '{node.id}': " "not found in templates or registry"
         )
 
     # ── Node execution ───────────────────────────────────────────────
@@ -235,9 +221,7 @@ class FlowExecutor:
             if result is not None:
                 last_error = result.error_message or "step execution failed"
             if attempt < attempts:
-                self.logger.warning(
-                    "Retrying node '%s' (attempt %d/%d)", node.id, attempt + 1, attempts
-                )
+                self.logger.warning("Retrying node '%s' (attempt %d/%d)", node.id, attempt + 1, attempts)
 
         return last_result, last_error or "node execution failed"
 
@@ -264,9 +248,7 @@ class FlowExecutor:
                 plan = await self._resolve_plan(node, params)
                 return await self._run_single(node, plan, session)
 
-        outcomes = await asyncio.gather(
-            *[_bounded(it) for it in items], return_exceptions=True
-        )
+        outcomes = await asyncio.gather(*[_bounded(it) for it in items], return_exceptions=True)
 
         sub_results: List[ScrapingResult] = []
         errors: List[str] = []
@@ -306,9 +288,7 @@ class FlowExecutor:
         blob = json.dumps(global_params, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:8]
 
-    def _checkpoint_path(
-        self, flow: ScrapingFlow, token: str
-    ) -> Optional[Path]:
+    def _checkpoint_path(self, flow: ScrapingFlow, token: str) -> Optional[Path]:
         """Return the checkpoint file path for *flow*/*token* (``None`` if off)."""
         if self._checkpoint_dir is None:
             return None
@@ -331,17 +311,12 @@ class FlowExecutor:
         if path is None:
             return None
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            node_id: result.extracted_data
-            for node_id, result in node_results.items()
-        }
+        payload = {node_id: result.extracted_data for node_id, result in node_results.items()}
         async with aiofiles.open(path, "w") as f:
             await f.write(json.dumps(payload))
         return str(path)
 
-    async def _load_checkpoint(
-        self, flow: ScrapingFlow, token: str
-    ) -> Dict[str, Any]:
+    async def _load_checkpoint(self, flow: ScrapingFlow, token: str) -> Dict[str, Any]:
         """Load a previously persisted checkpoint (empty dict if none)."""
         path = self._checkpoint_path(flow, token)
         if path is None or not path.exists():
@@ -407,9 +382,7 @@ class FlowExecutor:
                 if node.id == resume_from:
                     break
                 if node.id in checkpoint:
-                    node_results[node.id] = self._result_from_checkpoint(
-                        checkpoint[node.id]
-                    )
+                    node_results[node.id] = self._result_from_checkpoint(checkpoint[node.id])
                     nodes_completed += 1
 
         try:
@@ -419,21 +392,15 @@ class FlowExecutor:
                     continue
 
                 # Cascade skips: if any input source was skipped, skip too.
-                dep_sources = {
-                    ref.partition(".")[0] for ref in node.inputs.values()
-                }
+                dep_sources = {ref.partition(".")[0] for ref in node.inputs.values()}
                 if dep_sources & skipped:
-                    self.logger.info(
-                        "Skipping node '%s' (depends on skipped node)", node.id
-                    )
+                    self.logger.info("Skipping node '%s' (depends on skipped node)", node.id)
                     skipped.add(node.id)
                     continue
 
                 # Resolve inputs (data dependencies).
                 try:
-                    resolved, fanout_key, fanout_items = self._resolve_node_inputs(
-                        node, node_results
-                    )
+                    resolved, fanout_key, fanout_items = self._resolve_node_inputs(node, node_results)
                 except ValueError as exc:
                     flow_success = False
                     flow_error = str(exc)
@@ -444,9 +411,7 @@ class FlowExecutor:
 
                 # Execute (fan-out or single).
                 if fanout_key is not None:
-                    result, error = await self._run_fanout(
-                        node, base_params, fanout_key, fanout_items, session
-                    )
+                    result, error = await self._run_fanout(node, base_params, fanout_key, fanout_items, session)
                 else:
                     plan = await self._resolve_plan(node, base_params)
                     result, error = await self._run_single(node, plan, session)
@@ -454,9 +419,7 @@ class FlowExecutor:
                 if error is None:
                     node_results[node.id] = result
                     nodes_completed += 1
-                    checkpoint_path = await self._write_checkpoint(
-                        flow, checkpoint_token, node_results
-                    )
+                    checkpoint_path = await self._write_checkpoint(flow, checkpoint_token, node_results)
                     await session.close_if_last(node.session, node.id)
                     continue
 
@@ -464,7 +427,8 @@ class FlowExecutor:
                 if node.on_error == "skip":
                     self.logger.warning(
                         "Node '%s' failed; skipping (on_error=skip): %s",
-                        node.id, error,
+                        node.id,
+                        error,
                     )
                     skipped.add(node.id)
                     await session.close_if_last(node.session, node.id)

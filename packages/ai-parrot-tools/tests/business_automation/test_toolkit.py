@@ -262,9 +262,7 @@ class TestCredentialResolverFromBroker:
         )
 
         broker = AsyncMock()
-        broker.resolve = AsyncMock(
-            return_value=ResolvedCredential(provider="acme", secret=12345, key_fingerprint="fp")
-        )
+        broker.resolve = AsyncMock(return_value=ResolvedCredential(provider="acme", secret=12345, key_fingerprint="fp"))
         resolver = _credential_resolver_from_broker(broker, "gestoria")
         result = await resolver(SimpleNamespace(credential_provider="acme"))
         assert result is None
