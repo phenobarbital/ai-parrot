@@ -260,8 +260,66 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Re-verified the block-to-replace at the corrected line numbers
+(`:1615-1622`, re-`grep`ped fresh — matched the contract exactly). Added
+`sink_factory: SinkFactory | None = None` to `FormAPIHandler.__init__`
+(stored as `self._sink_factory`, `TYPE_CHECKING`-only import matching the
+file's own quoted-forward-ref convention for every other optional
+service). Replaced the unconditional store call with a branch: when
+`form.persistence is not None`, resolve the sink via the factory,
+`ensure_target(form)`, map via `nest_submission`/`flatten_submission`
+based on the sink's `family`, `write()` — `submission_storage` is never
+touched on this path (verified with a mock, not merely observed).
+`SinkUnavailableError`→503+`Retry-After: 30`, `SinkTargetMismatchError`→
+422, `SinkNotCapableError`→501, each via a local
+`_dispatch_on_error_best_effort` helper (best-effort `onError` dispatch,
+mirroring the existing validation/metadata early-return idiom) that
+never masks the original error even when the `onError` handler itself
+raises. Updated the docstring's flow list (step 5) to describe the
+branch. Lines 1624-1631 (the forwarder) and `services/forwarder.py`
+verified byte-for-byte untouched (`git diff --stat dev...HEAD` empty).
+9 new unit tests in `tests/unit/test_submit_path_branch.py`
+(exclusivity, status mapping incl. the non-masking onError case, and
+payload-family selection), all passing; `pytest -k submit` (47 tests,
+including every pre-existing one) passes; full package suite run
+confirmed exactly the same 40 pre-existing failures before and after
+this task's changes (zero regressions). `ruff`/`mypy` on `handlers.py`
+show only pre-existing violations (verified count-for-count against the
+pre-task baseline) plus one genuinely NEW `mypy` issue I introduced and
+fixed (`self._sink_factory` possibly `None` — added an explicit guard
+that also gracefully 503s a misconfigured handler instead of raising
+`AttributeError`).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **`sink.family` property added to the ABC** (`services/sinks/base.py`,
+   a TASK-2419 file) and overridden on `AsyncDBSink`
+   (`services/sinks/asyncdb_store.py`, TASK-2423). The task's own "Pattern
+   to Follow" sketch referenced `sink.is_document`, but no such attribute
+   exists anywhere in the actual TASK-2419/2422-2425 implementations —
+   only `AsyncDBSink` had a *private* `_is_document()`. Since this task's
+   central, testable acceptance criterion ("Document-family sinks receive
+   a nested payload; tabular ones receive a flat row") requires the
+   handler to know a sink's family *before* calling `write()`, I added a
+   minimal public `family` property (default `"tabular"` on the ABC,
+   overridden to return `"document"`/`"tabular"` per driver on
+   `AsyncDBSink`) rather than inventing an ad hoc handler-side check.
+   Re-ran both files' existing test suites after the change — no
+   regressions.
+2. **`get_submission`/`list_revisions` capability gating NOT implemented.**
+   The task's scope says "Gate `get_submission` and `list_revisions` on
+   the sink's capabilities" and its Test Specification includes
+   `test_read_on_write_only_sink_is_501` calling
+   `handler.get_submission(...)`. Verified via `grep` that **no such
+   methods exist anywhere on `FormAPIHandler` (or any handler) in this
+   codebase** — there is no read/list-revisions HTTP endpoint today, only
+   the storage-level `FormSubmissionStorage.get_submission`/
+   `list_revisions`. Per the Anti-Hallucination protocol ("STOP and
+   report" when a task's assumption doesn't match the codebase), I did
+   NOT invent new API surface (new methods + new routes) with no
+   specified path/request/response shape — that would be scope creep and
+   architecture invention, not "branching the submit path." This is a
+   gap in the spec/task chain that should be resolved by a follow-up task
+   (adding the read/list-revisions endpoints themselves) before this
+   specific capability-gating requirement can be implemented and tested.

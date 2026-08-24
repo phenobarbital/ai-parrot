@@ -264,8 +264,42 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `GoogleSheetSink` with capabilities
+`{WRITE, PROVISION, EXTEND}`. Guarded top-level
+`try/except ImportError: build = None` for
+`googleapiclient.discovery.build`, so the module (and package) import
+never fails without the `[gsheet]` extra; `_ensure_client()` raises an
+actionable `SinkUnavailableError` naming
+`pip install parrot-formdesigner[gsheet]` only when actually used.
+Credentials resolved exclusively via `SinkAliasRegistry.resolve_credentials`
+(never from the target model), built into a `google.oauth2.service_account.
+Credentials` (lazy import) accepting either a JSON blob or a file path.
+Added an internal `_SheetsClient` wrapper (real Sheets v4 calls) so the
+sink's own logic (`ensure_target`/`write`) is client-agnostic and
+directly testable with a fake client double implementing the same 4-method
+surface. Every blocking `googleapiclient`/credential-building call goes
+through `asyncio.to_thread` (verified with a spy). `ensure_target` creates
+the header on a fresh sheet, or appends only the missing columns at the
+trailing position on drift (existing columns never reordered/deleted).
+`write` never retries (including on a simulated `429`, mapped to
+`SinkUnavailableError`). Added the `[gsheet]` optional extra
+(`google-api-python-client>=2.151.0`, matching the version already used
+elsewhere in the workspace) to `pyproject.toml`, verified it parses via
+`tomllib`. 8 unit tests in `tests/unit/test_gsheet_sink.py`, all passing:
+guarded import (module import + actionable-error-on-use), header
+creation, additive column append, rate-limit mapping with exactly one
+attempt (no retry), the capability set, and a to-thread spy proving no
+synchronous Google call runs on the event loop. `ruff` and targeted
+`mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Diverged from the given Test Specification's
+exact fixture wiring (where `gsheet_sink` — pre-loaded with `fake_client`
+— was reused unmodified in the guarded-import-absent test, which would
+never exercise the `build is None` branch since a client was already
+injected). Instead, `TestGuardedImport.test_use_without_extra_is_actionable`
+constructs its own client-less sink so the guard genuinely runs; all other
+fixtures/tests match the given spec's intent and names
+(`gsheet_sink`, `fake_client`, `gsheet_sink_429`, capability/failure/
+provision coverage) faithfully.

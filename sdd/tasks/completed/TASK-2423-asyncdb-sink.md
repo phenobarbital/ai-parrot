@@ -234,8 +234,37 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Verified the installed `asyncdb` API surface directly (per the
+task's explicit warning) before writing any code:
+`asyncdb.AsyncDB(driver=..., dsn=...)` factory `__new__`; real per-driver
+methods `mongo.insert`/`list_collections`/`create_collection`/`fetch_one`;
+`arangodb.insert_document`/`collection_exists`/`create_collection`/`query`;
+`bigquery.write`/`create_table`/`query`. Implemented `AsyncDBSink` with
+driver classification (`DOCUMENT_DRIVERS = {mongo, arango}`,
+`TABULAR_DRIVERS = {bigquery}`), capabilities computed per driver
+(`{WRITE,READ,LIST,PROVISION}` + `EXTEND` only for bigquery),
+`ensure_target`/`write`/`read`/`list_revisions` dispatching to each
+driver's real method names, guarded lazy imports (`asyncdb`,
+`google.cloud.bigquery`) mapping failures to `SinkUnavailableError`.
+`write()` computes its own payload via `nest_submission`/
+`flatten_submission` when called with `payload=None` (per the task's
+"Pattern to Follow"), using a form cached from the most recent
+`ensure_target()` call (or supplied via an optional constructor kwarg for
+convenience/tests). 8 unit tests in `tests/unit/test_asyncdb_sink.py`
+using a fake driver double implementing the verified real method names,
+covering: document nesting, tabular flattening, per-driver capability
+sets, driver-failure mapping, and clean module import. `ruff` and
+targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `AsyncDBTarget.collection` is validated via
+`validate_identifier()` at construction (TASK-2417 — no dots allowed),
+which contradicts the spec's own docstring sketch of
+`"<dataset_id>.<table_id>"` for BigQuery. Resolved by using the tenant as
+the BigQuery dataset id (`dataset_id = tenant`) and `collection` as the
+table id — consistent with how tenant already scopes the Postgres schema
+elsewhere in this package. Documented in the module docstring and
+`_split_bigquery_collection()`. Did not modify `core/persistence.py`
+(TASK-2417) since a single validated identifier field is the more
+conservative, already-locked-in contract.

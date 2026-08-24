@@ -189,8 +189,43 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Created `docs/formdesigner-autonomous-persistence.md` covering:
+the `persistence:` block reference for all four `data` target types plus
+`definition`, with the actual field names re-verified against
+`core/persistence.py` (not the spec's design sketch — e.g. the `asyncdb`
+`collection` field's no-dots constraint documented, matching TASK-2423's
+own resolved deviation); the alias-allowlist operator setup including the
+`app["form_sink_aliases"]` app key and the exact registration kwarg ->
+env-var-purpose table; the full capability matrix with what `501` means;
+the data-loss-window warning as a prominent `!!! warning` admonition
+directly under the H1 (not a footnote); every provisioning/evolution rule
+(auto-create, additive-only, remove-leaves-column, rename-is-add,
+CSV-header-never-rewritten, CSV lock-free-append); destination-coordinate
+immutability; the `.xlsx` non-goal with its reason; the `[gsheet]` extra
+install command; two worked examples (Postgres table, CSV); and the
+reserved-column list. Added the page to `mkdocs.yml`'s nav alongside the
+other FormDesigner pages (indentation verified byte-for-byte against its
+siblings). Verified every code/YAML sample actually runs against the
+implemented API (not copied from the spec sketch): constructed both
+worked-example `FormSchema` objects, the top-of-doc `definition` example,
+and the full `SinkAliasRegistry` + `setup_form_api(..., alias_registry=)`
+snippet from §3, all executed successfully against the real,
+already-implemented code. Grepped the finished doc for all eight required
+terms (`503`, `Retry-After`, `.xlsx`, `additive`, `alias`, `501`,
+`coordinates`, `outbox`) — all present — and confirmed no sample uses
+`schema:` where the implementation expects `schema_name:`. Parsed the
+markdown through the `markdown` library (tables + fenced_code +
+admonition extensions) to confirm it renders without error. Full package
+test suite re-run: still exactly the same 40 pre-existing failures,
+zero regressions (expected — documentation-only change).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `mkdocs` itself is not installed in this
+environment (`pip show mkdocs` — not found), so "confirm the site builds"
+could not be executed literally. Verified nav-entry correctness
+structurally instead (exact indentation match against sibling nav
+entries) and rendered the page's markdown independently via the
+`markdown` library to confirm no syntax errors. A real `mkdocs build`
+should still be run in CI/by a maintainer with the docs toolchain
+installed before merge, to be safe.
