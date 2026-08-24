@@ -32,7 +32,7 @@
       "feature_id": "FEAT-446",
       "feature": "saas-auth-hardening",
       "spec": "sdd/specs/saas-auth-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Disjoint files from TASK-2320 (agent_guard/eval_context + handlers/bots.py, agent.py delegation bodies).",
       "assigned_to": null,
       "started_at": "2026-08-24T00:01:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2321-eval-context-consolidation.md"
+      "completed_at": "2026-08-24T00:14:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2321-eval-context-consolidation.md"
     },
     {
       "id": "TASK-2322",
