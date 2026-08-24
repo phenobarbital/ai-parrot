@@ -133,7 +133,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Logically independent of the other sink backends (TASK-2422/2423/2424/2425): each creates its own module and none registers itself - TASK-2426 owns `services/sinks/__init__.py` exclusively, so these four share no file. Still marked parallel=false because the spec's Worktree Strategy mandates per-spec isolation and the ABC + mapper contract is still settling while these are written.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2423-asyncdb-sink.md"
+      "completed_at": "2026-08-24T16:11:01+00:00",
+      "file": "sdd/tasks/completed/TASK-2423-asyncdb-sink.md"
     },
     {
       "id": "TASK-2424",
