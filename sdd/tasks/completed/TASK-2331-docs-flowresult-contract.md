@@ -201,12 +201,81 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-08-24
 **Notes**:
 
-**`metadata["mode"]` vocabulary as shipped**: (what TASK-2328 actually chose)
+Documentation only — `git diff --name-only` showed exactly one file,
+`docs/architecture/07-agentcrew.md`. No production code or test touched.
 
-**Deviations from spec**: none | describe if any
+Added **§7.4.1 "The `FlowResult` fidelity contract"** (~7.4 KB) directly under
+the existing §7.4 "Result aggregation, synthesis and persistence", so it sits
+with the other result-lifecycle material and before §7.5. Written against the
+*shipped* code, not the spec draft. Contents:
+
+- A 9-row field table (field / meaning / crew / flow / notes) covering every
+  `FlowResult` field, plus a paragraph listing the `NodeExecutionInfo` fields
+  both executors populate, and a pointer to
+  `tests/bots/flows/test_result_fidelity.py` + its `PARITY_EXEMPT_FIELDS` as
+  the enforcement mechanism.
+- **The `summary` exemption**, with the actual reason (`AgentCrew` mixes in
+  `SynthesisMixin`; `AgentsFlow` inherits only `PersistenceMixin`) and *why*
+  that is a sane default rather than a defect, plus BOTH opt-in routes: the
+  standalone `synthesize_results` util and an explicit `SynthesisNode` in the
+  graph.
+- **The `output` shape rule** with a worked example of each case (single leaf
+  -> scalar; fan-out -> `dict[node_id, Any]`; nothing executed -> `None`),
+  each showing the matching `metadata["leaves"]`. It states the leaf
+  definition and notes that explicit mode's leaf detection is skip-aware and
+  falls back to the terminal nodes of the path actually taken. It also records
+  that `content`/`final_result` inherit the rule and that there is deliberately
+  no plural `outputs` field.
+- **`responses` vs `node_results`** as its own subsection, since this is the
+  easiest thing to get wrong: `responses` is executor-dependent
+  (`AgentResponse` for crew, the `AgentNode.execute()` envelope for flow),
+  while `node_results`/`agent_results` is the shape-stable read that always
+  yields `dict[node_id, scalar]` and never an envelope.
+- The AgentsFlow `metadata` keys and the `execution_log` entry shape as code
+  blocks, transcribed from the shipped dict literals.
+- An "Ordering and timing caveats" subsection: deterministic `nodes` ordering
+  (completion order, failures appended sorted, no hash-order dependence), the
+  scheduler-`durations` vs node-envelope `execution_time` distinction, the
+  retry/last-attempt behaviour, and the resumed-run `total_time` caveat.
+- A closing note that `ctx.responses` / `ctx.node_metadata` now carry the same
+  fidelity as the `FlowResult`, which is what makes a checkpointed/resumed
+  context as informative as the result.
+
+Per the scope I documented the **contract, not the mechanism** — neither
+`_unwrap_response` nor `_aggregate_result`'s new parameters are mentioned;
+they are private.
+
+**Verification of every code reference in the new prose** (re-grepped against
+post-implementation source, not transcribed from the task):
+- `class FlowResult` — `core/result.py:353` ✓
+- `NodeExecutionInfo.status` closed literal
+  `["completed","failed","pending","running"]` — `core/result.py:298` ✓ (so
+  the "skipped nodes get no NodeExecutionInfo" claim holds)
+- `class AgentsFlow(PersistenceMixin)` — `flow/flow.py:217` ✓ (no
+  `SynthesisMixin`)
+- `class AgentCrew(PersistenceMixin, SynthesisMixin)` — `crew/crew.py:106` ✓
+- `synthesize_results` — `core/storage/synthesis.py:139` ✓
+- `SynthesisNode` — `flow/flow.py:2271`, exported from `flow/__init__.py` ✓
+  (it is NOT in `flow/nodes.py`, where I first looked)
+- `agent_results` alias — `core/result.py:542` ✓
+- metadata dict literal — `flow/flow.py:1157-1164` ✓
+- execution_log entry literal — `flow/flow.py:1063-1067` ✓
+- crew `metadata['mode']` values `'sequential'`/`'parallel'`/`'flow'`/`'loop'`
+  — `crew/crew.py:1377,1840,2207,…` ✓
+
+**`metadata["mode"]` vocabulary as shipped**: TASK-2328 shipped the **internal
+flow vocabulary** — `"explicit"` (from `add_node()`/`add_edge()`),
+`"definition"` (from a `FlowDefinition`), `"legacy"` (programmatic nodes with
+their own `successors`), resolved by `edges is not None` /
+`self._definition is not None` / else at `flow/flow.py:1150-1155`. This matches
+the spec's stated default for that open question. The docs make the divergence
+from `AgentCrew`'s `metadata["mode"]` explicit — crew records the *execution
+strategy* (`'sequential'`/`'parallel'`/`'flow'`/`'loop'`), flow records *how
+the graph was declared* — and warn the reader not to switch on the key without
+knowing which executor produced the result.
+
+**Deviations from spec**: none.

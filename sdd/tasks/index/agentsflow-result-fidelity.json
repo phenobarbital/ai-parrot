@@ -113,7 +113,7 @@
       "feature_id": "FEAT-447",
       "feature": "agentsflow-result-fidelity",
       "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "The ONLY parallelizable task in FEAT-447: touches docs/architecture/ 07-agentcrew.md exclusively, sharing no file with any other task. Can run in a separate worktree concurrently with TASK-2330 once 2328/2329 land.",
       "assigned_to": null,
       "started_at": "2026-08-23T23:10:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2331-docs-flowresult-contract.md"
+      "completed_at": "2026-08-24T00:38:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2331-docs-flowresult-contract.md"
     }
   ]
 }
