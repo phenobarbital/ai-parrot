@@ -540,13 +540,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: Appended `ingest-jira` right after `ingest` (before `claude-hook`,
+line 3430) — confirmed a single append-only hunk via `git diff -U0`
+(`@@ -3430,0 +3431,191 @@ def ingest`). Reused the existing
+`_env_setting(name)` helper (cli.py:415, already navconfig-then-env) for
+all `JIRA_WIKI_*` config resolution rather than re-implementing the `_cfg`
+idiom — it was already exactly what the task asked for. `JiraInterface()`
+is constructed with zero explicit kwargs since its own constructor already
+resolves all credentials internally (TASK-2400); the CLI only resolves the
+JQL scope and issues-dir precedence.
 
-**Build-path reuse**: `build.callback(...)` | `ctx.invoke(build, ...)` | replicated (and why)
-**`no_export` / `no_graph` decision**: (and rationale)
+**Build-path reuse**: `build.callback(...)` — verified callable and its
+exact parameter names (`path_, name, backend, force, no_git, quiet,
+no_export, no_graph, graph_kinds, vault_mode`) directly against the
+installed module before wiring the call, per the Agent Instructions.
+`ctx.invoke` was not needed.
 
-**Deviations from spec**: none | describe if any
+**`no_export` / `no_graph` decision**: both default **on** (skipped), per
+the task's own instruction — keeps a daily cron cheap; an operator can run
+`wikitoolkit build --path <issues-dir>` by hand for the OKF bundle / graph
+extras. `no_git=True` always, since the issues corpus is never a git repo.
+
+All 19 new tests pass; existing `test_cli.py` suite (9 tests) passes
+unchanged. `ruff check` clean on the new test file (1 auto-fixable import-
+order finding, applied via `--fix`, re-verified green); the 3 pre-existing
+`cli.py` findings (lines 379, 705, 948 — all far from this task's line-3431
+append) are unrelated to this diff, confirmed via `git diff` line ranges.
+
+**Deviations from spec**: none.

@@ -139,7 +139,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M5",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "Calls TASK-2403's sweep. Edits cli.py (123 KB, touched by every wiki feature) — append-only, single worktree.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2404-wikitoolkit-ingest-jira-command.md"
+      "completed_at": "2026-08-24T02:41:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2404-wikitoolkit-ingest-jira-command.md"
     },
     {
       "id": "TASK-2405",
