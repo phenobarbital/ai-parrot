@@ -295,9 +295,9 @@ class TestAwaitKeypressIsNotABrowserAction:
         result = await exec_await_keypress(real_playwright_driver, AwaitKeyPress())
 
         assert result is True
-        assert real_playwright_driver.current_url == url_before, (
-            "the real driver's page must be completely untouched by an action that is architecturally console-only"
-        )
+        assert (
+            real_playwright_driver.current_url == url_before
+        ), "the real driver's page must be completely untouched by an action that is architecturally console-only"
 
 
 class TestNoThirdPartyContact:
