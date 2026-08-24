@@ -32,7 +32,7 @@
       "feature_id": "FEAT-460",
       "feature": "raw-upload-field-types",
       "spec": "sdd/specs/raw-upload-field-types.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Structurally independent of TASK-2442 (different file), but sequential in the same worktree to avoid merge churn on a small change.",
       "assigned_to": null,
       "started_at": "2026-08-24T23:03:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2443-field-constraints-extension.md"
+      "completed_at": "2026-08-24T23:07:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2443-field-constraints-extension.md"
     },
     {
       "id": "TASK-2444",
