@@ -72,7 +72,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Disjoint files from 2412/2414/2415 (could parallelize after 2411), but per-spec sequential isolation was chosen for this feature.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2413-extractor-relation-mappings.md"
+      "completed_at": "2026-08-24T15:23:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2413-extractor-relation-mappings.md"
     },
     {
       "id": "TASK-2414",
