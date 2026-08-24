@@ -27,7 +27,7 @@ table, and a result DataFrame registered back in the catalog.
 6. [Objectives and constraints](#objectives-and-constraints)
 7. [Solving a scenario](#solving-a-scenario)
 8. [Reading the results](#reading-the-results)
-9. [The agent toolkit — 6 tools](#the-agent-toolkit--6-tools)
+9. [The agent toolkit — 6 tools](#the-agent-toolkit-6-tools)
 10. [Wiring it into an agent](#wiring-it-into-an-agent)
 11. [Recipes](#recipes)
 12. [Semantics worth knowing](#semantics-worth-knowing)
@@ -612,7 +612,7 @@ frame. `constrain_min("headcount", 1500)` is a floor on the total, not per row.
 ### "Best" needs a declared direction
 
 `compare_scenarios` ranks only metrics with an objective. See
-[compare_scenarios](#compare_scenarios--put-them-side-by-side).
+[compare_scenarios](#compare_scenarios-put-them-side-by-side).
 
 ### Result datasets
 

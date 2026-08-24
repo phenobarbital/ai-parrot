@@ -13,7 +13,7 @@
 1. [Anatomía de un agente analítico](#1-anatomía-de-un-agente-analítico)
 2. [DatasetManager: el catálogo de datos](#2-datasetmanager-el-catálogo-de-datos)
    - [El principio "in our end": los datos no salen a la nube](#21-el-principio-in-our-end-los-datos-no-salen-a-la-nube)
-   - [Tipos de datasets / fuentes soportadas](#22-tipos-de-datasets--fuentes-soportadas)
+   - [Tipos de datasets / fuentes soportadas](#22-tipos-de-datasets-fuentes-soportadas)
    - [Incorporar nuevos datasets en caliente](#23-incorporar-nuevos-datasets-en-caliente)
    - [Columnas calculadas y datasets compuestos](#24-columnas-calculadas-y-datasets-compuestos)
 3. [Sistema de Skills](#3-sistema-de-skills)

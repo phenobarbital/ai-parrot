@@ -6,7 +6,7 @@ This document describes the most important configuration values for AI-Parrot. A
 
 - [LLM API Keys](#llm-api-keys)
 - [Database Configuration](#database-configuration)
-- [Cache & Redis](#cache--redis)
+- [Cache & Redis](#cache-redis)
 - [Vector Databases](#vector-databases)
 - [Microsoft Integration](#microsoft-integration)
 - [Cloud Services](#cloud-services)

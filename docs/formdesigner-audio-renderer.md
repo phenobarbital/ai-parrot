@@ -40,11 +40,11 @@
    - 3.3 [AudioFieldRenderer (HTML5)](#33-audiofield-renderer-html5)
    - 3.4 [Modelos de datos](#34-modelos-de-datos)
 4. [Configuración del servidor](#4-configuración-del-servidor)
-5. [REST endpoint — obtener el manifiesto](#5-rest-endpoint--obtener-el-manifiesto)
+5. [REST endpoint — obtener el manifiesto](#5-rest-endpoint-obtener-el-manifiesto)
 6. [Protocolo WebSocket](#6-protocolo-websocket)
    - 6.1 [Autenticación](#61-autenticación)
-   - 6.2 [Mensajes cliente → servidor](#62-mensajes-cliente--servidor)
-   - 6.3 [Mensajes servidor → cliente](#63-mensajes-servidor--cliente)
+   - 6.2 [Mensajes cliente → servidor](#62-mensajes-cliente-servidor)
+   - 6.3 [Mensajes servidor → cliente](#63-mensajes-servidor-cliente)
    - 6.4 [Flujo completo de una sesión](#64-flujo-completo-de-una-sesión)
 7. [Guía de integración para el frontend](#7-guía-de-integración-para-el-frontend)
    - 7.1 [Conectarse y autenticarse](#71-conectarse-y-autenticarse)
@@ -279,7 +279,7 @@ class AudioSessionState(BaseModel):
 >   con baja confianza en espera de confirmación).
 >
 > Definiciones completas:
-> [`audio-form-voice-modes.md §4`](audio-form-voice-modes.md#4-rest-endpoint--audio-manifest)
+> [`audio-form-voice-modes.md §4`](audio-form-voice-modes.md#4-rest-endpoint-audio-manifest)
 
 ---
 
@@ -394,7 +394,7 @@ Accept-Language: es   (opcional, determina el locale de las preguntas)
 > `render_mode` (`"voice"` | `"select"` | `"visual"`), `sensitive`
 > (boolean), y `fallback_html` (HTML inline para campos complejos).
 > Ver payload completo:
-> [`audio-form-voice-modes.md §4`](audio-form-voice-modes.md#42-response--full-payload-with-voicemode)
+> [`audio-form-voice-modes.md §4`](audio-form-voice-modes.md#42-response-full-payload-with-voicemode)
 
 ---
 
@@ -458,7 +458,7 @@ Todos los mensajes de texto son JSON con un campo `"type"`.
 >   baja confianza después de recibir `confirm_request`.
 >
 > Ver referencia completa:
-> [`audio-form-voice-modes.md §7.1`](audio-form-voice-modes.md#71-client--server-messages)
+> [`audio-form-voice-modes.md §7.1`](audio-form-voice-modes.md#71-client-server-messages)
 
 #### `start_session`
 
@@ -481,7 +481,7 @@ después de autenticarse.
 > **🆕 FEAT-236** — `start_session` acepta seis campos adicionales
 > opcionales: `tts_backend`, `tts_voice`, `tts_mime_format`,
 > `auto_advance`, `enumerate_options`, `stt_confirm_threshold`.
-> Ver [`audio-form-voice-modes.md §6`](audio-form-voice-modes.md#6-start_session--extended-payload).
+> Ver [`audio-form-voice-modes.md §6`](audio-form-voice-modes.md#6-start_session-extended-payload).
 
 ---
 
@@ -637,7 +637,7 @@ sintetizador disponible.
 > su lógica de renderizado según `render_mode`: `"voice"` → input de
 > texto/micrófono; `"select"` → radio/checkbox; `"visual"` → inyectar
 > `fallback_html`.
-> Ver [`audio-form-voice-modes.md §7.2`](audio-form-voice-modes.md#72-server--client-messages).
+> Ver [`audio-form-voice-modes.md §7.2`](audio-form-voice-modes.md#72-server-client-messages).
 
 **Reproducir el audio TTS** (ejemplo):
 
