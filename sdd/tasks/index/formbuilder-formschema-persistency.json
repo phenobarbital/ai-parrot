@@ -14,7 +14,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task - everything else imports from it. Must land first.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2417-persistence-config-models.md"
+      "completed_at": "2026-08-24T15:46:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2417-persistence-config-models.md"
     },
     {
       "id": "TASK-2418",

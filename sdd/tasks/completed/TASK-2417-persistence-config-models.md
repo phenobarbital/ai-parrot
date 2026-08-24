@@ -231,8 +231,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `core/persistence.py` with `SinkCapability`, the four
+`*Target` models (`PostgresTableTarget`, `AsyncDBTarget`, `CsvFileTarget`,
+`GoogleSheetTarget`), `SubmissionTarget` discriminated union,
+`FileDefinitionTarget` / `DefinitionTarget`, and `FormPersistenceConfig`.
+All identifier fields validated via `validate_identifier()`; `path` fields
+reject absolute paths and `..` traversal segments. 11 unit tests in
+`tests/unit/test_persistence_models.py`, all passing. `ruff check` clean;
+`mypy --follow-imports=skip` clean (full-graph mypy run timed out in this
+environment — pre-existing infra limitation, not module-specific).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
