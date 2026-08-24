@@ -25,6 +25,7 @@ to from a test — a test that invokes pytest would recurse):
            packages/ai-parrot/tests/test_crew_parallel_regression.py \\
            packages/ai-parrot/tests/test_crew_final_regression.py -v
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -39,16 +40,18 @@ from parrot.bots.flows.flow import AgentsFlow
 # The exemption list — widening this must be a deliberate, reviewed edit.
 # ---------------------------------------------------------------------------
 
-PARITY_EXEMPT_FIELDS = frozenset({
-    # `summary` is the ONE legitimate divergence. AgentCrew mixes in
-    # SynthesisMixin and can synthesise a summary; AgentsFlow deliberately
-    # inherits only PersistenceMixin (flow/flow.py class declaration and its
-    # module docstring say so explicitly), leaving synthesis opt-in through
-    # the standalone `synthesize_results` util. An empty `summary` on a flow
-    # run is therefore a DESIGN DECISION (FEAT-447 Non-Goals / AC12), not a
-    # fidelity loss. Do not "fix" it by adding SynthesisMixin to AgentsFlow.
-    "summary",
-})
+PARITY_EXEMPT_FIELDS = frozenset(
+    {
+        # `summary` is the ONE legitimate divergence. AgentCrew mixes in
+        # SynthesisMixin and can synthesise a summary; AgentsFlow deliberately
+        # inherits only PersistenceMixin (flow/flow.py class declaration and its
+        # module docstring say so explicitly), leaving synthesis opt-in through
+        # the standalone `synthesize_results` util. An empty `summary` on a flow
+        # run is therefore a DESIGN DECISION (FEAT-447 Non-Goals / AC12), not a
+        # fidelity loss. Do not "fix" it by adding SynthesisMixin to AgentsFlow.
+        "summary",
+    }
+)
 
 #: `NodeExecutionInfo` fields both executors must populate for a successful
 #: LLM-backed node. `error` is excluded (it is `None` on success by design)
@@ -118,9 +121,7 @@ class ParityAgent:
         """AgentLike protocol method — delegates to `ask`."""
         return await self.ask(question=prompt, **kwargs)
 
-    async def ask(
-        self, prompt: str = "", *, question: str = "", **kwargs: Any
-    ) -> Any:
+    async def ask(self, prompt: str = "", *, question: str = "", **kwargs: Any) -> Any:
         import asyncio
 
         from parrot.models.basic import CompletionUsage, ToolCall
@@ -136,16 +137,15 @@ class ParityAgent:
             output=self.reply,
             model="gpt-4o",
             provider="openai",
-            usage=CompletionUsage(
-                prompt_tokens=13, completion_tokens=5, total_tokens=18
-            ),
-            tool_calls=[
-                ToolCall(id="tc-1", name="search", arguments={"q": effective})
-            ],
+            usage=CompletionUsage(prompt_tokens=13, completion_tokens=5, total_tokens=18),
+            tool_calls=[ToolCall(id="tc-1", name="search", arguments={"q": effective})],
         )
         return AgentResponse(
-            agent_id=self._name, agent_name=self._name, question=effective,
-            response=message, output=self.reply,
+            agent_id=self._name,
+            agent_name=self._name,
+            question=effective,
+            response=message,
+            output=self.reply,
         )
 
 
@@ -181,9 +181,7 @@ def _populated_fields(result: FlowResult) -> set[str]:
     return populated
 
 
-def _describe_divergence(
-    crew_fields: set[str], flow_fields: set[str]
-) -> str:
+def _describe_divergence(crew_fields: set[str], flow_fields: set[str]) -> str:
     """Render a directional, self-explaining parity failure message."""
     crew_only = sorted((crew_fields - flow_fields) - PARITY_EXEMPT_FIELDS)
     flow_only = sorted((flow_fields - crew_fields) - PARITY_EXEMPT_FIELDS)
@@ -202,9 +200,7 @@ def _describe_divergence(
             f"  ONLY the flow populates {flow_only} — the crew regressed, or a "
             "new field needs a documented exemption."
         )
-    lines.append(
-        f"  exempt (not compared): {sorted(PARITY_EXEMPT_FIELDS)}"
-    )
+    lines.append(f"  exempt (not compared): {sorted(PARITY_EXEMPT_FIELDS)}")
     return "\n".join(lines)
 
 
@@ -237,13 +233,17 @@ async def _run_flow() -> FlowResult:
     flow.add_node(
         AgentNode(
             agent=ParityAgent("a1", reply="out_a", delay=0.015),
-            node_id="a1", dependencies=set(), successors={"a2"},
+            node_id="a1",
+            dependencies=set(),
+            successors={"a2"},
         )
     )
     flow.add_node(
         AgentNode(
             agent=ParityAgent("a2", reply="out_b", delay=0.015),
-            node_id="a2", dependencies={"a1"}, successors=set(),
+            node_id="a2",
+            dependencies={"a1"},
+            successors=set(),
         )
     )
     return await flow.run_flow()
@@ -265,14 +265,13 @@ class TestCrewFlowParity:
         crew_fields = _populated_fields(crew_result)
         flow_fields = _populated_fields(flow_result)
 
-        assert (crew_fields - PARITY_EXEMPT_FIELDS) == (
-            flow_fields - PARITY_EXEMPT_FIELDS
-        ), _describe_divergence(crew_fields, flow_fields)
+        assert (crew_fields - PARITY_EXEMPT_FIELDS) == (flow_fields - PARITY_EXEMPT_FIELDS), _describe_divergence(
+            crew_fields, flow_fields
+        )
 
         # Guard against the assertion above passing vacuously: the fields
         # FEAT-447 exists to populate must actually be in the compared set.
-        for field in ("output", "responses", "nodes", "execution_log",
-                      "total_time", "metadata"):
+        for field in ("output", "responses", "nodes", "execution_log", "total_time", "metadata"):
             assert field in flow_fields, (
                 f"AgentsFlow left {field!r} at its default — FEAT-447 "
                 "regression in _aggregate_result / run_flow wiring."
@@ -316,8 +315,7 @@ class TestCrewFlowParity:
             assert values, f"{label} produced no node_results"
             for value in values:
                 assert not (isinstance(value, dict) and "response" in value), (
-                    f"{label} leaked an AgentNode envelope through "
-                    f"node_results: {value!r}"
+                    f"{label} leaked an AgentNode envelope through " f"node_results: {value!r}"
                 )
             # The alias must agree with the primary property.
             assert result.agent_results == result.node_results

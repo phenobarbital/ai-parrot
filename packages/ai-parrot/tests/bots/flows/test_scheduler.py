@@ -12,6 +12,7 @@ Tests verify:
 - FlowResult has status "failed" when all nodes fail.
 - FlowResult has status "partial" when some succeed, some fail.
 """
+
 import asyncio
 import inspect
 
@@ -22,7 +23,6 @@ from parrot.bots.flows.flow import AgentsFlow, NODE_REGISTRY, register_node
 from parrot.bots.flows.core.node import AgentNode, Node
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.result import FlowResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -111,9 +111,7 @@ class TestSchedulerSourceConstraints:
         import parrot.bots.flows.flow as flow_module
 
         src = inspect.getsource(flow_module)
-        assert "asyncio.gather" not in src, (
-            "asyncio.gather found in flow.py — forbidden by scheduler design."
-        )
+        assert "asyncio.gather" not in src, "asyncio.gather found in flow.py — forbidden by scheduler design."
 
 
 # ---------------------------------------------------------------------------
@@ -278,9 +276,7 @@ class TestAggregateResultFidelity:
             run_started_at=run_started_at,
         )
         assert result.total_time > 0
-        assert result.total_time == pytest.approx(
-            loop.time() - run_started_at, abs=0.5
-        )
+        assert result.total_time == pytest.approx(loop.time() - run_started_at, abs=0.5)
         # The alias and __repr__ follow it (spec AC4).
         assert result.total_execution_time == result.total_time
         assert "time=0.00s" not in repr(result)
@@ -299,7 +295,11 @@ class TestAggregateResultFidelity:
         assert len(result.execution_log) == 2
         for entry in result.execution_log:
             assert set(entry) == {
-                "node_id", "node_name", "status", "execution_time", "error",
+                "node_id",
+                "node_name",
+                "status",
+                "execution_time",
+                "error",
             }
         by_id = {e["node_id"]: e for e in result.execution_log}
         assert by_id["a"]["status"] == "completed"
@@ -308,9 +308,7 @@ class TestAggregateResultFidelity:
         assert by_id["b"]["status"] == "failed"
         assert "b exploded" in by_id["b"]["error"]
         # Same order as result.nodes.
-        assert [e["node_id"] for e in result.execution_log] == [
-            n.node_id for n in result.nodes
-        ]
+        assert [e["node_id"] for e in result.execution_log] == [n.node_id for n in result.nodes]
 
     async def test_aggregate_result_metadata_keys(self) -> None:
         """All six metadata keys present and correctly valued."""
@@ -326,16 +324,20 @@ class TestAggregateResultFidelity:
         )
         meta = result.metadata
         assert set(meta) == {
-            "mode", "node_count", "completed_count", "failed_count",
-            "skipped", "leaves",
+            "mode",
+            "node_count",
+            "completed_count",
+            "failed_count",
+            "skipped",
+            "leaves",
         }
         # Programmatic flow, no definition and no explicit edges → "legacy".
         assert meta["mode"] == "legacy"
         assert meta["node_count"] == 3
         assert meta["completed_count"] == 2
         assert meta["failed_count"] == 1
-        assert meta["skipped"] == ["y", "z"]     # sorted for determinism
-        assert meta["leaves"] == ["b"]           # only executed leaf
+        assert meta["skipped"] == ["y", "z"]  # sorted for determinism
+        assert meta["leaves"] == ["b"]  # only executed leaf
         # AC12: summary stays empty for AgentsFlow.
         assert result.summary == ""
 
@@ -365,14 +367,22 @@ class TestAggregateResultFidelity:
 
         # Without ctx: sorted, not hash-ordered.
         no_ctx = flow._aggregate_result(
-            flow._nodes, results, {}, {"a", "b", "c"}, set(),
+            flow._nodes,
+            results,
+            {},
+            {"a", "b", "c"},
+            set(),
         )
         assert [n.node_id for n in no_ctx.nodes] == ["a", "b", "c"]
 
         # Repeated aggregation is stable (the union is rebuilt each time).
         for _ in range(5):
             again = flow._aggregate_result(
-                flow._nodes, results, {}, {"c", "b", "a"}, set(),
+                flow._nodes,
+                results,
+                {},
+                {"c", "b", "a"},
+                set(),
             )
             assert [n.node_id for n in again.nodes] == ["a", "b", "c"]
 
@@ -412,7 +422,7 @@ class TestAggregateResultFidelity:
         )
         assert isinstance(result, FlowResult)
         assert result.output == "out_b"
-        assert result.total_time == 0.0          # no run_started_at supplied
+        assert result.total_time == 0.0  # no run_started_at supplied
         assert result.metadata["skipped"] == []
         assert len(result.nodes) == 2
         assert len(result.execution_log) == 2
@@ -437,9 +447,7 @@ class TestOutputShapeContract:
         assert set(result.output) == {"b", "c"}
         assert result.output == {"b": "branch_b", "c": "branch_c"}
         # Every value is a scalar, never a nested envelope.
-        assert not any(
-            isinstance(v, dict) and "response" in v for v in result.output.values()
-        )
+        assert not any(isinstance(v, dict) and "response" in v for v in result.output.values())
         assert sorted(result.metadata["leaves"]) == ["b", "c"]
 
     async def test_output_no_executed_leaf_is_empty_dict(self) -> None:

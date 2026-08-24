@@ -1,4 +1,5 @@
 """Unit tests for parrot.bots.flows.core.result (TASK-915)."""
+
 import pytest
 from parrot.bots.flows.core.result import (
     FlowResult,
@@ -52,9 +53,7 @@ class TestNodeExecutionInfo:
         assert info.usage == {"tokens": 100}
 
     def test_error_field(self):
-        info = NodeExecutionInfo(
-            node_id="n4", node_name="agent-4", status="failed", error="Timeout"
-        )
+        info = NodeExecutionInfo(node_id="n4", node_name="agent-4", status="failed", error="Timeout")
         assert info.error == "Timeout"
         d = info.to_dict()
         assert d["error"] == "Timeout"
@@ -248,16 +247,15 @@ def agent_response_with_usage():
         output="answer",
         model="gpt-4o",
         provider="openai",
-        usage=CompletionUsage(
-            prompt_tokens=11, completion_tokens=7, total_tokens=18
-        ),
-        tool_calls=[
-            ToolCall(id="tc-1", name="get_weather", arguments={"city": "Madrid"})
-        ],
+        usage=CompletionUsage(prompt_tokens=11, completion_tokens=7, total_tokens=18),
+        tool_calls=[ToolCall(id="tc-1", name="get_weather", arguments={"city": "Madrid"})],
     )
     return AgentResponse(
-        agent_id="a1", agent_name="agent-one", question="q",
-        response=message, output="answer",
+        agent_id="a1",
+        agent_name="agent-one",
+        question="q",
+        response=message,
+        output="answer",
     )
 
 
@@ -382,6 +380,7 @@ class TestBuildNodeMetadataEnvelope:
 
     def test_build_node_metadata_sets_client(self):
         """client is the concrete client class name, not None."""
+
         class OpenAIClient:
             model = "gpt-4o"
 
@@ -403,19 +402,33 @@ class TestBuildNodeMetadataEnvelope:
 
     def test_build_node_metadata_client_none_without_agent(self):
         """No agent (or an unconfigured string llm) leaves client as None."""
-        assert build_node_metadata(
-            node_id="n1", agent=None, response=None, output=None,
-            execution_time=0.0, status="completed",
-        ).client is None
+        assert (
+            build_node_metadata(
+                node_id="n1",
+                agent=None,
+                response=None,
+                output=None,
+                execution_time=0.0,
+                status="completed",
+            ).client
+            is None
+        )
 
         class UnconfiguredAgent:
             name = "agent-one"
             llm = "openai:gpt-4o"
 
-        assert build_node_metadata(
-            node_id="n1", agent=UnconfiguredAgent(), response=None, output=None,
-            execution_time=0.0, status="completed",
-        ).client is None
+        assert (
+            build_node_metadata(
+                node_id="n1",
+                agent=UnconfiguredAgent(),
+                response=None,
+                output=None,
+                execution_time=0.0,
+                status="completed",
+            ).client
+            is None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -449,10 +462,7 @@ class TestNodeResultsEnvelope:
         # The alias inherits the fix.
         assert result.agent_results == {"n1": "answer-1", "n2": {"structured": True}}
         # No value is an envelope dict (spec AC8).
-        assert not any(
-            isinstance(v, dict) and "response" in v
-            for v in result.node_results.values()
-        )
+        assert not any(isinstance(v, dict) and "response" in v for v in result.node_results.values())
         # Read-only projection: `responses` is untouched.
         assert result.responses["n1"]["prompt"] == "q"
 

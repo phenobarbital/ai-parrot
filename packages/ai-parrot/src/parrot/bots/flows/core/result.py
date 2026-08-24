@@ -13,6 +13,7 @@ in ``parrot.models.crew`` (wired up in TASK-920).
 
 ``AgentResult`` stays in ``parrot.models.crew`` for any remaining consumers.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 # ResponseType alias — mirrors the one in parrot.models.crew
 try:
     from parrot.models.responses import AIMessage, AgentResponse  # noqa: F401
+
     ResponseType = Any  # Union[AIMessage, AgentResponse, Any] but avoids heavy import
 except ImportError:
     ResponseType = Any
@@ -204,12 +206,14 @@ class NodeResult:
         if isinstance(self.result, dict):
             try:
                 from datamodel.parsers.json import json_encoder  # type: ignore[import]
+
                 content = (
                     f"\nKeys: {', '.join(str(k) for k in self.result.keys())}\n"
                     f"Content:\n{json_encoder(self.result)}\n            "
                 )
             except ImportError:
                 import json
+
                 content = (
                     f"\nKeys: {', '.join(str(k) for k in self.result.keys())}\n"
                     f"Content:\n{json.dumps(self.result, default=str)}\n            "
@@ -219,9 +223,11 @@ class NodeResult:
         if isinstance(self.result, list):
             try:
                 from datamodel.parsers.json import json_encoder  # type: ignore[import]
+
                 sample = json_encoder(self.result[:10]) if self.result else "[]"
             except ImportError:
                 import json
+
                 sample = json.dumps(self.result[:10], default=str) if self.result else "[]"
             item_types = set(type(item).__name__ for item in self.result[:100])
             content = (
@@ -238,6 +244,7 @@ class NodeResult:
 # ---------------------------------------------------------------------------
 # Helpers (copied/adapted from parrot.models.crew)
 # ---------------------------------------------------------------------------
+
 
 def determine_run_status(
     success_count: int,
@@ -437,11 +444,7 @@ class FlowResult:
         return str(self.output) if self.output is not None else ""
 
     def __repr__(self) -> str:
-        return (
-            f"FlowResult(status={self.status!r}, "
-            f"nodes={len(self.nodes)}, "
-            f"time={self.total_time:.2f}s)"
-        )
+        return f"FlowResult(status={self.status!r}, " f"nodes={len(self.nodes)}, " f"time={self.total_time:.2f}s)"
 
     # ── Primary computed properties ───────────────────────────────────────
 
@@ -569,14 +572,8 @@ class FlowResult:
             "content": self.content,
             "node_results": self.node_results,
             "agent_results": self.agent_results,  # backward compat
-            "nodes": [
-                n.to_dict() if isinstance(n, NodeExecutionInfo) else n
-                for n in self.nodes
-            ],
-            "agents": [  # backward compat
-                n.to_dict() if isinstance(n, NodeExecutionInfo) else n
-                for n in self.nodes
-            ],
+            "nodes": [n.to_dict() if isinstance(n, NodeExecutionInfo) else n for n in self.nodes],
+            "agents": [n.to_dict() if isinstance(n, NodeExecutionInfo) else n for n in self.nodes],  # backward compat
             "errors": self.errors,
             "execution_log": self.execution_log,
             "total_time": self.total_time,
@@ -600,10 +597,7 @@ class FlowResult:
         Returns:
             Dictionary containing all essential fields.
         """
-        serialised_nodes = [
-            n.to_dict() if isinstance(n, NodeExecutionInfo) else n
-            for n in self.nodes
-        ]
+        serialised_nodes = [n.to_dict() if isinstance(n, NodeExecutionInfo) else n for n in self.nodes]
 
         serialised_responses: Dict[str, Any] = {}
         for node_id, resp in self.responses.items():
@@ -761,16 +755,10 @@ def build_node_metadata(
         from parrot.models.responses import AIMessage, AgentResponse
 
         if isinstance(response, AgentResponse):
-            ai_message = (
-                response.response if isinstance(response.response, AIMessage) else None
-            )
+            ai_message = response.response if isinstance(response.response, AIMessage) else None
             model = getattr(response, "model", None) or getattr(ai_message, "model", None)
             provider = getattr(response, "provider", None) or getattr(ai_message, "provider", None)
-            raw_tc = (
-                getattr(response, "tool_calls", None)
-                or getattr(ai_message, "tool_calls", None)
-                or []
-            )
+            raw_tc = getattr(response, "tool_calls", None) or getattr(ai_message, "tool_calls", None) or []
             tool_calls = _serialise_tool_calls(raw_tc)
             if output is None:
                 output = response.output or getattr(ai_message, "output", None)

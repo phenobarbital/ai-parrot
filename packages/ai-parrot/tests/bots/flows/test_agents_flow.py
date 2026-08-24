@@ -11,6 +11,7 @@ Covers the 7 scenarios from Spec §4:
 
 All tests use stub agents and an in-memory StubRegistry — no real LLM calls.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,7 +38,6 @@ from parrot.bots.flows.flow.nodes import (
     DecisionResult,
     DecisionType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -293,7 +293,11 @@ class TestBranchingFanIn:
                 return "merged"
 
             async def ask(self, question: str = "", **kw: Any) -> Any:
-                received_deps.update(dict(question.split("=") for segment in question.split(",") if "=" in segment) if "," in question else {})
+                received_deps.update(
+                    dict(question.split("=") for segment in question.split(",") if "=" in segment)
+                    if "," in question
+                    else {}
+                )
                 return type("R", (), {"content": "merged"})()
 
         stub_registry.register(RecordingAgent("a"))
@@ -582,16 +586,14 @@ class UsageAgent:
             output=self.reply,
             model="gpt-4o",
             provider="openai",
-            usage=CompletionUsage(
-                prompt_tokens=13, completion_tokens=5, total_tokens=18
-            ),
-            tool_calls=[
-                ToolCall(id="tc-1", name="search", arguments={"q": question})
-            ],
+            usage=CompletionUsage(prompt_tokens=13, completion_tokens=5, total_tokens=18),
+            tool_calls=[ToolCall(id="tc-1", name="search", arguments={"q": question})],
         )
         return AgentResponse(
-            agent_name=self._name, question=question,
-            response=message, output=self.reply,
+            agent_name=self._name,
+            question=question,
+            response=message,
+            output=self.reply,
         )
 
 
@@ -604,11 +606,15 @@ def _make_usage_flow(delay: float = 0.0) -> AgentsFlow:
     """
     node_a = AgentNode(
         agent=UsageAgent("agent_a", reply="out_a", delay=delay),
-        node_id="a", dependencies=set(), successors={"b"},
+        node_id="a",
+        dependencies=set(),
+        successors={"b"},
     )
     node_b = AgentNode(
         agent=UsageAgent("agent_b", reply="out_b", delay=delay),
-        node_id="b", dependencies={"a"}, successors=set(),
+        node_id="b",
+        dependencies={"a"},
+        successors=set(),
     )
     flow = AgentsFlow("usage-fidelity-test")
     flow.add_node(node_a)
@@ -677,11 +683,15 @@ class TestFlowResultFidelityEndToEnd:
         """A failed node also lands in ctx.node_metadata, marked failed."""
         node_a = AgentNode(
             agent=MockAgent("agent_a", reply="out_a"),
-            node_id="a", dependencies=set(), successors={"b"},
+            node_id="a",
+            dependencies=set(),
+            successors={"b"},
         )
         node_b = AgentNode(
             agent=MockAgent("agent_b", fail=True),
-            node_id="b", dependencies={"a"}, successors=set(),
+            node_id="b",
+            dependencies={"a"},
+            successors=set(),
         )
         flow = AgentsFlow("failed-metadata-test")
         flow.add_node(node_a)
