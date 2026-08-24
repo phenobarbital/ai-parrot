@@ -90,7 +90,7 @@
       "feature_id": "FEAT-447",
       "feature": "agentsflow-result-fidelity",
       "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Asserts the end state of all four implementation tasks, so it can only run once they are all complete. New file, no edit conflicts, but the dependency is total.",
       "assigned_to": null,
       "started_at": "2026-08-23T23:10:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2330-crew-flow-parity-test.md"
+      "completed_at": "2026-08-24T00:36:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2330-crew-flow-parity-test.md"
     },
     {
       "id": "TASK-2331",

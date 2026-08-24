@@ -252,12 +252,82 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-08-24
 **Notes**:
 
-**Parity findings**: (any field that diverged and which upstream task owns the fix)
+Created `packages/ai-parrot/tests/bots/flows/test_result_fidelity.py` — tests
+only, zero production-code changes. 5 tests, all passing.
 
-**Deviations from spec**: none | describe if any
+- `PARITY_EXEMPT_FIELDS = frozenset({"summary"})` with the full rationale in a
+  comment (AgentsFlow inherits only `PersistenceMixin` by design; synthesis is
+  opt-in via `synthesize_results`), and `test_parity_exemptions_are_explicit`
+  pins it to exactly `{"summary"}` *and* asserts every exempt name is a real
+  `FlowResult` field, so a typo can never silently exempt nothing.
+- `_populated_fields()` compares each dataclass field against its declared
+  default (handling `default`, `default_factory`, and `output`'s no-default
+  case) and the two executors' populated-field sets must match modulo the
+  exemption. Values are NOT compared, per scope — except where they legitimately
+  must agree because they come from the shared agent stub rather than the
+  orchestration (`model`, `provider`, `usage["total_tokens"]`, `tool_calls[0]`,
+  `client`, `status`).
+- `_describe_divergence()` gives the failure message teeth: it prints both
+  populated sets, then names the diverging fields *with direction* — "ONLY the
+  crew populates [...] — AgentsFlow regressed (see TASK-2328/2329)" vs. "ONLY
+  the flow populates [...] — the crew regressed, or a new field needs a
+  documented exemption" — plus the exemption list.
+- A single `ParityAgent` stub is driven through BOTH executors unmodified. It
+  returns a real `AgentResponse`/`AIMessage`/`CompletionUsage`/`ToolCall` (a
+  `MagicMock` would make the `usage.model_dump()` assertions vacuous), exposes
+  `llm` so `client` is exercised, and satisfies both call conventions:
+  `AgentCrew._execute_agent` passes `question=/session_id=/user_id=/model=/
+  max_tokens=/use_conversation_history=`, `AgentNode.execute` passes
+  `question=/_trusted_source=`. It also needs `invoke()` (the `AgentLike`
+  protocol is `runtime_checkable` and `AgentNode` validates against it) and the
+  four `EVENT_*` class constants that `AgentCrew` registers listeners against —
+  the same surface `tests/_crew_test_helpers.DummyAgent` exposes.
+- Two tests beyond the 3 specified: `test_node_results_parity` (neither
+  executor may leak an envelope through `node_results`, and `agent_results`
+  must agree) and `test_flow_summary_stays_empty` (proves the exemption is real
+  and asserts `SynthesisMixin` is absent from `AgentsFlow.__mro__`, so the
+  Non-Goal cannot be violated silently).
+- The AC-level "existing suites unchanged" check is documented as a runnable
+  command in the module docstring rather than implemented as a test that shells
+  out to pytest, exactly as the scope directed.
+
+**Falsification (this matters — the test was vacuous on first write)**: I
+verified the guard actually bites by temporarily restoring the pre-FEAT-447
+`core/result.py` and `flow/flow.py` in the worktree (`git checkout 20d58fc71 --
+<the two files>`) and re-running the suite: **3 failed / 2 passed**, with
+`crew-only: ['execution_log', 'metadata', 'total_time']` and every flow node
+reporting `usage=None`. Restoring the fixed sources returns it to 5 passed. So
+the parity assertions genuinely detect the regression this feature fixes rather
+than passing by construction.
+
+An important environment finding surfaced during that check:
+`packages/ai-parrot/conftest.py` already prepends the *worktree's*
+`packages/ai-parrot/src` to `sys.path` at collection time, so pytest run from
+this worktree always exercises worktree code — no `PYTHONPATH` needed. Setting
+`PYTHONPATH` **as well** duplicates the path entry and is what produced the 9
+spurious `ContextSnapshot` model-identity failures I noted in TASK-2326's
+completion note when the checkpoint suite ran in the same process as the flow
+suites. (The 9 combined-run failures also reproduce on clean `dev`, so they are
+pre-existing regardless; but the correct local invocation is without
+`PYTHONPATH`.)
+
+**Parity findings**: **none — no field diverged.** With TASK-2326/2327/2328/
+2329 landed, `AgentsFlow` and `AgentCrew` populate identical `FlowResult` field
+sets (`output`, `responses`, `nodes`, `execution_log`, `total_time`,
+`metadata`) and identical `NodeExecutionInfo` field coverage (`model`,
+`provider`, `usage`, `tool_calls`, `client`, `execution_time`, `status`).
+No upstream task needs a fix.
+
+Verification:
+- `test_result_fidelity.py`: 5 passed.
+- `tests/bots/flows/` + `tests/test_flow_primitives/`: 727 passed.
+- Crew regression suites (AC13): 32 passed, unchanged.
+- `ruff check` on the new file: **clean** (0 findings — this is a new file, so
+  unlike the pre-existing modules there was no inherited baseline to respect;
+  the initial unused-`pytest` import and import-block ordering were fixed).
+
+**Deviations from spec**: none.
