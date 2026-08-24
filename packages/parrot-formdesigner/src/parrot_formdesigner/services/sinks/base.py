@@ -64,6 +64,32 @@ class AbstractSubmissionSink(ABC):
     Sheets) is fully instantiable without overriding them.
     """
 
+    def __init__(
+        self,
+        target: Any = None,
+        *,
+        alias_registry: Any = None,
+        tenant: str = "",
+        **kwargs: Any,
+    ) -> None:
+        """Common constructor shape shared by every concrete sink.
+
+        Every concrete backend accepts ``(target, *, alias_registry,
+        tenant, **kwargs)``, where ``target`` is the sink-specific
+        ``SubmissionTarget`` member and ``kwargs`` holds backend-specific
+        extras (e.g. ``pool=``, ``driver=``, ``client=``). Declared here
+        (with every parameter defaulted, so a zero-arg test double that
+        never overrides ``__init__`` keeps working) purely so
+        ``SinkFactory.get()``'s ``sink_cls(target, alias_registry=...,
+        tenant=...)`` call — where ``sink_cls`` is a ``type[
+        AbstractSubmissionSink]`` — type-checks against this ABC. Every
+        real backend overrides ``__init__`` completely and never calls
+        ``super().__init__()``, so this body never actually runs for
+        them. The ABC itself still cannot be instantiated directly
+        (blocked by its abstract methods, independent of this
+        ``__init__``).
+        """
+
     @property
     @abstractmethod
     def capabilities(self) -> frozenset[SinkCapability]:
