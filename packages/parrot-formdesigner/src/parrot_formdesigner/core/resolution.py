@@ -61,6 +61,8 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
         by_fid[f.field_id] = f
     known_uids = {str(f.field_uid) for f in by_fid.values()}
 
+    _check_embed_inverse_fields(form)
+
     def _uid_for(ref: str, owner: str, kind: str) -> str:
         if not ref:
             raise ValueError(f"Field {owner!r}: {kind} has an empty field reference")
@@ -149,6 +151,40 @@ def resolve_rule_references(form: FormSchema) -> FormSchema:
             op.target = _uid_for(op.target, section.section_id, "operation target")
 
     return form
+
+
+def _check_embed_inverse_fields(form: FormSchema) -> None:
+    """Verify embed-mode relations' ``inverse_field`` exists (FEAT-456).
+
+    Per-field Pydantic validators cannot see the whole form, so this check
+    — that an embed-mode field's ``relation.inverse_field`` actually names
+    a field inside its own ``item_template`` tree — happens here, at the
+    same resolution boundary ``resolve_rule_references`` uses for rule
+    references (spec §7 "inverse_field check placement").
+
+    Args:
+        form: The ``FormSchema`` to check.
+
+    Raises:
+        ValueError: If an embed-mode field's ``inverse_field`` does not
+            name any field in its ``item_template`` tree. Names the owning
+            ``field_id`` and the missing ``inverse_field``.
+    """
+    for f in form.iter_fields_recursive():
+        relation = f.relation
+        if relation is None or relation.mode != "embed":
+            continue
+        template_field_ids = (
+            {t.field_id for t in walk_fields([f.item_template])}
+            if f.item_template is not None
+            else set()
+        )
+        if relation.inverse_field not in template_field_ids:
+            raise ValueError(
+                f"Field {f.field_id!r}: relation.inverse_field "
+                f"{relation.inverse_field!r} does not name any field in "
+                "this field's item_template"
+            )
 
 
 def find_field_by_uid(
