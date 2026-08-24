@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **`wikitoolkit ingest-jira --backfill`, `--concurrency`, `--progress-every`.**
+  Each ticket costs two round trips (its share of a search page plus its own
+  remote-links call), and the sweep used to make them strictly one at a
+  time: 0.37s/ticket, i.e. ~57 minutes for a ~9300-ticket project. The
+  per-issue work now runs `--concurrency` wide (default 8, from
+  `JIRA_WIKI_CONCURRENCY`), bounded by a semaphore, with the `requests`
+  connection pool resized to match — measured 39s → 9s on a 109-ticket
+  scope, byte-identical output. `--concurrency 1` reproduces the sequential
+  sweep exactly.
+
+  `--backfill` is the one-shot-load preset: `--force` + concurrency 16 +
+  progress every 100 issues + **scope-completeness enforcement** — a fetch
+  that came up materially short of Jira's own approximate count for the
+  scope fails the run instead of recording a watermark over an incomplete
+  corpus. Outside `--backfill` the same shortfall is reported as a warning
+  (`SweepReport.warnings`, `SweepReport.approx_scope_count`), never a gate:
+  the count is approximate by definition.
+
 ### Fixed
 
 - **`wikitoolkit ingest-jira` fetched only the first page (FEAT-454

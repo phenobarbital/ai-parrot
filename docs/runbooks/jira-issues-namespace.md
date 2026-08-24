@@ -108,6 +108,40 @@ separate `build` step is needed. A `"partial"` run (see below) exits
 non-zero, so cron's own mail-on-failure already surfaces it — no extra
 alerting wiring required.
 
+## The first load: `--backfill`
+
+The initial load of a scope is a different job from the daily sweep — it
+fetches everything instead of a day's changes, and it is the one run where
+"did the whole scope actually land?" matters. That is `--backfill`:
+
+```bash
+wikitoolkit ingest-jira --jql 'project in (NAV)' --backfill
+```
+
+It is a **preset**, not a separate code path:
+
+| It sets | Why |
+|---|---|
+| `--force` | ignore any stored watermark; fetch the whole scope |
+| `--concurrency 16` | each ticket costs two round trips, and the second one dominates the wall clock |
+| progress every 100 issues | a multi-thousand-ticket load should not look hung |
+| scope-completeness enforcement | a fetch that came up materially short of Jira's own count for the scope **fails the run**, so no watermark is ever recorded over a corpus that was never fully fetched |
+
+Any explicit `--concurrency` / `--progress-every` still wins over the
+preset, so `--backfill --concurrency 4` is a gentle backfill.
+
+Measured on this repo's own corpus (109 tickets, Jira Cloud): 39s at
+`--concurrency 1`, 9s at the `--backfill` default — and the two corpora
+came out byte-identical apart from the `sync.fetched_at` stamp. Render
+order cannot affect the result: each document is rendered from its own
+ticket, and the aggregates are a max plus sets keyed by entity.
+
+Concurrency is bounded by a semaphore, and the sweep resizes the
+underlying `requests` connection pool to match (its default is 10, so an
+unresized pool would discard and re-handshake connections above that).
+`--concurrency 1` reproduces the strictly sequential sweep exactly, and
+never touches the pool.
+
 ## Querying it
 
 ```bash
@@ -154,7 +188,9 @@ watermark:
 
 - **`--force`** — re-fetches every issue in the JQL scope this run,
   regardless of the watermark. A byte-identical render still counts as
-  `unchanged` and is not rewritten (mtime untouched).
+  `unchanged` and is not rewritten (mtime untouched). For the *first* load
+  of a scope prefer `--backfill`, which is `--force` plus the guarantees a
+  one-shot load wants (see above).
 - **An `EXTRACTOR_VERSION` bump** (code change, `parrot.knowledge.wiki
   .jira_render.EXTRACTOR_VERSION`) — the sweep detects a scope's stored
   `extractor_version` is older than the running code's and automatically
@@ -178,6 +214,8 @@ wikitoolkit ingest-jira --force
 | `orphaned` | Documents on disk whose key fell out of scope (full sweeps only — **never** deleted) |
 | `entity_notes` | Person/project/component/label notes emitted this run |
 | `unresolved_link_keys` | Relation targets that fell outside the JQL scope, so `scan_vault` dropped their edge (the key still survives in frontmatter) |
+| `approx_scope_count` | Jira's own approximate count for the effective scope, when available (Cloud-only) — the yardstick for the shortfall check |
+| `warnings` | Non-fatal findings, e.g. a scope-completeness shortfall (an *error* instead, under `--backfill`) |
 | `watermark_advanced` | `true` only after a fully successful pass |
 | `errors` | Non-empty means the run is `"partial"` — the watermark was **not** advanced |
 
@@ -256,6 +294,7 @@ ticket prose and customer names must never enter git history.
 | `JIRA_WIKI_ISSUES_DIR` | `${PARROT_HOME}/wikis/issues` | Off-repo corpus root (G8) |
 | `JIRA_WIKI_JQL` | `project = ${JIRA_DEFAULT_PROJECT}` | Default sweep scope |
 | `JIRA_WIKI_NAMESPACE` | `issues` | Namespace name this runbook registers |
+| `JIRA_WIKI_CONCURRENCY` | `8` (`16` under `--backfill`) | Issues fetched concurrently; also sizes the HTTP connection pool |
 | `JIRA_WIKI_AC_FIELD` | (unset) | Acceptance-criteria custom field id; falls back to a by-name match, else the section is omitted |
 | `JIRA_INSTANCE`, `JIRA_AUTH_TYPE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_SECRET_TOKEN`, `JIRA_OAUTH_*`, `JIRA_REQUEST_TIMEOUT` | (existing) | Reused verbatim from `JiraToolkit` |
 
@@ -278,6 +317,18 @@ wikitoolkit ingest-jira --help
                         implemented in v1.
 --force                 Re-render every issue in scope, ignoring the stored
                         watermark.
+--backfill              One-shot full load of the scope. A preset: implies
+                        --force, raises the default concurrency, prints
+                        progress, and FAILS the run (leaving the watermark
+                        untouched) if the fetch came up short of Jira's own
+                        count for the scope.
+--concurrency INTEGER RANGE
+                        Issues fetched concurrently (default:
+                        JIRA_WIKI_CONCURRENCY, else 8; 16 under --backfill).
+                        1 sweeps strictly sequentially.  [1<=x<=64]
+--progress-every INTEGER RANGE
+                        Print a progress line every N issues (0 disables;
+                        default 100 under --backfill).  [0<=x<=100000]
 --dry-run               Report what would change; write nothing at all.
 --json                  Emit the SweepReport as JSON.
 -q, --quiet             Only print the final summary line.
