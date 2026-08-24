@@ -21,6 +21,7 @@ from ..core.constraints import (
     PostDependency,
 )
 from ..core.options import FieldOption
+from ..core.relations import EntityRef, RelationSpec
 from ..core.resolution import resolve_rule_references
 from ..core.schema import FormField, FormSchema, FormSection, SubmitAction
 from ..core.types import FieldType, LocalizedString
@@ -322,6 +323,9 @@ class YamlExtractor:
         # Parse options/choices
         options = self._parse_options(field_config)
 
+        # Parse relation (FEAT-456)
+        relation = self._parse_relation(field_config, field_id)
+
         # Parse depends_on
         depends_on = None
         if "depends_on" in field_config and field_config["depends_on"]:
@@ -367,12 +371,63 @@ class YamlExtractor:
             read_only=read_only,
             constraints=constraints if constraints and self._has_constraints(constraints) else None,
             options=options or None,
+            relation=relation,
             depends_on=depends_on,
             post_depends=post_depends,
             children=children or None,
             item_template=item_template,
             meta=meta,
         )
+
+    def _parse_relation(
+        self, field_config: dict[str, Any], field_id: str
+    ) -> RelationSpec | None:
+        """Parse an optional ``relation:`` block into a ``RelationSpec``
+        (FEAT-456).
+
+        Keys mirror ``RelationSpec`` exactly: ``cardinality``, ``mode``,
+        ``target: {namespace, entity, key_field}``, ``display_field``,
+        ``inverse_field``, ``on_delete``, ``filters``. A malformed block
+        raises rather than silently degrading to a plain (non-relational)
+        field — a mistyped relation must be caught, not swallowed.
+
+        Args:
+            field_config: Field configuration dict.
+            field_id: The owning field's id, used in error messages.
+
+        Returns:
+            A ``RelationSpec`` instance, or ``None`` if no ``relation:``
+            block is present.
+
+        Raises:
+            TypeError: If the ``relation:`` or ``relation.target`` block is
+                not a mapping.
+            ValueError: If the block is present but does not parse into a
+                valid ``RelationSpec``. The error names ``field_id``.
+        """
+        raw = field_config.get("relation")
+        if not raw:
+            return None
+        if not isinstance(raw, dict):
+            raise TypeError(
+                f"Field {field_id!r}: 'relation' block must be a mapping"
+            )
+
+        raw = dict(raw)
+        target_raw = raw.pop("target", None)
+        if not isinstance(target_raw, dict):
+            raise TypeError(
+                f"Field {field_id!r}: relation.target must be a mapping "
+                "with 'namespace' and 'entity'"
+            )
+
+        try:
+            target = EntityRef(**target_raw)
+            return RelationSpec(target=target, **raw)
+        except Exception as exc:
+            raise ValueError(
+                f"Field {field_id!r}: invalid relation block: {exc}"
+            ) from exc
 
     def _parse_constraints(self, field_config: dict[str, Any]) -> FieldConstraints | None:
         """Parse constraints from both new and legacy formats.
