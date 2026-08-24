@@ -365,10 +365,18 @@ def _install_navigator_stubs() -> None:
     sys.modules.setdefault("querysource", querysource_module)
     sys.modules.setdefault("querysource.conf", querysource_conf)
 
-    # parrot.notifications — required by parrot.scheduler
-    parrot_notifications = types.ModuleType("parrot.notifications")
-    parrot_notifications.NotificationMixin = type("NotificationMixin", (), {})
-    sys.modules.setdefault("parrot.notifications", parrot_notifications)
+    # parrot.notifications — required by parrot.scheduler.
+    # Prefer the REAL module when it is importable (same policy as
+    # parrot.conf below): the stub's empty NotificationMixin has none of
+    # the real methods, so once setdefault() wins, every test that
+    # exercises NotificationMixin silently skips itself instead of
+    # running (tests/notifications/ skipped all 24 cases this way).
+    try:
+        import parrot.notifications  # noqa: F401
+    except Exception:  # noqa: BLE001 — any import failure → stub fallback
+        parrot_notifications = types.ModuleType("parrot.notifications")
+        parrot_notifications.NotificationMixin = type("NotificationMixin", (), {})
+        sys.modules.setdefault("parrot.notifications", parrot_notifications)
 
     # parrot.conf — required by parrot.scheduler, parrot.memory, parrot.plugins, parrot.tools
     # Use a module subclass that auto-provides any missing attribute as a Path/str default
