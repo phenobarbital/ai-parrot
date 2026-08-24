@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-461
 **Date**: 2026-08-25
 **Author**: Jesus (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.28.0
 
 **Brainstorm**: `sdd/proposals/wikitoolkit-env-support.brainstorm.md` (Option A accepted; all 10 open questions resolved)
