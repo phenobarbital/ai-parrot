@@ -258,8 +258,32 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-24
+**Notes**: Implemented `CsvFileSink` with capabilities exactly
+`{WRITE, PROVISION}`. `ensure_target()` resolves the path via
+`SinkAliasRegistry.contain()`, creates the file with a header from
+`column_names_for(form)` when absent, and — when present — caches the
+file's REAL on-disk header plus any drift (`_extra_columns`, columns the
+current form has that the existing header lacks) instead of rewriting it,
+logging a warning naming the missing columns. `write()` renders one row
+via `csv.writer` into an in-memory buffer, then performs exactly ONE
+`fh.write()` call via `asyncio.to_thread` (verified with a monkeypatched
+`_append`), aligning values to the cached header order plus trailing
+extra columns. Blocking file I/O offloaded off the event loop throughout;
+`OSError` (permission, missing directory) maps to `SinkUnavailableError`;
+path-traversal `ValueError` from `contain()` propagates uncaught (fails
+before any file is touched). 11 unit tests in
+`tests/unit/test_csv_file_sink.py` using `tmp_path`, covering header
+creation, untouched-header-on-drift (with the warning asserted via
+`caplog`), two-submissions-two-lines, the single-write-call contract,
+both capability gates (`read`/`list_revisions` inherit
+`SinkNotCapableError`), a forged escaping path, and a chmod'd read-only
+directory. `ruff` and targeted `mypy` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — implemented the caching refinement over
+the task's own "Pattern to Follow" sketch (which showed `self._header`
+already populated without specifying how): `ensure_target()` caches the
+header (and any drifted extra columns) so `write()` performs exactly one
+`fh.write()` with no extra file read, matching the "ONE write() syscall"
+constraint literally.
