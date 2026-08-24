@@ -1,13 +1,12 @@
 """Shared fixtures for the packaged integration test suite."""
+
 from pathlib import Path
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def isolated_parrot_home(
-    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
-) -> Path:
+def isolated_parrot_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point ``PARROT_HOME`` at a temp dir for every integration test.
 
     Mirrors ``tests/knowledge/wiki/conftest.py``'s fixture of the same

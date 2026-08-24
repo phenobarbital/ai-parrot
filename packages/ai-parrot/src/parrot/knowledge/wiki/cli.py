@@ -154,19 +154,14 @@ def _selected_namespaces(ns_opt: str | None) -> set[str] | None:
     """
     if ns_opt is None or ns_opt == "all":
         return None
-    return {
-        part.strip()
-        for part in ns_opt.split(",")
-        if part.strip() and part.strip() != "local"
-    }
+    return {part.strip() for part in ns_opt.split(",") if part.strip() and part.strip() != "local"}
 
 
 def _unknown_namespace(ns_opt: str, known: list[str]) -> click.ClickException:
     """Build the error raised for a ``--ns`` name that is not declared."""
     listing = ", ".join(sorted(known)) or "(none declared)"
     return click.ClickException(
-        f"Unknown namespace {ns_opt!r}. Known: {listing} "
-        "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
+        f"Unknown namespace {ns_opt!r}. Known: {listing} " "(plus 'all', 'local'). Add one with `wikitoolkit ns add`."
     )
 
 
@@ -215,9 +210,7 @@ def _federate(
         skip = next((s for s in skipped if s.name == name), None)
         if skip is not None:
             hint = f" Fix: {skip.hint}" if skip.hint else ""
-            raise click.ClickException(
-                f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}"
-            ) from exc
+            raise click.ClickException(f"Namespace {name!r} is {skip.reason}: {skip.detail}.{hint}") from exc
         raise _unknown_namespace(name, list(declared)) from exc
 
 
@@ -262,8 +255,7 @@ def _write_id_for_ns(page_id: str, ns_opt: str | None) -> str:
     if namespace == target:
         return local_id
     raise click.ClickException(
-        f"Page id {page_id!r} belongs to namespace {namespace!r} — "
-        f"pass `--ns {namespace}` to write there."
+        f"Page id {page_id!r} belongs to namespace {namespace!r} — " f"pass `--ns {namespace}` to write there."
     )
 
 
@@ -323,9 +315,8 @@ def _echo_skips(store: BaseWikiStore, *, err: bool = False) -> None:
     """
     for skip in _collect_skips(store):
         hint = f" — {skip.hint}" if skip.hint else ""
-        click.echo(
-            f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err
-        )
+        click.echo(f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err)
+
 
 def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
     """Resolve the repo root + config, aborting with guidance if absent."""
@@ -486,8 +477,7 @@ def _resolve_read_store(
             )
         if ns_opt not in (None, "local"):
             raise click.ClickException(
-                "--store targets one pre-built store and never federates; "
-                "drop --store to read namespaces."
+                "--store targets one pre-built store and never federates; " "drop --store to read namespaces."
             )
         return create_wiki_store(storage_dir, backend=backend)
     root, config = _resolve_project(path_)
@@ -665,9 +655,7 @@ async def _prune_removed(
     """
     expected_files = {fs.record.concept_id for fs in scan.files}
     expected_dirs = {r.concept_id for r in scan.dir_records}
-    expected_uris = {
-        str((root / fs.rel_path).resolve()) for fs in scan.files
-    }
+    expected_uris = {str((root / fs.rel_path).resolve()) for fs in scan.files}
     root_prefix = str(root.resolve()) + os.sep
     removed = 0
 
@@ -683,9 +671,7 @@ async def _prune_removed(
             # Another corpus sharing this plane — not ours to prune.
             live_source_ids.add(entry.source_id)
             continue
-        for parent in PurePosixPath(
-            Path(entry.source_uri).relative_to(root.resolve()).as_posix()
-        ).parents:
+        for parent in PurePosixPath(Path(entry.source_uri).relative_to(root.resolve()).as_posix()).parents:
             emptied_dirs.add(f"dir:{parent if str(parent) != '.' else '.'}")
         await store.replace_source_slice(entry.source_id, [], [])
         await asyncio.to_thread(sources.remove_source, entry.source_id)
@@ -706,17 +692,9 @@ async def _prune_removed(
                 if await store.delete_page(cid):
                     surviving.discard(cid)
                     removed += 1
-        candidates = {
-            cid
-            for cid in surviving
-            if cid.startswith("dir:") and cid not in expected_dirs
-        }
+        candidates = {cid for cid in surviving if cid.startswith("dir:") and cid not in expected_dirs}
     else:
-        candidates = {
-            cid
-            for cid in surviving
-            if cid in emptied_dirs and cid not in expected_dirs
-        }
+        candidates = {cid for cid in surviving if cid in emptied_dirs and cid not in expected_dirs}
 
     # Deepest first, against a survivor set that shrinks as we go, so a
     # parent emptied by its own children going away is caught in ONE pass.
@@ -725,10 +703,7 @@ async def _prune_removed(
         if prefix in ("", "."):
             continue
         covered = f"{prefix}/"
-        if any(
-            other != cid and other.split(":", 1)[-1].startswith(covered)
-            for other in surviving
-        ):
+        if any(other != cid and other.split(":", 1)[-1].startswith(covered) for other in surviving):
             continue
         if await store.delete_page(cid):
             surviving.discard(cid)
@@ -1474,10 +1449,7 @@ def query(
     if show_body and rows[0].get("body"):
         click.echo(f"\n## {rows[0].get('title')}\n{rows[0]['body']}")
     _echo_skips(store)
-    click.echo(
-        "Next: `wikitoolkit page <id>` for a full page · "
-        "`wikitoolkit related <id>` for linked pages."
-    )
+    click.echo("Next: `wikitoolkit page <id>` for a full page · " "`wikitoolkit related <id>` for linked pages.")
 
 
 @wiki.command()
@@ -1688,8 +1660,7 @@ def _namespace_source(
     ]
     if len(given) != 1:
         raise click.ClickException(
-            "Give exactly one of --project / --store / --database / --vault "
-            f"(got: {', '.join(given) or 'none'})."
+            "Give exactly one of --project / --store / --database / --vault " f"(got: {', '.join(given) or 'none'})."
         )
 
 
@@ -1712,15 +1683,11 @@ def _global_registry_lock() -> Iterator[None]:
     home.mkdir(parents=True, exist_ok=True)
     with wiki_write_lock(home, timeout=REGISTRY_LOCK_WAIT_SECONDS) as acquired:
         if not acquired:
-            _cli_logger.warning(
-                "Could not take the %s lock; writing anyway.", home
-            )
+            _cli_logger.warning("Could not take the %s lock; writing anyway.", home)
         yield
 
 
-def _stored_namespace_path(
-    value: str | None, root: Path, is_global: bool
-) -> str | None:
+def _stored_namespace_path(value: str | None, root: Path, is_global: bool) -> str | None:
     """Normalise a user-typed namespace path into its stored form.
 
     Args:
@@ -1804,20 +1771,13 @@ def ns_list(path_: str | None, as_json: bool) -> None:
         click.echo(json.dumps(rows, indent=2, default=str))
         return
     if not rows:
-        click.echo(
-            "No namespaces declared. Add one with "
-            "`wikitoolkit ns add <name> --project <dir>`."
-        )
+        click.echo("No namespaces declared. Add one with " "`wikitoolkit ns add <name> --project <dir>`.")
         return
-    click.echo(
-        f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} "
-        f"{'built':<6} target"
-    )
+    click.echo(f"{'name':<16} {'kind':<9} {'backend':<9} {'origin':<7} " f"{'built':<6} target")
     for row in rows:
         built = "n/a" if row["built"] is None else ("yes" if row["built"] else "no")
         click.echo(
-            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} "
-            f"{row['origin']:<7} {built:<6} {row['target']}"
+            f"{row['name']:<16} {row['kind']:<9} {row['backend']:<9} " f"{row['origin']:<7} {built:<6} {row['target']}"
         )
         if row["description"]:
             click.echo(f"{'':<16} {row['description']}")
@@ -1875,8 +1835,7 @@ def ns_list(path_: str | None, as_json: bool) -> None:
     "--global",
     "is_global",
     is_flag=True,
-    help="Write to the per-user registry (PARROT_HOME/wikis.json) "
-    "instead of this repo's wiki.json.",
+    help="Write to the per-user registry (PARROT_HOME/wikis.json) " "instead of this repo's wiki.json.",
 )
 def ns_add(
     name: str,
@@ -1952,16 +1911,11 @@ def ns_add(
             written = save_global_registry(registry)
     else:
         if name in config.namespaces:
-            raise click.ClickException(
-                f"Namespace {name!r} already exists in {config_path(root)}. "
-                "Remove it first."
-            )
+            raise click.ClickException(f"Namespace {name!r} already exists in {config_path(root)}. " "Remove it first.")
         config.namespaces[name] = entry
         written = save_project_config(root, config)
         if name in load_global_registry().namespaces:
-            click.echo(
-                f"Note: this repo entry shadows the global namespace {name!r}."
-            )
+            click.echo(f"Note: this repo entry shadows the global namespace {name!r}.")
 
     click.echo(f"Added namespace {name!r} ({entry.kind}) → {written}")
     built = _namespace_built(entry, base_dir)
@@ -1970,10 +1924,7 @@ def ns_add(
         if not target.is_absolute():
             target = base_dir / target
         flag = "--store" if entry.kind == "store" else "--path"
-        click.echo(
-            f"Namespace {name!r} has no plane yet — build it with "
-            f"`wikitoolkit build {flag} {target}`."
-        )
+        click.echo(f"Namespace {name!r} has no plane yet — build it with " f"`wikitoolkit build {flag} {target}`.")
 
 
 @ns.command("remove")
@@ -1991,17 +1942,13 @@ def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
         with _global_registry_lock():
             registry = load_global_registry()
             if name not in registry.namespaces:
-                raise click.ClickException(
-                    f"No namespace {name!r} in {global_registry_path()}."
-                )
+                raise click.ClickException(f"No namespace {name!r} in {global_registry_path()}.")
             del registry.namespaces[name]
             written = save_global_registry(registry)
     else:
         root, config = _resolve_project(path_)
         if name not in config.namespaces:
-            raise click.ClickException(
-                f"No namespace {name!r} in {config_path(root)}."
-            )
+            raise click.ClickException(f"No namespace {name!r} in {config_path(root)}.")
         del config.namespaces[name]
         written = save_project_config(root, config)
     click.echo(f"Removed namespace {name!r} from {written}")
@@ -2220,13 +2167,10 @@ def _resolve_write_store(
     """
     if ns_opt not in (None, "local"):
         if store_opt:
-            raise click.ClickException(
-                "--store and --ns target different planes; use one of them."
-            )
+            raise click.ClickException("--store and --ns target different planes; use one of them.")
         if ns_opt == "all" or "," in ns_opt:
             raise click.ClickException(
-                "A write targets exactly one namespace — "
-                f"`--ns {ns_opt}` is not a write target."
+                "A write targets exactly one namespace — " f"`--ns {ns_opt}` is not a write target."
             )
         root, config = _resolve_project(path_)
         declared = _declared_namespaces(config)
@@ -2244,9 +2188,7 @@ def _resolve_write_store(
                 )
             )
         except Exception as exc:  # surfaced as a clear CLI error
-            raise click.ClickException(
-                f"Could not open namespace {ns_opt!r} for writing: {exc}"
-            ) from exc
+            raise click.ClickException(f"Could not open namespace {ns_opt!r} for writing: {exc}") from exc
         return store, storage_dir, None, None
 
     store_override = store_opt
@@ -2458,9 +2400,7 @@ def remember(
     """
     import hashlib
 
-    store, storage_dir, root, config = _resolve_write_store(
-        path_, store_opt, backend_opt, ns_opt
-    )
+    store, storage_dir, root, config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     asserted_by = _authoring_identity(by)
     run_id = _authoring_run_id()
 
@@ -2508,8 +2448,7 @@ def remember(
             storage_dir,
             "REMEMBER",
             f"page_id: {page_id}, title: {resolved_title!r}, "
-            f"category: {category}, by: {asserted_by}"
-            + (f", run: {run_id}" if run_id else ""),
+            f"category: {category}, by: {asserted_by}" + (f", run: {run_id}" if run_id else ""),
         )
 
     commit_id: str | None = None
@@ -2593,9 +2532,7 @@ def note(
     """
     from datetime import datetime
 
-    store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt, ns_opt
-    )
+    store, storage_dir, _root, _config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     page_id = _write_id_for_ns(page_id, ns_opt)
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
@@ -2666,9 +2603,7 @@ def link(
     cross-namespace edges. With ``--ns <name>`` the edge is written into
     that namespace; ids may be given qualified with that same name.
     """
-    store, storage_dir, _root, _config = _resolve_write_store(
-        path_, store_opt, backend_opt, ns_opt
-    )
+    store, storage_dir, _root, _config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     pages = {}
     for label, cid in (
         ("src", _write_id_for_ns(src, ns_opt)),

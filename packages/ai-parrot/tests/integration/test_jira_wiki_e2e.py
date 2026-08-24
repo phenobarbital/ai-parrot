@@ -9,6 +9,7 @@ to derive them (vault_scan.py:16-21). A failure here is a bug report
 against the module that produced the wrong input — TASK-2399/2400/2401/
 2403/2404 — never something to patch around from this file.
 """
+
 import asyncio
 import copy
 import sqlite3
@@ -137,11 +138,7 @@ class TestResync:
         changed = copy.deepcopy(payloads[0])
         changed["fields"]["status"]["name"] = "Done"
         changed["fields"]["updated"] = "2026-08-26T09:00:00.000+0000"
-        asyncio.run(
-            sweep_jira_issues(
-                FakeJiraInterface([changed] + payloads[1:]), corpus_dir, jql=JQL, force=True
-            )
-        )
+        asyncio.run(sweep_jira_issues(FakeJiraInterface([changed] + payloads[1:]), corpus_dir, jql=JQL, force=True))
         _build(runner, corpus_dir)
 
         assert len(list(corpus_dir.glob("NAV-*.md"))) == 3
@@ -175,9 +172,7 @@ class TestEntityNotesAndTagPages:
         assert (corpus_dir / "projects" / "NAV.md").exists()
         assert list((corpus_dir / "people").glob("*.md"))
         edges = _edges(corpus_dir / ".parrot" / "wiki" / "wiki.db")
-        assert any(rel == "tagged" for _, _, rel in edges), (
-            "#tags must become tag pages (vault_scan docstring 16-21)"
-        )
+        assert any(rel == "tagged" for _, _, rel in edges), "#tags must become tag pages (vault_scan docstring 16-21)"
         assert any(rel == "references" for _, _, rel in edges)
 
     def test_no_email_anywhere_in_corpus(self, corpus):
@@ -231,21 +226,15 @@ class TestNamespaceRegistration:
 class TestIngestJiraCommand:
     def test_ingest_jira_builds_by_default(self, tmp_path, payloads, monkeypatch):
         """G10: the plane can never silently lag the files."""
-        monkeypatch.setattr(
-            "parrot.interfaces.jira.JiraInterface", lambda *a, **k: FakeJiraInterface(payloads)
-        )
+        monkeypatch.setattr("parrot.interfaces.jira.JiraInterface", lambda *a, **k: FakeJiraInterface(payloads))
         d = tmp_path / "issues"
         runner = CliRunner()
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--project", "NAV", "--issues-dir", str(d), "--quiet"]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--project", "NAV", "--issues-dir", str(d), "--quiet"])
         assert result.exit_code == 0, result.output
         assert (d / ".parrot" / "wiki" / "wiki.db").exists()
 
     def test_no_build_leaves_db_absent(self, tmp_path, payloads, monkeypatch):
-        monkeypatch.setattr(
-            "parrot.interfaces.jira.JiraInterface", lambda *a, **k: FakeJiraInterface(payloads)
-        )
+        monkeypatch.setattr("parrot.interfaces.jira.JiraInterface", lambda *a, **k: FakeJiraInterface(payloads))
         d = tmp_path / "issues"
         runner = CliRunner()
         result = runner.invoke(
@@ -372,6 +361,6 @@ class TestNegativeGuarantees:
                     actual_failures.add(line[len("FAILED ") :].strip())
 
         new_regressions = actual_failures - known_preexisting_failures
-        assert not new_regressions, (
-            f"New test failure(s) introduced by the delegation refactor: {sorted(new_regressions)}"
-        )
+        assert (
+            not new_regressions
+        ), f"New test failure(s) introduced by the delegation refactor: {sorted(new_regressions)}"

@@ -21,6 +21,7 @@ Three invariants carry the most risk here:
 No LLM call is possible on this path: :func:`sweep_jira_issues` accepts no
 client and no model config.
 """
+
 import hashlib
 import logging
 import os

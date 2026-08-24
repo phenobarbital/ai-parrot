@@ -1,4 +1,5 @@
 """Tests for the Jira sweep — watermark, orphans, entity notes (FEAT-454, M4)."""
+
 import asyncio
 import json
 from pathlib import Path
@@ -32,9 +33,7 @@ class FakeJiraInterface:
     """In-memory JiraInterface stand-in: no network, scriptable pages,
     plus a failure-injection hook for the partial-sweep tests."""
 
-    def __init__(
-        self, raw_issues, *, fail_after=None, unreachable=(), probe_error=None, server_url=BASE
-    ):
+    def __init__(self, raw_issues, *, fail_after=None, unreachable=(), probe_error=None, server_url=BASE):
         self.raw_issues = list(raw_issues)
         self.fail_after = fail_after
         self.unreachable = set(unreachable)
@@ -82,9 +81,7 @@ def _tree(d: Path) -> dict[str, bytes]:
 
 class TestPublicSurface:
     def test_save_sync_state_roundtrip(self, issues_dir):
-        state = JiraSyncState(
-            scopes={"fp1": JiraScopeState(jql=JQL, jql_fingerprint="fp1", extractor_version=1)}
-        )
+        state = JiraSyncState(scopes={"fp1": JiraScopeState(jql=JQL, jql_fingerprint="fp1", extractor_version=1)})
         save_sync_state(issues_dir, state)
         loaded = load_sync_state(issues_dir)
         assert loaded.scopes["fp1"].jql == JQL
@@ -128,9 +125,7 @@ class TestWatermark:
 
     def test_scopes_keyed_by_fingerprint(self, raw_issue, issues_dir):
         _sweep(FakeJiraInterface([raw_issue]), issues_dir)
-        asyncio.run(
-            sweep_jira_issues(FakeJiraInterface([raw_issue]), issues_dir, jql="project = OTHER")
-        )
+        asyncio.run(sweep_jira_issues(FakeJiraInterface([raw_issue]), issues_dir, jql="project = OTHER"))
         state = load_sync_state(issues_dir)
         assert len(state.scopes) == 2
         assert jql_fingerprint(JQL) != jql_fingerprint("project = OTHER")

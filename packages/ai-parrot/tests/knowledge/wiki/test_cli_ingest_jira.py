@@ -1,4 +1,5 @@
 """Tests for `wikitoolkit ingest-jira` (FEAT-454, M5)."""
+
 import inspect
 import json
 
@@ -134,9 +135,7 @@ class TestScopeResolution:
         capture: dict = {}
         _patch_sweep(monkeypatch, capture=capture)
         _patch_interface(monkeypatch)
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--no-build", "--issues-dir", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--no-build", "--issues-dir", str(tmp_path)])
         assert result.exit_code == 0, result.output
         assert capture["jql"] == "project = ENV"
 
@@ -145,18 +144,14 @@ class TestScopeResolution:
         capture: dict = {}
         _patch_sweep(monkeypatch, capture=capture)
         _patch_interface(monkeypatch)
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--no-build", "--issues-dir", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--no-build", "--issues-dir", str(tmp_path)])
         assert result.exit_code == 0, result.output
         assert capture["jql"] == "project = NAV"
 
     def test_unresolvable_scope_is_a_click_exception(self, runner, monkeypatch, tmp_path):
         monkeypatch.delenv("JIRA_WIKI_JQL", raising=False)
         monkeypatch.delenv("JIRA_DEFAULT_PROJECT", raising=False)
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--no-build", "--issues-dir", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--no-build", "--issues-dir", str(tmp_path)])
         assert result.exit_code != 0
         assert "--jql" in result.output and "JIRA_WIKI_JQL" in result.output
 
@@ -168,9 +163,7 @@ class TestBuildByDefault:
         _patch_sweep(monkeypatch)
         _patch_interface(monkeypatch)
         _patch_build(monkeypatch, calls)
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--project", "NAV", "--issues-dir", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--project", "NAV", "--issues-dir", str(tmp_path)])
         assert result.exit_code == 0, result.output
         assert len(calls) == 1
         assert calls[0]["vault_mode"] is True
@@ -284,17 +277,13 @@ class TestFailureModes:
 
         monkeypatch.setattr("parrot.knowledge.wiki.jira_sync.sweep_jira_issues", boom)
         _patch_interface(monkeypatch)
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path)])
         assert result.exit_code != 0
         assert "Traceback" not in result.output
         assert "ai-parrot[jira]" in result.output
 
     def test_enrich_fails_fast(self, runner, tmp_path):
-        result = runner.invoke(
-            wiki, ["ingest-jira", "--enrich", "--no-build", "--issues-dir", str(tmp_path)]
-        )
+        result = runner.invoke(wiki, ["ingest-jira", "--enrich", "--no-build", "--issues-dir", str(tmp_path)])
         assert result.exit_code != 0
         assert "not implemented" in result.output.lower()
 
