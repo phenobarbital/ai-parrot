@@ -50,7 +50,7 @@
       "feature_id": "FEAT-446",
       "feature": "saas-auth-hardening",
       "spec": "sdd/specs/saas-auth-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports PARROT_SAAS_MODE from TASK-2320.",
       "assigned_to": null,
       "started_at": "2026-08-24T00:01:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2322-session-tenant-resolver.md"
+      "completed_at": "2026-08-24T00:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2322-session-tenant-resolver.md"
     },
     {
       "id": "TASK-2323",

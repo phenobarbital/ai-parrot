@@ -153,10 +153,32 @@ class TestResolveSessionTenant:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Created
+`packages/ai-parrot-server/src/parrot/handlers/crew/_tenancy.py` with
+`async def resolve_session_tenant(request, *, declared=None) -> str`.
+Resolution order implemented exactly as specified: explicit `tenant_id`
+claim → `programs[0]` → unresolvable. Unresolvable + `PARROT_SAAS_MODE`
+(read via a `_saas_mode()` indirection over `parrot.conf.PARROT_SAAS_MODE`
+at call time, per the Key Constraint, so `monkeypatch.setattr(conf,
+"PARROT_SAAS_MODE", ...)` is observed) → `web.HTTPForbidden`; flag off →
+`"global"`. `declared` mismatch → `web.HTTPBadRequest` regardless of SaaS
+mode; `declared=None` skips the check entirely; match passes through.
+The function does not read the request body itself (callers pass
+`declared=`, per the Key Constraint). Session access mirrors
+`agent_guard.py`'s pattern: `getattr(request, "session", None)` →
+`navigator_session.get_session()` fallback → lazy `AUTH_SESSION_OBJECT`
+import with `"userinfo"` fallback. No `superuser` bypass (deliberately
+out of scope, S1). No import of `parrot_formdesigner` or
+`parrot.tenancy`/`TenantContext` — verified via grep, only mentioned in
+prose comments as a semantic reference, never imported.
+`pytest packages/ai-parrot-server/tests/unit/test_crew_tenancy.py -v` —
+9 passed (6 from the Test Specification plus 3 additional edge cases:
+`declared=None` skip, SaaS-mode+mismatch still 400, and no-session
+fallback to legacy `"global"`). `ruff check --fix` applied; one
+intentional `BLE001` (broad-except around the `get_session` fallback)
+left, matching the same fail-open pattern already used throughout
+`pbac.py` / `agent_guard.py` / `eval_context.py` in this feature.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none.
