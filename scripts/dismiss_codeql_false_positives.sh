@@ -28,7 +28,19 @@ CLEARTEXT_LOG=(142 159)
 # generate_keys.py (L133), google/tools.py (L1302), databasequery/tool.py (L831)
 CLEARTEXT_STORE=(67 68 138)
 
-ALL_ALERTS=("${PATH_INJECTION[@]}" "${SQL_INJECTION[@]}" "${CLEARTEXT_LOG[@]}" "${CLEARTEXT_STORE[@]}")
+# --- URL redirection: redirect_uri checked against client.redirect_uris allowlist ---
+# mcp/oauth_server.py (L502, L671) — exact-membership check returns 400 before use
+URL_REDIRECTION=(122 123)
+
+# --- Overly-large-range: deliberate Unicode emoji block U+2600-U+27BF ---
+# voice/tts/supertonic_inference.py (L132)
+LARGE_RANGE=(162 163)
+
+# --- Stack-trace exposure: callers pass controlled message strings, never exceptions ---
+# handlers/openai_compat.py (L175)
+STACK_TRACE=(107)
+
+ALL_ALERTS=("${PATH_INJECTION[@]}" "${SQL_INJECTION[@]}" "${CLEARTEXT_LOG[@]}" "${CLEARTEXT_STORE[@]}" "${URL_REDIRECTION[@]}" "${LARGE_RANGE[@]}" "${STACK_TRACE[@]}")
 
 SUCCESS=0
 FAIL=0
@@ -36,14 +48,14 @@ for alert_num in "${ALL_ALERTS[@]}"; do
   if gh api -X PATCH \
     "repos/${REPO}/code-scanning/alerts/${alert_num}" \
     -f state=dismissed \
-    -f dismissed_reason=false-positive \
+    -f dismissed_reason="false positive" \
     -f dismissed_comment="${COMMENT}" \
     --silent 2>/dev/null; then
     echo "✅ Dismissed alert #${alert_num}"
-    ((SUCCESS++))
+    SUCCESS=$((SUCCESS + 1))
   else
     echo "❌ Failed alert #${alert_num}"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 done
 

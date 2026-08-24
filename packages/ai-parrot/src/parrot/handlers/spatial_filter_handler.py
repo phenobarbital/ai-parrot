@@ -372,7 +372,8 @@ class SpatialFilterHandler:
         try:
             req = DirectSpatialRequest(**body)
         except Exception as exc:
-            return await self._json_response({"error": f"Invalid request: {exc}"}, status=422)
+            self.logger.warning("SpatialFilterHandler: invalid direct request: %s", exc)
+            return await self._json_response({"error": "Invalid request parameters"}, status=422)
 
         try:
             spec = SpatialFilterSpec(

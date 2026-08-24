@@ -176,6 +176,15 @@ conflicts = [
         { package = "ai-parrot", extra = "observability-openlit" },
         { package = "ai-parrot-workspace", group = "dev" },
     ],
+    [
+        # flowtask 5.12.3 pins azure-identity==1.20.0, while async-notify[all]
+        # (pulled by all-fast) needs azure-identity>=1.23.0. Unbounded
+        # requires-python (>=3.11) makes uv explore a python>=3.14 split where
+        # both are required at once, so an uncached `uv sync --all-packages`
+        # is unsatisfiable and every CI/CodeQL run fails at install.
+        { package = "ai-parrot", extra = "all-fast" },
+        { package = "ai-parrot", extra = "flowtask" },
+    ],
     # flowtask/psutil vs liveavatar-voice — RESOLVED (flowtask 5.12.1).
     # openlit vs liveavatar-voice otel — RESOLVED via override-dependencies:
     # livekit-agents 1.6.1 pins otel~=1.39.0 (<1.40), but otel 1.39→1.42 is

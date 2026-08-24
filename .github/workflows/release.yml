@@ -3,6 +3,11 @@ name: Build and publish AI-Parrot packages
 on:
   release:
     types: [created]
+  # Manual trigger for exercising the build matrix from a branch without
+  # cutting a release. NOTE: the `deploy` job is gated on
+  # `if: github.event_name == 'release'`, so a dispatched run builds and
+  # uploads artifacts but never publishes to PyPI.
+  workflow_dispatch:
 
 jobs:
   build-core:
@@ -346,10 +351,13 @@ jobs:
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             manylinux: auto
-          # macOS x86_64 (Intel)
-          - os: macos-13
-            target: x86_64-apple-darwin
-            manylinux: 'off'
+          # macOS x86_64 (Intel) — REMOVED. GitHub retired the `macos-13`
+          # hosted runner image, so this leg never gets a runner: it sits in
+          # `queued` until the 24h limit, then fails with "exceeded the
+          # maximum execution time while awaiting a runner", which blocks
+          # `deploy` (observed on the 0.26.1 and 0.27.0-rc1 releases while
+          # every other build job was green). Intel macOS is not a target we
+          # ship parrot-codec for; those users fall back to the sdist.
           # macOS arm64 (Apple Silicon)
           - os: macos-latest
             target: aarch64-apple-darwin
