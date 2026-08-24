@@ -33,7 +33,11 @@ class CrewHandler(BaseView):
     (mirrors ``tool_catalog.py:231`` / ``special_nodes.py:74``); tenant
     identity for reads/deletes is resolved from the session via
     ``resolve_session_tenant`` (``handlers/crew/_tenancy.py``), never
-    trusted from the query string.
+    trusted from the query string. This is a per-view (class-level
+    decorator) enforcement mechanism — contrast with ``handlers/
+    stream.py``'s ``StreamHandler``, which instead relies on
+    navigator-auth's GLOBAL auth middleware (no exclude-list entry) plus
+    its own subprotocol pre-auth middleware for the WS route.
     """
 
     path: str = '/api/v1/crew'

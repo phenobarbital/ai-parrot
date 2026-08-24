@@ -204,6 +204,65 @@ class TestStreamRoutesRejectAnonymous:
 
 
 # ---------------------------------------------------------------------------
+# Code-review fix: stream_websocket()'s Sec-WebSocket-Protocol JWT auth
+# convention (for WS clients that can't rely on a session cookie or an
+# Authorization header on the upgrade request) must keep working now that
+# TASK-2324 put the route behind navigator-auth's global auth middleware
+# — which only recognizes Authorization headers / session cookies and, if
+# left unpatched, rejects a subprotocol-only client with 401 before
+# stream_websocket()'s own token check ever runs.
+# ---------------------------------------------------------------------------
+
+
+class TestWsSubprotocolPreauth:
+    async def test_valid_subprotocol_token_no_longer_401(
+        self, aiohttp_client, anon_app
+    ):
+        idp = anon_app["auth"]._idp
+        token, _refresh, _exp, _scheme = idp.create_token(
+            data={"username": "tester"}, expiration=3600
+        )
+        client = await aiohttp_client(anon_app)
+
+        resp = await client.get(
+            "/bots/bot-1/stream/ws",
+            headers={"Sec-WebSocket-Protocol": f"jwt, {token}"},
+        )
+
+        assert resp.status != 401
+
+    async def test_no_credentials_still_401(self, aiohttp_client, anon_app):
+        client = await aiohttp_client(anon_app)
+
+        resp = await client.get("/bots/bot-1/stream/ws")
+
+        assert resp.status == 401
+
+    async def test_invalid_subprotocol_token_still_401(self, aiohttp_client, anon_app):
+        client = await aiohttp_client(anon_app)
+
+        resp = await client.get(
+            "/bots/bot-1/stream/ws",
+            headers={"Sec-WebSocket-Protocol": "jwt, not-a-real-token"},
+        )
+
+        assert resp.status == 401
+
+    async def test_other_routes_unaffected_by_subprotocol_header(
+        self, aiohttp_client, anon_app
+    ):
+        client = await aiohttp_client(anon_app)
+
+        resp = await client.post(
+            "/bots/bot-1/stream/sse",
+            json={"prompt": "hi"},
+            headers={"Sec-WebSocket-Protocol": "jwt, whatever"},
+        )
+
+        assert resp.status == 401
+
+
+# ---------------------------------------------------------------------------
 # spec §4: test_body_tenant_ignored
 # ---------------------------------------------------------------------------
 
