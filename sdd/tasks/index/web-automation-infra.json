@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-23T11:32:17.155835+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-24T09:54:01+00:00",
   "tasks": [
     {
       "id": "TASK-2384",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T22:47:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2384-session-actions-scaffold-auth-cookies.md"
+      "file": "sdd/tasks/completed/TASK-2384-session-actions-scaffold-auth-cookies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2385",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:00:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2385-session-actions-waits-humanchannel.md"
+      "file": "sdd/tasks/completed/TASK-2385-session-actions-waits-humanchannel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2386",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:05:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2386-session-actions-file-transfer.md"
+      "file": "sdd/tasks/completed/TASK-2386-session-actions-file-transfer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2387",
@@ -85,7 +88,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:19:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2387-dispatch-stub-closure-and-legacy-delegation.md"
+      "file": "sdd/tasks/completed/TASK-2387-dispatch-stub-closure-and-legacy-delegation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2388",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:25:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2388-browseraction-union-and-plan-validation.md"
+      "file": "sdd/tasks/completed/TASK-2388-browseraction-union-and-plan-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2389",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:31:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2389-broker-backed-authenticate.md"
+      "file": "sdd/tasks/completed/TASK-2389-broker-backed-authenticate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2390",
@@ -146,7 +152,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:46:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2390-business-automation-toolkit-core.md"
+      "file": "sdd/tasks/completed/TASK-2390-business-automation-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2391",
@@ -166,7 +173,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-23T23:51:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2391-external-plans-directory-store.md"
+      "file": "sdd/tasks/completed/TASK-2391-external-plans-directory-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2392",
@@ -187,7 +195,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-24T00:02:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2392-bank-excel-expense-ingestion.md"
+      "file": "sdd/tasks/completed/TASK-2392-bank-excel-expense-ingestion.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2393",
@@ -205,7 +214,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-24T00:09:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2393-google-calendar-tools.md"
+      "file": "sdd/tasks/completed/TASK-2393-google-calendar-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2394",
@@ -225,7 +235,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-24T00:20:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2394-inprocess-scheduler-and-tax-reminders.md"
+      "file": "sdd/tasks/completed/TASK-2394-inprocess-scheduler-and-tax-reminders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2395",
@@ -246,7 +257,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-24T00:26:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2395-smokecheck-mechanism.md"
+      "file": "sdd/tasks/completed/TASK-2395-smokecheck-mechanism.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2396",
@@ -266,7 +278,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-24T00:38:38+00:00",
-      "file": "sdd/tasks/completed/TASK-2396-gestoria-wiki-plane-obsidian-mirror.md"
+      "file": "sdd/tasks/completed/TASK-2396-gestoria-wiki-plane-obsidian-mirror.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2397",
@@ -286,7 +299,8 @@
       "assigned_to": null,
       "started_at": "2026-08-23T22:39:41+00:00",
       "completed_at": "2026-08-24T02:30:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2397-whatsapp-allowlist-failclosed.md"
+      "file": "sdd/tasks/completed/TASK-2397-whatsapp-allowlist-failclosed.md",
+      "verification": "verified"
     }
   ]
 }
