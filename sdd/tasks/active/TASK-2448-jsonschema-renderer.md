@@ -69,16 +69,41 @@ _TYPE_MAP: dict[FieldType, str] = {
 }
 
 # parrot_formdesigner/renderers/jsonschema.py:92
+# CORRECTED (contract was stale — verified against the actual file at
+# implementation time): _UNION_SHAPES already includes IMAGE_DROPZONE
+# (bare oneOf: [{"type":"object"}, {"type":"array","items":{"type":"object"}}]
+# — NO properties defined at all yet), plus TREE_SELECT and AI_CAPTURE.
+# FILE and IMAGE are NOT in here yet — this task adds them, and this task
+# ALSO upgrades the existing bare IMAGE_DROPZONE entry to use the
+# FileEnvelope object schema instead of a bare "object".
 _UNION_SHAPES: dict[FieldType, dict] = {
-    # Currently includes TREE_SELECT (oneOf: [string, object])
-    # FILE and IMAGE are NOT in here yet — this task adds them
+    FieldType.TREE_SELECT: {"oneOf": [...]},
+    FieldType.IMAGE_DROPZONE: {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]},
+    FieldType.AI_CAPTURE: {},
 }
 
 # parrot_formdesigner/renderers/jsonschema.py:156
+# CORRECTED: IMAGE_DROPZONE is NOT in _STRUCTURAL_EXTRAS today (its shape
+# lives entirely in _UNION_SHAPES above, as a bare "object"/"array" with no
+# properties). _STRUCTURAL_EXTRAS currently holds AVAILABILITY, TAGS,
+# TRANSFER_LIST, TREE_SELECT, MULTI_UPLOAD (legacy {answer,blob_ref,display}
+# items — this task replaces those items with the FileEnvelope shape),
+# CREDIT_CARD, PLACE.
 _STRUCTURAL_EXTRAS: dict[FieldType, dict] = {
-    # Currently includes IMAGE_DROPZONE → {name, type, size, dataUrl}
-    # and MULTI_UPLOAD → array items
+    FieldType.MULTI_UPLOAD: {"items": {"type": "object", "properties": {"answer": {}, "blob_ref": {...}, "display": {...}}}},
+    # ... AVAILABILITY, TAGS, TRANSFER_LIST, TREE_SELECT, CREDIT_CARD, PLACE ...
 }
+
+# Note: _field_to_property() (per-field rendering) reads _TYPE_MAP and
+# _STRUCTURAL_EXTRAS directly but does NOT consult _UNION_SHAPES — this is
+# pre-existing behavior (also true today for TREE_SELECT/IMAGE_DROPZONE/
+# AI_CAPTURE), so per-field FILE/IMAGE output will show bare
+# {"type": "object", ...} without the oneOf/properties after this task,
+# consistent with how IMAGE_DROPZONE already renders per-field today. Only
+# type_level_value_shape() (the type-only catalog contract) fully resolves
+# _UNION_SHAPES. This task does not change _field_to_property() — out of
+# scope (not listed in Files to Create/Modify) and consistent with existing
+# precedent for the other _UNION_SHAPES members.
 
 # parrot_formdesigner/renderers/jsonschema.py:215
 def type_level_value_shape(field_type: FieldType) -> dict[str, Any]:
