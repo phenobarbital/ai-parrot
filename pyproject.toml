@@ -204,6 +204,23 @@ override-dependencies = [
     "emoji==1.7.0",
     "babel>=2.16.0",
     "msal==1.32.0",
+    # flowtask pins azure-identity==1.20.0 in EVERY published version
+    # (checked up to 5.12.13), while async-notify[all]>=1.6.0 — pulled by
+    # ai-parrot[all-fast] via [integrations] — requires >=1.23.0. The two meet
+    # in the same split (ai-parrot[all-fast] + ai-parrot-tools[all], whose
+    # [flowtask] extra brings flowtask in), so `uv sync` is unsatisfiable and
+    # every CI job fails at install. The conflicts entry added for
+    # ai-parrot[all-fast] x ai-parrot[flowtask] does not cover this path:
+    # flowtask arrives through ai-parrot-tools[flowtask], a different package
+    # extra. An override is preferable to more conflict pairs here — extra
+    # splits push an already OOM-prone resolution (45GB RSS locally) over the
+    # edge. 1.20 -> 1.23 is a minor, API-compatible bump.
+    # Pinned EXACTLY at 1.23.0, not >=: with an open floor uv picks 1.25.3,
+    # which requires msal>=1.35.1 and would silently contradict the
+    # msal==1.32.0 override above. 1.23.0 needs only msal>=1.30.0.
+    # Remove once flowtask relaxes its azure-identity pin (fix in progress in
+    # the flowtask repository).
+    "azure-identity==1.23.0",
     "numba>=0.57.0",
     "llvmlite>=0.40.0",
     "openpyxl>=3.1.2,<=3.1.5",
