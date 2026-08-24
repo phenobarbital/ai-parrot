@@ -32,7 +32,7 @@
       "feature_id": "FEAT-457",
       "feature": "formbuilder-formschema-persistency",
       "spec": "sdd/specs/formbuilder-formschema-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Independent of TASK-2417: this module resolves alias strings and does not import the persistence models. Marked parallel=false per the spec's per-spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2418-sink-alias-registry.md"
+      "completed_at": "2026-08-24T15:47:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2418-sink-alias-registry.md"
     },
     {
       "id": "TASK-2419",
