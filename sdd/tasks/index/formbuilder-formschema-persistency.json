@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-24T15:06:53.904386+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-24T18:01:22+00:00",
   "tasks": [
     {
       "id": "TASK-2417",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T15:46:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2417-persistence-config-models.md"
+      "file": "sdd/tasks/completed/TASK-2417-persistence-config-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2418",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T15:47:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2418-sink-alias-registry.md"
+      "file": "sdd/tasks/completed/TASK-2418-sink-alias-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2419",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T15:49:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2419-sink-abc-capabilities.md"
+      "file": "sdd/tasks/completed/TASK-2419-sink-abc-capabilities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2420",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T15:52:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2420-submission-mapper.md"
+      "file": "sdd/tasks/completed/TASK-2420-submission-mapper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2421",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T15:57:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2421-formschema-persistence-field.md"
+      "file": "sdd/tasks/completed/TASK-2421-formschema-persistence-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2422",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:03:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2422-postgres-table-sink.md"
+      "file": "sdd/tasks/completed/TASK-2422-postgres-table-sink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2423",
@@ -146,7 +152,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:11:01+00:00",
-      "file": "sdd/tasks/completed/TASK-2423-asyncdb-sink.md"
+      "file": "sdd/tasks/completed/TASK-2423-asyncdb-sink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2424",
@@ -168,7 +175,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:14:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2424-csv-file-sink.md"
+      "file": "sdd/tasks/completed/TASK-2424-csv-file-sink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2425",
@@ -190,7 +198,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:18:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2425-gsheet-sink.md"
+      "file": "sdd/tasks/completed/TASK-2425-gsheet-sink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2426",
@@ -213,7 +222,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:22:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2426-sink-dispatch-factory.md"
+      "file": "sdd/tasks/completed/TASK-2426-sink-dispatch-factory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2427",
@@ -234,7 +244,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:26:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2427-autonomous-form-storage.md"
+      "file": "sdd/tasks/completed/TASK-2427-autonomous-form-storage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2428",
@@ -256,7 +267,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T16:53:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2428-submit-path-integration.md"
+      "file": "sdd/tasks/completed/TASK-2428-submit-path-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2429",
@@ -277,7 +289,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T17:02:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2429-app-wiring.md"
+      "file": "sdd/tasks/completed/TASK-2429-app-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2430",
@@ -299,7 +312,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T17:11:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2430-integration-suite.md"
+      "file": "sdd/tasks/completed/TASK-2430-integration-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2431",
@@ -320,7 +334,8 @@
       "assigned_to": null,
       "started_at": "2026-08-24T15:41:01+00:00",
       "completed_at": "2026-08-24T17:18:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2431-docs-and-packaging.md"
+      "file": "sdd/tasks/completed/TASK-2431-docs-and-packaging.md",
+      "verification": "verified"
     }
   ]
 }
