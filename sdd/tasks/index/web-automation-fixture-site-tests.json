@@ -33,7 +33,7 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallel": false,
       "parallelism_notes": "Needs local_fixture_site (TASK-2407). TASK-2409 depends on this task's fake_broker fixture too.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-24T10:29:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2408-fake-broker-and-real-browser-smoke-tests.md",
       "verification": null
