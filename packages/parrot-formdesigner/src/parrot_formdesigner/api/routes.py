@@ -46,6 +46,7 @@ from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
 from ..services.sinks.factory import SinkFactory
 from . import controls as controls_module
+from . import file_upload as file_upload_module
 from . import operations as operations_module
 from . import render as render_module
 from . import uploads as uploads_module
@@ -374,6 +375,12 @@ def setup_form_api(
     app.router.add_post(
         f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/upload",
         _wrap_auth(uploads_module.handle_rest_upload),
+    )
+
+    # Raw upload field types (FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD) — FEAT-460
+    app.router.add_post(
+        f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/file-upload",
+        _wrap_auth(file_upload_module.handle_file_upload),
     )
 
     # Partial saves (FEAT-186)
