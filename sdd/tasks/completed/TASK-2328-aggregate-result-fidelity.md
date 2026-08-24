@@ -382,12 +382,85 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-08-24
 **Notes**:
 
-**`total_time` consumer audit**: (findings from the grep required in Gotchas)
+Module 3 landed as specified. `_aggregate_result` now has three keyword-only
+defaulted parameters (`ctx`, `run_started_at`, `skipped`) after the existing
+`edges`/`durations` positionals, so every pre-change call site still type-checks
+and still works.
 
-**Deviations from spec**: none | describe if any
+- **Ordering (G3)**: `terminal = completed | failed` is materialised once, then
+  walked in `ctx.completion_order` order (de-duplicated), with the residue
+  `terminal - seen` appended `sorted()`. Without a `ctx` the whole set is
+  `sorted()` rather than iterated — as the task asked, determinism is now
+  unconditional, not merely available.
+- **`total_time` (G2)**: `max(0.0, asyncio.get_running_loop().time() -
+  run_started_at)`, i.e. the *same* monotonic clock the scheduler reads at
+  `run_started_at`. A direct synchronous call (no running loop) logs at debug
+  via `self.logger` and leaves `0.0` instead of splicing in a foreign epoch.
+- **`execution_log`**: built in the same loop as `node_infos`, from the
+  `NodeExecutionInfo` just constructed, so the two lists are guaranteed
+  index-aligned and same-ordered. Exactly the five documented keys.
+- **`metadata`**: all six keys. `skipped` is `sorted()` (determinism);
+  `leaves` is the node_ids that actually produced `output` — `[leaf]` in the
+  single-leaf branch, `list(output_map)` in the fan-out branch — captured by a
+  new `output_leaves` variable that does not touch the existing leaf-detection
+  or `output` computation.
+- **`mode`**: resolved `"explicit"` / `"definition"` / `"legacy"` from
+  `edges is not None` / `self._definition is not None` / else. Per the spec's
+  open question I defaulted to the internal flow vocabulary, and the docstring
+  states explicitly that this is a DIFFERENT axis from AgentCrew's
+  `metadata['mode']` (`'sequential'`/`'parallel'`/`'loop'`), so nobody reads
+  them as comparable.
+- **Docstring**: the output shape contract verbatim, plus the three timing
+  caveats the task required (scheduler `durations` vs. the node envelope's own
+  `execution_time`; retries overwrite `durations[nid]` so the figure is the
+  LAST attempt; on a resumed run `total_time` covers the resumed segment only)
+  and the note that `summary` stays empty by design.
+
+Untouched, as required: the `output=resp` argument, leaf detection, the
+`output` computation, `NodeExecutionInfo.execution_time`'s source, and the
+class's inheritance (no `SynthesisMixin`). No `NodeExecutionInfo` is emitted
+for skipped nodes.
+
+Tests: 8 added to `tests/bots/flows/test_scheduler.py` — the 7 named plus
+`test_aggregate_result_node_order_is_deterministic` (asserts the no-`ctx` path
+sorts and that repeated aggregation over a differently-ordered input set is
+stable). `test_scheduler.py`: 23 passed (15 pre-existing + 8).
+
+**AC7 determinism proof**: the ordering/output tests were run under
+`PYTHONHASHSEED` = 0, 1, 42 and 12345 — 7 passed at every seed, so the order
+is provably independent of string-hash randomisation, not just incidentally
+stable.
+
+Verification:
+- `tests/bots/flows/` + `tests/test_flow_primitives/`: 718 passed
+  (699 clean-`dev` baseline + 8 + 2 + 8 + the pre-existing count; no failures).
+- `ruff` on `flow/flow.py`: 133 pre-existing findings -> 136, the delta being
+  exactly 3 `UP045` from the three new `Optional[...]` parameter annotations,
+  which match the file's 43 existing `Optional` annotations (the repo declares
+  no `[tool.ruff]` config, so these are defaults-only findings that predate
+  this feature). `test_scheduler.py` went 6 -> 5 findings: my use of
+  `pytest.approx` retired a pre-existing `F401` unused-`pytest` import.
+- `mypy` on `flow/flow.py`: 28 errors before, 28 after, the two sets identical
+  once line numbers are normalised — no new type errors.
+
+**`total_time` consumer audit** (the grep the Gotchas required, to rule out
+double-counting when `total_time` stops being `0.0`): **no consumer works
+around `total_time == 0.0`.**
+- `parrot/flows/` (dev_flow, dev_loop runners) and `parrot/handlers/`: zero
+  references to `total_time` / `total_execution_time` at all.
+- The only place that *sums* per-node `execution_time` is
+  `crew/crew.py:3381` (`total_time = sum(log['execution_time'] for log in
+  self.execution_log)`) — that is AgentCrew computing its OWN `total_time`
+  from its own `execution_log`, an input to a `FlowResult`, not a consumer
+  compensating for AgentsFlow's zero. It is untouched by this feature.
+- Remaining references are pure pass-throughs that now simply carry a real
+  number: `core/result.py` (`total_execution_time` alias, `to_dict`),
+  `core/storage/document.py:102` (persistence), `crew/crew.py:3691`
+  (`last_crew_result.total_time`), and `models/crew.py` (the legacy
+  `CrewResult`). None of them add or scale the value.
+
+**Deviations from spec**: none.

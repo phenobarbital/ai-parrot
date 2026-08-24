@@ -50,7 +50,7 @@
       "feature_id": "FEAT-447",
       "feature": "agentsflow-result-fidelity",
       "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Depends on TASK-2326: only after the shared helper unwraps envelopes does the metadata this method builds actually carry usage/tool_calls. Edits flow/flow.py, shared with TASK-2329.",
       "assigned_to": null,
       "started_at": "2026-08-23T23:10:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2328-aggregate-result-fidelity.md"
+      "completed_at": "2026-08-24T00:01:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2328-aggregate-result-fidelity.md"
     },
     {
       "id": "TASK-2329",
