@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-458
 **Date**: 2026-08-24
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.12.0
 
 ---
@@ -988,30 +988,30 @@ No new third-party dependency is introduced. Caps are `len()` and
 
 ### Unresolved
 
-- [ ] **`NULL` vs `{}` for a `keep` form that received no extras.** `NULL`
+- [x] **`NULL` vs `{}` for a `keep` form that received no extras.** `NULL`
       conflates "none arrived" with "policy off"; `{}` distinguishes them at the
       cost of a row-level lie about a capture attempt. Tests above assume `None`
-      — settle before Module 4 lands. — *Owner: Jesus*
-- [ ] **Error-key convention for `reject`.** Follow the existing form-level
+      — settle before Module 4 lands. — *Owner: Jesus*: None is preferable.
+- [x] **Error-key convention for `reject`.** Follow the existing form-level
       reserved keys `__circular__` (`validators.py:158`) and `__rules__` (`:164`)
       with a `__unknown__` entry, or report per-offending-key so a client can map
-      errors onto its own inputs? — *Owner: Jesus*
-- [ ] **Should `onAfterSubmit` see the extras?** It currently receives
+      errors onto its own inputs? — *Owner: Jesus*: leave the existing behavior
+- [x] **Should `onAfterSubmit` see the extras?** It currently receives
       `payload=submission.data` (`api/handlers.py:1664`). Passing the merged view
       is consistent with the forwarder; passing `data` alone is consistent with
-      "answers only". — *Owner: Jesus*
-- [ ] **Are the caps per-form overridable, or a single global constant?** The spec
+      "answers only". — *Owner: Jesus*: yes
+- [x] **Are the caps per-form overridable, or a single global constant?** The spec
       assumes module-level constants with an optional `FormAPIHandler` override;
-      a per-form override would be a second schema field. — *Owner: Jesus*
-- [ ] **Should the JSON Schema renderer emit `additionalProperties: false` under
+      a per-form override would be a second schema field. — *Owner: Jesus*: no, module-level constants
+- [x] **Should the JSON Schema renderer emit `additionalProperties: false` under
       `reject`?** It emits nothing about extra keys today. Cheap alignment, but it
-      changes rendered output for existing consumers. — *Owner: Jesus*
-- [ ] **Retention for captured extras.** Anonymous caller-controlled JSON in a
+      changes rendered output for existing consumers. — *Owner: Jesus*: yes
+- [x] **Retention for captured extras.** Anonymous caller-controlled JSON in a
       public-form column invites a purge/TTL story. Stated as a Non-Goal here —
-      confirm it stays a follow-up rather than a v1 requirement. — *Owner: Jesus*
-- [ ] **Is `unknown_fields` client-visible?** If the rendered form or the
+      confirm it stays a follow-up rather than a v1 requirement. — *Owner: Jesus*: follow-up
+- [x] **Is `unknown_fields` client-visible?** If the rendered form or the
       frontend docs (`scripts/gen_frontend_docs.py`) should expose the policy so a
-      client knows whether its extras will be kept, Module 9 grows. — *Owner: Jesus*
+      client knows whether its extras will be kept, Module 9 grows. — *Owner: Jesus*: No on this scope
 
 ---
 
