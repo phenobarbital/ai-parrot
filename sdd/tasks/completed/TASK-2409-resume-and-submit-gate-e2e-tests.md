@@ -114,7 +114,10 @@ class ExecutionPlanToolkit(AbstractToolkit):     # line 61
                  soft_timeout: float = 60.0, permission_context=None,
                  on_node_event: Optional[Callable[..., Any]] = None,
                  max_completed_runs: int = 50, **kwargs) -> None: ...   # line 93-106
-    async def plan_execute(self, plan: ExecutionPlan) -> ToolResult: ...
+    async def plan_execute(self, objective: Optional[str] = None,
+                            plan_name: Optional[str] = None,
+                            params: Optional[Dict[str, Any]] = None) -> ToolResult: ...  # line 432 — CORRECTED, see below
+    async def _run_plan(self, plan: ExecutionPlan, *, source: str) -> ToolResult: ...    # line 165 — the REAL integration point for a pre-built plan, see below
     async def plan_status(self, run_id: str) -> ToolResult: ...        # line 385 — poll this, do not assume sync completion
 
 # packages/ai-parrot/src/parrot/human/manager.py
@@ -129,8 +132,27 @@ class HumanInteractionManager:                    # line 51
 # packages/ai-parrot/tests/tools/execution_plan/test_integration.py
 ```
 
+### CORRECTION: `plan_execute()` cannot run a pre-built `ExecutionPlan`
+
+**Verified by reading `toolkit.py:432-458` directly** (this task's own
+contract's `plan_execute(self, plan: ExecutionPlan)` was wrong — no such
+parameter exists): `plan_execute()` only accepts `objective`
+(LLM-authored) or `plan_name` (a versioned file resolved via `plans_dir`)
+— never a pre-built in-memory `ExecutionPlan` object, which is exactly
+what `ingest.py`'s `build_import_plan()` returns. Both of
+`plan_execute()`'s own code paths ultimately call the private
+`_run_plan(plan, source=...)` (line 165) once a plan has been
+acquired/validated — **this task calls `_run_plan()` directly**, the same
+way `plan_execute()` itself does internally, rather than writing the plan
+to a file just to satisfy `plan_name`'s file-based loading path.
+`RunRecord.source` is a `Literal["objective", "plan_name"]` — pass
+`source="plan_name"` (the closer semantic match; there is no third literal
+for "pre-built object").
+
 ### Does NOT Exist
 
+- ~~`ExecutionPlanToolkit.plan_execute(plan: ExecutionPlan)`~~ — does not
+  exist; see the correction above.
 - ~~a `resume_from` parameter on `ExecutionPlanToolkit.plan_execute`~~ —
   still does not exist (FEAT-399's deliberate design, unchanged by
   FEAT-453). Resumability in this test comes entirely from
@@ -144,6 +166,17 @@ class HumanInteractionManager:                    # line 51
   `BusinessAutomationToolkit`) is the only gate — verify its exact
   `confirm()` signature via `parrot.auth.confirmation` before writing the
   scripted-approval test double, do not guess it.
+- ~~a `ToolManager` that must dispatch `run_operation` synchronously to
+  completion~~ — `BusinessAutomationToolkit.run_operation()` itself is
+  fire-and-forget (`{"status": "started", "run_id": ...}` immediately,
+  real work in a background `asyncio.Task`). A plan node's registered tool
+  function must poll `toolkit._runs[run_id]` to completion itself
+  (mirroring `smoke.py`'s `run_smoke_check()`, FEAT-453 TASK-2395), or
+  `AgentsFlow` marks the node "done" the instant the run merely *starts*.
+- ~~`register_tool(..., function=toolkit.run_operation)` (the bound method
+  directly)~~ — this would hit exactly the fire-and-forget gap above; wrap
+  it in a poll-to-completion closure instead (see the implementing test
+  file's `_make_run_operation_tool()`).
 
 ---
 
@@ -251,10 +284,114 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous, via /sdd-start)
+**Date**: 2026-08-24
+**Notes**: Implemented `test_fixture_site_e2e.py` with both required tests
+plus a small sanity test, all against a real, raw Playwright `Browser`, a
+real `ExecutionPlanToolkit`/`ToolManager`/`WorkingMemoryToolkit` stack, and
+the real `local_fixture_site`. `scripted_channel.py` was **not** created —
+see the human-manager decision below.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**`test_expense_import_resumes_from_checkpoint`** (AC-12): Built a
+test-local DRAFT operation ("record_row") navigating to
+`local_fixture_site`'s `/cookie-check` per row — deliberately not reusing
+the acme-books fixtures' own `clients_flow` (hardcoded
+`http://acme-books.test/...`, never resolvable by a real browser). Used
+the REAL `build_import_plan()` to generate the plan (never hand-rolled
+`PlanNode`s), and the REAL `make_import_progress_listener()` wired as
+`ExecutionPlanToolkit(on_node_event=...)`. Simulated a mid-run kill by
+raising inside the registered `run_operation` tool function on its 2nd
+invocation (row index 1) — **the row-index-2 node never dispatched at
+all**, confirmed empirically (`resumed.already_completed_rows == 1`
+after the kill, not 0 or 3), because `build_import_plan()`'s own
+sequential `depends_on` chaining means a failed node blocks its
+dependents — exactly the "raise-after-N-rows" approach the spec's Open
+Questions recommended over actually cancelling a background task.
+Re-building the plan for the same statement digest correctly returned
+only the 2 remaining nodes; running those to completion against a fresh
+(non-flaky) tool brought the manifest to `fully_completed=True`,
+`already_completed_rows=3` — no duplicates, no gaps.
 
-**Deviations from spec**: none | describe if any
+**`test_submit_gate_end_to_end`** (AC-8/AC-20): Built a test-local SUBMIT
+operation ("confirm_and_visit") navigating to `/cookie-check`. **Human-manager
+decision** (explicitly flagged as an implementer's call in this task's own
+scope): reused FEAT-453's own `_ApprovingHumanManager`-style stand-in
+(`conftest.py`) rather than building a full real `HumanChannel` protocol
+implementation from scratch. Rationale: `run_operation()`'s own sequential
+code structure — already proven correct by FEAT-453's existing
+`test_denied_submit_never_opens_browser`/`test_fails_closed_without_human_manager`
+— guarantees the confirmation check completes *before* `_ensure_open()`
+regardless of how long approval takes; a full multi-second
+`HumanChannel`/`register_response_handler()` round trip would add
+substantial implementation risk for no additional ordering guarantee. The
+real value THIS test adds over FEAT-453's own mocked tests is that a real
+post-approval Playwright session actually opens and reaches the real
+fixture site — which it does. Strengthened the stand-in with an *active*
+assertion (not just structural/ordering inference): the approving
+callback itself asserts `toolkit._opened is False` at the exact moment
+it's invoked, proving no browser session existed yet when the gate was
+checked. `approval_calls == [False]` (called exactly once, browser closed
+at that moment) and `toolkit._opened is True` afterward, both asserted.
+
+**Two significant Codebase Contract corrections found and verified
+empirically** (both already updated in this task's own Codebase Contract
+above before implementing, per Cardinal Rule 4):
+1. `ExecutionPlanToolkit.plan_execute()` does **not** accept a pre-built
+   `ExecutionPlan` at all (this task's original contract was wrong) — only
+   `objective` or `plan_name`. Both tests call the private `_run_plan(plan,
+   source="plan_name")` directly instead, the exact method
+   `plan_execute()` itself delegates to internally once a plan is
+   acquired. (`RunRecord.source` is a `Literal["objective", "plan_name"]`
+   — no third option for a pre-built object.)
+2. `BusinessAutomationToolkit.run_operation()` is fire-and-forget
+   (`{"status": "started", "run_id": ...}` immediately). A plan node's
+   registered tool function must poll `toolkit._runs[run_id]` to
+   completion itself, mirroring `smoke.py`'s `run_smoke_check()` pattern
+   (FEAT-453 TASK-2395) — otherwise `AgentsFlow` marks every node "done"
+   the instant a real, multi-second browser operation merely *starts*.
+   `_make_run_operation_tool()` implements this wrapper (bounded 20s
+   ceiling per row).
+
+Real `ToolManager()` (not `_FakeToolManager`) constructed standalone with
+no arguments and `.register_tool(name="run_operation", ..., function=...)`
+— mirroring `test_integration.py`'s own `BasicAgent.tool_manager.register_tool()`
+pattern (the `_FakeToolManager` there is used only for that file's separate
+fan-out/resumability test, not the "real tool dispatch" one).
+
+**Environment note (same pre-existing gap as FEAT-453's own session)**:
+`packages/ai-parrot/tests/tools/execution_plan/`'s own test suite (run to
+confirm no regression from this task's consumption of `ExecutionPlanToolkit`)
+initially hit the known Cython `.so` build-artifact gap
+(`parrot.utils.types`/`parrot.utils.parsers.toml` — compiled extensions
+present in the main repo checkout but not per-worktree, since `.so` files
+are gitignored). Resolved identically to FEAT-453's own precedent: copied
+the same 2 `.so` files from the main repo into this worktree (confirmed
+gitignored via `git check-ignore -v`, no risk of accidental commit) — not
+committed, a local-environment fix only.
+
+Full regression: `packages/ai-parrot-tools/tests/business_automation/` (91
+passed) + `tests/scraping/` (919 total passed across both dirs, same 7
+pre-existing/unrelated `CrawlEngine`/FEAT-013 failures) and
+`packages/ai-parrot/tests/tools/execution_plan/` (71 passed, confirming
+zero regression to `ExecutionPlanToolkit`'s own suite). `ruff check`
+clean (all-modern-style, no pre-existing debt to preserve in this
+brand-new file).
+
+**FEAT-453 spec AC-17/AC-20 status**: both are now genuinely exercised
+end-to-end against a real browser (AC-17 via TASK-2408's
+`test_authenticated_flow_end_to_end`/`test_stub_regression_full_plan` plus
+this task's resume/submit-gate tests; AC-20's `SmokeCheck` mechanism is
+exercised indirectly here via the same `run_operation()`/`toolkit._runs`
+polling pattern `run_smoke_check()` itself uses, though `SmokeCheck`
+specifically was not re-tested standalone in this feature — its own
+TASK-2395 mocked-executor tests remain the direct coverage). FEAT-453's
+own spec file was not edited, per this task's own instruction.
+
+**Deviations from spec**: `scripted_channel.py` was not created (the task
+explicitly made this conditional on the existing stand-in proving
+insufficient — it did not); the human-manager decision above is
+documented exactly as the task's own scope requested ("document the
+choice"). No other deviations — both required tests pass, using only the
+real production `_run_plan()`/`make_import_progress_listener()`/
+`_credential_resolver_from_broker()` (unused here but available)
+integration points, no FEAT-453 production code modified.

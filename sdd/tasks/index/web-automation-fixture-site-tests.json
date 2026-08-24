@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-24T10:05:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-24T11:23:43+00:00",
   "tasks": [
     {
       "id": "TASK-2407",
@@ -14,17 +14,17 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "No dependencies; must land before TASK-2408/2409 which both consume this fixture.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2407-local-fixture-site.md",
-      "verification": null
+      "started_at": "2026-08-24T10:13:54+00:00",
+      "completed_at": "2026-08-24T10:20:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2407-local-fixture-site.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2408",
@@ -33,17 +33,19 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-2407"],
+      "depends_on": [
+        "TASK-2407"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs local_fixture_site (TASK-2407). TASK-2409 depends on this task's fake_broker fixture too.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2408-fake-broker-and-real-browser-smoke-tests.md",
-      "verification": null
+      "started_at": "2026-08-24T10:29:22+00:00",
+      "completed_at": "2026-08-24T10:56:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2408-fake-broker-and-real-browser-smoke-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2409",
@@ -52,17 +54,20 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "XL",
-      "depends_on": ["TASK-2407", "TASK-2408"],
+      "depends_on": [
+        "TASK-2407",
+        "TASK-2408"
+      ],
       "parallel": false,
       "parallelism_notes": "Hardest module — needs both the fixture site and the fake_broker/real-driver fixtures from the prior two tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2409-resume-and-submit-gate-e2e-tests.md",
-      "verification": null
+      "started_at": "2026-08-24T11:05:24+00:00",
+      "completed_at": "2026-08-24T11:18:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2409-resume-and-submit-gate-e2e-tests.md",
+      "verification": "verified"
     }
   ]
 }
