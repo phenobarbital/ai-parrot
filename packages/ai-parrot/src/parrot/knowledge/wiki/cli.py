@@ -347,7 +347,35 @@ def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
 
 
 def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
-    """Create the retrieval-plane store for a repo."""
+    """Create the retrieval-plane store for a repo.
+
+    TODO(follow-up): let the navconfig environment pick the backend.
+
+    Today the backend is a per-repo, git-ignored fact: whatever
+    ``.parrot/wiki.json`` says, set once by ``build --backend``. That
+    makes "local sqlite while I work offline, ArangoDB when I'm on the
+    VPN" a file edit plus a rebuild, and it silently strands every
+    ``query`` the moment the server is unreachable — there is no
+    fallback.
+
+    The proposal is to drive it from the same ``env/<ENV>/`` layout
+    navconfig already uses for every other credential in this repo, so
+    ``ENV=dev`` resolves a local sqlite plane and ``ENV=prod`` (or a
+    dedicated value) resolves the shared ArangoDB one.
+
+    Most of the machinery already exists, and is inconsistent in a way
+    worth fixing in the same pass: ``WIKI_STORE_BACKEND`` IS honoured by
+    ``_resolve_read_store`` and ``_resolve_write_store`` — but only for
+    ``--store``/``WIKI_STORE`` targets, and ``build`` ignores it
+    entirely. So the work is mostly to define one precedence
+    (``--backend`` flag > environment > ``wiki.json``) and apply it here
+    and in ``build``, rather than to invent a new mechanism.
+
+    Open questions for that follow-up: whether the two planes stay in
+    sync or are simply different corpora; and whether an unreachable
+    ArangoDB should fall back to the local plane (convenient, but it
+    would answer queries from a stale corpus without saying so).
+    """
     storage = config.storage_path(root)
     if config.backend == "arangodb":
         from parrot.knowledge.wiki.project import resolve_arango_params
