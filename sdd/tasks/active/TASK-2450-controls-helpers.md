@@ -60,21 +60,55 @@ from parrot_formdesigner.renderers.jsonschema import type_level_value_shape  # l
 ### Existing Signatures to Use
 ```python
 # parrot_formdesigner/controls/builtin.py:66
+# CORRECTED (contract was stale — verified against the actual file at
+# implementation time): _BUILTIN_METADATA entries do NOT have a
+# "value_shape" key at all. FILE/IMAGE entries only have: label,
+# description, category="media", icon, render_hint="upload",
+# supports_constraints, is_container, supported_operators,
+# supported_effects, supported_operations. `value_shape` is computed
+# DYNAMICALLY in `_seed()` (line ~646) via
+# `type_level_value_shape(field_type)` and passed to
+# `register_field_control()` — it is NOT stored in `_BUILTIN_METADATA`
+# itself. Since TASK-2448 already updated `type_level_value_shape()` for
+# FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD, the registered controls'
+# `value_shape` is ALREADY correct with no code change needed in this
+# file — verified by a test against `get_controls()`, not
+# `_BUILTIN_METADATA[ft]["value_shape"]` (which does not exist).
 _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
-    # Each entry has: category, render_hint, value_shape, ...
-    # FILE: category="media", render_hint="upload"
-    # IMAGE: category="media", render_hint="upload"
+    FieldType.FILE: {"category": "media", "render_hint": "upload", "...": "..."},
+    FieldType.IMAGE: {"category": "media", "render_hint": "upload", "...": "..."},
 }
 
 # parrot_formdesigner/tools/field_helpers.py:16
+# CORRECTED: _FIELD_SCHEMA_SNIPPETS entries are FIELD-DEFINITION authoring
+# snippets (field_id/field_type/label/constraints/...), NOT submitted-value
+# examples — there is no "value_example" key anywhere in this file today.
+# Only FILE and IMAGE have entries; IMAGE_DROPZONE and MULTI_UPLOAD have NO
+# entry at all (FEAT-448 never backfilled the twelve absorbed types here).
+# This task adds a "value_example" + "note" key to the existing FILE/IMAGE
+# entries, and ADDS two new minimal entries for IMAGE_DROPZONE/MULTI_UPLOAD
+# (field-definition snippet + value_example + note) — narrowly scoped to
+# just these two, not the other ten still-missing FEAT-448 types.
 _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
-    # Each entry has example JSON for a field type
+    FieldType.FILE.value: {"field_id": "resume", "field_type": "file", "label": "Resume"},
+    FieldType.IMAGE.value: {"field_id": "profile_image", "field_type": "image", "label": "Profile image"},
+    # IMAGE_DROPZONE, MULTI_UPLOAD: no entry — this task adds them
 }
 ```
 
 ### Does NOT Exist
 - ~~`_BUILTIN_METADATA[FieldType.FILE]["envelope"]`~~ — no such key yet
-- ~~`controls/registry.py`~~ — no separate controls registry module
+- ~~`_BUILTIN_METADATA[FieldType.FILE]["value_shape"]`~~ — value_shape is
+  never stored in `_BUILTIN_METADATA`; it is computed in `_seed()`
+- ~~`_FIELD_SCHEMA_SNIPPETS["file"]["value_example"]`~~ — does not exist
+  yet; this task adds it
+- ~~`_FIELD_SCHEMA_SNIPPETS["image_dropzone"]`~~ / ~~`["multi_upload"]`~~ —
+  no entries exist yet for these two keys; this task adds them
+- ~~`controls/registry.py`~~ — WRONG in one respect: this module DOES
+  exist (`controls/registry.py`, holding `FieldControlMetadata`,
+  `register_field_control()`, `get_controls()`) — it is simply not a
+  second/duplicate metadata source to edit; `_BUILTIN_METADATA` lives in
+  `builtin.py` and feeds the registry via `_seed()`.
 
 ---
 

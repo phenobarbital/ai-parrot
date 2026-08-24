@@ -582,7 +582,10 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     },
     FieldType.MULTI_UPLOAD: {
         "label": "Multi Upload",
-        "description": "Multiple-file upload; a list of REST-style {answer, blob_ref, display} envelopes.",
+        # FEAT-460 — description updated: value shape is now a list of
+        # FileEnvelope objects. Legacy {answer,blob_ref,display} items are
+        # still accepted and mapped internally (validators.py dual-read).
+        "description": "Multiple-file upload; a list of FileEnvelope objects.",
         "category": "media",
         "icon": "multi-upload",
         "render_hint": "upload",

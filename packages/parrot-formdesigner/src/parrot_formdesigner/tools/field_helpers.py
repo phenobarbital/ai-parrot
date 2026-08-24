@@ -75,15 +75,37 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
             {"value": "sql", "label": "SQL"},
         ],
     },
+    # FEAT-460 — value_example/note added: submitted values are now
+    # FileEnvelope objects (dual-read: legacy plain string still accepted).
     FieldType.FILE.value: {
         "field_id": "resume",
         "field_type": "file",
         "label": "Resume",
+        "value_example": {
+            "filename": "document.pdf",
+            "content_type": "application/pdf",
+            "size": 183204,
+            "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+            "data_url": None,
+            "thumbnail_url": None,
+            "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        },
+        "note": "Also accepts a plain string (legacy dual-read). See the FileEnvelope model.",
     },
     FieldType.IMAGE.value: {
         "field_id": "profile_image",
         "field_type": "image",
         "label": "Profile image",
+        "value_example": {
+            "filename": "photo.jpg",
+            "content_type": "image/jpeg",
+            "size": 45000,
+            "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+            "data_url": "data:image/jpeg;base64,/9j/4AAQ...",
+            "thumbnail_url": "/api/v1/navigator/forms/form-uid/fields/field-uid/thumbnail/thumb-uuid",
+            "checksum": "sha256:abc123...",
+        },
+        "note": "Also accepts a plain string (legacy dual-read). See the FileEnvelope model.",
     },
     FieldType.COLOR.value: {
         "field_id": "theme_color",
@@ -254,6 +276,42 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
             "expression": None,  # FEAT-301 will populate the BEDMAS expression
             "render_as": "readonly",
         },
+    },
+    # FEAT-460 — raw upload field types. Submitted values are FileEnvelope
+    # objects; IMAGE_DROPZONE also has dual-read support for the legacy
+    # {name,type,size,dataUrl} shape, and MULTI_UPLOAD for the legacy
+    # [{answer,blob_ref,display}] shape (see validators.py _coerce_value).
+    FieldType.IMAGE_DROPZONE.value: {
+        "field_id": "photo_dropzone",
+        "field_type": "image_dropzone",
+        "label": "Photo dropzone",
+        "value_example": {
+            "filename": "photo.jpg",
+            "content_type": "image/jpeg",
+            "size": 45000,
+            "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+            "data_url": None,
+            "thumbnail_url": None,
+            "checksum": "sha256:abc123...",
+        },
+        "note": "Also accepts the legacy {name,type,size,dataUrl} shape. See the FileEnvelope model.",
+    },
+    FieldType.MULTI_UPLOAD.value: {
+        "field_id": "gallery",
+        "field_type": "multi_upload",
+        "label": "Gallery",
+        "value_example": [
+            {
+                "filename": "photo1.jpg",
+                "content_type": "image/jpeg",
+                "size": 45000,
+                "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+                "data_url": None,
+                "thumbnail_url": None,
+                "checksum": "sha256:abc123...",
+            },
+        ],
+        "note": "Also accepts the legacy [{answer,blob_ref,display}] shape. See the FileEnvelope model.",
     },
 }
 
