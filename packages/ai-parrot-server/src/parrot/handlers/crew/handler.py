@@ -300,7 +300,16 @@ class CrewHandler(BaseView):
         """
         Create a new AgentCrew or update an existing one.
 
-        Requires an authenticated session (FEAT-446).
+        Requires an authenticated session (FEAT-446). Tenant is resolved
+        from the session via ``resolve_session_tenant`` — a ``tenant``
+        field in the request body is only honored if it matches the
+        resolved tenant (otherwise 400); the crew is always created/
+        updated under the session-resolved tenant, never a client-
+        declared one (code-review fix: the original FEAT-446 pass
+        tenant-scoped ``get()``/``delete()`` but left ``put()`` trusting
+        ``crew_def.tenant`` straight from the body, allowing a caller of
+        any tenant to create/overwrite/delete another tenant's crew by
+        setting `"tenant"` in the payload).
 
         URL parameters:
             - id: Crew ID or name (optional, for updates)
@@ -329,7 +338,14 @@ class CrewHandler(BaseView):
             # Parse request body
             data = await self.request.json()
             crew_def = CrewDefinition(**data)
-            tenant = crew_def.tenant
+            # FEAT-446 code-review fix: tenant comes from the session,
+            # never the body; `declared=` triggers a 400 on conflicting
+            # values. The resolved tenant is authoritative for both the
+            # lookup below AND the definition that gets persisted.
+            tenant = await resolve_session_tenant(
+                self.request, declared=data.get('tenant')
+            )
+            crew_def.tenant = tenant
 
             # Validate bot manager availability
             if not self.bot_manager:

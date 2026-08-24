@@ -40,6 +40,7 @@ Two testing strategies are used, matched to what each row needs:
 """
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -330,3 +331,222 @@ class TestWsUserGated:
         UserSocketManager(app, route_prefix="/ws/user_saas_it_saas")
 
         assert "/ws/user_saas_it_saas" not in exclude_list
+
+
+# ---------------------------------------------------------------------------
+# Code-review fix (post-implementation): PUT /api/v1/crew tenant isolation.
+#
+# The original FEAT-446 pass tenant-scoped CrewHandler.get()/delete() via
+# resolve_session_tenant() but left put() (crew create/update) reading
+# `tenant = crew_def.tenant` straight from the request body — a caller of
+# any tenant could create/overwrite/delete another tenant's crew by
+# setting "tenant" in the payload. Fixed to resolve the tenant from the
+# session exactly like get()/delete(), with the body value only used for
+# the declared-mismatch check.
+# ---------------------------------------------------------------------------
+
+
+class TestCrewPutTenantIsolation:
+    async def test_declared_tenant_mismatch_rejected(
+        self, aiohttp_client, authenticated_app
+    ):
+        _set_session(authenticated_app, {"tenant_id": "acme"})
+        client = await aiohttp_client(authenticated_app)
+
+        resp = await client.put(
+            "/api/v1/crew",
+            json={"name": "victim-crew", "agents": [], "tenant": "victim-tenant"},
+        )
+
+        assert resp.status == 400
+
+    async def test_creates_under_session_tenant_when_body_omits_tenant(
+        self, aiohttp_client, authenticated_app
+    ):
+        _set_session(authenticated_app, {"tenant_id": "acme"})
+        authenticated_app["bot_manager"].add_crew = AsyncMock()
+        client = await aiohttp_client(authenticated_app)
+
+        resp = await client.put("/api/v1/crew", json={"name": "my-crew", "agents": []})
+
+        assert resp.status == 201
+        body = await resp.json()
+        assert body["tenant"] == "acme"
+        call_args = authenticated_app["bot_manager"].add_crew.call_args
+        persisted_def = call_args.args[2]
+        assert persisted_def.tenant == "acme"
+
+    async def test_creates_under_session_tenant_when_body_tenant_matches(
+        self, aiohttp_client, authenticated_app
+    ):
+        _set_session(authenticated_app, {"tenant_id": "acme"})
+        authenticated_app["bot_manager"].add_crew = AsyncMock()
+        client = await aiohttp_client(authenticated_app)
+
+        resp = await client.put(
+            "/api/v1/crew", json={"name": "my-crew", "agents": [], "tenant": "acme"}
+        )
+
+        assert resp.status == 201
+        body = await resp.json()
+        assert body["tenant"] == "acme"
+
+
+# ---------------------------------------------------------------------------
+# Code-review fix (post-implementation): CrewExecutionHandler job/crew
+# read+interact paths (get/patch/put) were not tenant-scoped at all —
+# only execute_crew() (POST) resolved a tenant. Any authenticated caller,
+# regardless of tenant, could poll/interact with any other tenant's job
+# given its job_id. Fixed by tagging every job with its owning tenant
+# (already done via `job.metadata['tenant']` at creation) and checking it
+# on every read/interact path, hiding cross-tenant existence as a 404
+# exactly like a genuinely-missing job.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def authenticated_execution_app(monkeypatch):
+    """A minimal app with only ``CrewExecutionHandler`` mounted, session
+    fully controlled per-test via ``app["_test_session"]`` (see
+    ``authenticated_app`` above for the mechanism).
+    """
+
+    @web.middleware
+    async def _mark_authenticated(request: web.Request, handler):
+        request["authenticated"] = True
+        return await handler(request)
+
+    async def _fake_get_session(request, new=False):
+        return request.app["_test_session"]
+
+    monkeypatch.setattr(
+        "navigator_auth.decorators.get_session", _fake_get_session
+    )
+
+    app = web.Application(middlewares=[_mark_authenticated])
+    app["_test_session"] = _FakeSession()
+    app["bot_manager"] = MagicMock()
+    CrewExecutionHandler.configure(app, "/api/v1/crews")
+    return app
+
+
+def _plant_job(app: web.Application, *, job_id: str, tenant: str, status=None):
+    """Register a job (and, for the detail/interact paths, a matching
+    ``_active_crews`` entry) directly on the handler class, bypassing
+    execute_crew()'s full LLM-execution path — this test only needs to
+    prove the tenant *check* on the read/interact side.
+    """
+    from datetime import datetime
+
+    from parrot.handlers.crew.models import JobStatus
+
+    job = app["_job_manager"].create_job(
+        job_id=job_id, obj_id="some-crew", query="hi", execution_mode="sequential"
+    )
+    job.metadata["tenant"] = tenant
+    job.status = status or JobStatus.COMPLETED
+    if job.status == JobStatus.COMPLETED:
+        job.completed_at = datetime.now(UTC)
+    fake_crew = MagicMock()
+    fake_crew.name = "Test Crew"
+    fake_crew.get_agent_statuses = MagicMock(return_value={"agent-1": "done"})
+    CrewExecutionHandler._active_crews[job_id] = fake_crew
+    return job
+
+
+class TestExecutionHandlerTenantIsolation:
+    @pytest.fixture(autouse=True)
+    def _job_manager(self, authenticated_execution_app):
+        from parrot.handlers.jobs.job import JobManager
+
+        jm = JobManager(id="test-execution-tenant-isolation")
+        authenticated_execution_app["job_manager"] = jm
+        authenticated_execution_app["_job_manager"] = jm
+        yield jm
+        CrewExecutionHandler._active_crews.clear()
+
+    async def test_get_detail_cross_tenant_hidden(
+        self, aiohttp_client, authenticated_execution_app
+    ):
+        job = _plant_job(authenticated_execution_app, job_id="job-1", tenant="acme")
+        _set_session(authenticated_execution_app, {"tenant_id": "beta"})
+        client = await aiohttp_client(authenticated_execution_app)
+
+        resp = await client.get(f"/api/v1/crews/{job.job_id}/some-crew")
+
+        assert resp.status == 404
+
+    async def test_get_detail_same_tenant_allowed(
+        self, aiohttp_client, authenticated_execution_app
+    ):
+        job = _plant_job(authenticated_execution_app, job_id="job-2", tenant="acme")
+        _set_session(authenticated_execution_app, {"tenant_id": "acme"})
+        client = await aiohttp_client(authenticated_execution_app)
+
+        resp = await client.get(f"/api/v1/crews/{job.job_id}/some-crew")
+
+        assert resp.status == 200
+
+    async def test_active_jobs_list_excludes_other_tenants(
+        self, aiohttp_client, authenticated_execution_app
+    ):
+        from parrot.handlers.crew.models import JobStatus
+
+        _plant_job(
+            authenticated_execution_app,
+            job_id="job-mine",
+            tenant="acme",
+            status=JobStatus.RUNNING,
+        )
+        _plant_job(
+            authenticated_execution_app,
+            job_id="job-not-mine",
+            tenant="beta",
+            status=JobStatus.RUNNING,
+        )
+        _set_session(authenticated_execution_app, {"tenant_id": "acme"})
+        client = await aiohttp_client(authenticated_execution_app)
+
+        resp = await client.get("/api/v1/crews", params={"mode": "active_jobs"})
+
+        assert resp.status == 200
+        body = await resp.json()
+        job_ids = {j["job_id"] for j in body}
+        assert "job-mine" in job_ids
+        assert "job-not-mine" not in job_ids
+
+    async def test_patch_cross_tenant_hidden(
+        self, aiohttp_client, authenticated_execution_app
+    ):
+        job = _plant_job(authenticated_execution_app, job_id="job-3", tenant="acme")
+        _set_session(authenticated_execution_app, {"tenant_id": "beta"})
+        client = await aiohttp_client(authenticated_execution_app)
+
+        resp = await client.patch("/api/v1/crews", params={"job_id": job.job_id})
+
+        assert resp.status == 404
+
+    async def test_patch_same_tenant_allowed(
+        self, aiohttp_client, authenticated_execution_app
+    ):
+        job = _plant_job(authenticated_execution_app, job_id="job-4", tenant="acme")
+        _set_session(authenticated_execution_app, {"tenant_id": "acme"})
+        client = await aiohttp_client(authenticated_execution_app)
+
+        resp = await client.patch("/api/v1/crews", params={"job_id": job.job_id})
+
+        assert resp.status == 200
+
+    async def test_put_interact_cross_tenant_hidden(
+        self, aiohttp_client, authenticated_execution_app
+    ):
+        job = _plant_job(authenticated_execution_app, job_id="job-5", tenant="acme")
+        _set_session(authenticated_execution_app, {"tenant_id": "beta"})
+        client = await aiohttp_client(authenticated_execution_app)
+
+        resp = await client.put(
+            f"/api/v1/crews/{job.job_id}/some-crew/ask",
+            json={"question": "how are you"},
+        )
+
+        assert resp.status == 404

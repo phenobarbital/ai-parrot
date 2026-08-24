@@ -29,9 +29,15 @@ decorator; both are a pass per the spec).
 
 ## Tenant identity — BREAKING for callers passing `tenant` in the body/query
 
-For the crew and crew-execution-history routes above, the tenant is now
-**resolved from the authenticated session**, never trusted from a
-`tenant` query parameter or JSON body field:
+For every route above (`CrewHandler`'s `get`/`put`/`delete`,
+`CrewExecutionHandler`'s `get`/`patch`/`put`/`post`, and
+`CrewExecutionHistoryHandler`), the tenant is now **resolved from the
+authenticated session**, never trusted from a `tenant` query parameter or
+JSON body field. This includes crew *creation/update* (`PUT
+/api/v1/crew`) and job status/interaction polling (`GET`/`PATCH`/`PUT
+/api/v1/crews`) — a caller can no longer create, update, delete, poll, or
+interact with a resource under any tenant but their own, regardless of
+what a request body or query string claims:
 
 - Resolution order: an explicit `tenant_id` claim in the session's
   userinfo → `programs[0]` → unresolvable.
@@ -108,6 +114,35 @@ never relied on passing a `tenant` value that differs from its own
 session's tenant. Otherwise: authenticate before calling the routes in
 the table above, and stop passing a conflicting `tenant` value (or match
 it to your session's tenant).
+
+## Post-implementation code-review hardening
+
+An adversarial code review of the initial implementation found two gaps
+before this feature was pushed, both fixed prior to merge:
+
+- `CrewHandler.put()` (crew create/update) was reading the tenant
+  straight from the request body instead of resolving it from the
+  session — the one route in the table above that wasn't yet covered by
+  the "Tenant identity" section's guarantee. Fixed to use
+  `resolve_session_tenant()` like every other method.
+- `CrewExecutionHandler`'s `get()` (job/crew detail, active/completed job
+  listings), `patch()` (job status polling), and `put()` (ask/summary
+  interaction) had no tenant check at all — only `execute_crew()` (the
+  `POST` path) resolved a tenant. Any authenticated user, regardless of
+  tenant, could poll or interact with any other tenant's job given its
+  `job_id`. Fixed by tagging every job with its owning tenant (already
+  done via `job.metadata['tenant']` at creation) and checking it on every
+  read/interact path — a cross-tenant job is reported as `404 Not Found`,
+  identical to a genuinely nonexistent one, so existence is never leaked.
+- Additionally, `setup_pbac()`'s per-agent/per-dataset sub-policy loaders
+  (`policies/agents/`, `policies/datasets/`) used to silently continue on
+  a load failure regardless of `PARROT_SAAS_MODE`, inconsistent with
+  every other failure path in that function. Now gated the same way: a
+  sub-policy load failure raises under `PARROT_SAAS_MODE=true` instead of
+  degrading silently.
+
+See `sdd/tasks/completed/TASK-2325-negative-path-test-suite.md`'s
+Completion Note for the full review trail.
 
 ## Design history
 

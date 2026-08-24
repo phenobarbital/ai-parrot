@@ -198,6 +198,17 @@ def setup_pbac(
                 str(agents_subdir),
                 exc,
             )
+            # Code-review fix: this path used to silently degrade
+            # (continue without per-agent policies) regardless of
+            # PARROT_SAAS_MODE — inconsistent with the "fail-closed
+            # under the flag" guarantee the other failure paths in this
+            # function provide.
+            if PARROT_SAAS_MODE:
+                raise RuntimeError(
+                    "PBAC initialization failed with PARROT_SAAS_MODE=true "
+                    f"(fail-closed): error loading per-agent policies from "
+                    f"'{agents_subdir}': {exc}"
+                ) from exc
 
     # Load per-dataset YAML policies from policies/datasets/ subdirectory (if present)
     datasets_subdir = policy_path / "datasets"
@@ -218,6 +229,14 @@ def setup_pbac(
                 str(datasets_subdir),
                 exc,
             )
+            # Code-review fix: same fail-closed gap as the per-agent
+            # loader above.
+            if PARROT_SAAS_MODE:
+                raise RuntimeError(
+                    "PBAC initialization failed with PARROT_SAAS_MODE=true "
+                    f"(fail-closed): error loading per-dataset policies from "
+                    f"'{datasets_subdir}': {exc}"
+                ) from exc
 
     try:
         evaluator.load_policies(policies)
