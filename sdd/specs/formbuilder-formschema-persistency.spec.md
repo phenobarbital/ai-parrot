@@ -8,7 +8,7 @@ base_branch: dev
 
 # Feature Specification: Autonomous FormSchema Persistence (Standalone Forms)
 
-**Feature ID**: FEAT-PENDING
+**Feature ID**: FEAT-457
 **Date**: 2026-08-24
 **Author**: Jesus Lara
 **Status**: approved
