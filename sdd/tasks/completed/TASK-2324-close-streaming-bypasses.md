@@ -145,10 +145,51 @@ class TestStreamExclusions:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Removed all four `exclude_list.append('/bots/*/stream/...')`
+calls from `handlers/stream.py::configure_routes` (the now-unused
+`from navigator_auth.conf import exclude_list` import was also removed);
+kept the four route registrations byte-identical (verified via a live
+`app.router.routes()` dump — all 4 routes still registered, same
+methods/paths). Did NOT add `@is_authenticated()` or any session/user
+read inside the four stream methods (`stream_sse`, `stream_ndjson`,
+`stream_chunked`, `stream_websocket`) — none of them currently use the
+caller's identity for any logic (they only read `bot_id` from the URL
+and `prompt`/kwargs from the body), and the task's own "Does NOT Exist"
+list says to add the decorator "ONLY if the integration test in
+TASK-2325 shows the middleware alone does not reject anonymous callers."
+Enforcement now comes entirely from navigator-auth's middleware once the
+route is no longer excluded (verified against
+`navigator_auth/middlewares/abstract.py:85`, which raises
+`web.HTTPUnauthorized`). Left this in place for TASK-2325 to prove/
+adjust with its integration suite rather than pre-emptively guessing at
+per-stream session-read requirements.
+`handlers/user.py::UserSocketManager.__init__`: `exclude_list.append(
+route_prefix)` is now gated behind
+`if not PARROT_SAAS_MODE and route_prefix not in exclude_list:`, mirroring
+the conditional-append pattern at `autonomous/orchestrator.py:363-365`.
+`PARROT_SAAS_MODE` is imported lazily inside `__init__` (not at module
+top) so tests can `monkeypatch.setattr(parrot.conf, "PARROT_SAAS_MODE",
+...)` before constructing the manager and have it observed immediately —
+same pattern as TASK-2322's `_saas_mode()` indirection.
+`pytest packages/ai-parrot-server/tests/unit/test_stream_auth.py -v` —
+4 passed (all from the Test Specification). Tests assert against
+`exclude_list` contents (never route behavior), per the Key Constraint,
+using an autouse fixture that snapshots/restores the shared, mutable
+`exclude_list` around each test to avoid cross-test pollution.
+Ruff: before/after diff against `dev` — stream.py flat at 14 errors
+(pre-existing, untouched by my edits); user.py flat at 59 (one
+transient new `RUF100` from a `# noqa: PLC0415` I added and then removed
+since that check isn't enabled in this project's ruff config); new test
+file clean after `ruff check --fix`.
+Confirmed NOT touched (per "NOT in scope"):
+`autonomous/orchestrator.py:363-365` (`/autonomous/admin`),
+`mcp/parrot_server.py` excludes, `services/whatsapp.py` excludes, and
+app.py's `/a2a`, `/.well-known/*`, `/api/messages`, `/api/msagentsdk/*`
+excludes — grep-verified zero changes to any of those files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — the "verify the four stream methods
+obtain session/user... add a read where needed" scope note was
+evaluated and found not-needed (no current logic depends on caller
+identity); documented above rather than adding speculative code.

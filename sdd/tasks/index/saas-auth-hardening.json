@@ -90,7 +90,7 @@
       "feature_id": "FEAT-446",
       "feature": "saas-auth-hardening",
       "spec": "sdd/specs/saas-auth-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "stream.py/user.py are disjoint from TASK-2322/2323 files; only needs the flag from TASK-2320.",
       "assigned_to": null,
       "started_at": "2026-08-24T00:01:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2324-close-streaming-bypasses.md"
+      "completed_at": "2026-08-24T00:19:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2324-close-streaming-bypasses.md"
     },
     {
       "id": "TASK-2325",
