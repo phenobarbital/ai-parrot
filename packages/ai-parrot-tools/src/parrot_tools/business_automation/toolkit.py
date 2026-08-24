@@ -96,8 +96,7 @@ class BusinessAutomationToolkit(AbstractToolkit):
         flows_override = kwargs.pop("flows", None)
         templates_override = kwargs.pop("templates", None)
         overrides_given = any(
-            override is not None
-            for override in (operations_override, flows_override, templates_override)
+            override is not None for override in (operations_override, flows_override, templates_override)
         )
 
         super().__init__(**kwargs)
