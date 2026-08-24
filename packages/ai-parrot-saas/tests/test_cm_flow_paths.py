@@ -405,6 +405,145 @@ async def test_a_wired_issuer_mints_a_real_coupon(
 
 
 # ---------------------------------------------------------------------------
+# The deterministic nodes against real repositories
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+async def test_the_deterministic_nodes_persist_what_they_did(
+    tenant, test_dsn, unique_schema
+) -> None:
+    """One run, and everything it should leave behind.
+
+    The unit tests drive each node alone; this proves they still line up when
+    the engine dispatches them — the review moves to ``replied``, the reply
+    attempt is on file with its text, and the guest resolved at ingest is the
+    one the contact step found.
+    """
+    from asyncdb import AsyncDB
+
+    from parrot_saas.db.schema import ensure_schema
+    from parrot_saas.reviews.mock import MockReviewSource
+    from parrot_saas.reviews.models import ReplyStatus, ReviewStatus
+    from parrot_saas.reviews.port import ReviewEvent
+    from parrot_saas.reviews.repository import GuestRepository, ReviewRepository
+
+    conn = AsyncDB("pg", dsn=test_dsn)
+    async with await conn.connection():
+        await ensure_schema(conn, schema=unique_schema)
+        await conn.execute(
+            f"INSERT INTO {unique_schema}.tenants (tenant_id, name) "
+            "VALUES ('bar-pepe', 'Bar Pepe')"
+        )
+
+    reviews = ReviewRepository(test_dsn, schema=unique_schema)
+    guests = GuestRepository(test_dsn, schema=unique_schema)
+    source = MockReviewSource(seed_demo=False)
+    try:
+        guest = await guests.upsert(
+            "bar-pepe", email="marta@example.com", display_name="Marta"
+        )
+        await guests.set_consent("bar-pepe", guest.guest_id, True)
+        event = ReviewEvent(
+            source="mock",
+            external_id="ext-1",
+            rating=1,
+            text="Cold food and a long wait.",
+        )
+        source.seed("bar-pepe", event)
+        stored, _ = await reviews.ingest(
+            "bar-pepe", event, guest_id=guest.guest_id
+        )
+
+        shared = {"review": _review(review_id=stored.review_id)}
+        result, executed = await _run(
+            tenant,
+            shared,
+            review_source=source,
+            review_repository=reviews,
+            guest_repository=guests,
+        )
+
+        # Published, and recorded with the text that went out.
+        assert topo.PUBLISH_REPLY in executed
+        replies = await reviews.list_replies("bar-pepe", stored.review_id)
+        assert len(replies) == 1
+        assert replies[0].status == ReplyStatus.PUBLISHED
+        assert replies[0].text == source.published[0][2]
+
+        # The guest ingest resolved is the one contact capture found.
+        contact = result.responses[topo.CAPTURE_CONTACT]
+        assert contact.guest_id == guest.guest_id
+        assert contact.contact_available is True
+        assert "marta@example.com" not in contact.model_dump_json()
+
+        # And the review ends up where an operator can see it.
+        assert (
+            await reviews.get("bar-pepe", stored.review_id)
+        ).status == ReviewStatus.REPLIED
+    finally:
+        await reviews.aclose()
+        await guests.aclose()
+        conn = AsyncDB("pg", dsn=test_dsn)
+        async with await conn.connection():
+            await conn.execute(f"DROP SCHEMA IF EXISTS {unique_schema} CASCADE")
+
+
+@pytest.mark.integration
+async def test_a_guest_without_consent_gets_a_reply_and_no_coupon(
+    tenant, test_dsn, unique_schema
+) -> None:
+    """The whole point of the contact step, end to end.
+
+    An address on file is not permission to use it, so the run answers the
+    review publicly and stops before the coupon branch.
+    """
+    from asyncdb import AsyncDB
+
+    from parrot_saas.db.schema import ensure_schema
+    from parrot_saas.reviews.mock import MockReviewSource
+    from parrot_saas.reviews.port import ReviewEvent
+    from parrot_saas.reviews.repository import GuestRepository, ReviewRepository
+
+    conn = AsyncDB("pg", dsn=test_dsn)
+    async with await conn.connection():
+        await ensure_schema(conn, schema=unique_schema)
+        await conn.execute(
+            f"INSERT INTO {unique_schema}.tenants (tenant_id, name) "
+            "VALUES ('bar-pepe', 'Bar Pepe')"
+        )
+
+    reviews = ReviewRepository(test_dsn, schema=unique_schema)
+    guests = GuestRepository(test_dsn, schema=unique_schema)
+    source = MockReviewSource(seed_demo=False)
+    try:
+        guest = await guests.upsert("bar-pepe", email="silent@example.com")
+        event = ReviewEvent(source="mock", external_id="ext-2", rating=1, text="Bad.")
+        source.seed("bar-pepe", event)
+        stored, _ = await reviews.ingest(
+            "bar-pepe", event, guest_id=guest.guest_id
+        )
+
+        result, executed = await _run(
+            tenant,
+            {"review": _review(review_id=stored.review_id)},
+            review_source=source,
+            review_repository=reviews,
+            guest_repository=guests,
+        )
+
+        assert topo.PUBLISH_REPLY in executed
+        assert topo.COUPON_ELIGIBILITY not in executed
+        assert result.responses[topo.CLOSE].outcome == "replied_no_contact"
+    finally:
+        await reviews.aclose()
+        await guests.aclose()
+        conn = AsyncDB("pg", dsn=test_dsn)
+        async with await conn.connection():
+            await conn.execute(f"DROP SCHEMA IF EXISTS {unique_schema} CASCADE")
+
+
+# ---------------------------------------------------------------------------
 # Checkpointing stays available
 # ---------------------------------------------------------------------------
 

@@ -23,12 +23,41 @@ from ..models import (
     Severity,
     TriageAction,
 )
+from navconfig.logging import logging
+
 from .base import CMNode, register_cm_node
+
+logger = logging.getLogger("parrot_saas.flows.cm.reply")
 
 #: Ratings at or below this are treated as detractors by the fallback triage.
 DETRACTOR_MAX_RATING = 2
 #: Ratings at or above this are treated as promoters.
 PROMOTER_MIN_RATING = 4
+
+#: Phrases that must never appear in a **public** reply, whatever the tenant
+#: configures on top. Each one is a specific way a published reply does damage:
+#:
+#: * offers and discounts — the coupon is delivered privately, to a guest who
+#:   consented. Announcing it under a public review turns a recovery gesture
+#:   into a standing promise to everyone who complains;
+#: * compensation — "refund", "free meal", "on the house" is the business
+#:   committing money in public, which no draft should do on its own;
+#: * model tells — "as an AI", a stray "[name]" or an unrendered "{{" is the
+#:   single most visible way this whole product can embarrass a customer.
+BLOCKED_PATTERNS: tuple[str, ...] = (
+    "discount",
+    "coupon",
+    "voucher",
+    "promo code",
+    "refund",
+    "free meal",
+    "on the house",
+    "compensat",
+    "as an ai",
+    "language model",
+    "[name]",
+    "{{",
+)
 
 
 @register_cm_node("cm.triage")
@@ -146,16 +175,26 @@ class GuardrailNode(CMNode):
     once ``max_revise_rounds`` is spent this node downgrades ``revise`` to
     ``blocked`` and the loop terminates.
 
+    This node is deterministic **by design**. It is the part of the pipeline
+    whose job is not to depend on a model's judgement: whatever the drafting
+    agent produces, the same rules decide whether it may be published.
+
     Attributes:
         max_revise_rounds: Drafting attempts allowed before a failing draft is
             blocked outright.
-        banned_phrases: Case-insensitive substrings that block a draft.
+        banned_phrases: Extra case-insensitive substrings this tenant refuses.
+            Added to :data:`BLOCKED_PATTERNS`, never replacing it — a tenant
+            configuring their own list must not be able to switch off the
+            protections that stop a public reply promising money.
         max_length: Longest acceptable reply.
+        min_length: Shortest acceptable reply. A three-word answer under a
+            one-star review reads as dismissal.
     """
 
     max_revise_rounds: int = 2
     banned_phrases: tuple[str, ...] = ()
     max_length: int = 1200
+    min_length: int = 40
 
     async def execute(
         self, ctx: FlowContext, deps: DependencyResults, **kwargs: Any
@@ -200,19 +239,35 @@ class GuardrailNode(CMNode):
         return attempt < self.max_revise_rounds
 
     def _violations(self, draft: ReplyDraft) -> list[str]:
-        """Return the reasons a draft is unacceptable, empty when it is fine."""
+        """Return the reasons a draft is unacceptable, empty when it is fine.
+
+        Args:
+            draft: The candidate reply.
+
+        Returns:
+            One reason per violation. They are collected rather than
+            short-circuited so a revision round can fix everything at once
+            instead of discovering the next problem on the next attempt.
+        """
         reasons: list[str] = []
         text = draft.text.strip()
         if not text:
             reasons.append("empty reply")
+            return reasons
+        if len(text) < self.min_length:
+            reasons.append(
+                f"reply is shorter than {self.min_length} characters"
+            )
         if len(text) > self.max_length:
             reasons.append(f"reply exceeds {self.max_length} characters")
+
         lowered = text.lower()
-        reasons.extend(
-            f"contains banned phrase: {phrase!r}"
-            for phrase in self.banned_phrases
-            if phrase.lower() in lowered
-        )
+        # The tenant's list is *added* to the built-in one. A tenant must be
+        # able to add house rules, not to disable the ones that keep a public
+        # reply from promising money or leaking a model tell.
+        for phrase in (*BLOCKED_PATTERNS, *self.banned_phrases):
+            if phrase.lower() in lowered:
+                reasons.append(f"contains banned phrase: {phrase!r}")
         return reasons
 
 
@@ -220,43 +275,127 @@ class GuardrailNode(CMNode):
 class PublishReplyNode(CMNode):
     """Publish the approved reply through the tenant's review source.
 
+    Every attempt is written to ``review_replies``, published or not. The
+    repair loop can produce several drafts for one review, and keeping only
+    the published one erases the evidence for why it reads as it does — which
+    is exactly what someone asks for when a reply goes wrong.
+
     Attributes:
-        review_source: Object implementing the ``ReviewSource`` port. Absent
-            in the skeleton, which records the reply without publishing.
-        timeout: Wall-clock budget for the outbound call.
+        review_source: Object implementing the ``ReviewSource`` port. Absent,
+            the node records the draft without publishing, which is what keeps
+            the whole graph runnable with no review platform.
+        review_repository: Repository the reply attempt is recorded in.
+        timeout: Wall-clock budget for the outbound call. The scheduler
+            enforces none of its own.
     """
 
     review_source: Optional[Any] = None
+    review_repository: Optional[Any] = None
     timeout: float = 30.0
 
     async def execute(
         self, ctx: FlowContext, deps: DependencyResults, **kwargs: Any
     ) -> PublishResult:
-        """Publish the approved reply and return the outcome."""
+        """Publish the approved reply and return the outcome.
+
+        Raises:
+            Exception: Whatever the review source raised. A platform that
+                refused the reply is a run that failed and should be retried,
+                so it routes to the failure handler rather than continuing
+                into the coupon branch as though the guest had been answered.
+        """
         shared = self.shared_state(ctx)
         verdict = shared.get("guardrail")
         review = shared.get("review")
+        tenant_id = shared.get("tenant_id") or getattr(review, "tenant_id", "")
         text = getattr(verdict, "text", "") or getattr(
             shared.get("draft"), "text", ""
         )
+        attempt = int(getattr(shared.get("draft"), "attempt", 1))
 
         if self.review_source is None:
             result = PublishResult(
                 published=False, reason="no review source configured"
             )
-        else:
+            await self._record(
+                tenant_id, review, text, attempt, result, reason=result.reason
+            )
+            shared["publish"] = result
+            return result
+
+        try:
             reply = await self.with_timeout(
                 self.review_source.reply(
-                    review.tenant_id, review.external_id, text
+                    getattr(review, "tenant_id", tenant_id),
+                    review.external_id,
+                    text,
                 ),
                 self.timeout,
                 "publishing the reply",
             )
-            result = PublishResult(
-                published=True, external_reply_id=reply.external_reply_id
+        except Exception as exc:  # noqa: BLE001 - recorded, then re-raised
+            # Record before re-raising: the failure handler summarises the run
+            # but does not know the text that was attempted, and that text is
+            # the first thing anyone will want to see.
+            await self._record(
+                tenant_id,
+                review,
+                text,
+                attempt,
+                PublishResult(published=False, reason=str(exc)),
+                reason=f"{type(exc).__name__}: {exc}",
             )
+            raise
+
+        result = PublishResult(
+            published=True, external_reply_id=reply.external_reply_id
+        )
+        await self._record(tenant_id, review, text, attempt, result)
         shared["publish"] = result
         return result
+
+    async def _record(
+        self,
+        tenant_id: str,
+        review: Any,
+        text: str,
+        attempt: int,
+        result: PublishResult,
+        *,
+        reason: str = "",
+    ) -> None:
+        """Write the attempt to ``review_replies``.
+
+        Never raises. The reply has already reached the guest by the time this
+        runs; losing the audit row is a smaller problem than turning a
+        successful publication into a failed run.
+        """
+        if self.review_repository is None or not getattr(
+            review, "review_id", ""
+        ):
+            return
+        try:
+            from ....reviews.models import ReplyStatus
+
+            await self.review_repository.record_reply(
+                tenant_id,
+                review.review_id,
+                text=text,
+                status=(
+                    ReplyStatus.PUBLISHED
+                    if result.published
+                    else ReplyStatus.FAILED
+                ),
+                external_reply_id=result.external_reply_id,
+                attempt=attempt,
+                reason=reason,
+            )
+        except Exception as exc:  # noqa: BLE001 - the reply already went out
+            logger.warning(
+                "could not record the reply attempt for review %s: %s",
+                getattr(review, "review_id", "?"),
+                exc,
+            )
 
 
 __all__ = (

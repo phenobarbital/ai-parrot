@@ -45,6 +45,7 @@ def build_cm_node_factories(
     triage_agent: Optional[Any] = None,
     reply_agent: Optional[Any] = None,
     review_source: Optional[Any] = None,
+    review_repository: Optional[Any] = None,
     guest_repository: Optional[Any] = None,
     ruleset: Optional[Any] = None,
     issuer: Optional[Any] = None,
@@ -63,6 +64,8 @@ def build_cm_node_factories(
             rating-based fallback.
         reply_agent: Configured agent for drafting; ``None`` uses a template.
         review_source: Adapter implementing the ``ReviewSource`` port.
+        review_repository: Repository the review's status and every reply
+            attempt are recorded in.
         guest_repository: Repository resolving guest contact details.
         ruleset: Compiled navrules ``RuleSet`` for coupon eligibility.
         issuer: Coupon issuance service.
@@ -77,18 +80,6 @@ def build_cm_node_factories(
         tenant.setting("max_revise_rounds", 2)
     )
     banned = tuple(tenant.setting("banned_phrases", ()) or ())
-
-    def _plain(cls):
-        """Return a factory constructing ``cls`` with no extra arguments."""
-
-        def _factory(
-            node_def: NodeDefinition, deps: Set[str], succs: Set[str]
-        ) -> Node:
-            return cls(
-                node_id=node_def.id, dependencies=deps, successors=succs
-            )
-
-        return _factory
 
     def _with(cls, **bound):
         """Return a factory constructing ``cls`` with bound dependencies."""
@@ -106,7 +97,12 @@ def build_cm_node_factories(
         return _factory
 
     return {
-        topo.NODE_TYPES[topo.REVIEW_INTAKE]: _plain(ReviewIntakeNode),
+        topo.NODE_TYPES[topo.REVIEW_INTAKE]: _with(
+            ReviewIntakeNode,
+            review_repository=review_repository,
+            tenant_id=tenant.tenant_id,
+            timezone=tenant.timezone,
+        ),
         topo.NODE_TYPES[topo.TRIAGE]: _with(TriageNode, agent=triage_agent),
         topo.NODE_TYPES[topo.REPLY_DRAFT]: _with(
             ReplyDraftNode, agent=reply_agent
@@ -119,6 +115,7 @@ def build_cm_node_factories(
         topo.NODE_TYPES[topo.PUBLISH_REPLY]: _with(
             PublishReplyNode,
             review_source=review_source,
+            review_repository=review_repository,
             timeout=node_timeout,
         ),
         topo.NODE_TYPES[topo.CAPTURE_CONTACT]: _with(
@@ -133,8 +130,12 @@ def build_cm_node_factories(
         topo.NODE_TYPES[topo.COUPON_DELIVER]: _with(
             CouponDeliverNode, delivery=delivery, timeout=node_timeout
         ),
-        topo.NODE_TYPES[topo.CLOSE]: _plain(CloseNode),
-        topo.NODE_TYPES[topo.FAILURE]: _plain(FailureNode),
+        topo.NODE_TYPES[topo.CLOSE]: _with(
+            CloseNode, review_repository=review_repository
+        ),
+        topo.NODE_TYPES[topo.FAILURE]: _with(
+            FailureNode, review_repository=review_repository
+        ),
     }
 
 
