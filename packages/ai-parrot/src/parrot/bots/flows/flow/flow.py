@@ -961,8 +961,36 @@ class AgentsFlow(PersistenceMixin):
         failed: set[str],
         edges: Optional[list[Any]] = None,
         durations: Optional[dict[str, float]] = None,
+        *,
+        ctx: Optional[FlowContext] = None,
+        run_started_at: Optional[float] = None,
+        skipped: Optional[set[str]] = None,
     ) -> FlowResult:
         """Build a FlowResult from scheduler state after the main loop exits.
+
+        **Output shape contract (normative, FEAT-447 G4).** ``FlowResult.output``
+        is polymorphic and its shape is decided here, by how many *leaf* nodes
+        the run actually executed:
+
+        * exactly one executed leaf -> that leaf's **scalar** output (unwrapped
+          from its ``AgentNode.execute()`` envelope);
+        * a fan-out of two or more executed leaves -> a ``dict[node_id, Any]``
+          of each leaf's scalar output;
+        * no executed leaf -> ``None``.
+
+        The node_ids that produced ``output`` are echoed in
+        ``metadata["leaves"]``. This polymorphism is deliberate and pinned by
+        tests -- see :attr:`FlowResult.output`.
+
+        **Timing notes.** ``NodeExecutionInfo.execution_time`` comes from the
+        scheduler's ``durations`` (which include spawn/queue overhead), *not*
+        from the node's own ``envelope["execution_time"]``; the two coexist and
+        measure different spans. Because ``durations[nid]`` is rewritten on
+        every completion event, a retried node reports its **last** attempt.
+        ``total_time`` is measured against ``run_started_at`` on the event
+        loop's monotonic clock -- the same clock the scheduler uses -- so on a
+        **resumed** run it is the wall clock of the resumed *segment*, not of
+        the original run.
 
         Args:
             nodes: All materialized nodes for this run.
@@ -975,12 +1003,47 @@ class AgentsFlow(PersistenceMixin):
                 or ``node.successors`` respectively).
             durations: Optional node_id → wall-clock seconds of the last
                 execution attempt, used for ``NodeExecutionInfo.execution_time``.
+            ctx: Optional run context. When supplied, ``nodes`` are ordered by
+                its ``completion_order`` (the true execution order) instead of
+                by set-iteration order. Failed nodes are absent from
+                ``completion_order`` -- ``mark_failed`` does not append -- so
+                they are appended afterwards in sorted order.
+            run_started_at: Optional ``loop.time()`` reading from the start of
+                the run, used for ``total_time``. ``total_time`` stays ``0.0``
+                when it is omitted.
+            skipped: Optional set of skipped node_ids. Reported through
+                ``metadata["skipped"]`` only: ``NodeExecutionInfo.status`` is a
+                closed literal with no ``"skipped"`` member, so skipped nodes
+                deliberately get no ``NodeExecutionInfo`` entry.
 
         Returns:
-            Populated FlowResult.
+            Populated FlowResult. ``summary`` is intentionally left empty --
+            ``AgentsFlow`` does not inherit ``SynthesisMixin``; synthesis stays
+            opt-in through ``synthesize_results``.
         """
+        # Deterministic node ordering (FEAT-447 G3). `completed | failed` is a
+        # set union, so iterating it directly discards execution order and
+        # varies with string hashing across processes. `ctx.completion_order`
+        # carries the true order; `mark_failed` does NOT append to it, so the
+        # residue (failures, and anything seeded by a resume) is appended in
+        # sorted order for stability. Without a ctx we still sort rather than
+        # iterate the union -- it costs nothing and removes the hash-order
+        # nondeterminism unconditionally.
+        terminal: set[str] = completed | failed
+        ordered: list[str] = []
+        if ctx is not None:
+            seen: set[str] = set()
+            for nid in ctx.completion_order:
+                if nid in terminal and nid not in seen:
+                    ordered.append(nid)
+                    seen.add(nid)
+            ordered.extend(sorted(terminal - seen))
+        else:
+            ordered = sorted(terminal)
+
         node_infos = []
-        for nid in completed | failed:
+        execution_log: list[dict[str, Any]] = []
+        for nid in ordered:
             node = nodes[nid]
             resp = results.get(nid)
             err = errors.get(nid)
@@ -995,6 +1058,15 @@ class AgentsFlow(PersistenceMixin):
                 error=str(err) if err else None,
             )
             node_infos.append(info)
+            execution_log.append(
+                {
+                    "node_id": info.node_id,
+                    "node_name": info.node_name,
+                    "status": info.status,
+                    "execution_time": info.execution_time,
+                    "error": info.error,
+                }
+            )
 
         # Identify leaf nodes: nodes with no outgoing edges to known nodes.
         # Explicit/definition modes use their edge lists; legacy programmatic
@@ -1025,6 +1097,8 @@ class AgentsFlow(PersistenceMixin):
             # Leaf = node with empty successors set.
             leaves = [nid for nid, node in nodes.items() if not node.successors]
 
+        # node_ids that actually contributed to `output` (echoed in metadata).
+        output_leaves: list[str] = []
         if len(leaves) == 1 and leaves[0] in results:
             leaf_result = results[leaves[0]]
             # AgentNode.execute() returns a dict with an "output" key holding
@@ -1034,6 +1108,7 @@ class AgentsFlow(PersistenceMixin):
                 output: Any = leaf_result["output"]
             else:
                 output = leaf_result
+            output_leaves = [leaves[0]]
         else:
             # Multi-leaf fan-out: collect each leaf's scalar output.
             output_map: dict[str, Any] = {}
@@ -1042,11 +1117,51 @@ class AgentsFlow(PersistenceMixin):
                     lr = results[nid]
                     output_map[nid] = lr["output"] if isinstance(lr, dict) and "output" in lr else lr
             output = output_map
+            output_leaves = list(output_map)
 
         from ..core.types import FlowStatus
 
         status_str = determine_run_status(len(completed), len(failed))
         flow_status = FlowStatus(status_str)
+
+        # Run wall clock (FEAT-447 G2). The scheduler measures `run_started_at`
+        # on the event loop's monotonic clock, so it must be read back from the
+        # same clock -- mixing in time.time()/time.monotonic() would compare
+        # unrelated epochs.
+        total_time = 0.0
+        if run_started_at is not None:
+            try:
+                total_time = max(
+                    0.0, asyncio.get_running_loop().time() - run_started_at
+                )
+            except RuntimeError:
+                # Called outside a running loop (only reachable from a direct
+                # synchronous call): the scheduler's epoch is unavailable, so
+                # leave total_time at its default rather than invent a figure.
+                self.logger.debug(
+                    "No running loop while aggregating %r; total_time left at 0.0",
+                    self.name,
+                )
+
+        # `mode` uses the flow's own internal vocabulary. Note this is a
+        # DIFFERENT axis from AgentCrew's metadata['mode']
+        # ('sequential'/'parallel'/'loop'), which describes an execution
+        # strategy rather than how the graph was declared.
+        if edges is not None:
+            mode = "explicit"
+        elif self._definition is not None:
+            mode = "definition"
+        else:
+            mode = "legacy"
+
+        metadata: dict[str, Any] = {
+            "mode": mode,
+            "node_count": len(nodes),
+            "completed_count": len(completed),
+            "failed_count": len(failed),
+            "skipped": sorted(skipped) if skipped else [],
+            "leaves": output_leaves,
+        }
 
         return FlowResult(
             output=output,
@@ -1054,6 +1169,9 @@ class AgentsFlow(PersistenceMixin):
             responses=dict(results),
             errors={k: str(v) for k, v in errors.items()},
             status=flow_status,
+            execution_log=execution_log,
+            total_time=total_time,
+            metadata=metadata,
         )
 
     async def run_flow(
