@@ -1,11 +1,27 @@
 """Tests for BusinessAutomationToolkit core (FEAT-453, Module 5).
 
-FEAT-453 TASK-2390.
+FEAT-453 TASK-2390. ``TestPlansDirWiring`` was added during the feature's
+final code-review remediation pass, closing the seam TASK-2390's own
+docstring deferred to TASK-2391 ("This task wires the seam ... does not
+implement the directory scan itself") — TASK-2391 built and fully tested
+``PlanDirectoryStore`` standalone, but nothing ever called it from
+``BusinessAutomationToolkit.__init__``, so a toolkit constructed with only
+``plans_dir`` (no ``operations``/``flows``/``templates`` overrides) silently
+booted with an empty operation registry. See
+``sdd/tasks/completed/TASK-2391-external-plans-directory-store.md``'s
+completion-note addendum for the full remediation note.
 """
 
+import asyncio
+import json
+import shutil
 from pathlib import Path
 
+import pytest
 from parrot_tools.business_automation import toolkit as business_toolkit
+from parrot_tools.business_automation.toolkit import BusinessAutomationToolkit
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "acme-books"
 
 
 class TestListAndDescribeOperations:
@@ -80,6 +96,81 @@ class TestResumeOperation:
         result = await toolkit.resume_operation(run_id)
         assert result["status"] == "started"
         assert result["resumed"] is True
+
+
+class TestPlansDirWiring:
+    """BusinessAutomationToolkit(plans_dir=...) with NO overrides must load
+    real operations from the directory (via PlanDirectoryStore) — not boot
+    silently empty."""
+
+    @pytest.fixture
+    def fixture_plans_dir(self, tmp_path: Path) -> Path:
+        dest = tmp_path / "plans"
+        shutil.copytree(FIXTURES_DIR, dest)
+        return dest
+
+    def test_no_overrides_loads_from_plans_dir(self, fixture_plans_dir):
+        tk = BusinessAutomationToolkit(plans_dir=fixture_plans_dir, browser=None)
+        assert set(tk._operations) == {"list_clients", "register_expense"}
+        assert tk._plan_store is not None
+
+    def test_overrides_still_skip_the_directory_scan(self, fixture_plans_dir):
+        # The interim/test seam must keep working exactly as before: passing
+        # explicit overrides means plans_dir is never scanned, even though
+        # it exists and contains real (different) fixture operations.
+        tk = BusinessAutomationToolkit(
+            plans_dir=fixture_plans_dir,
+            browser=None,
+            operations={},
+            flows={},
+            templates={},
+        )
+        assert tk._operations == {}
+        assert tk._plan_store is None
+
+    def test_nonexistent_plans_dir_without_overrides_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="does not exist"):
+            BusinessAutomationToolkit(plans_dir=tmp_path / "does-not-exist", browser=None)
+
+    def test_malformed_plans_dir_without_overrides_raises(self, fixture_plans_dir):
+        (fixture_plans_dir / "broken.operation.json").write_text("{not valid json")
+        with pytest.raises(ValueError, match="broken.operation.json"):
+            BusinessAutomationToolkit(plans_dir=fixture_plans_dir, browser=None)
+
+    async def test_run_operation_hot_reloads_plans_dir(self, fixture_plans_dir):
+        tk = BusinessAutomationToolkit(plans_dir=fixture_plans_dir, browser=None)
+        assert "new_operation" not in tk._operations
+
+        await asyncio.sleep(0.01)  # ensure a distinct mtime
+        (fixture_plans_dir / "new_operation.operation.json").write_text(
+            json.dumps(
+                {
+                    "name": "new_operation",
+                    "description": "Added after construction",
+                    "kind": "read",
+                    "flow_ref": "clients_flow",
+                }
+            )
+        )
+
+        result = await tk.run_operation("new_operation", {})
+        # A READ operation with no wired FlowExecutor still gets past the
+        # registry lookup — the point here is that hot-reload happened
+        # before that lookup, not that the run itself completes cleanly.
+        assert result.get("status") != "error" or "Unknown operation" not in result.get("error", "")
+
+    async def test_hot_reload_failure_returns_clean_error(self, fixture_plans_dir):
+        tk = BusinessAutomationToolkit(plans_dir=fixture_plans_dir, browser=None)
+
+        await asyncio.sleep(0.01)
+        (fixture_plans_dir / "broken.operation.json").write_text("{not valid json")
+
+        result = await tk.run_operation("register_expense", {"client": "ACME"})
+        assert result["status"] == "error"
+        assert "hot-reload" in result["error"]
+        # Previously-loaded operations must remain usable after a failed
+        # reload — the store leaves its last-good state untouched.
+        assert "register_expense" in tk._operations
 
 
 class TestNoSiteIdentifiers:

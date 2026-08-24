@@ -227,3 +227,25 @@ specified by the task (only implied by the test scaffold's
 straightforward, self-documenting convention the test names already hinted
 at, rather than inventing a different directory layout (e.g. subfolders per
 type).
+
+**Addendum (feature-completion code-review remediation, 2026-08-24)**: the
+adversarial review flagged 🔴 CRITICAL that `PlanDirectoryStore` — built and
+fully tested here — was never actually called from
+`BusinessAutomationToolkit.__init__` (TASK-2390's own docstring explicitly
+deferred this exact wiring to "once TASK-2391 lands", but no task's file
+list ever included `toolkit.py` again to close it). Since this was a
+genuine task-decomposition gap rather than an execution error in either
+task, it was closed during the feature's final review-remediation pass
+(not a new TASK-<NNN>): `BusinessAutomationToolkit.__init__` now
+constructs a `PlanDirectoryStore(plans_dir)` and calls `.load()` whenever
+none of the `operations`/`flows`/`templates` override kwargs are given
+(the override path — used by every existing test in this feature — is
+unchanged), and `run_operation()` calls `reload_if_changed()` on every
+invocation, closing the "hot-reload on change" behavior this task's own
+scope already promised but nothing ever invoked. A malformed/missing
+`plans_dir` at construction raises loudly (matching this store's own
+"never silently reject one bad file" contract); a hot-reload failure
+mid-run returns a clean `{"status": "error", ...}` without disturbing the
+previously-loaded (good) registries. 6 new tests added to
+`test_toolkit.py::TestPlansDirWiring`. See TASK-2397's completion note for
+the full list of review findings and how each was triaged.

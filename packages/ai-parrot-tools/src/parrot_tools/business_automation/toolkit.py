@@ -29,6 +29,7 @@ from parrot.tools.toolkit import AbstractToolkit
 from parrot_tools.scraping import FlowExecutor, ScrapingFlow, TemplatePlan
 
 from .models import BusinessOperation, OperationKind
+from .store import PlanDirectoryStore
 
 if TYPE_CHECKING:
     from parrot.auth.broker import CredentialBroker
@@ -68,8 +69,14 @@ class BusinessAutomationToolkit(AbstractToolkit):
         """Initialize the toolkit.
 
         Args:
-            plans_dir: External, private plans directory (Module 6). Stored
-                for TASK-2391's loader; not scanned by this task.
+            plans_dir: External, private plans directory (Module 6). When
+                none of the ``operations``/``flows``/``templates`` override
+                kwargs are given, this directory is loaded via
+                :class:`~parrot_tools.business_automation.store.PlanDirectoryStore`
+                at construction time (TASK-2391) — a malformed directory (or
+                a missing one) raises loudly, matching that store's own
+                "never silently reject one bad file" contract, rather than
+                booting an agent with a silently-empty operation registry.
             browser: Live browser handle forwarded to :class:`FlowExecutor`.
             credential_broker: Optional :class:`CredentialBroker` for
                 broker-backed ``Authenticate`` steps (Module 4).
@@ -80,12 +87,18 @@ class BusinessAutomationToolkit(AbstractToolkit):
             checkpoint_dir: Directory for :class:`FlowExecutor` checkpoints.
             **kwargs: Forwarded to :class:`AbstractToolkit`. ``operations``,
                 ``flows``, and ``templates`` (mappings keyed by name) are
-                popped here to seed the registries directly — the interim
-                seam until TASK-2391's directory loader replaces it.
+                popped here to seed the registries directly instead of
+                scanning ``plans_dir`` — the interim seam this task's own
+                tests (and TASK-2395/2396/2397's) still use for unit-level
+                fixtures.
         """
         operations_override = kwargs.pop("operations", None)
         flows_override = kwargs.pop("flows", None)
         templates_override = kwargs.pop("templates", None)
+        overrides_given = any(
+            override is not None
+            for override in (operations_override, flows_override, templates_override)
+        )
 
         super().__init__(**kwargs)
 
@@ -95,13 +108,25 @@ class BusinessAutomationToolkit(AbstractToolkit):
         self._human_manager = human_manager
         self._checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir else None
 
-        # TASK-2391 (Module 6) replaces this with a TemplatePlanStore that
-        # scans plans_dir, schema-validates on load, and hot-reloads on
-        # change. This task only wires the seam — no vendor/product
-        # identifiers are ever hardcoded here.
-        self._operations: Dict[str, BusinessOperation] = dict(operations_override or {})
-        self._flows: Dict[str, ScrapingFlow] = dict(flows_override or {})
-        self._templates: Dict[str, TemplatePlan] = dict(templates_override or {})
+        self._plan_store: Optional[PlanDirectoryStore] = None
+        if overrides_given:
+            # Interim/test seam: registries seeded directly, plans_dir is
+            # never scanned.
+            self._operations: Dict[str, BusinessOperation] = dict(operations_override or {})
+            self._flows: Dict[str, ScrapingFlow] = dict(flows_override or {})
+            self._templates: Dict[str, TemplatePlan] = dict(templates_override or {})
+        else:
+            # TASK-2391's PlanDirectoryStore scans plans_dir now; run_operation()
+            # hot-reloads it on every call (Module 6's documented "hot-reload
+            # on change"). A malformed directory raises here — the same
+            # ValueError the store itself raises — closing the seam TASK-2390's
+            # own docstring deferred ("This task wires the seam ... does not
+            # implement the directory scan itself").
+            self._plan_store = PlanDirectoryStore(self.plans_dir)
+            self._plan_store.load()
+            self._operations = self._plan_store.operations
+            self._flows = self._plan_store.flows
+            self._templates = self._plan_store.templates
 
         self._confirmation_guard = ConfirmationGuard(
             store=InMemoryConfirmationWindowStore(),
@@ -189,6 +214,24 @@ class BusinessAutomationToolkit(AbstractToolkit):
             ``"timeout"``) otherwise.
         """
         params = params or {}
+        if self._plan_store is not None:
+            try:
+                if self._plan_store.reload_if_changed():
+                    self._operations = self._plan_store.operations
+                    self._flows = self._plan_store.flows
+                    self._templates = self._plan_store.templates
+            except ValueError as exc:
+                # A plans_dir edited into a malformed state mid-run must not
+                # crash every subsequent call — the store itself already
+                # left its last-good registries untouched (see
+                # PlanDirectoryStore.load()); surface this as a clean error
+                # like every other run_operation() failure path.
+                return {
+                    "status": "error",
+                    "operation": name,
+                    "error": f"plans_dir hot-reload failed: {exc}",
+                }
+
         op = self._operations.get(name)
         if op is None:
             return {"status": "error", "operation": name, "error": f"Unknown operation: {name!r}"}

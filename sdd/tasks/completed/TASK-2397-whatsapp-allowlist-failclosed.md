@@ -323,3 +323,76 @@ pre-existing debt in `bridge_wrapper.py`/`bridge_config.py`, confirmed via
 **Deviations from spec**: none beyond the contract corrections already
 flagged above (`start_bridge()` does not exist; the real fail-closed check
 point is `WhatsAppBridgeWrapper.__init__()`).
+
+**Addendum — FEAT-453 feature-wide code-review triage (2026-08-24)**: after
+all 14 tasks landed, the `code-reviewer` agent ran an adversarial pass
+against the full `dev...HEAD` diff and the spec's AC-1..AC-20. Findings and
+disposition:
+
+- 🔴 **`PlanDirectoryStore` never wired into `BusinessAutomationToolkit`**
+  (AC-9 partial) — **FIXED** during this remediation pass. See TASK-2391's
+  completion-note addendum for the full description; 6 new tests in
+  `test_toolkit.py::TestPlansDirWiring`.
+- 🔴 **Credential broker / mid-plan `HumanChannel` never threaded through
+  `FlowExecutor`'s real dispatch path** (AC-5 partial — correct in
+  isolation, unreachable from `run_operation()`) — **NOT FIXED, escalated.**
+  Closing this requires adding `credential_resolver`/`channel` parameters to
+  `FlowExecutor.__init__`/`execute_plan_steps`/`_dispatch_step`
+  (`flow_executor.py`, `executor.py`) — a pre-existing FEAT-222 component
+  shared by `WebScrapingToolkit`/`CrawlEngine` far outside this feature, and
+  not listed in ANY FEAT-453 task's file list. Fixing it here would violate
+  Cardinal Rule 2 (file fidelity) and risk AC-18 ("no breaking change to
+  WebScrapingToolkit's public API") without its own Codebase Contract
+  verification. **Needs a dedicated follow-up task** against
+  `flow_executor.py`/`executor.py` before broker-backed `Authenticate` or a
+  manual `await_human` can work end-to-end through
+  `BusinessAutomationToolkit.run_operation()`.
+- 🔴 **AC-12 "mid-run kill resumes without duplicates" not implemented** —
+  **NOT FIXED, escalated.** `ExecutionPlanToolkit.plan_execute` (core,
+  `parrot/tools/execution_plan/toolkit.py:205`, pre-existing/unrelated
+  feature) hardcodes `checkpoint=False` and has no `resume_from` parameter;
+  `ingest.py`'s `_write_import_manifest` is an audit record, not a
+  resumability mechanism. AC-12a (digest discrimination) and AC-12b
+  (permissions/location) are met; AC-12 itself is not. Modifying core
+  `ExecutionPlanToolkit`'s checkpoint behavior is a design decision (blast
+  radius beyond this feature) that belongs in its own spec-reviewed task,
+  not an improvised fix at review time.
+- 🟠 **`ac8e9064a` ("style: apply black formatting")** folded this task's
+  real `bridge_config.py`/`bridge_wrapper.py` logic into a commit labeled
+  pure-formatting — already disclosed above; no further action (cannot
+  rewrite already-pushed history per the no-force-push/no-amend rule).
+- 🟠 **`ai-parrot-integrations` reaches into `parrot_tools.business_automation`
+  without a declared dependency; the fail-closed check silently returns
+  `False` on `ImportError`** — reviewed and judged low-risk-as-is (if
+  `ai-parrot-tools` isn't installed, `BusinessAutomationToolkit` cannot
+  exist, so the agent cannot have a SUBMIT operation in the first place);
+  the narrower case (partially-broken install) is not mitigated further.
+  **Not fixed** — left for the PR reviewer to weigh whether declaring an
+  optional dependency/extra is warranted.
+- 🟠 **Undeclared `pandas`/`ai-parrot-loaders` imports in `ingest.py`** —
+  **not fixed**; `ingest.py` is outside this task's file list and the fix
+  (declaring extras in `ai-parrot-tools/pyproject.toml`) is a packaging
+  decision for the PR reviewer, not a code-review-time improvisation.
+- 🟠 **Spec's named integration-test layer** (`local_fixture_site`,
+  `fake_broker`, the four named end-to-end tests) **was never built** —
+  each task already disclosed this individually; confirmed here as a
+  cumulative, feature-wide gap. Not fixed — building a real fixture-site
+  harness is a substantial undertaking warranting its own task, not a
+  review-time addition.
+- 🟠 **SUBMIT gate bypasses `ToolManager`, using a hand-built
+  `SimpleNamespace` tool-stub against `ConfirmationGuard.confirm()`** —
+  reviewed, verified functionally correct and disclosed in TASK-2390's own
+  completion note; accepted as an intentional, documented deviation from
+  Decision D2's prose rather than a defect. Not fixed.
+- 🟡/💡 suggestions (construction-time-only allowlist check, `SimpleNamespace`
+  stub's lack of a protocol guard, single-node-only flow validation, `00`
+  vs `+` phone-prefix normalization, AC-1's literal-grep wording) — noted,
+  not fixed, none block merge.
+
+**Net effect on AC status**: AC-9 moves from PARTIAL to MET by this
+remediation. AC-5, AC-12, AC-17, AC-20 remain PARTIAL/NOT MET and require
+follow-up tasks before this drives a real, unattended, resumable financial
+operation — the feature is sound, tested infrastructure, not yet a
+fully wired end-to-end capability. This is surfaced prominently in the
+feature-completion summary so `/sdd-done FEAT-453` and the human PR
+reviewer see it, not just this file.
