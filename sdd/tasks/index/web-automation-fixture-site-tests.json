@@ -14,7 +14,7 @@
       "feature_id": "FEAT-455",
       "feature": "web-automation-fixture-site-tests",
       "spec": "sdd/specs/web-automation-fixture-site-tests.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -22,9 +22,9 @@
       "parallelism_notes": "No dependencies; must land before TASK-2408/2409 which both consume this fixture.",
       "assigned_to": null,
       "started_at": "2026-08-24T10:13:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2407-local-fixture-site.md",
-      "verification": null
+      "completed_at": "2026-08-24T10:20:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2407-local-fixture-site.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2408",
