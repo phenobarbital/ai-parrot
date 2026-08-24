@@ -247,10 +247,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Codebase Contract was stale for `_UNION_SHAPES`/`_STRUCTURAL_EXTRAS`
+(corrected in this file before implementing) — IMAGE_DROPZONE was ALREADY
+a bare `oneOf: [object, array-of-object]` union in `_UNION_SHAPES`, not the
+`{name,type,size,dataUrl}` shape described in `_STRUCTURAL_EXTRAS` the
+contract claimed. Added a shared `FILE_ENVELOPE_SCHEMA` module constant;
+flipped `_TYPE_MAP[FILE/IMAGE]` to `"object"`; added FILE/IMAGE to
+`_UNION_SHAPES` as `oneOf: [string, FileEnvelope]`; upgraded the existing
+bare IMAGE_DROPZONE union to use `FILE_ENVELOPE_SCHEMA`; replaced the
+legacy `{answer,blob_ref,display}` `MULTI_UPLOAD` items schema in
+`_STRUCTURAL_EXTRAS` with `FILE_ENVELOPE_SCHEMA`. Confirmed
+`_field_to_property()` (per-field rendering) does not consult
+`_UNION_SHAPES` for ANY of its members today (TREE_SELECT, IMAGE_DROPZONE,
+AI_CAPTURE) — left it untouched, consistent with that pre-existing
+precedent and out of this task's file scope. New test file: 7/7 passed
+(added one extra test verifying deep-copy independence since the schema
+constant is shared across multiple dict entries). Full regression sweep
+(`renderers/`, `test_renderers.py`, `controls/`, FEAT-448 test files):
+258 passed, 1 pre-existing order-dependent failure
+(`test_registry_serves_all_eleven`) reproduced identically with `git
+stash` before my change — not a regression.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `test_dropzone_envelope_shape` was adapted from
+the task's literal Test Specification (`assert schema.get("type") ==
+"object"`) to assert the `oneOf` shape instead, because IMAGE_DROPZONE
+was already union-shaped in `_UNION_SHAPES` before this task (confirmed
+via the corrected contract) — the literal scaffold would never have
+passed against the real codebase.

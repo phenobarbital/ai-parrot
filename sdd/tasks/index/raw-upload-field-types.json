@@ -132,7 +132,7 @@
       "feature_id": "FEAT-460",
       "feature": "raw-upload-field-types",
       "spec": "sdd/specs/raw-upload-field-types.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Only depends on FileEnvelope (TASK-2442). Modifies jsonschema.py module-level dicts — sequential to avoid conflicts with TASK-2450 which reads the output.",
       "assigned_to": null,
       "started_at": "2026-08-24T23:03:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2448-jsonschema-renderer.md"
+      "completed_at": "2026-08-24T23:28:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2448-jsonschema-renderer.md"
     },
     {
       "id": "TASK-2449",
