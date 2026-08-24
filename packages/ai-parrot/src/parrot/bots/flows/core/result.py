@@ -377,7 +377,13 @@ class FlowResult:
       case: a linear or converging graph, and every ``AgentCrew`` run.
     * **A fan-out (two or more executed leaves)** -> a
       ``dict[node_id, Any]`` mapping each leaf's node_id to its scalar output.
-    * **No executed leaf** (empty or fully-failed run) -> ``None``.
+    * **No executed leaf** (an empty graph, or every leaf failed/skipped) ->
+      an **empty dict** ``{}``, since that case takes the fan-out branch with
+      nothing to collect. Long-standing behaviour, documented here rather
+      than changed: normalising it to ``None`` would be a breaking change to
+      an existing field's contract. Check ``status`` /
+      ``metadata["leaves"]`` — not the truthiness of ``output`` — to tell
+      "produced nothing" from "produced a falsy value".
 
     Consumers that must not branch on shape should read
     :attr:`node_results` instead, which is *always* a

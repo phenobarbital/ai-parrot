@@ -441,3 +441,24 @@ class TestOutputShapeContract:
             isinstance(v, dict) and "response" in v for v in result.output.values()
         )
         assert sorted(result.metadata["leaves"]) == ["b", "c"]
+
+    async def test_output_no_executed_leaf_is_empty_dict(self) -> None:
+        """No executed leaf -> `{}` (NOT None) — locks the real behaviour.
+
+        Added after review: the FEAT-447 docstrings originally claimed `None`
+        here, but the no-leaf case falls into the fan-out branch with nothing
+        to collect, and that predates FEAT-447. Normalising it to `None` would
+        break an existing field's contract, so the behaviour is pinned and
+        documented instead. `metadata["leaves"] == []` is the reliable
+        "produced nothing" signal.
+        """
+        # Empty graph.
+        empty = await AgentsFlow("empty-test").run_flow()
+        assert empty.output == {}
+        assert empty.metadata["leaves"] == []
+
+        # Single leaf that failed → still `{}`, not the scalar branch.
+        failed = await _make_failing_flow().run_flow()
+        assert failed.output == {}
+        assert failed.metadata["leaves"] == []
+        assert failed.metadata["failed_count"] == 1

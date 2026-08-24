@@ -976,7 +976,11 @@ class AgentsFlow(PersistenceMixin):
           from its ``AgentNode.execute()`` envelope);
         * a fan-out of two or more executed leaves -> a ``dict[node_id, Any]``
           of each leaf's scalar output;
-        * no executed leaf -> ``None``.
+        * no executed leaf (empty graph, or every leaf failed/skipped) -> an
+          empty dict ``{}`` -- that case falls into the fan-out branch with
+          nothing to collect. Pre-existing behaviour, left unchanged here
+          because normalising it to ``None`` would break an existing field's
+          contract; use ``status`` / ``metadata["leaves"]`` to detect it.
 
         The node_ids that produced ``output`` are echoed in
         ``metadata["leaves"]``. This polymorphism is deliberate and pinned by

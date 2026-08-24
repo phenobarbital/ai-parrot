@@ -339,7 +339,14 @@ result.output                 # {"b": "answer from b", "c": "answer from c"}
 result.metadata["leaves"]     # ["b", "c"]
 ```
 
-**No executed leaf** (an empty or fully-failed run) → `None`.
+**No executed leaf** — an empty graph, or every leaf failed or was skipped →
+an **empty dict** `{}`. That case falls into the fan-out branch with nothing
+to collect. This is long-standing behaviour, documented rather than changed:
+normalising it to `None` would break an existing field's contract. So do not
+test `if result.output:` to decide whether the run produced anything — check
+`result.status` or `result.metadata["leaves"]` (which is `[]` in exactly this
+case), otherwise you cannot distinguish "produced nothing" from "produced a
+falsy value".
 
 `content` and `final_result` are aliases for `output` and inherit this rule
 verbatim. There is deliberately **no** plural `outputs` field: code that must
