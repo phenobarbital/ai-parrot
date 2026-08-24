@@ -13,17 +13,27 @@ from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
+from navigator_auth.decorators import is_authenticated, user_session
 from navconfig.logging import logging
 from .models import CrewDefinition, ExecutionMode
+from ._tenancy import resolve_session_tenant
 from parrot.bots.flows.crew import AgentCrew
 
 
+@is_authenticated()
+@user_session()
 class CrewHandler(BaseView):
     """
     REST API Handler for AgentCrew CRUD operations.
 
     This handler manages the lifecycle of crew definitions (Create, Read, Update, Delete).
     Execution and runtime management are handled by CrewExecutionHandler.
+
+    FEAT-446: every HTTP method requires an authenticated session
+    (mirrors ``tool_catalog.py:231`` / ``special_nodes.py:74``); tenant
+    identity for reads/deletes is resolved from the session via
+    ``resolve_session_tenant`` (``handlers/crew/_tenancy.py``), never
+    trusted from the query string.
     """
 
     path: str = '/api/v1/crew'
@@ -191,6 +201,14 @@ class CrewHandler(BaseView):
         This endpoint accepts multipart/form-data with a JSON file containing
         the crew definition from the visual builder.
 
+        Requires an authenticated session (FEAT-446). Note: as of this
+        writing this method is not wired to any HTTP route (no ``post()``
+        handler dispatches to it) — the class-level ``@is_authenticated()``
+        decorator only wraps methods named after HTTP verbs
+        (``get``/``put``/``delete``/etc.), so it does not apply here; if a
+        route is added later, it must go through the class-level decorator
+        pattern (i.e. be named ``post``) rather than a bespoke wrapper.
+
         Form data:
             - file: JSON file with crew definition
 
@@ -281,6 +299,8 @@ class CrewHandler(BaseView):
     async def put(self):
         """
         Create a new AgentCrew or update an existing one.
+
+        Requires an authenticated session (FEAT-446).
 
         URL parameters:
             - id: Crew ID or name (optional, for updates)
@@ -395,6 +415,11 @@ class CrewHandler(BaseView):
         """
         Get crew information.
 
+        Requires an authenticated session (FEAT-446). Tenant is resolved
+        from the session via ``resolve_session_tenant`` — a ``tenant``
+        query parameter is only honored if it matches the resolved
+        tenant (otherwise 400).
+
         Query parameters:
             - name: Crew name (optional) - returns specific crew if provided
             - crew_id: Crew ID (optional) - returns specific crew if provided
@@ -409,7 +434,11 @@ class CrewHandler(BaseView):
             match_params = self.match_parameters(self.request)
             crew_id = match_params.get('id') or qs.get('crew_id')
             crew_name = qs.get('name')
-            tenant = qs.get('tenant') or "global"
+            # FEAT-446: tenant comes from the session, never the query
+            # string; `declared=` triggers a 400 on conflicting values.
+            tenant = await resolve_session_tenant(
+                self.request, declared=qs.get('tenant')
+            )
 
             if not self.bot_manager:
                 return self.error(
@@ -495,6 +524,11 @@ class CrewHandler(BaseView):
         """
         Delete a crew.
 
+        Requires an authenticated session (FEAT-446). Tenant is resolved
+        from the session via ``resolve_session_tenant`` — a ``tenant``
+        query parameter is only honored if it matches the resolved
+        tenant (otherwise 400).
+
         Query parameters:
             - name: Crew name (optional)
             - crew_id: Crew ID (optional)
@@ -509,7 +543,11 @@ class CrewHandler(BaseView):
             qs = self.get_arguments(self.request)
             crew_id = match_params.get('id') or qs.get('crew_id')
             crew_name = qs.get('name')
-            tenant = qs.get('tenant') or "global"
+            # FEAT-446: tenant comes from the session, never the query
+            # string; `declared=` triggers a 400 on conflicting values.
+            tenant = await resolve_session_tenant(
+                self.request, declared=qs.get('tenant')
+            )
 
             if not crew_name and not crew_id:
                 return self.error(
