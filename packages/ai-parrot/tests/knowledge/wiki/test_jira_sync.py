@@ -1,14 +1,17 @@
 """Tests for the Jira sweep — watermark, orphans, entity notes (FEAT-454, M4)."""
 
 import asyncio
+import gc
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from parrot.interfaces.jira import JiraAuthError, parse_issue
 from parrot.knowledge.wiki.jira_sync import (
     BACKFILL_SWEEP_CONCURRENCY,
     DEFAULT_SWEEP_CONCURRENCY,
+    MAX_SWEEP_CONCURRENCY,
     JiraScopeState,
     JiraSyncState,
     SweepReport,
@@ -531,10 +534,17 @@ class TestSweepConcurrency:
 
         assert seq.fetched == par.fetched == 9
         assert seq.written == par.written
-        # Byte-identical except for the sync.fetched_at wall clock, which
-        # differs between the two runs by construction.
-        strip = lambda tree: {k: b"\n".join(l for l in v.split(b"\n") if b"fetched_at" not in l) for k, v in tree.items()}
-        assert strip(_tree(seq_dir)) == strip(_tree(par_dir))
+        def _corpus(d):
+            """The rendered corpus only: no `.parrot/` state (its
+            `last_run_at` differs between runs), and with the
+            `sync.fetched_at` stamp dropped for the same reason."""
+            return {
+                k: b"\n".join(line for line in v.split(b"\n") if b"fetched_at" not in line)
+                for k, v in _tree(d).items()
+                if not k.startswith(".parrot")
+            }
+
+        assert _corpus(seq_dir) == _corpus(par_dir)
 
     def test_watermark_is_the_max_regardless_of_completion_order(self, raw_issue, issues_dir):
         issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(6)]
@@ -557,6 +567,59 @@ class TestSweepConcurrency:
         assert report.errors and report.watermark_advanced is False
         assert scope.last_run_status == "partial"
         assert iface.in_flight == 0, "in-flight tasks must be awaited/cancelled, not orphaned"
+
+
+class TestSweepConcurrencyFailureModes:
+    """Cancellation and multi-failure batches — the two ways a fan-out
+    leaks work a sequential loop never could."""
+
+    def test_cancellation_awaits_in_flight_work(self, raw_issue, issues_dir):
+        """`asyncio.CancelledError` is a BaseException: an `except Exception`
+        cleanup would let remote-link calls outlive the corpus write lock."""
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(20)]
+        iface = _ConcurrencyProbeInterface(issues, hold=0.05)
+
+        async def run():
+            task = asyncio.create_task(sweep_jira_issues(iface, issues_dir, jql=JQL, concurrency=4))
+            while iface.in_flight == 0:  # let a wave get airborne
+                await asyncio.sleep(0.005)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            # Checked with no grace period: the sweep must not return until
+            # its children are actually done, not merely asked to stop.
+            return iface.in_flight
+
+        assert asyncio.run(run()) == 0
+
+    def test_two_failures_in_one_wave_are_all_retrieved(self, raw_issue, issues_dir):
+        """Raising on the first failure in a completed batch left the other
+        task's exception unretrieved."""
+
+        class _TwoFailures(_ConcurrencyProbeInterface):
+            async def get_remote_links(self, key):
+                if key in ("NAV-9001", "NAV-9002"):
+                    raise RuntimeError(f"injected remote-link failure for {key}")
+                return await super().get_remote_links(key)
+
+        issues = [_keyed(raw_issue, f"NAV-{9000 + i}") for i in range(4)]
+        iface = _TwoFailures(issues)
+
+        async def run():
+            loop = asyncio.get_running_loop()
+            unhandled: list[dict] = []
+            loop.set_exception_handler(lambda _loop, ctx: unhandled.append(ctx))
+            report = await sweep_jira_issues(iface, issues_dir, jql=JQL, concurrency=4)
+            gc.collect()  # "exception was never retrieved" fires at GC time
+            await asyncio.sleep(0)
+            return report, unhandled
+
+        report, unhandled = asyncio.run(run())
+
+        assert report.errors and "injected remote-link failure" in report.errors[0]
+        assert report.watermark_advanced is False
+        assert iface.in_flight == 0
+        assert not [c for c in unhandled if "never retrieved" in str(c.get("message", ""))]
 
 
 class TestScopeCompletenessCanary:
@@ -639,6 +702,15 @@ class TestScopeCompletenessCanary:
 
 
 class TestConcurrencyPresets:
+    def test_concurrency_is_clamped_to_the_ceiling(self, raw_issue, issues_dir):
+        """Library callers and JIRA_WIKI_CONCURRENCY reach the sweep without
+        passing Click's range check, and the resident-task bound is 2x this."""
+        iface = _ConcurrencyProbeInterface([_keyed(raw_issue, "NAV-9000")])
+
+        _sweep(iface, issues_dir, concurrency=10_000)
+
+        assert iface.pool_sized_for == MAX_SWEEP_CONCURRENCY
+
     def test_backfill_preset_is_higher_than_the_cron_default(self):
         assert BACKFILL_SWEEP_CONCURRENCY > DEFAULT_SWEEP_CONCURRENCY
         # The cron default must stay inside `requests`' default pool (10),

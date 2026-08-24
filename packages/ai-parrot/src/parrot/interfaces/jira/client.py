@@ -660,14 +660,16 @@ class JiraInterface:
             if not next_page_token:
                 return
             if next_page_token in seen_tokens:
-                # Defensive: a non-advancing cursor would loop forever.
-                self.logger.warning(
-                    "Jira returned a repeated nextPageToken for JQL %r; "
-                    "stopping pagination after %d page(s).",
-                    jql,
-                    len(seen_tokens) + 1,
+                # A non-advancing cursor would loop forever. It must RAISE,
+                # not return: a silent stop here is indistinguishable from
+                # "scope exhausted", which is precisely how the offset loop
+                # this replaced managed to truncate a corpus and still let
+                # its caller record a complete-looking watermark.
+                raise RuntimeError(
+                    f"Jira returned a repeated nextPageToken for JQL {jql!r} "
+                    f"after {len(seen_tokens) + 1} page(s) — refusing to treat "
+                    "a non-advancing cursor as the end of the scope."
                 )
-                return
             seen_tokens.add(next_page_token)
 
     async def approximate_issue_count(self, jql: str) -> int | None:

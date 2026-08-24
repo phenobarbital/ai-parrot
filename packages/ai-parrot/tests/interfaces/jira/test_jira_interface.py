@@ -261,7 +261,11 @@ class TestCloudSearchPagination:
         assert len(self._collect(iface)) == 105
         assert [c[1] for c in iface._client.calls] == [None, "tok-1"]
 
-    def test_repeated_token_does_not_loop_forever(self, raw_issue):
+    def test_repeated_token_raises_instead_of_looping_or_lying(self, raw_issue):
+        """A non-advancing cursor must NOT read as "scope exhausted" — that
+        silent-stop shape is what let the old offset loop truncate a corpus
+        while its caller recorded a complete-looking watermark."""
+
         class StuckCloudJIRA(FakeCloudJIRA):
             def enhanced_search_issues(self, jql, nextPageToken=None, maxResults=100, **kw):
                 self.calls.append((jql, nextPageToken, maxResults))
@@ -269,8 +273,9 @@ class TestCloudSearchPagination:
 
         iface = self._iface(StuckCloudJIRA([]))
 
-        assert len(self._collect(iface)) == 2
-        assert len(iface._client.calls) == 2
+        with pytest.raises(RuntimeError, match="repeated nextPageToken"):
+            self._collect(iface)
+        assert len(iface._client.calls) == 2, "it must stop at the repeat, not loop"
 
     def test_empty_first_page_probes_auth(self):
         iface = self._iface(FakeCloudJIRA([[]]))

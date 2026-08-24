@@ -3418,7 +3418,7 @@ def ingest(
     "--concurrency",
     "concurrency_opt",
     default=None,
-    type=click.IntRange(1, 64),
+    type=click.IntRange(1, 64),  # == jira_sync.MAX_SWEEP_CONCURRENCY
     help=(
         "Issues fetched concurrently (default: JIRA_WIKI_CONCURRENCY, else 8; "
         "16 under --backfill). 1 sweeps strictly sequentially."
@@ -3492,6 +3492,7 @@ def ingest_jira(
     from parrot.knowledge.wiki.jira_sync import (
         BACKFILL_SWEEP_CONCURRENCY,
         DEFAULT_SWEEP_CONCURRENCY,
+        MAX_SWEEP_CONCURRENCY,
         resolve_issues_dir,
         sweep_jira_issues,
     )
@@ -3533,6 +3534,12 @@ def ingest_jira(
             concurrency = int(env_concurrency)
         except ValueError as exc:
             raise click.ClickException(f"JIRA_WIKI_CONCURRENCY must be an integer (got {env_concurrency!r}): {exc}") from exc
+        # The env var must clear the same bar as --concurrency: the sweep's
+        # resident-task bound is `concurrency * 2`.
+        if not 1 <= concurrency <= MAX_SWEEP_CONCURRENCY:
+            raise click.ClickException(
+                f"JIRA_WIKI_CONCURRENCY must be between 1 and {MAX_SWEEP_CONCURRENCY} (got {concurrency})."
+            )
     elif backfill:
         concurrency = BACKFILL_SWEEP_CONCURRENCY
     else:

@@ -75,6 +75,11 @@ DEFAULT_SWEEP_CONCURRENCY = 8
 # aggressive than a daily cron.
 BACKFILL_SWEEP_CONCURRENCY = 16
 
+# Hard ceiling, enforced here as well as by the CLI's own range check —
+# `JIRA_WIKI_CONCURRENCY` and library callers reach this function without
+# passing through Click, and the resident-task bound is `concurrency * 2`.
+MAX_SWEEP_CONCURRENCY = 64
+
 # A sweep that fetched less than this fraction of Jira's own approximate
 # count for the scope is reported as a shortfall — the canary for a
 # truncated fetch (the Cloud cursor-pagination bug). Generous on purpose:
@@ -367,7 +372,7 @@ async def sweep_jira_issues(
     Returns:
         A :class:`SweepReport` summarizing the run.
     """
-    concurrency = max(1, concurrency)
+    concurrency = min(max(1, concurrency), MAX_SWEEP_CONCURRENCY)
     if concurrency > 1:
         # Sized once, before any fan-out: `requests`' default pool is 10.
         # getattr-guarded because `interface` is a duck-typed seam here
@@ -541,6 +546,23 @@ async def _run_sweep(
         if progress is not None and progress_every > 0 and report.fetched % progress_every == 0:
             progress(report.fetched)
 
+    def _drain(done: set) -> Exception | None:
+        """Apply every successful task in ``done``; return the first failure.
+
+        Every task is retrieved, not just up to the first failure —
+        otherwise a batch where two tasks raise leaves the second exception
+        unretrieved (an "exception was never retrieved" warning, and a
+        second cause the report never mentions).
+        """
+        failure: Exception | None = None
+        for task in done:
+            exc = task.exception()
+            if exc is None:
+                _apply(task.result())
+            elif failure is None and isinstance(exc, Exception):
+                failure = exc
+        return failure
+
     pending: set[asyncio.Task] = set()
     try:
         async for raw in interface.search_issues(effective_jql, expand="renderedFields,changelog"):
@@ -551,23 +573,30 @@ async def _run_sweep(
             # 9k documents at once.
             if len(pending) >= concurrency * 2:
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-                for task in done:
-                    _apply(task.result())
+                failure = _drain(done)
+                if failure is not None:
+                    raise failure
         while pending:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                _apply(task.result())
+            failure = _drain(done)
+            if failure is not None:
+                raise failure
     except Exception as exc:  # noqa: BLE001 — record and stop; never advance on failure
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
         report.errors.append(str(exc))
         new_scope.last_run_status = "partial"
         if not dry_run:
             state.scopes[fp] = new_scope
             save_sync_state(issues_dir, state)
         return report
+    finally:
+        # `finally`, not the `except` above: `asyncio.CancelledError` is a
+        # BaseException, so a cancelled sweep (Ctrl-C, an outer timeout)
+        # would otherwise walk out of here leaving in-flight remote-link
+        # calls running past the release of the corpus write lock.
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     # --- Completeness canary -------------------------------------------
     # Runs BEFORE orphan detection on purpose: a truncated fetch makes
@@ -597,6 +626,14 @@ async def _run_sweep(
                 "permission-filtered result set — so this corpus is incomplete."
             )
             if enforce_scope_count:
+                # Jira's count is approximate and is not a snapshot of the
+                # same instant as the fetch, so this verdict can be wrong.
+                # Name the way past it rather than making the operator guess.
+                message += (
+                    " If Jira's count is wrong for this scope, re-run the same "
+                    "work without the check: --force --concurrency N "
+                    "--progress-every 100 (instead of --backfill)."
+                )
                 report.errors.append(message)
                 new_scope.last_run_status = "partial"
                 if not dry_run:

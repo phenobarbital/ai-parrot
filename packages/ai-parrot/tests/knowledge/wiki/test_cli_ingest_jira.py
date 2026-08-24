@@ -386,6 +386,19 @@ class TestBackfillPreset:
         assert result.exit_code != 0
         assert "JIRA_WIKI_CONCURRENCY" in result.output
 
+    def test_env_concurrency_is_range_checked_too(self, runner, monkeypatch, tmp_path):
+        """The env var must clear the same bar as --concurrency — the sweep's
+        resident-task bound is 2x this number."""
+        monkeypatch.setenv("JIRA_WIKI_CONCURRENCY", "5000")
+        _patch_sweep(monkeypatch)
+        _patch_interface(monkeypatch)
+        result = runner.invoke(
+            wiki,
+            ["ingest-jira", "--project", "NAV", "--no-build", "--issues-dir", str(tmp_path)],
+        )
+        assert result.exit_code != 0
+        assert "JIRA_WIKI_CONCURRENCY" in result.output
+
     def test_concurrency_is_range_checked(self, runner, monkeypatch, tmp_path):
         _patch_sweep(monkeypatch)
         _patch_interface(monkeypatch)
