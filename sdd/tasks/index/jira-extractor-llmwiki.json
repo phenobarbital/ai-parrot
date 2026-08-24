@@ -74,7 +74,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M3",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Needs TASK-2399's JiraIssue models and TASK-2398's ConceptType.ISSUE. Independent of TASK-2400 (no transport), so it could in principle run beside it — but both extend the same package surface and the spec chose one worktree.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2401-jira-deterministic-renderer.md"
+      "completed_at": "2026-08-24T01:25:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2401-jira-deterministic-renderer.md"
     },
     {
       "id": "TASK-2402",

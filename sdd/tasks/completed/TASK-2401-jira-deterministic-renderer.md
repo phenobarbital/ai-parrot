@@ -706,10 +706,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
+**Notes**: Implemented `jira_render.py` with `IssueFrontmatter`/`IssueSyncStamp`,
+`_ISSUE_FRONTMATTER_FIELD_ORDER` (mirroring `documents.py`'s determinism
+contract exactly), `issue_filename`, `person_slug`/`group_slug`
+(account-id-derived, filename-safe, collision-hash fallback),
+`split_at_marker` (all four documented cases: verbatim preservation,
+duplicated marker, code-fence false-positive, no-marker), a
+freshly-instantiated-per-call `html2text.HTML2Text()` converter with every
+option pinned explicitly, and `render_issue_document`/`render_person_note`/
+`render_group_note`. Appended `raw_issue`/`remote_links` fixtures to the
+existing `tests/knowledge/wiki/conftest.py` per scope, wrapping TASK-2399's
+`tests/fixtures/jira_payloads.py`. Generated the golden file, inspected it
+line-by-line before committing (confirmed correct frontmatter key order,
+sorted lists, wikilinks, tags, and marker placement), then committed it.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+All 36 tests pass (including the golden byte-comparison and all five
+sync-marker edge cases); full re-run across all four completed tasks'
+suites (76 tests) shows no regressions. `ruff check` clean on all
+touched/created files (two auto-fixable style findings in the
+task-specified test file — import order, `datetime.UTC` alias — applied
+via `ruff check --fix`, no semantic change).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `JiraIssueLinkKind.CLONES`/`.CLONED_BY` have no
+dedicated `IssueFrontmatter` field (the model only defines `blocks`/
+`blocked_by`/`relates`/`duplicates`, per the spec's own M3 data model) —
+mapped them into the `relates` frontmatter list, while the body's
+`## Relations` section still renders their own specific labels ("Clones"/
+"Cloned by") from the full link-kind set. Not explicitly specified either
+way; no test exercises clones/cloned_by, so this is a reasonable additive
+choice, not a spec contradiction.
