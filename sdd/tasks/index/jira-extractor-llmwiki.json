@@ -117,7 +117,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M4",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -128,8 +128,8 @@
       "parallelism_notes": "Orchestrates TASK-2400's reads and TASK-2401's renderer; needs both landed.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2403-jira-sweep-watermark-orphans.md"
+      "completed_at": "2026-08-24T02:36:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2403-jira-sweep-watermark-orphans.md"
     },
     {
       "id": "TASK-2404",

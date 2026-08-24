@@ -733,10 +733,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: Implemented `jira_sync.py` with `JiraScopeState`/`JiraSyncState`/
+`SweepReport`, `jql_fingerprint`, `resolve_issues_dir` (reusing the
+existing `parrot.knowledge.wiki.project.parrot_home()` resolver rather than
+reimplementing `PARROT_HOME` resolution — found via the task's own
+`grep -rn PARROT_HOME` instruction), `load_sync_state`/`save_sync_state`,
+and `sweep_jira_issues`. The watermark protocol was written and verified
+first, per the Agent Instructions ("get its tests green before adding
+entity notes or orphan detection"). Guards the corpus with the existing
+`wiki_write_lock(issues_dir / ".parrot")` — held only for non-dry-run
+sweeps, since `dry_run=True` must leave the directory tree byte-identical
+and `wiki_write_lock` itself creates a lock file as a side effect of
+merely acquiring it.
 
-**Deviations from spec**: none | describe if any
+**Key design decisions**:
+- **Version-forced rewrite**: a per-sweep `version_stale` flag (scope's
+  stored `extractor_version` < current `EXTRACTOR_VERSION`) skips the
+  byte-comparison entirely for that pass, always counting as "written" —
+  needed because `force=True` alone must still respect byte-identical
+  unchanged detection (per `test_unchanged_issue_not_rewritten`, which
+  uses `force=True` and expects `unchanged`), while an extractor-version
+  bump must force a rewrite even when the renderer's actual output
+  happens to be byte-identical in a given test scenario.
+- **Unreachable detection is duck-typed on `status_code`** (404/403),
+  never importing `jira.exceptions.JIRAError` — keeps this module
+  importable with `jira` absent (an explicit AC). A ticket that still
+  resolves (a `get_issue` probe succeeds) stays a plain reported orphan;
+  only a definitive 404/403 patches `sync.unreachable_since`.
+- **`_mark_unreachable` patches frontmatter directly** rather than calling
+  `render_issue_document` — a fresh `JiraIssue` is not available for a
+  ticket that no longer resolves, so the full renderer's inputs don't
+  exist for this path. Parses the existing YAML frontmatter block, sets
+  only `sync.unreachable_since`, re-dumps with `sort_keys=False` (Python
+  dicts preserve insertion order from `yaml.safe_load`, so key order
+  survives), and leaves body + human tail untouched. Documented as a
+  deliberate deviation from the task's literal "re-render through
+  render_issue_document" instruction (see below).
+- **Project note filenames preserve the raw project key** (e.g.
+  `projects/NAV.md`, per the spec's own Storage Layout example) rather
+  than running it through `group_slug()` — Jira project keys are already
+  filename-safe; only components/labels (arbitrary strings) need
+  slugification.
+- **Entity-note key merging** reads back `[[KEY]]` wikilinks from the
+  existing note's generated region (via `jira_render.split_at_marker`) and
+  unions with this sweep's newly-accumulated keys before re-rendering —
+  the one place this module reads its own prior output, exactly as scoped.
+
+All 31 tests pass on the first full run (including all watermark, orphan,
+unreachable, dry-run, entity-note, and concurrency cases). `ruff check`
+clean (2 auto-fixable style findings — unused `pytest` import, `datetime
+.UTC` alias — applied via `ruff check --fix`, no semantic change,
+re-verified green afterward). Full regression sweep across all prior
+FEAT-454 tasks' suites (204 passed except 2 pre-existing, unrelated
+`test_installer_mcp.py` failures — a `shutil.which("wikitoolkit")`
+environment artifact returning an absolute path instead of a bare command
+name in this venv, confirmed unrelated to any file this task touched) plus
+the TASK-2402 delegation suite (18 passed) — no regressions.
+
+**Deviations from spec**: `_mark_unreachable` patches the existing
+document's frontmatter directly instead of calling `render_issue_document`
+(see Notes above for why — the renderer requires a fresh `JiraIssue`,
+which does not exist for a ticket that no longer resolves). The *intent*
+of the instruction — human tail and body survive an unreachable-marking
+byte-for-byte — is preserved exactly; only the *mechanism* differs.
