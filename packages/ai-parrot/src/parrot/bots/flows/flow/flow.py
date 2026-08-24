@@ -1981,7 +1981,23 @@ class AgentsFlow(PersistenceMixin):
                 errors[nid] = event.error
                 failed.add(nid)
                 if isinstance(event.error, Exception):
-                    ctx.mark_failed(nid, event.error)
+                    # FEAT-447: `metadata=` (an existing parameter) fills
+                    # ctx.node_metadata, so a context inspected after the run
+                    # -- including a checkpointed/resumed one -- carries the
+                    # same fidelity as the FlowResult.
+                    ctx.mark_failed(
+                        nid,
+                        event.error,
+                        metadata=build_node_metadata(
+                            node_id=nid,
+                            agent=getattr(nodes[nid], "agent", None),
+                            response=None,
+                            output=None,
+                            execution_time=durations[nid],
+                            status="failed",
+                            error=str(event.error),
+                        ),
+                    )
                 self.logger.warning("Node %r failed: %s", nid, event.error)
                 self._notify_node_event(
                     "node_failed", nid,
@@ -1996,7 +2012,28 @@ class AgentsFlow(PersistenceMixin):
             else:
                 results[nid] = event.result
                 completed.add(nid)
-                ctx.mark_completed(nid, result=event.result)
+                # FEAT-447: `response=` carries the raw envelope verbatim (NOT
+                # pre-unwrapped -- consumers read scalars through
+                # FlowResult.node_results / ctx-level readers), and `metadata=`
+                # fills ctx.node_metadata. Both parameters already existed;
+                # AgentsFlow simply never passed them. The NodeExecutionInfo is
+                # deliberately built here as well as in _aggregate_result --
+                # the two paths stay independent rather than one consuming the
+                # other's state.
+                ctx.mark_completed(
+                    nid,
+                    result=event.result,
+                    response=event.result,
+                    metadata=build_node_metadata(
+                        node_id=nid,
+                        agent=getattr(nodes[nid], "agent", None),
+                        response=event.result,
+                        output=event.result,
+                        execution_time=durations[nid],
+                        status="completed",
+                        error=None,
+                    ),
+                )
                 self.logger.info("Node %r completed", nid)
                 self._notify_node_event(
                     "node_completed", nid,
@@ -2042,6 +2079,12 @@ class AgentsFlow(PersistenceMixin):
             nodes, results, errors, completed, failed,
             edges=edges if explicit_mode else None,
             durations=durations,
+            # FEAT-447: hand the aggregator what the scheduler already
+            # measured -- true completion order, the run clock, and the
+            # skipped set -- instead of discarding it.
+            ctx=ctx,
+            run_started_at=run_started_at,
+            skipped=skipped,
         )
         self._notify_node_event(
             "flow_completed", "",
