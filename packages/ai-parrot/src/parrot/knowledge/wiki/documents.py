@@ -25,7 +25,6 @@ from urllib.parse import urlparse
 
 import aiohttp
 import click
-import pymupdf
 import yaml
 from pydantic import BaseModel, Field
 
@@ -676,6 +675,8 @@ class DocumentAcquirer:
 
         if ref.suffix == ".pdf":
             try:
+                import pymupdf  # noqa: PLC0415 — lazy; only needed for PDF page counts
+
                 pdf = pymupdf.open(str(path))
                 try:
                     metadata.page_count = pdf.page_count
