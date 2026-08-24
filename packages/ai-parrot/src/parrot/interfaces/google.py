@@ -159,6 +159,60 @@ class CredentialsInterface:
 
 
 # ============================================================================
+# Calendar Client (FEAT-453, Module 7)
+# ============================================================================
+
+class CalendarClient:
+    """A live, authenticated Google Calendar v3 client wrapper.
+
+    Thin wrapper over :meth:`GoogleClient.execute_api_call`'s existing
+    per-call aiogoogle discovery/auth pattern — promoted from the bare
+    ``{'service': 'calendar', 'version': ...}`` config dict
+    ``get_calendar_client()`` used to return. Exposes a stable, direct
+    async interface for calendar operations instead of requiring every
+    caller to re-thread ``execute_api_call``'s ``service_name``/``api_name``/
+    ``method_chain`` triple.
+    """
+
+    def __init__(self, google_client: "GoogleClient", version: str = 'v3') -> None:
+        """Bind this wrapper to *google_client*.
+
+        Args:
+            google_client: The authenticated :class:`GoogleClient` whose
+                ``execute_api_call`` plumbing (auth, scopes, discovery) is
+                reused for every calendar operation.
+            version: Calendar API version (default ``'v3'``).
+        """
+        self._client = google_client
+        self.version = version
+
+    async def insert_event(self, calendar_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Insert a new event. Returns the raw Calendar v3 event resource."""
+        return await self._client.execute_api_call(
+            'calendar', 'events', 'insert',
+            version=self.version, calendarId=calendar_id, body=body,
+        )
+
+    async def list_events(self, calendar_id: str, **kwargs) -> Dict[str, Any]:
+        """List events. ``**kwargs`` forwards Calendar v3 list params
+        (``timeMin``, ``timeMax``, etc.). Returns the raw list response."""
+        return await self._client.execute_api_call(
+            'calendar', 'events', 'list',
+            version=self.version, calendarId=calendar_id, **kwargs,
+        )
+
+    async def patch_event(
+        self, calendar_id: str, event_id: str, body: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Partially update an event (PATCH semantics — unset fields in
+        *body* are left untouched). Returns the raw updated event resource."""
+        return await self._client.execute_api_call(
+            'calendar', 'events', 'patch',
+            version=self.version, calendarId=calendar_id, eventId=event_id, body=body,
+        )
+
+
+# ============================================================================
 # Google Client
 # ============================================================================
 
@@ -757,9 +811,22 @@ class GoogleClient(CredentialsInterface, ABC):
         """Get Google Docs client config."""
         return {'service': 'docs', 'version': version}
 
-    async def get_calendar_client(self, version: str = 'v3') -> Dict[str, Any]:
-        """Get Google Calendar client config."""
-        return {'service': 'calendar', 'version': version}
+    async def get_calendar_client(self, version: str = 'v3') -> "CalendarClient":
+        """Get a usable Google Calendar v3 client.
+
+        Promoted from returning a bare ``{'service': ..., 'version': ...}``
+        config dict (pre-FEAT-453) to a live :class:`CalendarClient` wrapper
+        that reuses this client's existing ``execute_api_call`` auth/scope
+        plumbing (aiogoogle discovery + service-account/user-creds dispatch)
+        for every calendar operation.
+
+        Args:
+            version: Calendar API version (default ``'v3'``).
+
+        Returns:
+            A :class:`CalendarClient` bound to this :class:`GoogleClient`.
+        """
+        return CalendarClient(self, version=version)
 
     async def get_storage_client(self, version: str = 'v1') -> Dict[str, Any]:
         """Get Google Cloud Storage client config."""
