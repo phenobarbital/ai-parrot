@@ -15,6 +15,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .types import LocalizedString
 
 
+DEFAULT_MAX_INLINE_SIZE = 10_485_760
+"""System default (10 MB) for the inline data_url size threshold (FEAT-460)."""
+
+
 class FieldConstraints(BaseModel):
     """Constraints applied to a form field for validation.
 
@@ -31,6 +35,9 @@ class FieldConstraints(BaseModel):
         max_items: Maximum number of items in array/multi-select fields (>= 0).
         allowed_mime_types: Allowed MIME types for file/image fields.
         max_file_size_bytes: Maximum file size in bytes for file/image fields (>= 0).
+        max_inline_size_bytes: Maximum file size (bytes) for inline data_url
+            inclusion. Files above this get blob_ref only. None → system
+            default (DEFAULT_MAX_INLINE_SIZE).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -47,6 +54,15 @@ class FieldConstraints(BaseModel):
     allowed_mime_types: list[str] | None = None
     max_file_size_bytes: int | None = Field(
         default=None, ge=0, description="Maximum file size in bytes"
+    )
+    max_inline_size_bytes: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Maximum file size (bytes) for inline data_url inclusion. "
+            "Files above this get blob_ref only. "
+            "None -> system default (DEFAULT_MAX_INLINE_SIZE)."
+        ),
     )
     # Phase 2 — scale fields for NPS / LIKERT / RANKING (FEAT-167)
     scale_min: int | None = Field(default=None, ge=0, description="Scale minimum (>= 0)")
