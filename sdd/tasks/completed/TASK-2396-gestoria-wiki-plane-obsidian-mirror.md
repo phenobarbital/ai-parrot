@@ -198,10 +198,70 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-24
+**Notes**: Implemented `build_gestoria_wiki()` and `record_operation_page()` in
+a new `memory.py`, instantiating the FEAT-452 domain-plane recipe (already
+proven by TASK-2379's `notes` plane) for a dedicated `gestoria` plane: its own
+`LLMWikiToolkit` instance, own storage root (`GESTORIA_WIKI_STORAGE_DIR`,
+default `~/.parrot/wikis/gestoria`), own PageIndex authoring plane
+(`_build_pageindex_toolkit()`, best-effort — logs a warning and returns
+`None` on failure, leaving the wiki retrieval-only), and own GraphIndex
+tenant (`tenant_id="gestoria"` passed to `build_graph_memory_toolkit()`).
+`build_gestoria_wiki()` bootstraps with an idempotent `create_wiki()` call in
+a *separate* try/except from toolkit construction, so a `create_wiki()`
+bootstrap failure (e.g. re-running against an already-initialized layout)
+never nulls out an otherwise-valid toolkit handle — only a construction
+failure (storage `mkdir()`, graph/pageindex wiring) returns `None`. Every
+failure path logs a warning naming `"gestoria"` so the agent still boots.
+`record_operation_page()` records what ran (`operation`), a stable sha256
+digest of `params` (never raw values — verified by a dedicated test that
+literal client names/amounts never leak into the page body), the
+confirmation-gate decision, and the outcome, as a page (`category="summary"`,
+the closest fit among `LLMWikiToolkit.create_page`'s existing categories —
+no dedicated "operation-record" category exists) and mirrors it to an
+Obsidian note via `ObsidianToolkit.create_note()` when an instance is
+passed. Both the wiki write and the Obsidian mirror are independently
+best-effort: either can fail without raising or blocking the other, since
+this is an audit/knowledge side effect, not the operation's own result.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Codebase Contract correction applied at implementation time** (the task's
+own contract already flagged this as a known-stale FEAT-452 TASK-2379
+artifact reference, not a new finding): confirmed via `read` that
+`LLMWikiToolkit._config_for()` is at `wiki/toolkit.py:1378` (not the
+TASK-2379 artifact's stale `:1205`) and that its `ValueError` is
+conditional on `_is_namespace()` post-FEAT-450 — consistent with this
+task's own already-corrected contract, requiring no further correction.
+Verified `ObsidianToolkit.create_note()` signature via read
+(`tools/obsidian.py:439`) before use.
 
-**Deviations from spec**: none | describe if any
+**Test-fixture correction**: `test_create_wiki_failure_does_not_null_toolkit`
+initially built a toolkit via the normal path and then separately, redundantly,
+built a second `RaisingWikiToolkit` — simplified to directly monkeypatch
+`LLMWikiToolkit` with a `RaisingWikiToolkit` subclass (overriding only
+`create_wiki` to raise) and call `build_gestoria_wiki()` once, asserting the
+returned toolkit is not `None` and that the failure was logged.
+
+**Environment-gap resolution carried over from TASK-2394**: this task's
+tests initially hit the same pre-existing Cython-extension gap (worktrees
+don't carry compiled `.pyx`→`.so` build artifacts, since those aren't
+git-tracked) via `packages/ai-parrot/tests/conftest.py`'s autouse
+`_reset_injection_engine_singleton` fixture. Copying the two specific `.so`
+files already identified in TASK-2394 (`parrot/utils/types.*.so`,
+`parrot/utils/parsers/toml.*.so`) from the main repo checkout into this
+worktree (confirmed gitignored via `git check-ignore -v`, so no risk of an
+accidental commit) resolved it — all 11 new tests ran and passed via real
+`pytest` (not a standalone workaround script). Full regression
+(`business_automation` + `scraping` + `google` suites, 872 tests) re-run
+clean: only the same 2 pre-existing, unrelated failure groups
+(`CrawlEngine`/FEAT-013, `test_places.py`), zero regressions introduced.
+`ruff check` clean except the same `UP006`/`UP035`/`UP045`/`UP017`/`UP037`
+pyupgrade-style debt already established as this feature's convention
+(matching `advanced_actions.py`'s `typing.Dict`/`Optional` style) plus 2
+`RUF059` unpacked-variable findings pre-dating this task's changes.
+
+**Deviations from spec**: none beyond the contract corrections the task
+file itself already flagged as expected (stale `_config_for` line number /
+conditional-guard behavior). `category="summary"` for `create_page()` is an
+implementation choice (no dedicated category exists for operation records)
+rather than a deviation from any specified value.
