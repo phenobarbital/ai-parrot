@@ -3,6 +3,7 @@
 
 FEAT-453 TASK-2385.
 """
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -122,25 +123,19 @@ class TestAwaitHuman:
 
 class TestAwaitKeypress:
     async def test_returns_true_on_expected_key(self, mock_driver, monkeypatch):
-        monkeypatch.setattr(
-            session_actions.select, "select", lambda *a, **kw: ([True], [], [])
-        )
+        monkeypatch.setattr(session_actions.select, "select", lambda *a, **kw: ([True], [], []))
         monkeypatch.setattr(session_actions.sys.stdin, "readline", lambda: "go\n")
         action = AwaitKeyPress(expected_key="go", timeout=5)
         assert await exec_await_keypress(mock_driver, action) is True
 
     async def test_any_key_when_expected_key_unset(self, mock_driver, monkeypatch):
-        monkeypatch.setattr(
-            session_actions.select, "select", lambda *a, **kw: ([True], [], [])
-        )
+        monkeypatch.setattr(session_actions.select, "select", lambda *a, **kw: ([True], [], []))
         monkeypatch.setattr(session_actions.sys.stdin, "readline", lambda: "anything\n")
         action = AwaitKeyPress(expected_key=None, timeout=5)
         assert await exec_await_keypress(mock_driver, action) is True
 
     async def test_timeout_returns_false(self, mock_driver, monkeypatch):
-        monkeypatch.setattr(
-            session_actions.select, "select", lambda *a, **kw: ([], [], [])
-        )
+        monkeypatch.setattr(session_actions.select, "select", lambda *a, **kw: ([], [], []))
         action = AwaitKeyPress(timeout=1)
         assert await exec_await_keypress(mock_driver, action) is False
 

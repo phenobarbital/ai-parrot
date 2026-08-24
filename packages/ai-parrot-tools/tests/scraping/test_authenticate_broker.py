@@ -3,6 +3,7 @@
 
 FEAT-453 TASK-2389.
 """
+
 from typing import Any, Optional, Tuple
 from unittest.mock import AsyncMock
 
@@ -102,7 +103,9 @@ class TestBrokerAuth:
     async def test_prefers_broker_over_literals(self, mock_driver, fake_broker):
         action = Authenticate(credential_provider="hooba", username="LITERAL", password="LITERAL")
         result = await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None,
+            mock_driver,
+            action,
+            dispatch_step_fn=None,
             credential_resolver=fake_broker.as_resolver(),
         )
         assert result is True
@@ -112,17 +115,24 @@ class TestBrokerAuth:
     async def test_broker_resolution_appends_audit_entry(self, mock_driver, fake_broker):
         action = Authenticate(credential_provider="hooba", username="LITERAL", password="LITERAL")
         await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None,
+            mock_driver,
+            action,
+            dispatch_step_fn=None,
             credential_resolver=fake_broker.as_resolver(),
         )
         fake_broker.audit_ledger.append.assert_awaited_once()
 
     async def test_broker_miss_fails_closed(self, mock_driver, missing_broker):
         action = Authenticate(credential_provider="hooba", username="LITERAL", password="LITERAL")
-        assert await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None,
-            credential_resolver=missing_broker.as_resolver(),
-        ) is False
+        assert (
+            await exec_authenticate(
+                mock_driver,
+                action,
+                dispatch_step_fn=None,
+                credential_resolver=missing_broker.as_resolver(),
+            )
+            is False
+        )
         mock_driver.fill.assert_not_awaited()
 
     async def test_credential_provider_without_resolver_fails_closed(self, mock_driver):
@@ -135,15 +145,17 @@ class TestBrokerAuth:
             return ("only-a-username", None)
 
         action = Authenticate(credential_provider="hooba", username="LITERAL", password="LITERAL")
-        assert await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None, credential_resolver=_resolver
-        ) is False
+        assert (
+            await exec_authenticate(mock_driver, action, dispatch_step_fn=None, credential_resolver=_resolver) is False
+        )
         mock_driver.fill.assert_not_awaited()
 
     async def test_never_logs_broker_credential(self, mock_driver, fake_broker, caplog):
         action = Authenticate(credential_provider="hooba", username="LITERAL", password="LITERAL")
         await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None,
+            mock_driver,
+            action,
+            dispatch_step_fn=None,
             credential_resolver=fake_broker.as_resolver(),
         )
         assert "broker-pass" not in caplog.text

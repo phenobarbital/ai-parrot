@@ -3,6 +3,7 @@
 An "acme-books" fixture domain is used throughout — never a real site name
 — matching the anonymized-fixtures convention the rest of the feature uses.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -88,9 +89,7 @@ class SpyConfirmationGuard:
 
     async def confirm(self, *, tool, parameters, permission_context=None):
         self.confirm_calls.append((tool, parameters))
-        return SimpleNamespace(
-            allowed=self._allow, status=self._status, reason=self._reason, parameters=parameters
-        )
+        return SimpleNamespace(allowed=self._allow, status=self._status, reason=self._reason, parameters=parameters)
 
 
 @pytest.fixture
@@ -115,9 +114,7 @@ def _make_toolkit(
     # itself (e.g. the fail-closed gate test) do NOT call this helper.
     toolkit._opened = True
     toolkit._flow_executor = AsyncMock()
-    toolkit._flow_executor.run = AsyncMock(
-        return_value=FlowResult(flow_name="fake", success=True)
-    )
+    toolkit._flow_executor.run = AsyncMock(return_value=FlowResult(flow_name="fake", success=True))
     return toolkit
 
 

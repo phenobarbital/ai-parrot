@@ -12,6 +12,7 @@ canary plan it runs (e.g. a login + dashboard read for a specific site) is
 private, out-of-repo (Deliverable X). Tests exercise the mechanism only,
 against a mocked flow executor — never a real third-party site.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -88,10 +89,7 @@ def register_smoke(
     """
     operation = toolkit._operations.get(check.operation)
     if operation is None:
-        raise ValueError(
-            f"SmokeCheck operation {check.operation!r} is not a registered "
-            "BusinessOperation"
-        )
+        raise ValueError(f"SmokeCheck operation {check.operation!r} is not a registered " "BusinessOperation")
     if operation.kind != OperationKind.READ:
         raise ValueError(
             f"SmokeCheck operation {check.operation!r} is "
@@ -160,9 +158,7 @@ def _extract_failure_detail(record: Dict[str, Any]) -> Tuple[str, str]:
         node_results = getattr(flow_result, "node_results", None) or {}
         for node_id, node_result in node_results.items():
             success = (
-                node_result.get("success")
-                if isinstance(node_result, dict)
-                else getattr(node_result, "success", None)
+                node_result.get("success") if isinstance(node_result, dict) else getattr(node_result, "success", None)
             )
             if success is False:
                 error_message = (

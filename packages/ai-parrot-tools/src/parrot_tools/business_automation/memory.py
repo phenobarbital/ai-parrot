@@ -15,6 +15,7 @@ operator runbook step (see ``docs/business-automation-runbook.md``), never
 agent code (FEAT-452 TASK-2382 non-scope) — an unregistered plane silently
 accumulates knowledge nobody can retrieve via ``wikitoolkit query``.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,8 +70,7 @@ def _build_pageindex_toolkit(storage: Path) -> Optional[Any]:
         return PageIndexToolkit(adapter, storage_dir=pageindex_dir)
     except Exception:
         logger.warning(
-            "PageIndexToolkit unavailable for the gestoria wiki; pages will "
-            "be written to the retrieval plane only.",
+            "PageIndexToolkit unavailable for the gestoria wiki; pages will " "be written to the retrieval plane only.",
             exc_info=True,
         )
         return None
@@ -136,8 +136,7 @@ async def build_gestoria_wiki(
         await toolkit.create_wiki(wiki_name)
     except Exception:
         logger.warning(
-            "create_wiki(%r) failed for the gestoria plane; continuing with "
-            "the existing layout.",
+            "create_wiki(%r) failed for the gestoria plane; continuing with " "the existing layout.",
             wiki_name,
             exc_info=True,
         )
@@ -210,13 +209,10 @@ async def record_operation_page(
     wiki_result: Optional[Dict[str, Any]] = None
     if wiki is not None:
         try:
-            wiki_result = await wiki.create_page(
-                wiki_name, title, body, category="summary"
-            )
+            wiki_result = await wiki.create_page(wiki_name, title, body, category="summary")
         except Exception:
             logger.warning(
-                "Failed to record operation %r (run_id=%s) to the gestoria "
-                "wiki plane",
+                "Failed to record operation %r (run_id=%s) to the gestoria " "wiki plane",
                 operation,
                 run_id,
                 exc_info=True,

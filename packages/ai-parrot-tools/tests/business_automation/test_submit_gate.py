@@ -2,6 +2,7 @@
 
 FEAT-453 TASK-2390.
 """
+
 from unittest.mock import AsyncMock
 
 from parrot_tools.business_automation.toolkit import BusinessAutomationToolkit
@@ -62,7 +63,9 @@ class TestSubmitGate:
         assert tool_stub.routing_meta["confirm_window_seconds"] == 0
         assert tool_stub.routing_meta["requires_confirmation"] is True
 
-    async def test_denied_submit_never_opens_browser(self, plans_dir, invoice_template, business_flows, business_operations):
+    async def test_denied_submit_never_opens_browser(
+        self, plans_dir, invoice_template, business_flows, business_operations
+    ):
         tk = BusinessAutomationToolkit(
             plans_dir=plans_dir,
             browser=None,

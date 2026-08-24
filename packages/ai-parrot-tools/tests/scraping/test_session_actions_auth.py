@@ -2,6 +2,7 @@
 
 FEAT-453 TASK-2384.
 """
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -58,9 +59,10 @@ class TestExecAuthenticate:
         assert "hunter2" not in caplog.text
 
     async def test_returns_false_on_failure(self, failing_driver):
-        assert await exec_authenticate(
-            failing_driver, Authenticate(username="u", password="p"), dispatch_step_fn=None
-        ) is False
+        assert (
+            await exec_authenticate(failing_driver, Authenticate(username="u", password="p"), dispatch_step_fn=None)
+            is False
+        )
 
     async def test_missing_credentials_returns_false(self, mock_driver):
         assert await exec_authenticate(mock_driver, Authenticate(), dispatch_step_fn=None) is False
@@ -91,17 +93,15 @@ class TestExecAuthenticate:
     async def test_credential_resolver_overrides_literals(self, mock_driver):
         resolver = AsyncMock(return_value=("resolved-user", "resolved-pass"))
         action = Authenticate(username="literal-user", password="literal-pass")
-        assert await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None, credential_resolver=resolver
-        ) is True
+        assert await exec_authenticate(mock_driver, action, dispatch_step_fn=None, credential_resolver=resolver) is True
         mock_driver.fill.assert_any_await("#username", "resolved-user")
 
     async def test_credential_resolver_failure_fails_closed(self, mock_driver):
         resolver = AsyncMock(side_effect=RuntimeError("broker down"))
         action = Authenticate(username="u", password="p")
-        assert await exec_authenticate(
-            mock_driver, action, dispatch_step_fn=None, credential_resolver=resolver
-        ) is False
+        assert (
+            await exec_authenticate(mock_driver, action, dispatch_step_fn=None, credential_resolver=resolver) is False
+        )
 
 
 class TestCookies:
@@ -130,7 +130,5 @@ class TestCookies:
         assert await exec_set_cookies(driver, SetCookies(cookies=[{"name": "a", "value": "b"}])) is False
 
     async def test_set_cookies_skips_entries_without_name(self, mock_driver):
-        assert await exec_set_cookies(
-            mock_driver, SetCookies(cookies=[{"value": "no-name-here"}])
-        ) is True
+        assert await exec_set_cookies(mock_driver, SetCookies(cookies=[{"value": "no-name-here"}])) is True
         mock_driver.execute_script.assert_not_awaited()

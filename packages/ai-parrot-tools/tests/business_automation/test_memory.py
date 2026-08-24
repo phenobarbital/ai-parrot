@@ -5,6 +5,7 @@ and `LLMWikiToolkit` at their source modules — the same seam TASK-2379's own
 `_build_notes_wiki_toolkit()` test suite uses — so these tests never build a
 real GraphIndex/PageIndex plane or call an LLM provider.
 """
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 

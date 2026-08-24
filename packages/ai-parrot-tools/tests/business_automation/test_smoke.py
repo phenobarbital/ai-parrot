@@ -5,6 +5,7 @@ real third-party site) — matching every other business_automation test in
 this feature (e.g. TASK-2390's own test suite), since the actual
 site-specific canary plan is Deliverable X, out of repo.
 """
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -97,27 +98,19 @@ async def _invoke_registered_job(scheduler: InProcessScheduler, job_id: str):
 class TestSmokeCheckRegistration:
     def test_refuses_submit_operation(self, toolkit, scheduler):
         with pytest.raises(ValueError, match="READ"):
-            register_smoke(
-                scheduler, toolkit, SmokeCheck(operation="issue_invoice", cron="0 * * * *")
-            )
+            register_smoke(scheduler, toolkit, SmokeCheck(operation="issue_invoice", cron="0 * * * *"))
 
     def test_refuses_unregistered_operation(self, toolkit, scheduler):
         with pytest.raises(ValueError, match="not a registered"):
-            register_smoke(
-                scheduler, toolkit, SmokeCheck(operation="does_not_exist", cron="0 * * * *")
-            )
+            register_smoke(scheduler, toolkit, SmokeCheck(operation="does_not_exist", cron="0 * * * *"))
 
     def test_registration_does_not_schedule_a_refused_check(self, toolkit, scheduler):
         with pytest.raises(ValueError):
-            register_smoke(
-                scheduler, toolkit, SmokeCheck(operation="issue_invoice", cron="0 * * * *")
-            )
+            register_smoke(scheduler, toolkit, SmokeCheck(operation="issue_invoice", cron="0 * * * *"))
         assert scheduler._scheduler.get_jobs() == []
 
     def test_accepts_read_operation(self, toolkit, scheduler):
-        job_id = register_smoke(
-            scheduler, toolkit, SmokeCheck(operation="dashboard_ping", cron="0 * * * *")
-        )
+        job_id = register_smoke(scheduler, toolkit, SmokeCheck(operation="dashboard_ping", cron="0 * * * *"))
         assert scheduler._scheduler.get_job(job_id) is not None
         assert "dashboard_ping" in job_id
 
@@ -134,17 +127,13 @@ class TestSmokeCheckExecution:
         assert record["status"] == "done"
         assert not fake_channel.alerts
 
-    async def test_failure_alerts_with_operation_node_and_error(
-        self, toolkit, scheduler, fake_channel
-    ):
+    async def test_failure_alerts_with_operation_node_and_error(self, toolkit, scheduler, fake_channel):
         toolkit._flow_executor.run = AsyncMock(
             return_value=FlowResult(
                 flow_name="dashboard_ping_flow",
                 success=False,
                 error_message="dashboard selector not found",
-                node_results={
-                    "n1": {"success": False, "error_message": "dashboard selector not found"}
-                },
+                node_results={"n1": {"success": False, "error_message": "dashboard selector not found"}},
             )
         )
         job_id = register_smoke(

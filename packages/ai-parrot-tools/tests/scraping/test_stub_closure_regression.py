@@ -7,6 +7,7 @@ every one of the eight action types must actually invoke its real
 ``session_actions.exec_*`` implementation, and an unhandled action type must
 still return ``False`` (never a silent ``True``).
 """
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,8 +16,14 @@ from parrot_tools.scraping.executor import execute_plan_steps
 from parrot_tools.scraping.plan import ScrapingPlan
 
 STUBBED = [
-    "authenticate", "upload_file", "wait_for_download", "get_cookies",
-    "set_cookies", "await_human", "await_keypress", "await_browser_event",
+    "authenticate",
+    "upload_file",
+    "wait_for_download",
+    "get_cookies",
+    "set_cookies",
+    "await_human",
+    "await_keypress",
+    "await_browser_event",
 ]
 
 # Minimal extra fields each action type needs to construct validly.
@@ -79,8 +86,6 @@ class TestStubClosure:
         # "hover" is registered in ACTION_MAP (so ScrapingStep.from_dict does
         # not raise) but is not handled by _dispatch_step's if/elif chain,
         # exercising the real "unknown to the dispatcher" else-branch.
-        plan = ScrapingPlan(
-            url="http://x/", objective="t", steps=[{"action": "hover", "selector": "#x"}]
-        )
+        plan = ScrapingPlan(url="http://x/", objective="t", steps=[{"action": "hover", "selector": "#x"}])
         result = await execute_plan_steps(spy_driver, plan=plan)
         assert not result.success or result.metadata.get("step_errors")

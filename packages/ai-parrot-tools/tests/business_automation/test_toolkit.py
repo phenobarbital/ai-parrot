@@ -2,6 +2,7 @@
 
 FEAT-453 TASK-2390.
 """
+
 from pathlib import Path
 
 from parrot_tools.business_automation import toolkit as business_toolkit
@@ -47,9 +48,7 @@ class TestRunOperation:
         result = await toolkit.run_operation("does_not_exist", {})
         assert result["status"] == "error"
 
-    async def test_confirmation_denied_returns_cancelled_without_running(
-        self, toolkit, spy_guard
-    ):
+    async def test_confirmation_denied_returns_cancelled_without_running(self, toolkit, spy_guard):
         spy_guard._allow = False
         spy_guard._status = "cancelled"
         result = await toolkit.run_operation("issue_invoice", {"client": "ACME"})

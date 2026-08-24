@@ -2,6 +2,7 @@
 
 FEAT-453 TASK-2392.
 """
+
 import stat
 
 import pandas as pd
@@ -33,16 +34,12 @@ def three_row_xlsx(tmp_path):
 
 @pytest.fixture
 def xlsx_a(tmp_path):
-    return _write_xlsx(
-        tmp_path / "a.xlsx", [{"client": "ACME", "amount": "100.00"}]
-    )
+    return _write_xlsx(tmp_path / "a.xlsx", [{"client": "ACME", "amount": "100.00"}])
 
 
 @pytest.fixture
 def xlsx_b(tmp_path):
-    return _write_xlsx(
-        tmp_path / "b.xlsx", [{"client": "Beta Corp", "amount": "42.50"}]
-    )
+    return _write_xlsx(tmp_path / "b.xlsx", [{"client": "Beta Corp", "amount": "42.50"}])
 
 
 @pytest.fixture(autouse=True)
@@ -131,6 +128,4 @@ class TestIngest:
         assert result["reconciled"] is False
 
     def test_digest_is_deterministic(self, three_row_xlsx):
-        assert compute_statement_digest(three_row_xlsx) == compute_statement_digest(
-            three_row_xlsx
-        )
+        assert compute_statement_digest(three_row_xlsx) == compute_statement_digest(three_row_xlsx)

@@ -20,6 +20,7 @@ browser against a financial system): any malformed file, or any
 ``.template.json`` carrying a literal ``authenticate`` password (TASK-2389's
 lint), rejects the **whole directory** — never silently skips one file.
 """
+
 from __future__ import annotations
 
 import json
@@ -92,9 +93,7 @@ class PlanDirectoryStore:
                 try:
                     op = BusinessOperation(**raw)
                 except ValidationError as exc:
-                    raise ValueError(
-                        f"{path.name}: BusinessOperation schema validation failed — {exc}"
-                    ) from exc
+                    raise ValueError(f"{path.name}: BusinessOperation schema validation failed — {exc}") from exc
                 operations[op.name] = op
 
             elif path.name.endswith(".template.json"):
@@ -107,18 +106,14 @@ class PlanDirectoryStore:
                 try:
                     template = TemplatePlan(**raw)
                 except ValidationError as exc:
-                    raise ValueError(
-                        f"{path.name}: TemplatePlan schema validation failed — {exc}"
-                    ) from exc
+                    raise ValueError(f"{path.name}: TemplatePlan schema validation failed — {exc}") from exc
                 templates[template.name] = template
 
             elif path.name.endswith(".flow.json"):
                 try:
                     flow = ScrapingFlow(**raw)
                 except ValidationError as exc:
-                    raise ValueError(
-                        f"{path.name}: ScrapingFlow schema validation failed — {exc}"
-                    ) from exc
+                    raise ValueError(f"{path.name}: ScrapingFlow schema validation failed — {exc}") from exc
                 flows[flow.name] = flow
 
             else:
@@ -132,7 +127,10 @@ class PlanDirectoryStore:
 
         logger.info(
             "PlanDirectoryStore loaded %d operation(s), %d template(s), %d flow(s) from %s",
-            len(operations), len(templates), len(flows), self.plans_dir,
+            len(operations),
+            len(templates),
+            len(flows),
+            self.plans_dir,
         )
 
     def reload_if_changed(self) -> bool:

@@ -2,6 +2,7 @@
 
 FEAT-453 TASK-2388.
 """
+
 import pytest
 from parrot_tools.scraping.models import BrowserAction
 from parrot_tools.scraping.plan import ScrapingPlan
@@ -10,7 +11,8 @@ from parrot_tools.scraping.plan import ScrapingPlan
 class TestValidateSteps:
     def test_valid_plan_returns_typed_actions(self):
         plan = ScrapingPlan(
-            url="http://x/", objective="t",
+            url="http://x/",
+            objective="t",
             steps=[{"action": "navigate", "url": "http://x/"}],
         )
         actions = plan.validate_steps()
@@ -19,7 +21,8 @@ class TestValidateSteps:
 
     def test_valid_plan_multiple_steps(self):
         plan = ScrapingPlan(
-            url="http://x/", objective="t",
+            url="http://x/",
+            objective="t",
             steps=[
                 {"action": "navigate", "url": "http://x/"},
                 {"action": "click", "selector": "#go"},
@@ -31,7 +34,8 @@ class TestValidateSteps:
 
     def test_unknown_action_raises_with_index(self):
         plan = ScrapingPlan(
-            url="http://x/", objective="t",
+            url="http://x/",
+            objective="t",
             steps=[{"action": "navigate", "url": "http://x/"}, {"action": "teleport"}],
         )
         with pytest.raises(ValueError, match=r"step 1"):
@@ -39,7 +43,8 @@ class TestValidateSteps:
 
     def test_missing_required_field_raises(self):
         plan = ScrapingPlan(
-            url="http://x/", objective="t",
+            url="http://x/",
+            objective="t",
             steps=[{"action": "upload_file", "selector": "#f"}],
         )
         with pytest.raises(ValueError, match="file_path"):
@@ -51,7 +56,8 @@ class TestValidateSteps:
 
     def test_strict_false_collects_all_errors(self):
         plan = ScrapingPlan(
-            url="http://x/", objective="t",
+            url="http://x/",
+            objective="t",
             steps=[
                 {"action": "teleport"},
                 {"action": "upload_file", "selector": "#f"},
@@ -67,7 +73,8 @@ class TestValidateSteps:
 
     def test_strict_true_raises_on_first_error_only(self):
         plan = ScrapingPlan(
-            url="http://x/", objective="t",
+            url="http://x/",
+            objective="t",
             steps=[{"action": "teleport"}, {"action": "upload_file", "selector": "#f"}],
         )
         with pytest.raises(ValueError) as excinfo:

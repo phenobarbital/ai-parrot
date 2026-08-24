@@ -3,6 +3,7 @@
 FEAT-453 TASK-2391. No test in this file (or anywhere else in the feature)
 may reference a real site — the fixture domain is a fictional "acme-books".
 """
+
 import json
 import shutil
 import time
@@ -72,9 +73,7 @@ class TestPlanDirectoryStore:
                     "name": "x",
                     "url_template": "http://x/",
                     "objective_template": "o",
-                    "steps_template": [
-                        {"action": "authenticate", "username": "u", "password": "hunter2"}
-                    ],
+                    "steps_template": [{"action": "authenticate", "username": "u", "password": "hunter2"}],
                 }
             )
         )
@@ -88,9 +87,7 @@ class TestPlanDirectoryStore:
                     "name": "x",
                     "url_template": "http://x/",
                     "objective_template": "o",
-                    "steps_template": [
-                        {"action": "authenticate", "username": "u", "password": "hunter2"}
-                    ],
+                    "steps_template": [{"action": "authenticate", "username": "u", "password": "hunter2"}],
                 }
             )
         )
@@ -105,9 +102,7 @@ class TestPlanDirectoryStore:
                     "name": "clean_auth",
                     "url_template": "http://x/",
                     "objective_template": "o",
-                    "steps_template": [
-                        {"action": "authenticate", "credential_provider": "acme-books"}
-                    ],
+                    "steps_template": [{"action": "authenticate", "credential_provider": "acme-books"}],
                 }
             )
         )

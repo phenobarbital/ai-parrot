@@ -14,6 +14,7 @@ action types, logged a warning, and returned ``True`` — reporting success
 without doing anything. That defect is the reason this module exists: every
 function here returns ``False`` (never ``True``) on a failure path.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,23 +56,20 @@ _DEFAULT_HUMAN_RECIPIENT = "operator"
 
 # Callback used to dispatch a single step back to the caller's executor.
 # Signature mirrors advanced_actions.DispatchStepFn / executor._dispatch_step.
-DispatchStepFn = Callable[
-    [AbstractDriver, ScrapingStep, str, int, Dict[str, Any]], Awaitable[bool]
-]
+DispatchStepFn = Callable[[AbstractDriver, ScrapingStep, str, int, Dict[str, Any]], Awaitable[bool]]
 
 # Optional credential resolution hook. Returns ``(username, password)`` (either
 # of which may be ``None``) or ``None`` to fall back to the action's literal
 # fields. TASK-2389 wires a CredentialBroker-backed implementation of this;
 # this module only defines the shape and calls it if supplied.
-CredentialResolverFn = Callable[
-    [Authenticate], Awaitable[Optional[Tuple[Optional[str], Optional[str]]]]
-]
+CredentialResolverFn = Callable[[Authenticate], Awaitable[Optional[Tuple[Optional[str], Optional[str]]]]]
 
 # Matches one `name=value` pair inside a `document.cookie` string.
 _COOKIE_PAIR_RE = re.compile(r"^\s*([^=;]+)=(.*)$")
 
 
 # ── Authentication ──────────────────────────────────────────────────
+
 
 async def exec_authenticate(
     driver: AbstractDriver,
@@ -148,8 +146,7 @@ async def exec_authenticate(
             resolved_username, resolved_password = resolved
             if not resolved_username or not resolved_password:
                 logger.error(
-                    "Credential broker returned an incomplete credential "
-                    "for provider=%r; failing closed",
+                    "Credential broker returned an incomplete credential " "for provider=%r; failing closed",
                     action.credential_provider,
                 )
                 return False
@@ -256,14 +253,11 @@ async def _authenticate_via_custom_steps(
 ) -> bool:
     """Run ``action.custom_steps`` sequentially for oauth/custom logins."""
     if not action.custom_steps:
-        logger.error(
-            "Authentication method %r requires custom_steps", action.method
-        )
+        logger.error("Authentication method %r requires custom_steps", action.method)
         return False
     if dispatch_step_fn is None:
         logger.error(
-            "Authentication method %r requires a dispatch_step_fn to run "
-            "custom_steps",
+            "Authentication method %r requires a dispatch_step_fn to run " "custom_steps",
             action.method,
         )
         return False
@@ -273,9 +267,7 @@ async def _authenticate_via_custom_steps(
         step = ScrapingStep(action=sub_action)
         success = await dispatch_step_fn(driver, step, "", timeout, step_extracted)
         if not success:
-            logger.warning(
-                "Custom authentication step failed: %s", sub_action.description
-            )
+            logger.warning("Custom authentication step failed: %s", sub_action.description)
             return False
 
     logger.info("Custom/OAuth authentication completed (%d step(s))", len(action.custom_steps))
@@ -291,6 +283,7 @@ async def _authenticate_via_custom_steps(
 # Codebase Contract anticipates for a driver-agnostic implementation. Note
 # this only sees non-HttpOnly cookies — the same limitation any page-JS-based
 # cookie read has.
+
 
 async def exec_get_cookies(driver: AbstractDriver, action: GetCookies) -> Dict[str, Any]:
     """Execute a :class:`GetCookies` action.
@@ -386,6 +379,7 @@ async def exec_set_cookies(driver: AbstractDriver, action: SetCookies) -> bool:
 # to poll) *requires* a channel, failing closed without one rather than
 # blocking for the full timeout.
 
+
 async def exec_await_human(
     driver: AbstractDriver,
     action: AwaitHuman,
@@ -415,10 +409,7 @@ async def exec_await_human(
 
     target = action.target
     if not target:
-        logger.error(
-            "await_human requires at least one condition "
-            "(selector, url_contains, title_contains)"
-        )
+        logger.error("await_human requires at least one condition " "(selector, url_contains, title_contains)")
         return False
 
     if channel is not None:
@@ -433,9 +424,7 @@ async def exec_await_human(
                 exc_info=True,
             )
 
-    logger.info(
-        "%s in the browser window (condition_type=%s)", action.message, action.condition_type
-    )
+    logger.info("%s in the browser window (condition_type=%s)", action.message, action.condition_type)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -448,15 +437,11 @@ async def exec_await_human(
     return False
 
 
-async def _check_human_condition(
-    driver: AbstractDriver, condition_type: str, target: str
-) -> bool:
+async def _check_human_condition(driver: AbstractDriver, condition_type: str, target: str) -> bool:
     """Evaluate one of the DOM-based await_human conditions."""
     try:
         if condition_type == "selector":
-            count = await driver.execute_script(
-                "return document.querySelectorAll(arguments[0]).length;", target
-            )
+            count = await driver.execute_script("return document.querySelectorAll(arguments[0]).length;", target)
             return bool(count) and int(count) > 0
         if condition_type == "url_contains":
             return target in driver.current_url
@@ -487,7 +472,8 @@ async def _await_human_manual(
     if channel is None:
         logger.error(
             "await_human condition_type='manual' requires a HumanChannel; "
-            "failing closed rather than blocking for %ds", timeout,
+            "failing closed rather than blocking for %ds",
+            timeout,
         )
         return False
 
@@ -525,6 +511,7 @@ async def _await_human_manual(
 
 # ── Console keypress wait ────────────────────────────────────────────
 
+
 async def exec_await_keypress(driver: AbstractDriver, action: AwaitKeyPress) -> bool:
     """Execute an :class:`AwaitKeyPress` action.
 
@@ -550,9 +537,7 @@ async def exec_await_keypress(driver: AbstractDriver, action: AwaitKeyPress) -> 
     loop = asyncio.get_running_loop()
 
     while time.monotonic() - start < timeout:
-        ready, _, _ = await loop.run_in_executor(
-            None, lambda: select.select([sys.stdin], [], [], 0.5)
-        )
+        ready, _, _ = await loop.run_in_executor(None, lambda: select.select([sys.stdin], [], [], 0.5))
         if ready:
             try:
                 keypress = sys.stdin.readline().strip()
@@ -656,8 +641,7 @@ async def exec_await_browser_event(driver: AbstractDriver, action: AwaitBrowserE
         logger.debug("Failed injecting the await_browser_event listener script", exc_info=True)
 
     logger.info(
-        "Awaiting browser event: key combo, floating button, custom event, "
-        "or localStorage flag will resume."
+        "Awaiting browser event: key combo, floating button, custom event, " "or localStorage flag will resume."
     )
 
     deadline = time.monotonic() + timeout
@@ -678,23 +662,17 @@ async def exec_await_browser_event(driver: AbstractDriver, action: AwaitBrowserE
     return False
 
 
-async def _check_browser_event_ready(
-    driver: AbstractDriver, predicate_js: Optional[str], ls_key: str
-) -> bool:
+async def _check_browser_event_ready(driver: AbstractDriver, predicate_js: Optional[str], ls_key: str) -> bool:
     """Check whether any of the browser-event resume signals has fired."""
     try:
         if predicate_js:
             ok = await driver.execute_script(predicate_js)
             if ok:
                 return True
-        val = await driver.execute_script(
-            f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}"
-        )
+        val = await driver.execute_script(f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}")
         if val == "1":
             return True
-        ready = await driver.execute_script(
-            "return !!(window.__scrapeSignal && window.__scrapeSignal.ready);"
-        )
+        ready = await driver.execute_script("return !!(window.__scrapeSignal && window.__scrapeSignal.ready);")
         return bool(ready)
     except Exception:
         # Debug-only: this runs on every poll iteration, so logging at a
@@ -736,9 +714,7 @@ def _resolve_within_root(raw_path: str) -> Optional[Path]:
         try:
             path.relative_to(root_path)
         except ValueError:
-            logger.error(
-                "Rejecting path outside the configured root %s: %s", root_path, path
-            )
+            logger.error("Rejecting path outside the configured root %s: %s", root_path, path)
             return None
     return path
 
@@ -794,7 +770,8 @@ async def exec_upload_file(driver: AbstractDriver, action: UploadFile) -> bool:
         except Exception:  # noqa: BLE001 — a missing post-upload element is a warning, not an upload failure
             logger.warning(
                 "Post-upload element not found within %ds: %s",
-                action.wait_timeout, action.wait_after_upload,
+                action.wait_timeout,
+                action.wait_after_upload,
             )
 
     return True
@@ -836,9 +813,7 @@ async def exec_wait_for_download(driver: AbstractDriver, action: WaitForDownload
         candidates = [f for f in download_dir.glob("*") if f.is_file()]
         if action.filename_pattern:
             candidates = [f for f in candidates if f.match(action.filename_pattern)]
-        candidates = [
-            f for f in candidates if f.suffix.lower() not in _INCOMPLETE_DOWNLOAD_SUFFIXES
-        ]
+        candidates = [f for f in candidates if f.suffix.lower() not in _INCOMPLETE_DOWNLOAD_SUFFIXES]
 
         for candidate in candidates:
             try:

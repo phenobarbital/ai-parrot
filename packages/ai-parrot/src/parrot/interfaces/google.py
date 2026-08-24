@@ -5,6 +5,7 @@ Simplified async-only implementation using aiogoogle.
 Provides unified interface for Google services with credential management
 and environment variable replacement.
 """
+
 from __future__ import annotations
 import contextlib
 from pathlib import Path, PurePath
@@ -32,70 +33,62 @@ from navconfig import BASE_DIR, config
 from ..exceptions import ConfigError
 from ..conf import GOOGLE_CREDENTIALS_FILE, REDIS_HISTORY_URL
 
-
 # ============================================================================
 # Default Scopes for Google Services
 # ============================================================================
 
 DEFAULT_SCOPES = {
     # Google Drive
-    'drive': [
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive.metadata.readonly'
+    "drive": [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/drive.metadata.readonly",
     ],
     # Google Sheets
-    'sheets': [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/spreadsheets.readonly'
-    ],
+    "sheets": ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/spreadsheets.readonly"],
     # Google Docs
-    'docs': [
-        'https://www.googleapis.com/auth/documents',
-        'https://www.googleapis.com/auth/documents.readonly'
-    ],
+    "docs": ["https://www.googleapis.com/auth/documents", "https://www.googleapis.com/auth/documents.readonly"],
     # Google Calendar
-    'calendar': [
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/calendar.readonly',
-        'https://www.googleapis.com/auth/calendar.events'
+    "calendar": [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.readonly",
+        "https://www.googleapis.com/auth/calendar.events",
     ],
     # Google Cloud Storage
-    'storage': [
-        'https://www.googleapis.com/auth/devstorage.full_control',
-        'https://www.googleapis.com/auth/devstorage.read_only',
-        'https://www.googleapis.com/auth/devstorage.read_write'
+    "storage": [
+        "https://www.googleapis.com/auth/devstorage.full_control",
+        "https://www.googleapis.com/auth/devstorage.read_only",
+        "https://www.googleapis.com/auth/devstorage.read_write",
     ],
     # Gmail
-    'gmail': [
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/gmail.modify',
-        'https://www.googleapis.com/auth/gmail.compose'
+    "gmail": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/gmail.compose",
     ],
     # Google Search
-    'search': [
-        'https://www.googleapis.com/auth/cse'
-    ],
+    "search": ["https://www.googleapis.com/auth/cse"],
     # Google Business Profile
-    'business': [
-        'https://www.googleapis.com/auth/business.manage'
-    ]
+    "business": ["https://www.googleapis.com/auth/business.manage"],
 }
 
 # Combined scopes for full access
-DEFAULT_SCOPES['all'] = list(set(
-    DEFAULT_SCOPES['drive'] +
-    DEFAULT_SCOPES['sheets'] +
-    DEFAULT_SCOPES['docs'] +
-    DEFAULT_SCOPES['calendar'] +
-    DEFAULT_SCOPES['storage'] +
-    DEFAULT_SCOPES['business']
-))
+DEFAULT_SCOPES["all"] = list(
+    set(
+        DEFAULT_SCOPES["drive"]
+        + DEFAULT_SCOPES["sheets"]
+        + DEFAULT_SCOPES["docs"]
+        + DEFAULT_SCOPES["calendar"]
+        + DEFAULT_SCOPES["storage"]
+        + DEFAULT_SCOPES["business"]
+    )
+)
 
 
 # ============================================================================
 # Credentials Interface Mixin
 # ============================================================================
+
 
 class CredentialsInterface:
     """
@@ -104,7 +97,7 @@ class CredentialsInterface:
     Handles ${VAR_NAME} patterns in credential dictionaries.
     """
 
-    ENV_VAR_PATTERN = re.compile(r'\$\{([^}]+)\}')
+    ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
     def processing_credentials(self) -> None:
         """
@@ -113,7 +106,7 @@ class CredentialsInterface:
         Replaces ${VAR_NAME} patterns with values from environment variables.
         Works with both navconfig and os.environ.
         """
-        if not hasattr(self, 'credentials_dict') or not self.credentials_dict:  # pylint: disable=E0203 # noqa
+        if not hasattr(self, "credentials_dict") or not self.credentials_dict:  # pylint: disable=E0203 # noqa
             return
 
         self.credentials_dict = self._replace_env_vars(self.credentials_dict)
@@ -146,10 +139,11 @@ class CredentialsInterface:
         Returns:
             String with variables replaced
         """
+
         def replacer(match):
             var_name = match.group(1)
             # Try navconfig first, then os.environ
-            if hasattr(config, 'get'):
+            if hasattr(config, "get"):
                 env_value = config.get(var_name)
                 if env_value is not None:
                     return env_value
@@ -161,6 +155,7 @@ class CredentialsInterface:
 # ============================================================================
 # Calendar Client (FEAT-453, Module 7)
 # ============================================================================
+
 
 class CalendarClient:
     """A live, authenticated Google Calendar v3 client wrapper.
@@ -174,7 +169,7 @@ class CalendarClient:
     ``method_chain`` triple.
     """
 
-    def __init__(self, google_client: "GoogleClient", version: str = 'v3') -> None:
+    def __init__(self, google_client: "GoogleClient", version: str = "v3") -> None:
         """Bind this wrapper to *google_client*.
 
         Args:
@@ -189,32 +184,44 @@ class CalendarClient:
     async def insert_event(self, calendar_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         """Insert a new event. Returns the raw Calendar v3 event resource."""
         return await self._client.execute_api_call(
-            'calendar', 'events', 'insert',
-            version=self.version, calendarId=calendar_id, body=body,
+            "calendar",
+            "events",
+            "insert",
+            version=self.version,
+            calendarId=calendar_id,
+            body=body,
         )
 
     async def list_events(self, calendar_id: str, **kwargs) -> Dict[str, Any]:
         """List events. ``**kwargs`` forwards Calendar v3 list params
         (``timeMin``, ``timeMax``, etc.). Returns the raw list response."""
         return await self._client.execute_api_call(
-            'calendar', 'events', 'list',
-            version=self.version, calendarId=calendar_id, **kwargs,
+            "calendar",
+            "events",
+            "list",
+            version=self.version,
+            calendarId=calendar_id,
+            **kwargs,
         )
 
-    async def patch_event(
-        self, calendar_id: str, event_id: str, body: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def patch_event(self, calendar_id: str, event_id: str, body: Dict[str, Any]) -> Dict[str, Any]:
         """Partially update an event (PATCH semantics — unset fields in
         *body* are left untouched). Returns the raw updated event resource."""
         return await self._client.execute_api_call(
-            'calendar', 'events', 'patch',
-            version=self.version, calendarId=calendar_id, eventId=event_id, body=body,
+            "calendar",
+            "events",
+            "patch",
+            version=self.version,
+            calendarId=calendar_id,
+            eventId=event_id,
+            body=body,
         )
 
 
 # ============================================================================
 # Google Client
 # ============================================================================
+
 
 class GoogleClient(CredentialsInterface, ABC):
     """
@@ -270,7 +277,7 @@ class GoogleClient(CredentialsInterface, ABC):
         credentials: Optional[Union[str, dict, Path]] = None,
         scopes: Optional[Union[List[str], str]] = None,
         user_creds_cache_file: Optional[Union[str, Path]] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize Google Client.
@@ -280,32 +287,25 @@ class GoogleClient(CredentialsInterface, ABC):
             scopes: Service scopes (e.g., ["drive", "sheets"] or "all")
             **kwargs: Additional arguments
         """
-        self.logger = logging.getLogger(
-            f'Parrot.Interfaces.{self.__class__.__name__}'
-        )
+        self.logger = logging.getLogger(f"Parrot.Interfaces.{self.__class__.__name__}")
 
         # Credential storage
         self.credentials_file: Optional[PurePath] = None
         self.credentials_str: Optional[str] = None
         self.credentials_dict: Optional[dict] = None
-        self.auth_type: str = 'service_account'  # or 'user'
+        self.auth_type: str = "service_account"  # or 'user'
         self._oauth_client_config: Optional[Dict[str, Any]] = None
         self._client_credentials_source: Optional[str] = None
-        self.redis_url: str = kwargs.get(
-            "redis_url", REDIS_HISTORY_URL or "redis://localhost:6379/0"
-        )
+        self.redis_url: str = kwargs.get("redis_url", REDIS_HISTORY_URL or "redis://localhost:6379/0")
         self.redis: Optional[aioredis.Redis] = None
         try:
             self.redis = aioredis.from_url(self.redis_url, encoding="utf-8", decode_responses=True)
         except Exception as e:
-            self.logger.warning(
-                "Google: Redis unavailable (%s); falling back to file cache only.", e
-            )
-        self.user_creds_ttl: int = int(kwargs.get("user_creds_ttl", 75 * 24 * 3600)) # 75 days
-
+            self.logger.warning("Google: Redis unavailable (%s); falling back to file cache only.", e)
+        self.user_creds_ttl: int = int(kwargs.get("user_creds_ttl", 75 * 24 * 3600))  # 75 days
 
         # Process scopes
-        self.scopes: List[str] = self._process_scopes(scopes or 'all')
+        self.scopes: List[str] = self._process_scopes(scopes or "all")
 
         # Credentials
         self._service_account_creds: Optional[ServiceAccountCreds] = None
@@ -320,7 +320,7 @@ class GoogleClient(CredentialsInterface, ABC):
             self.user_creds_cache_file: Optional[Path] = Path(user_creds_cache_file).expanduser().resolve()
         else:
             # Default cache location inside env directory
-            self.user_creds_cache_file = BASE_DIR.joinpath('env', 'google', 'user_creds.json')
+            self.user_creds_cache_file = BASE_DIR.joinpath("env", "google", "user_creds.json")
 
         # Process credentials
         self._load_credentials(credentials)
@@ -353,7 +353,7 @@ class GoogleClient(CredentialsInterface, ABC):
         # Expand scope names to URLs
         result = []
         for scope in scopes:
-            if scope.startswith('https://'):
+            if scope.startswith("https://"):
                 result.append(scope)
             elif scope in DEFAULT_SCOPES:
                 result.extend(DEFAULT_SCOPES[scope])
@@ -369,7 +369,9 @@ class GoogleClient(CredentialsInterface, ABC):
         scopes_key = "|".join(sorted(scopes))
         return f"google:oauth:{sid}:{u}:{hash(scopes_key)}"
 
-    async def _save_user_creds_to_redis(self, creds: dict, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]) -> None:
+    async def _save_user_creds_to_redis(
+        self, creds: dict, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]
+    ) -> None:
         if not self.redis:
             return
         key = self._redis_cache_key(client_id, user_hint, scopes)
@@ -380,7 +382,9 @@ class GoogleClient(CredentialsInterface, ABC):
         except Exception as e:
             self.logger.warning("Google: failed to save creds to Redis: %s", e)
 
-    async def _load_user_creds_from_redis(self, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]) -> bool:
+    async def _load_user_creds_from_redis(
+        self, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]
+    ) -> bool:
         if not self.redis:
             return False
         key = self._redis_cache_key(client_id, user_hint, scopes)
@@ -405,10 +409,7 @@ class GoogleClient(CredentialsInterface, ABC):
             self.logger.warning("Google: failed to load creds from Redis: %s", e)
             return False
 
-    def _load_credentials(
-        self,
-        credentials: Optional[Union[str, dict, Path]]
-    ) -> None:
+    def _load_credentials(self, credentials: Optional[Union[str, dict, Path]]) -> None:
         """
         Load and validate credentials.
 
@@ -417,9 +418,7 @@ class GoogleClient(CredentialsInterface, ABC):
         """
         if credentials is None:
             if not GOOGLE_CREDENTIALS_FILE.exists():
-                raise RuntimeError(
-                    "Google: No credentials provided and GOOGLE_CREDENTIALS_FILE not found."
-                )
+                raise RuntimeError("Google: No credentials provided and GOOGLE_CREDENTIALS_FILE not found.")
             self.credentials_file = GOOGLE_CREDENTIALS_FILE
             self._client_credentials_source = f"file:{self.credentials_file}"
             try:
@@ -433,8 +432,8 @@ class GoogleClient(CredentialsInterface, ABC):
         if isinstance(credentials, str):
             if credentials.lower() == "user":
                 # OAuth2 user credentials
-                self.auth_type = 'user'
-                self._client_credentials_source = 'user:prompt'
+                self.auth_type = "user"
+                self._client_credentials_source = "user:prompt"
                 return
             elif credentials.endswith(".json"):
                 # JSON file path
@@ -443,65 +442,53 @@ class GoogleClient(CredentialsInterface, ABC):
                     # Try BASE_DIR
                     self.credentials_file = BASE_DIR.joinpath(credentials).resolve()
                     if not self.credentials_file.exists():
-                        raise ConfigError(
-                            f"Google: Credentials file not found: {credentials}"
-                        )
+                        raise ConfigError(f"Google: Credentials file not found: {credentials}")
                 try:
                     self.credentials_dict = json.loads(self.credentials_file.read_text())
                     self._set_auth_type_from_dict(self.credentials_dict)
                     self._client_credentials_source = f"file:{self.credentials_file}"
                 except json.JSONDecodeError as exc:
-                    raise ConfigError(
-                        f"Google: Invalid JSON in credentials file: {self.credentials_file}"
-                    ) from exc
+                    raise ConfigError(f"Google: Invalid JSON in credentials file: {self.credentials_file}") from exc
             else:
                 # JSON string
                 try:
                     self.credentials_dict = json.loads(credentials)
                     self._set_auth_type_from_dict(self.credentials_dict)
-                    self._client_credentials_source = 'string:json'
+                    self._client_credentials_source = "string:json"
                 except json.JSONDecodeError as e:
-                    raise ConfigError(
-                        "Google: Invalid JSON credentials string"
-                    ) from e
+                    raise ConfigError("Google: Invalid JSON credentials string") from e
 
         elif isinstance(credentials, (Path, PurePath)):
             self.credentials_file = Path(credentials).resolve()
             if not self.credentials_file.exists():
-                raise ConfigError(
-                    f"Google: Credentials file not found: {self.credentials_file}"
-                )
+                raise ConfigError(f"Google: Credentials file not found: {self.credentials_file}")
             try:
                 self.credentials_dict = json.loads(self.credentials_file.read_text())
                 self._set_auth_type_from_dict(self.credentials_dict)
                 self._client_credentials_source = f"file:{self.credentials_file}"
             except json.JSONDecodeError as exc:
-                raise ConfigError(
-                    f"Google: Invalid JSON in credentials file: {self.credentials_file}"
-                ) from exc
+                raise ConfigError(f"Google: Invalid JSON in credentials file: {self.credentials_file}") from exc
 
         elif isinstance(credentials, dict):
             self.credentials_dict = credentials
             self._set_auth_type_from_dict(self.credentials_dict)
-            self._client_credentials_source = 'dict:provided'
+            self._client_credentials_source = "dict:provided"
 
         else:
-            raise ConfigError(
-                f"Google: Invalid credentials type: {type(credentials)}"
-            )
+            raise ConfigError(f"Google: Invalid credentials type: {type(credentials)}")
 
     def _set_auth_type_from_dict(self, data: Optional[Dict[str, Any]]) -> None:
         """Determine authentication type based on credentials dictionary."""
         if not data:
             return
 
-        if data.get('type') == 'service_account':
-            self.auth_type = 'service_account'
+        if data.get("type") == "service_account":
+            self.auth_type = "service_account"
             self._oauth_client_config = None
             return
 
-        if (oauth_config := self._extract_oauth_client_config(data)):
-            self.auth_type = 'user'
+        if oauth_config := self._extract_oauth_client_config(data):
+            self.auth_type = "user"
             self._oauth_client_config = oauth_config
         else:
             self._oauth_client_config = None
@@ -512,15 +499,15 @@ class GoogleClient(CredentialsInterface, ABC):
         if not data or not isinstance(data, dict):
             return None
 
-        if data.get('type') == 'service_account':
+        if data.get("type") == "service_account":
             return None
 
-        for key in ('installed', 'web'):
+        for key in ("installed", "web"):
             value = data.get(key)
-            if isinstance(value, dict) and 'client_id' in value:
+            if isinstance(value, dict) and "client_id" in value:
                 return value
 
-        if 'client_id' in data and ('auth_uri' in data or 'token_uri' in data):
+        if "client_id" in data and ("auth_uri" in data or "token_uri" in data):
             return data
 
         return None
@@ -540,8 +527,7 @@ class GoogleClient(CredentialsInterface, ABC):
                 candidates.append(json.loads(Path(self.credentials_file).read_text()))
             except json.JSONDecodeError:
                 self.logger.debug(
-                    "Google: Failed to parse credentials file %s for OAuth config.",
-                    self.credentials_file
+                    "Google: Failed to parse credentials file %s for OAuth config.", self.credentials_file
                 )
 
         default_file = GOOGLE_CREDENTIALS_FILE
@@ -551,12 +537,11 @@ class GoogleClient(CredentialsInterface, ABC):
                     candidates.append(json.loads(default_file.read_text()))
                 except json.JSONDecodeError:
                     self.logger.debug(
-                        "Google: Failed to parse default credentials file %s for OAuth config.",
-                        default_file
+                        "Google: Failed to parse default credentials file %s for OAuth config.", default_file
                     )
 
         for candidate in candidates:
-            if (oauth_config := self._extract_oauth_client_config(candidate)):
+            if oauth_config := self._extract_oauth_client_config(candidate):
                 self._oauth_client_config = oauth_config
                 return oauth_config
 
@@ -564,23 +549,26 @@ class GoogleClient(CredentialsInterface, ABC):
             "Google: OAuth client credentials not found. Provide OAuth client JSON for user authentication."
         )
 
-    def _prepare_user_creds(
-        self,
-        creds: Dict[str, Any],
-        scopes: List[str]
-    ) -> Dict[str, Any]:
+    def _prepare_user_creds(self, creds: Dict[str, Any], scopes: List[str]) -> Dict[str, Any]:
         """Prepare user credential payload for storage and UserCreds construction."""
         allowed_keys = [
-            'access_token', 'refresh_token', 'expires_in', 'expires_at',
-            'token_type', 'token_uri', 'token_info_uri', 'revoke_uri', 'id_token_jwt'
+            "access_token",
+            "refresh_token",
+            "expires_in",
+            "expires_at",
+            "token_type",
+            "token_uri",
+            "token_info_uri",
+            "revoke_uri",
+            "id_token_jwt",
         ]
         sanitized = {key: creds.get(key) for key in allowed_keys if creds.get(key) is not None}
 
-        id_token = creds.get('id_token')
+        id_token = creds.get("id_token")
         if isinstance(id_token, (dict, str)):
-            sanitized['id_token'] = id_token
+            sanitized["id_token"] = id_token
 
-        sanitized['scopes'] = scopes
+        sanitized["scopes"] = scopes
         return sanitized
 
     def _export_active_user_creds(self, scopes: List[str]) -> Dict[str, Any]:
@@ -593,7 +581,7 @@ class GoogleClient(CredentialsInterface, ABC):
             payload = self._user_creds_payload.copy()
         else:
             payload = dict(self._user_creds)
-        payload['scopes'] = scopes
+        payload["scopes"] = scopes
         return self._prepare_user_creds(payload, scopes)
 
     def _save_user_creds_to_cache(self, creds: Dict[str, Any]) -> None:
@@ -605,10 +593,7 @@ class GoogleClient(CredentialsInterface, ABC):
             self.user_creds_cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.user_creds_cache_file.write_text(json.dumps(creds, indent=2, default=str))
         except Exception as cache_error:  # pragma: no cover - defensive
-            self.logger.warning(
-                "Google: Failed to cache user credentials: %s",
-                cache_error
-            )
+            self.logger.warning("Google: Failed to cache user credentials: %s", cache_error)
 
     def _load_cached_user_creds(self) -> bool:
         """Load cached user credentials if available."""
@@ -617,20 +602,17 @@ class GoogleClient(CredentialsInterface, ABC):
 
         try:
             cached = json.loads(self.user_creds_cache_file.read_text())
-            scopes = cached.get('scopes', self.scopes)
+            scopes = cached.get("scopes", self.scopes)
             if isinstance(scopes, str):
                 scopes = [scopes]
             creds_kwargs = cached.copy()
-            creds_kwargs.pop('scopes', None)
+            creds_kwargs.pop("scopes", None)
             self._user_creds = UserCreds(scopes=scopes, **creds_kwargs)
             self._user_creds_payload = cached
             self._client_credentials_source = f"cache:{self.user_creds_cache_file}"
             return True
         except Exception as cache_error:  # pragma: no cover - defensive
-            self.logger.warning(
-                "Google: Failed to load cached user credentials: %s",
-                cache_error
-            )
+            self.logger.warning("Google: Failed to load cached user credentials: %s", cache_error)
             return False
 
     def load_cached_user_credentials(self) -> bool:
@@ -659,11 +641,11 @@ class GoogleClient(CredentialsInterface, ABC):
 
     def using_service_account(self) -> bool:
         """Return True if the client is configured for service-account credentials."""
-        return self.auth_type == 'service_account' and self._service_account_creds is not None
+        return self.auth_type == "service_account" and self._service_account_creds is not None
 
     def using_user_credentials(self) -> bool:
         """Return True if the client is configured for end-user OAuth credentials."""
-        return self.auth_type == 'user' and self._user_creds is not None
+        return self.auth_type == "user" and self._user_creds is not None
 
     async def initialize(self) -> GoogleClient:
         """
@@ -677,7 +659,7 @@ class GoogleClient(CredentialsInterface, ABC):
 
         # Process environment variables in credentials
         self.processing_credentials()
-        if self.auth_type != 'service_account':
+        if self.auth_type != "service_account":
             # user creds: try Redis first
             client_id = None
             try:
@@ -694,11 +676,9 @@ class GoogleClient(CredentialsInterface, ABC):
                 if not loaded:
                     # Fall back to file cache
                     if not self._load_cached_user_creds():
-                        raise RuntimeError(
-                            "Google: User credentials not available. Run interactive_login() first."
-                        )
+                        raise RuntimeError("Google: User credentials not available. Run interactive_login() first.")
 
-        elif self.auth_type == 'service_account':
+        elif self.auth_type == "service_account":
             # Service account credentials
             if self.credentials_dict:
                 creds_dict = self.credentials_dict
@@ -707,33 +687,23 @@ class GoogleClient(CredentialsInterface, ABC):
             else:
                 raise RuntimeError("Google: No credentials available")
 
-            self._service_account_creds = ServiceAccountCreds(
-                scopes=self.scopes,
-                **creds_dict
-            )
+            self._service_account_creds = ServiceAccountCreds(scopes=self.scopes, **creds_dict)
             self._user_creds = None
             self._user_creds_payload = None
             if not self._client_credentials_source:
-                self._client_credentials_source = 'service_account:runtime'
+                self._client_credentials_source = "service_account:runtime"
         else:
             # User credentials require interactive login
             self._service_account_creds = None
             if not self._user_creds and not self._load_cached_user_creds():
-                raise RuntimeError(
-                    "Google: User credentials not available. Run interactive_login() first."
-                )
+                raise RuntimeError("Google: User credentials not available. Run interactive_login() first.")
 
         self._authenticated = True
         self.logger.info("Google Client initialized")
         return self
 
     async def execute_api_call(
-        self,
-        service_name: str,
-        api_name: str,
-        method_chain: str,
-        version: str = None,
-        **kwargs
+        self, service_name: str, api_name: str, method_chain: str, version: str = None, **kwargs
     ) -> Any:
         """
         Execute a Google API call.
@@ -768,21 +738,20 @@ class GoogleClient(CredentialsInterface, ABC):
 
         # Default versions
         version_map = {
-            'drive': 'v3',
-            'sheets': 'v4',
-            'docs': 'v1',
-            'calendar': 'v3',
-            'storage': 'v1',
-            'gmail': 'v1',
-            'customsearch': 'v1'
+            "drive": "v3",
+            "sheets": "v4",
+            "docs": "v1",
+            "calendar": "v3",
+            "storage": "v1",
+            "gmail": "v1",
+            "customsearch": "v1",
         }
 
         if version is None:
-            version = version_map.get(service_name, 'v1')
+            version = version_map.get(service_name, "v1")
 
         async with Aiogoogle(
-            service_account_creds=self._service_account_creds,
-            user_creds=self._user_creds
+            service_account_creds=self._service_account_creds, user_creds=self._user_creds
         ) as aiogoogle:
             # Discover the API
             api = await aiogoogle.discover(service_name, version)
@@ -799,19 +768,19 @@ class GoogleClient(CredentialsInterface, ABC):
 
             return result
 
-    async def get_drive_client(self, version: str = 'v3') -> Dict[str, Any]:
+    async def get_drive_client(self, version: str = "v3") -> Dict[str, Any]:
         """Get Google Drive client config."""
-        return {'service': 'drive', 'version': version}
+        return {"service": "drive", "version": version}
 
-    async def get_sheets_client(self, version: str = 'v4') -> Dict[str, Any]:
+    async def get_sheets_client(self, version: str = "v4") -> Dict[str, Any]:
         """Get Google Sheets client config."""
-        return {'service': 'sheets', 'version': version}
+        return {"service": "sheets", "version": version}
 
-    async def get_docs_client(self, version: str = 'v1') -> Dict[str, Any]:
+    async def get_docs_client(self, version: str = "v1") -> Dict[str, Any]:
         """Get Google Docs client config."""
-        return {'service': 'docs', 'version': version}
+        return {"service": "docs", "version": version}
 
-    async def get_calendar_client(self, version: str = 'v3') -> "CalendarClient":
+    async def get_calendar_client(self, version: str = "v3") -> "CalendarClient":
         """Get a usable Google Calendar v3 client.
 
         Promoted from returning a bare ``{'service': ..., 'version': ...}``
@@ -828,20 +797,15 @@ class GoogleClient(CredentialsInterface, ABC):
         """
         return CalendarClient(self, version=version)
 
-    async def get_storage_client(self, version: str = 'v1') -> Dict[str, Any]:
+    async def get_storage_client(self, version: str = "v1") -> Dict[str, Any]:
         """Get Google Cloud Storage client config."""
-        return {'service': 'storage', 'version': version}
+        return {"service": "storage", "version": version}
 
-    async def get_gmail_client(self, version: str = 'v1') -> Dict[str, Any]:
+    async def get_gmail_client(self, version: str = "v1") -> Dict[str, Any]:
         """Get Gmail client config."""
-        return {'service': 'gmail', 'version': version}
+        return {"service": "gmail", "version": version}
 
-    async def search(
-        self,
-        query: str,
-        cse_id: Optional[str] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def search(self, query: str, cse_id: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """
         Perform a Google Custom Search.
 
@@ -853,20 +817,12 @@ class GoogleClient(CredentialsInterface, ABC):
         Returns:
             Search results
         """
-        if not (cse_id := cse_id or os.environ.get('GOOGLE_SEARCH_ENGINE_ID')):
+        if not (cse_id := cse_id or os.environ.get("GOOGLE_SEARCH_ENGINE_ID")):
             raise RuntimeError(
-                "Google Custom Search requires cse_id parameter or "
-                "GOOGLE_SEARCH_ENGINE_ID environment variable"
+                "Google Custom Search requires cse_id parameter or " "GOOGLE_SEARCH_ENGINE_ID environment variable"
             )
 
-        return await self.execute_api_call(
-            'customsearch',
-            'cse',
-            'list',
-            q=query,
-            cx=cse_id,
-            **kwargs
-        )
+        return await self.execute_api_call("customsearch", "cse", "list", q=query, cx=cse_id, **kwargs)
 
     async def interactive_login(
         self,
@@ -876,7 +832,7 @@ class GoogleClient(CredentialsInterface, ABC):
         open_browser: bool = True,
         browser: str = "system",
         login_callback: Optional[Callable[[str], Optional[bool]]] = None,
-        timeout: int = 300
+        timeout: int = 300,
     ) -> Dict[str, Any]:
         """
         Perform interactive OAuth2 login for user credentials.
@@ -892,45 +848,40 @@ class GoogleClient(CredentialsInterface, ABC):
             timeout: Seconds to wait for the authentication flow to complete
         """
 
-        self.auth_type = 'user'
+        self.auth_type = "user"
         scopes_list = self._process_scopes(scopes or self.scopes)
         self.processing_credentials()
 
         try:
             await self.ensure_interactive_session(scopes_list)
         except Exception as cached_error:  # pragma: no cover - defensive reuse path
-            self.logger.debug(
-                "Google: cached interactive session unavailable: %s",
-                cached_error
-            )
+            self.logger.debug("Google: cached interactive session unavailable: %s", cached_error)
         else:
             if self._user_creds:
-                self.logger.info(
-                    "Google: reusing cached credentials for interactive login request"
-                )
+                self.logger.info("Google: reusing cached credentials for interactive login request")
                 return self._export_active_user_creds(scopes_list)
 
         oauth_client_config = self._get_oauth_client_config()
-        redirect_uri = redirect_uri or oauth_client_config.get('redirect_uri')
+        redirect_uri = redirect_uri or oauth_client_config.get("redirect_uri")
         if not redirect_uri:
-            redirect_uris = oauth_client_config.get('redirect_uris', [])
+            redirect_uris = oauth_client_config.get("redirect_uris", [])
             if redirect_uris:
                 redirect_uri = redirect_uris[0]
         if not redirect_uri:
             redirect_uri = f"http://localhost:{port}/callback/aiogoogle"
 
         parsed_redirect = urlparse(redirect_uri)
-        callback_host = parsed_redirect.hostname or 'localhost'
+        callback_host = parsed_redirect.hostname or "localhost"
         callback_port = parsed_redirect.port or port
-        callback_path = parsed_redirect.path or '/'
-        if not callback_path.startswith('/'):
-            callback_path = f'/{callback_path}'
+        callback_path = parsed_redirect.path or "/"
+        if not callback_path.startswith("/"):
+            callback_path = f"/{callback_path}"
 
         client_creds = {
-            'client_id': oauth_client_config['client_id'],
-            'client_secret': oauth_client_config.get('client_secret'),
-            'scopes': scopes_list,
-            'redirect_uri': redirect_uri
+            "client_id": oauth_client_config["client_id"],
+            "client_secret": oauth_client_config.get("client_secret"),
+            "scopes": scopes_list,
+            "redirect_uri": redirect_uri,
         }
 
         aiogoogle_client = Aiogoogle(client_creds=client_creds)
@@ -939,11 +890,7 @@ class GoogleClient(CredentialsInterface, ABC):
 
         state = create_secret()
         authorization_url = aiogoogle_client.oauth2.authorization_url(
-            client_creds=client_creds,
-            state=state,
-            access_type="offline",
-            include_granted_scopes=True,
-            prompt="consent"
+            client_creds=client_creds, state=state, access_type="offline", include_granted_scopes=True, prompt="consent"
         )
 
         # Provide URL via callback or console
@@ -951,10 +898,7 @@ class GoogleClient(CredentialsInterface, ABC):
             try:
                 login_callback(authorization_url)
             except Exception as callback_error:  # pragma: no cover - defensive
-                self.logger.warning(
-                    "Login callback raised an exception: %s",
-                    callback_error
-                )
+                self.logger.warning("Login callback raised an exception: %s", callback_error)
         self.logger.info("Authorize Google access by visiting: %s", authorization_url)
         print("\n" + "=" * 60)
         print("Open the following URL in your browser to authenticate:")
@@ -969,41 +913,36 @@ class GoogleClient(CredentialsInterface, ABC):
 
         @routes.get(callback_path)
         async def oauth_callback(request):  # type: ignore[unused-variable]
-            if request.query.get('error'):
-                error_container['error'] = request.query.get('error_description') or request.query.get('error')
+            if request.query.get("error"):
+                error_container["error"] = request.query.get("error_description") or request.query.get("error")
                 login_event.set()
-                return web.json_response({'status': 'error', **error_container}, status=400)
+                return web.json_response({"status": "error", **error_container}, status=400)
 
-            if not request.query.get('code'):
+            if not request.query.get("code"):
                 login_event.set()
-                error_container['error'] = 'Missing authorization code'
+                error_container["error"] = "Missing authorization code"
                 return web.Response(text="Missing authorization code", status=400)
 
-            returned_state = request.query.get('state')
+            returned_state = request.query.get("state")
             if returned_state != state:
                 login_event.set()
-                error_container['error'] = 'State mismatch during OAuth2 callback'
+                error_container["error"] = "State mismatch during OAuth2 callback"
                 return web.Response(text="State mismatch", status=400)
 
             try:
                 full_user_creds = await aiogoogle_client.oauth2.build_user_creds(
-                    grant=request.query.get('code'),
-                    client_creds=client_creds
+                    grant=request.query.get("code"), client_creds=client_creds
                 )
-                result_container['creds'] = full_user_creds
+                result_container["creds"] = full_user_creds
                 login_event.set()
                 return web.Response(
-                    text="Authentication complete. You may close this window.",
-                    content_type='text/plain'
+                    text="Authentication complete. You may close this window.", content_type="text/plain"
                 )
             except Exception as auth_error:  # pragma: no cover - defensive
-                error_container['error'] = str(auth_error)
+                error_container["error"] = str(auth_error)
                 login_event.set()
                 logging.getLogger(__name__).exception("Google OAuth authentication failed")
-                return web.Response(
-                    text="Authentication failed. Please check server logs for details.",
-                    status=500
-                )
+                return web.Response(text="Authentication failed. Please check server logs for details.", status=500)
 
         app = web.Application()
         app.add_routes(routes)
@@ -1019,6 +958,7 @@ class GoogleClient(CredentialsInterface, ABC):
                 webbrowser.open(authorization_url, new=1, autoraise=True)
             elif browser == "playwright":
                 try:
+
                     async def launch_browser():
                         try:
                             async with async_playwright() as playwright:
@@ -1035,16 +975,11 @@ class GoogleClient(CredentialsInterface, ABC):
                         except asyncio.CancelledError:  # pragma: no cover - cancellation support
                             raise
                         except Exception as browser_error:  # pragma: no cover - defensive
-                            self.logger.warning(
-                                "Playwright interactive session failed: %s",
-                                browser_error
-                            )
+                            self.logger.warning("Playwright interactive session failed: %s", browser_error)
 
                     playwright_task = asyncio.create_task(launch_browser())
                 except ImportError:
-                    self.logger.warning(
-                        "Playwright is not installed; open the authorization URL manually."
-                    )
+                    self.logger.warning("Playwright is not installed; open the authorization URL manually.")
             elif browser == "selenium":
                 try:
                     from selenium import webdriver
@@ -1061,10 +996,7 @@ class GoogleClient(CredentialsInterface, ABC):
                             while not login_event.is_set():
                                 asyncio.sleep(1)
                         except Exception as selenium_error:  # pragma: no cover - defensive
-                            self.logger.warning(
-                                "Selenium interactive session failed: %s",
-                                selenium_error
-                            )
+                            self.logger.warning("Selenium interactive session failed: %s", selenium_error)
                         finally:
                             with suppress(Exception):
                                 driver.quit()
@@ -1072,9 +1004,7 @@ class GoogleClient(CredentialsInterface, ABC):
                     loop = asyncio.get_event_loop()
                     playwright_task = loop.run_in_executor(None, launch_selenium_browser)
                 except ImportError:
-                    self.logger.warning(
-                        "Selenium is not installed; open the authorization URL manually."
-                    )
+                    self.logger.warning("Selenium is not installed; open the authorization URL manually.")
             else:
                 self.logger.warning("Unknown browser=%s, falling back to system browser", browser)
                 webbrowser.open(authorization_url, new=1, autoraise=True)
@@ -1092,23 +1022,23 @@ class GoogleClient(CredentialsInterface, ABC):
                     await playwright_task
             await runner.cleanup()
 
-        if error_container.get('error'):
+        if error_container.get("error"):
             raise RuntimeError(f"Google interactive login failed: {error_container['error']}")
 
-        if 'creds' not in result_container:
+        if "creds" not in result_container:
             raise RuntimeError("Google interactive login did not return credentials")
 
-        sanitized_creds = self._prepare_user_creds(result_container['creds'], scopes_list)
+        sanitized_creds = self._prepare_user_creds(result_container["creds"], scopes_list)
         creds_for_instance = sanitized_creds.copy()
-        scopes_for_user = creds_for_instance.pop('scopes', scopes_list)
+        scopes_for_user = creds_for_instance.pop("scopes", scopes_list)
         self._user_creds = UserCreds(scopes=scopes_for_user, **creds_for_instance)
         self._service_account_creds = None
         self._authenticated = True
-        self._client_credentials_source = 'user:interactive'
+        self._client_credentials_source = "user:interactive"
         self._user_creds_payload = sanitized_creds.copy()
 
         self._save_user_creds_to_cache(sanitized_creds)
-        client_id = oauth_client_config.get('client_id')
+        client_id = oauth_client_config.get("client_id")
 
         self.logger.info("Google interactive login completed successfully")
         user_hint = sanitized_creds.get("id_token", {}) if isinstance(sanitized_creds.get("id_token"), dict) else None
@@ -1124,11 +1054,7 @@ class GoogleClient(CredentialsInterface, ABC):
         self.logger.info("Google Client closed")
 
     def __repr__(self) -> str:
-        return (
-            f"GoogleClient("
-            f"auth_type={self.auth_type}, "
-            f"authenticated={self._authenticated})"
-        )
+        return f"GoogleClient(" f"auth_type={self.auth_type}, " f"authenticated={self._authenticated})"
 
     async def ensure_interactive_session(self, scopes: Optional[Union[List[str], str]] = None) -> None:
         """Ensure we have usable user creds in memory; load from Redis/file cache if possible."""
@@ -1145,7 +1071,7 @@ class GoogleClient(CredentialsInterface, ABC):
 
         loaded = await self._load_user_creds_from_redis(client_id, user_hint, scopes_list)
         if not loaded and not self._load_cached_user_creds():
-                raise RuntimeError("Google: no cached session; call interactive_login()")
+            raise RuntimeError("Google: no cached session; call interactive_login()")
 
         # Optionally probe a trivial endpoint to trigger refresh if needed:
         try:
@@ -1154,20 +1080,16 @@ class GoogleClient(CredentialsInterface, ABC):
                 _ = await ag.oauth2.get_user_info()  # if scopes include openid/profile; otherwise skip
         except Exception as e:
             # If this fails due to expired token & bad refresh, force re-login
-            raise RuntimeError(
-                "Google: cached session expired; run interactive_login() again"
-            ) from e
-
+            raise RuntimeError("Google: cached session expired; run interactive_login() again") from e
 
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
 
+
 def create_google_client(
-    credentials: Optional[Union[str, dict, Path]] = None,
-    scopes: Optional[Union[List[str], str]] = None,
-    **kwargs
+    credentials: Optional[Union[str, dict, Path]] = None, scopes: Optional[Union[List[str], str]] = None, **kwargs
 ) -> GoogleClient:
     """
     Factory function to create a GoogleClient.
@@ -1180,8 +1102,4 @@ def create_google_client(
     Returns:
         GoogleClient instance
     """
-    return GoogleClient(
-        credentials=credentials,
-        scopes=scopes,
-        **kwargs
-    )
+    return GoogleClient(credentials=credentials, scopes=scopes, **kwargs)

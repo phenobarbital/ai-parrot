@@ -8,6 +8,7 @@ plumbing — **not** ``google-api-python-client``, which this repository does
 not use for Google services (see this task's Completion Note for the
 Codebase Contract correction).
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,10 +53,7 @@ def _require_tz_aware(value: str, field: str) -> datetime:
     except ValueError as exc:
         raise ValueError(f"{field!r} is not a valid ISO-8601 datetime: {value!r}") from exc
     if parsed.tzinfo is None:
-        raise ValueError(
-            f"{field!r} must include a timezone offset (got {value!r}); "
-            "naive datetimes are rejected"
-        )
+        raise ValueError(f"{field!r} must include a timezone offset (got {value!r}); " "naive datetimes are rejected")
     return parsed
 
 
@@ -169,9 +167,7 @@ class GoogleCalendarToolkit(AbstractToolkit):
             ``{"status": "success", "events": [<CalendarEvent dict>, ...]}``.
         """
         await self._ensure_open()
-        raw = await self._calendar.list_events(
-            calendar_id or self.calendar_id, timeMin=time_min, timeMax=time_max
-        )
+        raw = await self._calendar.list_events(calendar_id or self.calendar_id, timeMin=time_min, timeMax=time_max)
         items = raw.get("items", []) if isinstance(raw, dict) else []
         return {
             "status": "success",
@@ -219,7 +215,5 @@ class GoogleCalendarToolkit(AbstractToolkit):
             body["description"] = description
 
         await self._ensure_open()
-        raw = await self._calendar.patch_event(
-            calendar_id or self.calendar_id, event_id, body
-        )
+        raw = await self._calendar.patch_event(calendar_id or self.calendar_id, event_id, body)
         return {"status": "success", "event": _event_from_api(raw).model_dump()}

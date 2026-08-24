@@ -5,6 +5,7 @@ identifiers — the generic engine is public; site plans (e.g. a specific
 bookkeeping-product integration) stay in an external, private plans
 directory (Module 6) loaded at runtime.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -51,9 +52,7 @@ class BusinessOperation(BaseModel):
     kind: OperationKind
     flow_ref: str = Field(description="ScrapingFlow name in the plans dir")
     params: List[ParamSpec] = Field(default_factory=list)
-    confirm_prompt: Optional[str] = Field(
-        default=None, description="Shown to the human at the SUBMIT gate"
-    )
+    confirm_prompt: Optional[str] = Field(default=None, description="Shown to the human at the SUBMIT gate")
 
 
 class ImportRun(BaseModel):

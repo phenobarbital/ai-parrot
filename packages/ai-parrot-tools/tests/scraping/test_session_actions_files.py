@@ -3,6 +3,7 @@ part 3/3).
 
 FEAT-453 TASK-2386.
 """
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -40,9 +41,7 @@ class TestUpload:
         f1.write_bytes(b"%PDF-")
         f2 = tmp_path / "b.pdf"
         f2.write_bytes(b"%PDF-")
-        action = UploadFile(
-            selector="#f", file_path=str(f1), multiple_files=True, file_paths=[str(f1), str(f2)]
-        )
+        action = UploadFile(selector="#f", file_path=str(f1), multiple_files=True, file_paths=[str(f1), str(f2)])
         assert await exec_upload_file(mock_driver, action) is True
         args, _kwargs = mock_driver.fill.call_args
         assert str(f1.resolve()) in args[1]
@@ -51,9 +50,7 @@ class TestUpload:
     async def test_wait_after_upload_selector(self, mock_driver, tmp_path):
         f = tmp_path / "receipt.pdf"
         f.write_bytes(b"%PDF-")
-        action = UploadFile(
-            selector="#f", file_path=str(f), wait_after_upload="#done", wait_timeout=5
-        )
+        action = UploadFile(selector="#f", file_path=str(f), wait_after_upload="#done", wait_timeout=5)
         assert await exec_upload_file(mock_driver, action) is True
         mock_driver.wait_for_selector.assert_awaited_once_with("#done", timeout=5)
 
@@ -97,9 +94,7 @@ class TestDownload:
         dest = tmp_path / "kept"
         dest.mkdir()
         (dl / "factura-001.pdf").write_bytes(b"%PDF-")
-        action = WaitForDownload(
-            filename_pattern="*.pdf", download_path=str(dl), move_to=str(dest), timeout=2
-        )
+        action = WaitForDownload(filename_pattern="*.pdf", download_path=str(dl), move_to=str(dest), timeout=2)
         assert await exec_wait_for_download(mock_driver, action) is True
         assert (dest / "factura-001.pdf").exists()
 

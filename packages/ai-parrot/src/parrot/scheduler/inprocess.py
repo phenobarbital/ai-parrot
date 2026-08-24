@@ -24,6 +24,7 @@ Layering note: this is core (``ai-parrot``). ``ai-parrot-tools`` (which owns
 object and only references its type under ``TYPE_CHECKING``, never at
 runtime, to avoid a reverse/circular package dependency.
 """
+
 from __future__ import annotations
 
 import logging
@@ -79,9 +80,7 @@ class InProcessScheduler:
             self._running = False
             self._scheduler.shutdown(wait=False)
 
-    def add_cron(
-        self, name: str, cron: str, callback: Callable[..., Any]
-    ) -> str:
+    def add_cron(self, name: str, cron: str, callback: Callable[..., Any]) -> str:
         """Schedule *callback* on a 5-field cron expression.
 
         Args:
@@ -105,9 +104,7 @@ class InProcessScheduler:
                 f"('minute hour day month day_of_week'), got {cron!r}"
             )
         minute, hour, day, month, day_of_week = fields
-        trigger = CronTrigger(
-            minute=minute, hour=hour, day=day, month=month, day_of_week=day_of_week
-        )
+        trigger = CronTrigger(minute=minute, hour=hour, day=day, month=month, day_of_week=day_of_week)
         # NOTE: AsyncIOScheduler's `replace_existing=True` only dedupes
         # reliably once the scheduler is running — its pre-start "pending
         # jobs" queue does not check for id collisions the same way the
@@ -119,9 +116,7 @@ class InProcessScheduler:
                 self._scheduler.remove_job(name)
             except Exception:
                 self.logger.debug("add_cron(%r): prior job already removed", name, exc_info=True)
-        job = self._scheduler.add_job(
-            callback, trigger=trigger, id=name, name=name, replace_existing=True
-        )
+        job = self._scheduler.add_job(callback, trigger=trigger, id=name, name=name, replace_existing=True)
         self._jobs[name] = job
         return job.id
 
@@ -198,8 +193,7 @@ async def notify_tax_deadline(
     """
     if channel is None:
         logger.warning(
-            "notify_tax_deadline: no HumanChannel configured; deadline %r "
-            "(%s) will not be surfaced to a human",
+            "notify_tax_deadline: no HumanChannel configured; deadline %r " "(%s) will not be surfaced to a human",
             deadline.name,
             deadline.due_date,
         )
@@ -261,9 +255,10 @@ async def sweep_checkpoint_retention(
 
     if archived:
         logger.info(
-            "sweep_checkpoint_retention: archived %d checkpoint(s) older than "
-            "%d days from %s",
-            len(archived), retention_days, checkpoint_dir,
+            "sweep_checkpoint_retention: archived %d checkpoint(s) older than " "%d days from %s",
+            len(archived),
+            retention_days,
+            checkpoint_dir,
         )
         if channel is not None:
             await channel.send_notification(

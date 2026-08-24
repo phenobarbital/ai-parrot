@@ -2,6 +2,7 @@
 
 FEAT-453 TASK-2394.
 """
+
 import asyncio
 import stat
 from datetime import date, datetime, timedelta, timezone
@@ -23,8 +24,11 @@ class TestNoShadowing:
         import parrot.scheduler as s
 
         for name in (
-            "AgentSchedulerManager", "ScheduleType", "schedule",
-            "schedule_daily_report", "schedule_weekly_report",
+            "AgentSchedulerManager",
+            "ScheduleType",
+            "schedule",
+            "schedule_daily_report",
+            "schedule_weekly_report",
         ):
             assert name in s.__all__
 
@@ -35,8 +39,11 @@ class TestNoShadowing:
         import parrot.scheduler.inprocess as mod
 
         server_names = {
-            "AgentSchedulerManager", "ScheduleType", "schedule",
-            "schedule_daily_report", "schedule_weekly_report",
+            "AgentSchedulerManager",
+            "ScheduleType",
+            "schedule",
+            "schedule_daily_report",
+            "schedule_weekly_report",
         }
         exported = {name for name in dir(mod) if not name.startswith("_")}
         assert exported.isdisjoint(server_names)

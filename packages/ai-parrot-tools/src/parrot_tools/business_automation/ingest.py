@@ -28,6 +28,7 @@ import manifest under ``${PARROT_STATE_DIR}`` as the audit/reconciliation
 record this feature needs, independent of ``AgentsFlow``'s own (disabled)
 checkpointing.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -124,9 +125,7 @@ async def _load_expense_rows(
 
     missing_columns = {client_column, amount_column} - {str(c) for c in df.columns}
     if missing_columns:
-        raise ValueError(
-            f"Missing required column(s) in {xlsx_path}: {sorted(missing_columns)}"
-        )
+        raise ValueError(f"Missing required column(s) in {xlsx_path}: {sorted(missing_columns)}")
 
     df.columns = [str(c) for c in df.columns]
     return df[[client_column, amount_column]].astype(str).to_dict(orient="records")
@@ -178,9 +177,7 @@ async def build_import_plan(
         the row count (for reconciliation via :func:`reconcile`).
     """
     digest = compute_statement_digest(xlsx_path)
-    import_run = ImportRun(
-        statement_digest=digest, period=period, started_at=datetime.now(timezone.utc)
-    )
+    import_run = ImportRun(statement_digest=digest, period=period, started_at=datetime.now(timezone.utc))
 
     rows = await _load_expense_rows(xlsx_path, client_column, amount_column)
 
@@ -208,9 +205,7 @@ async def build_import_plan(
 
     plan = ExecutionPlan(
         name=f"expense-import-{digest}",
-        objective=(
-            f"Register {len(rows)} expense(s) from a bank statement for period {period}"
-        ),
+        objective=(f"Register {len(rows)} expense(s) from a bank statement for period {period}"),
         nodes=nodes,
         metadata=PlanMetadata(max_parallel_tasks=1),
     )
@@ -220,9 +215,7 @@ async def build_import_plan(
     return ImportPlanBundle(plan=plan, import_run=import_run, row_count=len(rows))
 
 
-def _write_import_manifest(
-    operation: str, plan: ExecutionPlan, import_run: ImportRun, *, rows_in: int
-) -> Path:
+def _write_import_manifest(operation: str, plan: ExecutionPlan, import_run: ImportRun, *, rows_in: int) -> Path:
     """Persist a small, permission-hardened import manifest.
 
     This is this module's own audit/reconciliation record — independent of

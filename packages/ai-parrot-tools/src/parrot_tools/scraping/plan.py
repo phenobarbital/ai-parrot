@@ -4,6 +4,7 @@ ScrapingPlan & PlanRegistryEntry Models.
 Pydantic v2 models for declarative scraping plans and registry index entries.
 ScrapingPlan is a value object — immutable once saved to disk.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -154,9 +155,7 @@ class ScrapingPlan(BaseModel):
             actions.append(action)
 
         if errors:
-            raise ValueError(
-                f"{len(errors)} invalid step(s):\n" + "\n".join(errors)
-            )
+            raise ValueError(f"{len(errors)} invalid step(s):\n" + "\n".join(errors))
 
         return actions
 

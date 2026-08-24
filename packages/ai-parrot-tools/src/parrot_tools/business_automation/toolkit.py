@@ -13,6 +13,7 @@ gate. ``run_operation`` manually invokes the guard for ``OperationKind.SUBMIT``
 operations *before* the browser is ever opened — ``DRAFT``/``READ`` operations
 never touch the guard at all.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -166,9 +167,7 @@ class BusinessAutomationToolkit(AbstractToolkit):
             "params": [p.model_dump() for p in op.params],
         }
 
-    async def run_operation(
-        self, name: str, params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    async def run_operation(self, name: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run a named business operation with these parameters.
 
         ``OperationKind.SUBMIT`` operations pause for human confirmation
@@ -225,9 +224,7 @@ class BusinessAutomationToolkit(AbstractToolkit):
 
         return {"status": "started", "run_id": run_id, "operation": op.name}
 
-    async def resume_operation(
-        self, run_id: str, resume_from: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def resume_operation(self, run_id: str, resume_from: Optional[str] = None) -> Dict[str, Any]:
         """Resume a previously started (and interrupted) operation run.
 
         Args:
@@ -269,18 +266,14 @@ class BusinessAutomationToolkit(AbstractToolkit):
 
         params = record.get("params", {})
         self._runs[run_id] = {"status": "running", "operation": op.name, "params": params}
-        task = asyncio.create_task(
-            self._execute_run(run_id, flow, params, resume_from=resume_from)
-        )
+        task = asyncio.create_task(self._execute_run(run_id, flow, params, resume_from=resume_from))
         self._run_tasks[run_id] = task
 
         return {"status": "started", "run_id": run_id, "operation": op.name, "resumed": True}
 
     # ── Internal ──────────────────────────────────────────────────────────
 
-    async def _request_submit_confirmation(
-        self, op: BusinessOperation, params: Dict[str, Any]
-    ) -> Any:
+    async def _request_submit_confirmation(self, op: BusinessOperation, params: Dict[str, Any]) -> Any:
         """Gate a SUBMIT-kind operation through the shared HITL stack.
 
         Builds a minimal stand-in object exposing only ``name`` and
@@ -301,8 +294,7 @@ class BusinessAutomationToolkit(AbstractToolkit):
             routing_meta={
                 "requires_confirmation": True,
                 "confirm_window_seconds": 0,
-                "confirm_template": op.confirm_prompt
-                or f"Run business operation {op.name!r} with: {{params}}",
+                "confirm_template": op.confirm_prompt or f"Run business operation {op.name!r} with: {{params}}",
             },
         )
         return await self._confirmation_guard.confirm(tool=tool_stub, parameters=params)
@@ -320,10 +312,7 @@ class BusinessAutomationToolkit(AbstractToolkit):
         for node in flow.nodes:
             template = self._templates.get(node.plan_ref)
             if template is None:
-                raise ValueError(
-                    f"No TemplatePlan registered for plan_ref={node.plan_ref!r} "
-                    f"(node={node.id!r})"
-                )
+                raise ValueError(f"No TemplatePlan registered for plan_ref={node.plan_ref!r} " f"(node={node.id!r})")
             plan = template.bind(**merged)
             plan.validate_steps()
 
