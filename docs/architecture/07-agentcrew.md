@@ -261,6 +261,165 @@ persists the `CrewResult` through the configured `ResultStorage`
 backend (file / Redis / Postgres) — fire-and-forget, tracked through
 `self._persist_tasks` so the crew can await them on shutdown.
 
+### 7.4.1 The `FlowResult` fidelity contract
+
+`FlowResult` (`parrot/bots/flows/core/result.py`) is the **single public
+result contract returned by both executors** — every `AgentCrew` mode and
+every `AgentsFlow` run. The two classes share no base class; they share this
+dataclass and the `build_node_metadata()` helper that fills its per-node
+entries.
+
+Every field below is populated by **both** executors, with exactly one
+documented exception:
+
+| Field | Meaning | `AgentCrew` | `AgentsFlow` | Notes |
+|---|---|---|---|---|
+| `output` | The run's final answer | ✅ | ✅ | Polymorphic — see "The `output` shape rule" below. |
+| `responses` | node_id → the raw object the node returned | ✅ | ✅ | **Shape differs by executor** — see "`responses` vs `node_results`". |
+| `summary` | LLM-synthesised merge of all results | ✅ | ⛔ **stays `""`** | The one exemption. See below. |
+| `nodes` | `list[NodeExecutionInfo]` — per-node metadata | ✅ | ✅ | For AgentsFlow, ordered by **actual completion order**. |
+| `execution_log` | `list[dict]` — one entry per terminal node | ✅ | ✅ | Entry shape below. |
+| `total_time` | Wall-clock seconds for the run | ✅ | ✅ | Monotonic clock; see the resume caveat below. |
+| `status` | `FlowStatus.COMPLETED` / `PARTIAL` / `FAILED` | ✅ | ✅ | Derived from completed-vs-failed counts. |
+| `errors` | node_id → stringified exception | ✅ | ✅ | |
+| `metadata` | Run-level extras | ✅ | ✅ | **Different keys per executor** — see below. |
+
+Each entry in `nodes` is a `NodeExecutionInfo` carrying `node_id`,
+`node_name`, `provider`, `model`, `execution_time`, `tool_calls`, `status`,
+`error`, `client` and `usage`. Both executors populate the LLM-derived
+fields (`model`/`provider`/`usage`/`tool_calls`) and `client` (the concrete
+client class name behind the node's agent, e.g. `"OpenAIClient"`).
+
+`packages/ai-parrot/tests/bots/flows/test_result_fidelity.py` is the
+contract test that holds the two executors to this table: it drives the same
+agent stubs through both and asserts their populated-field sets are equal
+modulo the `summary` exemption. Its `PARITY_EXEMPT_FIELDS` constant is the
+single place that exemption is encoded, so widening it requires a deliberate
+edit.
+
+#### The `summary` exemption
+
+`AgentsFlow` leaves `summary` as `""` **by design, not as a fidelity loss.**
+`AgentCrew` mixes in `SynthesisMixin` and can therefore merge every result
+into one LLM-generated summary (§7.4). `AgentsFlow` deliberately inherits
+only `PersistenceMixin`: a DAG run has no single "roster of results" to
+summarise by default, and paying for an extra LLM call on every flow would
+be a surprising cost.
+
+Synthesis is available to flows as an **opt-in**, in two forms:
+
+* the standalone `synthesize_results` util, called on the results you choose; or
+* a `SynthesisNode` placed explicitly in the graph, which makes the
+  synthesis a visible, scheduled node with its own usage accounting.
+
+#### The `output` shape rule
+
+`output` is polymorphic, and its shape depends on how many **leaf** nodes the
+run actually executed. A leaf is a node with no outgoing edge to another node
+in the graph; in explicit-edge mode leaf detection is *skip-aware*, so when
+every static leaf was skipped (an error-handler fan-in on the happy path, say)
+it falls back to the terminal nodes of the path actually taken.
+
+**One executed leaf → the leaf's scalar output.** The common case: any linear
+or converging graph, and every `AgentCrew` run.
+
+```python
+# a → b, single leaf `b`
+result = await flow.run_flow()
+result.output                 # "the answer from b"   (a scalar)
+result.metadata["leaves"]     # ["b"]
+```
+
+**Two or more executed leaves (a fan-out) → `dict[node_id, Any]`.**
+
+```python
+# a → {b, c}, two leaves
+result = await flow.run_flow()
+result.output                 # {"b": "answer from b", "c": "answer from c"}
+result.metadata["leaves"]     # ["b", "c"]
+```
+
+**No executed leaf** (an empty or fully-failed run) → `None`.
+
+`content` and `final_result` are aliases for `output` and inherit this rule
+verbatim. There is deliberately **no** plural `outputs` field: code that must
+not branch on shape should read `node_results`, which is always a
+`dict[node_id, scalar]` covering every node rather than just the leaves.
+
+#### `responses` vs `node_results`
+
+These two are easy to confuse, and only one of them is shape-stable:
+
+* **`responses`** holds whatever the node returned, and that differs by
+  executor. `AgentCrew` stores the `AgentResponse` object; `AgentsFlow` stores
+  the envelope dict `AgentNode.execute()` returns —
+  `{"response", "output", "execution_time", "prompt"}`. Reach into it only if
+  you specifically want the raw object.
+* **`node_results`** (and its `agent_results` alias) is the shape-stable read:
+  it unwraps both forms and always yields `dict[node_id, scalar]`. **No value
+  is ever an envelope dict.** Prefer it in consumer code.
+
+#### AgentsFlow `metadata` keys
+
+```python
+{
+    "mode": str,            # "explicit" | "definition" | "legacy"
+    "node_count": int,      # nodes materialized for the run
+    "completed_count": int,
+    "failed_count": int,
+    "skipped": list[str],   # skipped node_ids, sorted
+    "leaves": list[str],    # node_ids that produced `output`
+}
+```
+
+`mode` records **how the graph was declared** — `"explicit"` for
+`add_node()`/`add_edge()`, `"definition"` for a `FlowDefinition`, `"legacy"`
+for programmatic nodes carrying their own `successors`. Note this is a
+*different axis* from `AgentCrew`'s `metadata["mode"]`, which records the
+execution strategy (`"sequential"` / `"parallel"` / `"flow"` / `"loop"`). The
+two vocabularies are not comparable — do not switch on `metadata["mode"]`
+without knowing which executor produced the result.
+
+Skipped nodes appear **only** here. They get no `NodeExecutionInfo` entry,
+because `NodeExecutionInfo.status` is a closed literal
+(`completed`/`failed`/`pending`/`running`) with no `"skipped"` member.
+
+#### `execution_log` entry shape
+
+```python
+{
+    "node_id": str,
+    "node_name": str,
+    "status": str,            # "completed" | "failed"
+    "execution_time": float,
+    "error": str | None,
+}
+```
+
+One entry per completed-or-failed node, in the same order as `nodes`.
+
+#### Ordering and timing caveats
+
+* **`nodes` ordering is deterministic.** For AgentsFlow it follows the real
+  completion order (`FlowContext.completion_order`), with failed nodes — which
+  are never appended to that list — following in sorted order. It no longer
+  varies with string hashing between processes, so `nodes` can be rendered as
+  a run timeline.
+* **`execution_time` is the scheduler's measurement**, including spawn/queue
+  overhead — not the node's own inner timing (the envelope's
+  `execution_time`, which measures just the agent call). Both exist and they
+  legitimately differ.
+* **A retried node reports its last attempt**, since the scheduler overwrites
+  the node's duration on each completion event.
+* **On a resumed run, `total_time` covers the resumed segment only.** The run
+  clock is read in the current process, so it cannot include wall-clock time
+  from the original run that was checkpointed.
+
+After a run, the `FlowContext` carries the same fidelity as the `FlowResult`:
+`ctx.responses` holds the raw responses and `ctx.node_metadata` the per-node
+`NodeExecutionInfo` (including failed nodes). This is what makes a
+checkpointed or resumed context as informative as the result object itself.
+
 ## 7.5 When to pick which mode
 
 | Need                                                | Mode          | Why                                                                  |
