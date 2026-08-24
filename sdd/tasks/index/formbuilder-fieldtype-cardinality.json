@@ -14,7 +14,7 @@
       "feature_id": "FEAT-456",
       "feature": "formbuilder-fieldtype-cardinality",
       "spec": "sdd/specs/formbuilder-fieldtype-cardinality.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — everything else imports these models.",
       "assigned_to": null,
       "started_at": "2026-08-24T15:10:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2410-relation-core-models.md"
+      "completed_at": "2026-08-24T15:13:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2410-relation-core-models.md"
     },
     {
       "id": "TASK-2411",
