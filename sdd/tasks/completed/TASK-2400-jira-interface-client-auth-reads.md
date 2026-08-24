@@ -588,10 +588,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude session 2026-08-24)
+**Date**: 2026-08-24
+**Notes**: Implemented `JiraInterface` in `client.py` with all four auth
+modes (`basic_auth`, `token_auth`, `oauth` 1.0a, `oauth2_3lo`), the
+no-heuristic rule, the AUTHENTICATED_FAILED seraph probe (split into a
+never-raising `_probe_auth_sync`/`verify_auth` pair and a raising
+`_probe_myself` used internally by `search_issues`/`get_projects`),
+`resolve_ac_field_id` (config-key-first, by-name fallback, cached, never
+raises), and all reads (`get_issue`, `search_issues` as an async paginating
+iterator, `get_changelog`, `get_projects`, `get_remote_links`). Verified the
+installed `jira==3.10.5` `search_issues`/`fields`/`issue`/`remote_links`
+signatures directly against the venv before wiring pagination. Created
+`errors.py` (`JiraInterfaceError`, `JiraAuthError`, `JiraDependencyError`)
+and extended `__init__.py`'s exports per scope.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: (1) **oauth2_3lo per-user resolution** — the
+spec's `__init__` signature and read methods carry no `user_id`/`channel`
+parameter, yet 3LO is inherently per-user (`JiraToolkit` resolves it from a
+`PermissionContext` at call time). Since this task's own Test
+Specification only exercises 3LO construction (`auth_type` resolves,
+`server_url` not required) and never a live per-call resolution, I
+implemented `credential_resolver.resolve()` as a **zero-argument** duck-typed
+call — i.e. the resolver is expected to already be scoped to a single
+identity when used through this interface directly. This is flagged, not
+silently assumed: TASK-2402 (the `JiraToolkit` delegation refactor) will
+need to decide how 3LO's existing per-`(channel, user_id)` resolution
+threads through this interface, since the interface as specified has no
+slot for that context. (2) **Verification timing** — `_verify_static_credentials`
+runs lazily on the first `_ensure_client()` call rather than eagerly in
+`__init__` (the spec's constructor is documented as making "no network
+call"); this is a deliberate, test-compatible choice, not an oversight.
+(3) Added a `verify_tls: bool = False` constructor kwarg (task's own "Known
+Gotchas" section explicitly requests this, overridable, default preserving
+`jiratoolkit.py:960`'s existing `verify=False` behaviour) — additive, not
+in the spec's original signature list but explicitly asked for by this
+task's Implementation Notes.
 
-**Deviations from spec**: none | describe if any
+**Environment note**: this dev environment's real navconfig/.env carries
+live Jira credentials, and navconfig's dotenv loading pollutes `os.environ`
+directly. Three auth-resolution tests neutralize
+`parrot.interfaces.jira.client.nav_config` and/or `monkeypatch.delenv` the
+leaked vars so they are hermetic regardless of the local environment — a
+test-file-only fix, no production code affected.
+
+All 33 tests pass (16 from TASK-2399 + 17 new for this task — task listed
+`test_jira_interface.py` as the only new test file); `ruff check` clean on
+all touched files. `grep -rn "^from jira\|^import jira"
+packages/ai-parrot/src/` returns nothing (import lives inside
+`_import_jira()`); `grep -c 'accountId' client.py` is 0 (no duplicated PII
+logic).

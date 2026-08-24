@@ -53,7 +53,7 @@
       "feature": "jira-extractor-llmwiki",
       "spec": "sdd/specs/jira-extractor-llmwiki.spec.md",
       "module": "M1b",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Imports TASK-2399's models and extends its __init__.py.",
       "assigned_to": null,
       "started_at": "2026-08-24T01:01:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2400-jira-interface-client-auth-reads.md"
+      "completed_at": "2026-08-24T01:19:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2400-jira-interface-client-auth-reads.md"
     },
     {
       "id": "TASK-2401",
