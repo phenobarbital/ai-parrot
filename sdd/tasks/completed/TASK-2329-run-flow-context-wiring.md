@@ -261,12 +261,77 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-08-24
 **Notes**:
 
-**Checkpoint round-trip**: (how `node_metadata` was serialised, and whether the snapshot path needed a change)
+Module 4 landed as three surgical edits inside `run_flow`, no refactor:
 
-**Deviations from spec**: none | describe if any
+1. The `_aggregate_result` call site now passes `ctx=ctx`,
+   `run_started_at=run_started_at`, `skipped=skipped`.
+2. `ctx.mark_completed(...)` now also passes `response=event.result` (the
+   envelope **verbatim**, not pre-unwrapped) and `metadata=<NodeExecutionInfo>`.
+3. `ctx.mark_failed(...)` likewise passes `metadata=<NodeExecutionInfo>` with
+   `status="failed"` and the error string.
+
+Note on (3): the task's scope said "store each node's built
+`NodeExecutionInfo` into `ctx.node_metadata`" without prescribing the
+mechanism. `mark_failed` **already** accepts an optional `metadata`
+parameter (`core/context.py:206-225`), exactly like `mark_completed`, so both
+writes go through the existing documented API — no direct
+`ctx.node_metadata[...] = ...` poking, and no signature change anywhere. This
+also means a failed node appears in `ctx.node_metadata` (marked `"failed"`)
+even though it is deliberately absent from `completion_order`.
+
+As the task required, the `NodeExecutionInfo` is built here *in addition to*
+`_aggregate_result` building its own; the two paths stay independent and
+`_aggregate_result` was NOT restructured to consume `ctx.node_metadata`.
+
+Tests: 4 added to `tests/bots/flows/test_agents_flow.py` — the 3 named plus
+`test_flow_context_metadata_for_failed_node` (covers the `mark_failed` metadata
+path and the completion_order-residue interaction). A new `UsageAgent` stub
+returns a REAL `AgentResponse`/`AIMessage`/`CompletionUsage`/`ToolCall` (a
+`MagicMock` would make the `usage.model_dump()` assertions vacuous) and exposes
+an `llm` so `NodeExecutionInfo.client` is exercised end-to-end. It needs
+`invoke()` as well as `ask()` — the `AgentLike` protocol is `runtime_checkable`
+and `AgentNode`'s pydantic validation rejects a stub without it.
+
+One test detail worth flagging: `test_flow_run_total_time_nonzero` runs the
+flow with a 15 ms per-agent delay. `FlowResult.__repr__` formats `total_time`
+with `:.2f`, so a sub-5ms stub run prints `time=0.00s` **even when
+`total_time > 0`** — the delay keeps the "no longer shows time=0.00s"
+assertion a genuine check instead of something rounding could defeat.
+
+**Checkpoint round-trip**: **no change to the snapshot path was needed, and
+`node_metadata` is not serialised by it.** Verified by reading
+`FlowContext.to_snapshot()` (`core/context.py:261-320`): it captures
+`initial_task`/`results`/`responses`/`completed_tasks`/`completion_order`/
+`shared_data`/`errors` and never touches `node_metadata`, so the declared
+`Dict[str, NodeExecutionInfo]` type is honoured as-is (no `to_dict()`
+downgrade required). The one path that *does* read it is
+`FlowCheckpointer._build_checkpoint`, which maps it to
+`NodeStateSnapshot(fsm_state=info.status)`; since `status` is a plain `str`
+literal this validates cleanly. Proved empirically with a probe that runs a
+real 2-node flow, builds a checkpoint from the resulting ctx, and does a full
+`model_dump_json()` -> `model_validate_json()` round trip:
+`node_metadata keys: ['a','b']`, `node_states: [('a','completed'),
+('b','completed')]`, round trip OK at 1600 JSON bytes. Net effect: checkpoints
+now carry real per-node FSM states where the list used to be **empty**.
+
+Verification:
+- `tests/bots/flows/test_agents_flow.py`: 18 passed (14 pre-existing + 4).
+- `tests/bots/flows/` + `tests/test_flow_primitives/`: 722 passed.
+- `tests/flows/checkpoint/`: 70 passed, 2 skipped, 2 failed — the 2 failures
+  are `test_durable_store.py`'s Postgres tests failing on
+  `password authentication failed for user "postgres"`, and the identical
+  result (2 failed / 70 passed / 2 skipped) is reproduced on clean `dev` in
+  the main checkout. Environmental, not caused by this task.
+  `test_flow_export.py` (the snapshot round-trip) is green.
+- Crew regression suites: 32 passed, unchanged.
+- `ruff` on `flow/flow.py` and `test_agents_flow.py`: finding sets **byte-for-
+  byte identical** to before this task (zero new findings). `mypy` on
+  `flow/flow.py`: 28 errors before, 28 after, identical set.
+
+**Deviations from spec**: none. `FlowResult.responses` still holds raw
+envelopes (spec §8 open question left at status quo, as this task's scope
+directed).

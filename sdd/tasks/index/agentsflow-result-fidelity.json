@@ -70,7 +70,7 @@
       "feature_id": "FEAT-447",
       "feature": "agentsflow-result-fidelity",
       "spec": "sdd/specs/agentsflow-result-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Edits the same file and the adjacent call sites as TASK-2328 (flow/flow.py:1881 and :1926). Strictly sequential — parallel execution would conflict on every hunk.",
       "assigned_to": null,
       "started_at": "2026-08-23T23:10:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2329-run-flow-context-wiring.md"
+      "completed_at": "2026-08-24T00:08:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2329-run-flow-context-wiring.md"
     },
     {
       "id": "TASK-2330",
