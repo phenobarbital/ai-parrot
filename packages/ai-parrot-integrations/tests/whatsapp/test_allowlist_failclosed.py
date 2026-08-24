@@ -9,6 +9,7 @@ both directions: refusal when a SUBMIT operation is exposed, and unchanged
 permissive behaviour when it is not — plus the digits-only normalization
 used for allowlist comparisons.
 """
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -122,9 +123,7 @@ class TestFailClosed:
     def test_populated_allowlist_with_submit_starts_normally(self, tmp_path):
         toolkit = _make_business_toolkit(tmp_path, kind=OperationKind.SUBMIT)
         agent = _make_agent_with_toolkit(toolkit)
-        cfg = WhatsAppBridgeConfig(
-            name="g", chatbot_id="gestoria", allowed_numbers=["34600112233"]
-        )
+        cfg = WhatsAppBridgeConfig(name="g", chatbot_id="gestoria", allowed_numbers=["34600112233"])
 
         wrapper = WhatsAppBridgeWrapper(agent=agent, config=cfg, app=web.Application())
         assert wrapper.config is cfg
@@ -142,9 +141,7 @@ class TestNormalization:
     def test_is_authorized_accepts_differently_formatted_number(self, tmp_path):
         toolkit = _make_business_toolkit(tmp_path, kind=OperationKind.SUBMIT)
         agent = _make_agent_with_toolkit(toolkit)
-        cfg = WhatsAppBridgeConfig(
-            name="g", chatbot_id="gestoria", allowed_numbers=["+34 600 11 22 33"]
-        )
+        cfg = WhatsAppBridgeConfig(name="g", chatbot_id="gestoria", allowed_numbers=["+34 600 11 22 33"])
         wrapper = WhatsAppBridgeWrapper(agent=agent, config=cfg, app=web.Application())
 
         assert wrapper._is_authorized("34600112233") is True
@@ -153,9 +150,7 @@ class TestNormalization:
     def test_is_authorized_rejects_unlisted_number(self, tmp_path):
         toolkit = _make_business_toolkit(tmp_path, kind=OperationKind.SUBMIT)
         agent = _make_agent_with_toolkit(toolkit)
-        cfg = WhatsAppBridgeConfig(
-            name="g", chatbot_id="gestoria", allowed_numbers=["34600112233"]
-        )
+        cfg = WhatsAppBridgeConfig(name="g", chatbot_id="gestoria", allowed_numbers=["34600112233"])
         wrapper = WhatsAppBridgeWrapper(agent=agent, config=cfg, app=web.Application())
 
         assert wrapper._is_authorized("34999999999") is False
