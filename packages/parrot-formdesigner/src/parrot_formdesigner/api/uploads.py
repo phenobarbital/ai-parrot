@@ -47,22 +47,21 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, AsyncIterator
+from typing import Any
 
 from aiohttp import web
-
 from pydantic import TypeAdapter
 
 from ..core.resolution import find_field_by_uid
 from ..core.schema import FormField
 from ..core.types import FieldType
-from ..services.auth_context import AuthContext
 from ..services.rest_field_resolver import (
     AdditionalArg,
     RestCallbackInput,
     RestFieldResolver,
     RestFieldSpec,
 )
+from ._upload_helpers import _build_auth_context, _stream_with_limit
 from .handlers import extract_form_uid, extract_uid
 from .tenant import declared_tenant
 
@@ -132,79 +131,6 @@ def _get_blob_storage(app: web.Application) -> Any:
     storage = TempBlobStorage()
     app["blob_storage"] = storage
     return storage
-
-
-# ---------------------------------------------------------------------------
-# Streaming helpers
-# ---------------------------------------------------------------------------
-
-
-async def _stream_with_limit(
-    part: Any,
-    limit: int | None,
-) -> AsyncIterator[bytes]:
-    """Stream multipart part chunks, raising 413 if total exceeds limit.
-
-    Args:
-        part: An aiohttp multipart BodyPartReader.
-        limit: Maximum allowed bytes, or None for no limit.
-
-    Yields:
-        Chunks of bytes.
-
-    Raises:
-        web.HTTPRequestEntityTooLarge: When total bytes exceed limit.
-    """
-    total = 0
-    while True:
-        chunk = await part.read_chunk(65536)
-        if not chunk:
-            break
-        total += len(chunk)
-        if limit is not None and total > limit:
-            raise web.HTTPRequestEntityTooLarge(
-                max_size=limit,
-                actual_size=total,
-            )
-        yield chunk
-
-
-def _build_auth_context(request: web.Request) -> AuthContext:
-    """Build AuthContext from the inbound request.
-
-    Checks (in order):
-    1. ``request["auth_context"]`` — set by navigator-auth middleware.
-    2. ``Authorization: Bearer <token>`` header.
-    3. ``Authorization: ApiKey <token>`` header.
-    4. Defaults to ``AuthContext(scheme="none")``.
-
-    Args:
-        request: The incoming aiohttp request.
-
-    Returns:
-        AuthContext for the request.
-    """
-    if "auth_context" in request:
-        existing = request["auth_context"]
-        if isinstance(existing, AuthContext):
-            return existing
-
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        return AuthContext(
-            scheme="bearer",
-            token=token,
-            headers={"Authorization": auth_header},
-        )
-    if auth_header.startswith("ApiKey "):
-        token = auth_header[7:]
-        return AuthContext(
-            scheme="api_key",
-            token=token,
-            headers={"X-API-Key": token},
-        )
-    return AuthContext(scheme="none")
 
 
 # ---------------------------------------------------------------------------
