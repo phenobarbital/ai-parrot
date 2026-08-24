@@ -169,9 +169,7 @@ class CsvFileTarget(BaseModel):
     @classmethod
     def _validate_delimiter(cls, value: str) -> str:
         if len(value) != 1:
-            raise ValueError(
-                f"delimiter must be exactly one character, got {value!r}"
-            )
+            raise ValueError(f"delimiter must be exactly one character, got {value!r}")
         return value
 
 

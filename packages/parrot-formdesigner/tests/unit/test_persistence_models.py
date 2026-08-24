@@ -54,9 +54,7 @@ class TestPersistenceModels:
             CsvFileTarget(type="csv_file", connection="exports", path="a.csv", delimiter=bad)
 
     def test_accepts_single_char_delimiter(self):
-        target = CsvFileTarget(
-            type="csv_file", connection="exports", path="a.csv", delimiter=";"
-        )
+        target = CsvFileTarget(type="csv_file", connection="exports", path="a.csv", delimiter=";")
         assert target.delimiter == ";"
 
     def test_capabilities_enum_members(self):

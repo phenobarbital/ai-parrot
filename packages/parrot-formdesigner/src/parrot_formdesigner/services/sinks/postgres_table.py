@@ -234,9 +234,7 @@ class PostgresTableSink(AbstractSubmissionSink):
             try:
                 await self._pool.close()
             except Exception:
-                self.logger.warning(
-                    "PostgresTableSink: error closing pool", exc_info=True
-                )
+                self.logger.warning("PostgresTableSink: error closing pool", exc_info=True)
             else:
                 self.logger.info("PostgresTableSink: pool closed")
         self._pool = None

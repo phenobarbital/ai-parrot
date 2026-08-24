@@ -140,9 +140,7 @@ class SinkFactory:
         """
         sinks = list(self._cache.values())
         if sinks:
-            results = await asyncio.gather(
-                *(sink.close() for sink in sinks), return_exceptions=True
-            )
+            results = await asyncio.gather(*(sink.close() for sink in sinks), return_exceptions=True)
             for sink, result in zip(sinks, results, strict=True):
                 if isinstance(result, BaseException):
                     self.logger.warning(
