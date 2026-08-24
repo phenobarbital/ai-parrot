@@ -429,9 +429,7 @@ async def _run_sweep(
             if existing_text is not None and not version_stale:
                 existing_fetched_at = _existing_fetched_at(existing_text)
                 comparison_fetched_at = existing_fetched_at if existing_fetched_at is not None else fetched_at
-                comparison_text = render_issue_document(
-                    issue, fetched_at=comparison_fetched_at, existing=existing_text
-                )
+                comparison_text = render_issue_document(issue, fetched_at=comparison_fetched_at, existing=existing_text)
                 unchanged = comparison_text == existing_text
 
             if unchanged:

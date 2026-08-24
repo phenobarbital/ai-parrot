@@ -211,9 +211,7 @@ class TestIdempotenceAndInPlaceUpdate:
         text = path.read_text()
         assert "keep me" in text and "Done" in text
 
-    def test_force_resync_unchanged_ticket_ignores_fetched_at_drift(
-        self, raw_issue, issues_dir, monkeypatch
-    ):
+    def test_force_resync_unchanged_ticket_ignores_fetched_at_drift(self, raw_issue, issues_dir, monkeypatch):
         """Adversarial-review regression: a --force resync of an
         UNCHANGED ticket, executed at a LATER wall-clock time, must
         still count as unchanged and leave the file byte-identical and

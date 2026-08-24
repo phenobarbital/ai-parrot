@@ -642,9 +642,7 @@ def _render_note_frontmatter(type_value: str, title: str) -> str:
         those), with its own trailing newline stripped.
     """
     payload = {"type": type_value, "title": title}
-    return yaml.safe_dump(
-        payload, sort_keys=False, allow_unicode=True, default_flow_style=False
-    ).rstrip("\n")
+    return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True, default_flow_style=False).rstrip("\n")
 
 
 def _append_or_preserve(generated: str, existing: str | None) -> str:
