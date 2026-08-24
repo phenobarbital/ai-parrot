@@ -18,6 +18,15 @@ Lazy-init contract for REST field services (FEAT-170):
 
 Callers that do not use ``FieldType.REST`` need not provide these kwargs;
 defaults are ``None`` and no exception is raised.
+
+Autonomous FormSchema persistence (FEAT-457): passing ``alias_registry``
+wires the connection-alias allowlist as the ``app["form_sink_aliases"]``
+app key — an explicit, testable, deliberately NOT runtime-mutable
+security control (no route ever mutates it). A ``SinkFactory`` is built
+from it and injected into ``FormAPIHandler``; a shutdown hook closes
+every cached sink. Omitting ``alias_registry`` (the default) leaves the
+feature entirely inactive — forms without a ``persistence`` block behave
+exactly as before this feature existed.
 """
 
 from __future__ import annotations
@@ -35,6 +44,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 
 from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
+from ..services.sinks.factory import SinkFactory
 from . import controls as controls_module
 from . import operations as operations_module
 from . import render as render_module
@@ -56,6 +66,7 @@ if TYPE_CHECKING:
     from ..services.project_service import ProjectService
     from ..services.rbac import RBACService
     from ..services.rest_field_resolver import RestFieldResolver
+    from ..services.sink_aliases import SinkAliasRegistry
     from ..services.submissions import FormSubmissionStorage
     from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
@@ -172,6 +183,7 @@ def setup_form_api(
     workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
     venue_service: "VenueService | None" = None,
     rbac_enforcing: bool = False,
+    alias_registry: "SinkAliasRegistry | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -216,6 +228,12 @@ def setup_form_api(
             ``POST /org/sync/workday``.
         rbac_enforcing: When ``False`` (default), RBAC gate-keeping on existing
             form endpoints runs in shadow mode (log only, never block).
+        alias_registry: Optional ``SinkAliasRegistry`` (FEAT-457). When
+            provided, exposed as the ``app["form_sink_aliases"]`` app key
+            and used to build a ``SinkFactory`` injected into
+            ``FormAPIHandler`` — forms declaring ``persistence`` write to
+            their own sink. ``None`` (default) leaves the feature
+            entirely inactive; no route ever mutates this allowlist.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -248,6 +266,22 @@ def setup_form_api(
 
         app.on_shutdown.append(_close_partial_store)
 
+    # FEAT-457 — Autonomous FormSchema Persistence. The alias allowlist is
+    # an explicit, deliberately NOT runtime-mutable security control: no
+    # route below ever writes to `app["form_sink_aliases"]`. Omitting
+    # `alias_registry` (the default) leaves the feature entirely inactive
+    # — `sink_factory` stays `None` and forms without a `persistence`
+    # block behave exactly as before this feature existed.
+    sink_factory: SinkFactory | None = None
+    if alias_registry is not None:
+        app["form_sink_aliases"] = alias_registry
+        sink_factory = SinkFactory(alias_registry)
+
+        async def _close_sink_factory(app: web.Application) -> None:
+            await sink_factory.close_all()
+
+        app.on_shutdown.append(_close_sink_factory)
+
     handler = FormAPIHandler(
         registry=registry,
         client=client,
@@ -260,7 +294,9 @@ def setup_form_api(
         workday_adapter=workday_adapter,
         venue_service=venue_service,
         rbac_enforcing=rbac_enforcing,
+        sink_factory=sink_factory,
     )
+    app["form_api_handler"] = handler
 
     bp = base_path.rstrip("/")
     # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
