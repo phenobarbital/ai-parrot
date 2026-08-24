@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from parrot.interfaces.jira import JiraAuthError, parse_issue
@@ -33,11 +34,21 @@ class FakeJiraInterface:
     """In-memory JiraInterface stand-in: no network, scriptable pages,
     plus a failure-injection hook for the partial-sweep tests."""
 
-    def __init__(self, raw_issues, *, fail_after=None, unreachable=(), probe_error=None, server_url=BASE):
+    def __init__(
+        self,
+        raw_issues,
+        *,
+        fail_after=None,
+        unreachable=(),
+        probe_error=None,
+        transient_error_keys=(),
+        server_url=BASE,
+    ):
         self.raw_issues = list(raw_issues)
         self.fail_after = fail_after
         self.unreachable = set(unreachable)
         self.probe_error = probe_error
+        self.transient_error_keys = set(transient_error_keys)
         self.server_url = server_url
         self.searched: list[str] = []
 
@@ -53,6 +64,10 @@ class FakeJiraInterface:
     async def get_issue(self, key, *, fields=None, expand=None):
         if key in self.unreachable:
             raise _FakeNotFoundError(404)
+        if key in self.transient_error_keys:
+            # No status_code — a non-404/403 failure (rate limit, timeout,
+            # permissions), distinct from a definitive "gone" verdict.
+            raise RuntimeError(f"injected transient error probing {key}")
         return {"id": "0", "key": key}
 
     async def resolve_ac_field_id(self):
@@ -196,6 +211,37 @@ class TestIdempotenceAndInPlaceUpdate:
         text = path.read_text()
         assert "keep me" in text and "Done" in text
 
+    def test_force_resync_unchanged_ticket_ignores_fetched_at_drift(
+        self, raw_issue, issues_dir, monkeypatch
+    ):
+        """Adversarial-review regression: a --force resync of an
+        UNCHANGED ticket, executed at a LATER wall-clock time, must
+        still count as unchanged and leave the file byte-identical and
+        its mtime untouched — sync.fetched_at drifting alone must never
+        trigger a rewrite (G2)."""
+        import parrot.knowledge.wiki.jira_sync as sync_mod
+
+        class _FixedDatetime(datetime):
+            _now = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+
+            @classmethod
+            def now(cls, tz=None):
+                return cls._now
+
+        monkeypatch.setattr(sync_mod, "datetime", _FixedDatetime)
+
+        _sweep(FakeJiraInterface([raw_issue]), issues_dir)
+        path = issues_dir / "NAV-9372.md"
+        before_bytes = path.read_bytes()
+        before_mtime = path.stat().st_mtime_ns
+
+        _FixedDatetime._now = datetime(2026, 8, 25, 9, 0, 0, tzinfo=UTC)
+        report = _sweep(FakeJiraInterface([raw_issue]), issues_dir, force=True)
+
+        assert report.unchanged >= 1 and report.written == 0
+        assert path.read_bytes() == before_bytes
+        assert path.stat().st_mtime_ns == before_mtime
+
 
 class TestEntityNotes:
     def test_notes_emitted(self, raw_issue, issues_dir):
@@ -255,6 +301,27 @@ class TestOrphansAndUnreachable:
         path = issues_dir / "NAV-9372.md"
         assert path.exists()
         assert "unreachable_since" in path.read_text()
+
+    def test_watermark_not_advanced_when_orphan_probe_errors(self, raw_issue, issues_dir):
+        """Adversarial-review regression (G5): a transient error probing
+        ONE orphan candidate — among an otherwise fully successful full
+        sweep — must gate the watermark exactly like a fetch-loop
+        failure does. Silently marking this run "ok" would be the same
+        silent, self-perpetuating failure mode G5 exists to prevent,
+        just via a different code path."""
+        _sweep(FakeJiraInterface([raw_issue]), issues_dir)
+        iface = FakeJiraInterface([], transient_error_keys={"NAV-9372"})
+        report = _sweep(iface, issues_dir, force=True)
+
+        assert report.errors, "the transient probe error must be recorded"
+        assert report.watermark_advanced is False
+        scope = load_sync_state(issues_dir).scopes[jql_fingerprint(JQL)]
+        assert scope.last_run_status == "partial"
+        # The document itself is untouched — never marked unreachable on
+        # an inconclusive probe, never deleted.
+        path = issues_dir / "NAV-9372.md"
+        assert path.exists()
+        assert "unreachable_since" not in path.read_text()
 
 
 class TestDryRun:

@@ -221,6 +221,22 @@ class TestSatelliteNotes:
         out = render_person_note(person, ["NAV-1"], existing="old\n" + tail)
         assert out.endswith(tail)
 
+    def test_person_note_survives_yaml_special_chars_in_display_name(self):
+        """Adversarial review finding: a display name containing a colon
+        (e.g. "Doe: Jane") must not break the note's frontmatter — the
+        title must round-trip through a real YAML parser correctly."""
+        person = JiraPerson(account_id="abc", display_name="Doe: Jane")
+        out = render_person_note(person, ["NAV-1"])
+        block = out.split("---\n", 2)[1]
+        parsed = yaml.safe_load(block)
+        assert parsed == {"type": "Person", "title": "Doe: Jane"}
+
+    def test_group_note_survives_yaml_special_chars_in_name(self):
+        out = render_group_note("project", "Team: Backend", ["NAV-1"])
+        block = out.split("---\n", 2)[1]
+        parsed = yaml.safe_load(block)
+        assert parsed == {"type": "Project", "title": "Team: Backend"}
+
 
 class TestPurity:
     def test_no_io_or_network_imports(self):

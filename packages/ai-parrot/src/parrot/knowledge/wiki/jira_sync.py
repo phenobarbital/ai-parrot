@@ -204,6 +204,52 @@ def _existing_note_keys(existing_text: str | None) -> set[str]:
     return set(_WIKILINK_RE.findall(generated))
 
 
+def _existing_fetched_at(existing_text: str | None) -> datetime | None:
+    """Parse ``sync.fetched_at`` out of an existing document's frontmatter.
+
+    Adversarial-review finding: ``render_issue_document`` embeds the
+    live wall-clock ``fetched_at`` into every render, so a naive full-byte
+    comparison against a freshly-stamped render would treat *every* ticket
+    as changed on *every* sweep — defeating G2's byte-determinism promise
+    the moment a ticket is re-rendered for any reason (``--force``, an
+    ``EXTRACTOR_VERSION`` bump, or Jira's ``updated`` moving for a reason
+    the corpus doesn't track, e.g. a comment). Used to render a
+    *comparison* copy stamped with the SAME timestamp the on-disk file
+    already carries, so the unchanged-detection only reacts to an actual
+    content change, never to the passage of time alone.
+
+    Args:
+        existing_text: The document's current on-disk content, if any.
+
+    Returns:
+        The parsed timestamp, or ``None`` if it cannot be found/parsed.
+    """
+    if not existing_text or not existing_text.startswith("---\n"):
+        return None
+    _, _, rest = existing_text.partition("---\n")
+    fm_block, sep, _body = rest.partition("---\n")
+    if not sep:
+        return None
+    try:
+        payload = yaml.safe_load(fm_block)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    sync = payload.get("sync")
+    if not isinstance(sync, dict):
+        return None
+    raw = sync.get("fetched_at")
+    if not raw:
+        return None
+    try:
+        # _DT_FORMAT ends in %z, so this IS timezone-aware — ruff's DTZ007
+        # cannot see that from a non-literal format string.
+        return datetime.strptime(raw, _DT_FORMAT)  # noqa: DTZ007
+    except ValueError:
+        return None
+
+
 def _mark_unreachable(text: str, *, unreachable_since: str) -> str:
     """Patch ``sync.unreachable_since`` into an existing document in place.
 
@@ -373,11 +419,25 @@ async def _run_sweep(
 
             path = issues_dir / issue_filename(issue.key)
             existing_text = path.read_text(encoding="utf-8") if path.exists() else None
-            new_text = render_issue_document(issue, fetched_at=fetched_at, existing=existing_text)
 
-            if existing_text is not None and new_text == existing_text and not version_stale:
+            # Compare against a render stamped with the EXISTING file's own
+            # fetched_at (when parseable) rather than the fresh wall-clock
+            # one — otherwise every re-render would look "changed" purely
+            # because sync.fetched_at advanced, defeating G2's
+            # byte-determinism guarantee (adversarial-review finding).
+            unchanged = False
+            if existing_text is not None and not version_stale:
+                existing_fetched_at = _existing_fetched_at(existing_text)
+                comparison_fetched_at = existing_fetched_at if existing_fetched_at is not None else fetched_at
+                comparison_text = render_issue_document(
+                    issue, fetched_at=comparison_fetched_at, existing=existing_text
+                )
+                unchanged = comparison_text == existing_text
+
+            if unchanged:
                 report.unchanged += 1
             else:
+                new_text = render_issue_document(issue, fetched_at=fetched_at, existing=existing_text)
                 if not dry_run:
                     path.write_text(new_text, encoding="utf-8")
                 report.written += 1
@@ -404,6 +464,17 @@ async def _run_sweep(
 
     # --- Entity notes -----------------------------------------------------
     _write_entity_notes(issues_dir, people, projects, components, labels, report, dry_run=dry_run)
+
+    # An orphan-verification probe failure (recorded above, never raised)
+    # must gate the watermark exactly like the fetch loop's own failures
+    # do (G5, adversarial-review finding) — otherwise a transient error
+    # probing one orphan among many silently marks an incomplete run "ok".
+    if report.errors:
+        new_scope.last_run_status = "partial"
+        if not dry_run:
+            state.scopes[fp] = new_scope
+            save_sync_state(issues_dir, state)
+        return report
 
     # --- Advance the watermark — only reached on a fully successful pass -
     if max_updated is not None:

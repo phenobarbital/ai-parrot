@@ -569,8 +569,7 @@ def render_person_note(
     """
     lines = [
         "---",
-        f"type: {ConceptType.PERSON.value}",
-        f"title: {person.display_name}",
+        _render_note_frontmatter(ConceptType.PERSON.value, person.display_name),
         "---",
         "",
         f"# {person.display_name}",
@@ -609,8 +608,7 @@ def render_group_note(
     }[kind]
     lines = [
         "---",
-        f"type: {concept_type.value}",
-        f"title: {name}",
+        _render_note_frontmatter(concept_type.value, name),
         "---",
         "",
         f"# {name}",
@@ -621,6 +619,32 @@ def render_group_note(
         lines.append(f"- [[{key}]]")
     generated = "\n".join(lines) + "\n"
     return _append_or_preserve(generated, existing)
+
+
+def _render_note_frontmatter(type_value: str, title: str) -> str:
+    """Render a satellite note's two-key frontmatter body via `yaml.safe_dump`.
+
+    Adversarial-review finding: raw f-string interpolation of ``title``
+    (a Jira display name / project / component / label — arbitrary
+    operator-controlled text) produced invalid YAML for any value
+    containing a colon or other YAML-special character (e.g. a display
+    name like ``"Doe: Jane"``), silently losing the note's `type`/`title`
+    during `vault_scan` ingestion. Mirrors the main ticket document's own
+    `_render_frontmatter`, which already used `yaml.safe_dump` correctly.
+
+    Args:
+        type_value: The `ConceptType` value string (already `.value`).
+        title: The note's title (display name / project / component /
+            label name).
+
+    Returns:
+        The YAML body only (no ``---`` fences — the caller supplies
+        those), with its own trailing newline stripped.
+    """
+    payload = {"type": type_value, "title": title}
+    return yaml.safe_dump(
+        payload, sort_keys=False, allow_unicode=True, default_flow_style=False
+    ).rstrip("\n")
 
 
 def _append_or_preserve(generated: str, existing: str | None) -> str:

@@ -1349,6 +1349,8 @@ class JiraToolkit(AbstractToolkit):
         """
         # Transport delegated to JiraInterface (FEAT-454, G1) — the exact
         # same client.issue(...) call this method used to make directly.
+        from parrot.interfaces.jira import JiraAuthError
+
         try:
             obj = await self._read_interface.fetch_issue_object(issue, fields=fields, expand=expand)
         except JIRAError as exc:
@@ -1363,6 +1365,12 @@ class JiraToolkit(AbstractToolkit):
             raise
         except AuthorizationRequired:
             raise
+        except JiraAuthError as exc:
+            # This docstring's own contract: "Authentication and permission
+            # errors are re-raised rather than wrapped" — translate to this
+            # toolkit's exception type so the trailing except Exception
+            # below never silently downgrades it to a generic envelope.
+            raise JiraAuthenticationError(str(exc)) from exc
         except Exception as exc:
             self.logger.error("jira_get_issue failed: %s", exc, exc_info=True)
             return {
@@ -2658,6 +2666,8 @@ class JiraToolkit(AbstractToolkit):
         # fetch_issues() mirrors this exact nextPageToken pagination loop
         # verbatim, returning raw Issue objects for _issue_to_dict below
         # (unchanged) to project, exactly as it did inline before.
+        from parrot.interfaces.jira import JiraAuthError
+
         try:
             issue_objects = await self._read_interface.fetch_issues(
                 jql,
@@ -2667,6 +2677,11 @@ class JiraToolkit(AbstractToolkit):
             )
         except AuthorizationRequired:
             raise
+        except JiraAuthError as exc:
+            # This docstring's own contract: "Authentication errors are
+            # re-raised" — translate rather than let the trailing except
+            # Exception below silently downgrade it to a generic envelope.
+            raise JiraAuthenticationError(str(exc)) from exc
         except Exception as exc:
             self.logger.error("jira_search_issues failed: %s", exc, exc_info=True)
             return {

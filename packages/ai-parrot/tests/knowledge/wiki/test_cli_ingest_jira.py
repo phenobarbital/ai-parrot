@@ -298,11 +298,14 @@ class TestNoSelfRegistration:
 
 class TestAppendOnlyEdit:
     def test_existing_commands_untouched(self):
-        """cli.py is contested — the diff must be append-only.
+        """cli.py is contested — new content must be additive only.
 
-        Verified via `git diff -U0 packages/ai-parrot/src/parrot/knowledge/
-        wiki/cli.py` showing a single hunk appended after the last
-        pre-existing command (`ingest`), before `claude-hook` — never
-        inside a pre-existing command body.
+        This asserts the new `ingest_jira` command exists as a sibling of
+        the pre-existing commands. It does NOT assert byte-for-byte diff
+        shape (a later, unrelated formatting pass may reflow whitespace
+        across the whole file) — only that no pre-existing command was
+        removed or renamed by this change.
         """
         assert hasattr(cli, "ingest_jira")
+        for existing in ("ingest", "claude_hook"):
+            assert hasattr(cli, existing), existing

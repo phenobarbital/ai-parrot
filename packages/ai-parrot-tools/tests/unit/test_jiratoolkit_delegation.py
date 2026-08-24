@@ -219,6 +219,29 @@ class TestErrorTaxonomyPreserved:
         with pytest.raises(JiraAuthenticationError):
             await toolkit._get_full_changelog("NAV-1")
 
+    @pytest.mark.asyncio
+    async def test_get_issue_auth_error_is_translated(self, toolkit):
+        """Adversarial review finding: jira_get_issue's own docstring
+        promises "Authentication and permission errors are re-raised
+        rather than wrapped" — a JiraAuthError from the interface must
+        honour that, not fall into the trailing except Exception and get
+        silently downgraded to a generic status="error" envelope."""
+        fake = _FakeReadInterface()
+        fake.fetch_issue_object = AsyncMock(side_effect=JiraAuthError("nope"))
+        _attach_fake_interface(toolkit, fake)
+        with pytest.raises(JiraAuthenticationError):
+            await toolkit.jira_get_issue("NAV-1")
+
+    @pytest.mark.asyncio
+    async def test_search_issues_auth_error_is_translated(self, toolkit):
+        """jira_search_issues's own docstring promises "Authentication
+        errors are re-raised" — same contract as jira_get_issue."""
+        fake = _FakeReadInterface()
+        fake.fetch_issues = AsyncMock(side_effect=JiraAuthError("nope"))
+        _attach_fake_interface(toolkit, fake)
+        with pytest.raises(JiraAuthenticationError):
+            await toolkit.jira_search_issues("project = NAV")
+
     def test_missing_jira_dependency_message_is_actionable(self):
         """The toolkit module hard-imports `jira` at load time
         (jiratoolkit.py ~:46), so it cannot even be imported without the
