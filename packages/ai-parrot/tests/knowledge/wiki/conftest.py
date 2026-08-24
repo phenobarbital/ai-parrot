@@ -39,3 +39,23 @@ def remote_links() -> list[dict]:
     from tests.fixtures.jira_payloads import remote_links_payload
 
     return remote_links_payload()
+
+
+@pytest.fixture
+def frozen_now():
+    """Fixed timestamp so byte-comparisons in jira_render/jira_sync tests
+    are stable. Reuses TASK-2401's local fixture shape (packages/ai-parrot/
+    tests/knowledge/wiki/test_jira_render.py) so both suites share one
+    definition."""
+    from datetime import UTC, datetime
+
+    return datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def issues_dir(tmp_path):
+    """Empty corpus root for the Jira sweep suite (TASK-2403); assertions
+    run against rendered bytes on disk."""
+    d = tmp_path / "issues"
+    d.mkdir()
+    return d
