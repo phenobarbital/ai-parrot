@@ -9,6 +9,7 @@ from navigator.views import BaseHandler, BaseView
 
 from ..scheduler import ScheduleType
 from ..scheduler.functions import list_supported_callbacks
+from ..scheduler.sanitize import SchedulerConfigError
 
 
 class SchedulerCatalogHelper(BaseHandler):
@@ -112,6 +113,9 @@ class SchedulerJobsHandler(BaseView):
             return self.json_response({"status": "success", "schedule": self.manager._serialize_job(schedule)}, status=201)  # pylint: disable=protected-access
         except KeyError as exc:
             return self._error_response(f"Missing required field: {exc.args[0]}", status=400)
+        except SchedulerConfigError as exc:
+            # Unusable schedule_type/schedule_config — a client error, not ours.
+            return self._error_response(str(exc), status=400)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Scheduler POST failed: %s", exc, exc_info=True)
             return self._error_response(str(exc), status=500)
@@ -134,6 +138,9 @@ class SchedulerJobsHandler(BaseView):
             else:
                 schedule = await self.manager.update_schedule(schedule_id, payload)
             return self.json_response({"status": "success", "schedule": self.manager._serialize_job(schedule)})  # pylint: disable=protected-access
+        except SchedulerConfigError as exc:
+            # Unusable schedule_type/schedule_config — a client error, not ours.
+            return self._error_response(str(exc), status=400)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Scheduler PATCH failed: %s", exc, exc_info=True)
             return self._error_response(str(exc), status=500)
