@@ -245,7 +245,30 @@ Same as TASK-2478.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Created `crew/tunnel.py` with `AgentTunnel` and `TunnelRegistry`
+per the skeleton. `get_or_create` uses a symmetric sorted-pair key with a
+per-pair `asyncio.Lock` to avoid duplicate room creation under concurrent
+callers; rooms are created with `is_direct=True`,
+`preset="trusted_private_chat"`, both agent invitees, and an initial
+`m.parrot.tunnel` state event. `AgentTunnel.ask` follows the
+correlation-future pattern from `MatrixA2ATransport.wait_for_result`,
+rejecting on `hops+1 > max_hops` before sending, and mapping
+timeout/error/schema-error/success into the `AgentAnswer.metadata.status`
+envelope exactly as specified. `on_custom_event` resolves RESULT futures
+by `metadata["correlation_id"]` falling back to `task_id`, appends
+FEEDBACK to a per-room list, and dispatches TASK to
+`wrappers[target_agent].handle_task` via a `getattr` guard (logs and
+no-ops when the wrapper or `handle_task` — added in TASK-2482 — is
+absent), restricted to known tunnel rooms only. The TTL sweeper runs at
+`min(60, ttl_minutes*60/4)` seconds, is skipped entirely when
+`ttl_minutes == 0`, and swallows per-tunnel exceptions. 7/7 new tests
+pass; full matrix regression 204/210 pass (6 pre-existing
+`test_matrix_hook.py` failures, unrelated). `ruff check` on the new file
+shows only the same style categories (`UP006`/`UP017`/`UP035`/`UP041`/
+`UP045`/`BLE001`) already established throughout `crew/session.py` and
+`crew/registry.py` (`datetime.now(timezone.utc)`,
+`except asyncio.TimeoutError`) — verified by direct comparison, not a
+regression.
 **Deviations from spec**: none
