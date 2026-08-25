@@ -534,7 +534,17 @@
       "snippet": {
         "field_id": "resume",
         "field_type": "file",
-        "label": "Resume"
+        "label": "Resume",
+        "note": "Also accepts a plain string (legacy dual-read). See the FileEnvelope model.",
+        "value_example": {
+          "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+          "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "content_type": "application/pdf",
+          "data_url": null,
+          "filename": "document.pdf",
+          "size": 183204,
+          "thumbnail_url": null
+        }
       },
       "supported_effects": [
         "show",
@@ -550,7 +560,56 @@
       "supports_constraints": true,
       "type": "file",
       "value_shape": {
-        "type": "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "blob_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "checksum": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "data_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "filename": {
+                "type": "string"
+              },
+              "size": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "thumbnail_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "filename",
+              "content_type",
+              "size"
+            ],
+            "type": "object"
+          }
+        ]
       }
     },
     {
@@ -667,7 +726,17 @@
       "snippet": {
         "field_id": "profile_image",
         "field_type": "image",
-        "label": "Profile image"
+        "label": "Profile image",
+        "note": "Also accepts a plain string (legacy dual-read). See the FileEnvelope model.",
+        "value_example": {
+          "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+          "checksum": "sha256:abc123...",
+          "content_type": "image/jpeg",
+          "data_url": "data:image/jpeg;base64,/9j/4AAQ...",
+          "filename": "photo.jpg",
+          "size": 45000,
+          "thumbnail_url": "/api/v1/navigator/forms/form-uid/fields/field-uid/thumbnail/thumb-uuid"
+        }
       },
       "supported_effects": [
         "show",
@@ -683,7 +752,56 @@
       "supports_constraints": true,
       "type": "image",
       "value_shape": {
-        "type": "string"
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "blob_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "checksum": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "data_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "filename": {
+                "type": "string"
+              },
+              "size": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "thumbnail_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "filename",
+              "content_type",
+              "size"
+            ],
+            "type": "object"
+          }
+        ]
       }
     },
     {
@@ -693,7 +811,21 @@
       "is_container": false,
       "label": "Image Dropzone",
       "render_hint": "upload",
-      "snippet": {},
+      "snippet": {
+        "field_id": "photo_dropzone",
+        "field_type": "image_dropzone",
+        "label": "Photo dropzone",
+        "note": "Also accepts the legacy {name,type,size,dataUrl} shape. See the FileEnvelope model.",
+        "value_example": {
+          "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+          "checksum": "sha256:abc123...",
+          "content_type": "image/jpeg",
+          "data_url": null,
+          "filename": "photo.jpg",
+          "size": 45000,
+          "thumbnail_url": null
+        }
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -710,10 +842,94 @@
       "value_shape": {
         "oneOf": [
           {
+            "additionalProperties": false,
+            "properties": {
+              "blob_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "checksum": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "data_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "filename": {
+                "type": "string"
+              },
+              "size": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "thumbnail_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "filename",
+              "content_type",
+              "size"
+            ],
             "type": "object"
           },
           {
             "items": {
+              "additionalProperties": false,
+              "properties": {
+                "blob_ref": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "checksum": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "content_type": {
+                  "type": "string"
+                },
+                "data_url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "filename": {
+                  "type": "string"
+                },
+                "size": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "thumbnail_url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "filename",
+                "content_type",
+                "size"
+              ],
               "type": "object"
             },
             "type": "array"
@@ -959,12 +1175,28 @@
     },
     {
       "category": "media",
-      "description": "Multiple-file upload; a list of REST-style {answer, blob_ref, display} envelopes.",
+      "description": "Multiple-file upload; a list of FileEnvelope objects.",
       "icon": "multi-upload",
       "is_container": false,
       "label": "Multi Upload",
       "render_hint": "upload",
-      "snippet": {},
+      "snippet": {
+        "field_id": "gallery",
+        "field_type": "multi_upload",
+        "label": "Gallery",
+        "note": "Also accepts the legacy [{answer,blob_ref,display}] shape. See the FileEnvelope model.",
+        "value_example": [
+          {
+            "blob_ref": "s3://bucket/form-uid/field-uid/uuid",
+            "checksum": "sha256:abc123...",
+            "content_type": "image/jpeg",
+            "data_url": null,
+            "filename": "photo1.jpg",
+            "size": 45000,
+            "thumbnail_url": null
+          }
+        ]
+      },
       "supported_effects": [
         "show",
         "hide",
@@ -981,18 +1213,48 @@
       "value_shape": {
         "format": "multi-upload",
         "items": {
+          "additionalProperties": false,
           "properties": {
-            "answer": {},
             "blob_ref": {
               "type": [
                 "string",
                 "null"
               ]
             },
-            "display": {
+            "checksum": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "content_type": {
               "type": "string"
+            },
+            "data_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "filename": {
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "thumbnail_url": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
+          "required": [
+            "filename",
+            "content_type",
+            "size"
+          ],
           "type": "object"
         },
         "type": "array"

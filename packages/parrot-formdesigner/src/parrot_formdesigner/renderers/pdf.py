@@ -22,6 +22,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
+from ..core.file_envelope import UPLOAD_FIELD_TYPES
 from ..core.schema import (
     FormField,
     FormSchema,
@@ -77,6 +78,22 @@ _PDF_FALLBACK_NEW_TYPES = frozenset(
         FieldType.PLACE,
     }
 )
+
+
+def _extract_display_name(value: Any) -> str:
+    """Extract a display name from a legacy or FileEnvelope upload value.
+
+    Args:
+        value: Legacy string (URL or base64) or FileEnvelope dict.
+
+    Returns:
+        A human-readable filename/label. Empty string if value is falsy.
+    """
+    if isinstance(value, dict) and "filename" in value:
+        return str(value.get("filename") or "")
+    if isinstance(value, str):
+        return value.rsplit("/", 1)[-1] if "/" in value else value
+    return str(value) if value else ""
 
 
 def _localize(value: LocalizedString | None, locale: str, default: str = "") -> str:
@@ -330,7 +347,13 @@ class PdfRenderer(AbstractFormRenderer):
         c.drawString(self.MARGIN_X, cursor_y, label)
         cursor_y -= self.FIELD_HEIGHT
 
-        prefilled_value = str(prefilled[field.field_id]) if prefilled and field.field_id in prefilled else ""
+        _has_prefilled = bool(prefilled) and field.field_id in prefilled
+        if field.field_type in UPLOAD_FIELD_TYPES:
+            # FEAT-460 — show the filename from a FileEnvelope (or legacy
+            # string) instead of the raw dict repr / URL as fallback text.
+            prefilled_value = _extract_display_name(prefilled[field.field_id]) if _has_prefilled else ""
+        else:
+            prefilled_value = str(prefilled[field.field_id]) if _has_prefilled else ""
 
         form = c.acroForm
         x = self.MARGIN_X

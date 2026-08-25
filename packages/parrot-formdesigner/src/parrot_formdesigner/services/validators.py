@@ -60,6 +60,73 @@ _CRON_FIELD_COUNT = 5
 _IMAGE_DROPZONE_KEYS = ("name", "type", "size", "dataUrl")
 _MULTI_UPLOAD_KEYS = ("answer", "blob_ref")
 
+# FEAT-460 — raw upload field types dual-read coercer.
+_FILE_ENVELOPE_REQUIRED_KEYS = ("filename", "content_type", "size")
+
+
+def _is_file_envelope_shaped(value: Any) -> bool:
+    """Return whether a dict already looks like a FileEnvelope.
+
+    Detected by the presence of both ``filename`` and ``content_type`` —
+    both required FileEnvelope fields that legacy shapes never carry
+    (legacy IMAGE_DROPZONE uses ``name``/``type``; legacy MULTI_UPLOAD uses
+    ``answer``/``blob_ref``).
+
+    Args:
+        value: The candidate value.
+
+    Returns:
+        True if ``value`` is a dict with both ``filename`` and ``content_type``.
+    """
+    return isinstance(value, dict) and "filename" in value and "content_type" in value
+
+
+def _map_legacy_dropzone(value: dict) -> dict:
+    """Map a legacy IMAGE_DROPZONE ``{name,type,size,dataUrl}`` dict to a
+    FileEnvelope-shaped dict.
+
+    Args:
+        value: The legacy dropzone dict.
+
+    Returns:
+        A FileEnvelope-shaped dict. ``blob_ref`` is None — legacy dropzone
+        values were never server-persisted.
+    """
+    return {
+        "filename": value.get("name"),
+        "content_type": value.get("type"),
+        "size": value.get("size"),
+        "blob_ref": None,
+        "data_url": value.get("dataUrl"),
+        "thumbnail_url": None,
+        "checksum": None,
+    }
+
+
+def _map_legacy_multi_upload_item(item: dict) -> dict:
+    """Map a legacy MULTI_UPLOAD ``{answer,blob_ref,display}`` dict to a
+    FileEnvelope-shaped dict.
+
+    Args:
+        item: The legacy multi-upload item.
+
+    Returns:
+        A FileEnvelope-shaped dict. ``size`` and ``content_type`` are lossy
+        fallbacks (0 / "application/octet-stream") — the legacy shape
+        carries neither.
+    """
+    answer = item.get("answer")
+    data_url = answer if isinstance(answer, str) and answer.startswith("data:") else None
+    return {
+        "filename": item.get("display") or "unknown",
+        "content_type": "application/octet-stream",
+        "size": 0,
+        "blob_ref": item.get("blob_ref"),
+        "data_url": data_url,
+        "thumbnail_url": None,
+        "checksum": None,
+    }
+
 
 def _resolve_localized(value: LocalizedString | None, locale: str = "en") -> str | None:
     """Resolve a LocalizedString to a plain string using the given locale.
@@ -323,7 +390,14 @@ class FormValidator:
             if c.max_items is not None and isinstance(coerced, list):
                 if len(coerced) > c.max_items:
                     errors.append(f"{label} must have at most {c.max_items} items")
-            if c.allowed_mime_types and field.field_type in (FieldType.FILE, FieldType.IMAGE):
+            if (
+                c.allowed_mime_types
+                and field.field_type in (FieldType.FILE, FieldType.IMAGE)
+                and not _is_file_envelope_shaped(coerced)
+            ):
+                # FileEnvelope values (FEAT-460) carry content_type directly —
+                # the {field_id}__mime side-channel is only needed for legacy
+                # string values, which have no MIME of their own.
                 mime = all_data.get(f"{field.field_id}__mime") if all_data else None
                 if mime and mime not in c.allowed_mime_types:
                     errors.append(f"{label} must be one of: {', '.join(c.allowed_mime_types)}")
@@ -555,14 +629,53 @@ class FormValidator:
                 return value.strip()
             raise ValueError("Signature pad value must be a PNG data URL string")
 
-        elif ft == FieldType.IMAGE_DROPZONE:
-            if isinstance(value, (dict, list)):
+        # FEAT-460 — FILE/IMAGE dual-read: legacy string values pass through
+        # unchanged; FileEnvelope dicts pass through for structural
+        # validation in _validate_by_type.
+        elif ft in (FieldType.FILE, FieldType.IMAGE):
+            if isinstance(value, str):
                 return value
+            if isinstance(value, dict):
+                return value
+            raise ValueError(f"{ft.value} value must be a string or a FileEnvelope object")
+
+        elif ft == FieldType.IMAGE_DROPZONE:
+            # FEAT-460 — map a *complete* legacy {name,type,size,dataUrl}
+            # dict to a FileEnvelope-shaped dict. Incomplete/unknown dicts
+            # are left as-is so _validate_by_type's legacy-key check still
+            # flags what's missing (backward-compatible error reporting).
+            if isinstance(value, dict):
+                if not _is_file_envelope_shaped(value) and all(k in value for k in _IMAGE_DROPZONE_KEYS):
+                    return _map_legacy_dropzone(value)
+                return value
+            if isinstance(value, list):
+                return [
+                    (
+                        _map_legacy_dropzone(item)
+                        if isinstance(item, dict)
+                        and not _is_file_envelope_shaped(item)
+                        and all(k in item for k in _IMAGE_DROPZONE_KEYS)
+                        else item
+                    )
+                    for item in value
+                ]
             raise ValueError("Image dropzone value must be a dict or a list of dicts")
 
         elif ft == FieldType.MULTI_UPLOAD:
+            # FEAT-460 — map each *complete* legacy {answer,blob_ref,display}
+            # item to a FileEnvelope-shaped dict; leave incomplete/unknown
+            # items as-is for _validate_by_type's legacy-key check.
             if isinstance(value, list):
-                return value
+                return [
+                    (
+                        _map_legacy_multi_upload_item(item)
+                        if isinstance(item, dict)
+                        and not _is_file_envelope_shaped(item)
+                        and all(k in item for k in _MULTI_UPLOAD_KEYS)
+                        else item
+                    )
+                    for item in value
+                ]
             raise ValueError("Multi upload value must be a list of upload envelopes")
 
         elif ft == FieldType.AI_CAPTURE:
@@ -739,9 +852,19 @@ class FormValidator:
             if isinstance(value, str) and not _PNG_DATA_URL_PATTERN.match(value):
                 errors.append(f"{label} must be a PNG data URL")
 
+        # FEAT-460 — FileEnvelope dicts for FILE/IMAGE; plain strings need no
+        # structural check (legacy passthrough).
+        elif ft in (FieldType.FILE, FieldType.IMAGE) and isinstance(value, dict):
+            missing = [k for k in _FILE_ENVELOPE_REQUIRED_KEYS if k not in value]
+            if missing:
+                errors.append(f"{label} is missing keys: {', '.join(missing)}")
+
         elif ft == FieldType.IMAGE_DROPZONE:
             if isinstance(value, dict):
-                missing = [k for k in _IMAGE_DROPZONE_KEYS if k not in value]
+                required_keys = (
+                    _FILE_ENVELOPE_REQUIRED_KEYS if _is_file_envelope_shaped(value) else _IMAGE_DROPZONE_KEYS
+                )
+                missing = [k for k in required_keys if k not in value]
                 if missing:
                     errors.append(f"{label} is missing keys: {', '.join(missing)}")
             elif isinstance(value, list):
@@ -749,7 +872,10 @@ class FormValidator:
                     if not isinstance(item, dict):
                         errors.append(f"{label} item {i} must be an object")
                         continue
-                    missing = [k for k in _IMAGE_DROPZONE_KEYS if k not in item]
+                    required_keys = (
+                        _FILE_ENVELOPE_REQUIRED_KEYS if _is_file_envelope_shaped(item) else _IMAGE_DROPZONE_KEYS
+                    )
+                    missing = [k for k in required_keys if k not in item]
                     if missing:
                         errors.append(f"{label} item {i} is missing keys: {', '.join(missing)}")
 
@@ -759,7 +885,10 @@ class FormValidator:
                     if not isinstance(item, dict):
                         errors.append(f"{label} item {i} must be an object")
                         continue
-                    missing = [k for k in _MULTI_UPLOAD_KEYS if k not in item]
+                    required_keys = (
+                        _FILE_ENVELOPE_REQUIRED_KEYS if _is_file_envelope_shaped(item) else _MULTI_UPLOAD_KEYS
+                    )
+                    missing = [k for k in required_keys if k not in item]
                     if missing:
                         errors.append(f"{label} item {i} is missing keys: {', '.join(missing)}")
 

@@ -177,6 +177,10 @@ class ArangoDBWikiStore(BaseWikiStore):
         self._db: Optional[Any] = None
         self._initialized = False
         self._init_lock = asyncio.Lock()
+        # The event loop the live connection belongs to (see
+        # _connection_is_stale). Recorded when the connection is made, NOT
+        # at construction: the two are rarely the same loop.
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -264,6 +268,12 @@ class ArangoDBWikiStore(BaseWikiStore):
         Raises:
             FileNotFoundError: ``read_only`` and the plane does not exist.
         """
+        # Checked before the `_initialized` short-circuit so EVERY entry
+        # point (public methods via _ensure_init, and callers that await
+        # initialize() directly — the sources manager, the federation)
+        # gets a live connection rather than one bound to a dead loop.
+        if self._connection_is_stale():
+            await self._discard_connection()
         if self._initialized:
             return
         async with self._init_lock:
@@ -271,6 +281,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 return
             if self._read_only:
                 await self._connect_existing()
+                self._loop = asyncio.get_running_loop()
                 self._initialized = True
                 return
             self._db = AsyncDB(
@@ -289,6 +300,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                     await self._db.create_collection(name, edge=is_edge)
 
             await self._create_pages_view()
+            self._loop = asyncio.get_running_loop()
             self._initialized = True
 
     async def _connect_existing(self) -> None:
@@ -417,11 +429,60 @@ class ArangoDBWikiStore(BaseWikiStore):
             await self._db.close()
             self._db = None
         self._initialized = False
+        self._loop = None
+
+    def _connection_is_stale(self) -> bool:
+        """Whether the cached connection belongs to a finished/foreign loop.
+
+        ``asyncdb``'s ArangoDB driver is ``aiohttp``-backed, and aiohttp
+        binds its connector to the loop that created it: a connection
+        cannot outlive the ``asyncio.run(...)`` that opened it, nor be
+        driven from a different loop. A process that makes several
+        ``asyncio.run`` calls — the CLI's ``status``, which resolves each
+        federated plane in its own run — would otherwise reuse a
+        connection whose loop is closed, surfacing from deep inside the
+        driver as the unhelpful ``Event loop is closed``.
+
+        Returns:
+            ``True`` when the live connection must be discarded and
+            re-established on the current loop.
+        """
+        if not self._initialized or self._loop is None:
+            return False
+        if self._loop.is_closed():
+            return True
+        try:
+            current = asyncio.get_running_loop()
+        except RuntimeError:  # pragma: no cover - initialize() always has one
+            return False
+        return current is not self._loop
+
+    async def _discard_connection(self) -> None:
+        """Drop the cached connection without driving its dead loop.
+
+        ``close()`` is attempted but its failure is expected and ignored:
+        the loop that owns the transport is exactly what is gone. The
+        ``asyncio.Lock`` is rebuilt for the same reason — it binds to the
+        loop that first awaits it.
+        """
+        db, self._db = self._db, None
+        self._initialized = False
+        self._loop = None
+        self._init_lock = asyncio.Lock()
+        if db is None:
+            return
+        try:
+            await db.close()
+        except Exception as exc:  # noqa: BLE001 — the owning loop is gone
+            self.logger.debug("Ignoring close() on a stale ArangoDB connection: %s", exc)
 
     async def _ensure_init(self) -> None:
-        """Lazily connect on first use — every public method calls this."""
-        if not self._initialized:
-            await self.initialize()
+        """Lazily connect on first use — every public method calls this.
+
+        Delegates to :meth:`initialize`, which is idempotent AND
+        re-establishes a connection left behind by a finished event loop.
+        """
+        await self.initialize()
 
     # ------------------------------------------------------------------
     # Internal AQL helpers

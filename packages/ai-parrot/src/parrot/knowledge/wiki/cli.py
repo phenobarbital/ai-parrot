@@ -347,7 +347,35 @@ def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
 
 
 def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
-    """Create the retrieval-plane store for a repo."""
+    """Create the retrieval-plane store for a repo.
+
+    TODO(follow-up): let the navconfig environment pick the backend.
+
+    Today the backend is a per-repo, git-ignored fact: whatever
+    ``.parrot/wiki.json`` says, set once by ``build --backend``. That
+    makes "local sqlite while I work offline, ArangoDB when I'm on the
+    VPN" a file edit plus a rebuild, and it silently strands every
+    ``query`` the moment the server is unreachable — there is no
+    fallback.
+
+    The proposal is to drive it from the same ``env/<ENV>/`` layout
+    navconfig already uses for every other credential in this repo, so
+    ``ENV=dev`` resolves a local sqlite plane and ``ENV=prod`` (or a
+    dedicated value) resolves the shared ArangoDB one.
+
+    Most of the machinery already exists, and is inconsistent in a way
+    worth fixing in the same pass: ``WIKI_STORE_BACKEND`` IS honoured by
+    ``_resolve_read_store`` and ``_resolve_write_store`` — but only for
+    ``--store``/``WIKI_STORE`` targets, and ``build`` ignores it
+    entirely. So the work is mostly to define one precedence
+    (``--backend`` flag > environment > ``wiki.json``) and apply it here
+    and in ``build``, rather than to invent a new mechanism.
+
+    Open questions for that follow-up: whether the two planes stay in
+    sync or are simply different corpora; and whether an unreachable
+    ArangoDB should fall back to the local plane (convenient, but it
+    would answer queries from a stale corpus without saying so).
+    """
     storage = config.storage_path(root)
     if config.backend == "arangodb":
         from parrot.knowledge.wiki.project import resolve_arango_params
@@ -371,18 +399,19 @@ def _open_sources(
 ) -> SourceCollectionManager:
     """Create the source manifest manager matching the store backend.
 
-    For the ``arangodb`` backend, ``store`` must already be an
-    *initialized* (connected) ``ArangoDBWikiStore`` — its ``asyncdb``
-    connection is shared with the returned manager rather than opening a
-    second one. Callers are responsible for ``await store.initialize()``
-    (or ``asyncio.run(...)`` from a sync context) before this is called.
+    For the ``arangodb`` backend the ``ArangoDBWikiStore`` itself is
+    handed over (not its private ``_db``), so the manager shares that one
+    connection AND inherits the store's reconnect-on-a-dead-loop handling
+    — grabbing the raw connection here froze whatever was cached at this
+    moment, which a later ``asyncio.run(...)`` then used after its loop
+    had closed. The store's ``initialize()`` is idempotent, so it no
+    longer matters whether the caller connected it first.
     """
     storage = config.storage_path(root)
     if config.backend == "sqlite":
         return SourceCollectionManager(storage / "sources", db_path=storage / "wiki.db")
     if config.backend == "arangodb":
-        arango_db = getattr(store, "_db", None)
-        return SourceCollectionManager(storage / "sources", backend="arangodb", arango_db=arango_db)
+        return SourceCollectionManager(storage / "sources", backend="arangodb", arango_store=store)
     return SourceCollectionManager(storage / "sources", backend="json")
 
 
@@ -585,30 +614,53 @@ async def _ingest_files(
     bulk_records = []
     bulk_edges: list[tuple[str, str, str]] = []
 
-    for fs in scan.files:
-        abs_path = root / fs.rel_path
-        uri = str(abs_path.resolve())
-        source_id = await asyncio.to_thread(sources.find_by_uri, uri)
-        if source_id is None:
-            entry = await asyncio.to_thread(sources.add_source, abs_path)
-            source_id = entry.source_id
-        elif not force and not await asyncio.to_thread(sources.is_stale, source_id):
+    # The manifest is read and written in BATCHES, not per file. The
+    # per-file API costs one round trip per call — invisible on a local
+    # sqlite manifest, dominant on a server-hosted one: registering a new
+    # file took ~5 round trips (find_by_uri, add_source's own lookup +
+    # write, mark_ingested's read + write), ~0.5s/file measured against a
+    # remote ArangoDB, i.e. ~80 minutes for a 9k-file corpus.
+    paths = [(root / fs.rel_path).resolve() for fs in scan.files]
+    known = await asyncio.to_thread(sources.find_entries_by_uris, [str(path) for path in paths])
+
+    # Staleness is decided from the entries just read (same rule, no extra
+    # read per file), so only the files that will actually be re-ingested
+    # get registered.
+    pending: list[tuple[Any, Path]] = []
+    for file_slice, abs_path in zip(scan.files, paths):
+        entry = known.get(str(abs_path))
+        if entry is not None and not force and not sources.entry_is_stale(entry):
             unchanged += 1
             continue
-        fs.record.source_id = source_id
-        slice_edges = edges_by_src.get(fs.record.concept_id, [])
+        pending.append((file_slice, abs_path))
+
+    # `known` is handed over so the registration does not repeat the read
+    # the loop above already did.
+    registered = await asyncio.to_thread(sources.add_sources, [path for _, path in pending], known)
+    id_by_uri = {entry.source_uri: entry.source_id for entry in registered}
+
+    ingested_pages: dict[str, list[str]] = {}
+    for file_slice, abs_path in pending:
+        source_id = id_by_uri[str(abs_path)]
+        file_slice.record.source_id = source_id
+        slice_edges = edges_by_src.get(file_slice.record.concept_id, [])
         if fresh:
-            bulk_records.append(fs.record)
+            bulk_records.append(file_slice.record)
             bulk_edges.extend(slice_edges)
         else:
-            await store.replace_source_slice(source_id, [fs.record], slice_edges)
-        await asyncio.to_thread(sources.mark_ingested, source_id, [fs.record.concept_id])
+            # Incremental path: each slice is replaced atomically, so it
+            # stays one call per changed file — a re-build touches a
+            # handful of files, not the whole corpus.
+            await store.replace_source_slice(source_id, [file_slice.record], slice_edges)
+        ingested_pages.setdefault(source_id, []).append(file_slice.record.concept_id)
         written += 1
 
     if bulk_records:
         await store.upsert_pages(bulk_records)
     if bulk_edges:
         await store.add_edges(bulk_edges)
+    if ingested_pages:
+        await asyncio.to_thread(sources.mark_ingested_many, ingested_pages)
     return {"written": written, "unchanged": unchanged}
 
 

@@ -44,6 +44,34 @@ from parrot.knowledge.wiki.models import SourceManifestEntry
 #: consumers of this module never pull in ``asyncdb``.
 _ARANGO_SOURCES_COLLECTION = "wiki_sources"
 
+#: The one definition of the sqlite ``sources`` upsert, shared by the
+#: single-row (``_upsert``) and batch (``_upsert_many``) writers so the
+#: 14-column statement can never drift between them.
+_SOURCES_UPSERT_SQL = (
+    "INSERT INTO sources"
+    " (source_id, source_uri, file_hash, mtime, ingested_at,"
+    "  pages_generated, status, destination, decision_source,"
+    "  charter_version, composite_score, doc_metadata,"
+    "  content_type, loader)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    " ON CONFLICT(source_id) DO UPDATE SET"
+    "  source_uri=excluded.source_uri, file_hash=excluded.file_hash,"
+    "  mtime=excluded.mtime, ingested_at=excluded.ingested_at,"
+    "  pages_generated=excluded.pages_generated, status=excluded.status,"
+    "  destination=excluded.destination,"
+    "  decision_source=excluded.decision_source,"
+    "  charter_version=excluded.charter_version,"
+    "  composite_score=excluded.composite_score,"
+    "  doc_metadata=excluded.doc_metadata,"
+    "  content_type=excluded.content_type,"
+    "  loader=excluded.loader"
+)
+
+#: Max bind parameters per sqlite ``IN (...)`` clause. SQLite's own
+#: ``SQLITE_MAX_VARIABLE_NUMBER`` defaults to 999 on older builds, so the
+#: bulk readers chunk below that rather than assuming a modern limit.
+_SQLITE_IN_CHUNK = 500
+
 #: FEAT-402 (TASK-2073) additive columns on the `sources` table:
 #: name -> SQL type. All nullable so pre-FEAT-402 databases keep
 #: opening cleanly; see ``_migrate_sources_columns``.
@@ -216,6 +244,201 @@ class SourceCollectionManager:
         )
         return entry
 
+    # ------------------------------------------------------------------
+    # Bulk manifest operations
+    #
+    # The per-file API above costs one round trip per call, which is
+    # invisible on a local sqlite/json manifest and dominant on a
+    # server-hosted one: registering a new file used to take ~5 round
+    # trips (find_by_uri, add_source's own lookup + write, mark_ingested's
+    # read + write), measured at ~0.5s/file against a remote ArangoDB —
+    # ~80 minutes for a 9k-file corpus. These collapse a whole scan into
+    # a handful of statements. Semantics are unchanged: the same hashes,
+    # the same staleness rule, the same rows.
+    # ------------------------------------------------------------------
+
+    def find_entries_by_uris(self, uris: list[str]) -> dict[str, SourceManifestEntry]:
+        """Look up many sources by URI in as few statements as possible.
+
+        Args:
+            uris: Absolute source URIs (``str(path.resolve())``).
+
+        Returns:
+            Mapping of ``source_uri`` -> entry, containing only the URIs
+            that are actually tracked.
+        """
+        if not uris:
+            return {}
+        wanted = set(uris)
+        if self.backend == "json":
+            return {e.source_uri: e for e in self._manifest.values() if e.source_uri in wanted}
+        if self.backend == "arangodb":
+            rows = self._run_async(
+                self._arango_query(
+                    "FOR doc IN @@collection FILTER doc.source_uri IN @uris RETURN doc",
+                    {"@collection": _ARANGO_SOURCES_COLLECTION, "uris": list(wanted)},
+                )
+            )
+            return {e.source_uri: e for e in (self._doc_to_entry(row) for row in rows)}
+
+        found: dict[str, SourceManifestEntry] = {}
+        ordered = list(wanted)
+        with self._connect() as conn:
+            for start in range(0, len(ordered), _SQLITE_IN_CHUNK):
+                chunk = ordered[start : start + _SQLITE_IN_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                rows = conn.execute(
+                    # f-string builds only the "?,?,?" placeholder run — the
+                    # values themselves are always bound, never interpolated.
+                    f"SELECT * FROM sources WHERE source_uri IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    entry = self._row_to_entry(row)
+                    found[entry.source_uri] = entry
+        return found
+
+    def find_entries_by_ids(self, source_ids: list[str]) -> dict[str, SourceManifestEntry]:
+        """Fetch many sources by id in as few statements as possible.
+
+        Args:
+            source_ids: Stable source identifiers.
+
+        Returns:
+            Mapping of ``source_id`` -> entry, for the ids that exist.
+        """
+        if not source_ids:
+            return {}
+        wanted = set(source_ids)
+        if self.backend == "json":
+            return {sid: e for sid, e in self._manifest.items() if sid in wanted}
+        if self.backend == "arangodb":
+            rows = self._run_async(
+                self._arango_query(
+                    "FOR doc IN @@collection FILTER doc._key IN @keys RETURN doc",
+                    {"@collection": _ARANGO_SOURCES_COLLECTION, "keys": list(wanted)},
+                )
+            )
+            return {e.source_id: e for e in (self._doc_to_entry(row) for row in rows)}
+
+        found: dict[str, SourceManifestEntry] = {}
+        ordered = list(wanted)
+        with self._connect() as conn:
+            for start in range(0, len(ordered), _SQLITE_IN_CHUNK):
+                chunk = ordered[start : start + _SQLITE_IN_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                rows = conn.execute(
+                    f"SELECT * FROM sources WHERE source_id IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    entry = self._row_to_entry(row)
+                    found[entry.source_id] = entry
+        return found
+
+    def add_sources(
+        self,
+        paths: list[Path],
+        known: dict[str, SourceManifestEntry] | None = None,
+    ) -> list[SourceManifestEntry]:
+        """Register (or refresh) many source files in one write.
+
+        The batch equivalent of :meth:`add_source`: hashes and stats every
+        file locally, resolves existing ids with a single lookup, then
+        writes every row in one statement.
+
+        One deliberate difference from :meth:`add_source`: an
+        already-tracked source keeps its original ``ingested_at`` and
+        ``pages_generated`` instead of having them reset. The build
+        pipeline registers *changed* files through here (the single-source
+        path only ever saw brand-new ones), and resetting those fields
+        would both re-date every re-ingested file and drop its page list
+        if the run failed before ``mark_ingested_many``.
+
+        Args:
+            paths: Source file paths; each is resolved before use.
+            known: Entries already read for these URIs (see
+                :meth:`find_entries_by_uris`). Pass it when the caller has
+                just read them to skip this method's own id-resolution
+                read — one fewer round trip on a server-hosted manifest.
+
+        Returns:
+            The created/updated entries, in the order given.
+
+        Raises:
+            FileNotFoundError: If any path does not exist — same contract
+                as :meth:`add_source`, reported for the whole batch.
+        """
+        if not paths:
+            return []
+        resolved = [Path(path).resolve() for path in paths]
+        missing = [str(path) for path in resolved if not path.exists()]
+        if missing:
+            raise FileNotFoundError(f"Source file(s) not found: {', '.join(missing[:5])}")
+
+        existing = known if known is not None else self.find_entries_by_uris([str(path) for path in resolved])
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        entries: list[SourceManifestEntry] = []
+        for path in resolved:
+            source_uri = str(path)
+            prior = existing.get(source_uri)
+            entries.append(
+                SourceManifestEntry(
+                    source_id=prior.source_id if prior else self._generate_source_id(source_uri),
+                    source_uri=source_uri,
+                    file_hash=self._compute_hash(path),
+                    mtime=path.stat().st_mtime,
+                    ingested_at=prior.ingested_at if prior else now,
+                    pages_generated=prior.pages_generated if prior else [],
+                    status="ingested",
+                )
+            )
+        self._upsert_many(entries)
+        self.logger.debug("add_sources: registered %d source(s)", len(entries))
+        return entries
+
+    def mark_ingested_many(
+        self,
+        pages_by_source: dict[str, list[str]],
+        status: str = "ingested",
+    ) -> None:
+        """Record ingest results for many sources in one write.
+
+        The batch equivalent of :meth:`mark_ingested`, including its
+        re-hash of each file (a file rewritten *during* the ingest run
+        must not be left looking fresh). Untracked ids are skipped with a
+        warning, exactly as the single-source version does.
+
+        Args:
+            pages_by_source: ``source_id`` -> page ids produced for it.
+            status: New lifecycle status for every source in the batch.
+        """
+        if not pages_by_source:
+            return
+        entries = self.find_entries_by_ids(list(pages_by_source))
+        updated: list[SourceManifestEntry] = []
+        for source_id, pages in pages_by_source.items():
+            entry = entries.get(source_id)
+            if entry is None:
+                self.logger.warning("mark_ingested: source_id=%s not found", source_id)
+                continue
+            path = Path(entry.source_uri)
+            if not path.exists():
+                continue
+            updated.append(
+                SourceManifestEntry(
+                    source_id=entry.source_id,
+                    source_uri=entry.source_uri,
+                    file_hash=self._compute_hash(path),
+                    mtime=path.stat().st_mtime,
+                    ingested_at=entry.ingested_at,
+                    pages_generated=pages,
+                    status=status,
+                )
+            )
+        if updated:
+            self._upsert_many(updated)
+
     def list_sources(self) -> list[SourceManifestEntry]:
         """Return all tracked sources.
 
@@ -268,10 +491,27 @@ class SourceCollectionManager:
         if entry is None:
             self.logger.debug("is_stale: source_id=%s not tracked", source_id)
             return True
+        return self.entry_is_stale(entry)
 
+    def entry_is_stale(self, entry: SourceManifestEntry) -> bool:
+        """Staleness of an ALREADY-FETCHED manifest entry — no DB read.
+
+        The comparison half of :meth:`is_stale`, split out so a caller
+        that has just read a batch of entries (see
+        :meth:`find_entries_by_uris`) can classify them without one
+        round trip per file. :meth:`is_stale` is this plus the read, so
+        the rule lives in exactly one place.
+
+        Args:
+            entry: The manifest entry to compare against its file.
+
+        Returns:
+            ``True`` when the underlying file is gone or its content /
+            mtime has changed since the entry was recorded.
+        """
         path = Path(entry.source_uri)
         if not path.exists():
-            self.logger.debug("is_stale: source_id=%s file gone (%s)", source_id, path)
+            self.logger.debug("is_stale: source_id=%s file gone (%s)", entry.source_id, path)
             return True
 
         current_mtime = path.stat().st_mtime
@@ -282,7 +522,7 @@ class SourceCollectionManager:
             stale = current_hash != entry.file_hash
             self.logger.debug(
                 "is_stale: source_id=%s mtime_changed=True hash_changed=%s",
-                source_id,
+                entry.source_id,
                 stale,
             )
             return stale
@@ -531,41 +771,50 @@ class SourceCollectionManager:
             self._run_async(self._async_upsert(entry))
             return
         with self._connect() as conn:
-            conn.execute(
-                "INSERT INTO sources"
-                " (source_id, source_uri, file_hash, mtime, ingested_at,"
-                "  pages_generated, status, destination, decision_source,"
-                "  charter_version, composite_score, doc_metadata,"
-                "  content_type, loader)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(source_id) DO UPDATE SET"
-                "  source_uri=excluded.source_uri, file_hash=excluded.file_hash,"
-                "  mtime=excluded.mtime, ingested_at=excluded.ingested_at,"
-                "  pages_generated=excluded.pages_generated, status=excluded.status,"
-                "  destination=excluded.destination,"
-                "  decision_source=excluded.decision_source,"
-                "  charter_version=excluded.charter_version,"
-                "  composite_score=excluded.composite_score,"
-                "  doc_metadata=excluded.doc_metadata,"
-                "  content_type=excluded.content_type,"
-                "  loader=excluded.loader",
-                (
-                    entry.source_id,
-                    entry.source_uri,
-                    entry.file_hash,
-                    entry.mtime,
-                    entry.ingested_at,
-                    json.dumps(entry.pages_generated),
-                    entry.status,
-                    entry.destination,
-                    entry.decision_source,
-                    entry.charter_version,
-                    entry.composite_score,
-                    (json.dumps(entry.doc_metadata) if entry.doc_metadata is not None else None),
-                    entry.content_type,
-                    entry.loader,
-                ),
-            )
+            conn.execute(_SOURCES_UPSERT_SQL, self._entry_params(entry))
+
+    def _upsert_many(self, entries: list[SourceManifestEntry]) -> None:
+        """Insert or replace many source entries in ONE statement.
+
+        The batch twin of :meth:`_upsert` — same SQL, same document
+        shape, one round trip (or one sqlite transaction, or one manifest
+        save) instead of ``len(entries)``.
+
+        Args:
+            entries: Entries to write; an empty list is a no-op.
+        """
+        if not entries:
+            return
+        if self.backend == "json":
+            for entry in entries:
+                self._manifest[entry.source_id] = entry
+            self._save_manifest()
+            return
+        if self.backend == "arangodb":
+            self._run_async(self._async_upsert_many(entries))
+            return
+        with self._connect() as conn:
+            conn.executemany(_SOURCES_UPSERT_SQL, [self._entry_params(e) for e in entries])
+
+    @staticmethod
+    def _entry_params(entry: SourceManifestEntry) -> tuple:
+        """Bind parameters for :data:`_SOURCES_UPSERT_SQL`, in column order."""
+        return (
+            entry.source_id,
+            entry.source_uri,
+            entry.file_hash,
+            entry.mtime,
+            entry.ingested_at,
+            json.dumps(entry.pages_generated),
+            entry.status,
+            entry.destination,
+            entry.decision_source,
+            entry.charter_version,
+            entry.composite_score,
+            (json.dumps(entry.doc_metadata) if entry.doc_metadata is not None else None),
+            entry.content_type,
+            entry.loader,
+        )
 
     @staticmethod
     def _optional_column(row: sqlite3.Row, name: str) -> Any:
@@ -789,9 +1038,14 @@ class SourceCollectionManager:
             loader=doc.get("loader"),
         )
 
-    async def _async_upsert(self, entry: SourceManifestEntry) -> None:
-        """Insert or update one source entry in ``wiki_sources`` via AQL UPSERT."""
-        doc = {
+    @staticmethod
+    def _entry_to_doc(entry: SourceManifestEntry) -> dict[str, Any]:
+        """Shape one entry as a ``wiki_sources`` document.
+
+        Shared by the single-row and batch AQL writers so both store
+        identical documents.
+        """
+        return {
             "_key": entry.source_id,
             "source_id": entry.source_id,
             "source_uri": entry.source_uri,
@@ -804,11 +1058,25 @@ class SourceCollectionManager:
             "content_type": entry.content_type,
             "loader": entry.loader,
         }
+
+    async def _async_upsert(self, entry: SourceManifestEntry) -> None:
+        """Insert or update one source entry in ``wiki_sources`` via AQL UPSERT."""
         await self._arango_execute(
             "UPSERT {_key: @key} INSERT @doc UPDATE @doc IN @@collection",
             {
                 "key": entry.source_id,
-                "doc": doc,
+                "doc": self._entry_to_doc(entry),
+                "@collection": _ARANGO_SOURCES_COLLECTION,
+            },
+        )
+
+    async def _async_upsert_many(self, entries: list[SourceManifestEntry]) -> None:
+        """UPSERT many source documents in one AQL statement."""
+        await self._arango_execute(
+            "FOR doc IN @docs"
+            " UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@collection",
+            {
+                "docs": [self._entry_to_doc(entry) for entry in entries],
                 "@collection": _ARANGO_SOURCES_COLLECTION,
             },
         )

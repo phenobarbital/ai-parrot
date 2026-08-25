@@ -20,6 +20,8 @@ from .metadata_callbacks import MetadataCallbackInput, MetadataCallbackOutput
 from .metadata_enricher import MetadataResolutionError, enrich_submission
 from .question_bank import QuestionBankService, ReusableField, ReusableFieldRef
 from .registry import FormRegistry, FormStorage
+from .sink_aliases import SinkAliasRegistry
+from .sinks import SinkFactory
 from .storage import PostgresFormStorage
 from .submissions import (
     CORE_METADATA_COLUMNS,
@@ -46,6 +48,9 @@ __all__ = [
     "QuestionBankService",
     "ReusableField",
     "ReusableFieldRef",
+    # Autonomous FormSchema persistence (FEAT-457)
+    "SinkAliasRegistry",
+    "SinkFactory",
     "SubmissionForwarder",
     "ValidationResult",
     "VersionMeta",

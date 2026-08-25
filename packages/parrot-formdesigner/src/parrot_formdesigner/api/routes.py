@@ -18,6 +18,15 @@ Lazy-init contract for REST field services (FEAT-170):
 
 Callers that do not use ``FieldType.REST`` need not provide these kwargs;
 defaults are ``None`` and no exception is raised.
+
+Autonomous FormSchema persistence (FEAT-457): passing ``alias_registry``
+wires the connection-alias allowlist as the ``app["form_sink_aliases"]``
+app key — an explicit, testable, deliberately NOT runtime-mutable
+security control (no route ever mutates it). A ``SinkFactory`` is built
+from it and injected into ``FormAPIHandler``; a shutdown hook closes
+every cached sink. Omitting ``alias_registry`` (the default) leaves the
+feature entirely inactive — forms without a ``persistence`` block behave
+exactly as before this feature existed.
 """
 
 from __future__ import annotations
@@ -35,13 +44,14 @@ from navigator_auth.decorators import is_authenticated, user_session
 
 from ..services.public_forms import public_form_paths
 from ..services.registry import FormRegistry
+from ..services.sinks.factory import SinkFactory
 from . import controls as controls_module
+from . import file_upload as file_upload_module
 from . import operations as operations_module
 from . import render as render_module
 from . import uploads as uploads_module
 from .handlers import FormAPIHandler
 from .tenant import requires_tenant
-
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
@@ -56,6 +66,7 @@ if TYPE_CHECKING:
     from ..services.project_service import ProjectService
     from ..services.rbac import RBACService
     from ..services.rest_field_resolver import RestFieldResolver
+    from ..services.sink_aliases import SinkAliasRegistry
     from ..services.submissions import FormSubmissionStorage
     from ..services.venue_service import VenueService
     from ..services.workday_sync import WorkdayIdentitySyncAdapter
@@ -143,13 +154,38 @@ def _reserved_tenant_segments(app: web.Application, bp: str) -> frozenset[str]:
         canonical = resource.canonical
         if bp and not canonical.startswith(f"{bp}/"):
             continue
-        remainder = canonical[len(bp):].lstrip("/")
+        remainder = canonical[len(bp) :].lstrip("/")
         if not remainder:
             continue
         first_segment = remainder.split("/", 1)[0]
         if first_segment and not first_segment.startswith("{"):
             reserved.add(first_segment)
     return frozenset(reserved)
+
+def _stash_without_clobbering(app: web.Application, key: str, value: object) -> None:
+    """Put ``value`` on ``app[key]`` without destroying what the host wired.
+
+    Extracted rather than inlined (ARCHITECTURE Rule 4): ``setup_form_api``
+    already sits above the complexity ceiling at 26, and four inline branches
+    pushed it to 28. A function that already violates a budget is not grown —
+    the branches move out.
+
+    Semantics:
+      * an EXPLICIT ``value`` wins — it is the more specific instruction;
+      * ``None`` only ensures the key EXISTS, so callers reading ``app[key]``
+        get ``None`` rather than a ``KeyError`` (the pre-FEAT-460 contract);
+      * a backend the host wired BEFORE calling setup SURVIVES.
+
+    Args:
+        app: The aiohttp application.
+        key: The app key to stash under.
+        value: The service instance, or ``None``.
+    """
+    if value is not None:
+        app[key] = value
+    else:
+        app.setdefault(key, None)
+
 
 
 def setup_form_api(
@@ -172,6 +208,7 @@ def setup_form_api(
     workday_adapter: "WorkdayIdentitySyncAdapter | None" = None,
     venue_service: "VenueService | None" = None,
     rbac_enforcing: bool = False,
+    alias_registry: "SinkAliasRegistry | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -216,6 +253,12 @@ def setup_form_api(
             ``POST /org/sync/workday``.
         rbac_enforcing: When ``False`` (default), RBAC gate-keeping on existing
             form endpoints runs in shadow mode (log only, never block).
+        alias_registry: Optional ``SinkAliasRegistry`` (FEAT-457). When
+            provided, exposed as the ``app["form_sink_aliases"]`` app key
+            and used to build a ``SinkFactory`` injected into
+            ``FormAPIHandler`` — forms declaring ``persistence`` write to
+            their own sink. ``None`` (default) leaves the feature
+            entirely inactive; no route ever mutates this allowlist.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -231,8 +274,26 @@ def setup_form_api(
 
     # Stash REST-field services (FEAT-170). Both may be None; the upload
     # handler resolves defaults lazily on first request.
-    app["blob_storage"] = blob_storage
-    app["rest_resolver"] = resolver
+    #
+    # NEVER overwrite a backend the HOST already wired (FEAT-460). These two
+    # lines used to assign unconditionally, so a host that wired
+    # ``app["blob_storage"]`` BEFORE calling this function had it replaced
+    # with the ``None`` default a line later. That is not hypothetical: it is
+    # what fieldsync does — ``fieldsync/forms.py::_wire_blob_storage`` binds
+    # an ``S3BlobStorage(prefix="fieldsync/forms/")``, logs "persistent S3
+    # blob storage wired", and then calls ``setup_form_api`` without the
+    # kwarg. `_get_blob_storage` then found ``None`` on the first upload,
+    # built a ``TempBlobStorage`` and cached it under the SAME key, so every
+    # form attachment since FEAT-484 landed in a process-local temp directory
+    # that dies on restart — the exact failure `_wire_blob_storage` exists to
+    # prevent. Observed live 2026-08-24: ten photos written as
+    # ``temp://…`` while the startup log said S3.
+    #
+    # An EXPLICIT kwarg still wins (it is the more specific instruction). A
+    # ``None`` kwarg only ensures the key exists, so callers reading
+    # ``app["blob_storage"]`` keep getting ``None`` rather than a KeyError.
+    _stash_without_clobbering(app, "blob_storage", blob_storage)
+    _stash_without_clobbering(app, "rest_resolver", resolver)
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
@@ -248,6 +309,22 @@ def setup_form_api(
 
         app.on_shutdown.append(_close_partial_store)
 
+    # FEAT-457 — Autonomous FormSchema Persistence. The alias allowlist is
+    # an explicit, deliberately NOT runtime-mutable security control: no
+    # route below ever writes to `app["form_sink_aliases"]`. Omitting
+    # `alias_registry` (the default) leaves the feature entirely inactive
+    # — `sink_factory` stays `None` and forms without a `persistence`
+    # block behave exactly as before this feature existed.
+    sink_factory: SinkFactory | None = None
+    if alias_registry is not None:
+        app["form_sink_aliases"] = alias_registry
+        sink_factory = SinkFactory(alias_registry)
+
+        async def _close_sink_factory(app: web.Application) -> None:
+            await sink_factory.close_all()
+
+        app.on_shutdown.append(_close_sink_factory)
+
     handler = FormAPIHandler(
         registry=registry,
         client=client,
@@ -260,7 +337,9 @@ def setup_form_api(
         workday_adapter=workday_adapter,
         venue_service=venue_service,
         rbac_enforcing=rbac_enforcing,
+        sink_factory=sink_factory,
     )
+    app["form_api_handler"] = handler
 
     bp = base_path.rstrip("/")
     # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
@@ -292,14 +371,10 @@ def setup_form_api(
     app.router.add_delete(f"{tp}/forms/{{form_uid}}", _wrap_auth(handler.delete_form))
 
     # Natural language editing
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/edit", _wrap_auth(handler.edit_form))
 
     # Clone endpoint
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form))
 
     # Contract endpoints (schema, style). /schema is one of the five
     # public-form globs (services/public_forms.py); /style is not.
@@ -307,9 +382,7 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/schema",
         _wrap_auth(handler.get_schema, tenant="public"),
     )
-    app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style)
-    )
+    app.router.add_get(f"{tp}/forms/{{form_uid}}/style", _wrap_auth(handler.get_style))
 
     # Render dispatcher (path-param format) — a public-form glob.
     app.router.add_get(
@@ -347,16 +420,22 @@ def setup_form_api(
         _wrap_auth(uploads_module.handle_rest_upload),
     )
 
-    # Partial saves (FEAT-186)
+    # Raw upload field types (FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD) — FEAT-460
     app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial)
+        f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/file-upload",
+        _wrap_auth(file_upload_module.handle_file_upload),
     )
+    # Thumbnail serving route — TASK-2469 (follow-up: thumbnail_url must be
+    # a fetchable URL, not a raw blob_ref)
     app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial)
+        f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/thumbnail",
+        _wrap_auth(file_upload_module.handle_get_thumbnail),
     )
-    app.router.add_delete(
-        f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial)
-    )
+
+    # Partial saves (FEAT-186)
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial))
+    app.router.add_get(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.get_partial))
+    app.router.add_delete(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.delete_partial))
 
     # Remote lifecycle event bridge (FEAT-188)
     app.router.add_post(
@@ -399,18 +478,10 @@ def setup_form_api(
     # Note: /versions and /import-report routes are registered BEFORE the
     # generic /{form_uid} catch-all to avoid shadowing issues if the router
     # were order-sensitive (aiohttp matches on specificity, but belt-and-braces).
-    app.router.add_post(
-        f"{tp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form)
-    )
-    app.router.add_get(
-        f"{tp}/fields", _wrap_auth(handler.list_fields)
-    )
-    app.router.add_post(
-        f"{tp}/fields", _wrap_auth(handler.create_field)
-    )
-    app.router.add_get(
-        f"{tp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions)
-    )
+    app.router.add_post(f"{tp}/forms/{{form_uid}}/publish", _wrap_auth(handler.publish_form))
+    app.router.add_get(f"{tp}/fields", _wrap_auth(handler.list_fields))
+    app.router.add_post(f"{tp}/fields", _wrap_auth(handler.create_field))
+    app.router.add_get(f"{tp}/forms/{{form_uid}}/versions", _wrap_auth(handler.list_versions))
     app.router.add_get(
         f"{tp}/forms/{{form_uid}}/versions/{{version}}",
         _wrap_auth(handler.get_version),
@@ -425,12 +496,8 @@ def setup_form_api(
     # byte-identical to 0.8.21 and none of them carries the tenant
     # decorator (tenant="none"). Organizations are the layer that
     # *defines* tenants; scoping them by one would invert the dependency.
-    app.router.add_get(
-        f"{bp}/org/graph", _wrap_auth(handler.get_org_graph, tenant="none")
-    )
-    app.router.add_post(
-        f"{bp}/org/projects", _wrap_auth(handler.create_project, tenant="none")
-    )
+    app.router.add_get(f"{bp}/org/graph", _wrap_auth(handler.get_org_graph, tenant="none"))
+    app.router.add_post(f"{bp}/org/projects", _wrap_auth(handler.create_project, tenant="none"))
     app.router.add_post(
         f"{bp}/org/cost-centers/{{project_id}}/workday-map",
         _wrap_auth(handler.map_project_workday, tenant="none"),
@@ -508,9 +575,7 @@ def setup_form_api(
                             form_uid,
                         )
                         return
-                    _auth.register_exclusions(
-                        public_form_paths(form_uid, tenant, base_path=_bp)
-                    )
+                    _auth.register_exclusions(public_form_paths(form_uid, tenant, base_path=_bp))
                 else:
                     # The form may already be gone (unregister() fires this
                     # callback AFTER removing the form — FEAT-241) or may
@@ -521,16 +586,10 @@ def setup_form_api(
                     # the only way to guarantee no stale exemption survives
                     # a delete or a re-tenant.
                     for candidate_tenant in await registry.list_tenants():
-                        _auth.unregister_exclusions(
-                            public_form_paths(
-                                form_uid, candidate_tenant, base_path=_bp
-                            )
-                        )
+                        _auth.unregister_exclusions(public_form_paths(form_uid, candidate_tenant, base_path=_bp))
 
             registry.set_public_toggle_callback(_public_toggle)
-            logger.info(
-                "setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp
-            )
+            logger.info("setup_form_api: is_public toggle wired to auth exclude list (base_path=%s)", _bp)
 
     # FEAT-241 M7: Register exclude-provider for restart re-hydration.
     # On each server startup, AuthHandler will invoke this provider and
@@ -566,15 +625,9 @@ def setup_form_api(
                 for tenant in await registry.list_tenants():
                     for form in await registry.list_forms(tenant=tenant):
                         if form.is_public:
-                            paths.extend(
-                                public_form_paths(
-                                    form.form_uid, tenant, base_path=_bp_m7
-                                )
-                            )
+                            paths.extend(public_form_paths(form.form_uid, tenant, base_path=_bp_m7))
             except Exception as exc:
-                logger.warning(
-                    "public_forms_exclude_provider: failed: %s", exc
-                )
+                logger.warning("public_forms_exclude_provider: failed: %s", exc)
             return paths
 
         _auth.add_exclude_provider(_public_forms_exclude_provider)
@@ -595,8 +648,7 @@ def setup_form_api(
     # surfaces and a tenant identity is not siloed per mount.
     api_reserved_tenant_segments = _reserved_tenant_segments(app, bp)
     app["formdesigner_reserved_tenant_segments"] = (
-        app.get("formdesigner_reserved_tenant_segments", frozenset())
-        | api_reserved_tenant_segments
+        app.get("formdesigner_reserved_tenant_segments", frozenset()) | api_reserved_tenant_segments
     )
 
     # FEAT-429 Module 5: boot-time warning when a provisioned tenant

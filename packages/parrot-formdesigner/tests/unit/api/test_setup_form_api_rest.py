@@ -85,3 +85,48 @@ def test_setup_existing_routes_still_mounted() -> None:
     assert "/api/v1/{tenant}/forms" in paths
     assert "/api/v1/{tenant}/forms/{form_uid}" in paths
     assert "/api/v1/{tenant}/forms/{form_uid}/data" in paths
+
+
+def test_setup_does_not_overwrite_a_host_wired_blob_storage() -> None:
+    """FEAT-460 — a backend the HOST wired before calling setup must survive.
+
+    fieldsync binds `app["blob_storage"]` to an S3BlobStorage and THEN calls
+    `setup_form_api` without the kwarg. Before this fix the unconditional
+    assignment replaced it with the `None` default, `_get_blob_storage` built
+    a TempBlobStorage on the first upload and cached it under the same key,
+    and every form attachment landed in a temp directory that dies on
+    restart. Observed live 2026-08-24: ten photos stored as `temp://` while
+    the startup log said S3.
+    """
+    app = web.Application()
+    registry = FormRegistry()
+    host_storage = MagicMock(name="host_s3_blob_storage")
+    app["blob_storage"] = host_storage
+
+    setup_form_api(app, registry)  # no kwarg, exactly how fieldsync calls it
+
+    assert app["blob_storage"] is host_storage
+
+
+def test_an_explicit_kwarg_still_wins_over_a_host_wired_one() -> None:
+    """The kwarg is the more specific instruction, so it takes precedence."""
+    app = web.Application()
+    registry = FormRegistry()
+    app["blob_storage"] = MagicMock(name="host")
+    explicit = MagicMock(name="explicit")
+
+    setup_form_api(app, registry, blob_storage=explicit)
+
+    assert app["blob_storage"] is explicit
+
+
+def test_setup_does_not_overwrite_a_host_wired_resolver() -> None:
+    """Same rule for the REST resolver — one bug, two keys."""
+    app = web.Application()
+    registry = FormRegistry()
+    host_resolver = MagicMock(name="host_resolver")
+    app["rest_resolver"] = host_resolver
+
+    setup_form_api(app, registry)
+
+    assert app["rest_resolver"] is host_resolver

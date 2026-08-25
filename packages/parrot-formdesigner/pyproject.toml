@@ -48,10 +48,13 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.27.0",
+    "ai-parrot>=0.27.1",
 ]
 redis = [
     "redis>=4.5",
+]
+gsheet = [
+    "google-api-python-client>=2.151.0",
 ]
 test = [
     "pypdf>=6.0",
