@@ -6,17 +6,21 @@ Supports the async context-manager protocol for clean lifecycle management.
 """
 from __future__ import annotations
 
-import asyncio
+import inspect
 import logging
-import uuid
 from typing import Dict, Optional
 
+from . import context as ctx
+from .channels import ChannelManager
 from .config import MatrixCrewConfig
 from .coordinator import MatrixCoordinator
 from .crew_wrapper import MatrixCrewAgentWrapper
 from .mention import parse_mention
 from .registry import MatrixAgentCard, MatrixCrewRegistry
 from .session import MatrixCollaborativeSession
+from .swarm import SwarmSessionManager
+from .swarm_toolkit import AgentSwarmToolkit
+from .tunnel import TunnelRegistry
 
 
 class MatrixCrewTransport:
@@ -44,7 +48,11 @@ class MatrixCrewTransport:
         self._wrappers: Dict[str, MatrixCrewAgentWrapper] = {}
         self._room_to_agent: Dict[str, str] = {}  # dedicated room → agent name
         self._agent_mxids: set[str] = set()  # all virtual MXIDs (for self-filter)
-        self._active_sessions: Dict[str, MatrixCollaborativeSession] = {}  # room_id → session
+        # room_id → session_id → session (FEAT-463: concurrent sessions per room)
+        self._active_sessions: Dict[str, Dict[str, MatrixCollaborativeSession]] = {}
+        self._channels: Optional[ChannelManager] = None
+        self._tunnels: Optional[TunnelRegistry] = None
+        self._swarm: Optional[SwarmSessionManager] = None
         self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -190,6 +198,54 @@ class MatrixCrewTransport:
         if self._config.pinned_registry:
             await self._coordinator.start()
 
+        # 7.5 — Swarm wiring (FEAT-463): human classification, channels,
+        # tunnels, per-agent toolkit attachment, custom-event dispatch.
+        self._registry.set_bot_mxid(self._config.bot_mxid)
+        self._registry.set_human_patterns(self._config.human_namespace_patterns)
+
+        self._channels = ChannelManager(self._config, self._appservice)
+        await self._channels.ensure_channels()
+
+        if self._config.tunnels.enabled:
+            self._tunnels = TunnelRegistry(
+                self._config.tunnels,
+                self._appservice,
+                self._channels,
+                self._wrappers,
+                self._config.server_name,
+            )
+            await self._tunnels.start_sweeper()
+
+        if self._config.collaborative:
+            self._swarm = SwarmSessionManager(self._config.collaborative, self)
+
+        if self._tunnels is not None:
+            for agent_name in self._config.agents:
+                try:
+                    from parrot.manager import BotManager  # type: ignore
+
+                    bot = await BotManager.get_bot(self._config.agents[agent_name].chatbot_id)
+                except Exception as exc:
+                    self.logger.warning(
+                        "Could not resolve bot for agent '%s' — skipping toolkit "
+                        "attachment: %s",
+                        agent_name, exc,
+                    )
+                    continue
+                if bot is None or not hasattr(bot, "tool_manager"):
+                    self.logger.warning(
+                        "Agent '%s' has no bot/tool_manager yet — skipping "
+                        "AgentSwarmToolkit attachment",
+                        agent_name,
+                    )
+                    continue
+                toolkit = AgentSwarmToolkit(
+                    agent_name, self._tunnels, self._registry, self._channels, self._appservice
+                )
+                bot.tool_manager.register_toolkit(toolkit)
+
+        self._appservice.set_custom_event_callback(self._on_custom_event)
+
         # 8 — Register event callback
         self._appservice.set_event_callback(self.on_room_message)
 
@@ -201,6 +257,18 @@ class MatrixCrewTransport:
 
         if self._coordinator:
             await self._coordinator.stop()
+
+        # Cancel any still-active swarm/collaborative sessions
+        for room_sessions in list(self._active_sessions.values()):
+            for session in list(room_sessions.values()):
+                try:
+                    await session.cancel("Transport shutting down")
+                except Exception as exc:
+                    self.logger.warning("Failed to cancel session: %s", exc)
+        self._active_sessions.clear()
+
+        if self._tunnels:
+            await self._tunnels.stop()
 
         # Unregister agents from registry
         for agent_name in list(self._wrappers.keys()):
@@ -226,14 +294,18 @@ class MatrixCrewTransport:
 
         Routing priority:
         1. Agent self-filter (virtual agent MXIDs + coordinator):
-           - If an active collaborative session exists AND the agent message
-             contains an @mention → route through session (inter-agent bypass).
+           - If an active collaborative/swarm session exists (resolved via
+             the ``origin_session`` swarm context, falling back to any
+             active session in the room) AND the agent message contains an
+             @mention → route through the session (inter-agent bypass).
            - Otherwise → drop silently.
-        2. ``!investigate <question>`` command (human) → create collaborative session.
-        3. Dedicated room → route to the owning agent.
-        4. ``@mention`` in body → route to the mentioned agent.
-        5. ``unaddressed_agent`` configured → route to the default agent.
-        6. Otherwise → ignore.
+        2. ``!channels`` / ``!agents`` / ``!tunnels`` (human) → coordinator listing.
+        3. ``!investigate <question>`` command (human) → start a session (any room).
+        4. Dedicated room → route to the owning agent.
+        5. ``@mention`` in body → route to the mentioned agent.
+        6. ``unaddressed_agent`` configured → route to the default agent.
+        7. NEW: channel ``answer_policy == "swarm"`` + human sender → start a swarm session.
+        8. Otherwise → ignore.
 
         Args:
             room_id: Matrix room ID.
@@ -241,9 +313,11 @@ class MatrixCrewTransport:
             body: Plain-text message body.
             event_id: Matrix event ID.
         """
-        # 1 — Agent self-filter with collaborative session bypass
+        event_id_str = str(event_id) if event_id else ""
+
+        # 1 — Agent self-filter with collaborative/swarm session bypass
         if sender in self._agent_mxids:
-            session = getattr(self, "_active_sessions", {}).get(room_id)
+            session = self._resolve_active_session(room_id)
             if session and session.is_active:
                 # Only bypass self-filter for @mentions during an active session
                 mentioned = parse_mention(body, self._config.server_name)
@@ -252,53 +326,59 @@ class MatrixCrewTransport:
                         "Routing inter-agent @mention from %s during active session",
                         sender,
                     )
-                    await session.handle_inter_agent_message(sender, body, str(event_id) if event_id else "")
+                    await session.handle_inter_agent_message(sender, body, event_id_str)
                     return
             # Normal self-filter: drop non-mention agent messages
             return
 
-        event_id_str = str(event_id) if event_id else ""
+        # 2 — !channels / !agents / !tunnels listing commands (human)
+        channels = getattr(self, "_channels", None)
+        tunnels = getattr(self, "_tunnels", None)
+        stripped_body = body.strip()
+        if stripped_body == "!channels":
+            text = self._coordinator.render_channels(
+                channels.list_channels() if channels else []
+            )
+            await self._appservice.send_as_bot(room_id, text)
+            return
+        if stripped_body == "!agents":
+            text = await self._coordinator.render_agents()
+            await self._appservice.send_as_bot(room_id, text)
+            return
+        if stripped_body == "!tunnels":
+            text = self._coordinator.render_tunnels(
+                tunnels.list_tunnels() if tunnels else []
+            )
+            await self._appservice.send_as_bot(room_id, text)
+            return
 
-        # 2 — !investigate command (human) → create collaborative session
+        # 3 — !investigate command (human) → start a session (any room)
+        # Lazily create the SwarmSessionManager when collaborative sessions
+        # are configured but `start()` hasn't wired one yet (e.g. a
+        # transport driven directly in tests) — keeps `!investigate`
+        # backward-compatible with FEAT-195 usage.
+        swarm = getattr(self, "_swarm", None)
+        if swarm is None and self._config.collaborative is not None:
+            swarm = SwarmSessionManager(self._config.collaborative, self)
+            self._swarm = swarm
         question = self._is_collaborative_command(body)
         if question is not None:
             collab = self._config.collaborative
-            if collab is None:
+            if collab is None or swarm is None:
                 self.logger.debug(
                     "Received !investigate but collaborative config is not set — ignoring"
                 )
                 # Fall through to normal routing
             else:
-                if room_id in self._active_sessions:
-                    self.logger.info(
-                        "Concurrent session request in %s — rejecting", room_id
-                    )
-                    await self._appservice.send_as_bot(  # type: ignore[union-attr]
-                        room_id,
-                        "A collaborative session is already active in this room.",
-                    )
-                    return
-                session = MatrixCollaborativeSession(
-                    session_id=str(uuid.uuid4()),
-                    room_id=room_id,
-                    question=question,
-                    config=collab,
-                    appservice=self._appservice,  # type: ignore[arg-type]
-                    registry=self._registry,
-                    wrappers=self._wrappers,
-                    server_name=self._config.server_name,
-                )
-                self._active_sessions[room_id] = session
                 self.logger.info(
                     "Starting collaborative session in %s: %r", room_id, question
                 )
-                asyncio.create_task(
-                    self._run_session(room_id, session),
-                    name=f"collab-session-{room_id}",
+                await swarm.maybe_start(
+                    room_id, sender, question, event_id_str, explicit=True
                 )
                 return
 
-        # 3 — Dedicated room routing
+        # 4 — Dedicated room routing
         if room_id in self._room_to_agent:
             agent_name = self._room_to_agent[room_id]
             wrapper = self._wrappers.get(agent_name)
@@ -309,7 +389,7 @@ class MatrixCrewTransport:
                 await wrapper.handle_message(room_id, sender, body, event_id_str)
                 return
 
-        # 4 — @mention routing
+        # 5 — @mention routing
         localpart = parse_mention(body, self._config.server_name)
         if localpart:
             # Find the wrapper whose mxid_localpart matches
@@ -326,7 +406,7 @@ class MatrixCrewTransport:
                         )
                         return
 
-        # 5 — Default / unaddressed agent
+        # 6 — Default / unaddressed agent
         if self._config.unaddressed_agent:
             wrapper = self._wrappers.get(self._config.unaddressed_agent)
             if wrapper:
@@ -337,10 +417,112 @@ class MatrixCrewTransport:
                 await wrapper.handle_message(room_id, sender, body, event_id_str)
                 return
 
-        # 6 — Ignore
+        # 7 — Swarm channel policy (FEAT-463): un-mentioned human text in a
+        # `swarm` channel starts a collaborative session.
+        ch = channels.channel_for_room(room_id) if channels else None
+        if ch and ch.answer_policy == "swarm" and swarm and self._registry.is_human(sender):
+            await swarm.maybe_start(room_id, sender, body, event_id_str)
+            return
+        if ch and ch.answer_policy in ("mention", "silent"):
+            self.logger.debug(
+                "Channel '%s' policy=%s — ignoring un-addressed message", ch.name, ch.answer_policy
+            )
+
+        # 8 — Ignore
         self.logger.debug(
             "No routing match for message in %s from %s", room_id, sender
         )
+
+    def _resolve_active_session(self, room_id: str) -> Optional["MatrixCollaborativeSession"]:
+        """Resolve the active session for an inter-agent message bypass.
+
+        Prefers the session named by the ``current_session`` swarm context
+        (set around ``handle_task`` for tunnel-originated calls); falls back
+        to any active session in ``room_id``.
+
+        Args:
+            room_id: The room the inter-agent message arrived in.
+
+        Returns:
+            The resolved ``MatrixCollaborativeSession``, or ``None``.
+        """
+        active_sessions = getattr(self, "_active_sessions", {})
+        origin_session_id = ctx.current_session.get()
+        if origin_session_id:
+            for room_sessions in active_sessions.values():
+                if origin_session_id in room_sessions:
+                    return room_sessions[origin_session_id]
+        room_sessions = active_sessions.get(room_id, {})
+        for session in room_sessions.values():
+            if session.is_active:
+                return session
+        return None
+
+    def _build_session(
+        self,
+        session_id: str,
+        room_id: str,
+        question: str,
+        *,
+        trigger_event_id: Optional[str] = None,
+    ) -> "MatrixCollaborativeSession":
+        """Construct a ``MatrixCollaborativeSession`` for this transport.
+
+        Passes ``trigger_event_id`` / ``tunnels`` only if the installed
+        ``MatrixCollaborativeSession`` constructor already accepts them
+        (TASK-2485) — keeps this task independently testable beforehand.
+
+        Args:
+            session_id: Unique id for the new session.
+            room_id: Matrix room the session runs in.
+            question: The triggering question text.
+            trigger_event_id: Event id of the triggering message, when known.
+
+        Returns:
+            A new, not-yet-started ``MatrixCollaborativeSession``.
+        """
+        kwargs = {
+            "session_id": session_id,
+            "room_id": room_id,
+            "question": question,
+            "config": self._config.collaborative,
+            "appservice": self._appservice,
+            "registry": self._registry,
+            "wrappers": self._wrappers,
+            "server_name": self._config.server_name,
+        }
+        params = inspect.signature(MatrixCollaborativeSession.__init__).parameters
+        if "trigger_event_id" in params:
+            kwargs["trigger_event_id"] = trigger_event_id
+        if "tunnels" in params:
+            kwargs["tunnels"] = self._tunnels
+        return MatrixCollaborativeSession(**kwargs)
+
+    async def _on_custom_event(
+        self, event_type: str, content: dict, room_id: str, sender: str
+    ) -> None:
+        """Dispatch an inbound ``m.parrot.*`` custom event (FEAT-463).
+
+        TASK events in a known tunnel room are handled by the target
+        agent's wrapper; RESULT/FEEDBACK events are handled by the
+        ``TunnelRegistry``. Any attached ``HybridDelegator`` also receives
+        every event (best-effort, optional).
+
+        Args:
+            event_type: The Matrix event type string.
+            content: The event content dict.
+            room_id: The room the event was received in.
+            sender: The MXID of the event sender.
+        """
+        if self._tunnels is not None:
+            await self._tunnels.on_custom_event(event_type, content, room_id, sender)
+
+        delegator = getattr(self, "_delegator", None)
+        if delegator is not None:
+            try:
+                await delegator.on_custom_event(event_type, content)
+            except Exception as exc:
+                self.logger.warning("HybridDelegator.on_custom_event failed: %s", exc)
 
     async def _run_session(
         self, room_id: str, session: "MatrixCollaborativeSession"
@@ -362,7 +544,14 @@ class MatrixCrewTransport:
                 "Session in %s failed: %s", room_id, exc, exc_info=True
             )
         finally:
-            self._active_sessions.pop(room_id, None)
+            room_sessions = self._active_sessions.get(room_id)
+            if room_sessions:
+                for sid, s in list(room_sessions.items()):
+                    if s is session:
+                        room_sessions.pop(sid, None)
+                        break
+                if not room_sessions:
+                    self._active_sessions.pop(room_id, None)
 
     def _is_collaborative_command(self, body: str) -> Optional[str]:
         """Detect a collaborative investigation command prefix.

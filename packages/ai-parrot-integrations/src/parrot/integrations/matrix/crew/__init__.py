@@ -39,6 +39,7 @@ from .session_models import (
     CollaborativeSessionState,
     SessionPhase,
 )
+from .swarm import SwarmSessionManager
 from .swarm_toolkit import AgentSwarmToolkit
 from .transport import MatrixCrewTransport
 from .tunnel import AgentTunnel, TunnelRegistry
@@ -69,4 +70,5 @@ __all__ = [
     "format_reply",
     "build_pill",
     "build_reply_content",
+    "SwarmSessionManager",
 ]

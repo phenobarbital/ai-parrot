@@ -5,6 +5,7 @@ by agent name or full MXID.
 """
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -84,6 +85,8 @@ class MatrixCrewRegistry:
     def __init__(self) -> None:
         self._agents: Dict[str, MatrixAgentCard] = {}  # keyed by agent_name
         self._lock = asyncio.Lock()
+        self._bot_mxid: Optional[str] = None
+        self._human_patterns: List["re.Pattern"] = []
         self.logger = logging.getLogger(__name__)
 
     async def register(self, card: MatrixAgentCard) -> None:
@@ -196,3 +199,49 @@ class MatrixCrewRegistry:
         """
         async with self._lock:
             return list(self._agents.values())
+
+    # ------------------------------------------------------------------
+    # Human classification (FEAT-463)
+    # ------------------------------------------------------------------
+
+    def set_bot_mxid(self, mxid: str) -> None:
+        """Set the coordinator bot's MXID for human classification.
+
+        Args:
+            mxid: The coordinator bot's full MXID.
+        """
+        self._bot_mxid = mxid
+
+    def set_human_patterns(self, patterns: List[str]) -> None:
+        """Set the bridge-puppet regex patterns used to *confirm* humans.
+
+        These patterns identify MXIDs known to be bridged human puppets
+        (e.g. Slack/Signal/Discord). They are informational — ``is_human``
+        already treats any MXID that isn't a registered agent or the bot
+        as human; matching one of these patterns simply confirms it.
+
+        Args:
+            patterns: List of regex pattern strings.
+        """
+        self._human_patterns = [re.compile(p) for p in patterns]
+
+    def is_human(self, mxid: str) -> bool:
+        """Classify an MXID as human (not an agent, not the coordinator bot).
+
+        Any MXID matching a registered agent's ``mxid`` or the coordinator
+        bot's MXID is NOT human. Every other MXID — including bridged
+        puppets matching ``human_namespace_patterns`` and plain native
+        Matrix users — is human.
+
+        Args:
+            mxid: Full ``@user:server`` Matrix ID to classify.
+
+        Returns:
+            ``True`` if ``mxid`` is not a known agent or the bot.
+        """
+        if mxid == self._bot_mxid:
+            return False
+        for card in self._agents.values():
+            if card.mxid == mxid:
+                return False
+        return True

@@ -155,14 +155,22 @@ class TestTransportCollaborativeRouting:
         assert "!room:server" not in transport._active_sessions
 
     @pytest.mark.asyncio
-    async def test_concurrent_session_rejected(self):
-        """Second !investigate in same room rejected while session active."""
-        transport = _make_transport()
+    async def test_concurrent_session_cap_rejected(self):
+        """!investigate beyond max_concurrent_sessions gets a busy reply.
 
-        # Manually inject an active session for the room
-        mock_existing = MagicMock()
-        mock_existing.is_active = True
-        transport._active_sessions["!room:server"] = mock_existing
+        FEAT-463 replaces the old one-session-per-room singleton with a
+        concurrency cap (`CollaborativeConfig.max_concurrent_sessions`,
+        default 3) enforced by `SwarmSessionManager` — up to the cap,
+        multiple sessions may run concurrently in the same room.
+        """
+        transport = _make_transport()
+        max_sessions = transport._config.collaborative.max_concurrent_sessions
+
+        # Manually inject `max_sessions` active sessions for the room
+        # (new nested shape: room_id -> session_id -> session).
+        transport._active_sessions["!room:server"] = {
+            f"sid{i}": MagicMock(is_active=True) for i in range(max_sessions)
+        }
 
         await transport.on_room_message(
             room_id="!room:server",
@@ -171,10 +179,11 @@ class TestTransportCollaborativeRouting:
             event_id="$evt2",
         )
 
-        # send_as_bot should have been called with the rejection message
-        transport._appservice.send_as_bot.assert_called_once()
-        call_args = transport._appservice.send_as_bot.call_args
-        assert "already active" in call_args[0][1].lower()
+        # A busy reply should have been sent instead of a new session.
+        transport._appservice.send_reply_as_bot.assert_called_once()
+        call_args = transport._appservice.send_reply_as_bot.call_args
+        assert "busy" in call_args[0][1].lower()
+        assert len(transport._active_sessions["!room:server"]) == max_sessions
 
     @pytest.mark.asyncio
     async def test_no_collaborative_config_ignores_command(self):
@@ -199,7 +208,7 @@ class TestTransportCollaborativeRouting:
 
         mock_session = AsyncMock()
         mock_session.is_active = True
-        transport._active_sessions["!room:server"] = mock_session
+        transport._active_sessions["!room:server"] = {"sid1": mock_session}
 
         await transport.on_room_message(
             room_id="!room:server",
@@ -221,7 +230,7 @@ class TestTransportCollaborativeRouting:
 
         mock_session = AsyncMock()
         mock_session.is_active = True
-        transport._active_sessions["!room:server"] = mock_session
+        transport._active_sessions["!room:server"] = {"sid1": mock_session}
 
         await transport.on_room_message(
             room_id="!room:server",
@@ -311,7 +320,7 @@ class TestTransportCollaborativeRouting:
 
         mock_session = MagicMock()
         mock_session.is_active = False  # session already completed
-        transport._active_sessions["!room:server"] = mock_session
+        transport._active_sessions["!room:server"] = {"sid1": mock_session}
 
         await transport.on_room_message(
             room_id="!room:server",
