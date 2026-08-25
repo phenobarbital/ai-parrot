@@ -1,0 +1,29 @@
+# mautrix-discord bridge config template for the AI-Parrot dev stack
+# (FEAT-463). Copied to /data/config.yaml on first bridge run; the bridge
+# then generates /data/registration.yaml (git-ignored — never commit it).
+# See docs/integrations/matrix/BRIDGES.md for setup instructions (bot
+# token recommended over user-token login).
+
+homeserver:
+    address: http://synapse:8008
+    domain: parrot.local
+
+appservice:
+    address: http://mautrix-discord:29334
+    hostname: 0.0.0.0
+    port: 29334
+    database:
+        type: postgres
+        uri: postgres://synapse:${POSTGRES_PASSWORD}@postgres/mautrix_discord?sslmode=disable
+    id: discord
+    bot_username: discordbot
+    bot_displayname: Discord Bridge Bot
+
+bridge:
+    username_template: "discord_{userid}"
+    displayname_template: "{displayname} (Discord)"
+    permissions:
+        "parrot.local": user
+
+logging:
+    min_level: info

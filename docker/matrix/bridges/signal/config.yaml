@@ -1,0 +1,32 @@
+# mautrix-signal bridge config template for the AI-Parrot dev stack
+# (FEAT-463). Copied to /data/config.yaml on first bridge run; the bridge
+# then generates /data/registration.yaml (git-ignored — never commit it).
+# See docs/integrations/matrix/BRIDGES.md for setup instructions.
+
+homeserver:
+    address: http://synapse:8008
+    domain: parrot.local
+
+appservice:
+    address: http://mautrix-signal:29328
+    hostname: 0.0.0.0
+    port: 29328
+    database:
+        type: postgres
+        uri: postgres://synapse:${POSTGRES_PASSWORD}@postgres/mautrix_signal?sslmode=disable
+    id: signal
+    bot_username: signalbot
+    bot_displayname: Signal Bridge Bot
+
+signal:
+    # Path to the signald/signal-cli socket bundled by the mautrix-signal image.
+    socket_path: /var/run/signald/signald.sock
+
+bridge:
+    username_template: "signal_{userid}"
+    displayname_template: "{displayname} (Signal)"
+    permissions:
+        "parrot.local": user
+
+logging:
+    min_level: info

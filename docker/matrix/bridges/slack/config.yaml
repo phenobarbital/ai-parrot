@@ -1,0 +1,29 @@
+# mautrix-slack bridge config template for the AI-Parrot dev stack
+# (FEAT-463). Copied to /data/config.yaml on first bridge run; the bridge
+# then generates /data/registration.yaml (git-ignored — never commit it).
+# See docs/integrations/matrix/BRIDGES.md for setup instructions (Slack
+# app token / cookie login).
+
+homeserver:
+    address: http://synapse:8008
+    domain: parrot.local
+
+appservice:
+    address: http://mautrix-slack:29335
+    hostname: 0.0.0.0
+    port: 29335
+    database:
+        type: postgres
+        uri: postgres://synapse:${POSTGRES_PASSWORD}@postgres/mautrix_slack?sslmode=disable
+    id: slack
+    bot_username: slackbot
+    bot_displayname: Slack Bridge Bot
+
+bridge:
+    username_template: "slack_{userid}"
+    displayname_template: "{displayname} (Slack)"
+    permissions:
+        "parrot.local": user
+
+logging:
+    min_level: info

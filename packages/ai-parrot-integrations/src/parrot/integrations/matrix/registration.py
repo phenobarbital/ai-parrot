@@ -5,6 +5,7 @@ that must be placed in the homeserver data directory and referenced
 in homeserver.yaml under `app_service_config_files`.
 """
 from __future__ import annotations
+import os
 from pathlib import Path
 from typing import Optional
 import secrets
@@ -67,3 +68,20 @@ def generate_registration(
             yaml.dump(registration, f, default_flow_style=False)
 
     return registration
+
+
+if __name__ == "__main__":
+    # CLI entry point for the Matrix dev stack bootstrap script (FEAT-463):
+    #   python -m parrot.integrations.matrix.registration
+    # Prints a fresh AppService registration YAML to stdout, configured
+    # from environment variables (falls back to sane dev-stack defaults).
+    _as_token, _hs_token = generate_tokens()
+    _registration = generate_registration(
+        _as_token,
+        _hs_token,
+        bot_localpart=os.environ.get("MATRIX_BOT_LOCALPART", "parrot"),
+        namespace_regex=os.environ.get("MATRIX_NAMESPACE_REGEX", "parrot-.*"),
+        as_url=os.environ.get("MATRIX_AS_URL", "http://localhost:9090"),
+        as_id=os.environ.get("MATRIX_AS_ID", "ai-parrot"),
+    )
+    print(yaml.dump(_registration, default_flow_style=False))
