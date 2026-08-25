@@ -47,6 +47,9 @@ Implements spec §3 Module 9.
 | `packages/ai-parrot-openlit-bridge/src/ai_parrot_openlit_bridge/cli.py` | CREATE | CLI entry point |
 | `packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml` | CREATE | Docker compose snippet |
 | `packages/ai-parrot-openlit-bridge/tests/test_probe.py` | CREATE | Unit tests |
+| `packages/ai-parrot-openlit-bridge/README.md` | CREATE (not originally listed) | Referenced by `pyproject.toml`'s `readme` field; matches every other workspace package's convention |
+| `packages/ai-parrot-openlit-bridge/src/ai_parrot_openlit_bridge/py.typed` | CREATE (not originally listed) | PEP 561 marker, referenced by `tool.setuptools.package-data` |
+| `packages/ai-parrot-openlit-bridge/tests/test_cli.py` | CREATE (not originally listed) | Unit tests for the `parrot-openlit-check` CLI entry point (AC explicitly requires CLI exit-code coverage) |
 
 ---
 
@@ -287,10 +290,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Created the `ai-parrot-openlit-bridge` package under
+`packages/ai-parrot-openlit-bridge/` (auto-picked-up by the workspace's
+`members = ["packages/*"]` glob — no root `pyproject.toml` change needed).
+`probe.py` implements `validate_endpoint(url, *, timeout=5.0, headers=None)
+-> EndpointStatus`, a best-effort async OTLP-reachability check (empty POST
+to `<url>/v1/traces`) that never raises. `cli.py` wraps it as the
+`parrot-openlit-check` console script (exit 0/1). Bundled
+`docker-compose.openlit.yml` (OpenLIT collector + Postgres backing store)
+and a `README.md`. Verified end-to-end: installed the package editable via
+`uv pip install -e packages/ai-parrot-openlit-bridge --no-deps`, confirmed
+`from ai_parrot_openlit_bridge import validate_endpoint` imports cleanly,
+and ran the real (uninstalled after) `parrot-openlit-check` console script
+against an actually-closed port (`http://localhost:19999`), observing the
+real `❌ ... exit 1` output — not just the mocked unit tests. 13 new unit
+tests added (8 for `probe.py`, 5 for `cli.py`), all pass; `ruff check` on
+the whole package is fully clean (brand-new package, no pre-existing
+baseline to preserve). `docker-compose.openlit.yml` validated as parseable
+YAML via `yaml.safe_load()`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Used `setuptools` as the build backend
+(matching every other package in this workspace, e.g.
+`ai-parrot-loaders`) instead of the task's illustrative `hatchling`
+snippet — `hatchling` is not used anywhere else in the repo and would be
+an unnecessary new build-backend dependency for a workspace member. (2)
+`requires-python = ">=3.11"` (matching the workspace-wide floor in the
+root `pyproject.toml` and every sibling package) instead of the task's
+illustrative `>=3.10`. (3) Added `README.md`, `py.typed`, and
+`tests/test_cli.py` (not in the original Files table) — see the note
+added to that table. (4) Per the task's explicit "NOT in scope" note,
+`packages/ai-parrot/pyproject.toml`'s `observability-openlit` extra was
+NOT re-wired to depend on this new package — TASK-2476 (already
+completed, sequenced before this task) left it as an empty
+backward-compat placeholder. Wiring `observability-openlit =
+["ai-parrot-openlit-bridge"]` is a natural follow-up but is out of this
+task's stated scope and was not done.
