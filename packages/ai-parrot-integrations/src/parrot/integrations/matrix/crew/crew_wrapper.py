@@ -7,8 +7,11 @@ streaming / chunking), and coordinator status notifications.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import List, Optional, TYPE_CHECKING
+
+from ..events import ParrotEventType, ResultEventContent, TaskEventContent
 
 if TYPE_CHECKING:
     from ..appservice import MatrixAppService
@@ -151,9 +154,91 @@ class MatrixCrewAgentWrapper:
             # 9 — notify coordinator
             await self._coordinator.on_status_change(self._agent_name)
 
+    async def handle_task(self, task: TaskEventContent, room_id: str) -> None:
+        """Answer an inbound ``m.parrot.task`` and emit ``m.parrot.result``.
+
+        Runs this agent with a structured-output prompt built from the
+        task content (and ``expected_schema`` when present), then replies
+        as this agent with an ``m.parrot.result`` event carrying the same
+        ``correlation_id`` (falling back to ``task_id`` for legacy
+        callers, e.g. ``HybridDelegator``). Never raises — any failure or
+        timeout is reported as a ``success=False`` result.
+
+        Args:
+            task: The inbound task content.
+            room_id: The (tunnel) room to reply in.
+        """
+        corr = task.correlation_id or task.task_id
+        meta = {
+            "correlation_id": corr,
+            "origin_session": task.origin_session,
+            "hops": task.hops,
+        }
+        timeout = float(task.metadata.get("timeout", 120.0))
+
+        await self._registry.update_status(self._agent_name, "busy", task.content[:50])
+        try:
+            from parrot.manager import BotManager  # type: ignore
+
+            agent = await BotManager.get_bot(self._config.chatbot_id)
+            if agent is None:
+                raise RuntimeError(
+                    f"Agent '{self._config.chatbot_id}' not found in BotManager"
+                )
+            text: str = await asyncio.wait_for(
+                agent.ask(self._build_task_prompt(task)), timeout
+            )
+            result = ResultEventContent(
+                task_id=task.task_id, content=text, success=True, metadata=meta
+            )
+        except Exception as exc:  # noqa: BLE001 — never propagate into the AppService loop
+            self.logger.error(
+                "handle_task failed for %s: %s", self._agent_name, exc
+            )
+            result = ResultEventContent(
+                task_id=task.task_id,
+                content="",
+                success=False,
+                error=str(exc),
+                metadata=meta,
+            )
+        finally:
+            await self._registry.update_status(self._agent_name, "ready")
+
+        await self._appservice.send_custom_event_as_agent(
+            self._agent_name, room_id, ParrotEventType.RESULT, result.model_dump()
+        )
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    _JSON_INSTRUCTION = (
+        'Reply ONLY with a JSON object: '
+        '{"answer": <your answer>, "confidence": <0..1>, "sources": [<strings>]}.'
+    )
+
+    def _build_task_prompt(self, task: TaskEventContent) -> str:
+        """Build the structured-output prompt for an inbound tunnel task.
+
+        Args:
+            task: The inbound task content.
+
+        Returns:
+            A prompt instructing the agent to reply with a JSON object,
+            optionally constrained by ``task.expected_schema``.
+        """
+        requester = task.metadata.get("requester", "another agent")
+        parts = [
+            f"A peer agent ({requester}) asks you: {task.content}",
+            self._JSON_INSTRUCTION,
+        ]
+        if task.expected_schema:
+            parts.append(
+                'The value of "answer" MUST conform to this JSON Schema:\n'
+                + json.dumps(task.expected_schema)
+            )
+        return "\n\n".join(parts)
 
     async def _send_response(self, room_id: str, response: str) -> None:
         """Send the agent response, chunking if necessary.
