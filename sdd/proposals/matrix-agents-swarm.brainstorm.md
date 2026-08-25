@@ -11,7 +11,7 @@ base_branch: dev
 **Date**: 2026-08-25
 **Author**: Jesus Lara / AI-Parrot Team
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: A (+ D as optional add-on)
 
 ---
 
@@ -258,7 +258,7 @@ channels:
   - name: general           # public, everybody can join
     visibility: public
     agents: [researcher, analyst, writer]
-    answer_policy: swarm     # mention | swarm | router | silent
+    answer_policy: swarm     # mention | swarm | silent   (router: deferred follow-up)
     swarm:
       max_concurrent_sessions: 3
       cooldown_seconds: 10
@@ -268,14 +268,14 @@ channels:
     answer_policy: mention
 tunnels:
   enabled: true
-  ttl_minutes: 120
+  ttl_minutes: 120                # 0 = keep forever
   echo_summary_to_channel: true   # post "🔒 analyst asked writer a question" in the originating channel
 space:
-  enabled: true
+  enabled: false                  # optional Matrix Space grouping (Option D)
   name: "Parrot Swarm"
 ```
 
-**Human in a channel (native or via Slack/Signal/Discord/Instagram/e-mail/XMPP):**
+**Human in a channel (native or via Slack/Signal/Discord bridges):**
 - `@researcher what's the Q2 trend?` → only `researcher` answers (unchanged).
 - Plain text in a `swarm` channel → the coordinator posts *"🐦 Swarm session
   #a1b2 started (3 agents)"*, each agent posts its findings as a reply to the
@@ -289,14 +289,15 @@ space:
 
 **Agent (LLM tools, `AgentSwarmToolkit`):**
 - `ask_agent(agent: str, question: str, expected_schema: dict | None, timeout: int)` →
-  returns the peer's structured answer.
+  returns an `AgentAnswer` envelope `{answer, confidence, sources, metadata}`;
+  when `expected_schema` is given, `answer` is validated against it (JSON Schema).
 - `send_feedback(agent: str, about_event_id: str, rating: int, comment: str)`.
 - `list_agents()` / `list_channels()` from the registry.
 - `post_to_channel(channel: str, text: str)` (policy-checked).
 
 **Developer / operator (deployment):**
 - `docker compose -f docker-compose.matrix.yml --profile bridges up` starts
-  Synapse + Postgres + Element Web + the selected bridges; a
+  Synapse + Postgres + Element Web + the signal/slack/discord bridges; a
   `scripts/matrix/bootstrap.sh` registers the AppService, the coordinator user,
   the bridge registrations and prints login hints.
 - `docs/integrations/matrix/CLIENTS.md` documents the selected clients.
@@ -327,12 +328,13 @@ discover the homeserver.
 | Signal | `dock.mau.dev/mautrix/signal` v26.07 | AGPL-3.0 | needs a phone number to link |
 | Slack | `dock.mau.dev/mautrix/slack` v26.08 | AGPL-3.0 | bridgev2, native password/token login |
 | Discord | `dock.mau.dev/mautrix/discord` v0.7.7 | AGPL-3.0 | supports bot accounts (recommended for the swarm) |
-| Instagram | `dock.mau.dev/mautrix/meta` (Instagram mode) | AGPL-3.0 | `mautrix-instagram` is deprecated; use mautrix-meta with `MODE=instagram`. Unofficial API → account-ban risk; marked *experimental* |
-| E-mail | `ghcr.io/etkecc/postmoogle` | AGPL-3.0 | bot (not AppService) acting as an SMTP server; needs :25/:587 exposed and MX record → in dev we bind on a high port and document it |
-| XMPP | `mautrix-jabber` (bridgev2, Go) — fallback `slidge` + `matridge` | (unstated, repo very young: 3 commits) / AGPL-3.0 | Both immature; XMPP shipped as **experimental** profile, MUC support limited |
+| Instagram | `dock.mau.dev/mautrix/meta` (Instagram mode) | AGPL-3.0 | **Documentation only, not in compose.** `mautrix-instagram` is deprecated; mautrix-meta with `MODE=instagram` uses an unofficial API → account-ban risk |
+| XMPP | `mautrix-jabber` (bridgev2, Go) — alternative `slidge` + `matridge` | (unstated, repo very young) / AGPL-3.0 | **Documentation only, not in compose.** Both immature; MUC support limited |
+| E-mail | — | — | **Out of scope.** E-mail notifications are sent by agents through `async-notify` (`NotificationMixin`); Postmoogle evaluated and rejected (SMTP server + MX/TLS requirements) |
 
-All bridges use the **AppService** registration files mounted into Synapse
-(`app_service_config_files`) except Postmoogle (plain bot login).
+The compose file ships **signal, slack and discord** under the `bridges`
+profile. All three use **AppService** registration files mounted into Synapse
+(`app_service_config_files`).
 
 ### Internal Behavior
 
@@ -345,8 +347,8 @@ All bridges use the **AppService** registration files mounted into Synapse
    channel policy. For `swarm`, `SwarmSessionManager` checks concurrency/cooldown
    and spawns a `MatrixCollaborativeSession` (refactored to accept a
    `session_id`/`trigger_event_id` and to keep per-session state instead of a
-   room-wide singleton). For `router`, the coordinator LLM picks agents. For
-   `silent`, nothing.
+   room-wide singleton). For `silent`, nothing. (`router` — coordinator LLM
+   picks agents — is deferred to a follow-up feature.)
 3. **Tunnel** — `TunnelRegistry.get_or_create(a, b)` returns a private room
    (`m.parrot.tunnel` state event, both agents joined via the AppService
    intents, `preset=private_chat`, `is_direct=true`). `ask_agent` sends a
@@ -361,10 +363,9 @@ All bridges use the **AppService** registration files mounted into Synapse
    posting only a one-line echo to the channel when
    `echo_summary_to_channel` is on.
 6. **Bridged humans** — MXIDs from bridge namespaces (`@signal_…`,
-   `@slack_…`, `@discord_…`, `@meta_…`, `@xmpp_…`, `@postmoogle`) are
-   classified as *human* by the registry (non-agent, non-coordinator); replies
-   go to the room and the bridge relays them. Postmoogle rooms are `mention`
-   policy by default to avoid mail floods.
+   `@slack_…`, `@discord_…`; configurable regex list so documented-only
+   bridges can be added) are classified as *human* by the registry (non-agent,
+   non-coordinator); replies go to the room and the bridge relays them.
 7. **Cleanup** — idle tunnels past `ttl_minutes` are left by both agents and
    tombstoned; `ToolManager.cleanup_toolkits()` closes the toolkit.
 
@@ -398,9 +399,11 @@ All bridges use the **AppService** registration files mounted into Synapse
   `list_agents`, `list_channels`, `post_to_channel`).
 - `matrix-swarm-sessions`: policy-driven, concurrent collaborative sessions
   per room (extends FEAT-195 engine).
-- `matrix-dev-stack`: docker-compose with Synapse+Postgres+Element Web and
-  bridge profiles (signal, slack, discord, instagram, email, xmpp) + bootstrap
-  script + `CLIENTS.md`.
+- `matrix-dev-stack`: docker-compose with Synapse+Postgres+Element Web and a
+  `bridges` profile (signal, slack, discord) + bootstrap script + `CLIENTS.md`
+  + `BRIDGES.md` (incl. documentation-only Instagram/XMPP guidance).
+- `matrix-space-grouping` (optional, off by default): Space root +
+  `m.space.child` links for channels; tunnels as private children.
 
 ### Modified Capabilities
 - `integrations-matrix-multi` (FEAT-044): `MatrixCrewConfig` gains
@@ -633,10 +636,10 @@ as_token:str, hs_token:str, homeserver:str="http://localhost:8008", server_name:
 - [x] Bridge selection strictness — *Owner: Jesus Lara*: best-available per platform, licence noted per bridge.
 - [x] Agent-to-agent Q&A exposure — *Owner: Jesus Lara*: both — `AgentSwarmToolkit` tools and session-driven cross-pollination share the tunnel primitive.
 - [x] Bridged humans — *Owner: Jesus Lara*: treated the same as native humans.
-- [ ] Should `router` answer policy (coordinator LLM chooses responders) ship in v1 or be deferred? — *Owner: Jesus Lara*
-- [ ] Tunnel rooms: keep forever (audit) vs `ttl_minutes` tombstone default? Suggested default 120 min. — *Owner: Jesus Lara*
-- [ ] `echo_summary_to_channel` default on or off? — *Owner: Jesus Lara*
-- [ ] Should the Space grouping (Option D) be included in the spec or left as follow-up? — *Owner: Jesus Lara*
-- [ ] Instagram (mautrix-meta) and XMPP (mautrix-jabber/slidge) are unofficial/immature — ship as `experimental` profiles or drop from the compose file? — *Owner: Jesus Lara*
-- [ ] Postmoogle needs SMTP ports + MX for real mail; is a dev-only (localhost SMTP) setup acceptable for v1? — *Owner: Jesus Lara*
-- [ ] Structured answer schema for `ask_agent`: free JSON schema passed by the caller vs fixed `AgentAnswer` model (answer, confidence, sources)? — *Owner: Jesus Lara*
+- [x] Should `router` answer policy (coordinator LLM chooses responders) ship in v1 or be deferred? — *Owner: Jesus Lara*: deferred to a follow-up; v1 ships `mention | swarm | silent`.
+- [x] Tunnel rooms: keep forever (audit) vs `ttl_minutes` tombstone default? — *Owner: Jesus Lara*: `ttl_minutes: 120` default; idle tunnels are left by both agents and tombstoned (history stays on the server); `0` = keep forever.
+- [x] `echo_summary_to_channel` default on or off? — *Owner: Jesus Lara*: on by default.
+- [x] Should the Space grouping (Option D) be included in the spec or left as follow-up? — *Owner: Jesus Lara*: included as an optional capability, `space.enabled: false` by default.
+- [x] Instagram (mautrix-meta) and XMPP (mautrix-jabber/slidge) are unofficial/immature — ship as `experimental` profiles or drop from the compose file? — *Owner: Jesus Lara*: dropped from the compose file; documented only (how to add them, licences, risks).
+- [x] Postmoogle needs SMTP ports + MX for real mail; is a dev-only (localhost SMTP) setup acceptable for v1? — *Owner: Jesus Lara*: e-mail bridge removed from scope entirely. E-mail is handled by agents via `async-notify` (`NotificationMixin`), not via Matrix.
+- [x] Structured answer schema for `ask_agent`: free JSON schema passed by the caller vs fixed `AgentAnswer` model? — *Owner: Jesus Lara*: fixed `AgentAnswer` envelope `{answer, confidence, sources, metadata}`; when the caller passes `expected_schema`, `answer` must validate against it.
