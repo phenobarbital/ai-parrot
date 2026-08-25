@@ -6,7 +6,6 @@ Supports the async context-manager protocol for clean lifecycle management.
 """
 from __future__ import annotations
 
-import inspect
 import logging
 from typing import Dict, Optional
 
@@ -468,9 +467,10 @@ class MatrixCrewTransport:
     ) -> "MatrixCollaborativeSession":
         """Construct a ``MatrixCollaborativeSession`` for this transport.
 
-        Passes ``trigger_event_id`` / ``tunnels`` only if the installed
-        ``MatrixCollaborativeSession`` constructor already accepts them
-        (TASK-2485) — keeps this task independently testable beforehand.
+        Passes ``trigger_event_id`` (so announcements/synthesis reply to
+        the triggering message) and ``tunnels`` (so cross-pollination
+        routes through private tunnels — TASK-2485) through to the
+        session constructor.
 
         Args:
             session_id: Unique id for the new session.
@@ -481,22 +481,18 @@ class MatrixCrewTransport:
         Returns:
             A new, not-yet-started ``MatrixCollaborativeSession``.
         """
-        kwargs = {
-            "session_id": session_id,
-            "room_id": room_id,
-            "question": question,
-            "config": self._config.collaborative,
-            "appservice": self._appservice,
-            "registry": self._registry,
-            "wrappers": self._wrappers,
-            "server_name": self._config.server_name,
-        }
-        params = inspect.signature(MatrixCollaborativeSession.__init__).parameters
-        if "trigger_event_id" in params:
-            kwargs["trigger_event_id"] = trigger_event_id
-        if "tunnels" in params:
-            kwargs["tunnels"] = self._tunnels
-        return MatrixCollaborativeSession(**kwargs)
+        return MatrixCollaborativeSession(
+            session_id=session_id,
+            room_id=room_id,
+            question=question,
+            config=self._config.collaborative,
+            appservice=self._appservice,
+            registry=self._registry,
+            wrappers=self._wrappers,
+            server_name=self._config.server_name,
+            trigger_event_id=trigger_event_id,
+            tunnels=self._tunnels,
+        )
 
     async def _on_custom_event(
         self, event_type: str, content: dict, room_id: str, sender: str
