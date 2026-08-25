@@ -161,7 +161,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -172,8 +172,8 @@
       "parallelism_notes": "Edits session.py + transport._build_session",
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2485-session-tunnel-cross-pollination.md"
+      "completed_at": "2026-08-25T23:36:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2485-session-tunnel-cross-pollination.md"
     },
     {
       "id": "TASK-2486",
