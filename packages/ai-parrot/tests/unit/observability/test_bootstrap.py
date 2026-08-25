@@ -103,19 +103,17 @@ def test_openlit_flag_no_longer_escalates_to_otel(monkeypatch) -> None:
 
 def test_traceloop_flag_no_longer_activates_traceloop_backend(monkeypatch) -> None:
     """FEAT-462: OBSERVABILITY_TRACELOOP=true is a deprecated no-op —
-    _do_bootstrap() no longer imports or calls setup_traceloop at all."""
+    _do_bootstrap() no longer imports or references traceloop_integration
+    at all (the module itself is deleted — TASK-2476). The lightweight
+    'logging' path activates instead, exactly as if the flag were unset."""
     monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
     monkeypatch.setenv("OBSERVABILITY_TRACELOOP", "true")
-
-    called = {}
-    import parrot.observability.traceloop_integration as tl_mod
-    monkeypatch.setattr(tl_mod, "setup_traceloop", lambda cfg: called.__setitem__("cfg", cfg))
 
     with scope():
         boot.ensure_observability_bootstrapped()
 
-    assert called == {}  # setup_traceloop never invoked
     assert boot._SUBSCRIBER is not None  # lightweight 'logging' path used instead
+    assert [r.name for r in boot._SUBSCRIBER.recorders] == ["logging"]
 
 
 def test_both_deprecated_flags_set_falls_back_to_logging(monkeypatch) -> None:

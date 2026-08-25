@@ -125,57 +125,12 @@ conflicts = [
         { package = "ai-parrot", extra = "gemma4" },
         { package = "ai-parrot-loaders", extra = "all" },
     ],
-    # openlit 1.40-1.45 caps openai<3.0.0, while the OpenAI-facing extras
-    # intentionally require SDK 3.3.1+ for newer model/API support.
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot", extra = "openai" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot", extra = "llms" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot", extra = "mcp" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot", extra = "all" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot", extra = "all-fast" },
-    ],
-    # openlit>=1.40 caps openai<3.0, so it conflicts with EVERY extra in the
-    # workspace that pins openai>=3.3.1. The full set as of 2026-08-22:
-    # ai-parrot[openai,llms,mcp] (declared above), ai-parrot-embeddings[openai,all],
-    # ai-parrot-integrations[voice-openai] (and [voice]/[all], which include it).
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot-embeddings", extra = "all" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot-embeddings", extra = "openai" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot-integrations", extra = "voice-openai" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot-integrations", extra = "voice" },
-    ],
-    [
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot-integrations", extra = "all" },
-    ],
-    [
-        # The workspace `dev` dependency-group also carries openai>=3.3.1.
-        { package = "ai-parrot", extra = "observability-openlit" },
-        { package = "ai-parrot-workspace", group = "dev" },
-    ],
+    # FEAT-462: the 11 `observability-openlit` conflicting-groups entries that
+    # used to live here (openlit>=1.40 caps openai<3.0.0, conflicting with
+    # every openai>=3.3.1-pinning extra) are removed — `observability-openlit`
+    # no longer installs the `openlit` SDK at all. OpenLIT is now a pure OTLP
+    # endpoint configuration (see ObservabilityConfig.otlp_targets /
+    # OpenLitUsageRecorder), eliminating the version conflict entirely.
     [
         # flowtask 5.12.3 pins azure-identity==1.20.0, while async-notify[all]
         # (pulled by all-fast) needs azure-identity>=1.23.0. Unbounded

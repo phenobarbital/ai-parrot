@@ -12,7 +12,6 @@ exporters and readers baked in at fixture time.
 
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -232,40 +231,48 @@ async def test_scenario_3_traces_metrics_cost() -> None:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_scenario_4_openlit_mocked() -> None:
-    """OpenLIT init is called exactly once; trace subscriber still works."""
-    from parrot.observability.openlit_integration import _reset_for_tests
-
-    _reset_for_tests()
-    fake_openlit = MagicMock()
+async def test_scenario_4_openlit_recorder_alongside_tracing() -> None:
+    """FEAT-462: OpenLitUsageRecorder (mocked exporter) receives a usage
+    record on AfterClientCallEvent, while the native trace subscriber
+    independently still produces spans on the same event stream — the two
+    paths coexist without interfering with each other."""
+    from parrot.observability.recorders.subscriber import (  # noqa: PLC0415
+        UsageRecordingSubscriber,
+    )
 
     exporter = InMemorySpanExporter()
     tp = _make_tracer_provider(exporter)
 
-    with patch.dict(sys.modules, {"openlit": fake_openlit}):
-        from parrot.observability import ObservabilityConfig  # noqa: PLC0415
-        from parrot.observability.openlit_integration import init_openlit  # noqa: PLC0415
-
-        cfg = ObservabilityConfig(enabled=True, enable_openlit=True)
-        init_openlit(cfg)
-        assert fake_openlit.init.call_count == 1, "openlit.init should be called once"
-
-        # Second call is a no-op
-        init_openlit(cfg)
-        assert fake_openlit.init.call_count == 1, "openlit.init called more than once"
-
-    with scope() as registry:
-        trace_sub = GenAIOpenTelemetrySubscriber(
-            service_name="parrot-poc",
-            tracer_provider=tp,
+    with (
+        patch("opentelemetry.sdk.trace.TracerProvider"),
+        patch("opentelemetry.sdk.trace.export.BatchSpanProcessor"),
+        patch(
+            "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
+        ),
+        patch("opentelemetry.sdk.resources.Resource"),
+    ):
+        from parrot.observability.recorders.openlit_recorder import (  # noqa: PLC0415
+            OpenLitUsageRecorder,
         )
-        trace_sub.register(registry)
-        await _drive_client_cycle(registry)
+
+        openlit_recorder = OpenLitUsageRecorder(endpoint="http://localhost:4318")
+        mock_span = MagicMock()
+        openlit_recorder._tracer.start_span = MagicMock(return_value=mock_span)
+
+        with scope() as registry:
+            trace_sub = GenAIOpenTelemetrySubscriber(
+                service_name="parrot-poc",
+                tracer_provider=tp,
+            )
+            trace_sub.register(registry)
+            usage_sub = UsageRecordingSubscriber(recorders=[openlit_recorder])
+            usage_sub.register(registry)
+            await _drive_client_cycle(registry)
 
     spans = exporter.get_finished_spans()
-    assert len(spans) >= 1, "Spans expected from trace subscriber"
-
-    _reset_for_tests()
+    assert len(spans) >= 1, "Spans expected from the native trace subscriber"
+    mock_span.set_attribute.assert_any_call("gen_ai.provider.name", "openai")
+    mock_span.end.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

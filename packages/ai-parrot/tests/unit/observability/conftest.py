@@ -4,8 +4,7 @@ These tests configure *process-global* state on two layers:
 
 1. **AI-Parrot's own module globals** in ``parrot.observability.setup``
    (``_TRACER_PROVIDER`` / ``_METER_PROVIDER`` / ``_STATE`` /
-   ``_SUBSCRIPTION_IDS``) and the ``openlit_integration._INITIALIZED``
-   sentinel.
+   ``_SUBSCRIPTION_IDS``).
 2. **The OpenTelemetry API globals.** ``setup_telemetry()`` calls
    ``otel_trace.set_tracer_provider()`` / ``otel_metrics.set_meter_provider()``,
    each guarded by a one-shot ``Once`` latch
@@ -70,15 +69,6 @@ def _reset_parrot_globals() -> None:
     setup_mod._TRACER_PROVIDER = None
     setup_mod._METER_PROVIDER = None
     setup_mod._SUBSCRIPTION_IDS.clear()
-
-    try:
-        from parrot.observability.openlit_integration import (  # noqa: PLC0415
-            _reset_for_tests,
-        )
-
-        _reset_for_tests()
-    except Exception:  # noqa: BLE001 — openlit is an optional extra
-        pass
 
 
 @pytest.fixture(autouse=True)
