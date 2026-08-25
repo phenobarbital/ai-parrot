@@ -200,7 +200,26 @@ Same as TASK-2478.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Created `crew/swarm_toolkit.py` with `AgentSwarmToolkit
+(AbstractToolkit)` exposing exactly 5 tools (`ask_agent`, `send_feedback`,
+`list_agents`, `list_channels`, `post_to_channel`) per the skeleton, plus
+`crew/context.py` with the 4 `contextvars` (`current_hops`,
+`current_session`, `current_channel_room`, `current_trigger_event`).
+`MatrixCrewAgentWrapper.handle_message` now sets a fresh hop chain
+(`hops=0`, `session=None`) plus the originating `room_id`/`event_id` for
+the echo line, and `handle_task` propagates `task.hops` /
+`task.origin_session` — both reset via `contextvars.Token` in their
+`finally` blocks so nested/concurrent requests stay isolated.
+`ask_agent` rejects self-asks and unknown agents before touching the
+tunnel, propagates `current_hops`/`current_session` into
+`AgentTunnel.ask`, and posts the optional echo (`send_reply_as_agent`)
+only when `TunnelConfig.echo_summary_to_channel` is set AND both context
+vars are populated. `post_to_channel` checks `ChannelManager.is_member`
+before resolving the room and calling `send_as_agent`. 6/6 new tests
+pass; full matrix regression 214/220 pass (6 pre-existing
+`test_matrix_hook.py` failures, unrelated). `ruff check` matches the
+established `crew/` baseline categories with no new ones (verified via
+`git stash`).
 **Deviations from spec**: none
