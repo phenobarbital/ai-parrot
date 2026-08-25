@@ -221,7 +221,7 @@
       "feature_id": "FEAT-460",
       "feature": "raw-upload-field-types",
       "spec": "sdd/specs/raw-upload-field-types.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -232,7 +232,7 @@
       "parallel": false,
       "parallelism_notes": "Follow-up from adversarial code review — thumbnail_url currently holds a raw blob_ref, not a fetchable URL. Depends on ThumbnailService, the upload handler, and route registration all being in place.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-25T00:21:45+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2469-thumbnail-serving-route.md"
     }
