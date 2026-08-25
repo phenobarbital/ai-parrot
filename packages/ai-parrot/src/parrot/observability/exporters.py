@@ -14,7 +14,65 @@ from __future__ import annotations
 
 from typing import Any
 
-from parrot.observability.config import ObservabilityConfig
+from parrot.observability.config import ObservabilityConfig, OtlpTarget
+
+
+def make_span_exporters(
+    targets: list[OtlpTarget],
+    protocol: str = "http/protobuf",
+) -> list[Any]:
+    """Return one OTLP span exporter per *targets* entry (FEAT-462).
+
+    Multi-endpoint counterpart to :func:`make_span_exporter`. Each target
+    gets its own exporter built from its ``endpoint``/``headers``; all
+    targets share the same *protocol*. This is how ``setup_telemetry()``
+    attaches one ``BatchSpanProcessor`` per target to a single shared
+    ``TracerProvider`` — there is no ``CompositeSpanExporter`` in the OTel
+    SDK.
+
+    Args:
+        targets: List of OTLP export destinations.
+        protocol: Shared transport protocol for all targets
+            (``"http/protobuf"`` or ``"grpc"``).
+
+    Returns:
+        A list of exporter instances, one per target, in the same order as
+        *targets*. Empty list when *targets* is empty.
+
+    Raises:
+        ImportError: When ``protocol="grpc"`` is requested but the gRPC
+            exporter package is not installed.
+    """
+    exporters: list[Any] = []
+    for target in targets:
+        if protocol == "grpc":
+            try:
+                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+                    OTLPSpanExporter as GrpcSpanExporter,
+                )
+            except ImportError as exc:
+                raise ImportError(
+                    "gRPC OTLP exporter requires the 'observability' extra "
+                    "with grpcio. Install with: pip install "
+                    "'ai-parrot[observability]' grpcio"
+                ) from exc
+            headers = tuple(target.headers.items()) or None
+            exporters.append(
+                GrpcSpanExporter(endpoint=target.endpoint, headers=headers)
+            )
+            continue
+
+        # Default: http/protobuf — mirror make_span_exporter()'s /v1/traces
+        # endpoint suffixing so the single-target fallback in
+        # setup_telemetry() (TASK-2474) is byte-for-byte identical to the
+        # pre-FEAT-462 behavior.
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
+        endpoint = f"{target.endpoint.rstrip('/')}/v1/traces"
+        headers = target.headers or None
+        exporters.append(OTLPSpanExporter(endpoint=endpoint, headers=headers))
+    return exporters
 
 
 def make_span_exporter(config: ObservabilityConfig) -> Any:
