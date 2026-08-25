@@ -165,10 +165,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Implemented `handle_get_thumbnail` in `api/file_upload.py`
+(resolves form/field via `find_field_by_uid`, 404s for unknown form/field
+or a non-upload field type, decodes the `ref` query param with `unquote`,
+streams via `blob_storage.get(ref)` — correctly `await`-then-iterate per
+the contract's explicit warning — and returns `image/webp` bytes; catches
+`(FileNotFoundError, ValueError, OSError)` narrowly so a missing/malformed
+blob_ref 404s instead of 500ing). Registered `GET .../fields/{field_uid}/
+thumbnail` in `routes.py` right after `/file-upload`, wrapped with the
+same `_wrap_auth` (default `tenant="required"`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+`_finalize_envelope` now builds `thumbnail_url` as
+`f"{thumbnail_base_path}?ref={quote(thumbnail_ref, safe='')}"` instead of
+assigning the raw blob_ref. `thumbnail_base_path` is derived per-request
+in `handle_file_upload` from `request.path.rsplit("/", 1)[0] +
+"/thumbnail"` (the file-upload endpoint's own path minus its last
+segment) rather than reading `setup_form_api`'s `base_path` — avoids
+needing to thread that configuration value through, and correctly
+reflects the actual mounted path even if a deployment customizes it. This
+required adding a `thumbnail_base_path: str` parameter to
+`_process_file_part`, `_handle_chunk`, and `_finalize_envelope`.
 
-**Deviations from spec**: none | describe if any
+Updated both existing thumbnail assertions per the task's own file list:
+`test_file_upload_handler.py::test_thumbnail_for_image` (now checks the
+full `.../thumbnail?ref=...` path) and
+`test_file_upload.py::test_image_upload_with_thumbnail` (now does a real
+HTTP round-trip through the new route instead of reading blob storage
+directly — the literal "Round-trip" acceptance criterion). Added 2 more
+integration tests (404 for unknown ref, 404 for non-upload field) and the
+dedicated `test_thumbnail_route.py` (6 tests: happy path + content-type +
+call args, missing ref, storage miss, non-upload field, unknown
+form/field).
+
+Full regression check: ran `pytest packages/parrot-formdesigner/tests/`
+before and after this task's changes — identical 40 pre-existing failures
+in both runs (diffed the sorted FAILED lines, zero difference), passed
+count went 2505 → 2513 (this task's 8 new tests, all passing). No new
+ruff findings (BLE001/UP037 counts in `file_upload.py`/`routes.py`
+confirmed identical via `git stash` before/after).
+
+**Deviations from spec**: none — implemented exactly as scoped, including
+the "pick whichever keeps `_finalize_envelope`'s signature simplest"
+open choice (threaded `thumbnail_base_path` as a plain parameter rather
+than deriving it from `app`/config inside `_finalize_envelope` itself).
