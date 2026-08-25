@@ -14,7 +14,7 @@
       "feature_id": "FEAT-462",
       "feature": "unified-telemetry-bus",
       "spec": "sdd/specs/unified-telemetry-bus.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all downstream tasks depend on OtlpTarget and config changes",
       "assigned_to": null,
       "started_at": "2026-08-25T22:13:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2470-config-model-extensions.md"
+      "completed_at": "2026-08-25T22:21:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2470-config-model-extensions.md"
     },
     {
       "id": "TASK-2471",
