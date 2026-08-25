@@ -133,7 +133,7 @@
       "feature_id": "FEAT-462",
       "feature": "unified-telemetry-bus",
       "spec": "sdd/specs/unified-telemetry-bus.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Must run after setup and bootstrap are clean of traceloop/openlit references",
       "assigned_to": null,
       "started_at": "2026-08-25T22:13:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2476-delete-integrations-and-cleanup.md"
+      "completed_at": "2026-08-25T22:56:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2476-delete-integrations-and-cleanup.md"
     },
     {
       "id": "TASK-2477",
