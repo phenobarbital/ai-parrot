@@ -102,6 +102,8 @@ class CollaborativeConfig(BaseModel):
         summarizer_agent: Agent name for final synthesis (None = post raw results).
         session_verbosity: 'full' posts all announcements, 'minimal' reduces them.
         include_chat_context: Pass recent chat history to the summarizer.
+        max_concurrent_sessions: Maximum number of concurrent sessions per room.
+        cooldown_seconds: Minimum gap between session triggers in a room.
     """
 
     command_prefix: str = Field(
@@ -134,6 +136,74 @@ class CollaborativeConfig(BaseModel):
         default=True,
         description="Pass recent chat history to the summarizer",
     )
+    max_concurrent_sessions: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Maximum number of concurrent collaborative sessions per room",
+    )
+    cooldown_seconds: float = Field(
+        default=10.0,
+        ge=0,
+        description="Minimum gap between session triggers in a room",
+    )
+
+
+class ChannelConfig(BaseModel):
+    """A declared agent channel materialised as a Matrix room.
+
+    Attributes:
+        name: Alias localpart (``#<name>:<server_name>``).
+        visibility: ``public`` (anyone may join) or ``private`` (invite-only).
+        agents: Member agent names (keys of ``MatrixCrewConfig.agents``).
+        answer_policy: How un-mentioned human text is handled —
+            ``mention`` (ignore unless @mentioned), ``swarm`` (start a
+            collaborative session), or ``silent`` (never respond).
+        room_id: Pre-existing room id; a new room is created when ``None``.
+        topic: Optional room topic set at creation time.
+    """
+
+    name: str = Field(
+        ..., pattern=r"^[a-z0-9][a-z0-9_-]*$", description="alias localpart"
+    )
+    visibility: Literal["public", "private"] = "public"
+    agents: List[str] = Field(default_factory=list)
+    answer_policy: Literal["mention", "swarm", "silent"] = "mention"
+    room_id: Optional[str] = None
+    topic: Optional[str] = None
+
+
+class TunnelConfig(BaseModel):
+    """Configuration for private agent-to-agent tunnels.
+
+    Attributes:
+        enabled: Whether tunnels may be created.
+        ttl_minutes: Idle timeout before a tunnel is tombstoned (0 = forever).
+        max_hops: Maximum number of relayed hops before a task is rejected.
+        default_timeout: Default ``ask`` timeout in seconds.
+        echo_summary_to_channel: Whether to post a one-line echo of a
+            cross-pollination question in the originating channel.
+    """
+
+    enabled: bool = True
+    ttl_minutes: int = Field(default=120, ge=0, description="0 = keep forever")
+    max_hops: int = Field(default=3, ge=1, le=10)
+    default_timeout: float = Field(default=60.0, gt=0)
+    echo_summary_to_channel: bool = True
+
+
+class SpaceConfig(BaseModel):
+    """Optional Matrix Space grouping for channels and tunnels.
+
+    Attributes:
+        enabled: Whether a Space is created and children are linked.
+        name: Space room name.
+        room_id: Pre-existing Space room id; created when ``None``.
+    """
+
+    enabled: bool = False
+    name: str = "Parrot Swarm"
+    room_id: Optional[str] = None
 
 
 class MatrixCrewConfig(BaseModel):
@@ -154,6 +224,12 @@ class MatrixCrewConfig(BaseModel):
         unaddressed_agent: Default agent for unmentioned messages.
         max_message_length: Chunk responses beyond this length.
         collaborative: Optional collaborative session configuration.
+        channels: Declared agent channels (public/private rooms with policy).
+        tunnels: Configuration for private agent-to-agent tunnels.
+        space: Optional Matrix Space grouping for channels and tunnels.
+        human_namespace_patterns: Regex patterns identifying bridged human
+            MXIDs (e.g. Slack/Signal/Discord puppets) so they are treated
+            the same as native Matrix humans.
     """
 
     homeserver_url: str = Field(..., description="Matrix homeserver URL")
@@ -189,6 +265,66 @@ class MatrixCrewConfig(BaseModel):
         default=None,
         description="Collaborative session configuration (optional, backward-compatible)",
     )
+    channels: List[ChannelConfig] = Field(
+        default_factory=list, description="Declared agent channels"
+    )
+    tunnels: TunnelConfig = Field(
+        default_factory=TunnelConfig,
+        description="Private agent-to-agent tunnel configuration",
+    )
+    space: SpaceConfig = Field(
+        default_factory=SpaceConfig,
+        description="Optional Matrix Space grouping for channels and tunnels",
+    )
+    human_namespace_patterns: List[str] = Field(
+        default_factory=lambda: [r"^@signal_", r"^@slack_", r"^@discord_"],
+        description="Regex patterns identifying bridged human MXIDs",
+    )
+
+    @model_validator(mode="after")
+    def validate_channels(self) -> "MatrixCrewConfig":
+        """Validate declared channels.
+
+        Ensures channel names are unique, every channel's ``agents`` entry
+        refers to a known agent (only enforced when ``agents`` is
+        non-empty, mirroring ``validate_summarizer_agent``), and any
+        channel using ``answer_policy="swarm"`` has ``collaborative``
+        configured.
+
+        Returns:
+            Self after validation.
+
+        Raises:
+            ValueError: On duplicate channel names, unknown member agents,
+                or a ``swarm`` channel without ``collaborative`` configured.
+        """
+        names = [c.name for c in self.channels]
+        if len(names) != len(set(names)):
+            raise ValueError(f"duplicate channel names: {names}")
+        for ch in self.channels:
+            if self.agents:
+                unknown = [a for a in ch.agents if a not in self.agents]
+                if unknown:
+                    raise ValueError(
+                        f"channel '{ch.name}' references unknown agents {unknown}"
+                    )
+            if ch.answer_policy == "swarm" and self.collaborative is None:
+                raise ValueError(
+                    f"channel '{ch.name}' uses answer_policy=swarm but "
+                    "'collaborative' is not configured"
+                )
+        return self
+
+    def channel(self, name: str) -> Optional[ChannelConfig]:
+        """Look up a declared channel by name.
+
+        Args:
+            name: Channel name (alias localpart).
+
+        Returns:
+            The matching ``ChannelConfig``, or ``None`` if not found.
+        """
+        return next((c for c in self.channels if c.name == name), None)
 
     @model_validator(mode="after")
     def validate_summarizer_agent(self) -> "MatrixCrewConfig":

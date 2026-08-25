@@ -19,7 +19,14 @@ Public API::
     )
 """
 
-from .config import CollaborativeConfig, MatrixCrewAgentEntry, MatrixCrewConfig
+from .config import (
+    ChannelConfig,
+    CollaborativeConfig,
+    MatrixCrewAgentEntry,
+    MatrixCrewConfig,
+    SpaceConfig,
+    TunnelConfig,
+)
 from .coordinator import MatrixCoordinator
 from .crew_wrapper import MatrixCrewAgentWrapper
 from .delegation import DelegationRequest, HybridDelegator
@@ -34,9 +41,12 @@ from .session_models import (
 from .transport import MatrixCrewTransport
 
 __all__ = [
+    "ChannelConfig",
     "CollaborativeConfig",
     "MatrixCrewConfig",
     "MatrixCrewAgentEntry",
+    "SpaceConfig",
+    "TunnelConfig",
     "MatrixCrewRegistry",
     "MatrixAgentCard",
     "MatrixCoordinator",
