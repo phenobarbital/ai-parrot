@@ -655,9 +655,25 @@ class AbstractBlobStorage(ABC):
 
 ---
 
+## 9. Follow-up Work
+
+- **TASK-2469 — Thumbnail Serving Route.** Raised by the adversarial code
+  review during implementation: `FileEnvelope.thumbnail_url` is documented
+  (and fixtured in §4's `sample_image_envelope`) as a real HTTP path, but
+  the shipped V1 populates it with the raw blob storage reference instead
+  (no thumbnail-serving route exists in `api/routes.py`). Tracked as a
+  dedicated follow-up task under this same spec rather than blocking the
+  rest of FEAT-460 — `thumbnail_url` populated/null correctness (the
+  literal §5 acceptance criterion) is unaffected; only its *fetchability*
+  as a URL is deferred. See `sdd/tasks/completed/TASK-2469-thumbnail-serving-route.md`
+  once done (or `sdd/tasks/active/` if still pending).
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-25 | Jesus Lara / Claude | Initial draft from brainstorm Option B |
 | 0.2 | 2026-08-25 | Jesus Lara / Claude | Resolved all 6 open questions; updated defaults (10 MB inline threshold, 150×150 WebP thumbnails, server-side SHA-256 checksum, basic chunked upload support, no feature flag, data_url stored in DB) |
+| 0.3 | 2026-08-25 | sdd-worker (Claude Sonnet 5) | Added §9 Follow-up Work — TASK-2469 (thumbnail serving route), raised by the FEAT-460 adversarial code review |

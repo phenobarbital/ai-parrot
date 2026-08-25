@@ -69,16 +69,41 @@ _TYPE_MAP: dict[FieldType, str] = {
 }
 
 # parrot_formdesigner/renderers/jsonschema.py:92
+# CORRECTED (contract was stale — verified against the actual file at
+# implementation time): _UNION_SHAPES already includes IMAGE_DROPZONE
+# (bare oneOf: [{"type":"object"}, {"type":"array","items":{"type":"object"}}]
+# — NO properties defined at all yet), plus TREE_SELECT and AI_CAPTURE.
+# FILE and IMAGE are NOT in here yet — this task adds them, and this task
+# ALSO upgrades the existing bare IMAGE_DROPZONE entry to use the
+# FileEnvelope object schema instead of a bare "object".
 _UNION_SHAPES: dict[FieldType, dict] = {
-    # Currently includes TREE_SELECT (oneOf: [string, object])
-    # FILE and IMAGE are NOT in here yet — this task adds them
+    FieldType.TREE_SELECT: {"oneOf": [...]},
+    FieldType.IMAGE_DROPZONE: {"oneOf": [{"type": "object"}, {"type": "array", "items": {"type": "object"}}]},
+    FieldType.AI_CAPTURE: {},
 }
 
 # parrot_formdesigner/renderers/jsonschema.py:156
+# CORRECTED: IMAGE_DROPZONE is NOT in _STRUCTURAL_EXTRAS today (its shape
+# lives entirely in _UNION_SHAPES above, as a bare "object"/"array" with no
+# properties). _STRUCTURAL_EXTRAS currently holds AVAILABILITY, TAGS,
+# TRANSFER_LIST, TREE_SELECT, MULTI_UPLOAD (legacy {answer,blob_ref,display}
+# items — this task replaces those items with the FileEnvelope shape),
+# CREDIT_CARD, PLACE.
 _STRUCTURAL_EXTRAS: dict[FieldType, dict] = {
-    # Currently includes IMAGE_DROPZONE → {name, type, size, dataUrl}
-    # and MULTI_UPLOAD → array items
+    FieldType.MULTI_UPLOAD: {"items": {"type": "object", "properties": {"answer": {}, "blob_ref": {...}, "display": {...}}}},
+    # ... AVAILABILITY, TAGS, TRANSFER_LIST, TREE_SELECT, CREDIT_CARD, PLACE ...
 }
+
+# Note: _field_to_property() (per-field rendering) reads _TYPE_MAP and
+# _STRUCTURAL_EXTRAS directly but does NOT consult _UNION_SHAPES — this is
+# pre-existing behavior (also true today for TREE_SELECT/IMAGE_DROPZONE/
+# AI_CAPTURE), so per-field FILE/IMAGE output will show bare
+# {"type": "object", ...} without the oneOf/properties after this task,
+# consistent with how IMAGE_DROPZONE already renders per-field today. Only
+# type_level_value_shape() (the type-only catalog contract) fully resolves
+# _UNION_SHAPES. This task does not change _field_to_property() — out of
+# scope (not listed in Files to Create/Modify) and consistent with existing
+# precedent for the other _UNION_SHAPES members.
 
 # parrot_formdesigner/renderers/jsonschema.py:215
 def type_level_value_shape(field_type: FieldType) -> dict[str, Any]:
@@ -222,10 +247,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Codebase Contract was stale for `_UNION_SHAPES`/`_STRUCTURAL_EXTRAS`
+(corrected in this file before implementing) — IMAGE_DROPZONE was ALREADY
+a bare `oneOf: [object, array-of-object]` union in `_UNION_SHAPES`, not the
+`{name,type,size,dataUrl}` shape described in `_STRUCTURAL_EXTRAS` the
+contract claimed. Added a shared `FILE_ENVELOPE_SCHEMA` module constant;
+flipped `_TYPE_MAP[FILE/IMAGE]` to `"object"`; added FILE/IMAGE to
+`_UNION_SHAPES` as `oneOf: [string, FileEnvelope]`; upgraded the existing
+bare IMAGE_DROPZONE union to use `FILE_ENVELOPE_SCHEMA`; replaced the
+legacy `{answer,blob_ref,display}` `MULTI_UPLOAD` items schema in
+`_STRUCTURAL_EXTRAS` with `FILE_ENVELOPE_SCHEMA`. Confirmed
+`_field_to_property()` (per-field rendering) does not consult
+`_UNION_SHAPES` for ANY of its members today (TREE_SELECT, IMAGE_DROPZONE,
+AI_CAPTURE) — left it untouched, consistent with that pre-existing
+precedent and out of this task's file scope. New test file: 7/7 passed
+(added one extra test verifying deep-copy independence since the schema
+constant is shared across multiple dict entries). Full regression sweep
+(`renderers/`, `test_renderers.py`, `controls/`, FEAT-448 test files):
+258 passed, 1 pre-existing order-dependent failure
+(`test_registry_serves_all_eleven`) reproduced identically with `git
+stash` before my change — not a regression.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `test_dropzone_envelope_shape` was adapted from
+the task's literal Test Specification (`assert schema.get("type") ==
+"object"`) to assert the `oneOf` shape instead, because IMAGE_DROPZONE
+was already union-shaped in `_UNION_SHAPES` before this task (confirmed
+via the corrected contract) — the literal scaffold would never have
+passed against the real codebase.

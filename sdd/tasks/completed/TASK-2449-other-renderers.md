@@ -149,10 +149,51 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Implemented envelope-aware value display for 3 of the 5 listed
+renderers (html5.py, pdf.py, adaptive_card.py), where a live value-rendering
+code path actually exists:
+- **html5.py**: `_render_input` for FILE/IMAGE no longer emits an invalid
+  `value=` attribute (browsers ignore/reject it on `type="file"` inputs
+  anyway); instead emits `data-filename="..."` (via a new
+  `_extract_display_name()` helper) and an `accept="..."` attribute derived
+  from `constraints.allowed_mime_types`.
+- **pdf.py**: the module-level `prefilled_value` computation now branches
+  on `UPLOAD_FIELD_TYPES` (from `core.file_envelope`) to show the extracted
+  filename instead of the raw dict repr as AcroForm placeholder-textfield
+  fallback text.
+- **adaptive_card.py**: added an explicit `elif ft in UPLOAD_FIELD_TYPES`
+  branch in `_build_input_element` (before the generic fallback) showing
+  the filename, and — for images — appending `thumbnail_url` to the
+  displayed text when present.
+- Manually verified end-to-end (see session transcript): HTML5 emits
+  `data-filename`/`accept`, PDF renders without error, Adaptive Card shows
+  `"photo.jpg (temp://thumb)"` for an image envelope with a thumbnail.
+- Full regression sweep: `tests/unit/renderers/` + `test_renderers.py` =
+  136 passed, 0 failed. No new ruff findings (21 pre-existing in these 3
+  files, confirmed identical via `git stash`).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: **xforms.py and telegram/renderer.py were left
+UNCHANGED** after investigation. Both renderers structurally ignore
+submitted values by design, not incidentally:
+- `XFormsRenderer.render()`'s own docstring states it "ignores style /
+  prefilled / errors parameters (HTML-only concerns)" — there is no value
+  binding code path to make envelope-aware. The FILE/IMAGE `mediatype`
+  hints (`image/*` / `*/*`) and the `("upload", "anyURI")` binding-type
+  mapping were already correct and are unchanged, satisfying "upload
+  binding type preserved" literally.
+- `TelegramRenderer.render()` accepts a `prefilled` parameter but never
+  reads it anywhere in the method body (dead parameter, same posture as
+  xforms) — INLINE mode builds keyboards from field *structure*
+  (options/labels), WEBAPP mode returns only a URL. No function anywhere
+  in `renderers/telegram/` formats a field's *value* into displayed text,
+  so there is no "upload field result" display site to update.
 
-**Deviations from spec**: none | describe if any
+Implementing a new value-rendering feature in either file to give myself
+something to change would be scope creep beyond "lightweight display-only
+updates" (the task's own Test Specification note) and would add
+disconnected, untested code. Flagging this for spec/PR review — if a
+result-summary/confirmation-message feature is later added to either
+renderer, it should incorporate `_extract_display_name`-equivalent logic
+then.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from ..core.file_envelope import UPLOAD_FIELD_TYPES
 from ..core.schema import (
     FormField,
     FormSchema,
@@ -23,6 +24,22 @@ from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_display_name(value: Any) -> str:
+    """Extract a display name from a legacy or FileEnvelope upload value.
+
+    Args:
+        value: Legacy string (URL or base64) or FileEnvelope dict.
+
+    Returns:
+        A human-readable filename/label. Empty string if value is falsy.
+    """
+    if isinstance(value, dict) and "filename" in value:
+        return str(value.get("filename") or "")
+    if isinstance(value, str):
+        return value.rsplit("/", 1)[-1] if "/" in value else value
+    return str(value) if value else ""
 
 
 def _resolve(value: LocalizedString | None, locale: str = "en") -> str:
@@ -1007,6 +1024,23 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
             if value is not None:
                 elem["value"] = value
             return elem
+
+        # FEAT-460 — FILE/IMAGE/IMAGE_DROPZONE/MULTI_UPLOAD: no native
+        # Adaptive Card upload element exists (spec §4), so these still use
+        # the text-placeholder fallback — but show the FileEnvelope's
+        # filename (and, for images, a thumbnail_url link) instead of the
+        # raw dict repr / URL.
+        elif ft in UPLOAD_FIELD_TYPES:
+            display_name = _extract_display_name(value)
+            display_value = display_name
+            if isinstance(value, dict) and value.get("thumbnail_url"):
+                display_value = f"{display_name} ({value['thumbnail_url']})" if display_name else value["thumbnail_url"]
+            return {
+                **base,
+                "type": "Input.Text",
+                "placeholder": _resolve(field.placeholder, locale) if field.placeholder else "",
+                "value": display_value,
+            }
 
         # Fallback for unsupported types (includes SIGNATURE, REMOTE_RESPONSE, AVAILABILITY)
         else:

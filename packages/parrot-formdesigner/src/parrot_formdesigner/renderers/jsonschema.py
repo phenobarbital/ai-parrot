@@ -40,8 +40,10 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.TIME: "string",
     FieldType.SELECT: "string",
     FieldType.MULTI_SELECT: "array",
-    FieldType.FILE: "string",
-    FieldType.IMAGE: "string",
+    # FEAT-460 — FILE/IMAGE adopt the FileEnvelope object shape; the
+    # backward-compatible legacy string shape is published via _UNION_SHAPES.
+    FieldType.FILE: "object",
+    FieldType.IMAGE: "object",
     FieldType.GROUP: "object",
     FieldType.ARRAY: "array",
     # New field types (FEAT-167)
@@ -77,6 +79,26 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.PLACE: "object",
 }
 
+# FEAT-460 — canonical JSON Schema shape for the FileEnvelope value shape
+# adopted by all upload field types (FILE, IMAGE, IMAGE_DROPZONE,
+# MULTI_UPLOAD). Defined once and reused across _UNION_SHAPES /
+# _STRUCTURAL_EXTRAS entries below; every read site deep-copies before
+# returning, so sharing this dict across multiple entries is safe.
+FILE_ENVELOPE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "filename": {"type": "string"},
+        "content_type": {"type": "string"},
+        "size": {"type": "integer", "minimum": 0},
+        "blob_ref": {"type": ["string", "null"]},
+        "data_url": {"type": ["string", "null"]},
+        "thumbnail_url": {"type": ["string", "null"]},
+        "checksum": {"type": ["string", "null"]},
+    },
+    "required": ["filename", "content_type", "size"],
+    "additionalProperties": False,
+}
+
 # FEAT-448 codex F4/F5/F6 — types whose accepted value is a UNION.
 #
 # `_TYPE_MAP` holds ONE JSON Schema type keyword per FieldType, which cannot
@@ -94,11 +116,17 @@ _UNION_SHAPES: dict[FieldType, dict[str, Any]] = {
     FieldType.TREE_SELECT: {
         "oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
     },
-    # validators.py accepts one {name,type,size,dataUrl} or a list of them
+    # FEAT-460 — dual-read: validators.py accepts a legacy string (URL or
+    # base64) OR the new FileEnvelope object. Backward-compatible with
+    # existing frontends that still send strings.
+    FieldType.FILE: {"oneOf": [{"type": "string"}, FILE_ENVELOPE_SCHEMA]},
+    FieldType.IMAGE: {"oneOf": [{"type": "string"}, FILE_ENVELOPE_SCHEMA]},
+    # FEAT-460 — validators.py accepts one FileEnvelope (mapped from legacy
+    # {name,type,size,dataUrl} when present) or a list of them.
     FieldType.IMAGE_DROPZONE: {
         "oneOf": [
-            {"type": "object"},
-            {"type": "array", "items": {"type": "object"}},
+            FILE_ENVELOPE_SCHEMA,
+            {"type": "array", "items": FILE_ENVELOPE_SCHEMA},
         ],
     },
     # A third-party API's response. Its shape is explicitly not ours to define
@@ -172,19 +200,11 @@ _STRUCTURAL_EXTRAS: dict[FieldType, dict[str, Any]] = {
     # selection also yields the node value per spec §4, but the schema
     # declares the multi-select shape as the structural contract).
     FieldType.TREE_SELECT: {"items": {"type": "string"}},
-    # FEAT-448 (TASK-2337) — MULTI_UPLOAD: array of REST-like upload
-    # envelopes (spec §4). Registered and typed, not further wired — the
-    # singular-vs-list mismatch with _validate_rest_field is fieldsync
-    # FEAT-514's blocker, not this renderer's.
+    # FEAT-460 — MULTI_UPLOAD: array of FileEnvelope objects (replaces the
+    # legacy REST-like {answer,blob_ref,display} item shape; validators.py
+    # maps legacy items to FileEnvelope internally).
     FieldType.MULTI_UPLOAD: {
-        "items": {
-            "type": "object",
-            "properties": {
-                "answer": {},
-                "blob_ref": {"type": ["string", "null"]},
-                "display": {"type": "string"},
-            },
-        },
+        "items": FILE_ENVELOPE_SCHEMA,
     },
     # FEAT-448 (TASK-2337) — CREDIT_CARD: server-accepted shape only (spec
     # §4, TASK-2334) — brand/last4/name/expiry. cvv and the full PAN are

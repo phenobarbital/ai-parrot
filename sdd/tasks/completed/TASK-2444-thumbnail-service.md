@@ -270,10 +270,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Implemented `ThumbnailService` exactly per the contract pattern —
+constructor takes `AbstractBlobStorage` + max_width/max_height/quality/
+output_format, `generate()` resizes via Pillow inside `asyncio.to_thread`,
+persists via `AbstractBlobStorage.put()` with `{field_id}__thumb` metadata,
+and returns `None` (with a warning log) on failure. Added
+`test_thumbnail_service.py` per the task's Test Specification verbatim.
+All 4 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

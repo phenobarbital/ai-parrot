@@ -230,10 +230,72 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Created `tests/integration/test_file_upload.py` with:
+- `TestFileUploadEndToEnd` (4 tests) — real `TempBlobStorage` (no mocks),
+  hitting `handle_file_upload` via a real aiohttp test client: single-file
+  PDF upload (response validated against the real `FileEnvelope.
+  model_validate()`, blob retrievable from storage), image upload with a
+  real Pillow-generated JPEG (thumbnail genuinely generated and retrievable,
+  ≤150×150), 3-file MULTI_UPLOAD, and a 2-chunk basic chunked upload
+  (offset/length headers) verifying correct reassembly + checksum.
+- `TestLegacyRegression` (3 tests) — via the EXISTING `FormAPIHandler.
+  submit_data()` submission endpoint (NOT `/file-upload`), using a real
+  (unmocked) `FormValidator` and the same MagicMock-request pattern already
+  established in `test_submit_merge.py`/`test_submit_path_branch.py`:
+  legacy string FILE, legacy `{name,type,size,dataUrl}` IMAGE_DROPZONE, and
+  legacy `[{answer,blob_ref,display}]` MULTI_UPLOAD all submit without a
+  422.
+- All 5 spec §4 fixtures (`sample_file_envelope`, `sample_image_envelope`,
+  `legacy_dropzone_value`, `legacy_multi_upload_value`) added as
+  module-local fixtures rather than in `tests/conftest.py` — they are only
+  consumed by this one test module today, so a shared conftest addition
+  would be premature; promote them later if a second test module needs them.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Real bug found and fixed** (in `api/file_upload.py`, from TASK-2445):
+`_handle_chunk`'s reassembly loop did `async for part_bytes in
+blob_storage.get(ref):` without awaiting — `AbstractBlobStorage.get()` is
+an `async def` that RETURNS an async iterator (must be awaited once, then
+iterated), not itself an async generator. This was invisible to TASK-2445's
+mocked-storage unit tests (which never exercised the real chunked-upload
+reassembly path) and only surfaced once this task's chunked-upload
+integration test ran against the real `TempBlobStorage`. Fixed to
+`stream = await blob_storage.get(ref); async for part_bytes in stream:`.
+This is exactly the kind of defect integration tests exist to catch.
 
-**Deviations from spec**: none | describe if any
+**Full regression verification**: ran the complete
+`packages/parrot-formdesigner/tests/` suite both with and without my
+TASK-2451 changes (`git stash -u` to the TASK-2450-complete commit) — same
+45 pre-existing failures in BOTH runs, byte-for-byte identical list
+(pre-existing test-order/registry-pollution issues unrelated to FEAT-460,
+consistent with the `test_extension_registration.py` `_REGISTRY.clear()`
+gap already flagged in TASK-2450's Completion Note). My changes add 7 new
+passing tests with zero regressions (2489 -> 2496 passed, 45 -> 45 failed).
+All 93 feature-owned tests (TASK-2442 through TASK-2451) pass together.
+
+**Deviations from spec**: fixtures added as module-local rather than in
+`tests/conftest.py` (see above — narrower scope, same effective coverage).
+
+**Post-review addendum** (adversarial code review during FEAT-460
+completion, commit `646b314dc`):
+- The reviewer's own full-suite run surfaced a genuinely stale
+  `tests/fixtures/form_controls_snapshot.json` (TASK-2448's value_shape
+  changes were never propagated into it) and an order-dependent failure
+  in TASK-2450's `test_controls_helpers_envelope.py` (KeyError under
+  `pytest tests/unit/` when a pre-existing bug in
+  `test_extension_registration.py` clears the shared controls registry
+  ahead of it). Both fixed; verified against a real `dev`-branch baseline
+  worktree (not just `git stash` within this branch) that the resulting
+  40 full-suite failures are byte-for-byte identical to `dev` — i.e.
+  fully pre-existing and unrelated to FEAT-460.
+- The reviewer also found a real concurrency bug in the chunked-upload
+  handler (TASK-2445) and an orphaned-blob issue in the multipart
+  rejection path — both fixed, with new regression tests added to this
+  file (`test_chunked_upload_missing_upload_id_rejected`,
+  `test_concurrent_chunked_uploads_do_not_interleave`,
+  `test_chunked_upload_size_exceeded_rejected_upfront`,
+  `test_multi_file_rejection_cleans_up_orphaned_blob`). See TASK-2445's
+  completion note for the code-side detail.
+- Full suite after fixes: 2505 passed, 40 failed (pre-existing, confirmed
+  identical to `dev`), 20 skipped, 3 xfailed — 0 regressions from FEAT-460.

@@ -157,10 +157,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-25
+**Notes**: Added `DEFAULT_MAX_INLINE_SIZE = 10_485_760` module-level constant
+and `max_inline_size_bytes: int | None` field (default None, ge=0) to
+`FieldConstraints`, placed right after `max_file_size_bytes`. Added
+`test_constraints_inline.py` per the task's Test Specification verbatim.
+Ran the new tests plus the full `tests/unit/core/` suite (170 passed) to
+confirm no regression to existing constraints.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
