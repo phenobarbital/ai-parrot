@@ -1,0 +1,106 @@
+# swarm_crew.yaml
+#
+# Example Matrix Agents Swarm configuration (FEAT-463): declared channels
+# with answer policies, private agent-to-agent tunnels, an optional Matrix
+# Space, and concurrent collaborative sessions.
+#
+# Builds on collaborative_crew.yaml (FEAT-195) — the `collaborative:`
+# block below adds `max_concurrent_sessions` / `cooldown_seconds` on top of
+# the existing fields.
+#
+# Usage:
+#   python swarm_example.py --config swarm_crew.yaml
+#
+# Required environment variables:
+#   MATRIX_AS_TOKEN         — Application Service token (from registration.yaml)
+#   MATRIX_HS_TOKEN         — Homeserver token (from registration.yaml)
+#   MATRIX_GENERAL_ROOM_ID  — Room ID of the general/swarm room
+
+homeserver_url: "http://localhost:8008"
+server_name: "parrot.local"
+as_token: "${MATRIX_AS_TOKEN}"
+hs_token: "${MATRIX_HS_TOKEN}"
+bot_mxid: "@parrot-bot:parrot.local"
+general_room_id: "${MATRIX_GENERAL_ROOM_ID}"
+appservice_port: 8449
+
+agents:
+  researcher:
+    chatbot_id: "web-researcher"
+    display_name: "Researcher"
+    mxid_localpart: "parrot-researcher"
+    skills:
+      - "web-search"
+      - "document-analysis"
+
+  analyst:
+    chatbot_id: "financial-analyst"
+    display_name: "Analyst"
+    mxid_localpart: "parrot-analyst"
+    skills:
+      - "sql"
+      - "financial-analysis"
+
+  writer:
+    chatbot_id: "report-writer"
+    display_name: "Writer"
+    mxid_localpart: "parrot-writer"
+    skills:
+      - "writing"
+      - "editing"
+
+  summarizer:
+    chatbot_id: "synthesis-agent"
+    display_name: "Summarizer"
+    mxid_localpart: "parrot-summarizer"
+    skills:
+      - "synthesis"
+
+# Declared channels — materialised as Matrix rooms at MatrixCrewTransport.start().
+# `general` uses answer_policy: swarm, so un-mentioned human questions start
+# a collaborative session automatically; `finance` stays mention-only.
+channels:
+  - name: general
+    visibility: public
+    agents: [researcher, analyst, writer]
+    answer_policy: swarm
+    topic: "AI-Parrot swarm — ask anything"
+  - name: finance
+    visibility: private
+    agents: [analyst]
+    answer_policy: mention
+    topic: "Financial analysis (mention @analyst)"
+
+# Private agent-to-agent tunnels (lazily created 2-agent rooms).
+tunnels:
+  enabled: true
+  ttl_minutes: 120
+  max_hops: 3
+  default_timeout: 60.0
+  echo_summary_to_channel: true
+
+# Optional Matrix Space grouping channels + tunnels. Off by default.
+space:
+  enabled: false
+  name: "Parrot Swarm"
+
+# Collaborative investigation settings — see collaborative_crew.yaml for
+# field-by-field documentation. `max_concurrent_sessions` /
+# `cooldown_seconds` are new in FEAT-463.
+collaborative:
+  command_prefix: "!investigate"
+  max_rounds: 1
+  agent_timeout: 120.0
+  session_timeout: 600.0
+  summarizer_agent: "summarizer"
+  session_verbosity: "full"
+  include_chat_context: true
+  max_concurrent_sessions: 3
+  cooldown_seconds: 10.0
+
+# Bridged-human MXID patterns (Signal/Slack/Discord puppets) — these are
+# classified identically to native Matrix humans by MatrixCrewRegistry.is_human().
+human_namespace_patterns:
+  - "^@signal_"
+  - "^@slack_"
+  - "^@discord_"
