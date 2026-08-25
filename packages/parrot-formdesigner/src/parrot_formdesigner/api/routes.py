@@ -382,6 +382,12 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/file-upload",
         _wrap_auth(file_upload_module.handle_file_upload),
     )
+    # Thumbnail serving route — TASK-2469 (follow-up: thumbnail_url must be
+    # a fetchable URL, not a raw blob_ref)
+    app.router.add_get(
+        f"{tp}/forms/{{form_uid}}/fields/{{field_uid}}/thumbnail",
+        _wrap_auth(file_upload_module.handle_get_thumbnail),
+    )
 
     # Partial saves (FEAT-186)
     app.router.add_post(f"{tp}/forms/{{form_uid}}/partial", _wrap_auth(handler.save_partial))

@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import FormData, web
-from parrot_formdesigner.api.file_upload import handle_file_upload
+from parrot_formdesigner.api.file_upload import handle_file_upload, handle_get_thumbnail
 from parrot_formdesigner.api.handlers import FormAPIHandler
 from parrot_formdesigner.core.constraints import FieldConstraints
 from parrot_formdesigner.core.file_envelope import FileEnvelope
@@ -98,6 +98,11 @@ async def _tenant_wrapped_upload(request: web.Request) -> web.Response:
     return await handle_file_upload(request)
 
 
+async def _tenant_wrapped_thumbnail(request: web.Request) -> web.Response:
+    request["tenant"] = request.match_info["tenant"]
+    return await handle_get_thumbnail(request)
+
+
 async def _make_upload_client(aiohttp_client, form: FormSchema, blob_storage):
     app = web.Application()
     registry = FormRegistry()
@@ -107,6 +112,10 @@ async def _make_upload_client(aiohttp_client, form: FormSchema, blob_storage):
     app.router.add_post(
         "/api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/file-upload",
         _tenant_wrapped_upload,
+    )
+    app.router.add_get(
+        "/api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/thumbnail",
+        _tenant_wrapped_thumbnail,
     )
     return await aiohttp_client(app)
 
@@ -176,11 +185,47 @@ class TestFileUploadEndToEnd:
         envelope = FileEnvelope.model_validate(body)
 
         assert envelope.thumbnail_url is not None
-        thumb_chunks = [chunk async for chunk in await blob_storage.get(envelope.thumbnail_url)]
-        thumb_bytes = b"".join(thumb_chunks)
+        assert envelope.thumbnail_url.startswith(
+            f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'photo')}/thumbnail?ref="
+        )
+
+        # Round-trip: GET the returned thumbnail_url and get back valid
+        # image bytes (TASK-2469 acceptance criterion).
+        thumb_resp = await client.get(envelope.thumbnail_url)
+        assert thumb_resp.status == 200
+        assert thumb_resp.content_type == "image/webp"
+        thumb_bytes = await thumb_resp.read()
         thumb_img = Image.open(BytesIO(thumb_bytes))
         assert thumb_img.width <= 150
         assert thumb_img.height <= 150
+
+    @pytest.mark.asyncio
+    async def test_thumbnail_route_returns_404_for_unknown_ref(self, aiohttp_client):
+        """GET .../thumbnail with an unknown ref -> 404, not 500."""
+        field = FormField(field_id="photo", field_type=FieldType.IMAGE, label={"en": "Photo"})
+        form = _make_form(field)
+        blob_storage = TempBlobStorage()
+        client = await _make_upload_client(aiohttp_client, form, blob_storage)
+
+        resp = await client.get(
+            f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'photo')}/thumbnail"
+            "?ref=temp%3A%2F%2Fbogus%2Fmissing%2Fkey"
+        )
+        assert resp.status == 404
+
+    @pytest.mark.asyncio
+    async def test_thumbnail_route_returns_404_for_non_upload_field(self, aiohttp_client):
+        """GET .../thumbnail for a non-upload field type -> 404."""
+        field = FormField(field_id="name", field_type=FieldType.TEXT, label={"en": "Name"})
+        form = _make_form(field)
+        blob_storage = TempBlobStorage()
+        client = await _make_upload_client(aiohttp_client, form, blob_storage)
+
+        resp = await client.get(
+            f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'name')}/thumbnail"
+            "?ref=temp%3A%2F%2Fanything"
+        )
+        assert resp.status == 404
 
     @pytest.mark.asyncio
     async def test_multi_file_upload(self, aiohttp_client):

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import FormData, web
-
 from parrot_formdesigner.api.file_upload import handle_file_upload
 from parrot_formdesigner.core.constraints import FieldConstraints
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
@@ -230,7 +229,13 @@ class TestFileUploadHandler:
             data=_file_data(filename="photo.jpg", content_type="image/jpeg", content=b"jpegbytes"),
         )
         body = await resp.json()
-        assert body["thumbnail_url"] == "temp://thumb-ref"
+        # thumbnail_url is a fetchable path under handle_get_thumbnail
+        # (TASK-2469), not the raw blob_ref — the ref is URL-encoded in
+        # the 'ref' query parameter.
+        assert body["thumbnail_url"] == (
+            f"/api/v1/navigator/forms/{form.form_uid}/fields/{_field_uid(form, 'photo')}"
+            "/thumbnail?ref=temp%3A%2F%2Fthumb-ref"
+        )
         thumbnail_service.generate.assert_called_once()
 
     @pytest.mark.asyncio

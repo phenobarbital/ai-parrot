@@ -4,6 +4,10 @@ Exposes ``handle_file_upload`` — an aiohttp request handler mounted at:
 
     POST /api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/file-upload
 
+and ``handle_get_thumbnail`` — mounted at:
+
+    GET /api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/thumbnail?ref=<encoded-blob-ref>
+
 Handles the binary pipeline for FILE, IMAGE, IMAGE_DROPZONE, and
 MULTI_UPLOAD field types: multipart parsing, MIME/size enforcement, blob
 storage persistence, inline data_url encoding, SHA-256 checksums, optional
@@ -26,6 +30,15 @@ upload — required to disambiguate concurrent uploads to the same field).
 Chunks are buffered in blob storage (one blob per chunk) and reassembled
 when the final chunk arrives (``offset + len(chunk) == total_length``).
 This is NOT full tus-protocol support — see the spec's Non-Goals.
+
+Thumbnail URLs (TASK-2469):
+``FileEnvelope.thumbnail_url`` is a fetchable path under
+``handle_get_thumbnail`` (this module), not the raw blob reference —
+the ``ref`` query parameter carries that reference URL-encoded (blob_ref
+strings are backend-opaque, e.g. ``temp://...`` / ``s3://bucket/...``,
+and contain ``/``, so a query param avoids parsing a backend-specific key
+shape out of a path segment). No signing/expiry — same unsigned trust
+model as ``blob_ref`` itself.
 """
 
 from __future__ import annotations
@@ -35,6 +48,7 @@ import hashlib
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
+from urllib.parse import quote, unquote
 
 from aiohttp import web
 
@@ -179,6 +193,12 @@ async def handle_file_upload(request: web.Request) -> web.Response:
     blob_storage = _get_blob_storage(request.app)
     blob_tenant: str | None = request.headers.get("X-Parrot-Tenant") or tenant
 
+    # This endpoint's own path, minus the trailing '/file-upload' segment,
+    # is exactly the field's base path (".../forms/{form_uid}/fields/
+    # {field_uid}") — reused to build a fetchable thumbnail_url without
+    # needing to know setup_form_api's (possibly customized) base_path.
+    thumbnail_base_path = request.path.rsplit("/", 1)[0] + "/thumbnail"
+
     upload_offset = request.headers.get("X-Parrot-Upload-Offset")
     upload_length = request.headers.get("X-Parrot-Upload-Length")
 
@@ -194,6 +214,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
             max_size,
             allowed_mimes,
             max_inline,
+            thumbnail_base_path,
         )
         if envelope is None:
             return web.json_response({"status": "chunk_received"}, status=202)
@@ -239,6 +260,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 max_size,
                 allowed_mimes,
                 max_inline,
+                thumbnail_base_path,
             )
             envelopes.append(envelope)
 
@@ -275,6 +297,7 @@ async def _process_file_part(
     max_size: int | None,
     allowed_mimes: list[str] | None,
     max_inline: int,
+    thumbnail_base_path: str,
 ) -> FileEnvelope:
     """Stream, validate, and persist a single multipart file part.
 
@@ -288,6 +311,8 @@ async def _process_file_part(
         max_size: Maximum allowed file size in bytes, or None.
         allowed_mimes: Allowed MIME types, or None (any allowed).
         max_inline: Size threshold for inline data_url inclusion.
+        thumbnail_base_path: Path prefix for building a fetchable
+            ``thumbnail_url`` (see ``handle_get_thumbnail``).
 
     Returns:
         The finalized FileEnvelope for this file part.
@@ -319,6 +344,7 @@ async def _process_file_part(
         blob_storage,
         blob_tenant,
         max_inline,
+        thumbnail_base_path,
     )
 
 
@@ -332,6 +358,7 @@ async def _handle_chunk(
     max_size: int | None,
     allowed_mimes: list[str] | None,
     max_inline: int,
+    thumbnail_base_path: str,
 ) -> FileEnvelope | None:
     """Handle one chunk of a basic chunked upload.
 
@@ -345,6 +372,8 @@ async def _handle_chunk(
         max_size: Maximum allowed assembled file size in bytes, or None.
         allowed_mimes: Allowed MIME types, or None (any allowed).
         max_inline: Size threshold for inline data_url inclusion.
+        thumbnail_base_path: Path prefix for building a fetchable
+            ``thumbnail_url`` (see ``handle_get_thumbnail``).
 
     Returns:
         The finalized FileEnvelope once the final chunk is received and
@@ -441,6 +470,7 @@ async def _handle_chunk(
         blob_storage,
         blob_tenant,
         max_inline,
+        thumbnail_base_path,
     )
 
 
@@ -455,6 +485,7 @@ async def _finalize_envelope(
     blob_storage: AbstractBlobStorage,
     blob_tenant: str | None,
     max_inline: int,
+    thumbnail_base_path: str,
 ) -> FileEnvelope:
     """Persist file bytes to blob storage and build the FileEnvelope.
 
@@ -469,6 +500,9 @@ async def _finalize_envelope(
         blob_storage: Blob storage backend.
         blob_tenant: Tenant tag for blob metadata.
         max_inline: Size threshold for inline data_url inclusion.
+        thumbnail_base_path: Path prefix (".../fields/{field_uid}/thumbnail")
+            for building a fetchable ``thumbnail_url`` — the thumbnail's
+            blob_ref is appended as a URL-encoded ``ref`` query parameter.
 
     Returns:
         The finalized FileEnvelope.
@@ -503,7 +537,9 @@ async def _finalize_envelope(
     thumbnail_url: str | None = None
     if content_type.startswith("image/"):
         thumbnail_service = _get_thumbnail_service(app, blob_storage)
-        thumbnail_url = await thumbnail_service.generate(file_bytes, blob_meta)
+        thumbnail_ref = await thumbnail_service.generate(file_bytes, blob_meta)
+        if thumbnail_ref is not None:
+            thumbnail_url = f"{thumbnail_base_path}?ref={quote(thumbnail_ref, safe='')}"
 
     return FileEnvelope(
         filename=filename,
@@ -514,3 +550,59 @@ async def _finalize_envelope(
         thumbnail_url=thumbnail_url,
         checksum=f"sha256:{checksum_hex}",
     )
+
+
+async def handle_get_thumbnail(request: web.Request) -> web.Response:
+    """Handle GET .../forms/{form_uid}/fields/{field_uid}/thumbnail?ref=<encoded-blob-ref>.
+
+    Streams back a previously generated thumbnail's bytes. ``ref`` is the
+    opaque blob_ref embedded (URL-encoded) in a FileEnvelope's
+    ``thumbnail_url`` by ``_finalize_envelope``.
+
+    Args:
+        request: The incoming aiohttp web.Request.
+
+    Returns:
+        The thumbnail bytes, ``Content-Type: image/webp``.
+
+    Raises:
+        web.HTTPNotFound: Form/field not found, field is not an upload
+            type, the ``ref`` query parameter is missing, or the
+            referenced blob cannot be read.
+    """
+    form_uid = extract_form_uid(request)
+    field_uid = extract_uid(request, "field_uid")
+    tenant = declared_tenant(request)
+
+    registry = request.app.get("form_registry")
+    if registry is None:
+        raise web.HTTPInternalServerError(reason="form_registry not configured")
+
+    form = await registry.get(form_uid, tenant=tenant)
+    if form is None:
+        raise web.HTTPNotFound(reason=f"Form not found: {form_uid!r}")
+
+    found = find_field_by_uid(form, field_uid)
+    if found is None:
+        raise web.HTTPNotFound(reason=f"Field not found: {field_uid!r}")
+    field: FormField = found[0]
+
+    if field.field_type not in UPLOAD_FIELD_TYPES:
+        raise web.HTTPNotFound(
+            reason=(f"Field {field.field_id!r} is not an upload field " f"(got {field.field_type.value!r})")
+        )
+
+    raw_ref = request.query.get("ref")
+    if not raw_ref:
+        raise web.HTTPNotFound(reason="Missing 'ref' query parameter")
+    ref = unquote(raw_ref)
+
+    blob_storage = _get_blob_storage(request.app)
+    try:
+        stream = await blob_storage.get(ref)
+        chunks = [chunk async for chunk in stream]
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        logger.warning("Thumbnail not found for ref %r: %s", ref, exc)
+        raise web.HTTPNotFound(reason="Thumbnail not found") from exc
+
+    return web.Response(body=b"".join(chunks), content_type="image/webp")
