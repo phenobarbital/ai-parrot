@@ -165,6 +165,10 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
         "gen_ai.request.model": event.model,
         # Custom extension — not part of OTel GenAI SemConv stable spec (May 2025)
         "gen_ai.request.has_tools": event.has_tools,
+        # FEAT-462 — OpenLIT dashboards classify spans by operation type.
+        # Hardcoded "chat" covers 95%+ of calls today; a future enhancement
+        # could derive this from event metadata (e.g. "embed").
+        "gen_ai.operation.name": "chat",
     }
     if event.temperature is not None:
         attrs["gen_ai.request.temperature"] = event.temperature
@@ -209,7 +213,8 @@ def build_after_client_attrs(
     if event.finish_reason is not None:
         attrs["gen_ai.response.finish_reason"] = event.finish_reason
     if cost_usd is not None:
-        attrs["parrot.cost.usd"] = cost_usd
+        attrs["parrot.cost.usd"] = cost_usd  # legacy name — kept for backward compat
+        attrs["gen_ai.usage.cost"] = cost_usd  # FEAT-462 — OpenLIT SemConv standard
     if event.agent_name:  # FEAT-228: omit when None/empty
         attrs["parrot.agent.name"] = event.agent_name
     if event.user_id:
