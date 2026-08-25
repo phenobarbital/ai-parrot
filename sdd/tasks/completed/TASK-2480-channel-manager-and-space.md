@@ -208,7 +208,20 @@ Same as TASK-2478.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Created `crew/channels.py` with `ChannelManager` per the
+skeleton: `ensure_channels()` resolves `room_id` → alias → creates a new
+room (initial `m.parrot.channel` state on creation, reconciled state with
+a `logger.warning` for pre-existing rooms), joins member agents, and links
+to the optional Space. Added `ensure_space()` / `link_to_space()` writing
+`m.space.child` (on the Space, keyed by child room id) / `m.space.parent`
+(on the child, keyed by the Space id). Added `creation_content` kwarg to
+`MatrixAppService.create_room_as_bot` (passed through to
+`IntentAPI.create_room`) so the Space room can be created with
+`{"type": "m.space"}`. Exported `ChannelManager` from `crew/__init__.py`.
+5/5 new tests pass; full matrix regression 197/203 pass (6 pre-existing
+`test_matrix_hook.py` failures unrelated to this task, confirmed via
+`git stash` baseline in TASK-2478). `ruff check` shows only pre-existing
+baseline lint categories, no new ones.
 **Deviations from spec**: none
