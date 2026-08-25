@@ -40,8 +40,10 @@ from .session_models import (
     SessionPhase,
 )
 from .transport import MatrixCrewTransport
+from .tunnel import AgentTunnel, TunnelRegistry
 
 __all__ = [
+    "AgentTunnel",
     "ChannelConfig",
     "ChannelManager",
     "CollaborativeConfig",
@@ -49,6 +51,7 @@ __all__ = [
     "MatrixCrewAgentEntry",
     "SpaceConfig",
     "TunnelConfig",
+    "TunnelRegistry",
     "MatrixCrewRegistry",
     "MatrixAgentCard",
     "MatrixCoordinator",
