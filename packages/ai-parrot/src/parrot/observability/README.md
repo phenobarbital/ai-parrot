@@ -15,9 +15,8 @@ from parrot.observability import ObservabilityConfig, setup_telemetry, shutdown_
 setup_telemetry(ObservabilityConfig(
     enabled=True,
     service_name="my-agent",
-    otlp_endpoint="http://localhost:4318",
+    otlp_endpoint="http://localhost:4318",  # point this at your OpenLIT/OTLP collector
     enable_cost_tracking=True,
-    enable_openlit=True,   # requires: pip install 'ai-parrot[observability-openlit]'
 ))
 
 # ... run your agent as usual ...
@@ -71,20 +70,26 @@ the OpenTelemetry SDK. Cost is computed via the bundled `CostCalculator`
 
 ### End-to-end with OpenLIT + OTLP (dashboards, zero code)
 
+**FEAT-462 — Unified Telemetry Bus**: OpenLIT is no longer a Python SDK
+dependency. It's a plain OTLP HTTP collector + dashboard that AI-Parrot
+exports GenAI SemConv spans to directly — no `openlit.init()`, no
+`observability-openlit` SDK extra, no version-conflicting `openai` pin.
+
 This is the recommended path to get a **dashboard of LLM requests** (tokens,
 USD cost, latency, model, errors) without writing any code:
 
 ```bash
-# 1. Install the extras
+# 1. Install the extra (aiohttp-only helper, see ai-parrot-openlit-bridge)
 pip install 'ai-parrot[observability,observability-openlit]'
 
-# 2. Launch the demo stack (OpenLIT UI :3000 + ClickHouse + Prometheus :9090)
-docker compose -f packages/ai-parrot/src/parrot/observability/examples/docker-compose.observability.yml up -d
+# 2. Launch a local OpenLIT collector — see
+#    packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml
+docker compose -f packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml up -d
+parrot-openlit-check http://localhost:4318   # verify reachability
 
 # 3. Point AI-Parrot at it (e.g. in your .env)
 export OBSERVABILITY_ENABLED=true
 export OBSERVABILITY_BACKEND=otel
-export OBSERVABILITY_OPENLIT=true
 export OBSERVABILITY_SERVICE_NAME=my-agent
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
@@ -93,11 +98,26 @@ Now build/use **any** bot — observability auto-boots on first construction and
 exports OTLP traces + metrics. Open <http://localhost:3000> to see each LLM
 request with tokens, cost and latency.
 
+For **multiple** OTLP destinations at once (e.g. OpenLIT + Grafana Tempo),
+set `OTLP_TARGETS` instead of the single `OTEL_EXPORTER_OTLP_ENDPOINT` — one
+`BatchSpanProcessor` is attached per target on the shared `TracerProvider`:
+
+```bash
+export OTLP_TARGETS='[{"name":"openlit","endpoint":"http://localhost:4318"},{"name":"tempo","endpoint":"http://tempo:4318"}]'
+```
+
+For a **cost-only** OpenLIT dashboard without the full trace pipeline (e.g.
+while running the lightweight `logging` backend), use the additive
+`OpenLitUsageRecorder` instead:
+
+```bash
+export OBSERVABILITY_ENABLED=true
+export OBSERVABILITY_OPENLIT_RECORDER=true
+export OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT=http://localhost:4318
+```
+
 Notes:
 
-- **OpenLIT escalates the backend.** Setting `OBSERVABILITY_OPENLIT=true` forces
-  the `otel` path even if `OBSERVABILITY_BACKEND` is unset/`logging`, because
-  OpenLIT needs the global `TracerProvider` that only `setup_telemetry` installs.
 - **Graceful flush is automatic.** An `atexit` hook flushes the final
   `BatchSpanProcessor` / `PeriodicExportingMetricReader` batch on process exit;
   long-running servers also flush deterministically via the autonomous
@@ -109,50 +129,18 @@ Notes:
 - **Custom pricing.** Point `PARROT_PRICING_PATH` at a dir of `<provider>.json`
   files to override the bundled cost tables.
 
-### Simple local/dev with OpenLLMetry (Traceloop)
-
-When you want a lightweight local/dev setup that shows the **actual prompts and
-responses** in the trace (the one thing the native path withholds by default for
-PII), use the `traceloop` backend. Keep OpenLIT for production:
-
-```bash
-pip install 'ai-parrot[observability,observability-traceloop]'
-
-export OBSERVABILITY_ENABLED=true
-export OBSERVABILITY_TRACELOOP=true          # forces backend=traceloop; OpenLIT stays off
-export OBSERVABILITY_CAPTURE_CONTENT=true    # dev only — captures prompts/completions (PII)
-export OBSERVABILITY_SERVICE_NAME=my-agent
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-```
-
-How it works:
-
-- **Traceloop owns one OTLP pipeline.** `Traceloop.init()` installs the global
-  `TracerProvider`, exports to your collector, and auto-instruments the LLM SDKs
-  (OpenAI/Anthropic/…) with content capture. AI-Parrot's native span/metric
-  subscribers ride the *same* global provider, so you also get the agent/tool/
-  client spans and usage/cost metrics — **one pipeline, no duplicate spans**.
-- **Mutually exclusive with OpenLIT.** Setting `OBSERVABILITY_TRACELOOP=true`
-  forces `backend=traceloop`; if `OBSERVABILITY_OPENLIT=true` is also set,
-  Traceloop wins and OpenLIT is disabled with a warning. The `traceloop-sdk` is
-  an independent optional extra — choosing OpenLIT never installs Traceloop and
-  vice-versa.
-- **Content capture is gated.** Prompts/completions are captured only when
-  `OBSERVABILITY_CAPTURE_CONTENT=true` (maps to `capture_prompts` /
-  `capture_completions`, which also sets Traceloop's `TRACELOOP_TRACE_CONTENT`).
-  Leave it off outside dev/test.
-
-Point it at any OTLP backend — the bundled OpenLIT stack at `:4318`, a local
-Jaeger/Grafana Tempo, SigNoz, or the Traceloop cloud (set an API key).
-
 ### Backends
 
 | Backend | Install | When |
 |---|---|---|
 | `logging` (default) | none | Start here. Zero infra, zero network, minimal latency. |
 | `prometheus` | `pip install 'ai-parrot[observability-prometheus]'` | Pull-based metrics + Grafana dashboards. Exposes `:9464/metrics`. |
-| `otel` | `pip install 'ai-parrot[observability]'` | Full OTLP traces + metrics (delegates to `setup_telemetry`). Add `observability-openlit` for the production OpenLIT backend. |
-| `traceloop` | `pip install 'ai-parrot[observability,observability-traceloop]'` | **Local/dev**: OpenLLMetry (Traceloop) owns the OTLP pipeline + auto-instruments the LLM SDKs with prompt/completion capture. Mutually exclusive with OpenLIT. |
+| `otel` | `pip install 'ai-parrot[observability]'` | Full OTLP traces + metrics (delegates to `setup_telemetry`). Point `otlp_endpoint`/`otlp_targets` at OpenLIT, Tempo, SigNoz, etc. |
+
+`usage_backend="traceloop"` and the `enable_openlit`/`enable_traceloop` config
+flags are deprecated (FEAT-462): the former is remapped to `"otel"` with a
+deprecation log, the latter two emit a `DeprecationWarning` and otherwise do
+nothing — configure an OTLP target or the `OpenLitUsageRecorder` instead.
 
 The Prometheus backend exposes `parrot_llm_requests_total`,
 `parrot_llm_input_tokens_total`, `parrot_llm_output_tokens_total`,
@@ -210,7 +198,10 @@ globally-registered subscriber (the usage recorder *or* the OTel
 | `enable_traces` | bool | `True` | Subscribe `GenAIOpenTelemetrySubscriber`. |
 | `enable_metrics` | bool | `True` | Subscribe `MetricsSubscriber`. |
 | `enable_cost_tracking` | bool | `True` | Build a `CostCalculator` and inject into subscribers. |
-| `enable_openlit` | bool | `False` | Call `openlit.init()` for auto-instrumentation. |
+| `otlp_targets` | list[OtlpTarget] | `[]` | FEAT-462: multi-endpoint OTLP export. Empty → falls back to `otlp_endpoint` as a single implicit target. |
+| `openlit_recorder_endpoint` | str \| None | `None` | FEAT-462: OTLP endpoint for the additive `OpenLitUsageRecorder` (usage-only spans, works independent of `usage_backend`). |
+| `enable_openlit` | bool | `False` | **Deprecated (FEAT-462)** — no-op, emits a `DeprecationWarning`. Configure `otlp_targets`/`openlit_recorder_endpoint` instead. |
+| `enable_traceloop` | bool | `False` | **Deprecated (FEAT-462)** — no-op, emits a `DeprecationWarning`. |
 | `sampling_ratio` | float | `1.0` | `TraceIdRatioBased` sampler rate `[0.0, 1.0]`. |
 | `capture_prompts` | bool | `False` | Include system-prompt SHA-256 hashes in spans. **PII guard: default off.** |
 | `capture_completions` | bool | `False` | Add per-chunk span events for streaming. **PII guard: default off.** |
@@ -229,7 +220,11 @@ globally-registered subscriber (the usage recorder *or* the OTel
 | `OBSERVABILITY_ENABLED` | `config.enabled` | Set to `"true"` or `"1"` to enable. |
 | `OBSERVABILITY_SERVICE_NAME` | `config.service_name` | Overrides the default `"ai-parrot"`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `config.otlp_endpoint` | Standard OTel env var; navconfig reads it. |
-| `OBSERVABILITY_OPENLIT` | `config.enable_openlit` | Set to `"true"` to enable OpenLIT auto-instrumentation. |
+| `OTLP_TARGETS` | `config.otlp_targets` | FEAT-462: JSON list of `{"name","endpoint","headers"}`. Malformed JSON is logged and ignored (falls back to `otlp_endpoint`). |
+| `OBSERVABILITY_OPENLIT_RECORDER` | `config.openlit_recorder_endpoint` | FEAT-462: boolean enable switch for the additive `OpenLitUsageRecorder`; defaults the endpoint to `otlp_endpoint`. |
+| `OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT` | `config.openlit_recorder_endpoint` | FEAT-462: explicit endpoint override for the recorder above. |
+| `OBSERVABILITY_OPENLIT` | `config.enable_openlit` | **Deprecated (FEAT-462)** — no-op; emits a `DeprecationWarning`. |
+| `OBSERVABILITY_TRACELOOP` | `config.enable_traceloop` | **Deprecated (FEAT-462)** — no-op; emits a `DeprecationWarning`. |
 | `OBSERVABILITY_COST` | `config.enable_cost_tracking` | Set to `"false"` to disable cost tracking. |
 | `OBSERVABILITY_SAMPLING` | `config.sampling_ratio` | Float string `"0.1"` → 10% sampling. |
 | `PARROT_PRICING_PATH` | `config.pricing_override_path` | Path to a custom pricing directory. |
@@ -261,9 +256,9 @@ is GDPR/CCPA compliant before production use.
 
 - **Disabled** (`config.enabled=False`): ~0 ns overhead; `setup_telemetry` returns
   immediately without importing the OTel SDK.
-- **Enabled, no OpenLIT**: p50 overhead < 1 ms per `bot.ask()` round-trip on a
+- **Enabled**: p50 overhead < 1 ms per `bot.ask()` round-trip on a
   typical developer machine.
-- **Enabled + OpenLIT** (mocked): p50 overhead < 5 ms.
+- **Enabled + `OpenLitUsageRecorder`** (mocked exporter): p50 overhead < 5 ms.
 - **`SimpleSpanProcessor` is forbidden** — `setup_telemetry` will raise `ConfigurationError`
   if one is detected. Always use `BatchSpanProcessor` (wired automatically).
 
@@ -273,15 +268,12 @@ These guarantees are enforced by `tests/integration/observability/test_perf.py`.
 
 ## OpenLIT contract
 
-OpenLIT auto-spans are **children** of AI-Parrot's own spans, not siblings.
-
-This is guaranteed automatically: `setup_telemetry` installs the global `TracerProvider`
-**before** calling `openlit.init()`. OpenLIT inherits the active provider and the active
-span context, so its spans nest correctly under ours.
-
-**Do not reorder** `setup_telemetry` and `openlit.init()` calls. If you call
-`openlit.init()` manually before `setup_telemetry`, parent-child relationships
-may be reversed.
+**FEAT-462**: OpenLIT is a deployment-time OTLP endpoint, not an SDK — there is
+no `openlit.init()` call and no parent/child span-ordering concern anymore.
+AI-Parrot's own `GenAIOpenTelemetrySubscriber` emits every GenAI SemConv span
+directly; OpenLIT's dashboard reads them straight off the OTLP endpoint you
+point `otlp_endpoint`/`otlp_targets` at. See `ai-parrot-openlit-bridge` for an
+optional endpoint-reachability probe (`parrot-openlit-check`).
 
 ---
 
@@ -303,7 +295,9 @@ covers 5 scenarios:
 1. **Traces only** (`enable_metrics=False`) — span exporter captures spans.
 2. **Metrics only** (`enable_traces=False`) — metric reader collects counters/histograms.
 3. **Traces + metrics + cost** — both exporter and reader are populated; cost counter updated.
-4. **Traces + OpenLIT (mocked)** — `openlit.init` called exactly once; subscriber still works.
+4. **Traces + `OpenLitUsageRecorder` (mocked exporter)** — the additive usage recorder
+   receives a record on `AfterClientCallEvent` while the native trace subscriber
+   independently still produces spans on the same event stream.
 5. **Sampling = 10%** — 100 requests yield ~10 spans (±50% CI tolerance).
 
 Run with:
@@ -351,17 +345,6 @@ Install the `observability` extra:
 ```bash
 pip install 'ai-parrot[observability]'
 ```
-
-**"ImportError: enable_openlit=True requires the 'observability-openlit' extra"**
-Install:
-```bash
-pip install 'ai-parrot[observability-openlit]'
-```
-
-**OpenLIT spans appear as siblings instead of children of AI-Parrot spans**
-`openlit.init()` was called before `setup_telemetry()`. Always call
-`setup_telemetry()` first. Setting `enable_openlit=True` in `ObservabilityConfig`
-guarantees the correct order.
 
 **"ConfigurationError: setup_telemetry already configured with a different ObservabilityConfig"**
 `setup_telemetry` is idempotent for the same config but rejects a second call with

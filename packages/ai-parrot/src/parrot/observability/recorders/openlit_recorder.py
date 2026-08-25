@@ -13,6 +13,7 @@ Spec §3 Module 4.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from parrot.observability.recorders.base import AbstractLogger
@@ -83,8 +84,14 @@ class OpenLitUsageRecorder(AbstractLogger):
                 OTLPSpanExporter,
             )
 
+            # Mirror exporters.py's make_span_exporter()/make_span_exporters():
+            # the OTel SDK does NOT auto-append /v1/traces when endpoint= is
+            # passed explicitly (only the env-var-driven default does), so
+            # without this suffix every span silently 404s against a real
+            # OTLP HTTP collector.
+            http_endpoint = f"{endpoint.rstrip('/')}/v1/traces"
             exporter = OTLPSpanExporter(
-                endpoint=endpoint,
+                endpoint=http_endpoint,
                 headers=headers or None,
             )
 
@@ -102,11 +109,17 @@ class OpenLitUsageRecorder(AbstractLogger):
         """
         span = self._tracer.start_span("parrot.usage")
         try:
+            # Emit both the legacy gen_ai.system key and the newer
+            # gen_ai.provider.name key, matching attributes.py's established
+            # dual-emission convention (some collectors/dashboards still read
+            # the legacy key).
+            span.set_attribute("gen_ai.system", record.provider)
             span.set_attribute("gen_ai.provider.name", record.provider)
             span.set_attribute("gen_ai.request.model", record.model)
             span.set_attribute("gen_ai.operation.name", "chat")
             span.set_attribute("gen_ai.usage.input_tokens", record.input_tokens)
             span.set_attribute("gen_ai.usage.output_tokens", record.output_tokens)
+            span.set_attribute("gen_ai.usage.total_tokens", record.total_tokens)
             if record.cost_usd is not None:
                 span.set_attribute("gen_ai.usage.cost", record.cost_usd)
                 span.set_attribute("parrot.cost.usd", record.cost_usd)
@@ -119,12 +132,17 @@ class OpenLitUsageRecorder(AbstractLogger):
     async def aclose(self) -> None:
         """Flush pending spans and shut down the private provider.
 
+        ``force_flush``/``shutdown`` are synchronous, network-blocking OTel
+        SDK calls — run them in the default executor so this coroutine never
+        blocks the event loop (async-first project convention).
+
         Resilient to double-call and provider errors — logs a warning
         instead of raising, matching the ``AbstractLogger`` shutdown
         contract (called from best-effort shutdown paths).
         """
         try:
-            self._provider.force_flush()
-            self._provider.shutdown()
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._provider.force_flush)
+            await loop.run_in_executor(None, self._provider.shutdown)
         except Exception as exc:  # noqa: BLE001 — best-effort shutdown
             logger.warning("Error shutting down OpenLIT recorder: %s", exc)

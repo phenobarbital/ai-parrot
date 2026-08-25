@@ -50,7 +50,9 @@ python basic_telemetry.py
 ```
 
 The script:
-1. Calls `setup_telemetry()` with `enable_openlit=True`.
+1. Calls `setup_telemetry()` pointed at the local OpenLIT collector via
+   `otlp_endpoint` (FEAT-462: OpenLIT is a plain OTLP destination, not an
+   SDK flag).
 2. Sends 3 chat completions (or synthetic spans if `openai` is not installed).
 3. Calls `shutdown_telemetry()` to flush all data before exiting.
 

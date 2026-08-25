@@ -251,10 +251,13 @@ async def create_app() -> web.Application:
 
     # Ensure clean shutdown.
     # Observability auto-boots from env (OBSERVABILITY_ENABLED=true,
-    # OBSERVABILITY_BACKEND=otel, OBSERVABILITY_OPENLIT=true,
-    # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318) the first time an agent
-    # is built. orchestrator.stop() flushes the final OTLP batch; an atexit hook
-    # is also registered as a safety net for non-orchestrated exits.
+    # OBSERVABILITY_BACKEND=otel,
+    # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318) the first time an
+    # agent is built. Point OTEL_EXPORTER_OTLP_ENDPOINT (or OTLP_TARGETS for
+    # multiple destinations) at an OpenLIT collector to see spans there — the
+    # OBSERVABILITY_OPENLIT flag is deprecated and no longer needed (FEAT-462).
+    # orchestrator.stop() flushes the final OTLP batch; an atexit hook is also
+    # registered as a safety net for non-orchestrated exits.
     async def on_cleanup(_app: web.Application) -> None:
         await orchestrator.stop()
 

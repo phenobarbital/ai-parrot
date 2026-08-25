@@ -60,7 +60,9 @@ async def main() -> None:
             enable_traces=True,
             enable_metrics=True,
             enable_cost_tracking=True,
-            enable_openlit=True,        # auto-instrument via OpenLIT
+            # FEAT-462: no enable_openlit flag needed — pointing otlp_endpoint
+            # (above) at an OpenLIT collector is all that's required. OpenLIT
+            # is a pure OTLP endpoint now, not an SDK to auto-instrument with.
             capture_completions=False,  # PII guard
             sampling_ratio=1.0,
         )

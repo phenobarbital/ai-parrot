@@ -22,14 +22,15 @@ services:
     image: ghcr.io/openlit/openlit:latest
     container_name: openlit
     ports:
-      # OTLP HTTP receiver (traces/metrics) — point OTEL_EXPORTER_OTLP_ENDPOINT
-      # or an OtlpTarget's `endpoint` here.
-      - "4318:4318"
-      # OpenLIT dashboard UI.
-      - "3000:3000"
+      # Bound to loopback only — this is a local-dev snippet, not a
+      # production deployment artifact. Change to "4318:4318" (all
+      # interfaces) deliberately if you need remote access, and change
+      # the Postgres credentials below first.
+      - "127.0.0.1:4318:4318"  # OTLP HTTP receiver (traces/metrics)
+      - "127.0.0.1:3000:3000"  # OpenLIT dashboard UI
     environment:
-      # Postgres backing store for the dashboard. Change credentials before
-      # any non-local deployment.
+      # Postgres backing store for the dashboard. These are local-dev-only
+      # defaults — change credentials before any non-local deployment.
       INIT_DB_HOST: openlit-db
       INIT_DB_USER: postgres
       INIT_DB_PASSWORD: postgres
@@ -42,6 +43,7 @@ services:
     image: postgres:16-alpine
     container_name: openlit-db
     environment:
+      # Local-dev-only defaults — see the openlit service's INIT_DB_* above.
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: openlit

@@ -47,13 +47,14 @@ from parrot.observability.bootstrap import (
     shutdown_usage_recording,
 )
 from parrot.observability.context import agent_identity, current_agent_name
-from parrot.observability.config import ObservabilityConfig
+from parrot.observability.config import ObservabilityConfig, OtlpTarget
 from parrot.observability.cost.calculator import CostCalculator
 from parrot.observability.errors import ConfigurationError
 from parrot.observability.provider import ParrotTelemetryProvider
 from parrot.observability.recorders import (
     AbstractLogger,
     LoggingUsageRecorder,
+    OpenLitUsageRecorder,
     UsageRecord,
     UsageRecordingSubscriber,
 )
@@ -63,6 +64,7 @@ from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
 __all__: list[str] = [
     "ObservabilityConfig",
+    "OtlpTarget",
     "ConfigurationError",
     "ParrotTelemetryProvider",
     "setup_telemetry",
@@ -73,6 +75,7 @@ __all__: list[str] = [
     "AbstractLogger",
     "UsageRecord",
     "LoggingUsageRecorder",
+    "OpenLitUsageRecorder",
     "UsageRecordingSubscriber",
     "ensure_observability_bootstrapped",
     "shutdown_usage_recording",

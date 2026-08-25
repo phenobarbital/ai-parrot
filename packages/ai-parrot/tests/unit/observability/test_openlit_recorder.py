@@ -57,6 +57,33 @@ class TestOpenLitUsageRecorder:
         recorder = OpenLitUsageRecorder(endpoint="http://localhost:4318")
         assert recorder.name == "openlit"
 
+    def test_http_endpoint_gets_v1_traces_suffix(self, patched_otel) -> None:
+        """Regression test: the http/protobuf exporter must receive
+        endpoint + "/v1/traces", exactly mirroring exporters.py's
+        make_span_exporter()/make_span_exporters() — the OTel SDK does
+        NOT auto-append this path when endpoint= is passed explicitly.
+        Without it, every span silently 404s against a real collector."""
+        from parrot.observability.recorders.openlit_recorder import (
+            OpenLitUsageRecorder,
+        )
+
+        OpenLitUsageRecorder(endpoint="http://localhost:4318")
+        patched_otel["exporter_cls"].assert_called_once_with(
+            endpoint="http://localhost:4318/v1/traces",
+            headers=None,
+        )
+
+    def test_http_endpoint_trailing_slash_no_double_suffix(self, patched_otel) -> None:
+        from parrot.observability.recorders.openlit_recorder import (
+            OpenLitUsageRecorder,
+        )
+
+        OpenLitUsageRecorder(endpoint="http://localhost:4318/")
+        patched_otel["exporter_cls"].assert_called_once_with(
+            endpoint="http://localhost:4318/v1/traces",
+            headers=None,
+        )
+
     async def test_record_sets_attributes(self, patched_otel, sample_record) -> None:
         from parrot.observability.recorders.openlit_recorder import (
             OpenLitUsageRecorder,
@@ -68,9 +95,11 @@ class TestOpenLitUsageRecorder:
 
         await recorder.record(sample_record)
 
+        mock_span.set_attribute.assert_any_call("gen_ai.system", "openai")
         mock_span.set_attribute.assert_any_call("gen_ai.provider.name", "openai")
         mock_span.set_attribute.assert_any_call("gen_ai.request.model", "gpt-4o")
         mock_span.set_attribute.assert_any_call("gen_ai.operation.name", "chat")
+        mock_span.set_attribute.assert_any_call("gen_ai.usage.total_tokens", 150)
         mock_span.set_attribute.assert_any_call("gen_ai.usage.cost", 0.002)
         mock_span.set_attribute.assert_any_call("parrot.cost.usd", 0.002)
         mock_span.set_attribute.assert_any_call("parrot.trace_id", "abc123")
@@ -119,7 +148,9 @@ class TestFactoryOpenlitBranch:
         recorder_names = [r.name for r in recorders]
         assert "openlit" in recorder_names
 
-    def test_falls_back_to_otlp_endpoint_when_no_explicit_endpoint(self, patched_otel) -> None:
+    def test_explicit_endpoint_wins_over_otlp_endpoint(self, patched_otel) -> None:
+        """When both openlit_recorder_endpoint and otlp_endpoint are set,
+        the explicit recorder endpoint takes precedence."""
         config = ObservabilityConfig(
             openlit_recorder_endpoint="http://openlit:4318",
             otlp_endpoint="http://default:4318",
@@ -128,6 +159,25 @@ class TestFactoryOpenlitBranch:
             build_recorders_from_config(config)
             mock_recorder_cls.assert_called_once_with(
                 endpoint="http://openlit:4318",
+                headers=config.otlp_headers,
+                service_name=config.service_name,
+            )
+
+    def test_falls_back_to_otlp_endpoint_when_recorder_endpoint_matches_default(
+        self, patched_otel
+    ) -> None:
+        """True fallback case: from_env() defaults openlit_recorder_endpoint
+        to otlp_endpoint when OBSERVABILITY_OPENLIT_RECORDER=true is set
+        without an explicit OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT — the
+        factory then builds the recorder against that fallen-back value."""
+        config = ObservabilityConfig(
+            openlit_recorder_endpoint="http://default:4318",
+            otlp_endpoint="http://default:4318",
+        )
+        with patch("parrot.observability.recorders.openlit_recorder.OpenLitUsageRecorder") as mock_recorder_cls:
+            build_recorders_from_config(config)
+            mock_recorder_cls.assert_called_once_with(
+                endpoint="http://default:4318",
                 headers=config.otlp_headers,
                 service_name=config.service_name,
             )
