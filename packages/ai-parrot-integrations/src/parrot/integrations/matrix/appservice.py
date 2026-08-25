@@ -440,6 +440,7 @@ class MatrixAppService:
         visibility: str = "private",
         invitees: Optional[List[str]] = None,
         initial_state: Optional[List[dict]] = None,
+        creation_content: Optional[dict] = None,
     ) -> str:
         """Create a room as the AppService bot and return its room_id.
 
@@ -458,6 +459,8 @@ class MatrixAppService:
             visibility: Room directory visibility (``private`` or ``public``).
             invitees: Optional list of MXIDs to invite at creation time.
             initial_state: Optional list of initial state event dicts.
+            creation_content: Optional extra ``m.room.create`` content, e.g.
+                ``{"type": "m.space"}`` to create a Matrix Space room.
 
         Returns:
             The newly created room's id.
@@ -476,6 +479,7 @@ class MatrixAppService:
             visibility=RoomDirectoryVisibility(visibility),
             invitees=[UserID(u) for u in invitees or []],
             initial_state=initial_state,
+            creation_content=creation_content,
         )
         self.logger.info(
             "Created room %s (alias=%s, direct=%s)", room_id, alias_localpart, is_direct

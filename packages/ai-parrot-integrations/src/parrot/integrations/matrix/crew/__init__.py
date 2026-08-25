@@ -19,6 +19,7 @@ Public API::
     )
 """
 
+from .channels import ChannelManager
 from .config import (
     ChannelConfig,
     CollaborativeConfig,
@@ -42,6 +43,7 @@ from .transport import MatrixCrewTransport
 
 __all__ = [
     "ChannelConfig",
+    "ChannelManager",
     "CollaborativeConfig",
     "MatrixCrewConfig",
     "MatrixCrewAgentEntry",
