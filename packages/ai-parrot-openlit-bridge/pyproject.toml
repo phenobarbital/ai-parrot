@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77.0.0", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot-openlit-bridge"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Minimal OTLP endpoint validation helper for OpenLIT — no monkey-patching SDK required (FEAT-462)"
+readme = "README.md"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+license = "MIT"
+keywords = ["ai", "observability", "opentelemetry", "openlit", "otlp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+# Deliberately minimal — this package replaces the openlit/traceloop-sdk
+# monkey-patching SDKs (whose version-conflicting openai pins motivated
+# FEAT-462) with a zero-heavy-dependency OTLP endpoint probe. aiohttp is
+# already a workspace dependency, so this adds nothing new to the lock.
+dependencies = [
+    "aiohttp>=3.9",
+]
+
+[project.scripts]
+parrot-openlit-check = "ai_parrot_openlit_bridge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Repository = "https://github.com/phenobarbital/ai-parrot"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ai_parrot_openlit_bridge*"]
+
+[tool.setuptools.package-data]
+"ai_parrot_openlit_bridge" = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

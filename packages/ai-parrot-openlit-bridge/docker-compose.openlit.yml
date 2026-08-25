@@ -1,0 +1,53 @@
+# docker-compose.openlit.yml — bundled OpenLIT collector + UI snippet
+# (FEAT-462 — Unified Telemetry Bus).
+#
+# ai-parrot no longer bundles/depends on the `openlit` Python SDK — OpenLIT
+# is now a plain OTLP HTTP collector + dashboard you run separately, and
+# ai-parrot exports GenAI SemConv spans to it via
+# `ObservabilityConfig.otlp_targets` / `OpenLitUsageRecorder`.
+#
+# Usage:
+#   docker compose -f docker-compose.openlit.yml up -d
+#   parrot-openlit-check http://localhost:4318   # verify reachability
+#
+# Then configure ai-parrot to export to it, e.g.:
+#   OBSERVABILITY_ENABLED=true
+#   OBSERVABILITY_BACKEND=otel
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# or, for multi-target export alongside another collector:
+#   OTLP_TARGETS=[{"name":"openlit","endpoint":"http://localhost:4318"}]
+
+services:
+  openlit:
+    image: ghcr.io/openlit/openlit:latest
+    container_name: openlit
+    ports:
+      # OTLP HTTP receiver (traces/metrics) — point OTEL_EXPORTER_OTLP_ENDPOINT
+      # or an OtlpTarget's `endpoint` here.
+      - "4318:4318"
+      # OpenLIT dashboard UI.
+      - "3000:3000"
+    environment:
+      # Postgres backing store for the dashboard. Change credentials before
+      # any non-local deployment.
+      INIT_DB_HOST: openlit-db
+      INIT_DB_USER: postgres
+      INIT_DB_PASSWORD: postgres
+      INIT_DB_NAME: openlit
+    depends_on:
+      - openlit-db
+    restart: unless-stopped
+
+  openlit-db:
+    image: postgres:16-alpine
+    container_name: openlit-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: openlit
+    volumes:
+      - openlit-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  openlit-db-data:
