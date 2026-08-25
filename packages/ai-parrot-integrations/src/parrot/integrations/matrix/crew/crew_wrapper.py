@@ -12,6 +12,7 @@ import logging
 from typing import List, Optional, TYPE_CHECKING
 
 from ..events import ParrotEventType, ResultEventContent, TaskEventContent
+from . import context as ctx
 
 if TYPE_CHECKING:
     from ..appservice import MatrixAppService
@@ -107,6 +108,14 @@ class MatrixCrewAgentWrapper:
                 name=f"typing_{self._agent_name}",
             )
 
+        # Swarm request context (FEAT-463): a human-triggered message starts
+        # a fresh hop chain, and carries the originating room/event so
+        # AgentSwarmToolkit.ask_agent can post its optional echo line.
+        hops_token = ctx.current_hops.set(0)
+        session_token = ctx.current_session.set(None)
+        room_token = ctx.current_channel_room.set(room_id)
+        trigger_token = ctx.current_trigger_event.set(event_id)
+
         try:
             # 4 — resolve agent from BotManager
             from parrot.manager import BotManager  # type: ignore
@@ -154,6 +163,12 @@ class MatrixCrewAgentWrapper:
             # 9 — notify coordinator
             await self._coordinator.on_status_change(self._agent_name)
 
+            # 10 — reset swarm request context
+            ctx.current_hops.reset(hops_token)
+            ctx.current_session.reset(session_token)
+            ctx.current_channel_room.reset(room_token)
+            ctx.current_trigger_event.reset(trigger_token)
+
     async def handle_task(self, task: TaskEventContent, room_id: str) -> None:
         """Answer an inbound ``m.parrot.task`` and emit ``m.parrot.result``.
 
@@ -175,6 +190,12 @@ class MatrixCrewAgentWrapper:
             "hops": task.hops,
         }
         timeout = float(task.metadata.get("timeout", 120.0))
+
+        # Swarm request context (FEAT-463): propagate the hop count and
+        # originating session so a peer's own `ask_agent` tool calls (a
+        # potential A→B→A chain) are rejected once `max_hops` is reached.
+        hops_token = ctx.current_hops.set(task.hops)
+        session_token = ctx.current_session.set(task.origin_session)
 
         await self._registry.update_status(self._agent_name, "busy", task.content[:50])
         try:
@@ -204,6 +225,8 @@ class MatrixCrewAgentWrapper:
             )
         finally:
             await self._registry.update_status(self._agent_name, "ready")
+            ctx.current_hops.reset(hops_token)
+            ctx.current_session.reset(session_token)
 
         await self._appservice.send_custom_event_as_agent(
             self._agent_name, room_id, ParrotEventType.RESULT, result.model_dump()

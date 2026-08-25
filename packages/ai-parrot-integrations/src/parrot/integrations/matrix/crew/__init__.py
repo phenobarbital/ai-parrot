@@ -39,10 +39,12 @@ from .session_models import (
     CollaborativeSessionState,
     SessionPhase,
 )
+from .swarm_toolkit import AgentSwarmToolkit
 from .transport import MatrixCrewTransport
 from .tunnel import AgentTunnel, TunnelRegistry
 
 __all__ = [
+    "AgentSwarmToolkit",
     "AgentTunnel",
     "ChannelConfig",
     "ChannelManager",
