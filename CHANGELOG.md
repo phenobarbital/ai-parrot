@@ -7,40 +7,68 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+---
+
+## [0.27.1] — 2026-08-25
+
 ### Added
 
-- **`wikitoolkit ingest-jira --backfill`, `--concurrency`, `--progress-every`.**
-  Each ticket costs two round trips (its share of a search page plus its own
-  remote-links call), and the sweep used to make them strictly one at a
-  time: 0.37s/ticket, i.e. ~57 minutes for a ~9300-ticket project. The
-  per-issue work now runs `--concurrency` wide (default 8, from
-  `JIRA_WIKI_CONCURRENCY`), bounded by a semaphore, with the `requests`
-  connection pool resized to match — measured 39s → 9s on a 109-ticket
-  scope, byte-identical output. `--concurrency 1` reproduces the sequential
-  sweep exactly.
+#### FEAT-457: FormBuilder FormSchema Persistency
 
-  `--backfill` is the one-shot-load preset: `--force` + concurrency 16 +
-  progress every 100 issues + **scope-completeness enforcement** — a fetch
-  that came up materially short of Jira's own approximate count for the
-  scope fails the run instead of recording a watermark over an incomplete
-  corpus. Outside `--backfill` the same shortfall is reported as a warning
-  (`SweepReport.warnings`, `SweepReport.approx_scope_count`), never a gate:
-  the count is approximate by definition.
+Autonomous submission persistence pipeline for FormBuilder — forms declare
+a `persistence` block and submissions route to the appropriate sink
+automatically, no handler-side wiring.
+
+- `parrot.forms.core.persistence` — `PersistenceConfig`, `SinkType`,
+  `SinkCoordinate` (immutable after validation).
+- `AbstractSubmissionSink` ABC with capability model and typed error taxonomy.
+- Six built-in sinks: `PostgresTableSink` (provision + extend), `AsyncDBSink`
+  (Mongo/Arango nested, BigQuery tabular), `CsvFileSink` (lock-free),
+  `GoogleSheetSink` (with `[gsheet]` optional extra).
+- `SubmissionMapper` — tabular flattening and document nesting.
+- `SinkAliasRegistry` — tenant-scoped credential allowlist.
+- `SinkFactory` + `SinkDispatchTable` — coordinate-driven dispatch.
+- `AutonomousFormStorage` — pointer-indexed form definitions.
+- Application wiring via alias registry app key and factory injection.
+- End-to-end integration suite and reference documentation.
+
+#### FEAT-456: FormBuilder Relational Field Types
+
+Relational cardinality support for FormBuilder fields — define entity
+references and relation specs declaratively in field extractors.
+
+- `EntityRef`, `RelationSpec` models.
+- `FormField.relation` aspect with combination validator.
+- Extractor `relation:` block (YAML) + JSON Schema `x-relation` emission.
+- `FormValidator` shape validation for relational submissions.
+- Documentation and end-to-end integration tests.
+
+#### FEAT-455: Web Automation Fixture-Site Tests
+
+Test infrastructure for the web-automation toolkit: local fixture site,
+`fake_broker` fixture, real-browser smoke tests, resume-without-duplicates
+and submit-gate end-to-end coverage.
 
 ### Fixed
 
 - **`wikitoolkit ingest-jira` fetched only the first page (FEAT-454
-  follow-up).** Jira Cloud retired the offset-based `/search` endpoint:
-  pycontribs now redirects `search_issues(startAt=0)` to the cursor-based
-  `enhanced_search_issues` and raises for any `startAt > 0`, and that
-  response carries no `total`. `JiraInterface.search_issues` read the
-  missing `total` as "scope exhausted" and stopped after exactly one page
-  (100 issues), which also produced spurious `unresolved_link_keys`
-  warnings for in-scope tickets it had never fetched. It now paginates by
-  `nextPageToken` on Cloud and keeps the `startAt` loop for Server/DC,
-  where a missing `total` pages on until a short page instead of
-  truncating. Operators who ran a truncated sweep must backfill with
-  `ingest-jira --force` — the truncated run stored an `"ok"` watermark.
+  follow-up).** Jira Cloud's cursor-based pagination now handled correctly;
+  `--backfill`, `--concurrency`, and `--progress-every` flags added for
+  large-corpus ingestion.
+- **`setup_form_api` clobbered host-wired blob storage** — the API setup
+  no longer overwrites a storage instance already attached by the host app.
+- **`notification_succeeded` clobbered by NotificationMixin homologation** —
+  restored after the `send_*` wrapper refactor.
+- **`azure-identity==1.23.0` broke uv resolution** — pinned override added.
+- **CodeQL pipeline unblocked** — last real alert closed.
+
+### Changed
+
+- CI release workflow: allow manual `workflow_dispatch` runs; drop retired
+  `macos-13` build leg from `build-parrot-codec`.
+- `release.py` now tracks `parrot-codec` as a managed distribution.
+- MkDocs: 74 orphaned pages added to nav; new Knowledge Graph section
+  (LLM Wiki, PageIndex, GraphIndex).
 
 ---
 
