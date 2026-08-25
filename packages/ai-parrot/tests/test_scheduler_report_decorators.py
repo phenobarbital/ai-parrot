@@ -289,7 +289,7 @@ class TestRegisterBotSchedules:
 
     def test_uses_chatbot_id_for_env_key(self):
         """chatbot_id takes priority over name when building the env var key."""
-        with patch("parrot.scheduler._resolve_report_schedule") as mock_resolve:
+        with patch("parrot.scheduler.manager._resolve_report_schedule") as mock_resolve:
             mock_resolve.return_value = {"hour": 8, "minute": 0}
             bot = self._make_daily_bot(name="ignored", chatbot_id="analytics_bot")
             mgr = _make_manager()
@@ -298,7 +298,7 @@ class TestRegisterBotSchedules:
 
     def test_falls_back_to_name_for_env_key(self):
         """name is used when chatbot_id is absent."""
-        with patch("parrot.scheduler._resolve_report_schedule") as mock_resolve:
+        with patch("parrot.scheduler.manager._resolve_report_schedule") as mock_resolve:
             mock_resolve.return_value = {"hour": 8, "minute": 0}
             bot = self._make_daily_bot(name="ReportBot")
             mgr = _make_manager()

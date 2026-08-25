@@ -15,6 +15,11 @@ _SERVER_CLASSES = {
     "schedule_daily_report": ("parrot.scheduler.manager", "schedule_daily_report"),
     "schedule_weekly_report": ("parrot.scheduler.manager", "schedule_weekly_report"),
     "AgentSchedulerManager": ("parrot.scheduler.manager", "AgentSchedulerManager"),
+    # Private env-var parsers — re-exported so the report-decorator test suite
+    # can reach them through the namespace shim.
+    "_parse_daily_schedule": ("parrot.scheduler.manager", "_parse_daily_schedule"),
+    "_parse_weekly_schedule": ("parrot.scheduler.manager", "_parse_weekly_schedule"),
+    "_resolve_report_schedule": ("parrot.scheduler.manager", "_resolve_report_schedule"),
 }
 
 

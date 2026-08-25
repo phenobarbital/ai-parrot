@@ -39,6 +39,16 @@ from asyncdb import AsyncDB
 from navigator.connections import PostgresPool
 from parrot.conf import default_dsn, CACHE_HOST, CACHE_PORT
 from .models import AgentSchedule
+from .sanitize import (
+    WEEKDAYS,
+    SchedulerConfigError,
+    clean_int,
+    clean_str,
+    normalize_jobstore_alias,
+    normalize_schedule_type,
+    sanitize_redis_settings,
+    sanitize_schedule_config,
+)
 from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
 from .functions import build_scheduler_callback
@@ -207,11 +217,17 @@ def _parse_daily_schedule(raw: Optional[str]) -> Dict[str, Any]:
         Dict with keys ``hour`` and ``minute``.
         Falls back to ``{"hour": 8, "minute": 0}`` on ``None`` or malformed input.
     """
-    if raw:
+    text = clean_str(raw, field="daily report schedule")
+    if text:
         try:
-            parts = raw.strip().split(":")
-            return {"hour": int(parts[0]), "minute": int(parts[1])}
-        except (ValueError, IndexError, AttributeError):
+            hour_part, minute_part = text.split(":", 1)
+        except ValueError:
+            _log.warning("Could not parse daily schedule %r; using default 08:00", raw)
+        else:
+            hour = clean_int(hour_part, default=None, minimum=0, maximum=23, field="hour")
+            minute = clean_int(minute_part, default=None, minimum=0, maximum=59, field="minute")
+            if hour is not None and minute is not None:
+                return {"hour": hour, "minute": minute}
             _log.warning("Could not parse daily schedule %r; using default 08:00", raw)
     return {"hour": 8, "minute": 0}
 
@@ -229,19 +245,23 @@ def _parse_weekly_schedule(raw: Optional[str]) -> Dict[str, Any]:
         Falls back to ``{"day_of_week": "mon", "hour": 9, "minute": 0}`` on ``None``
         or malformed input.
     """
-    if raw:
-        try:
-            parts = raw.strip().split()
-            dow = parts[0].lower()[:3]          # "monday" → "mon", "FRI" → "fri"
-            time_parts = parts[1].split(":")
-            return {
-                "day_of_week": dow,
-                "hour": int(time_parts[0]),
-                "minute": int(time_parts[1]),
-            }
-        except (ValueError, IndexError, AttributeError):
-            _log.warning("Could not parse weekly schedule %r; using default mon 09:00", raw)
-    return {"day_of_week": "mon", "hour": 9, "minute": 0}
+    default = {"day_of_week": "mon", "hour": 9, "minute": 0}
+    text = clean_str(raw, field="weekly report schedule")
+    if not text:
+        return default
+    parts = text.split()
+    if len(parts) != 2 or ":" not in parts[1]:
+        _log.warning("Could not parse weekly schedule %r; using default mon 09:00", raw)
+        return default
+
+    dow = parts[0].lower()[:3]          # "monday" → "mon", "FRI" → "fri"
+    hour_part, minute_part = parts[1].split(":", 1)
+    hour = clean_int(hour_part, default=None, minimum=0, maximum=23, field="hour")
+    minute = clean_int(minute_part, default=None, minimum=0, maximum=59, field="minute")
+    if dow not in WEEKDAYS or hour is None or minute is None:
+        _log.warning("Could not parse weekly schedule %r; using default mon 09:00", raw)
+        return default
+    return {"day_of_week": dow, "hour": hour, "minute": minute}
 
 
 def _resolve_report_schedule(agent_id: str, report_type: str) -> Dict[str, Any]:
@@ -884,37 +904,38 @@ class AgentSchedulerManager:
         Returns:
             APScheduler trigger instance
         """
-        schedule_type = schedule_type.lower()
+        # `schedule_type` and `config` come straight off the
+        # navigator.agents_scheduler row, so they may carry untrimmed strings,
+        # empty values, nulls or unknown keys. Normalize before any of it
+        # reaches a trigger — APScheduler fails late and opaquely otherwise
+        # (and silently degrades a daily job into an every-minute one when a
+        # cron field arrives as None).
+        schedule_type = normalize_schedule_type(schedule_type)
+        config = sanitize_schedule_config(schedule_type, config)
 
         if schedule_type == ScheduleType.ONCE.value:
             run_date = config.get('run_date', datetime.now())
             return DateTrigger(run_date=run_date)
 
         elif schedule_type == ScheduleType.DAILY.value:
-            hour = config.get('hour', 0)
-            minute = config.get('minute', 0)
-            return CronTrigger(hour=hour, minute=minute)
+            return CronTrigger(hour=config['hour'], minute=config['minute'])
 
         elif schedule_type == ScheduleType.WEEKLY.value:
-            day_of_week = config.get('day_of_week', 'mon')
-            hour = config.get('hour', 0)
-            minute = config.get('minute', 0)
-            return CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute)
+            return CronTrigger(
+                day_of_week=config['day_of_week'],
+                hour=config['hour'],
+                minute=config['minute'],
+            )
 
         elif schedule_type == ScheduleType.MONTHLY.value:
-            day = config.get('day', 1)
-            hour = config.get('hour', 0)
-            minute = config.get('minute', 0)
-            return CronTrigger(day=day, hour=hour, minute=minute)
+            return CronTrigger(
+                day=config['day'],
+                hour=config['hour'],
+                minute=config['minute'],
+            )
 
         elif schedule_type == ScheduleType.INTERVAL.value:
-            return IntervalTrigger(
-                weeks=config.get('weeks', 0),
-                days=config.get('days', 0),
-                hours=config.get('hours', 0),
-                minutes=config.get('minutes', 0),
-                seconds=config.get('seconds', 0)
-            )
+            return IntervalTrigger(**config)
 
         elif schedule_type == ScheduleType.CRON.value:
             # Full cron expression support
@@ -925,7 +946,7 @@ class AgentSchedulerManager:
             return CronTrigger.from_crontab(**config, timezone='UTC')
 
         else:
-            raise ValueError(
+            raise SchedulerConfigError(
                 f"Unsupported schedule type: {schedule_type}"
             )
 
@@ -967,6 +988,16 @@ class AgentSchedulerManager:
         Returns:
             Created AgentSchedule instance
         """
+        # Normalize and validate caller-supplied values BEFORE anything is
+        # persisted. Doing it here rather than at trigger-build time matters:
+        # the "Add to APScheduler" block below wraps every exception in a
+        # RuntimeError after deleting the row, which would both mask the
+        # SchedulerConfigError (the API could not map it to a 400) and write a
+        # row only to roll it back.
+        schedule_type = normalize_schedule_type(schedule_type)
+        scheduler_type = self._safe_jobstore(scheduler_type, strict=True)
+        schedule_config = sanitize_schedule_config(schedule_type, schedule_config)
+
         # Validate agent exists
         if self.bot_manager:
             if is_crew:
@@ -1251,7 +1282,9 @@ class AgentSchedulerManager:
                                 'send_result': dict(schedule_data.send_result or {}),
                                 'callbacks': list(schedule_data.callbacks or []),
                             },
-                            jobstore=schedule_data.scheduler_type or 'default',
+                            jobstore=self._safe_jobstore(
+                                schedule_data.scheduler_type
+                            ),
                             replace_existing=True
                         )
 
@@ -1423,25 +1456,53 @@ class AgentSchedulerManager:
             'scheduler_type', 'callbacks'
         }
         old_scheduler_type = schedule.scheduler_type
+
+        # Normalize the incoming values first. `scheduler_type` is checked
+        # strictly because this is an explicit request: silently downgrading it
+        # to the in-memory store while persisting 'redis' would leave the row
+        # claiming a durability the job does not have.
+        updates = dict(updates)
+        if 'schedule_type' in updates:
+            updates['schedule_type'] = normalize_schedule_type(
+                updates['schedule_type']
+            )
+        if 'scheduler_type' in updates:
+            updates['scheduler_type'] = self._safe_jobstore(
+                updates['scheduler_type'], strict=True
+            )
+
         for key, value in updates.items():
             if key in editable_fields:
                 setattr(schedule, key, value)
+
+        # Prove the merged configuration can actually build a trigger BEFORE
+        # persisting it. Validating afterwards would leave the row holding a
+        # config that was rejected, with no job scheduled — and
+        # load_schedules_from_db() would keep failing on it after a restart.
+        trigger = None
+        if schedule.enabled:
+            trigger = self._create_trigger(
+                schedule.schedule_type, schedule.schedule_config
+            )
+
         schedule.updated_at = datetime.now()
         async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
             AgentSchedule.Meta.connection = conn
             await schedule.update()
         job_id = str(schedule.schedule_id)
         with contextlib.suppress(Exception):
-            self.scheduler.remove_job(job_id, jobstore=old_scheduler_type)
+            # Cleanup of the previous placement — fall back rather than raise.
+            self.scheduler.remove_job(
+                job_id, jobstore=self._safe_jobstore(old_scheduler_type)
+            )
         if schedule.enabled:
-            trigger = self._create_trigger(schedule.schedule_type, schedule.schedule_config)
             job = self.scheduler.add_job(
                 self._execute_agent_job,
                 trigger=trigger,
                 id=job_id,
                 name=f"{schedule.agent_name}_{schedule.schedule_type}",
                 kwargs=self._job_kwargs_from_schedule(schedule),
-                jobstore=schedule.scheduler_type,
+                jobstore=self._safe_jobstore(schedule.scheduler_type),
                 replace_existing=True
             )
             if job.next_run_time:
@@ -1454,11 +1515,51 @@ class AgentSchedulerManager:
     async def delete_schedule(self, schedule_id: str) -> None:
         schedule = await self.get_schedule(schedule_id)
         with contextlib.suppress(JobLookupError):
-            self.scheduler.remove_job(str(schedule.schedule_id), jobstore=schedule.scheduler_type)
+            self.scheduler.remove_job(
+                str(schedule.schedule_id),
+                jobstore=self._safe_jobstore(schedule.scheduler_type),
+            )
         pool = await self._get_connection_pool()
         async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
             AgentSchedule.Meta.connection = conn
             await schedule.delete()
+
+    def _registered_jobstores(self) -> Set[str]:
+        """Return the jobstore aliases currently registered on the scheduler.
+
+        Used to normalize a row's ``scheduler_type`` before it reaches
+        ``add_job()``/``remove_job()``: APScheduler raises ``KeyError`` for an
+        unregistered alias, which is exactly what happens when a schedule says
+        ``'redis'`` but the scheduler was started with ``use_redis=False``.
+
+        Returns:
+            The set of known aliases; always contains ``'default'``.
+        """
+        aliases = {'default'}
+        scheduler = self.scheduler
+        if scheduler is not None:
+            aliases.update(getattr(scheduler, '_jobstores', {}) or {})
+        return aliases
+
+    def _safe_jobstore(self, value: Any, *, strict: bool = False) -> str:
+        """Normalize a ``scheduler_type`` value into a usable jobstore alias.
+
+        Args:
+            value: Raw ``scheduler_type`` from a schedule row or API payload.
+            strict: Raise instead of falling back to ``'default'`` when the
+                alias is not registered. Used for explicit API requests, where
+                silently downgrading a caller's durability choice to an
+                in-memory store would be worse than an error.
+
+        Returns:
+            A trimmed, lowercase alias that is registered on the scheduler.
+
+        Raises:
+            SchedulerConfigError: When ``strict`` and the alias is unknown.
+        """
+        return normalize_jobstore_alias(
+            value, available=self._registered_jobstores(), strict=strict
+        )
 
     def _build_jobstores(self, use_redis: bool = False) -> Dict[str, Any]:
         """Build the APScheduler jobstore mapping.
@@ -1479,12 +1580,16 @@ class AgentSchedulerManager:
 
     def _make_redis_jobstore(self) -> RedisJobStore:
         """Construct a `RedisJobStore` using the shared cache configuration."""
+        # CACHE_HOST/CACHE_PORT come from navconfig, whose `fallback=` only
+        # applies to *absent* keys — a present-but-empty `CACHE_PORT=` yields
+        # ''. redis-py defers int(port) to the first connection, so an unclean
+        # value would only surface as a per-tick "Error getting due jobs from
+        # job store 'redis'" inside APScheduler's loop. Sanitize here instead.
+        settings = sanitize_redis_settings(host=CACHE_HOST, port=CACHE_PORT, db=6)
         return RedisJobStore(
-            db=6,
             jobs_key="apscheduler.jobs",
             run_times_key="apscheduler.run_times",
-            host=CACHE_HOST,
-            port=CACHE_PORT,
+            **settings,
         )
 
     def _ensure_redis_jobstore(self) -> None:
