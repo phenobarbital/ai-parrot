@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-463
 **Date**: 2026-08-26
 **Author**: Jesus Lara / AI-Parrot Team
-**Status**: draft
+**Status**: approved
 **Target version**: 0.28.0 (next minor)
 **Brainstorm**: `sdd/proposals/matrix-agents-swarm.brainstorm.md`
 **Builds on**: FEAT-044 (`integrations-matrix-multi`), FEAT-195 (`matrix-collaborative-crew`)
