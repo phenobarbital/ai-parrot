@@ -367,3 +367,6 @@ corpus/compliance_soc2_hipaa/raw/
 corpus/compliance_soc2_hipaa/trees/
 # parrot LLM-wiki state (local retrieval plane)
 .parrot/
+
+#MCP Custom Local configs
+.mcp.json
