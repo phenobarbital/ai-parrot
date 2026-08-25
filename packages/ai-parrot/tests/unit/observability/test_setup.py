@@ -119,8 +119,11 @@ def test_openlit_not_imported_when_disabled() -> None:
             sys.modules["openlit"] = saved
 
 
-def test_openlit_called_when_enabled() -> None:
-    """When enable_openlit=True, openlit.init is invoked exactly once."""
+def test_openlit_not_called_even_when_enabled() -> None:
+    """FEAT-462: enable_openlit=True no longer calls openlit.init — the flag
+    is deprecated and setup_telemetry() no longer imports/calls init_openlit
+    at all. Configure an OTLP target (e.g. pointed at an OpenLIT collector)
+    instead."""
     fake_openlit = MagicMock()
     with patch.dict(sys.modules, {"openlit": fake_openlit}):
         cfg = ObservabilityConfig(
@@ -129,7 +132,7 @@ def test_openlit_called_when_enabled() -> None:
             enable_cost_tracking=False,
         )
         setup_telemetry(cfg)
-        assert fake_openlit.init.call_count == 1
+        assert fake_openlit.init.call_count == 0
 
 
 def test_shutdown_clears_state() -> None:
