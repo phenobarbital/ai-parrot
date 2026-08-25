@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-25T00:00:00Z",
-  "completed_at": "2026-08-24T23:51:45+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-2442",
@@ -213,6 +213,28 @@
       "started_at": "2026-08-24T23:03:46+00:00",
       "completed_at": "2026-08-24T23:51:45+00:00",
       "file": "sdd/tasks/completed/TASK-2451-integration-tests.md"
+    },
+    {
+      "id": "TASK-2469",
+      "slug": "thumbnail-serving-route",
+      "title": "Thumbnail Serving Route",
+      "feature_id": "FEAT-460",
+      "feature": "raw-upload-field-types",
+      "spec": "sdd/specs/raw-upload-field-types.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2444",
+        "TASK-2445",
+        "TASK-2446"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Follow-up from adversarial code review — thumbnail_url currently holds a raw blob_ref, not a fetchable URL. Depends on ThumbnailService, the upload handler, and route registration all being in place.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2469-thumbnail-serving-route.md"
     }
   ]
 }
