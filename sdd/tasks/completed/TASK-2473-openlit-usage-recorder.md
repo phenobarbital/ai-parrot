@@ -347,3 +347,20 @@ is currently unreachable — kept as written (harmless, forward-compatible)
 since the AC's actual tested trigger is `openlit_recorder_endpoint`, and
 extending the Literal would touch `config.py` (TASK-2470's scope, already
 completed/committed). Documented in the task's Codebase Contract section.
+
+**Critical post-review fix**: a second adversarial review round (after
+all 8 tasks + the first review's fixes had landed) found that the
+http/protobuf branch never appended `/v1/traces` to the endpoint — unlike
+`exporters.py`'s `make_span_exporter()`/`make_span_exporters()`, which the
+task's own Codebase Contract explicitly referenced as the pattern to
+follow. Every span silently 404'd against a real OTLP HTTP collector, so
+this recorder delivered no data at all against the default protocol. The
+existing unit tests never caught it because they mock `OTLPSpanExporter`
+entirely without asserting the endpoint argument it receives. Fixed to
+mirror `exporters.py` exactly, added a regression test asserting the
+suffixed URL, and also (same review round) wrapped `aclose()`'s blocking
+`force_flush()`/`shutdown()` calls in `run_in_executor` and added
+`gen_ai.system`/`gen_ai.usage.total_tokens` span attributes for parity
+with `attributes.py`'s established conventions. See commit
+"fix(unified-telemetry-bus): fix critical OTLP endpoint bug + address 2nd
+review round".
