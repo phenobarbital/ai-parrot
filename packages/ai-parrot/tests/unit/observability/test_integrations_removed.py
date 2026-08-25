@@ -103,17 +103,29 @@ class TestDependencyCleanup:
             assert "traceloop" not in dep.lower()
 
     def test_openlit_not_a_dependency_anywhere(self) -> None:
-        """No package's pyproject.toml declares openlit or traceloop-sdk."""
+        """No package's pyproject.toml *declares* openlit/traceloop-sdk as a
+        dependency (checked structurally via ``project.dependencies`` /
+        ``project.optional-dependencies`` — a package like
+        ``ai-parrot-openlit-bridge`` mentioning "openlit" in its own name,
+        keywords, or description is expected and not a violation)."""
         import pathlib
+        import tomllib
 
         workspace_root = pathlib.Path(__file__).resolve().parents[5]
         offenders = []
         for pyproject in workspace_root.glob("**/pyproject.toml"):
             if ".venv" in pyproject.parts or "node_modules" in pyproject.parts:
                 continue
-            text = pyproject.read_text()
-            if '"openlit' in text or "'openlit" in text:
-                offenders.append(pyproject)
-            if '"traceloop-sdk' in text or "'traceloop-sdk" in text:
-                offenders.append(pyproject)
+            with open(pyproject, "rb") as f:
+                data = tomllib.load(f)
+            project = data.get("project", {})
+            dep_lists = [project.get("dependencies", [])]
+            dep_lists.extend(project.get("optional-dependencies", {}).values())
+            for deps in dep_lists:
+                for dep in deps:
+                    name = dep.lower().split(";")[0]
+                    if name.startswith("openlit") or "openlit>" in name or "openlit=" in name:
+                        offenders.append((pyproject, dep))
+                    if name.startswith("traceloop-sdk"):
+                        offenders.append((pyproject, dep))
         assert not offenders, f"openlit/traceloop-sdk still declared in: {offenders}"
