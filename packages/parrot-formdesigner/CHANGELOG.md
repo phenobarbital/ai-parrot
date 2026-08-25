@@ -4,6 +4,18 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **NetworkNinja importer — multi-photo questions are `MULTI_UPLOAD`**:
+  `FIELD_IMAGE_UPLOAD_MULTIPLE` now imports as `FieldType.MULTI_UPLOAD`
+  (keeping `meta.accept = "image/*"`) instead of `FieldType.FILE` with a
+  `meta.multiple` flag. `FILE` is single-cardinality everywhere else in the
+  library (`is_single_cardinality`, the `/file-upload` handler, the
+  validator's list refusal), so the old spelling produced schemas the
+  library's own validator flagged on every real multi-photo answer.
+  Forms already imported keep working as they are stored; re-import (or a
+  registry-based patch) is what moves them to the new spelling.
+
 ### Added
 
 - **FEAT-456 — Relational Field Cardinality**: a new orthogonal

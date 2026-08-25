@@ -266,9 +266,17 @@ _FIELD_TYPE_MAP: dict[str, tuple[FieldType, dict[str, Any]] | None] = {
         FieldType.GROUP,
         {"read_only": True, "meta": {"render_as": "subsection"}},
     ),
+    # A multi-photo question is MULTI_UPLOAD, not FILE-with-a-flag. FILE is
+    # single-cardinality everywhere else in the library (`is_single_cardinality`,
+    # the /file-upload handler rejects a second part, the validator refuses a
+    # list) so the old `FILE + meta.multiple` spelling produced schemas the
+    # library's own validator flagged on every real multi-photo answer.
+    # Measured on Epson's live form (2026-08-25): 65 such questions, 76/76
+    # upload fields consistent with networkninja.form_metadata — the
+    # cardinality was always right, only the spelling disagreed.
     "FIELD_IMAGE_UPLOAD_MULTIPLE": (
-        FieldType.FILE,
-        {"meta": {"accept": "image/*", "multiple": True}},
+        FieldType.MULTI_UPLOAD,
+        {"meta": {"accept": "image/*"}},
     ),
     "FIELD_DISPLAY_TEXT": (
         FieldType.TEXT,

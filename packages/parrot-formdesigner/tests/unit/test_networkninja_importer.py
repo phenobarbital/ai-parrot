@@ -379,6 +379,7 @@ def test_networkninja_formula_dangling_reference():
     "data_type, expected_type",
     [
         ("FIELD_IMAGE_UPLOAD", FieldType.FILE),
+        ("FIELD_IMAGE_UPLOAD_MULTIPLE", FieldType.MULTI_UPLOAD),
         ("FIELD_AGREEMENT_CHECKBOX", FieldType.BOOLEAN),
         ("FIELD_DURATION", FieldType.TEXT),
         ("FIELD_DATETIME", FieldType.DATETIME),
@@ -1827,3 +1828,35 @@ async def test_store_group_alternatives_evaluate_for_either_answer_value():
             visit_context={"store_groups": ["Best Buy"]},
         )
         assert fired is False, f"answer={answer!r} must not fire at a non-matching store"
+
+
+# ---------------------------------------------------------------------------
+# Multi-photo questions are MULTI_UPLOAD, not FILE + meta.multiple
+# ---------------------------------------------------------------------------
+
+
+def test_multi_photo_question_is_multi_upload_not_file_with_a_flag():
+    """``FIELD_IMAGE_UPLOAD_MULTIPLE`` must import as ``MULTI_UPLOAD``.
+
+    FILE is single-cardinality across the library (``is_single_cardinality``,
+    the ``/file-upload`` handler, the validator's list refusal), so spelling
+    "many photos" as ``FILE + meta.multiple`` produced schemas the validator
+    flagged on every real multi-photo answer. The ``accept`` hint survives;
+    the ``multiple`` flag is gone because the TYPE now carries cardinality.
+    """
+    svc = _svc()
+    schema = svc.to_form_schema(_make_row("FIELD_IMAGE_UPLOAD_MULTIPLE"))
+    field = list(schema.iter_all_fields())[0]
+    assert field.field_type == FieldType.MULTI_UPLOAD
+    assert (field.meta or {}).get("accept") == "image/*"
+    assert "multiple" not in (field.meta or {})
+
+
+def test_single_photo_question_stays_a_single_file():
+    """The single-photo sibling is untouched: FILE, ``accept`` only."""
+    svc = _svc()
+    schema = svc.to_form_schema(_make_row("FIELD_IMAGE_UPLOAD"))
+    field = list(schema.iter_all_fields())[0]
+    assert field.field_type == FieldType.FILE
+    assert (field.meta or {}).get("accept") == "image/*"
+    assert "multiple" not in (field.meta or {})
