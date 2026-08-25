@@ -255,3 +255,12 @@ reference "openlit" as part of the rationale — those aren't
 and other packages (e.g. livekit-agents) may still depend on the same otel
 version floor; touching them without a full `uv lock` run to verify was
 judged too risky for this task's scope.
+
+**Post-hoc fix (after TASK-2477)**: `test_openlit_not_a_dependency_anywhere`
+used a raw substring scan that false-positived on
+`ai-parrot-openlit-bridge`'s own `pyproject.toml` (TASK-2477) once it
+existed — its `keywords` list legitimately contains `"openlit"`. Fixed to
+parse `project.dependencies`/`optional-dependencies` structurally via
+`tomllib` and check for an actual dependency declaration instead of any
+text mention. See commit "fix(unified-telemetry-bus): make
+test_openlit_not_a_dependency_anywhere structural".
