@@ -276,3 +276,26 @@ All 93 feature-owned tests (TASK-2442 through TASK-2451) pass together.
 
 **Deviations from spec**: fixtures added as module-local rather than in
 `tests/conftest.py` (see above — narrower scope, same effective coverage).
+
+**Post-review addendum** (adversarial code review during FEAT-460
+completion, commit `646b314dc`):
+- The reviewer's own full-suite run surfaced a genuinely stale
+  `tests/fixtures/form_controls_snapshot.json` (TASK-2448's value_shape
+  changes were never propagated into it) and an order-dependent failure
+  in TASK-2450's `test_controls_helpers_envelope.py` (KeyError under
+  `pytest tests/unit/` when a pre-existing bug in
+  `test_extension_registration.py` clears the shared controls registry
+  ahead of it). Both fixed; verified against a real `dev`-branch baseline
+  worktree (not just `git stash` within this branch) that the resulting
+  40 full-suite failures are byte-for-byte identical to `dev` — i.e.
+  fully pre-existing and unrelated to FEAT-460.
+- The reviewer also found a real concurrency bug in the chunked-upload
+  handler (TASK-2445) and an orphaned-blob issue in the multipart
+  rejection path — both fixed, with new regression tests added to this
+  file (`test_chunked_upload_missing_upload_id_rejected`,
+  `test_concurrent_chunked_uploads_do_not_interleave`,
+  `test_chunked_upload_size_exceeded_rejected_upfront`,
+  `test_multi_file_rejection_cleans_up_orphaned_blob`). See TASK-2445's
+  completion note for the code-side detail.
+- Full suite after fixes: 2505 passed, 40 failed (pre-existing, confirmed
+  identical to `dev`), 20 skipped, 3 xfailed — 0 regressions from FEAT-460.

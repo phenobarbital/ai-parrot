@@ -309,3 +309,22 @@ implemented per the "Basic chunked upload support" scope note.
   fallbacks (not specified verbatim in the spec, which only names the
   Offset/Length headers) since the reassembled body has no multipart part
   to source these from.
+
+**Post-review addendum** (adversarial code review during FEAT-460
+completion): the adversarial reviewer found two real defects in this
+task's chunked-upload implementation, both fixed in a follow-up commit
+(`646b314dc`) before push:
+- `_CHUNK_BUFFERS` was keyed on `(form_uid, field_uid)` only — two
+  concurrent chunked uploads to the same field (e.g. two submitters
+  filling the same public form) could interleave/corrupt each other's
+  chunks. Fixed by requiring a client-supplied `X-Parrot-Upload-Id`
+  header and keying on `(form_uid, field_uid, upload_id)`. This is a
+  contract addition beyond what this task originally specified/documented.
+- Oversized chunked uploads were only rejected *after* every chunk had
+  already been buffered and reassembled. Fixed by checking the declared
+  `X-Parrot-Upload-Length` against `max_file_size_bytes` up front.
+- Also fixed (multipart path, same review pass): a rejected multi-file
+  upload to a single-cardinality field left the first file's already-
+  persisted blob orphaned in storage — now cleaned up before the 400.
+See TASK-2451's completed file and the commit message for full detail and
+the new regression tests covering all three.
