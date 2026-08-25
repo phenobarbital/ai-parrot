@@ -14,7 +14,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation models imported by every other code task",
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2478-swarm-config-and-event-models.md"
+      "completed_at": "2026-08-25T23:01:16+00:00",
+      "file": "sdd/tasks/completed/TASK-2478-swarm-config-and-event-models.md"
     },
     {
       "id": "TASK-2479",
