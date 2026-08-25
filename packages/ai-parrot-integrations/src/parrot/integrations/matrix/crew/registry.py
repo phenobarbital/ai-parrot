@@ -3,6 +3,7 @@
 Provides CRUD operations on ``MatrixAgentCard`` entries and resolution
 by agent name or full MXID.
 """
+
 import asyncio
 import logging
 import re

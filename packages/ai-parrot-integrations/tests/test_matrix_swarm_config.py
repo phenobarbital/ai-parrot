@@ -1,4 +1,5 @@
 """Tests for swarm config models — FEAT-463 TASK-2478."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -47,9 +48,7 @@ def test_swarm_requires_collaborative():
         MatrixCrewConfig(
             **BASE,
             agents=AGENTS,
-            channels=[
-                ChannelConfig(name="g", agents=["analyst"], answer_policy="swarm")
-            ],
+            channels=[ChannelConfig(name="g", agents=["analyst"], answer_policy="swarm")],
         )
 
 

@@ -4,6 +4,7 @@ Each ``MatrixCrewAgentWrapper`` handles messages directed at a specific agent:
 typing indicators, BotManager resolution, response sending (with optional
 streaming / chunking), and coordinator status notifications.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -93,9 +94,7 @@ class MatrixCrewAgentWrapper:
 
         # 1 — update status → busy
         task_preview = body[:50]
-        await self._registry.update_status(
-            self._agent_name, "busy", task_preview
-        )
+        await self._registry.update_status(self._agent_name, "busy", task_preview)
 
         # 2 — notify coordinator
         await self._coordinator.on_status_change(self._agent_name)
@@ -122,9 +121,7 @@ class MatrixCrewAgentWrapper:
 
             agent = await BotManager.get_bot(self._config.chatbot_id)
             if agent is None:
-                raise RuntimeError(
-                    f"Agent '{self._config.chatbot_id}' not found in BotManager"
-                )
+                raise RuntimeError(f"Agent '{self._config.chatbot_id}' not found in BotManager")
 
             # 5 — get response
             response: str = await agent.ask(body)
@@ -203,19 +200,11 @@ class MatrixCrewAgentWrapper:
 
             agent = await BotManager.get_bot(self._config.chatbot_id)
             if agent is None:
-                raise RuntimeError(
-                    f"Agent '{self._config.chatbot_id}' not found in BotManager"
-                )
-            text: str = await asyncio.wait_for(
-                agent.ask(self._build_task_prompt(task)), timeout
-            )
-            result = ResultEventContent(
-                task_id=task.task_id, content=text, success=True, metadata=meta
-            )
+                raise RuntimeError(f"Agent '{self._config.chatbot_id}' not found in BotManager")
+            text: str = await asyncio.wait_for(agent.ask(self._build_task_prompt(task)), timeout)
+            result = ResultEventContent(task_id=task.task_id, content=text, success=True, metadata=meta)
         except Exception as exc:  # noqa: BLE001 — never propagate into the AppService loop
-            self.logger.error(
-                "handle_task failed for %s: %s", self._agent_name, exc
-            )
+            self.logger.error("handle_task failed for %s: %s", self._agent_name, exc)
             result = ResultEventContent(
                 task_id=task.task_id,
                 content="",
@@ -237,8 +226,7 @@ class MatrixCrewAgentWrapper:
     # ------------------------------------------------------------------
 
     _JSON_INSTRUCTION = (
-        'Reply ONLY with a JSON object: '
-        '{"answer": <your answer>, "confidence": <0..1>, "sources": [<strings>]}.'
+        "Reply ONLY with a JSON object: " '{"answer": <your answer>, "confidence": <0..1>, "sources": [<strings>]}.'
     )
 
     def _build_task_prompt(self, task: TaskEventContent) -> str:
@@ -257,10 +245,7 @@ class MatrixCrewAgentWrapper:
             self._JSON_INSTRUCTION,
         ]
         if task.expected_schema:
-            parts.append(
-                'The value of "answer" MUST conform to this JSON Schema:\n'
-                + json.dumps(task.expected_schema)
-            )
+            parts.append('The value of "answer" MUST conform to this JSON Schema:\n' + json.dumps(task.expected_schema))
         return "\n\n".join(parts)
 
     async def _send_response(self, room_id: str, response: str) -> None:
@@ -280,6 +265,7 @@ class MatrixCrewAgentWrapper:
                 intent = self._appservice._get_intent(self._mxid)
                 # Send initial placeholder then edit with full response
                 from mautrix.types import RoomID  # type: ignore
+
                 event_id = await intent.send_text(RoomID(room_id), "...")
                 await intent.send_message_event(
                     RoomID(room_id),
@@ -296,16 +282,12 @@ class MatrixCrewAgentWrapper:
                 )
                 return
             except Exception as exc:
-                self.logger.debug(
-                    "Streaming failed, falling back to chunked send: %s", exc
-                )
+                self.logger.debug("Streaming failed, falling back to chunked send: %s", exc)
 
         # Non-streaming: chunk and send
         chunks = self._chunk_text(response, self._max_message_length)
         for chunk in chunks:
-            await self._appservice.send_as_agent(
-                self._agent_name, room_id, chunk
-            )
+            await self._appservice.send_as_agent(self._agent_name, room_id, chunk)
 
     async def _send_typing(self, room_id: str) -> None:
         """Background coroutine that sends typing indicators every 10 s.
@@ -320,6 +302,7 @@ class MatrixCrewAgentWrapper:
         try:
             intent = self._appservice._get_intent(self._mxid)
             from mautrix.types import RoomID  # type: ignore
+
             while True:
                 try:
                     await intent.set_typing(RoomID(room_id), timeout=15000)
@@ -330,6 +313,7 @@ class MatrixCrewAgentWrapper:
             try:
                 intent = self._appservice._get_intent(self._mxid)
                 from mautrix.types import RoomID  # type: ignore
+
                 await intent.set_typing(RoomID(room_id), typing=False)
             except Exception:
                 pass

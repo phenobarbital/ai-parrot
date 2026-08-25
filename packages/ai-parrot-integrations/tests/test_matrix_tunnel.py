@@ -1,4 +1,5 @@
 """Tests for AgentTunnel / TunnelRegistry — FEAT-463 TASK-2481."""
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -16,9 +17,7 @@ pytestmark = pytest.mark.asyncio
 def reg():
     svc = AsyncMock()
     svc.create_room_as_bot.return_value = "!tun:parrot.local"
-    svc.list_agents = MagicMock(
-        return_value={"a": "@parrot-a:parrot.local", "b": "@parrot-b:parrot.local"}
-    )
+    svc.list_agents = MagicMock(return_value={"a": "@parrot-a:parrot.local", "b": "@parrot-b:parrot.local"})
     svc.send_custom_event_as_agent.return_value = "$task"
     channels = MagicMock()
     channels._space_id = None
@@ -102,9 +101,7 @@ async def test_schema_error(reg):
         )
 
     asyncio.create_task(deliver())
-    ans = await t.ask(
-        "a", "b", "q", expected_schema={"type": "object", "required": ["total"]}
-    )
+    ans = await t.ask("a", "b", "q", expected_schema={"type": "object", "required": ["total"]})
     assert ans.metadata["status"] == "schema_error"
 
 
