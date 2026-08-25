@@ -277,9 +277,18 @@ class ObservabilityConfig(BaseModel):
         ``PARROT_PRICING_PATH``      ``pricing_override_path``
         ``OTLP_TARGETS``             ``otlp_targets`` (FEAT-462, JSON list)
         ``OBSERVABILITY_OPENLIT_RECORDER``  ``openlit_recorder_endpoint``
-                                      (FEAT-462; truthy → ``otlp_endpoint``,
-                                      or set the var to the endpoint URL
-                                      directly)
+                                      (FEAT-462; boolean enable switch —
+                                      parsed with the same truthy/falsy
+                                      rules as every other boolean env var
+                                      here, e.g. ``"true"``/``"1"``; when
+                                      truthy, defaults the endpoint to
+                                      ``otlp_endpoint``)
+        ``OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT``  ``openlit_recorder_endpoint``
+                                      (FEAT-462; explicit endpoint URL —
+                                      overrides the ``otlp_endpoint``
+                                      default above; setting this alone,
+                                      without the boolean switch, also
+                                      enables the recorder)
         ===========================  ==============================
 
         Returns:

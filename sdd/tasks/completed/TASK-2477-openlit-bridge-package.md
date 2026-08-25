@@ -305,8 +305,8 @@ and a `README.md`. Verified end-to-end: installed the package editable via
 `from ai_parrot_openlit_bridge import validate_endpoint` imports cleanly,
 and ran the real (uninstalled after) `parrot-openlit-check` console script
 against an actually-closed port (`http://localhost:19999`), observing the
-real `❌ ... exit 1` output — not just the mocked unit tests. 13 new unit
-tests added (8 for `probe.py`, 5 for `cli.py`), all pass; `ruff check` on
+real `❌ ... exit 1` output — not just the mocked unit tests. 8 new unit
+tests added (5 for `probe.py`, 3 for `cli.py`), all pass; `ruff check` on
 the whole package is fully clean (brand-new package, no pre-existing
 baseline to preserve). `docker-compose.openlit.yml` validated as parseable
 YAML via `yaml.safe_load()`.
@@ -327,3 +327,21 @@ completed, sequenced before this task) left it as an empty
 backward-compat placeholder. Wiring `observability-openlit =
 ["ai-parrot-openlit-bridge"]` is a natural follow-up but is out of this
 task's stated scope and was not done.
+
+**Post-review fix**: the adversarial code review (run after all 8 tasks
+completed) flagged this exact gap as an "Important" finding — closing it
+before merge rather than leaving two "not my scope" notes pointing at each
+other. Wired `observability-openlit = ["ai-parrot-openlit-bridge"]` in
+`packages/ai-parrot/pyproject.toml` and added the corresponding
+`ai-parrot-openlit-bridge = { workspace = true }` entry to the root
+`pyproject.toml`'s `[tool.uv.sources]` (matching every sibling satellite
+package's existing pattern). Updated `test_extras_still_exist_with_empty_
+deps` (renamed `test_extras_still_exist_without_the_sdks`) and added
+`test_observability_openlit_installs_bridge_package` in
+`test_integrations_removed.py` to assert the new wiring. Also fixed a
+docstring/behavior mismatch the same review caught in `config.py`'s
+`from_env()` (claimed `OBSERVABILITY_OPENLIT_RECORDER` could be set to a
+URL directly; the code only ever parsed it as a boolean) and added a
+debug log in `bootstrap.py`'s otel branch so setting
+`OBSERVABILITY_OPENLIT_RECORDER` alongside `OBSERVABILITY_BACKEND=otel`
+no longer silently does nothing without a trace of why.

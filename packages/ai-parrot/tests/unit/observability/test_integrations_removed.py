@@ -80,9 +80,13 @@ class TestDependencyCleanup:
                     entry.get("extra") != "observability-openlit"
                 ), f"Found observability-openlit in conflicts: {pair}"
 
-    def test_extras_still_exist_with_empty_deps(self) -> None:
+    def test_extras_still_exist_without_the_sdks(self) -> None:
         """observability-openlit / observability-traceloop extras still
-        exist (backward compat) but no longer pull the SDKs."""
+        exist (backward compat) but no longer pull the openlit/traceloop-sdk
+        SDKs. observability-openlit now installs the ai-parrot-openlit-bridge
+        helper package instead (TASK-2477) — a dependency name that
+        legitimately contains the substring "openlit", so this checks for
+        the exact SDK package name rather than a blanket substring."""
         import pathlib
         import tomllib
 
@@ -94,9 +98,23 @@ class TestDependencyCleanup:
         assert "observability-openlit" in extras
         assert "observability-traceloop" in extras
         for dep in extras["observability-openlit"]:
-            assert "openlit" not in dep.lower()
+            name = dep.lower().split(";")[0].strip()
+            assert name != "openlit" and not name.startswith(("openlit>", "openlit="))
         for dep in extras["observability-traceloop"]:
             assert "traceloop" not in dep.lower()
+
+    def test_observability_openlit_installs_bridge_package(self) -> None:
+        """observability-openlit installs the ai-parrot-openlit-bridge
+        helper package (TASK-2477's follow-up wiring)."""
+        import pathlib
+        import tomllib
+
+        pkg_root = pathlib.Path(__file__).resolve().parents[3]
+        pyproject = pkg_root / "pyproject.toml"
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        extras = data["project"]["optional-dependencies"]
+        assert "ai-parrot-openlit-bridge" in extras["observability-openlit"]
 
     def test_openlit_not_a_dependency_anywhere(self) -> None:
         """No package's pyproject.toml *declares* openlit/traceloop-sdk as a

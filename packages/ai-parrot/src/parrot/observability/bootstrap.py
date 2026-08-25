@@ -89,6 +89,22 @@ def _do_bootstrap() -> None:
         setup_telemetry(config)
         _register_atexit_flush()
         logger.info("Observability auto-boot: OTel backend active.")
+        if config.openlit_recorder_endpoint:
+            # FEAT-462: the OpenLitUsageRecorder fan-out only wires in on
+            # the lightweight (logging/prometheus) path below — the otel
+            # backend returns here before reaching it. The OTel trace
+            # pipeline already carries cost/usage data as span attributes,
+            # so this is intentional, not a bug; log it so a user who set
+            # OBSERVABILITY_OPENLIT_RECORDER expecting the separate usage-
+            # span fan-out isn't left silently guessing why it never fires.
+            logger.debug(
+                "Observability auto-boot: openlit_recorder_endpoint=%r is "
+                "set but ignored on the 'otel' backend path — "
+                "OpenLitUsageRecorder only activates on the lightweight "
+                "(logging/prometheus) path. The otel TracerProvider "
+                "already carries usage/cost data as span attributes.",
+                config.openlit_recorder_endpoint,
+            )
         return
 
     # Lightweight pluggable path (logging / prometheus) — no OTel SDK import.

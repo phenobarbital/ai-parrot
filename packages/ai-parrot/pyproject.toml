@@ -637,12 +637,13 @@ observability = [
 # feature eliminates). They are deployment-time OTLP endpoint
 # configurations instead: configure `ObservabilityConfig.otlp_targets`
 # (multi-endpoint OTLP export) or the `OpenLitUsageRecorder` (usage-only
-# spans fanned out via the AbstractLogger layer). These extras are kept
-# empty for backward compat with existing `pip install
-# ai-parrot[observability-openlit]` invocations — TASK-2477 repurposes
-# `observability-openlit` to install the minimal `ai-parrot-openlit-bridge`
-# helper package (endpoint validation + health-check CLI, no SDK).
-observability-openlit = []
+# spans fanned out via the AbstractLogger layer). `observability-openlit`
+# now installs the minimal `ai-parrot-openlit-bridge` helper package
+# (endpoint validation + `parrot-openlit-check` health-check CLI, zero
+# heavy deps) instead of the `openlit` SDK.
+observability-openlit = [
+    "ai-parrot-openlit-bridge",
+]
 
 # FEAT-462 — deprecated no-op extra, kept for backward compat. See
 # observability-openlit above; Traceloop's bridge equivalent is deferred.

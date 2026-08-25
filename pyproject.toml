@@ -260,6 +260,7 @@ ai-parrot-pipelines = { workspace = true }
 ai-parrot-integrations = { workspace = true }
 ai-parrot-advisors = { workspace = true }
 ai-parrot-server = { workspace = true }
+ai-parrot-openlit-bridge = { workspace = true }
 navrules = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }
