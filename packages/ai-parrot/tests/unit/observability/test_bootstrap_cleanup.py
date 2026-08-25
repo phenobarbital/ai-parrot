@@ -117,9 +117,7 @@ class TestBackwardCompatOtelPath:
         finally:
             boot.reset_bootstrap_for_tests()
 
-    def test_otel_backend_with_openlit_recorder_logs_debug_note(
-        self, monkeypatch, caplog
-    ) -> None:
+    def test_otel_backend_with_openlit_recorder_logs_debug_note(self, monkeypatch, caplog) -> None:
         """OBSERVABILITY_BACKEND=otel + an openlit_recorder_endpoint logs a
         debug note explaining the recorder does not fan out on this path
         (it never silently does nothing without any trace of why)."""
@@ -128,9 +126,7 @@ class TestBackwardCompatOtelPath:
         monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
         monkeypatch.setenv("OBSERVABILITY_BACKEND", "otel")
         monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER", "true")
-        monkeypatch.setenv(
-            "OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318"
-        )
+        monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318")
 
         import parrot.observability.setup as setup_mod
 
@@ -139,14 +135,10 @@ class TestBackwardCompatOtelPath:
         boot.reset_bootstrap_for_tests()
         try:
             with (
-                caplog.at_level(
-                    logging.DEBUG, logger="parrot.observability.bootstrap"
-                ),
+                caplog.at_level(logging.DEBUG, logger="parrot.observability.bootstrap"),
                 scope(),
             ):
                 boot.ensure_observability_bootstrapped()
-            assert any(
-                "openlit_recorder_endpoint" in r.message for r in caplog.records
-            )
+            assert any("openlit_recorder_endpoint" in r.message for r in caplog.records)
         finally:
             boot.reset_bootstrap_for_tests()
