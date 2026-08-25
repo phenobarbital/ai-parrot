@@ -177,7 +177,33 @@ Same as TASK-2478. This task may run in its own worktree (`parallel: true`).
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Rewrote `docker-compose.matrix.yml` with the 7 required
+services (`postgres`, `synapse`, `element-web`, `well-known`,
+`mautrix-signal`/`slack`/`discord` under the `bridges` profile) — verified
+with `docker compose --profile bridges config` (docker was available in
+this sandbox, so the test actually ran rather than skipping). Added
+`docker/matrix/synapse/homeserver.yaml.tmpl`, `postgres/init.sql` (creates
+`synapse` + 3 bridge databases), `element/config.json`,
+`well-known/{nginx.conf,client.json,server.json}`, and per-bridge
+`bridges/{signal,slack,discord}/config.yaml` templates. Added
+`registration.py`'s `__main__` guard (env-driven, prints registration
+YAML to stdout). Wrote `scripts/matrix/bootstrap.sh` (`set -euo pipefail`,
+`--dry-run`/`--bridges` flags, the 6 documented steps). `.gitignore`
+extended for generated registration/secrets/homeserver state — verified
+via `git check-ignore`. 4/4 new tests pass; full `pytest -k matrix`
+232/238 pass (6 pre-existing `test_matrix_hook.py` failures, unrelated).
+`ruff check registration.py` matches the pre-existing baseline exactly.
+**Deviations from spec**: `test_registration_main_outputs_yaml`'s `env`
+dict in the task's literal Test Specification omits `PYTHONPATH`, which
+in a subprocess means `python -m parrot.integrations.matrix.registration`
+resolves against the main-repo editable install (not this worktree's
+`registration.py`) — pytest's own root `conftest.py` prepends worktree
+`src/` paths, but that only applies within the pytest PROCESS itself, not
+a fresh subprocess it spawns. Added
+`"PYTHONPATH": str(ROOT / "packages" / "ai-parrot-integrations" / "src")`
+to the test's `env` dict so it actually exercises the worktree's
+`__main__` guard; without it the test would fail (empty stdout) even with
+a correct implementation. Verified this is necessary by reproducing the
+failure with the literal env dict first. No other deviations.
