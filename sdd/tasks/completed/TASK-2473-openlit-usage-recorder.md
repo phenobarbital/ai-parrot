@@ -44,7 +44,7 @@ Implements spec §3 Module 4.
 |---|---|---|
 | `packages/ai-parrot/src/parrot/observability/recorders/openlit_recorder.py` | CREATE | OpenLitUsageRecorder implementation |
 | `packages/ai-parrot/src/parrot/observability/recorders/factory.py` | MODIFY | Add `"openlit"` branch |
-| `packages/ai-parrot/tests/observability/test_openlit_recorder.py` | CREATE | Unit tests |
+| `packages/ai-parrot/tests/unit/observability/test_openlit_recorder.py` | CREATE | Unit tests (corrected path — see TASK-2470) |
 
 ---
 
@@ -97,6 +97,19 @@ class PrometheusUsageRecorder(AbstractLogger):
 - ~~`parrot.observability.recorders.openlit_recorder`~~ — module does not exist; must be created
 - ~~`OpenLitUsageRecorder`~~ — class does not exist; must be created
 - ~~`CompositeSpanExporter`~~ — NOT a thing in OTel SDK
+
+### Contract correction (verified 2026-08-25)
+`ObservabilityConfig.usage_backend`'s `UsageBackend` Literal is
+`Literal["none", "logging", "prometheus", "otel", "traceloop"]` — it does
+NOT include `"openlit"`, so `ObservabilityConfig(usage_backend="openlit")`
+raises `ValidationError`. The factory's `usage_backend == "openlit"` check
+is therefore currently unreachable dead code (kept for forward-compat/
+documentation purposes); the tested, functional trigger is
+`config.openlit_recorder_endpoint` being truthy (set via
+`OBSERVABILITY_OPENLIT_RECORDER`/`OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT`
+— see TASK-2470/TASK-2475). Extending the Literal to include `"openlit"`
+is out of scope for this task (would touch `config.py`, owned by
+TASK-2470, already completed).
 
 ---
 
@@ -304,10 +317,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Created `OpenLitUsageRecorder(AbstractLogger)` in
+`recorders/openlit_recorder.py` with a private `TracerProvider` +
+`BatchSpanProcessor` + OTLP span exporter (HTTP or gRPC per `protocol`).
+`record()` emits a `"parrot.usage"` span with `gen_ai.provider.name`,
+`gen_ai.request.model`, `gen_ai.operation.name="chat"`,
+`gen_ai.usage.{input,output}_tokens`, and — when `cost_usd` is set —
+both `gen_ai.usage.cost` and `parrot.cost.usd`, plus `parrot.trace_id`
+and `service.name`. `aclose()` flushes/shuts down the private provider,
+swallowing errors (logged as a warning). Wired an additive `"openlit"`
+branch into `build_recorders_from_config()`, appended after the
+existing backend dispatch so it stacks with `"logging"`/`"prometheus"`/
+`"none"` rather than replacing them — triggered by
+`config.openlit_recorder_endpoint` being truthy. 9 new unit tests added
+(recorder construction/record/aclose + 4 factory-wiring tests). Full
+`tests/unit/observability/` suite (158 tests) passes. `ruff check` shows
+0 new violations across all 3 touched/created files (`openlit_recorder.py`
+is fully clean; `factory.py` carries the same 4 pre-existing violations
+as before this change).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Test file path corrected to
+`tests/unit/observability/` (same correction as prior FEAT-462 tasks).
+(2) Discovered and documented a contract gap: `usage_backend`'s
+`UsageBackend` Literal does not include `"openlit"`, so the
+`config.usage_backend == "openlit"` half of the factory's `or` condition
+is currently unreachable — kept as written (harmless, forward-compatible)
+since the AC's actual tested trigger is `openlit_recorder_endpoint`, and
+extending the Literal would touch `config.py` (TASK-2470's scope, already
+completed/committed). Documented in the task's Codebase Contract section.
