@@ -36,9 +36,7 @@ class TestValidateEndpoint:
     async def test_unreachable_endpoint(self) -> None:
         """Returns reachable=False for a dead endpoint."""
         mock_session = MagicMock()
-        mock_session.post = MagicMock(
-            side_effect=aiohttp.ClientError("Connection refused")
-        )
+        mock_session.post = MagicMock(side_effect=aiohttp.ClientError("Connection refused"))
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 

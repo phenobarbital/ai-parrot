@@ -7,6 +7,7 @@ import pytest
 from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
 from parrot.observability import bootstrap as boot
 
+
 @pytest.fixture(autouse=True)
 def _clean():
     """Reset the bootstrap module's own globals (``_SUBSCRIBER`` /
@@ -67,6 +68,7 @@ def test_otel_backend_delegates_to_setup_telemetry(monkeypatch) -> None:
         return None
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
 
     with scope():
@@ -91,6 +93,7 @@ def test_openlit_flag_no_longer_escalates_to_otel(monkeypatch) -> None:
         called["config"] = config
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
 
     with scope():
@@ -144,6 +147,7 @@ def test_traceloop_backend_value_maps_to_otel(monkeypatch) -> None:
         called["config"] = config
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
 
     with scope():
@@ -159,6 +163,7 @@ def test_atexit_flush_registered_once(monkeypatch) -> None:
 
     registered = []
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(boot_mod.atexit, "register", registered.append)
 
     with scope():
@@ -173,6 +178,7 @@ def test_atexit_not_registered_when_disabled(monkeypatch) -> None:
     """No flush hook is registered when observability is disabled."""
     registered = []
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(boot_mod.atexit, "register", registered.append)
 
     with scope():
@@ -187,13 +193,17 @@ def test_shutdown_observability_aggregates_and_is_idempotent(monkeypatch) -> Non
     calls = {"otel": 0, "usage": 0}
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(
-        setup_mod, "shutdown_telemetry",
+        setup_mod,
+        "shutdown_telemetry",
         lambda: calls.__setitem__("otel", calls["otel"] + 1),
     )
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(
-        boot_mod, "shutdown_usage_recording",
+        boot_mod,
+        "shutdown_usage_recording",
         lambda: calls.__setitem__("usage", calls["usage"] + 1),
     )
 
@@ -213,8 +223,10 @@ def test_shutdown_observability_swallows_errors(monkeypatch) -> None:
     monkeypatch.setattr(setup_mod, "shutdown_telemetry", _boom)
     usage_called = {"n": 0}
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(
-        boot_mod, "shutdown_usage_recording",
+        boot_mod,
+        "shutdown_usage_recording",
         lambda: usage_called.__setitem__("n", usage_called["n"] + 1),
     )
 

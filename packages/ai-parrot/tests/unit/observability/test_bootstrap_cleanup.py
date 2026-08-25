@@ -51,9 +51,7 @@ class TestBootstrapOpenLitRecorder:
         an OpenLitUsageRecorder (verifies the config wiring end to end)."""
         monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
         monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER", "true")
-        monkeypatch.setenv(
-            "OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318"
-        )
+        monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318")
         from parrot.observability.config import ObservabilityConfig
         from parrot.observability.recorders.factory import (
             build_recorders_from_config,
@@ -64,16 +62,12 @@ class TestBootstrapOpenLitRecorder:
         recorder_names = [r.name for r in recorders]
         assert "openlit" in recorder_names
 
-    def test_openlit_recorder_wired_into_bootstrap_subscriber(
-        self, monkeypatch
-    ) -> None:
+    def test_openlit_recorder_wired_into_bootstrap_subscriber(self, monkeypatch) -> None:
         """The lightweight bootstrap path subscribes the openlit recorder
         alongside the default logging recorder."""
         monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
         monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER", "true")
-        monkeypatch.setenv(
-            "OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318"
-        )
+        monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318")
         boot.reset_bootstrap_for_tests()
         try:
             with scope():

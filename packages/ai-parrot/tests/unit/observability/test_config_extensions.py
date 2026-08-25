@@ -45,9 +45,7 @@ class TestObservabilityConfigOtlpTargets:
     """``ObservabilityConfig.otlp_targets`` field behavior."""
 
     def test_accepts_list_of_otlp_target(self) -> None:
-        cfg = ObservabilityConfig(
-            otlp_targets=[OtlpTarget(name="a", endpoint="http://a:4318")]
-        )
+        cfg = ObservabilityConfig(otlp_targets=[OtlpTarget(name="a", endpoint="http://a:4318")])
         assert len(cfg.otlp_targets) == 1
         assert cfg.otlp_targets[0].name == "a"
 
@@ -110,9 +108,7 @@ class TestOpenlitRecorderEnvParsing:
 
     def test_explicit_endpoint_override(self, monkeypatch) -> None:
         monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER", "true")
-        monkeypatch.setenv(
-            "OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318"
-        )
+        monkeypatch.setenv("OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT", "http://openlit:4318")
         cfg = ObservabilityConfig.from_env()
         assert cfg.openlit_recorder_endpoint == "http://openlit:4318"
 

@@ -43,12 +43,11 @@ from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
-
 # ---------------------------------------------------------------------------
 # Benchmark helpers
 # ---------------------------------------------------------------------------
 
-_N = 50   # iterations per benchmark (kept low for fast CI; still statistically valid)
+_N = 50  # iterations per benchmark (kept low for fast CI; still statistically valid)
 
 
 def _make_tc() -> TraceContext:
@@ -124,6 +123,7 @@ def _benchmark_disabled() -> float:
 # Performance tests
 # ---------------------------------------------------------------------------
 
+
 def test_p50_overhead_under_1ms() -> None:
     """p50 overhead of enabled telemetry (no OpenLIT) must be < 1 ms.
 
@@ -156,9 +156,7 @@ def test_p50_overhead_under_5ms_with_openlit_recorder_mock() -> None:
     with (
         patch("opentelemetry.sdk.trace.TracerProvider"),
         patch("opentelemetry.sdk.trace.export.BatchSpanProcessor"),
-        patch(
-            "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-        ),
+        patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"),
         patch("opentelemetry.sdk.resources.Resource"),
     ):
         from parrot.observability.recorders.openlit_recorder import (  # noqa: PLC0415

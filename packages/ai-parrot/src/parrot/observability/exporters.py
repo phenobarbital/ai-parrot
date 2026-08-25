@@ -57,9 +57,7 @@ def make_span_exporters(
                     "'ai-parrot[observability]' grpcio"
                 ) from exc
             headers = tuple(target.headers.items()) or None
-            exporters.append(
-                GrpcSpanExporter(endpoint=target.endpoint, headers=headers)
-            )
+            exporters.append(GrpcSpanExporter(endpoint=target.endpoint, headers=headers))
             continue
 
         # Default: http/protobuf — mirror make_span_exporter()'s /v1/traces
@@ -69,6 +67,7 @@ def make_span_exporters(
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
             OTLPSpanExporter,
         )
+
         endpoint = f"{target.endpoint.rstrip('/')}/v1/traces"
         headers = target.headers or None
         exporters.append(OTLPSpanExporter(endpoint=endpoint, headers=headers))
@@ -109,6 +108,7 @@ def make_span_exporter(config: ObservabilityConfig) -> Any:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: PLC0415
         OTLPSpanExporter,
     )
+
     endpoint = f"{config.otlp_endpoint.rstrip('/')}/v1/traces"
     headers = config.otlp_headers or None
     return OTLPSpanExporter(endpoint=endpoint, headers=headers)
@@ -148,6 +148,7 @@ def make_metric_exporter(config: ObservabilityConfig) -> Any:
     from opentelemetry.exporter.otlp.proto.http.metric_exporter import (  # noqa: PLC0415
         OTLPMetricExporter,
     )
+
     endpoint = f"{config.otlp_endpoint.rstrip('/')}/v1/metrics"
     headers = config.otlp_headers or None
     return OTLPMetricExporter(endpoint=endpoint, headers=headers)

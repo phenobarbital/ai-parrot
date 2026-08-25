@@ -57,9 +57,7 @@ def build_recorders_from_config(
             )
         )
     else:
-        logger.debug(
-            "build_recorders_from_config: backend=%r yields no recorders.", backend
-        )
+        logger.debug("build_recorders_from_config: backend=%r yields no recorders.", backend)
 
     # FEAT-462 — OpenLitUsageRecorder is additive to whichever backend above
     # ran: it can be enabled alongside "logging"/"prometheus"/"none", not

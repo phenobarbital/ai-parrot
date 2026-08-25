@@ -40,9 +40,7 @@ class TestIntegrationsDeleted:
         are fine)."""
         import pathlib
 
-        src_root = (
-            pathlib.Path(__file__).resolve().parents[3] / "src" / "parrot"
-        )
+        src_root = pathlib.Path(__file__).resolve().parents[3] / "src" / "parrot"
         assert src_root.is_dir(), src_root
         offenders = []
         for path in src_root.rglob("*.py"):
@@ -59,9 +57,7 @@ class TestIntegrationsDeleted:
                     offenders.append((path, needle))
         # The __init__.py docstring explicitly documents the removal — allow
         # that single, expected mention; fail on anything else.
-        unexpected = [
-            (p, n) for p, n in offenders if p.name != "__init__.py"
-        ]
+        unexpected = [(p, n) for p, n in offenders if p.name != "__init__.py"]
         assert not unexpected, f"Unexpected references remain: {unexpected}"
 
 
@@ -80,9 +76,9 @@ class TestDependencyCleanup:
         conflicts = data["tool"]["uv"]["conflicts"]
         for pair in conflicts:
             for entry in pair:
-                assert entry.get("extra") != "observability-openlit", (
-                    f"Found observability-openlit in conflicts: {pair}"
-                )
+                assert (
+                    entry.get("extra") != "observability-openlit"
+                ), f"Found observability-openlit in conflicts: {pair}"
 
     def test_extras_still_exist_with_empty_deps(self) -> None:
         """observability-openlit / observability-traceloop extras still

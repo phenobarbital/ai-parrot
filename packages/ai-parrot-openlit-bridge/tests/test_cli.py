@@ -19,9 +19,7 @@ class TestCli:
         monkeypatch.setattr(sys, "argv", ["parrot-openlit-check", "http://x:4318"])
         with patch(
             "ai_parrot_openlit_bridge.cli.validate_endpoint",
-            return_value=EndpointStatus(
-                reachable=True, status_code=200, collector_info="otel-collector"
-            ),
+            return_value=EndpointStatus(reachable=True, status_code=200, collector_info="otel-collector"),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -44,9 +42,7 @@ class TestCli:
         assert "Connection refused" in out
 
     def test_timeout_arg_parsed(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            sys, "argv", ["parrot-openlit-check", "http://x:4318", "--timeout", "1.5"]
-        )
+        monkeypatch.setattr(sys, "argv", ["parrot-openlit-check", "http://x:4318", "--timeout", "1.5"])
         called = {}
 
         async def _fake_validate(url, *, timeout=5.0, headers=None):
@@ -54,9 +50,7 @@ class TestCli:
             called["timeout"] = timeout
             return EndpointStatus(reachable=True, status_code=200)
 
-        with patch(
-            "ai_parrot_openlit_bridge.cli.validate_endpoint", _fake_validate
-        ), pytest.raises(SystemExit):
+        with patch("ai_parrot_openlit_bridge.cli.validate_endpoint", _fake_validate), pytest.raises(SystemExit):
             main()
         assert called["timeout"] == 1.5
         assert called["url"] == "http://x:4318"

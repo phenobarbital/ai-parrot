@@ -107,9 +107,7 @@ def _do_bootstrap() -> None:
 
     recorders = build_recorders_from_config(config)
     if not recorders:
-        logger.debug(
-            "Observability auto-boot: backend=%r produced no recorders.", backend
-        )
+        logger.debug("Observability auto-boot: backend=%r produced no recorders.", backend)
         return
 
     subscriber = UsageRecordingSubscriber(
@@ -166,9 +164,7 @@ def shutdown_observability() -> None:
     try:
         shutdown_usage_recording()
     except Exception:  # noqa: BLE001
-        logger.debug(
-            "shutdown_observability: usage-recording teardown failed.", exc_info=True
-        )
+        logger.debug("shutdown_observability: usage-recording teardown failed.", exc_info=True)
 
 
 def shutdown_usage_recording() -> None:

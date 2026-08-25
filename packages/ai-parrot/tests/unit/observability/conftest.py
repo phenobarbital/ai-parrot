@@ -23,6 +23,7 @@ The layer-2 reset pokes at private OpenTelemetry attributes. We assert their
 presence up front so a future OTel rename fails loudly here (one obvious
 location) instead of silently re-polluting global state.
 """
+
 from __future__ import annotations
 
 import pytest

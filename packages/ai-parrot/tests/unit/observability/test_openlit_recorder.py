@@ -37,9 +37,7 @@ def patched_otel():
     with (
         patch("opentelemetry.sdk.trace.TracerProvider") as mock_provider_cls,
         patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as mock_bsp,
-        patch(
-            "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-        ) as mock_exporter_cls,
+        patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as mock_exporter_cls,
         patch("opentelemetry.sdk.resources.Resource") as mock_resource,
     ):
         yield {
@@ -121,16 +119,12 @@ class TestFactoryOpenlitBranch:
         recorder_names = [r.name for r in recorders]
         assert "openlit" in recorder_names
 
-    def test_falls_back_to_otlp_endpoint_when_no_explicit_endpoint(
-        self, patched_otel
-    ) -> None:
+    def test_falls_back_to_otlp_endpoint_when_no_explicit_endpoint(self, patched_otel) -> None:
         config = ObservabilityConfig(
             openlit_recorder_endpoint="http://openlit:4318",
             otlp_endpoint="http://default:4318",
         )
-        with patch(
-            "parrot.observability.recorders.openlit_recorder.OpenLitUsageRecorder"
-        ) as mock_recorder_cls:
+        with patch("parrot.observability.recorders.openlit_recorder.OpenLitUsageRecorder") as mock_recorder_cls:
             build_recorders_from_config(config)
             mock_recorder_cls.assert_called_once_with(
                 endpoint="http://openlit:4318",

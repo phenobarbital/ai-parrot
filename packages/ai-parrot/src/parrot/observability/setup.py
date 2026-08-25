@@ -57,9 +57,7 @@ _SETUP_LOCK = threading.Lock()
 
 # Token-space bucket boundaries for gen_ai.client.token.usage histogram.
 # These are NOT seconds; the latency buckets ([0.01..60.0]) are wrong for tokens.
-_TOKEN_BUCKETS: list[int] = [
-    10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000
-]
+_TOKEN_BUCKETS: list[int] = [10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000]
 
 
 def setup_telemetry(
@@ -180,9 +178,7 @@ def setup_telemetry(
         # --- 3. MeterProvider with histogram Views --------------------------------
         from parrot.observability.exporters import make_metric_exporter  # noqa: PLC0415
 
-        buckets: list[float] = config.histogram_buckets or [
-            0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0
-        ]
+        buckets: list[float] = config.histogram_buckets or [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]
         _latency_histogram_names = [
             "gen_ai.client.operation.duration",
             "parrot.tool.execution.duration",
@@ -199,9 +195,7 @@ def setup_telemetry(
         views.append(
             View(
                 instrument_name="gen_ai.client.token.usage",
-                aggregation=ExplicitBucketHistogramAggregation(
-                    boundaries=_TOKEN_BUCKETS
-                ),
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=_TOKEN_BUCKETS),
             )
         )
         metric_exporter = make_metric_exporter(config)
@@ -229,13 +223,10 @@ def setup_telemetry(
 
                     override = nav_config.get("PARROT_PRICING_PATH", fallback=None)
                 except ImportError:
-                    logger.debug(
-                        "navconfig not available; skipping PARROT_PRICING_PATH lookup."
-                    )
+                    logger.debug("navconfig not available; skipping PARROT_PRICING_PATH lookup.")
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "navconfig raised an unexpected error during PARROT_PRICING_PATH "
-                        "lookup: %s",
+                        "navconfig raised an unexpected error during PARROT_PRICING_PATH " "lookup: %s",
                         exc,
                     )
             cost_calc = CostCalculator(override_path=override)
@@ -281,8 +272,7 @@ def setup_telemetry(
 
         _STATE[cfg_hash] = provider
         logger.info(
-            "setup_telemetry: observability active for '%s' (traces=%s, metrics=%s, "
-            "cost=%s, otlp_targets=%d)",
+            "setup_telemetry: observability active for '%s' (traces=%s, metrics=%s, " "cost=%s, otlp_targets=%d)",
             config.service_name,
             config.enable_traces,
             config.enable_metrics,
@@ -365,6 +355,4 @@ def _get_parrot_version() -> str:
 
 def _hash_config(config: ObservabilityConfig) -> str:
     """Return a stable SHA-256 hex digest of the serialised *config*."""
-    return hashlib.sha256(
-        json.dumps(config.model_dump(), sort_keys=True, default=str).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(config.model_dump(), sort_keys=True, default=str).encode()).hexdigest()

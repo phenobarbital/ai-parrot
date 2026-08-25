@@ -62,12 +62,15 @@ async def validate_endpoint(
     """
     health_url = f"{url.rstrip('/')}/v1/traces"
     try:
-        async with aiohttp.ClientSession() as session, session.post(
-            health_url,
-            headers=headers or {},
-            timeout=aiohttp.ClientTimeout(total=timeout),
-            data=b"",  # empty POST — we only care about reachability
-        ) as resp:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(
+                health_url,
+                headers=headers or {},
+                timeout=aiohttp.ClientTimeout(total=timeout),
+                data=b"",  # empty POST — we only care about reachability
+            ) as resp,
+        ):
             return EndpointStatus(
                 reachable=True,
                 status_code=resp.status,

@@ -18,9 +18,7 @@ class TestMakeSpanExporters:
             OtlpTarget(name="a", endpoint="http://a:4318"),
             OtlpTarget(name="b", endpoint="http://b:4318"),
         ]
-        with patch(
-            "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-        ) as mock_cls:
+        with patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as mock_cls:
             mock_cls.return_value = MagicMock()
             result = make_span_exporters(targets)
             assert len(result) == 2
@@ -44,9 +42,7 @@ class TestMakeSpanExporters:
             endpoint="http://x:4318",
             headers={"Authorization": "Bearer tok"},
         )
-        with patch(
-            "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-        ) as mock_cls:
+        with patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as mock_cls:
             mock_cls.return_value = MagicMock()
             make_span_exporters([target])
             mock_cls.assert_called_once_with(
@@ -56,15 +52,11 @@ class TestMakeSpanExporters:
 
     def test_grpc_protocol(self) -> None:
         target = OtlpTarget(name="a", endpoint="http://a:4317")
-        with patch(
-            "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter"
-        ) as mock_cls:
+        with patch("opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter") as mock_cls:
             mock_cls.return_value = MagicMock()
             result = make_span_exporters([target], protocol="grpc")
             assert len(result) == 1
-            mock_cls.assert_called_once_with(
-                endpoint="http://a:4317", headers=None
-            )
+            mock_cls.assert_called_once_with(endpoint="http://a:4317", headers=None)
 
     def test_single_target_matches_make_span_exporter(self) -> None:
         """The single-target fallback path is identical to make_span_exporter().

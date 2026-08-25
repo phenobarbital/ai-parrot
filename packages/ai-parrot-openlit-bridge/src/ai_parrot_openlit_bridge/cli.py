@@ -22,9 +22,7 @@ def main() -> None:
         description="Validate an OTLP endpoint for OpenLIT compatibility.",
     )
     parser.add_argument("url", help="OTLP base URL (e.g. http://localhost:4318)")
-    parser.add_argument(
-        "--timeout", type=float, default=5.0, help="Timeout in seconds"
-    )
+    parser.add_argument("--timeout", type=float, default=5.0, help="Timeout in seconds")
     args = parser.parse_args()
 
     result = asyncio.run(validate_endpoint(args.url, timeout=args.timeout))

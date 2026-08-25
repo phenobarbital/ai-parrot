@@ -162,10 +162,18 @@ class ObservabilityConfig(BaseModel):
         default_factory=lambda: [
             # LLM SDKs traced natively by GenAIOpenTelemetrySubscriber — skip to
             # avoid duplicate GenAI spans.
-            "openai", "openai_agents", "anthropic", "bedrock",
-            "groq", "vertexai", "google_ai_studio",
+            "openai",
+            "openai_agents",
+            "anthropic",
+            "bedrock",
+            "groq",
+            "vertexai",
+            "google_ai_studio",
             # Breaks / irrelevant transitive deps.
-            "milvus", "fastapi", "starlette", "tornado",
+            "milvus",
+            "fastapi",
+            "starlette",
+            "tornado",
         ]
     )
 
@@ -196,8 +204,8 @@ class ObservabilityConfig(BaseModel):
 
     # Sampling & PII
     sampling_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
-    capture_prompts: bool = False       # PII: default off
-    capture_completions: bool = False   # PII: default off
+    capture_prompts: bool = False  # PII: default off
+    capture_completions: bool = False  # PII: default off
 
     # Metric export tuning
     metric_export_interval_ms: int = 60_000
@@ -224,22 +232,18 @@ class ObservabilityConfig(BaseModel):
         """
         if self.enable_openlit:
             warnings.warn(
-                "enable_openlit is deprecated — configure an OTLP target "
-                "instead. See FEAT-462.",
+                "enable_openlit is deprecated — configure an OTLP target " "instead. See FEAT-462.",
                 DeprecationWarning,
                 stacklevel=2,
             )
         if self.enable_traceloop:
             warnings.warn(
-                "enable_traceloop is deprecated — configure an OTLP target "
-                "instead. See FEAT-462.",
+                "enable_traceloop is deprecated — configure an OTLP target " "instead. See FEAT-462.",
                 DeprecationWarning,
                 stacklevel=2,
             )
         if self.usage_backend == "traceloop":
-            logger.warning(
-                "usage_backend='traceloop' is deprecated, mapping to 'otel'"
-            )
+            logger.warning("usage_backend='traceloop' is deprecated, mapping to 'otel'")
             self.usage_backend = "otel"
         return self
 
@@ -287,24 +291,12 @@ class ObservabilityConfig(BaseModel):
         values: dict = {
             "enabled": _as_bool(get("OBSERVABILITY_ENABLED"), defaults.enabled),
             "service_name": get("OBSERVABILITY_SERVICE_NAME") or defaults.service_name,
-            "enable_cost_tracking": _as_bool(
-                get("OBSERVABILITY_COST"), defaults.enable_cost_tracking
-            ),
-            "enable_openlit": _as_bool(
-                get("OBSERVABILITY_OPENLIT"), defaults.enable_openlit
-            ),
-            "enable_traceloop": _as_bool(
-                get("OBSERVABILITY_TRACELOOP"), defaults.enable_traceloop
-            ),
-            "sampling_ratio": _as_float(
-                get("OBSERVABILITY_SAMPLING"), defaults.sampling_ratio
-            ),
-            "usage_log_level": _as_log_level(
-                get("OBSERVABILITY_LOG_LEVEL"), defaults.usage_log_level
-            ),
-            "prometheus_port": _as_int(
-                get("OBSERVABILITY_PROM_PORT"), defaults.prometheus_port
-            ),
+            "enable_cost_tracking": _as_bool(get("OBSERVABILITY_COST"), defaults.enable_cost_tracking),
+            "enable_openlit": _as_bool(get("OBSERVABILITY_OPENLIT"), defaults.enable_openlit),
+            "enable_traceloop": _as_bool(get("OBSERVABILITY_TRACELOOP"), defaults.enable_traceloop),
+            "sampling_ratio": _as_float(get("OBSERVABILITY_SAMPLING"), defaults.sampling_ratio),
+            "usage_log_level": _as_log_level(get("OBSERVABILITY_LOG_LEVEL"), defaults.usage_log_level),
+            "prometheus_port": _as_int(get("OBSERVABILITY_PROM_PORT"), defaults.prometheus_port),
             "prometheus_addr": get("OBSERVABILITY_PROM_ADDR") or defaults.prometheus_addr,
         }
 
@@ -329,13 +321,9 @@ class ObservabilityConfig(BaseModel):
         # string means "disable nothing" (distinct from unset → use defaults).
         disable = get("OBSERVABILITY_OPENLIT_DISABLE")
         if disable is not None:
-            values["openlit_disabled_instrumentors"] = [
-                name.strip() for name in disable.split(",") if name.strip()
-            ]
+            values["openlit_disabled_instrumentors"] = [name.strip() for name in disable.split(",") if name.strip()]
 
-        values["openlit_log_level"] = _as_log_level(
-            get("OBSERVABILITY_OPENLIT_LOG_LEVEL"), defaults.openlit_log_level
-        )
+        values["openlit_log_level"] = _as_log_level(get("OBSERVABILITY_OPENLIT_LOG_LEVEL"), defaults.openlit_log_level)
         values["openlit_disable_metrics"] = _as_bool(
             get("OBSERVABILITY_OPENLIT_DISABLE_METRICS"),
             defaults.openlit_disable_metrics,
@@ -351,13 +339,9 @@ class ObservabilityConfig(BaseModel):
         targets_raw = get("OTLP_TARGETS")
         if targets_raw:
             try:
-                values["otlp_targets"] = [
-                    OtlpTarget(**t) for t in json.loads(targets_raw)
-                ]
+                values["otlp_targets"] = [OtlpTarget(**t) for t in json.loads(targets_raw)]
             except Exception as exc:  # noqa: BLE001 — malformed env input
-                logger.warning(
-                    "Malformed OTLP_TARGETS env var, ignoring: %s", exc
-                )
+                logger.warning("Malformed OTLP_TARGETS env var, ignoring: %s", exc)
                 values["otlp_targets"] = []
 
         # FEAT-462 — OpenLIT usage recorder. `OBSERVABILITY_OPENLIT_RECORDER`
@@ -368,9 +352,7 @@ class ObservabilityConfig(BaseModel):
         recorder_enabled = _as_bool(get("OBSERVABILITY_OPENLIT_RECORDER"), False)
         if recorder_enabled or recorder_endpoint_override:
             values["openlit_recorder_endpoint"] = (
-                recorder_endpoint_override
-                or values.get("otlp_endpoint")
-                or defaults.otlp_endpoint
+                recorder_endpoint_override or values.get("otlp_endpoint") or defaults.otlp_endpoint
             )
 
         return cls(**values)

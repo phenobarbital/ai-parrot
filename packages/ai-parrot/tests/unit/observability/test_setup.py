@@ -63,13 +63,9 @@ def test_idempotent_same_config() -> None:
 
 def test_conflicting_config_raises() -> None:
     """Second call with different config raises ConfigurationError."""
-    setup_telemetry(
-        ObservabilityConfig(enabled=True, service_name="a", enable_cost_tracking=False)
-    )
+    setup_telemetry(ObservabilityConfig(enabled=True, service_name="a", enable_cost_tracking=False))
     with pytest.raises(ConfigurationError, match="already been configured"):
-        setup_telemetry(
-            ObservabilityConfig(enabled=True, service_name="b", enable_cost_tracking=False)
-        )
+        setup_telemetry(ObservabilityConfig(enabled=True, service_name="b", enable_cost_tracking=False))
 
 
 def test_service_instance_id_default() -> None:

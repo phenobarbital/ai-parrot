@@ -34,10 +34,10 @@ from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_tracer_provider(exporter: InMemorySpanExporter) -> TracerProvider:
     """Build a TracerProvider that writes spans to *exporter*."""
@@ -122,6 +122,7 @@ async def _drive_invoke_cycle(registry, *, agent_name: str = "test-agent") -> No
 # Scenario 1 — traces only (enable_metrics=False)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_scenario_1_traces_only() -> None:
     """Span exporter captures spans; no MetricsSubscriber registered."""
@@ -141,13 +142,13 @@ async def test_scenario_1_traces_only() -> None:
     assert len(finished) >= 1, f"Expected at least 1 span, got {len(finished)}"
     names = [s.name for s in finished]
     # At least one span should mention the client
-    assert any("openai" in n or "client" in n or "parrot" in n for n in names), \
-        f"Unexpected span names: {names}"
+    assert any("openai" in n or "client" in n or "parrot" in n for n in names), f"Unexpected span names: {names}"
 
 
 # ---------------------------------------------------------------------------
 # Scenario 2 — metrics only (enable_traces=False)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_scenario_2_metrics_only() -> None:
@@ -168,18 +169,14 @@ async def test_scenario_2_metrics_only() -> None:
     # At least one metric should have been recorded
     rm_list = metrics.resource_metrics
     assert rm_list, "No resource metrics collected"
-    all_metrics = [
-        m.name
-        for rm in rm_list
-        for sm in rm.scope_metrics
-        for m in sm.metrics
-    ]
+    all_metrics = [m.name for rm in rm_list for sm in rm.scope_metrics for m in sm.metrics]
     assert all_metrics, "No metric names found"
 
 
 # ---------------------------------------------------------------------------
 # Scenario 3 — traces + metrics + cost
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_scenario_3_traces_metrics_cost() -> None:
@@ -217,18 +214,14 @@ async def test_scenario_3_traces_metrics_cost() -> None:
     # Metrics: at least one metric data point
     metrics = reader.get_metrics_data()
     rm_list = metrics.resource_metrics
-    all_metrics = [
-        m.name
-        for rm in rm_list
-        for sm in rm.scope_metrics
-        for m in sm.metrics
-    ]
+    all_metrics = [m.name for rm in rm_list for sm in rm.scope_metrics for m in sm.metrics]
     assert all_metrics, "No metrics collected"
 
 
 # ---------------------------------------------------------------------------
 # Scenario 4 — traces + OpenLIT (mocked)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_scenario_4_openlit_recorder_alongside_tracing() -> None:
@@ -246,9 +239,7 @@ async def test_scenario_4_openlit_recorder_alongside_tracing() -> None:
     with (
         patch("opentelemetry.sdk.trace.TracerProvider"),
         patch("opentelemetry.sdk.trace.export.BatchSpanProcessor"),
-        patch(
-            "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"
-        ),
+        patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"),
         patch("opentelemetry.sdk.resources.Resource"),
     ):
         from parrot.observability.recorders.openlit_recorder import (  # noqa: PLC0415
@@ -279,6 +270,7 @@ async def test_scenario_4_openlit_recorder_alongside_tracing() -> None:
 # Scenario 5 — sampling=0.1 over 100 requests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_scenario_5_sampling_ratio() -> None:
     """With sampling_ratio=0.1 and 100 requests, roughly 10 spans arrive (±50%)."""
@@ -304,14 +296,13 @@ async def test_scenario_5_sampling_ratio() -> None:
     spans = exporter.get_finished_spans()
     # With 10% sampling, expect roughly 10 spans (±50% tolerance = 5..15).
     # The exact count is probabilistic; we use a wide tolerance for CI reliability.
-    assert 2 <= len(spans) <= 25, (
-        f"Expected ~10 sampled spans from 100 requests at 10% ratio, got {len(spans)}"
-    )
+    assert 2 <= len(spans) <= 25, f"Expected ~10 sampled spans from 100 requests at 10% ratio, got {len(spans)}"
 
 
 # ---------------------------------------------------------------------------
 # FEAT-228: per-agent attribution — Scenarios 6 & 7
 # ---------------------------------------------------------------------------
+
 
 async def _drive_client_cycle_with_agent(
     registry,
@@ -376,32 +367,27 @@ async def test_scenario_6_metrics_carry_agent_name() -> None:
             cost_calculator=cost_calc,
         )
         metrics_sub.register(registry)
-        await _drive_client_cycle_with_agent(
-            registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini"
-        )
+        await _drive_client_cycle_with_agent(registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini")
 
     # Check operation duration histogram carries the agent label
     duration_pts = _collect_metric_points(reader, "gen_ai.client.operation.duration")
     assert duration_pts, "No duration data points collected"
     assert any(
-        pt.attributes.get("parrot.agent.name") == "porygon"
-        for pt in duration_pts
+        pt.attributes.get("parrot.agent.name") == "porygon" for pt in duration_pts
     ), "parrot.agent.name='porygon' not found in duration metric labels"
 
     # Check token usage histogram
     token_pts = _collect_metric_points(reader, "gen_ai.client.token.usage")
     assert token_pts, "No token usage data points"
     assert any(
-        pt.attributes.get("parrot.agent.name") == "porygon"
-        for pt in token_pts
+        pt.attributes.get("parrot.agent.name") == "porygon" for pt in token_pts
     ), "parrot.agent.name='porygon' not found in token metric labels"
 
     # Check cost counter carries agent label (only when pricing data is available)
     cost_pts = _collect_metric_points(reader, "gen_ai.client.cost.total")
     if cost_pts:
         assert any(
-            pt.attributes.get("parrot.agent.name") == "porygon"
-            for pt in cost_pts
+            pt.attributes.get("parrot.agent.name") == "porygon" for pt in cost_pts
         ), "parrot.agent.name='porygon' not found in cost metric labels"
 
 
@@ -423,14 +409,14 @@ async def test_scenario_7_metrics_unknown_when_agent_none() -> None:
     duration_pts = _collect_metric_points(reader, "gen_ai.client.operation.duration")
     assert duration_pts, "No duration data points"
     assert any(
-        pt.attributes.get("parrot.agent.name") == "unknown"
-        for pt in duration_pts
+        pt.attributes.get("parrot.agent.name") == "unknown" for pt in duration_pts
     ), "parrot.agent.name='unknown' not found for None agent"
 
 
 # ---------------------------------------------------------------------------
 # FEAT-228: per-agent attribution — Scenarios 8 & 9 (client span attributes)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_scenario_8_client_span_has_agent_name() -> None:
@@ -444,22 +430,18 @@ async def test_scenario_8_client_span_has_agent_name() -> None:
             tracer_provider=tp,
         )
         trace_sub.register(registry)
-        await _drive_client_cycle_with_agent(
-            registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini"
-        )
+        await _drive_client_cycle_with_agent(registry, agent_name="porygon", client_name="openai", model="gpt-4o-mini")
 
     finished = exporter.get_finished_spans()
     assert finished, "No spans collected"
     # The client span has gen_ai.response.model or gen_ai.request.model set
     client_spans = [
-        s for s in finished
-        if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
+        s for s in finished if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
     ]
     assert client_spans, f"No client span found; spans: {[s.name for s in finished]}"
     for span in client_spans:
         assert span.attributes.get("parrot.agent.name") == "porygon", (
-            f"Expected parrot.agent.name='porygon' on span '{span.name}', "
-            f"got: {dict(span.attributes)}"
+            f"Expected parrot.agent.name='porygon' on span '{span.name}', " f"got: {dict(span.attributes)}"
         )
 
 
@@ -481,8 +463,7 @@ async def test_scenario_9_client_span_omits_agent_when_none() -> None:
     finished = exporter.get_finished_spans()
     assert finished, "No spans collected"
     client_spans = [
-        s for s in finished
-        if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
+        s for s in finished if s.attributes.get("gen_ai.response.model") or s.attributes.get("gen_ai.request.model")
     ]
     assert client_spans, f"No client span found; spans: {[s.name for s in finished]}"
     for span in client_spans:
