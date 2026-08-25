@@ -2,11 +2,31 @@
 shapes (FEAT-460).
 """
 
+import importlib
+import sys
+
 import pytest
-from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.controls.builtin import _BUILTIN_METADATA
-from parrot_formdesigner.controls.registry import get_controls
+from parrot_formdesigner.controls.registry import _REGISTRY, get_controls
+from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.tools.field_helpers import _FIELD_SCHEMA_SNIPPETS
+
+
+@pytest.fixture(autouse=True)
+def _ensure_registry_seeded():
+    """Defensively re-seed the controls registry if another test cleared it.
+
+    ``tests/unit/controls/test_extension_registration.py`` has a
+    pre-existing autouse fixture that does ``_REGISTRY.clear()`` in its
+    teardown without re-seeding — a shared-mutable-state bug in that
+    (out-of-scope) test file that leaves ``get_controls()`` empty for any
+    test running afterward in the same session. Re-seed here rather than
+    assume a particular test-run order.
+    """
+    if not _REGISTRY:
+        sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+        importlib.import_module("parrot_formdesigner.controls.builtin")
+    yield
 
 
 class TestBuiltinMetadataEnvelope:

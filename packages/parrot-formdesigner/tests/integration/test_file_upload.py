@@ -18,6 +18,7 @@ import pytest
 from aiohttp import FormData, web
 from parrot_formdesigner.api.file_upload import handle_file_upload
 from parrot_formdesigner.api.handlers import FormAPIHandler
+from parrot_formdesigner.core.constraints import FieldConstraints
 from parrot_formdesigner.core.file_envelope import FileEnvelope
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
@@ -215,11 +216,13 @@ class TestFileUploadEndToEnd:
         full_content = b"A" * 40 + b"B" * 40
         chunk1, chunk2 = full_content[:40], full_content[40:]
         url = f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'doc')}/file-upload"
+        upload_id = str(uuid.uuid4())
 
         resp1 = await client.post(
             url,
             data=chunk1,
             headers={
+                "X-Parrot-Upload-Id": upload_id,
                 "X-Parrot-Upload-Offset": "0",
                 "X-Parrot-Upload-Length": str(len(full_content)),
                 "Content-Type": "application/octet-stream",
@@ -231,6 +234,7 @@ class TestFileUploadEndToEnd:
             url,
             data=chunk2,
             headers={
+                "X-Parrot-Upload-Id": upload_id,
                 "X-Parrot-Upload-Offset": "40",
                 "X-Parrot-Upload-Length": str(len(full_content)),
                 "X-Parrot-Upload-Content-Type": "text/plain",
@@ -244,6 +248,126 @@ class TestFileUploadEndToEnd:
 
         chunks = [chunk async for chunk in await blob_storage.get(envelope.blob_ref)]
         assert b"".join(chunks) == full_content
+
+    @pytest.mark.asyncio
+    async def test_chunked_upload_missing_upload_id_rejected(self, aiohttp_client):
+        """A chunk request without X-Parrot-Upload-Id is rejected (400)."""
+        field = FormField(field_id="doc", field_type=FieldType.FILE, label={"en": "Doc"})
+        form = _make_form(field)
+        blob_storage = TempBlobStorage()
+        client = await _make_upload_client(aiohttp_client, form, blob_storage)
+
+        url = f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'doc')}/file-upload"
+        resp = await client.post(
+            url,
+            data=b"chunk-bytes",
+            headers={
+                "X-Parrot-Upload-Offset": "0",
+                "X-Parrot-Upload-Length": "11",
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_concurrent_chunked_uploads_do_not_interleave(self, aiohttp_client):
+        """Two concurrent chunked uploads to the SAME field must not corrupt
+        each other's reassembly (regression for the upload_id fix)."""
+        field = FormField(field_id="doc", field_type=FieldType.FILE, label={"en": "Doc"})
+        form = _make_form(field)
+        blob_storage = TempBlobStorage()
+        client = await _make_upload_client(aiohttp_client, form, blob_storage)
+        url = f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'doc')}/file-upload"
+
+        content_a = b"A" * 20
+        content_b = b"B" * 30
+        upload_id_a = str(uuid.uuid4())
+        upload_id_b = str(uuid.uuid4())
+
+        # Interleave: A's only chunk, then B's only chunk.
+        resp_a = await client.post(
+            url,
+            data=content_a,
+            headers={
+                "X-Parrot-Upload-Id": upload_id_a,
+                "X-Parrot-Upload-Offset": "0",
+                "X-Parrot-Upload-Length": str(len(content_a)),
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        resp_b = await client.post(
+            url,
+            data=content_b,
+            headers={
+                "X-Parrot-Upload-Id": upload_id_b,
+                "X-Parrot-Upload-Offset": "0",
+                "X-Parrot-Upload-Length": str(len(content_b)),
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        assert resp_a.status == 200
+        assert resp_b.status == 200
+        envelope_a = FileEnvelope.model_validate(await resp_a.json())
+        envelope_b = FileEnvelope.model_validate(await resp_b.json())
+        assert envelope_a.size == len(content_a)
+        assert envelope_b.size == len(content_b)
+
+        chunks_a = [c async for c in await blob_storage.get(envelope_a.blob_ref)]
+        chunks_b = [c async for c in await blob_storage.get(envelope_b.blob_ref)]
+        assert b"".join(chunks_a) == content_a
+        assert b"".join(chunks_b) == content_b
+
+    @pytest.mark.asyncio
+    async def test_chunked_upload_size_exceeded_rejected_upfront(self, aiohttp_client):
+        """Declared total length over max_file_size_bytes -> 413, no chunk persisted."""
+        field = FormField(
+            field_id="doc",
+            field_type=FieldType.FILE,
+            label={"en": "Doc"},
+            constraints=FieldConstraints(max_file_size_bytes=10),
+        )
+        form = _make_form(field)
+        blob_storage = TempBlobStorage()
+        client = await _make_upload_client(aiohttp_client, form, blob_storage)
+        url = f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'doc')}/file-upload"
+
+        resp = await client.post(
+            url,
+            data=b"X" * 20,
+            headers={
+                "X-Parrot-Upload-Id": str(uuid.uuid4()),
+                "X-Parrot-Upload-Offset": "0",
+                "X-Parrot-Upload-Length": "20",
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        assert resp.status == 413
+
+    @pytest.mark.asyncio
+    async def test_multi_file_rejection_cleans_up_orphaned_blob(self, aiohttp_client):
+        """A rejected multi-file upload to a single-cardinality field must
+        not leave the first file's blob behind in storage."""
+        field = FormField(field_id="doc", field_type=FieldType.FILE, label={"en": "Doc"})
+        form = _make_form(field)
+        blob_storage = TempBlobStorage()
+        # Spy on delete() (wrapping the real implementation) to verify the
+        # orphaned first-file blob is actually cleaned up, not just left in
+        # place — TempBlobStorage has no in-memory store to inspect directly.
+        real_delete = blob_storage.delete
+        delete_spy = AsyncMock(side_effect=real_delete)
+        blob_storage.delete = delete_spy
+        client = await _make_upload_client(aiohttp_client, form, blob_storage)
+
+        data = FormData()
+        data.add_field("file", io.BytesIO(b"one"), filename="a.txt", content_type="text/plain")
+        data.add_field("file", io.BytesIO(b"two"), filename="b.txt", content_type="text/plain")
+
+        resp = await client.post(
+            f"/api/v1/{_TEST_TENANT}/forms/{form.form_uid}/fields/{_field_uid(form, 'doc')}/file-upload",
+            data=data,
+        )
+        assert resp.status == 400
+        delete_spy.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

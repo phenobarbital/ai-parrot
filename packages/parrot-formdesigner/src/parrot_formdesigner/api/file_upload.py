@@ -20,10 +20,12 @@ Error codes:
 Basic chunked upload:
 Clients that split a large file into sequential chunks may send each
 chunk as a raw (non-multipart) request body, tagged with the
-``X-Parrot-Upload-Offset`` and ``X-Parrot-Upload-Length`` headers. Chunks
-are buffered in blob storage (one blob per chunk) and reassembled when
-the final chunk arrives (``offset + len(chunk) == total_length``). This
-is NOT full tus-protocol support — see the spec's Non-Goals.
+``X-Parrot-Upload-Offset`` and ``X-Parrot-Upload-Length`` headers, plus a
+client-generated ``X-Parrot-Upload-Id`` (stable across all chunks of one
+upload — required to disambiguate concurrent uploads to the same field).
+Chunks are buffered in blob storage (one blob per chunk) and reassembled
+when the final chunk arrives (``offset + len(chunk) == total_length``).
+This is NOT full tus-protocol support — see the spec's Non-Goals.
 """
 
 from __future__ import annotations
@@ -48,10 +50,14 @@ from .tenant import declared_tenant
 
 logger = logging.getLogger(__name__)
 
-# Basic chunked-upload session buffer: (form_uid, field_uid) -> {offset: blob_ref}.
-# Process-local — sufficient for the V1 "basic chunked upload" scope (not
-# full tus-protocol support; see spec Non-Goals).
-_CHUNK_BUFFERS: dict[tuple[str, str], dict[int, str]] = {}
+# Basic chunked-upload session buffer:
+# (form_uid, field_uid, upload_id) -> {offset: blob_ref}. Keyed on the
+# client-supplied upload_id (not just form_uid/field_uid) so concurrent
+# uploads to the same field never interleave. Process-local — sufficient
+# for the V1 "basic chunked upload" scope (not full tus-protocol support;
+# see spec Non-Goals). An abandoned upload (client stops sending chunks)
+# leaves its entry and chunk blobs orphaned — no expiry/GC in V1.
+_CHUNK_BUFFERS: dict[tuple[str, str, str], dict[int, str]] = {}
 
 
 def _get_blob_storage(app: web.Application) -> AbstractBlobStorage:
@@ -207,6 +213,21 @@ async def handle_file_upload(request: web.Request) -> web.Response:
             if (part.name or "") != "file":
                 continue
             if single and envelopes:
+                # The first file was already persisted before we could see
+                # a second 'file' part arrive — clean it up (and any
+                # thumbnail) rather than leaving an orphaned blob behind.
+                for orphan in envelopes:
+                    for ref in (orphan.blob_ref, orphan.thumbnail_url):
+                        if not ref:
+                            continue
+                        try:
+                            await blob_storage.delete(ref)
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to clean up orphaned blob %r after multi-file rejection: %s",
+                                ref,
+                                exc,
+                            )
                 raise web.HTTPBadRequest(reason=f"Field {field_id!r} accepts a single file only")
             envelope = await _process_file_part(
                 part,
@@ -341,8 +362,28 @@ async def _handle_chunk(
     except (KeyError, ValueError) as exc:
         raise web.HTTPBadRequest(reason="Invalid X-Parrot-Upload-Offset/X-Parrot-Upload-Length headers") from exc
 
+    # Reject up front (before persisting any chunk) once the declared total
+    # length already exceeds the constraint — avoids buffering chunks for a
+    # transfer that is guaranteed to be rejected at reassembly time anyway.
+    if max_size is not None and total_length > max_size:
+        raise web.HTTPRequestEntityTooLarge(max_size=max_size, actual_size=total_length)
+
+    # A per-upload identifier is REQUIRED: keying the chunk-buffer session
+    # on (form_uid, field_uid) alone would let two concurrent chunked
+    # uploads to the SAME field (e.g. two submitters filling the same
+    # public form at once) interleave/overwrite each other's chunks and
+    # silently corrupt the reassembled file. The client must generate one
+    # (e.g. a UUID) and send it on every chunk of the same upload.
+    upload_id = request.headers.get("X-Parrot-Upload-Id")
+    if not upload_id:
+        raise web.HTTPBadRequest(
+            reason="Chunked upload requires an X-Parrot-Upload-Id header "
+            "(client-generated, stable across all chunks of one upload) to "
+            "disambiguate concurrent uploads to the same field"
+        )
+
     chunk_bytes = await request.read()
-    key = (str(form.form_uid), str(field.field_uid))
+    key = (str(form.form_uid), str(field.field_uid), upload_id)
     session = _CHUNK_BUFFERS.setdefault(key, {})
 
     chunk_meta = BlobMetadata(
