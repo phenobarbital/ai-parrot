@@ -92,10 +92,7 @@ async def main() -> None:
             logger.info("Answer: %s", answer[:120])
 
     except ImportError:
-        logger.warning(
-            "openai package not installed — running in no-op demo mode. "
-            "Install with: pip install openai"
-        )
+        logger.warning("openai package not installed — running in no-op demo mode. " "Install with: pip install openai")
         # Emit synthetic events so the observability stack still sees something
         from opentelemetry import trace  # noqa: PLC0415
 

@@ -163,9 +163,7 @@ class TestFactoryOpenlitBranch:
                 service_name=config.service_name,
             )
 
-    def test_falls_back_to_otlp_endpoint_when_recorder_endpoint_matches_default(
-        self, patched_otel
-    ) -> None:
+    def test_falls_back_to_otlp_endpoint_when_recorder_endpoint_matches_default(self, patched_otel) -> None:
         """True fallback case: from_env() defaults openlit_recorder_endpoint
         to otlp_endpoint when OBSERVABILITY_OPENLIT_RECORDER=true is set
         without an explicit OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT — the

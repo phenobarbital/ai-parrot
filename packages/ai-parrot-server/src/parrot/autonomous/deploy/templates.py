@@ -65,7 +65,7 @@ def post_fork(server, worker):
     )
 '''
 
-SUPERVISORD_CONFIG_TEMPLATE = '''\
+SUPERVISORD_CONFIG_TEMPLATE = """\
 ; ==========================================================================
 ; Supervisor program: {agent_name}
 ; ==========================================================================
@@ -106,9 +106,9 @@ stdout_logfile_backups=10
 stderr_logfile=/var/log/{agent_name}/{agent_name}_err.log
 stderr_logfile_maxbytes=50MB
 stderr_logfile_backups=10
-'''
+"""
 
-SYSTEMD_SERVICE_TEMPLATE = '''\
+SYSTEMD_SERVICE_TEMPLATE = """\
 # ==========================================================================
 # systemd unit: {agent_name}
 # ==========================================================================
@@ -150,7 +150,7 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-'''
+"""
 
 SAMPLE_AGENT_TEMPLATE = '''\
 """Sample AutonomousOrchestrator agent.
