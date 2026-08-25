@@ -52,7 +52,7 @@
       "feature_id": "FEAT-462",
       "feature": "unified-telemetry-bus",
       "spec": "sdd/specs/unified-telemetry-bus.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "No shared files with TASK-2470 but sequential in worktree for simplicity",
       "assigned_to": null,
       "started_at": "2026-08-25T22:13:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2472-genai-semconv-attributes.md"
+      "completed_at": "2026-08-25T22:28:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2472-genai-semconv-attributes.md"
     },
     {
       "id": "TASK-2473",
