@@ -41,6 +41,7 @@ _SEP = "__"
 
 # Reserved columns every sink writes, sourced from `FormSubmission`
 # attributes (services/submissions.py:50) — never from the form itself.
+# FEAT-458: "extra_data" added — captured undeclared submission keys.
 RESERVED_COLUMNS: frozenset[str] = frozenset(
     {
         "submission_id",
@@ -59,6 +60,7 @@ RESERVED_COLUMNS: frozenset[str] = frozenset(
         "root_submission_id",
         "revision",
         "context",
+        "extra_data",
     }
 )
 
@@ -80,6 +82,7 @@ _RESERVED_COLUMN_ORDER: tuple[str, ...] = (
     "root_submission_id",
     "revision",
     "context",
+    "extra_data",
 )
 
 
@@ -154,6 +157,9 @@ def flatten_submission(form: FormSchema, submission: FormSubmission) -> dict[str
             (e.g. exceeds the 63-character Postgres cap).
     """
     row: dict[str, Any] = _reserved_values(submission)
+    # FEAT-458: mirror the ARRAY treatment — one JSON-serialized column.
+    # None stays None (SQL NULL), never the string "null".
+    row["extra_data"] = json.dumps(submission.extra_data) if submission.extra_data is not None else None
 
     data = submission.data
     for column_name, field in _iter_form_fields(form):
@@ -215,7 +221,9 @@ def nest_submission(form: FormSchema, submission: FormSubmission) -> dict[str, A
     Returns:
         A dict with every reserved column plus a ``"data"`` key holding
         ``submission.data`` exactly as submitted (a shallow copy, so the
-        caller's ``submission.data`` is never mutated).
+        caller's ``submission.data`` is never mutated). FEAT-458:
+        ``extra_data`` is one of the reserved columns — included as a
+        nested object (or ``None``), never stringified.
     """
     del form  # unused — document mode keeps `data` nested regardless of shape
     doc: dict[str, Any] = _reserved_values(submission)

@@ -23,7 +23,12 @@ from parrot_formdesigner.services.sinks.mapper import (
 from parrot_formdesigner.services.submissions import FormSubmission
 
 
-def _submission(data: dict, form_uid: uuid.UUID | None = None) -> FormSubmission:
+def _submission(
+    data: dict,
+    form_uid: uuid.UUID | None = None,
+    *,
+    extra_data: dict | None = None,
+) -> FormSubmission:
     return FormSubmission(
         form_uid=form_uid or uuid.uuid4(),
         form_id="test-form",
@@ -31,6 +36,7 @@ def _submission(data: dict, form_uid: uuid.UUID | None = None) -> FormSubmission
         data=data,
         is_valid=True,
         created_at=datetime.now(UTC),
+        extra_data=extra_data,
     )
 
 
@@ -173,3 +179,84 @@ class TestFieldTypesFor:
         assert "campaign_id" not in types  # metadata key, not a form field
         assert "submission_id" not in types  # reserved column
         assert "name" in types
+
+
+# ---------------------------------------------------------------------------
+# FEAT-458 — extra_data reserved column (TASK-2438)
+# ---------------------------------------------------------------------------
+
+
+def test_reserved_columns_includes_extra_data():
+    assert "extra_data" in RESERVED_COLUMNS
+
+
+class TestFlattenExtraData:
+    def test_emits_json_column(self, form_with_group):
+        submission = _submission({}, form_uid=form_with_group.form_uid, extra_data={"legacy_id": 42})
+        row = flatten_submission(form_with_group, submission)
+        assert row["extra_data"] == json.dumps({"legacy_id": 42})
+
+    def test_none_stays_none(self, form_with_group):
+        submission = _submission({}, form_uid=form_with_group.form_uid, extra_data=None)
+        row = flatten_submission(form_with_group, submission)
+        assert row["extra_data"] is None
+
+    def test_none_is_not_the_string_null(self, form_with_group):
+        submission = _submission({}, form_uid=form_with_group.form_uid, extra_data=None)
+        row = flatten_submission(form_with_group, submission)
+        assert row["extra_data"] != "null"
+
+
+class TestNestExtraData:
+    def test_included_as_object(self, form_with_group):
+        submission = _submission({}, form_uid=form_with_group.form_uid, extra_data={"legacy_id": 42})
+        doc = nest_submission(form_with_group, submission)
+        assert doc["extra_data"] == {"legacy_id": 42}
+
+    def test_not_stringified(self, form_with_group):
+        submission = _submission({}, form_uid=form_with_group.form_uid, extra_data={"a": 1})
+        doc = nest_submission(form_with_group, submission)
+        assert not isinstance(doc["extra_data"], str)
+
+    def test_none_stays_none(self, form_with_group):
+        submission = _submission({}, form_uid=form_with_group.form_uid, extra_data=None)
+        doc = nest_submission(form_with_group, submission)
+        assert doc["extra_data"] is None
+
+
+def test_column_names_for_includes_extra_data(form_with_group):
+    assert "extra_data" in column_names_for(form_with_group)
+
+
+class TestFieldIdCollision:
+    """Spec AC15 — a field_id (or metadata key) named "extra_data" collides
+    with the reserved column at authoring time, for a tabular target."""
+
+    @pytest.fixture
+    def form_dict_with_persistence(self):
+        return {
+            "form_id": "f1",
+            "title": "Form 1",
+            "sections": [
+                {
+                    "section_id": "s1",
+                    "fields": [
+                        {"field_id": "extra_data", "field_type": "text", "label": "Extra Data"},
+                    ],
+                }
+            ],
+            "persistence": {
+                "data": {
+                    "type": "postgres_table",
+                    "connection": "survey_db",
+                    "schema_name": "surveys",
+                    "table": "nps_2026",
+                }
+            },
+        }
+
+    def test_field_id_named_extra_data_rejected(self, form_dict_with_persistence):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="extra_data"):
+            FormSchema.model_validate(form_dict_with_persistence)

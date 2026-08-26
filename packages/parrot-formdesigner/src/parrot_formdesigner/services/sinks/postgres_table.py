@@ -57,6 +57,7 @@ _RESERVED_COLUMN_DDL: dict[str, str] = {
     "root_submission_id": "VARCHAR(255)",
     "revision": "INTEGER",
     "context": "JSONB",
+    "extra_data": "JSONB",  # FEAT-458 — captured undeclared submission keys
 }
 
 # FieldType -> (DDL type for ADD COLUMN, compatible information_schema
@@ -315,7 +316,10 @@ class PostgresTableSink(AbstractSubmissionSink):
         if not isinstance(payload, dict):
             raise TypeError("PostgresTableSink.write() expects a flattened dict payload")
 
-        jsonb_columns = {"context"} | {
+        # FEAT-458: "extra_data" joins "context" as a reserved JSONB column —
+        # subject to the same double-encoding hazard the ::text::jsonb cast
+        # exists to prevent (services/submissions.py:254-282).
+        jsonb_columns = {"context", "extra_data"} | {
             column for column, field_type in self._known_field_types.items() if field_type == FieldType.ARRAY
         }
 

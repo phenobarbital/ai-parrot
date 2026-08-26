@@ -175,6 +175,12 @@ class TestDDL:
     def test_jsonb_uses_text_cast(self, sink):
         assert "::text::jsonb" in sink._insert_sql()
 
+    def test_extra_data_column_is_jsonb_not_text(self, sink):
+        """FEAT-458 — the reserved extra_data column must be JSONB, matching
+        `context`, not fall through to the TEXT default."""
+        create_sql = sink._create_table_sql()
+        assert '"extra_data" JSONB' in create_sql
+
     def test_full_capability_set(self, sink):
         assert sink.capabilities == frozenset(
             {
@@ -213,6 +219,22 @@ class TestReadWrite:
     async def test_write_returns_submission_id(self, sink, submission):
         result = await sink.write(submission, {"comment": "great"})
         assert result == submission.submission_id
+
+    async def test_write_casts_extra_data_column(self, sink, fake_pool, submission):
+        """FEAT-458 — writing an "extra_data" column uses the ::text::jsonb
+        cast, the same double-encoding-hazard fix as "context"."""
+        import json as json_module
+
+        await sink.write(
+            submission,
+            {"comment": "great", "extra_data": json_module.dumps({"legacy_id": 42})},
+        )
+        insert_sql = fake_pool.executed[-1]
+        assert '"extra_data"' in insert_sql
+        # The placeholder position for extra_data must carry the cast.
+        columns = ["comment", "extra_data"]
+        placeholder_index = columns.index("extra_data") + 1
+        assert f"${placeholder_index}::text::jsonb" in insert_sql
 
     async def test_write_read_roundtrip(self, sink, fake_pool, submission):
         await sink.write(
