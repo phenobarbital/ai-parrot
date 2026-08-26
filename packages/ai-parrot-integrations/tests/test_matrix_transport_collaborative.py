@@ -1,11 +1,11 @@
 """Tests for MatrixCrewTransport collaborative integration (TASK-1299 — FEAT-195)."""
-
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.integrations.matrix.crew.transport import MatrixCrewTransport
 from parrot.integrations.matrix.crew.config import CollaborativeConfig, MatrixCrewConfig
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -168,7 +168,9 @@ class TestTransportCollaborativeRouting:
 
         # Manually inject `max_sessions` active sessions for the room
         # (new nested shape: room_id -> session_id -> session).
-        transport._active_sessions["!room:server"] = {f"sid{i}": MagicMock(is_active=True) for i in range(max_sessions)}
+        transport._active_sessions["!room:server"] = {
+            f"sid{i}": MagicMock(is_active=True) for i in range(max_sessions)
+        }
 
         await transport.on_room_message(
             room_id="!room:server",
@@ -275,7 +277,9 @@ class TestTransportCollaborativeRouting:
         )
 
         wrapper = transport._wrappers.get("analyst")
-        wrapper.handle_message.assert_called_once_with("!room:server", "@human:server", "@analyst what is X?", "$evt7")
+        wrapper.handle_message.assert_called_once_with(
+            "!room:server", "@human:server", "@analyst what is X?", "$evt7"
+        )
 
     @pytest.mark.asyncio
     async def test_session_cleanup_on_failure(self):

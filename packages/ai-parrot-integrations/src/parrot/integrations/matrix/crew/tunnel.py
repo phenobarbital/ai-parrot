@@ -8,7 +8,6 @@ the matching result via a correlation-future — the same pattern used by
 ``correlation_id`` instead of ``task_id``. Idle tunnels are tombstoned by a
 periodic sweeper after ``ttl_minutes`` (``0`` = keep forever).
 """
-
 import asyncio
 import logging
 import uuid
@@ -113,7 +112,9 @@ class AgentTunnel:
             requester, self.room_id, ParrotEventType.TASK, task.model_dump()
         )
         try:
-            result: ResultEventContent = await asyncio.wait_for(fut, timeout or cfg.default_timeout)
+            result: ResultEventContent = await asyncio.wait_for(
+                fut, timeout or cfg.default_timeout
+            )
         except asyncio.TimeoutError:
             self._registry.discard_future(task.correlation_id)
             return AgentAnswer(

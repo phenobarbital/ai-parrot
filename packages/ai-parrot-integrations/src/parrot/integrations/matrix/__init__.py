@@ -8,7 +8,6 @@ Provides Matrix-based communication for agents via mautrix-python:
 - Custom m.parrot.* event types
 - MatrixCrewTransport: multi-agent crew (FEAT-044)
 """
-
 import importlib
 from typing import TYPE_CHECKING
 

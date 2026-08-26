@@ -1,5 +1,4 @@
 """Tests for MatrixCrewAgentWrapper.handle_task — FEAT-463 TASK-2482."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -57,7 +56,9 @@ async def test_schema_in_prompt(wrapper):
     bot = MagicMock()
     bot.ask = AsyncMock(return_value="{}")
     with patch("parrot.manager.BotManager.get_bot", AsyncMock(return_value=bot)):
-        await w.handle_task(_task(expected_schema={"type": "object", "required": ["total"]}), "!tun:s")
+        await w.handle_task(
+            _task(expected_schema={"type": "object", "required": ["total"]}), "!tun:s"
+        )
     assert '"required"' in bot.ask.call_args.args[0]
 
 
@@ -75,5 +76,7 @@ async def test_correlation_falls_back_to_task_id(wrapper):
     bot = MagicMock()
     bot.ask = AsyncMock(return_value="x")
     with patch("parrot.manager.BotManager.get_bot", AsyncMock(return_value=bot)):
-        await w.handle_task(TaskEventContent(task_id="legacy", content="q", target_agent="writer"), "!r:s")
+        await w.handle_task(
+            TaskEventContent(task_id="legacy", content="q", target_agent="writer"), "!r:s"
+        )
     assert svc.send_custom_event_as_agent.call_args.args[3]["metadata"]["correlation_id"] == "legacy"

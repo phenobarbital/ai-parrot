@@ -4,7 +4,6 @@ Produces a Synapse/Conduit/Tuwunel-compatible registration file
 that must be placed in the homeserver data directory and referenced
 in homeserver.yaml under `app_service_config_files`.
 """
-
 from __future__ import annotations
 import os
 from pathlib import Path

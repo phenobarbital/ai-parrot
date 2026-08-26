@@ -58,7 +58,6 @@ Expected behaviour:
   - Sending "!channels" / "!agents" / "!tunnels" lists the current swarm
     topology from the coordinator bot.
 """
-
 import argparse
 import asyncio
 import logging
@@ -141,7 +140,9 @@ def _setup_bots() -> None:
         # get an AgentSwarmToolkit attached by MatrixCrewTransport.start()
         # (as long as BotManager.get_bot(chatbot_id) resolves and the bot
         # exposes .tool_manager) — no extra wiring needed here.
-        logger.warning("No real agents configured — edit _setup_bots() to register your agents.")
+        logger.warning(
+            "No real agents configured — edit _setup_bots() to register your agents."
+        )
 
     except ImportError:
         logger.warning("BotManager not available — skipping agent setup")
@@ -180,11 +181,13 @@ async def _run_crew(config_path: str) -> None:
     collab = transport._config.collaborative
     if collab is None:
         logger.warning(
-            "No 'collaborative:' section found — swarm-policy channels and " "'!investigate' will not start sessions."
+            "No 'collaborative:' section found — swarm-policy channels and "
+            "'!investigate' will not start sessions."
         )
     else:
         logger.info(
-            "Collaborative mode: command='%s', max_concurrent_sessions=%d, " "cooldown_seconds=%.0f, summarizer='%s'",
+            "Collaborative mode: command='%s', max_concurrent_sessions=%d, "
+            "cooldown_seconds=%.0f, summarizer='%s'",
             collab.command_prefix,
             collab.max_concurrent_sessions,
             collab.cooldown_seconds,
@@ -207,11 +210,15 @@ async def _run_crew(config_path: str) -> None:
         logger.info(
             "Agents: %s",
             ", ".join(
-                f"@{e.mxid_localpart}:{transport._config.server_name}" for e in transport._config.agents.values()
+                f"@{e.mxid_localpart}:{transport._config.server_name}"
+                for e in transport._config.agents.values()
             ),
         )
         logger.info("General room: %s", transport._config.general_room_id)
-        logger.info("Coordinator commands (any room): !channels, !agents, !tunnels, " "!investigate <question>")
+        logger.info(
+            "Coordinator commands (any room): !channels, !agents, !tunnels, "
+            "!investigate <question>"
+        )
         await stop_event.wait()
 
     logger.info("Swarm stopped cleanly.")

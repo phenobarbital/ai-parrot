@@ -1,5 +1,4 @@
 """Tests for MatrixCrewTransport swarm dispatch & concurrent sessions — FEAT-463 TASK-2484."""
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,16 +23,24 @@ def _transport(policy="swarm", max_sessions=2, cooldown=0.0):
         bot_mxid="@parrot:parrot.local",
         general_room_id="!gen:parrot.local",
         agents={
-            "analyst": MatrixCrewAgentEntry(chatbot_id="analyst", display_name="A", mxid_localpart="parrot-analyst")
+            "analyst": MatrixCrewAgentEntry(
+                chatbot_id="analyst", display_name="A", mxid_localpart="parrot-analyst"
+            )
         },
         collaborative=CollaborativeConfig(max_concurrent_sessions=max_sessions, cooldown_seconds=cooldown),
-        channels=[ChannelConfig(name="general", agents=["analyst"], answer_policy=policy, room_id="!gen:parrot.local")],
+        channels=[
+            ChannelConfig(
+                name="general", agents=["analyst"], answer_policy=policy, room_id="!gen:parrot.local"
+            )
+        ],
     )
     t = MatrixCrewTransport(cfg)
     t._appservice = AsyncMock()
     t._agent_mxids = {"@parrot-analyst:parrot.local"}
     t._channels = MagicMock()
-    t._channels.channel_for_room.side_effect = lambda r: cfg.channels[0] if r == "!gen:parrot.local" else None
+    t._channels.channel_for_room.side_effect = (
+        lambda r: cfg.channels[0] if r == "!gen:parrot.local" else None
+    )
     t._registry.set_human_patterns(cfg.human_namespace_patterns)
     t._build_session = MagicMock(side_effect=lambda *a, **k: MagicMock(is_active=True, run=AsyncMock()))
     from parrot.integrations.matrix.crew.swarm import SwarmSessionManager

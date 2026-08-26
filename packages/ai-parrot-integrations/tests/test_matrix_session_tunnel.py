@@ -1,5 +1,4 @@
 """Tests for MatrixCollaborativeSession trigger reply-to & tunnel cross-pollination — FEAT-463 TASK-2485."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,7 +16,9 @@ def _session(tunnels, **kw):
     svc.send_reply_as_agent.return_value = "$echo"
     svc.send_reply_as_bot.return_value = "$b"
     registry = AsyncMock()
-    registry.all_agents.return_value = [MagicMock(agent_name=n, display_name=n, mxid=f"@{n}:s") for n in ("a", "b")]
+    registry.all_agents.return_value = [
+        MagicMock(agent_name=n, display_name=n, mxid=f"@{n}:s") for n in ("a", "b")
+    ]
     wrappers = {n: MagicMock(_config=MagicMock(chatbot_id=n)) for n in ("a", "b")}
     s = MatrixCollaborativeSession(
         "s1",
