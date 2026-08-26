@@ -494,8 +494,12 @@ class CommCenterHandler(BaseHandler):
 
         db = _get_db()
         async with await db.connection() as conn:
-            rows = await conn.fetchall(list_query, (*params, limit, offset))
-            count_rows = await conn.fetchall(count_query, tuple(params))
+            # asyncdb's signature is fetchall(sentence, *args): a tuple counts as ONE
+            # argument, so passing (*params, limit, offset) made every request fail with
+            # "the server expects 2 arguments for this query, 1 was passed" before this
+            # endpoint could ever return a 200. Splat them.
+            rows = await conn.fetchall(list_query, *params, limit, offset)
+            count_rows = await conn.fetchall(count_query, *params)
         total = count_rows[0]["total"] if count_rows else 0
 
         batches = [

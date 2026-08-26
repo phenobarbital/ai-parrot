@@ -365,7 +365,12 @@ async def aggregate_batch_status(
     async with await db.connection() as conn:
         table = f"{PARROT_SCHEMA}.{NotificationBatchRecipient.Meta.name}"
         query = f"SELECT status, COUNT(*) AS count FROM {table} WHERE batch_id = $1 GROUP BY status"
-        counts = await conn.fetchall(query, (batch_id,))
+        # asyncdb's signature is fetchall(sentence, *args), so a tuple arrives as the
+        # *value* of $1 rather than as its argument list. Unlike the arity mismatch this
+        # module had in get_batches(), that fails on type — "invalid input for query
+        # argument $1: (UUID(...),) (bytes is not a 16-char string)" — and made every
+        # request to this endpoint a 500, with or without details=true.
+        counts = await conn.fetchall(query, batch_id)
         by_status = {row["status"]: row["count"] for row in (counts or [])}
 
         result = {

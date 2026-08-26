@@ -175,7 +175,7 @@ install-loaders-all:
 # too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
 # Install either in a separate env.
 install-all:
-	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
+	uv sync --frozen --no-dev --all-packages --all-extras --no-extra liveavatar-voice
 	uv pip install querysource
 	$(MAKE) build-rust
 	@echo "All packages installed with ALL extras (except gemma4)."
@@ -198,7 +198,7 @@ endif
 # too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
 # Install either in a separate env.
 develop:
-	uv sync --all-packages --all-extras --no-extra gemma4
+	uv sync --all-packages --all-extras
 	$(MAKE) build-inplace
 	$(MAKE) build-rust
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
