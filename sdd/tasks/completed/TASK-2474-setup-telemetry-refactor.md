@@ -38,7 +38,8 @@ Implements spec §3 Module 5.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/observability/setup.py` | MODIFY | Multi-BSP loop, remove `init_openlit` call |
-| `packages/ai-parrot/tests/observability/test_setup_multi_target.py` | CREATE | Unit tests |
+| `packages/ai-parrot/tests/unit/observability/test_setup_multi_target.py` | CREATE | Unit tests (corrected path — see TASK-2470) |
+| `packages/ai-parrot/tests/unit/observability/test_setup.py` | MODIFY (not originally listed) | `test_openlit_called_when_enabled` asserted the OLD behavior this task explicitly removes; replaced with `test_openlit_not_called_even_when_enabled` asserting the new (0-call) behavior. Unavoidable direct consequence of this task's own acceptance criterion — not scope creep. |
 
 ---
 
@@ -188,10 +189,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Replaced the single-`BatchSpanProcessor` step 2 in
+`setup_telemetry()` with a loop: resolves `config.otlp_targets` (or wraps
+`config.otlp_endpoint`/`otlp_headers` into a single implicit `OtlpTarget`
+named `"default"` for backward compat), calls `make_span_exporters(targets,
+protocol=config.otlp_protocol)`, and attaches one `BatchSpanProcessor` per
+resulting exporter — logging each target's name/endpoint at INFO. Removed
+step 7 (`init_openlit(config)` call + its import) entirely, and updated the
+function's module/docstring (steps list, `Raises` section) and
+`shutdown_telemetry()`'s stale OpenLIT re-init note accordingly. The
+info-level summary log at the end now reports `otlp_targets=<N>` instead of
+the removed `openlit=<bool>` field. 5 new unit tests added
+(`test_setup_multi_target.py`): 2/3-target BSP-count assertions, single-
+endpoint-fallback BSP count, no-openlit-init-call, and a source-scan
+assertion that `init_openlit` no longer appears anywhere in `setup.py`.
+Also updated the pre-existing `test_openlit_called_when_enabled` in
+`test_setup.py` (asserted the OLD behavior this task explicitly removes)
+to `test_openlit_not_called_even_when_enabled` (asserts 0 calls) — an
+unavoidable, minimal, directly-related fix, not scope creep. Full
+`tests/unit/observability/` suite (163 tests) passes. `ruff check` on
+`setup.py` shows 32 pre-existing violations (down from the 33 pre-existing
+before this change — net negative, i.e. 0 new); both test files are lint-
+clean relative to their own baselines (`test_setup.py` unchanged at 10
+pre-existing errors on lines untouched by this task;
+`test_setup_multi_target.py` is a new file with 0 errors).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Test file path corrected to
+`tests/unit/observability/` (same correction as prior FEAT-462 tasks).
+(2) Modified `test_setup.py` (not originally listed in the task's Files
+table) — required because this task's own acceptance criterion
+("`init_openlit(config)` is NOT called anywhere in `setup_telemetry()`")
+directly invalidates that pre-existing test's assertion; see the note in
+the task's Files to Create/Modify table.

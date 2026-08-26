@@ -4,7 +4,9 @@ FEAT-177 TASK-1238.
 
 Asserts the spec §5 performance contract:
   - p50 overhead of telemetry (enabled, no OpenLIT) vs disabled: < 1 ms
-  - p50 overhead with OpenLIT mock: < 5 ms
+  - p50 overhead with the OpenLitUsageRecorder (mocked exporter) active: < 5 ms
+    (FEAT-462: OpenLIT is now a pure OTLP-export recorder, not a
+    monkey-patching SDK)
 
 Uses a tight event-emit loop against the global registry with InMemory
 exporters — NO real network calls, NO real OpenLIT.
@@ -21,7 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import statistics
-import sys
 import time
 from unittest.mock import MagicMock, patch
 
@@ -42,12 +43,11 @@ from navigator_eventbus.lifecycle.trace import TraceContext
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
-
 # ---------------------------------------------------------------------------
 # Benchmark helpers
 # ---------------------------------------------------------------------------
 
-_N = 50   # iterations per benchmark (kept low for fast CI; still statistically valid)
+_N = 50  # iterations per benchmark (kept low for fast CI; still statistically valid)
 
 
 def _make_tc() -> TraceContext:
@@ -123,6 +123,7 @@ def _benchmark_disabled() -> float:
 # Performance tests
 # ---------------------------------------------------------------------------
 
+
 def test_p50_overhead_under_1ms() -> None:
     """p50 overhead of enabled telemetry (no OpenLIT) must be < 1 ms.
 
@@ -142,35 +143,50 @@ def test_p50_overhead_under_1ms() -> None:
     )
 
 
-def test_p50_overhead_under_5ms_with_openlit_mock() -> None:
-    """p50 overhead with (mocked) OpenLIT enabled must be < 5 ms.
+def test_p50_overhead_under_5ms_with_openlit_recorder_mock() -> None:
+    """p50 overhead with the (mocked-exporter) OpenLitUsageRecorder active
+    must be < 5 ms.
 
-    OpenLIT itself does async HTTP exports — in production those are
-    non-blocking. Here we mock openlit.init to be a no-op, so we only
-    measure the subscriber overhead not the network.
+    FEAT-462: OpenLIT is no longer a monkey-patching SDK — this benchmarks
+    the replacement path, ``OpenLitUsageRecorder`` (an additional
+    ``AbstractLogger`` fanned out to by ``UsageRecordingSubscriber`` on
+    every ``AfterClientCallEvent``), with its OTLP exporter mocked so we
+    measure the recorder's own overhead, not network I/O.
     """
-    from parrot.observability.openlit_integration import _reset_for_tests  # noqa: PLC0415
+    with (
+        patch("opentelemetry.sdk.trace.TracerProvider"),
+        patch("opentelemetry.sdk.trace.export.BatchSpanProcessor"),
+        patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter"),
+        patch("opentelemetry.sdk.resources.Resource"),
+    ):
+        from parrot.observability.recorders.openlit_recorder import (  # noqa: PLC0415
+            OpenLitUsageRecorder,
+        )
+        from parrot.observability.recorders.subscriber import (  # noqa: PLC0415
+            UsageRecordingSubscriber,
+        )
 
-    _reset_for_tests()
-    fake_openlit = MagicMock()
+        openlit_recorder = OpenLitUsageRecorder(endpoint="http://localhost:4318")
+        openlit_recorder._tracer.start_span = MagicMock(return_value=MagicMock())
 
-    with patch.dict(sys.modules, {"openlit": fake_openlit}):
-        from parrot.observability.openlit_integration import init_openlit  # noqa: PLC0415
-        from parrot.observability import ObservabilityConfig  # noqa: PLC0415
+        disabled_p50 = _benchmark_disabled()
 
-        cfg = ObservabilityConfig(enabled=True, enable_openlit=True)
-        init_openlit(cfg)  # one-time init (mocked)
+        async def _run_with_recorder() -> list[float]:
+            with scope() as registry:
+                usage_sub = UsageRecordingSubscriber(recorders=[openlit_recorder])
+                usage_sub.register(registry)
+                return await _run_iterations(registry, _N)
 
-    disabled_p50 = _benchmark_disabled()
-    enabled_p50 = _benchmark_enabled(with_openlit=True)
+        samples = asyncio.run(_run_with_recorder())
+        enabled_p50 = statistics.median(samples)
+
     delta_ms = (enabled_p50 - disabled_p50) * 1000.0
 
     assert delta_ms < 5.0, (
-        f"Telemetry+OpenLIT(mock) overhead {delta_ms:.3f} ms exceeds 5 ms budget. "
-        f"(disabled p50={disabled_p50*1000:.3f} ms, enabled p50={enabled_p50*1000:.3f} ms)"
+        f"Telemetry+OpenLitUsageRecorder(mock) overhead {delta_ms:.3f} ms exceeds "
+        f"5 ms budget. (disabled p50={disabled_p50*1000:.3f} ms, "
+        f"enabled p50={enabled_p50*1000:.3f} ms)"
     )
-
-    _reset_for_tests()
 
 
 def test_disabled_overhead_under_0_1ms() -> None:

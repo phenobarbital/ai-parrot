@@ -7,6 +7,7 @@ import pytest
 from navigator_eventbus.lifecycle.global_registry import get_global_registry, scope
 from parrot.observability import bootstrap as boot
 
+
 @pytest.fixture(autouse=True)
 def _clean():
     """Reset the bootstrap module's own globals (``_SUBSCRIBER`` /
@@ -67,6 +68,7 @@ def test_otel_backend_delegates_to_setup_telemetry(monkeypatch) -> None:
         return None
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
 
     with scope():
@@ -77,62 +79,82 @@ def test_otel_backend_delegates_to_setup_telemetry(monkeypatch) -> None:
     assert boot._SUBSCRIBER is None  # lightweight path not used
 
 
-def test_openlit_escalates_to_otel(monkeypatch) -> None:
-    """OBSERVABILITY_OPENLIT=true forces the otel path even with backend unset."""
+def test_openlit_flag_no_longer_escalates_to_otel(monkeypatch) -> None:
+    """FEAT-462: OBSERVABILITY_OPENLIT=true is a deprecated no-op — it no
+    longer escalates the backend to otel. With backend otherwise unset, the
+    lightweight 'logging' path activates instead, exactly as if the flag
+    were never set."""
     monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
     monkeypatch.setenv("OBSERVABILITY_OPENLIT", "true")
-    # Backend deliberately left unset (resolves to "none"/"logging" normally).
 
     called = {}
 
     def _fake_setup(config):
         called["config"] = config
-        return None
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
 
     with scope():
         boot.ensure_observability_bootstrapped()
 
-    assert "config" in called
-    assert called["config"].usage_backend == "otel"
-    assert called["config"].enable_openlit is True
-    assert boot._SUBSCRIBER is None  # otel path, not the lightweight subscriber
+    assert "config" not in called  # setup_telemetry (otel path) never called
+    assert boot._SUBSCRIBER is not None  # lightweight 'logging' path used
+    assert [r.name for r in boot._SUBSCRIBER.recorders] == ["logging"]
 
 
-def test_traceloop_backend_activates(monkeypatch) -> None:
-    """OBSERVABILITY_TRACELOOP=true forces the traceloop backend (not otel/logging)."""
+def test_traceloop_flag_no_longer_activates_traceloop_backend(monkeypatch) -> None:
+    """FEAT-462: OBSERVABILITY_TRACELOOP=true is a deprecated no-op —
+    _do_bootstrap() no longer imports or references traceloop_integration
+    at all (the module itself is deleted — TASK-2476). The lightweight
+    'logging' path activates instead, exactly as if the flag were unset."""
     monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
     monkeypatch.setenv("OBSERVABILITY_TRACELOOP", "true")
-
-    called = {}
-    import parrot.observability.traceloop_integration as tl_mod
-    monkeypatch.setattr(tl_mod, "setup_traceloop", lambda cfg: called.__setitem__("cfg", cfg))
 
     with scope():
         boot.ensure_observability_bootstrapped()
 
-    assert "cfg" in called
-    assert called["cfg"].usage_backend == "traceloop"
-    assert boot._SUBSCRIBER is None  # not the lightweight path
+    assert boot._SUBSCRIBER is not None  # lightweight 'logging' path used instead
+    assert [r.name for r in boot._SUBSCRIBER.recorders] == ["logging"]
 
 
-def test_traceloop_and_openlit_are_mutually_exclusive(monkeypatch) -> None:
-    """When both are set, Traceloop wins and OpenLIT is disabled."""
+def test_both_deprecated_flags_set_falls_back_to_logging(monkeypatch) -> None:
+    """FEAT-462: with both deprecated flags set, neither triggers special
+    handling — the lightweight 'logging' path activates, same as if neither
+    flag were set."""
     monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
     monkeypatch.setenv("OBSERVABILITY_TRACELOOP", "true")
     monkeypatch.setenv("OBSERVABILITY_OPENLIT", "true")
 
+    with scope():
+        boot.ensure_observability_bootstrapped()
+
+    assert boot._SUBSCRIBER is not None
+    assert [r.name for r in boot._SUBSCRIBER.recorders] == ["logging"]
+
+
+def test_traceloop_backend_value_maps_to_otel(monkeypatch) -> None:
+    """usage_backend='traceloop' (e.g. from a stale OBSERVABILITY_BACKEND env
+    var) is remapped to 'otel' by ObservabilityConfig's model_validator
+    before _do_bootstrap ever sees it — so the otel path activates."""
+    monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
+    monkeypatch.setenv("OBSERVABILITY_BACKEND", "traceloop")
+
     called = {}
-    import parrot.observability.traceloop_integration as tl_mod
-    monkeypatch.setattr(tl_mod, "setup_traceloop", lambda cfg: called.__setitem__("cfg", cfg))
+
+    def _fake_setup(config):
+        called["config"] = config
+
+    import parrot.observability.setup as setup_mod
+
+    monkeypatch.setattr(setup_mod, "setup_telemetry", _fake_setup)
 
     with scope():
         boot.ensure_observability_bootstrapped()
 
-    assert called["cfg"].usage_backend == "traceloop"
-    assert called["cfg"].enable_openlit is False
+    assert called["config"].usage_backend == "otel"
+    assert boot._SUBSCRIBER is None
 
 
 def test_atexit_flush_registered_once(monkeypatch) -> None:
@@ -141,6 +163,7 @@ def test_atexit_flush_registered_once(monkeypatch) -> None:
 
     registered = []
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(boot_mod.atexit, "register", registered.append)
 
     with scope():
@@ -155,6 +178,7 @@ def test_atexit_not_registered_when_disabled(monkeypatch) -> None:
     """No flush hook is registered when observability is disabled."""
     registered = []
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(boot_mod.atexit, "register", registered.append)
 
     with scope():
@@ -169,13 +193,17 @@ def test_shutdown_observability_aggregates_and_is_idempotent(monkeypatch) -> Non
     calls = {"otel": 0, "usage": 0}
 
     import parrot.observability.setup as setup_mod
+
     monkeypatch.setattr(
-        setup_mod, "shutdown_telemetry",
+        setup_mod,
+        "shutdown_telemetry",
         lambda: calls.__setitem__("otel", calls["otel"] + 1),
     )
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(
-        boot_mod, "shutdown_usage_recording",
+        boot_mod,
+        "shutdown_usage_recording",
         lambda: calls.__setitem__("usage", calls["usage"] + 1),
     )
 
@@ -195,8 +223,10 @@ def test_shutdown_observability_swallows_errors(monkeypatch) -> None:
     monkeypatch.setattr(setup_mod, "shutdown_telemetry", _boom)
     usage_called = {"n": 0}
     import parrot.observability.bootstrap as boot_mod
+
     monkeypatch.setattr(
-        boot_mod, "shutdown_usage_recording",
+        boot_mod,
+        "shutdown_usage_recording",
         lambda: usage_called.__setitem__("n", usage_called["n"] + 1),
     )
 

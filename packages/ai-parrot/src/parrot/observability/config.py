@@ -6,13 +6,37 @@ Spec §2 Data Models.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import warnings
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 UsageBackend = Literal["none", "logging", "prometheus", "otel", "traceloop"]
+
+logger = logging.getLogger(__name__)
+
+
+class OtlpTarget(BaseModel):
+    """One OTLP export destination.
+
+    FEAT-462 — Unified Telemetry Bus. Holds the per-target endpoint/headers
+    for multi-endpoint OTLP export (e.g. one target for OpenLIT, one for
+    Grafana Tempo). All targets share the global ``otlp_protocol``,
+    ``sampling_ratio``, and batch settings declared on ``ObservabilityConfig``.
+
+    Attributes:
+        name: Human label for the target (e.g. ``"openlit"``, ``"tempo"``).
+        endpoint: OTLP base URL for this target.
+        headers: Optional extra headers forwarded to this target's OTLP
+            endpoint (e.g. ``{"Authorization": "Bearer <token>"}``).
+    """
+
+    name: str
+    endpoint: str
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
 class ObservabilityConfig(BaseModel):
@@ -35,23 +59,30 @@ class ObservabilityConfig(BaseModel):
             ``"grpc"``. gRPC requires the ``observability`` extra.
         otlp_headers: Optional extra headers forwarded to the OTLP endpoint
             (e.g. ``{"Authorization": "Bearer <token>"}``.
+        otlp_targets: FEAT-462 — list of additional ``OtlpTarget`` export
+            destinations for multi-endpoint OTLP export (e.g. one target for
+            OpenLIT, one for Grafana Tempo). All targets share this config's
+            ``otlp_protocol``, ``sampling_ratio``, and batch settings. When
+            empty (the default), ``otlp_endpoint`` is used as the single
+            implicit target (backward compat).
+        openlit_recorder_endpoint: FEAT-462 — OTLP endpoint for the
+            ``OpenLitUsageRecorder`` ``AbstractLogger`` backend. When set
+            (together with ``OBSERVABILITY_OPENLIT_RECORDER=true``),
+            ``UsageRecord`` data is pushed as GenAI SemConv OTel spans to
+            this endpoint.
         enable_traces: Subscribe ``GenAIOpenTelemetrySubscriber``.
         enable_metrics: Subscribe ``MetricsSubscriber``.
         enable_cost_tracking: Build a ``CostCalculator`` and pass it to
             both subscribers.
-        enable_openlit: Call ``openlit.init()`` after setting up OTel providers.
-            Requires the ``observability-openlit`` extra. Intended as the
-            production telemetry backend. Mutually exclusive with
-            ``enable_traceloop`` (Traceloop wins; OpenLIT is disabled with a
-            warning when both are requested).
-        enable_traceloop: Activate the OpenLLMetry (Traceloop) backend — a
-            simple, content-rich tracing path aimed at local/dev. Requires the
-            ``observability-traceloop`` extra. When ``True`` the usage backend is
-            forced to ``"traceloop"``: Traceloop owns the OTLP trace pipeline and
-            auto-instruments the LLM SDKs (with prompt/completion capture gated by
-            ``capture_prompts``/``capture_completions``), while AI-Parrot's native
-            span/metric subscribers ride the same global provider — one pipeline,
-            no duplicate spans.
+        enable_openlit: **Deprecated (FEAT-462)** — previously called
+            ``openlit.init()`` after setting up OTel providers. Configure an
+            OTLP target instead. Kept for backward compatibility; setting it
+            to ``True`` now only emits a ``DeprecationWarning`` and has no
+            other effect.
+        enable_traceloop: **Deprecated (FEAT-462)** — previously activated
+            the OpenLLMetry (Traceloop) backend. Configure an OTLP target
+            instead. Kept for backward compatibility; setting it to ``True``
+            now only emits a ``DeprecationWarning`` and has no other effect.
         sampling_ratio: ``TraceIdRatioBased`` sampler rate. Range [0.0, 1.0].
             Default ``1.0`` (sample everything).
         capture_prompts: When ``True``, raw system-prompt hash values are
@@ -94,6 +125,8 @@ class ObservabilityConfig(BaseModel):
     otlp_endpoint: str = "http://localhost:4318"
     otlp_protocol: Literal["http/protobuf", "grpc"] = "http/protobuf"
     otlp_headers: dict[str, str] = Field(default_factory=dict)
+    otlp_targets: list[OtlpTarget] = Field(default_factory=list)  # FEAT-462
+    openlit_recorder_endpoint: str | None = None  # FEAT-462
 
     # Subscribers
     enable_traces: bool = True
@@ -129,10 +162,18 @@ class ObservabilityConfig(BaseModel):
         default_factory=lambda: [
             # LLM SDKs traced natively by GenAIOpenTelemetrySubscriber — skip to
             # avoid duplicate GenAI spans.
-            "openai", "openai_agents", "anthropic", "bedrock",
-            "groq", "vertexai", "google_ai_studio",
+            "openai",
+            "openai_agents",
+            "anthropic",
+            "bedrock",
+            "groq",
+            "vertexai",
+            "google_ai_studio",
             # Breaks / irrelevant transitive deps.
-            "milvus", "fastapi", "starlette", "tornado",
+            "milvus",
+            "fastapi",
+            "starlette",
+            "tornado",
         ]
     )
 
@@ -163,8 +204,8 @@ class ObservabilityConfig(BaseModel):
 
     # Sampling & PII
     sampling_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
-    capture_prompts: bool = False       # PII: default off
-    capture_completions: bool = False   # PII: default off
+    capture_prompts: bool = False  # PII: default off
+    capture_completions: bool = False  # PII: default off
 
     # Metric export tuning
     metric_export_interval_ms: int = 60_000
@@ -179,6 +220,32 @@ class ObservabilityConfig(BaseModel):
     usage_log_logger_name: str = "parrot.usage"
     prometheus_port: int = 9464
     prometheus_addr: str = "0.0.0.0"
+
+    @model_validator(mode="after")
+    def _warn_deprecated_flags(self) -> ObservabilityConfig:
+        """Emit ``DeprecationWarning``s for FEAT-462 deprecated fields/values.
+
+        ``enable_openlit``/``enable_traceloop`` are kept for backward
+        compatibility but no longer drive any behavior — configure an OTLP
+        target instead. ``usage_backend="traceloop"`` is remapped to
+        ``"otel"`` with a warning log.
+        """
+        if self.enable_openlit:
+            warnings.warn(
+                "enable_openlit is deprecated — configure an OTLP target " "instead. See FEAT-462.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if self.enable_traceloop:
+            warnings.warn(
+                "enable_traceloop is deprecated — configure an OTLP target " "instead. See FEAT-462.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if self.usage_backend == "traceloop":
+            logger.warning("usage_backend='traceloop' is deprecated, mapping to 'otel'")
+            self.usage_backend = "otel"
+        return self
 
     @classmethod
     def from_env(cls) -> "ObservabilityConfig":
@@ -208,6 +275,20 @@ class ObservabilityConfig(BaseModel):
         ``OBSERVABILITY_PROM_PORT``  ``prometheus_port``
         ``OBSERVABILITY_PROM_ADDR``  ``prometheus_addr``
         ``PARROT_PRICING_PATH``      ``pricing_override_path``
+        ``OTLP_TARGETS``             ``otlp_targets`` (FEAT-462, JSON list)
+        ``OBSERVABILITY_OPENLIT_RECORDER``  ``openlit_recorder_endpoint``
+                                      (FEAT-462; boolean enable switch —
+                                      parsed with the same truthy/falsy
+                                      rules as every other boolean env var
+                                      here, e.g. ``"true"``/``"1"``; when
+                                      truthy, defaults the endpoint to
+                                      ``otlp_endpoint``)
+        ``OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT``  ``openlit_recorder_endpoint``
+                                      (FEAT-462; explicit endpoint URL —
+                                      overrides the ``otlp_endpoint``
+                                      default above; setting this alone,
+                                      without the boolean switch, also
+                                      enables the recorder)
         ===========================  ==============================
 
         Returns:
@@ -219,24 +300,12 @@ class ObservabilityConfig(BaseModel):
         values: dict = {
             "enabled": _as_bool(get("OBSERVABILITY_ENABLED"), defaults.enabled),
             "service_name": get("OBSERVABILITY_SERVICE_NAME") or defaults.service_name,
-            "enable_cost_tracking": _as_bool(
-                get("OBSERVABILITY_COST"), defaults.enable_cost_tracking
-            ),
-            "enable_openlit": _as_bool(
-                get("OBSERVABILITY_OPENLIT"), defaults.enable_openlit
-            ),
-            "enable_traceloop": _as_bool(
-                get("OBSERVABILITY_TRACELOOP"), defaults.enable_traceloop
-            ),
-            "sampling_ratio": _as_float(
-                get("OBSERVABILITY_SAMPLING"), defaults.sampling_ratio
-            ),
-            "usage_log_level": _as_log_level(
-                get("OBSERVABILITY_LOG_LEVEL"), defaults.usage_log_level
-            ),
-            "prometheus_port": _as_int(
-                get("OBSERVABILITY_PROM_PORT"), defaults.prometheus_port
-            ),
+            "enable_cost_tracking": _as_bool(get("OBSERVABILITY_COST"), defaults.enable_cost_tracking),
+            "enable_openlit": _as_bool(get("OBSERVABILITY_OPENLIT"), defaults.enable_openlit),
+            "enable_traceloop": _as_bool(get("OBSERVABILITY_TRACELOOP"), defaults.enable_traceloop),
+            "sampling_ratio": _as_float(get("OBSERVABILITY_SAMPLING"), defaults.sampling_ratio),
+            "usage_log_level": _as_log_level(get("OBSERVABILITY_LOG_LEVEL"), defaults.usage_log_level),
+            "prometheus_port": _as_int(get("OBSERVABILITY_PROM_PORT"), defaults.prometheus_port),
             "prometheus_addr": get("OBSERVABILITY_PROM_ADDR") or defaults.prometheus_addr,
         }
 
@@ -261,13 +330,9 @@ class ObservabilityConfig(BaseModel):
         # string means "disable nothing" (distinct from unset → use defaults).
         disable = get("OBSERVABILITY_OPENLIT_DISABLE")
         if disable is not None:
-            values["openlit_disabled_instrumentors"] = [
-                name.strip() for name in disable.split(",") if name.strip()
-            ]
+            values["openlit_disabled_instrumentors"] = [name.strip() for name in disable.split(",") if name.strip()]
 
-        values["openlit_log_level"] = _as_log_level(
-            get("OBSERVABILITY_OPENLIT_LOG_LEVEL"), defaults.openlit_log_level
-        )
+        values["openlit_log_level"] = _as_log_level(get("OBSERVABILITY_OPENLIT_LOG_LEVEL"), defaults.openlit_log_level)
         values["openlit_disable_metrics"] = _as_bool(
             get("OBSERVABILITY_OPENLIT_DISABLE_METRICS"),
             defaults.openlit_disable_metrics,
@@ -276,6 +341,28 @@ class ObservabilityConfig(BaseModel):
         pricing = get("PARROT_PRICING_PATH")
         if pricing:
             values["pricing_override_path"] = pricing
+
+        # FEAT-462 — multi-endpoint OTLP export targets (JSON list). Malformed
+        # JSON (or any per-item validation error) is caught, logged, and the
+        # single-endpoint (otlp_endpoint) fallback is used instead.
+        targets_raw = get("OTLP_TARGETS")
+        if targets_raw:
+            try:
+                values["otlp_targets"] = [OtlpTarget(**t) for t in json.loads(targets_raw)]
+            except Exception as exc:  # noqa: BLE001 — malformed env input
+                logger.warning("Malformed OTLP_TARGETS env var, ignoring: %s", exc)
+                values["otlp_targets"] = []
+
+        # FEAT-462 — OpenLIT usage recorder. `OBSERVABILITY_OPENLIT_RECORDER`
+        # is the boolean enable switch; `OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT`
+        # optionally overrides the target endpoint (falls back to
+        # `otlp_endpoint` when unset).
+        recorder_endpoint_override = get("OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT")
+        recorder_enabled = _as_bool(get("OBSERVABILITY_OPENLIT_RECORDER"), False)
+        if recorder_enabled or recorder_endpoint_override:
+            values["openlit_recorder_endpoint"] = (
+                recorder_endpoint_override or values.get("otlp_endpoint") or defaults.otlp_endpoint
+            )
 
         return cls(**values)
 

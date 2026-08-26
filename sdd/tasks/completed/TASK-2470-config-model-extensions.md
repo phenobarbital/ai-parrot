@@ -41,7 +41,7 @@ Implements spec §3 Module 1.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/observability/config.py` | MODIFY | Add `OtlpTarget`, `otlp_targets`, `openlit_recorder_endpoint`, deprecation validators, env var parsing |
-| `packages/ai-parrot/tests/observability/test_config_extensions.py` | CREATE | Unit tests for new config fields and deprecation warnings |
+| `packages/ai-parrot/tests/unit/observability/test_config_extensions.py` | CREATE | Unit tests for new config fields and deprecation warnings (corrected path — codebase contract said `tests/observability/`, but all existing observability tests live under `tests/unit/observability/`, e.g. `test_config.py`, `test_config_from_env.py`) |
 
 ---
 
@@ -240,10 +240,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Added `OtlpTarget` Pydantic model above `ObservabilityConfig`,
+plus `otlp_targets: list[OtlpTarget]` and `openlit_recorder_endpoint: str | None`
+fields. Added a `model_validator(mode="after")` that emits `DeprecationWarning`
+for `enable_openlit`/`enable_traceloop` and remaps `usage_backend="traceloop"`
+to `"otel"` with a `logger.warning` (applies to both direct construction and
+`from_env()`). `from_env()` now parses `OTLP_TARGETS` (JSON list, malformed
+JSON caught/logged/ignored) and `OBSERVABILITY_OPENLIT_RECORDER` (boolean
+toggle) + `OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT` (explicit endpoint
+override, falling back to `otlp_endpoint` when unset) — the second env var
+wasn't explicitly named in this task's scope but is required for
+`openlit_recorder_endpoint` to be independently configurable, and TASK-2475's
+own test spec already assumes it exists. 16 new unit tests added; all 138
+existing `tests/unit/observability/` tests still pass. `ruff check` on
+`config.py` shows the same 10 pre-existing violations as before this change
+(all `UP045`/`RUF100` on code untouched by this task) — 0 new violations.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Test file path corrected from the task's stated
+`packages/ai-parrot/tests/observability/test_config_extensions.py` to
+`packages/ai-parrot/tests/unit/observability/test_config_extensions.py` —
+the codebase contract's path was stale; every existing observability test
+(`test_config.py`, `test_config_from_env.py`, etc.) lives under
+`tests/unit/observability/`.

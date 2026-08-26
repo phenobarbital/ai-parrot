@@ -21,25 +21,25 @@ bot/client/tool construction
         └─ ensure_observability_bootstrapped()   ← reads OBSERVABILITY_* env
              ├─ backend=logging     → one structured line per LLM call (no infra)
              ├─ backend=prometheus  → counters/histograms on :9464/metrics
-             ├─ backend=otel        → setup_telemetry(): OTLP traces + metrics
-             │                         (+ openlit.init when OBSERVABILITY_OPENLIT=true)  ← prod
-             └─ backend=traceloop   → Traceloop owns the OTLP pipeline + LLM-SDK
-                                       auto-instrumentation w/ content capture       ← local/dev
-                                       (forced by OBSERVABILITY_TRACELOOP=true)
+             └─ backend=otel        → setup_telemetry(): OTLP traces + metrics,
+                                       one BatchSpanProcessor per otlp_targets entry
 ```
 
-**Backend choice (FEAT — OpenLLMetry alternative).** OpenLIT and OpenLLMetry
-(Traceloop) both auto-instrument the provider SDKs, so they are **mutually
-exclusive** and ship as independent optional extras — picking one never installs
-the other. The recommended split:
+**FEAT-462 — Unified Telemetry Bus.** OpenLIT and OpenLLMetry (Traceloop) used
+to be monkey-patching SDKs that auto-instrumented the provider SDKs and were
+mutually exclusive. Both SDK dependencies are gone: `openlit`/`traceloop-sdk`
+pinned conflicting `openai` version ranges, which is exactly the conflict this
+feature eliminates. OpenLIT (and any other OTLP-compatible backend — Tempo,
+SigNoz, …) is now a **pure deployment-time OTLP endpoint** you point
+`otlp_endpoint`/`otlp_targets` at — no SDK, no install-time conflict.
+`usage_backend="traceloop"` is remapped to `"otel"` with a deprecation log; the
+`enable_openlit`/`enable_traceloop` config flags remain for backward compat but
+are now no-ops that only emit a `DeprecationWarning`.
 
-- **Production → OpenLIT** (`OBSERVABILITY_OPENLIT=true`, backend `otel`): layers
-  onto AI-Parrot's `setup_telemetry` providers; ships its own UI + ClickHouse.
-- **Local/dev → OpenLLMetry/Traceloop** (`OBSERVABILITY_TRACELOOP=true`, backend
-  `traceloop`): simplest path to see prompts/responses in the trace. Traceloop
-  owns a single OTLP pipeline and AI-Parrot's native subscribers ride the same
-  global provider — no duplicate spans. When both flags are set, Traceloop wins
-  and OpenLIT is disabled with a warning.
+For a **cost-only** OpenLIT dashboard without the full trace pipeline, use the
+additive `OpenLitUsageRecorder` (`OBSERVABILITY_OPENLIT_RECORDER=true`) — it
+pushes `UsageRecord`s as GenAI SemConv spans via its own private
+`TracerProvider`, independent of `usage_backend`.
 
 Lifecycle events (FEAT-176) — `BeforeClientCallEvent` / `AfterClientCallEvent` /
 `ClientCallFailedEvent`, tool events, invoke events — are the instrumentation
@@ -51,16 +51,17 @@ captured by default (PII guard).
 ## 10.2 Get a dashboard of LLM requests (OpenLIT + OTLP)
 
 ```bash
-# 1. Install extras
+# 1. Install the extra (aiohttp-only helper — no monkey-patching SDK)
 pip install 'ai-parrot[observability,observability-openlit]'
 
-# 2. Launch the demo stack: OpenLIT UI :3000 + ClickHouse + Prometheus :9090
-docker compose -f packages/ai-parrot/src/parrot/observability/examples/docker-compose.observability.yml up -d
+# 2. Launch a local OpenLIT collector — see
+#    packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml
+docker compose -f packages/ai-parrot-openlit-bridge/docker-compose.openlit.yml up -d
+parrot-openlit-check http://localhost:4318   # verify reachability
 
 # 3. Point AI-Parrot at the collector (.env)
 OBSERVABILITY_ENABLED=true
 OBSERVABILITY_BACKEND=otel
-OBSERVABILITY_OPENLIT=true
 OBSERVABILITY_SERVICE_NAME=my-agent
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
@@ -68,10 +69,10 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 Build/use any bot → open <http://localhost:3000> to see each LLM request with
 tokens, USD cost, latency, model and errors.
 
-On a clean start, log in with the default OpenLIT account — email
-`user@openlit.io`, password `openlituser` — then change it (or create your own)
-under **Settings → Profile**. Users persist in the `openlit-data` volume, so if
-you already created another account, use that instead.
+For **multiple** OTLP destinations at once, set `OTLP_TARGETS` (a JSON list of
+`{"name","endpoint","headers"}`) instead of the single
+`OTEL_EXPORTER_OTLP_ENDPOINT` — one `BatchSpanProcessor` is attached per target
+on the shared `TracerProvider`.
 
 For Prometheus + Grafana, set
 `OBSERVABILITY_BACKEND=prometheus` and import the dashboards under
@@ -82,9 +83,10 @@ For Prometheus + Grafana, set
 | Env var | Field | Default |
 |---|---|---|
 | `OBSERVABILITY_ENABLED` | master switch | `false` |
-| `OBSERVABILITY_BACKEND` | `none`·`logging`·`prometheus`·`otel`·`traceloop` | `none` → `logging` when enabled |
-| `OBSERVABILITY_OPENLIT` | init OpenLIT (escalates backend to `otel`) — prod | `false` |
-| `OBSERVABILITY_TRACELOOP` | OpenLLMetry/Traceloop (forces backend `traceloop`) — local/dev | `false` |
+| `OBSERVABILITY_BACKEND` | `none`·`logging`·`prometheus`·`otel` | `none` → `logging` when enabled |
+| `OTLP_TARGETS` | multi-endpoint OTLP export (JSON list) | `[]` → falls back to `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `OBSERVABILITY_OPENLIT_RECORDER` / `_ENDPOINT` | additive `OpenLitUsageRecorder` (usage-only spans) | `false` / unset |
+| `OBSERVABILITY_OPENLIT` / `OBSERVABILITY_TRACELOOP` | **deprecated** — no-op, `DeprecationWarning` | `false` |
 | `OBSERVABILITY_CAPTURE_CONTENT` | capture prompts/completions (PII; dev only) | `false` |
 | `OBSERVABILITY_SERVICE_NAME` | `service.name` | `ai-parrot` |
 | `OBSERVABILITY_COST` | USD cost tracking | `true` |

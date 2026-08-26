@@ -24,10 +24,15 @@ path):
   * ``shutdown_observability`` — aggregate flush/teardown for any active backend
     (registered automatically via ``atexit`` on first boot).
 
-OpenLLMetry (Traceloop) backend — a simple, content-rich local/dev tracing path,
-mutually exclusive with OpenLIT (the production backend):
-  * ``init_traceloop`` / ``setup_traceloop`` / ``shutdown_traceloop`` — activate
-    via ``OBSERVABILITY_TRACELOOP=true`` (or ``usage_backend="traceloop"``).
+FEAT-462 — Unified Telemetry Bus: OpenLIT and Traceloop are no longer
+monkey-patching SDK dependencies. They are deployment-time OTLP endpoint
+configurations instead — configure ``ObservabilityConfig.otlp_targets``
+(multi-endpoint OTLP export) or the ``OpenLitUsageRecorder`` (usage-only
+spans) rather than the removed ``init_traceloop``/``setup_traceloop``/
+``shutdown_traceloop`` and ``init_openlit`` helpers.
+``enable_traceloop``/``enable_openlit`` remain on ``ObservabilityConfig``
+for backward compat but now only emit a ``DeprecationWarning`` and have no
+other effect.
 
 Per-agent attribution (FEAT-228):
   * ``current_agent_name`` — task-local ``ContextVar[Optional[str]]`` holding
@@ -42,27 +47,24 @@ from parrot.observability.bootstrap import (
     shutdown_usage_recording,
 )
 from parrot.observability.context import agent_identity, current_agent_name
-from parrot.observability.config import ObservabilityConfig
+from parrot.observability.config import ObservabilityConfig, OtlpTarget
 from parrot.observability.cost.calculator import CostCalculator
 from parrot.observability.errors import ConfigurationError
 from parrot.observability.provider import ParrotTelemetryProvider
 from parrot.observability.recorders import (
     AbstractLogger,
     LoggingUsageRecorder,
+    OpenLitUsageRecorder,
     UsageRecord,
     UsageRecordingSubscriber,
 )
 from parrot.observability.setup import setup_telemetry, shutdown_telemetry
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
-from parrot.observability.traceloop_integration import (
-    init_traceloop,
-    setup_traceloop,
-    shutdown_traceloop,
-)
 
 __all__: list[str] = [
     "ObservabilityConfig",
+    "OtlpTarget",
     "ConfigurationError",
     "ParrotTelemetryProvider",
     "setup_telemetry",
@@ -73,13 +75,11 @@ __all__: list[str] = [
     "AbstractLogger",
     "UsageRecord",
     "LoggingUsageRecorder",
+    "OpenLitUsageRecorder",
     "UsageRecordingSubscriber",
     "ensure_observability_bootstrapped",
     "shutdown_usage_recording",
     "shutdown_observability",
-    "init_traceloop",
-    "setup_traceloop",
-    "shutdown_traceloop",
     # FEAT-228: per-agent attribution
     "current_agent_name",
     "agent_identity",
