@@ -9,6 +9,68 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.28.0] — 2026-08-26
+
+### Added
+
+#### FEAT-463: Matrix Agents Swarm
+
+Matrix-protocol agent swarm infrastructure — agents coordinate over
+Matrix rooms via an Application Service, with dedicated channels, tunnels,
+and swarm-policy dispatch.
+
+- `ChannelManager` — room provisioning with optional Spaces.
+- `TunnelRegistry` & `AgentTunnel` — bidirectional agent-to-agent
+  communication via `m.parrot.task` / `m.parrot.result` events.
+- Inbound task handler: `handle_task → m.parrot.result`.
+- `AgentSwarmToolkit` — LLM-callable tools for swarm operations.
+- Transport wiring, swarm policy dispatch, and concurrent sessions.
+- Session trigger reply-to & tunnel cross-pollination.
+- Matrix dev stack: `docker-compose`, bridges profile, bootstrap script.
+- Documentation: `CLIENTS.md`, `BRIDGES.md`, swarm example & usage guide.
+
+#### FEAT-462: Unified Telemetry Bus
+
+Replaces the fragmented telemetry layer with a single OTEL + OpenLIT
+pipeline — configure once, export to any combination of endpoints.
+
+- `ObservabilityConfig` model extensions for multi-target OTLP.
+- `make_span_exporters` multi-endpoint exporter factory.
+- GenAI SemConv attribute additions (token-level, model metadata).
+- `OpenLitUsageRecorder` — async usage recording via OpenLIT.
+- `OpenLIT Bridge` optional-extra package (`parrot-openlit`).
+- Setup telemetry refactor & bootstrap cleanup (delete legacy
+  integration paths, consolidate `_do_bootstrap`).
+
+#### FEAT-460: Raw Upload Field Types
+
+File-upload support for FormBuilder — upload, validate, thumbnail,
+and serve binary attachments declaratively.
+
+- `FileEnvelope` model & `UPLOAD_FIELD_TYPES` constant.
+- `FieldConstraints.max_inline_size_bytes` extension.
+- `ThumbnailService` — on-demand thumbnail generation.
+- `/file-upload` route handler and route registration.
+- Validator dual-read coercer (base64 ↔ multipart).
+- JSON Schema, HTML5, PDF, and adaptive-card renderer updates.
+- `/thumbnail` serving route.
+- Integration & regression test suite.
+
+### Fixed
+
+- **Scheduler input sanitization** — env and DB inputs now sanitized
+  before they reach APScheduler, closing an injection vector.
+- **NetworkNinja multi-photo import** — a multi-photo question now
+  imports as `MULTI_UPLOAD` instead of `FILE` with a flag.
+- **OTLP endpoint bug (FEAT-462)** — critical exporter target
+  resolution fixed during code review.
+
+### Changed
+
+- Project-local RTK filters configuration (`.rtk.local.toml`).
+
+---
+
 ## [0.27.1] — 2026-08-25
 
 ### Added
