@@ -236,9 +236,7 @@ class TestDocToSubmission:
         """flatten_submission (bigquery) JSON-serializes extra_data."""
         import json
 
-        result = bigquery_sink._doc_to_submission(
-            self._doc(submission, extra_data=json.dumps({"legacy_id": 42}))
-        )
+        result = bigquery_sink._doc_to_submission(self._doc(submission, extra_data=json.dumps({"legacy_id": 42})))
         assert result.extra_data == {"legacy_id": 42}
 
     def test_none_stays_none(self, mongo_sink, submission):
