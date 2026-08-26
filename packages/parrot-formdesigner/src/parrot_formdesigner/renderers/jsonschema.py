@@ -15,7 +15,13 @@ import logging
 from copy import deepcopy
 from typing import Any
 
-from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
+from ..core.schema import (
+    FormField,
+    FormSchema,
+    FormSubsection,
+    RenderedForm,
+    UnknownFieldsPolicy,
+)
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -314,6 +320,12 @@ class JsonSchemaRenderer(AbstractFormRenderer):
     - x-placeholder: placeholder text
     - x-read-only: read-only flag
 
+    Under ``form.unknown_fields is UnknownFieldsPolicy.REJECT`` (FEAT-458),
+    the top-level schema also emits ``additionalProperties: false`` — the
+    server will 422 an undeclared key, so a standards-compliant client can
+    validate that locally. ``drop`` and ``keep`` emit nothing, keeping the
+    output byte-identical to every pre-FEAT-458 form.
+
     Example:
         renderer = JsonSchemaRenderer()
         result = await renderer.render(form_schema, style_schema)
@@ -448,6 +460,12 @@ class JsonSchemaRenderer(AbstractFormRenderer):
             schema["description"] = _resolve(form.description, locale)
         if required:
             schema["required"] = required
+        if form.unknown_fields is UnknownFieldsPolicy.REJECT:
+            # The server will 422 an undeclared key, so say so in the schema: a
+            # standards-compliant client validates locally instead of round-tripping
+            # a submission that cannot succeed. `drop`/`keep` emit nothing, keeping
+            # output byte-identical for every pre-FEAT-458 form.
+            schema["additionalProperties"] = False
 
         return schema
 
