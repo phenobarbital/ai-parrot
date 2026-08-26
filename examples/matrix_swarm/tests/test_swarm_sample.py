@@ -4,6 +4,7 @@ Matrix Swarm Sample Test Suite (FEAT-464).
 Validates the YAML files, demo script, environment template, and
 agent instantiation with mocked LLM clients.
 """
+
 import ast
 import re
 import pytest
@@ -34,12 +35,8 @@ class TestAgentsYaml:
             assert "llm" in agent, f"{agent_id} missing llm"
             assert "system_prompt" in agent, f"{agent_id} missing system_prompt"
             # Verify system_prompt is substantive (>=3 sentences)
-            sentences = len(
-                [s for s in agent["system_prompt"].split(".") if s.strip()]
-            )
-            assert (
-                sentences >= 3
-            ), f"{agent_id} system_prompt has {sentences} sentences, need >=3"
+            sentences = len([s for s in agent["system_prompt"].split(".") if s.strip()])
+            assert sentences >= 3, f"{agent_id} system_prompt has {sentences} sentences, need >=3"
 
     def test_agents_use_different_providers(self) -> None:
         """Each agent uses a different LLM provider."""
@@ -118,11 +115,7 @@ class TestDemoScript:
         """swarm_demo.py has required functions."""
         source = (SAMPLE_DIR / "swarm_demo.py").read_text()
         tree = ast.parse(source)
-        func_names = {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
+        func_names = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
         required = {"_load_agents_from_yaml", "_setup_agents", "_run_swarm", "main"}
         assert required.issubset(func_names)
 
@@ -175,9 +168,7 @@ class TestDocumentation:
         readme = (SAMPLE_DIR / "README.md").read_text()
         sections = ["Prerequisites", "Quick Start", "Troubleshooting"]
         for section in sections:
-            assert (
-                section.lower() in readme.lower()
-            ), f"README missing section: {section}"
+            assert section.lower() in readme.lower(), f"README missing section: {section}"
 
     def test_makefile_exists(self) -> None:
         """Makefile exists."""
@@ -189,9 +180,7 @@ class TestDocumentation:
         targets = ["setup", "start", "stop", "logs", "demo", "clean"]
         for target in targets:
             pattern = rf"^{target}\s*:"
-            assert re.search(
-                pattern, makefile, re.MULTILINE
-            ), f"Makefile missing target: {target}"
+            assert re.search(pattern, makefile, re.MULTILINE), f"Makefile missing target: {target}"
 
 
 # --- Integration Tests ---
@@ -207,9 +196,7 @@ class TestAgentIntegration:
         return data["agents"]
 
     @patch("parrot.clients.factory.LLMFactory.create")
-    def test_agent_instantiation(
-        self, mock_create: MagicMock, agent_defs: dict
-    ) -> None:
+    def test_agent_instantiation(self, mock_create: MagicMock, agent_defs: dict) -> None:
         """Create all 4 agents with mocked LLM clients.
 
         This test verifies that BasicAgent can be instantiated with the
@@ -235,9 +222,7 @@ class TestAgentIntegration:
         assert len(agents) == 4
 
     @patch("parrot.clients.factory.LLMFactory.create")
-    def test_botmanager_registration(
-        self, mock_create: MagicMock, agent_defs: dict
-    ) -> None:
+    def test_botmanager_registration(self, mock_create: MagicMock, agent_defs: dict) -> None:
         """Register agents and retrieve by chatbot_id.
 
         This test verifies that agents can be registered in BotManager

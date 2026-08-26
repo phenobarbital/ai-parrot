@@ -26,6 +26,7 @@ Quick start:
 
 See README.md for full step-by-step guide.
 """
+
 import argparse
 import asyncio
 import logging
@@ -52,11 +53,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Matrix Swarm Sample — 4-agent demo (FEAT-464)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Example:\n"
-            "  python swarm_demo.py\n"
-            "  python swarm_demo.py --agents custom_agents.yaml"
-        ),
+        epilog=("Example:\n" "  python swarm_demo.py\n" "  python swarm_demo.py --agents custom_agents.yaml"),
     )
     parser.add_argument(
         "--config",
@@ -253,9 +250,7 @@ async def _run_swarm(config_path: str) -> None:
                 for agent in transport._config.agents.values()
             ),
         )
-        logger.info(
-            "Coordinator commands (any room): !channels, !agents, !tunnels, !investigate"
-        )
+        logger.info("Coordinator commands (any room): !channels, !agents, !tunnels, !investigate")
         await stop_event.wait()
 
     logger.info("Swarm stopped cleanly.")
