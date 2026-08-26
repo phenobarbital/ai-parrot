@@ -4,7 +4,6 @@ Top-level lifecycle manager for a Matrix multi-agent crew.
 Manages the ``MatrixAppService``, coordinator, registry, and per-agent wrappers.
 Supports the async context-manager protocol for clean lifecycle management.
 """
-
 from __future__ import annotations
 
 import logging
@@ -103,7 +102,10 @@ class MatrixCrewTransport:
             server_name=self._config.server_name,
             listen_port=self._config.appservice_port,
             bot_localpart=self._config.bot_mxid.split(":")[0].lstrip("@"),
-            agent_mxid_map={name: entry.mxid_localpart for name, entry in self._config.agents.items()},
+            agent_mxid_map={
+                name: entry.mxid_localpart
+                for name, entry in self._config.agents.items()
+            },
             auto_join_rooms=[self._config.general_room_id],
         )
 
@@ -113,7 +115,9 @@ class MatrixCrewTransport:
         await self._appservice.start()  # start AS first (need intent API)
 
         for agent_name, entry in self._config.agents.items():
-            mxid = await self._appservice.register_agent(agent_name, entry.display_name)
+            mxid = await self._appservice.register_agent(
+                agent_name, entry.display_name
+            )
             self._agent_mxids.add(mxid)
             self.logger.info("Registered virtual user %s for agent '%s'", mxid, agent_name)
 
@@ -154,23 +158,24 @@ class MatrixCrewTransport:
         for agent_name, entry in self._config.agents.items():
             # General room
             try:
-                await self._appservice.ensure_agent_in_room(agent_name, self._config.general_room_id)
+                await self._appservice.ensure_agent_in_room(
+                    agent_name, self._config.general_room_id
+                )
             except Exception as exc:
                 self.logger.warning(
                     "Could not join agent '%s' to general room: %s",
-                    agent_name,
-                    exc,
+                    agent_name, exc,
                 )
             # Dedicated room
             if entry.dedicated_room_id:
                 try:
-                    await self._appservice.ensure_agent_in_room(agent_name, entry.dedicated_room_id)
+                    await self._appservice.ensure_agent_in_room(
+                        agent_name, entry.dedicated_room_id
+                    )
                 except Exception as exc:
                     self.logger.warning(
                         "Could not join agent '%s' to dedicated room %s: %s",
-                        agent_name,
-                        entry.dedicated_room_id,
-                        exc,
+                        agent_name, entry.dedicated_room_id, exc,
                     )
 
         # 7 — Create and start coordinator
@@ -221,18 +226,21 @@ class MatrixCrewTransport:
                     bot = await BotManager.get_bot(self._config.agents[agent_name].chatbot_id)
                 except Exception as exc:
                     self.logger.warning(
-                        "Could not resolve bot for agent '%s' — skipping toolkit " "attachment: %s",
-                        agent_name,
-                        exc,
+                        "Could not resolve bot for agent '%s' — skipping toolkit "
+                        "attachment: %s",
+                        agent_name, exc,
                     )
                     continue
                 if bot is None or not hasattr(bot, "tool_manager"):
                     self.logger.warning(
-                        "Agent '%s' has no bot/tool_manager yet — skipping " "AgentSwarmToolkit attachment",
+                        "Agent '%s' has no bot/tool_manager yet — skipping "
+                        "AgentSwarmToolkit attachment",
                         agent_name,
                     )
                     continue
-                toolkit = AgentSwarmToolkit(agent_name, self._tunnels, self._registry, self._channels, self._appservice)
+                toolkit = AgentSwarmToolkit(
+                    agent_name, self._tunnels, self._registry, self._channels, self._appservice
+                )
                 bot.tool_manager.register_toolkit(toolkit)
 
         self._appservice.set_custom_event_callback(self._on_custom_event)
@@ -327,7 +335,9 @@ class MatrixCrewTransport:
         tunnels = getattr(self, "_tunnels", None)
         stripped_body = body.strip()
         if stripped_body == "!channels":
-            text = self._coordinator.render_channels(channels.list_channels() if channels else [])
+            text = self._coordinator.render_channels(
+                channels.list_channels() if channels else []
+            )
             await self._appservice.send_as_bot(room_id, text)
             return
         if stripped_body == "!agents":
@@ -335,7 +345,9 @@ class MatrixCrewTransport:
             await self._appservice.send_as_bot(room_id, text)
             return
         if stripped_body == "!tunnels":
-            text = self._coordinator.render_tunnels(tunnels.list_tunnels() if tunnels else [])
+            text = self._coordinator.render_tunnels(
+                tunnels.list_tunnels() if tunnels else []
+            )
             await self._appservice.send_as_bot(room_id, text)
             return
 
@@ -352,11 +364,17 @@ class MatrixCrewTransport:
         if question is not None:
             collab = self._config.collaborative
             if collab is None or swarm is None:
-                self.logger.debug("Received !investigate but collaborative config is not set — ignoring")
+                self.logger.debug(
+                    "Received !investigate but collaborative config is not set — ignoring"
+                )
                 # Fall through to normal routing
             else:
-                self.logger.info("Starting collaborative session in %s: %r", room_id, question)
-                await swarm.maybe_start(room_id, sender, question, event_id_str, explicit=True)
+                self.logger.info(
+                    "Starting collaborative session in %s: %r", room_id, question
+                )
+                await swarm.maybe_start(
+                    room_id, sender, question, event_id_str, explicit=True
+                )
                 return
 
         # 4 — Dedicated room routing
@@ -364,7 +382,9 @@ class MatrixCrewTransport:
             agent_name = self._room_to_agent[room_id]
             wrapper = self._wrappers.get(agent_name)
             if wrapper:
-                self.logger.debug("Routing to dedicated-room agent '%s'", agent_name)
+                self.logger.debug(
+                    "Routing to dedicated-room agent '%s'", agent_name
+                )
                 await wrapper.handle_message(room_id, sender, body, event_id_str)
                 return
 
@@ -378,10 +398,11 @@ class MatrixCrewTransport:
                     if wrapper:
                         self.logger.debug(
                             "Routing @%s mention to agent '%s'",
-                            localpart,
-                            agent_name,
+                            localpart, agent_name,
                         )
-                        await wrapper.handle_message(room_id, sender, body, event_id_str)
+                        await wrapper.handle_message(
+                            room_id, sender, body, event_id_str
+                        )
                         return
 
         # 6 — Default / unaddressed agent
@@ -402,10 +423,14 @@ class MatrixCrewTransport:
             await swarm.maybe_start(room_id, sender, body, event_id_str)
             return
         if ch and ch.answer_policy in ("mention", "silent"):
-            self.logger.debug("Channel '%s' policy=%s — ignoring un-addressed message", ch.name, ch.answer_policy)
+            self.logger.debug(
+                "Channel '%s' policy=%s — ignoring un-addressed message", ch.name, ch.answer_policy
+            )
 
         # 8 — Ignore
-        self.logger.debug("No routing match for message in %s from %s", room_id, sender)
+        self.logger.debug(
+            "No routing match for message in %s from %s", room_id, sender
+        )
 
     def _resolve_active_session(self, room_id: str) -> Optional["MatrixCollaborativeSession"]:
         """Resolve the active session for an inter-agent message bypass.
@@ -485,7 +510,9 @@ class MatrixCrewTransport:
             tunnels=self._tunnels,
         )
 
-    async def _on_custom_event(self, event_type: str, content: dict, room_id: str, sender: str) -> None:
+    async def _on_custom_event(
+        self, event_type: str, content: dict, room_id: str, sender: str
+    ) -> None:
         """Dispatch an inbound ``m.parrot.*`` custom event (FEAT-463).
 
         TASK events in a known tunnel room are handled by the target
@@ -509,7 +536,9 @@ class MatrixCrewTransport:
             except Exception as exc:
                 self.logger.warning("HybridDelegator.on_custom_event failed: %s", exc)
 
-    async def _run_session(self, room_id: str, session: "MatrixCollaborativeSession") -> None:
+    async def _run_session(
+        self, room_id: str, session: "MatrixCollaborativeSession"
+    ) -> None:
         """Run a collaborative session as a fire-and-forget asyncio task.
 
         Wraps ``session.run()`` so that exceptions are logged rather than
@@ -523,7 +552,9 @@ class MatrixCrewTransport:
         try:
             await session.run()
         except Exception as exc:
-            self.logger.error("Session in %s failed: %s", room_id, exc, exc_info=True)
+            self.logger.error(
+                "Session in %s failed: %s", room_id, exc, exc_info=True
+            )
         finally:
             room_sessions = self._active_sessions.get(room_id)
             if room_sessions:
@@ -556,7 +587,7 @@ class MatrixCrewTransport:
         prefix = collab.command_prefix
         stripped = body.strip()
         if stripped.startswith(prefix):
-            question = stripped[len(prefix) :].strip()
+            question = stripped[len(prefix):].strip()
             return question if question else None
         return None
 
@@ -603,7 +634,9 @@ class _AppServiceBotClient:
         """
         return await self._appservice.send_as_bot(room_id, text)
 
-    async def send_reply(self, room_id: str, text: str, reply_to_event_id: str) -> str:
+    async def send_reply(
+        self, room_id: str, text: str, reply_to_event_id: str
+    ) -> str:
         """Send a reply-to message as the coordinator bot.
 
         Args:
@@ -614,9 +647,13 @@ class _AppServiceBotClient:
         Returns:
             Event ID string.
         """
-        return await self._appservice.send_reply_as_bot(room_id, text, reply_to_event_id)
+        return await self._appservice.send_reply_as_bot(
+            room_id, text, reply_to_event_id
+        )
 
-    async def edit_message(self, room_id: str, event_id: str, new_text: str) -> str:
+    async def edit_message(
+        self, room_id: str, event_id: str, new_text: str
+    ) -> str:
         """Edit a message as the coordinator bot.
 
         Args:
@@ -644,7 +681,9 @@ class _AppServiceBotClient:
         ev_id = await intent.send_message(RoomID(room_id), content)
         return str(ev_id)
 
-    async def set_room_state(self, room_id: str, event_type: str, content: dict) -> None:
+    async def set_room_state(
+        self, room_id: str, event_type: str, content: dict
+    ) -> None:
         """Set a room state event via the bot intent.
 
         Args:
@@ -654,5 +693,9 @@ class _AppServiceBotClient:
         """
         from mautrix.types import EventType, RoomID  # type: ignore
 
-        evt_type = EventType.find(event_type, t_class=EventType.Class.STATE)
-        await self._appservice.bot_intent.send_state_event(RoomID(room_id), evt_type, content)
+        evt_type = EventType.find(
+            event_type, t_class=EventType.Class.STATE
+        )
+        await self._appservice.bot_intent.send_state_event(
+            RoomID(room_id), evt_type, content
+        )

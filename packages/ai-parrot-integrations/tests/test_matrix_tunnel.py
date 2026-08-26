@@ -1,5 +1,4 @@
 """Tests for AgentTunnel / TunnelRegistry — FEAT-463 TASK-2481."""
-
 import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -21,7 +20,9 @@ pytestmark = pytest.mark.asyncio
 def reg():
     svc = AsyncMock()
     svc.create_room_as_bot.return_value = "!tun:parrot.local"
-    svc.list_agents = MagicMock(return_value={"a": "@parrot-a:parrot.local", "b": "@parrot-b:parrot.local"})
+    svc.list_agents = MagicMock(
+        return_value={"a": "@parrot-a:parrot.local", "b": "@parrot-b:parrot.local"}
+    )
     svc.send_custom_event_as_agent.return_value = "$task"
     channels = MagicMock()
     channels._space_id = None
@@ -105,7 +106,9 @@ async def test_schema_error(reg):
         )
 
     asyncio.create_task(deliver())
-    ans = await t.ask("a", "b", "q", expected_schema={"type": "object", "required": ["total"]})
+    ans = await t.ask(
+        "a", "b", "q", expected_schema={"type": "object", "required": ["total"]}
+    )
     assert ans.metadata["status"] == "schema_error"
 
 
@@ -195,15 +198,21 @@ async def test_task_rejected_when_sender_or_target_not_in_pair(reg):
     r._wrappers["a"] = wrapper
     r._wrappers["b"] = wrapper
 
-    task_content = TaskEventContent(task_id="t1", content="q", target_agent="a", correlation_id="c1").model_dump()
+    task_content = TaskEventContent(
+        task_id="t1", content="q", target_agent="a", correlation_id="c1"
+    ).model_dump()
 
     # Sender is not part of the ("a", "b") pair at all.
-    await r.on_custom_event(ParrotEventType.TASK, task_content, "!tun:parrot.local", "@stranger:parrot.local")
+    await r.on_custom_event(
+        ParrotEventType.TASK, task_content, "!tun:parrot.local", "@stranger:parrot.local"
+    )
     wrapper.handle_task.assert_not_awaited()
 
     # Sender is legitimate but the declared target isn't part of the pair.
     forged_content = TaskEventContent(
         task_id="t2", content="q", target_agent="someone-else", correlation_id="c2"
     ).model_dump()
-    await r.on_custom_event(ParrotEventType.TASK, forged_content, "!tun:parrot.local", "@parrot-a:parrot.local")
+    await r.on_custom_event(
+        ParrotEventType.TASK, forged_content, "!tun:parrot.local", "@parrot-a:parrot.local"
+    )
     wrapper.handle_task.assert_not_awaited()

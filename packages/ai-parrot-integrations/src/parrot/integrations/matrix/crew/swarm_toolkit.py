@@ -6,7 +6,6 @@ Its public async methods become LLM-callable tools that let an agent ask
 peer agents questions through private tunnels, send feedback, and
 discover/post to swarm channels.
 """
-
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -154,7 +153,8 @@ class AgentSwarmToolkit(AbstractToolkit):
         return [
             ch
             for ch in channels
-            if ch.get("visibility") == "public" or self._channels.is_member(self._agent_name, ch.get("name"))
+            if ch.get("visibility") == "public"
+            or self._channels.is_member(self._agent_name, ch.get("name"))
         ]
 
     async def post_to_channel(self, channel: str, text: str) -> str:

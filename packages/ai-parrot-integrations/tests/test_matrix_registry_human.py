@@ -1,5 +1,4 @@
 """Tests for MatrixCrewRegistry.is_human — FEAT-463 TASK-2484."""
-
 import pytest
 
 from parrot.integrations.matrix.crew.registry import MatrixAgentCard, MatrixCrewRegistry

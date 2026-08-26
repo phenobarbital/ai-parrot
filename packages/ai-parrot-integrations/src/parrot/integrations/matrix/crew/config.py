@@ -3,7 +3,6 @@
 Pydantic v2 models for configuring a multi-agent crew
 operating on a Matrix homeserver via the Application Service protocol.
 """
-
 import logging
 import os
 import re
@@ -71,12 +70,22 @@ class MatrixCrewAgentEntry(BaseModel):
 
     chatbot_id: str = Field(..., description="BotManager lookup key")
     display_name: str = Field(..., description="Human-readable display name")
-    mxid_localpart: str = Field(..., description="Localpart for virtual MXID (e.g. 'analyst')")
-    avatar_url: Optional[str] = Field(default=None, description="mxc:// URL for agent avatar")
-    dedicated_room_id: Optional[str] = Field(default=None, description="Agent's private dedicated room ID")
-    skills: List[str] = Field(default_factory=list, description="Skill descriptions for status board")
+    mxid_localpart: str = Field(
+        ..., description="Localpart for virtual MXID (e.g. 'analyst')"
+    )
+    avatar_url: Optional[str] = Field(
+        default=None, description="mxc:// URL for agent avatar"
+    )
+    dedicated_room_id: Optional[str] = Field(
+        default=None, description="Agent's private dedicated room ID"
+    )
+    skills: List[str] = Field(
+        default_factory=list, description="Skill descriptions for status board"
+    )
     tags: List[str] = Field(default_factory=list, description="Routing tags")
-    file_types: List[str] = Field(default_factory=list, description="Accepted file MIME types")
+    file_types: List[str] = Field(
+        default_factory=list, description="Accepted file MIME types"
+    )
 
 
 class CollaborativeConfig(BaseModel):
@@ -154,7 +163,9 @@ class ChannelConfig(BaseModel):
         topic: Optional room topic set at creation time.
     """
 
-    name: str = Field(..., pattern=r"^[a-z0-9][a-z0-9_-]*$", description="alias localpart")
+    name: str = Field(
+        ..., pattern=r"^[a-z0-9][a-z0-9_-]*$", description="alias localpart"
+    )
     visibility: Literal["public", "private"] = "public"
     agents: List[str] = Field(default_factory=list)
     answer_policy: Literal["mention", "swarm", "silent"] = "mention"
@@ -222,23 +233,41 @@ class MatrixCrewConfig(BaseModel):
     """
 
     homeserver_url: str = Field(..., description="Matrix homeserver URL")
-    server_name: str = Field(..., description="Server domain name (e.g. 'example.com')")
+    server_name: str = Field(
+        ..., description="Server domain name (e.g. 'example.com')"
+    )
     as_token: str = Field(..., description="Application Service token")
     hs_token: str = Field(..., description="Homeserver token")
     bot_mxid: str = Field(..., description="Coordinator bot full MXID")
     general_room_id: str = Field(..., description="Shared room ID for all agents")
-    agents: Dict[str, MatrixCrewAgentEntry] = Field(default_factory=dict, description="agent_name → configuration")
-    appservice_port: int = Field(default=8449, description="AS HTTP listener port")
-    pinned_registry: bool = Field(default=True, description="Pin status board in general room")
-    typing_indicator: bool = Field(default=True, description="Show typing indicator while processing")
-    streaming: bool = Field(default=True, description="Use edit-based streaming for responses")
-    unaddressed_agent: Optional[str] = Field(default=None, description="Default agent for unmentioned messages")
-    max_message_length: int = Field(default=4096, description="Chunk responses beyond this length")
+    agents: Dict[str, MatrixCrewAgentEntry] = Field(
+        default_factory=dict, description="agent_name → configuration"
+    )
+    appservice_port: int = Field(
+        default=8449, description="AS HTTP listener port"
+    )
+    pinned_registry: bool = Field(
+        default=True, description="Pin status board in general room"
+    )
+    typing_indicator: bool = Field(
+        default=True, description="Show typing indicator while processing"
+    )
+    streaming: bool = Field(
+        default=True, description="Use edit-based streaming for responses"
+    )
+    unaddressed_agent: Optional[str] = Field(
+        default=None, description="Default agent for unmentioned messages"
+    )
+    max_message_length: int = Field(
+        default=4096, description="Chunk responses beyond this length"
+    )
     collaborative: Optional[CollaborativeConfig] = Field(
         default=None,
         description="Collaborative session configuration (optional, backward-compatible)",
     )
-    channels: List[ChannelConfig] = Field(default_factory=list, description="Declared agent channels")
+    channels: List[ChannelConfig] = Field(
+        default_factory=list, description="Declared agent channels"
+    )
     tunnels: TunnelConfig = Field(
         default_factory=TunnelConfig,
         description="Private agent-to-agent tunnel configuration",
@@ -276,10 +305,13 @@ class MatrixCrewConfig(BaseModel):
             if self.agents:
                 unknown = [a for a in ch.agents if a not in self.agents]
                 if unknown:
-                    raise ValueError(f"channel '{ch.name}' references unknown agents {unknown}")
+                    raise ValueError(
+                        f"channel '{ch.name}' references unknown agents {unknown}"
+                    )
             if ch.answer_policy == "swarm" and self.collaborative is None:
                 raise ValueError(
-                    f"channel '{ch.name}' uses answer_policy=swarm but " "'collaborative' is not configured"
+                    f"channel '{ch.name}' uses answer_policy=swarm but "
+                    "'collaborative' is not configured"
                 )
         return self
 

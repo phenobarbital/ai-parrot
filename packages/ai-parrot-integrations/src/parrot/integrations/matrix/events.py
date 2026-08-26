@@ -3,7 +3,6 @@
 These events extend the Matrix protocol to support agent-to-agent
 communication, task lifecycle, and streaming within Matrix rooms.
 """
-
 import importlib.util
 import json
 from datetime import datetime
@@ -13,7 +12,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 try:
     from mautrix.types import EventType, SerializableAttrs
-
     HAS_MAUTRIX = True
 except ImportError:
     HAS_MAUTRIX = False
@@ -22,7 +20,6 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Custom event type identifiers
 # ---------------------------------------------------------------------------
-
 
 class ParrotEventType:
     """Matrix event type constants for AI-Parrot."""
@@ -85,7 +82,6 @@ else:
 # Pydantic content models for each event type
 # ---------------------------------------------------------------------------
 
-
 class AgentCardEventContent(BaseModel):
     """Content of m.parrot.agent_card state event.
 
@@ -99,8 +95,12 @@ class AgentCardEventContent(BaseModel):
     skills: List[Dict[str, Any]] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     capabilities: Dict[str, Any] = Field(default_factory=dict)
-    default_input_modes: List[str] = Field(default_factory=lambda: ["text/plain", "application/json"])
-    default_output_modes: List[str] = Field(default_factory=lambda: ["text/plain", "application/json"])
+    default_input_modes: List[str] = Field(
+        default_factory=lambda: ["text/plain", "application/json"]
+    )
+    default_output_modes: List[str] = Field(
+        default_factory=lambda: ["text/plain", "application/json"]
+    )
     protocol_version: str = "0.3"
     icon_url: Optional[str] = None
     # Original A2A URL (for fallback to HTTP transport)
@@ -161,7 +161,6 @@ class StatusEventContent(BaseModel):
 # Swarm envelope, feedback, and state-event content models (FEAT-463)
 # ---------------------------------------------------------------------------
 
-
 class AgentAnswer(BaseModel):
     """Fixed envelope returned by ``AgentSwarmToolkit.ask_agent``.
 
@@ -206,7 +205,9 @@ class AgentAnswer(BaseModel):
         expected_type = schema.get("type")
         if expected_type == "object":
             if not isinstance(self.answer, dict):
-                raise ValueError(f"expected object, got {type(self.answer).__name__}")
+                raise ValueError(
+                    f"expected object, got {type(self.answer).__name__}"
+                )
             required = schema.get("required", [])
             missing = [k for k in required if k not in self.answer]
             if missing:
@@ -215,7 +216,9 @@ class AgentAnswer(BaseModel):
             raise ValueError(f"expected string, got {type(self.answer).__name__}")
         elif expected_type == "array" and not isinstance(self.answer, list):
             raise ValueError(f"expected array, got {type(self.answer).__name__}")
-        elif expected_type in ("number", "integer") and not isinstance(self.answer, (int, float)):
+        elif expected_type in ("number", "integer") and not isinstance(
+            self.answer, (int, float)
+        ):
             raise ValueError(f"expected {expected_type}, got {type(self.answer).__name__}")
         elif expected_type == "boolean" and not isinstance(self.answer, bool):
             raise ValueError(f"expected boolean, got {type(self.answer).__name__}")

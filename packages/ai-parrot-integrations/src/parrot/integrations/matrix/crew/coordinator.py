@@ -5,7 +5,6 @@ of all agents in the crew (ready / busy / offline).  The board is updated
 on every agent join, leave, or status-change event, subject to a
 configurable rate limit.
 """
-
 import logging
 import time
 from datetime import datetime, timezone
@@ -72,12 +71,17 @@ class MatrixCoordinator:
 
     async def stop(self) -> None:
         """Post a shutdown notice to the general room."""
-        shutdown_text = "AI-Parrot Crew shutting down...\n" "All agents are going offline. Goodbye!"
+        shutdown_text = (
+            "AI-Parrot Crew shutting down...\n"
+            "All agents are going offline. Goodbye!"
+        )
         try:
             await self._client.send_text(self._room_id, shutdown_text)
             self.logger.info("Shutdown notice sent to %s", self._room_id)
         except Exception as exc:
-            self.logger.error("Failed to send shutdown notice: %s", exc, exc_info=True)
+            self.logger.error(
+                "Failed to send shutdown notice: %s", exc, exc_info=True
+            )
 
     # ------------------------------------------------------------------
     # Event hooks
@@ -120,7 +124,9 @@ class MatrixCoordinator:
         the previous update it is silently skipped.
         """
         if self._status_event_id is None:
-            self.logger.debug("Status board not yet created; skipping refresh")
+            self.logger.debug(
+                "Status board not yet created; skipping refresh"
+            )
             return
 
         now = time.monotonic()
@@ -137,7 +143,9 @@ class MatrixCoordinator:
             self._last_update = now
             self.logger.debug("Status board refreshed")
         except Exception as exc:
-            self.logger.error("Failed to refresh status board: %s", exc, exc_info=True)
+            self.logger.error(
+                "Failed to refresh status board: %s", exc, exc_info=True
+            )
 
     # ------------------------------------------------------------------
     # Swarm listing commands (FEAT-463): !channels / !agents / !tunnels
@@ -160,7 +168,8 @@ class MatrixCoordinator:
         for ch in channels:
             agents = ", ".join(ch.get("agents") or []) or "-"
             lines.append(
-                f"- #{ch.get('name')} ({ch.get('visibility')}, " f"policy={ch.get('answer_policy')}) — agents: {agents}"
+                f"- #{ch.get('name')} ({ch.get('visibility')}, "
+                f"policy={ch.get('answer_policy')}) — agents: {agents}"
             )
         return "\n".join(lines)
 
@@ -192,7 +201,9 @@ class MatrixCoordinator:
         for t in tunnels:
             agents = t.get("agents") or []
             pair = " <-> ".join(agents) if agents else "?"
-            lines.append(f"- {pair} (room {t.get('room_id')}, last used {t.get('last_used')})")
+            lines.append(
+                f"- {pair} (room {t.get('room_id')}, last used {t.get('last_used')})"
+            )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -239,7 +250,6 @@ class MatrixCoordinator:
             elif hasattr(self._client, "client"):
                 # Direct mautrix client access
                 from mautrix.types import EventType, RoomID
-
                 await self._client.client.send_state_event(
                     RoomID(self._room_id),
                     EventType.find(
@@ -250,4 +260,6 @@ class MatrixCoordinator:
                 )
             self.logger.info("Pinned status board message %s", event_id)
         except Exception as exc:
-            self.logger.warning("Could not pin status board: %s", exc)
+            self.logger.warning(
+                "Could not pin status board: %s", exc
+            )

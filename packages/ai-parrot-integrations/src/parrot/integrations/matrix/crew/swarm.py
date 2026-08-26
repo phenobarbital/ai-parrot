@@ -5,7 +5,6 @@ per room and ``cooldown_seconds`` between trigger events, and starts
 ``MatrixCollaborativeSession`` instances as background tasks — replacing the
 single-session-per-room limit with a concurrent, per-session-id map.
 """
-
 import asyncio
 import logging
 import time
@@ -78,7 +77,9 @@ class SwarmSessionManager:
         now = time.monotonic()
 
         if len(self.active(room_id)) >= self._cfg.max_concurrent_sessions:
-            await self._t._appservice.send_reply_as_bot(room_id, "🐦 Swarm is busy — try again shortly.", event_id)
+            await self._t._appservice.send_reply_as_bot(
+                room_id, "🐦 Swarm is busy — try again shortly.", event_id
+            )
             return None
 
         if not explicit and now - self._last_start.get(room_id, 0.0) < self._cfg.cooldown_seconds:
