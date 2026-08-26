@@ -631,23 +631,23 @@ observability = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.25,<2.0",
 ]
 
-# Optional OpenLIT auto-instrumentation (FEAT-177 — opt-in via enable_openlit=True)
-# NOTE: floor pinned to 1.40 — older openlit releases pin tiktoken<0.7 and
-# xmltodict<0.13, which conflict with the core deps (tiktoken>=0.9.0,
-# xmltodict>=0.14.2) and the flowtask extra. 1.40+ drops the tiktoken pin and
-# accepts xmltodict<1.0.
+# FEAT-462 — Unified Telemetry Bus: OpenLIT and Traceloop are no longer
+# monkey-patching SDK dependencies (both `openlit` and `traceloop-sdk`
+# hard-pin conflicting `openai` version ranges — the root cause this
+# feature eliminates). They are deployment-time OTLP endpoint
+# configurations instead: configure `ObservabilityConfig.otlp_targets`
+# (multi-endpoint OTLP export) or the `OpenLitUsageRecorder` (usage-only
+# spans fanned out via the AbstractLogger layer). `observability-openlit`
+# now installs the minimal `ai-parrot-openlit-bridge` helper package
+# (endpoint validation + `parrot-openlit-check` health-check CLI, zero
+# heavy deps) instead of the `openlit` SDK.
 observability-openlit = [
-    "openlit>=1.40.0",
+    "ai-parrot-openlit-bridge",
 ]
 
-# Optional OpenLLMetry (Traceloop) backend (opt-in via enable_traceloop=True).
-# A simple, content-rich local/dev tracing path. Mutually exclusive with OpenLIT
-# at runtime. The Traceloop.init params used (app_name, api_endpoint, api_key,
-# disable_batch, telemetry_enabled, resource_attributes, headers) are stable
-# across the traceloop-sdk 0.x line; floor pinned to avoid the pre-0.30 API.
-observability-traceloop = [
-    "traceloop-sdk>=0.40.0,<1.0",
-]
+# FEAT-462 — deprecated no-op extra, kept for backward compat. See
+# observability-openlit above; Traceloop's bridge equivalent is deferred.
+observability-traceloop = []
 
 # Pluggable usage-logging: Prometheus backend (pull-based metrics + cost).
 # The default "logging" usage backend needs NO extra — it uses stdlib logging.

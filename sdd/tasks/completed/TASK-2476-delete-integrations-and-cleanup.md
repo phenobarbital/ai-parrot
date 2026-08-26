@@ -47,7 +47,13 @@ into a single task since they are tightly coupled and both small.
 | `packages/ai-parrot/src/parrot/observability/__init__.py` | MODIFY | Remove traceloop/openlit exports |
 | `packages/ai-parrot/pyproject.toml` | MODIFY | Repurpose observability extras |
 | `pyproject.toml` (workspace root) | MODIFY | Remove conflicting-groups entries |
-| `packages/ai-parrot/tests/observability/test_integrations_removed.py` | CREATE | Verification tests |
+| `packages/ai-parrot/tests/unit/observability/test_integrations_removed.py` | CREATE | Verification tests (corrected path — see TASK-2470) |
+| `packages/ai-parrot/tests/unit/observability/test_openlit_integration.py` | DELETE (not originally listed) | Tested the deleted `openlit_integration` module directly — cannot import, must be removed |
+| `packages/ai-parrot/tests/unit/observability/test_traceloop_integration.py` | DELETE (not originally listed) | Tested the deleted `traceloop_integration` module directly — cannot import, must be removed |
+| `packages/ai-parrot/tests/unit/observability/test_bootstrap.py` | MODIFY (not originally listed) | 1 remaining test directly imported `traceloop_integration` to patch it — updated for the now-deleted module |
+| `packages/ai-parrot/tests/unit/observability/conftest.py` | MODIFY (not originally listed) | Removed a dead (but now-stale) `openlit_integration._reset_for_tests()` reset call + docstring mention |
+| `packages/ai-parrot/tests/integration/observability/test_perf.py` | MODIFY (not originally listed) | 1 test directly called the deleted `openlit_integration.init_openlit` — replaced with an equivalent benchmark against `OpenLitUsageRecorder` |
+| `packages/ai-parrot/tests/integration/observability/test_poc.py` | MODIFY (not originally listed) | 1 test directly called the deleted `openlit_integration.init_openlit` — replaced with an equivalent scenario using `OpenLitUsageRecorder` alongside tracing |
 
 ---
 
@@ -197,10 +203,64 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Deleted `openlit_integration.py` and `traceloop_integration.py`.
+Removed the `traceloop_integration` import and `init_traceloop`/
+`setup_traceloop`/`shutdown_traceloop` from `parrot.observability.__init__`'s
+imports and `__all__` (updated the docstring's public-surface section to
+describe the FEAT-462 OTLP-target/recorder replacement instead). Emptied
+`observability-openlit`/`observability-traceloop` in
+`packages/ai-parrot/pyproject.toml` (kept the extra names for backward
+compat, per the task's "not ready" placeholder pattern — TASK-2477
+repurposes `observability-openlit`). Removed all 11
+`observability-openlit` conflicts entries (and their 2 explanatory comment
+blocks) from the workspace root `pyproject.toml`'s `tool.uv.conflicts`,
+replacing them with one comment documenting the removal. Verified via
+`tomllib` that both TOML files remain syntactically valid and that no
+`tool.uv.conflicts` entry still references `observability-openlit`.
+Verified via the specified grep that `packages/ai-parrot/src/` has zero
+remaining references to the deleted modules (the only textual hits are in
+`__init__.py`'s docstring explaining the removal). 9 new unit tests added
+(`test_integrations_removed.py`): import-failure checks for both deleted
+modules, `__all__`/`ImportError` checks for the 3 removed re-exports, a
+full source-tree scan for stray references, and 3 dependency-cleanup
+checks (no `observability-openlit` in `tool.uv.conflicts`, both extras
+still present but SDK-free, no `openlit`/`traceloop-sdk` string anywhere
+under any `pyproject.toml` in the workspace). `uv lock --dry-run` was
+attempted but times out at 90s without completing even in dry-run mode —
+consistent with this workspace's own documented "45GB RSS, OOM-prone"
+resolution cost (see the `constraint-dependencies` comment in the root
+`pyproject.toml`); TOML structural validity was instead verified via
+`tomllib.load()` on both files. Full `tests/unit/observability/` +
+`tests/integration/observability/` suite (184 tests) passes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: (1) Test file path corrected to
+`tests/unit/observability/` (same correction as prior FEAT-462 tasks).
+(2) Deleted 2 pre-existing test files (`test_openlit_integration.py`,
+`test_traceloop_integration.py`) that directly imported the now-deleted
+modules — unavoidable, direct consequence of this task's own deletion
+scope. (3) Modified `test_bootstrap.py`, `conftest.py`, `test_perf.py`,
+and `test_poc.py` (none originally listed) — each had at least one test
+or fixture directly importing/calling the deleted modules
+(`traceloop_integration.setup_traceloop`, `openlit_integration.
+_reset_for_tests`/`init_openlit`); updated in place to either drop the
+now-impossible assertion or exercise the FEAT-462 replacement
+(`OpenLitUsageRecorder` via `UsageRecordingSubscriber`) instead, per the
+note added to the task's Files to Create/Modify table. (4) Did not modify
+the `override-dependencies`/`constraint-dependencies` otel-version-pinning
+entries in the root `pyproject.toml`, even though their comments still
+reference "openlit" as part of the rationale — those aren't
+`conflicting-groups`/`conflicts` entries (out of the AC's explicit scope)
+and other packages (e.g. livekit-agents) may still depend on the same otel
+version floor; touching them without a full `uv lock` run to verify was
+judged too risky for this task's scope.
 
-**Deviations from spec**: none | describe if any
+**Post-hoc fix (after TASK-2477)**: `test_openlit_not_a_dependency_anywhere`
+used a raw substring scan that false-positived on
+`ai-parrot-openlit-bridge`'s own `pyproject.toml` (TASK-2477) once it
+existed — its `keywords` list legitimately contains `"openlit"`. Fixed to
+parse `project.dependencies`/`optional-dependencies` structurally via
+`tomllib` and check for an actual dependency declaration instead of any
+text mention. See commit "fix(unified-telemetry-bus): make
+test_openlit_not_a_dependency_anywhere structural".

@@ -57,8 +57,27 @@ def build_recorders_from_config(
             )
         )
     else:
-        logger.debug(
-            "build_recorders_from_config: backend=%r yields no recorders.", backend
+        logger.debug("build_recorders_from_config: backend=%r yields no recorders.", backend)
+
+    # FEAT-462 — OpenLitUsageRecorder is additive to whichever backend above
+    # ran: it can be enabled alongside "logging"/"prometheus"/"none", not
+    # only as a standalone backend. Triggered by either an explicit
+    # ``usage_backend == "openlit"`` (reserved for future use — the
+    # ``UsageBackend`` Literal does not currently include it) or by setting
+    # ``openlit_recorder_endpoint`` (the actual, tested trigger — see
+    # ``OBSERVABILITY_OPENLIT_RECORDER``/``OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT``
+    # in ``ObservabilityConfig.from_env()``).
+    if backend == "openlit" or config.openlit_recorder_endpoint:
+        from parrot.observability.recorders.openlit_recorder import (
+            OpenLitUsageRecorder,
+        )
+
+        recorders.append(
+            OpenLitUsageRecorder(
+                endpoint=config.openlit_recorder_endpoint or config.otlp_endpoint,
+                headers=config.otlp_headers,
+                service_name=config.service_name,
+            )
         )
 
     return recorders

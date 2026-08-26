@@ -36,7 +36,7 @@ builder functions and will pick up the new attributes automatically).
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/observability/attributes.py` | MODIFY | Add 2 attributes to builder functions |
-| `packages/ai-parrot/tests/observability/test_attributes_semconv.py` | CREATE | Unit tests |
+| `packages/ai-parrot/tests/unit/observability/test_attributes_semconv.py` | CREATE | Unit tests (corrected path — see TASK-2470) |
 
 ---
 
@@ -55,15 +55,13 @@ from parrot.observability.attributes import (
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot/src/parrot/observability/attributes.py:143
-def build_before_client_attrs(
-    event,  # BeforeClientCallEvent
-    *,
-    gen_ai_system: str | None = None,
-) -> dict[str, Any]:
+# CORRECTED — no gen_ai_system kwarg exists; the contract's signature was
+# stale. Actual signature (verified 2026-08-26):
+def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
     """Build OTel attribute dict from a BeforeClientCallEvent."""
     # Returns dict with keys like:
     #   "gen_ai.system", "gen_ai.provider.name",
-    #   "gen_ai.request.model", "gen_ai.request.max_tokens", etc.
+    #   "gen_ai.request.model", "gen_ai.request.has_tools", etc.
 
 # packages/ai-parrot/src/parrot/observability/attributes.py:182
 def build_after_client_attrs(
@@ -198,10 +196,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Added `"gen_ai.operation.name": "chat"` (unconditional) to
+`build_before_client_attrs()`'s returned dict. Added `"gen_ai.usage.cost"`
+alongside the existing `"parrot.cost.usd"` in `build_after_client_attrs()`,
+guarded by the same `if cost_usd is not None:` block so both are present or
+both are absent together. 5 new unit tests added, built against real
+`BeforeClientCallEvent`/`AfterClientCallEvent` instances (matching this
+test package's existing convention in `test_attributes.py`, rather than
+the task's illustrative `MagicMock`-based fixtures). Full
+`tests/unit/observability/` suite (149 tests) passes. `ruff check` on
+`attributes.py` shows the same single pre-existing `UP045` violation as
+before this change (an `Optional[float]` on code untouched by this task) —
+0 new violations.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Also fixed an SDD bookkeeping bug found while working this task: the
+"sdd: complete TASK-2470/2471" commits had moved those task files to
+`completed/` on disk but never staged the deletion from `active/` — HEAD's
+tree still carried stale duplicate copies in `active/`. Fixed with a
+dedicated commit (`sdd: fix missing deletions of TASK-2470/2471 from
+active/`) before continuing this task.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Test file path corrected to
+`tests/unit/observability/` (same correction as TASK-2470/2471). Test
+fixtures use real lifecycle event instances instead of `MagicMock` to match
+the existing `test_attributes.py` convention.

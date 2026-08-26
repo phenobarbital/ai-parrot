@@ -16,12 +16,14 @@ from parrot.observability.recorders.base import AbstractLogger
 from parrot.observability.recorders.factory import build_recorders_from_config
 from parrot.observability.recorders.logging_recorder import LoggingUsageRecorder
 from parrot.observability.recorders.models import UsageRecord
+from parrot.observability.recorders.openlit_recorder import OpenLitUsageRecorder
 from parrot.observability.recorders.subscriber import UsageRecordingSubscriber
 
 __all__ = [
     "AbstractLogger",
     "UsageRecord",
     "LoggingUsageRecorder",
+    "OpenLitUsageRecorder",
     "UsageRecordingSubscriber",
     "build_recorders_from_config",
 ]

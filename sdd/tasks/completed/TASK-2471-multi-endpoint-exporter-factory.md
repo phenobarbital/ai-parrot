@@ -40,7 +40,7 @@ Implements spec §3 Module 2.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/observability/exporters.py` | MODIFY | Add `make_span_exporters()` function |
-| `packages/ai-parrot/tests/observability/test_exporters_multi.py` | CREATE | Unit tests |
+| `packages/ai-parrot/tests/unit/observability/test_exporters_multi.py` | CREATE | Unit tests (corrected path — see TASK-2470 for the same `tests/observability/` → `tests/unit/observability/` correction) |
 
 ---
 
@@ -192,10 +192,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Added `make_span_exporters(targets, protocol)` to `exporters.py`,
+above `make_span_exporter()`. For `http/protobuf` targets it appends
+`/v1/traces` to each target's endpoint — this mirrors
+`make_span_exporter()`'s existing suffixing behavior exactly (verified with
+a direct comparison test: `test_single_target_matches_make_span_exporter`),
+which TASK-2474 requires for its single-target fallback to be identical to
+pre-FEAT-462 behavior. gRPC targets pass the raw endpoint + tuple-form
+headers, matching the existing gRPC branch. 13 new unit tests added; full
+`tests/unit/observability/` suite (144 tests) passes. `ruff check` on
+`exporters.py` shows the same 4 pre-existing `RUF100` violations as before
+this change (unused `# noqa: PLC0415` — a repo-wide convention on lines
+this task did not touch) — 0 new violations (removed the same noqa comment
+from my 2 new lazy imports since it flagged as unused there too).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Test file path corrected to
+`tests/unit/observability/` (same correction as TASK-2470). (2) The
+`test_headers_passed_through` test asserts the endpoint WITH the
+`/v1/traces` suffix, whereas the task's illustrative test snippet asserted
+the raw endpoint with no suffix. The suffix is required for correctness
+(real OTLP protocol compliance) and, more concretely, for TASK-2474's own
+acceptance criterion that the single-target `otlp_endpoint` fallback must
+be "byte-for-byte identical" to `make_span_exporter()` — which already
+appends this suffix. Not suffixing would have silently broken that
+downstream guarantee.

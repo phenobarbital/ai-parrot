@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     "openai": "openai",
     "anthropic": "anthropic",
-    "claude-agent": "anthropic",    # routes through Anthropic
+    "claude-agent": "anthropic",  # routes through Anthropic
     # FEAT-232: Claude served through AWS Bedrock. OpenLIT's canonical provider
     # value for Bedrock is ``aws.bedrock`` (GEN_AI_SYSTEM_AWS_BEDROCK), distinct
     # from the direct Anthropic API. The Bedrock backend must emit one of these
@@ -42,14 +42,14 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
     # Bedrock in OpenLIT. The "aws" workspace backend stays "anthropic" — it is
     # still the Anthropic API, only credentialed via an AWS workspace.
     "anthropic-bedrock": "aws.bedrock",
-    "bedrock": "aws.bedrock",       # alias for the LLMFactory "bedrock:" route key
-    "google": "gemini",             # default; override per route when Vertex
+    "bedrock": "aws.bedrock",  # alias for the LLMFactory "bedrock:" route key
+    "google": "gemini",  # default; override per route when Vertex
     "gemini-live": "gemini",
     "groq": "groq",
-    "grok": "xai",                  # no OTel-standard value; custom
-    "nvidia": "nvidia",             # custom — no OTel-standard
-    "huggingface": "huggingface",   # custom
-    "gemma4": "huggingface",        # Gemma is HF-hosted
+    "grok": "xai",  # no OTel-standard value; custom
+    "nvidia": "nvidia",  # custom — no OTel-standard
+    "huggingface": "huggingface",  # custom
+    "gemma4": "huggingface",  # Gemma is HF-hosted
 }
 
 # Track which unknown client_names have already been warned about (module-level).
@@ -165,6 +165,10 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
         "gen_ai.request.model": event.model,
         # Custom extension — not part of OTel GenAI SemConv stable spec (May 2025)
         "gen_ai.request.has_tools": event.has_tools,
+        # FEAT-462 — OpenLIT dashboards classify spans by operation type.
+        # Hardcoded "chat" covers 95%+ of calls today; a future enhancement
+        # could derive this from event metadata (e.g. "embed").
+        "gen_ai.operation.name": "chat",
     }
     if event.temperature is not None:
         attrs["gen_ai.request.temperature"] = event.temperature
@@ -209,7 +213,8 @@ def build_after_client_attrs(
     if event.finish_reason is not None:
         attrs["gen_ai.response.finish_reason"] = event.finish_reason
     if cost_usd is not None:
-        attrs["parrot.cost.usd"] = cost_usd
+        attrs["parrot.cost.usd"] = cost_usd  # legacy name — kept for backward compat
+        attrs["gen_ai.usage.cost"] = cost_usd  # FEAT-462 — OpenLIT SemConv standard
     if event.agent_name:  # FEAT-228: omit when None/empty
         attrs["parrot.agent.name"] = event.agent_name
     if event.user_id:

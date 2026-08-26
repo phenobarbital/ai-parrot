@@ -6,15 +6,16 @@ FEAT-177 TASK-1235.
 
 1. Builds an OTel ``Resource`` (service.name, service.version, service.instance.id,
    parrot.version).
-2. Configures a ``TracerProvider`` with ``BatchSpanProcessor`` + ``TraceIdRatioBased``
-   sampler and registers it globally.
+2. Configures a ``TracerProvider`` with one ``BatchSpanProcessor`` per OTLP
+   target (FEAT-462 — ``config.otlp_targets``, or a single implicit target
+   wrapping the legacy ``config.otlp_endpoint``) + ``TraceIdRatioBased``
+   sampler, and registers it globally.
 3. Configures a ``MeterProvider`` with ``PeriodicExportingMetricReader`` + histogram
    ``View`` objects for LLM-optimised bucket boundaries, and registers it globally.
 4. Optionally builds a ``CostCalculator`` (respects ``PARROT_PRICING_PATH`` env var).
 5. Constructs ``GenAIOpenTelemetrySubscriber`` and/or ``MetricsSubscriber``.
 6. Bundles them into ``ParrotTelemetryProvider`` and calls
    ``get_global_registry().add_provider(provider)``.
-7. Optionally calls ``openlit.init`` via the TASK-1236 wrapper.
 
 Idempotent: same ``config`` → same provider returned; different ``config`` →
 ``ConfigurationError``.  ``config.enabled=False`` → immediate ``None`` return with
@@ -56,9 +57,7 @@ _SETUP_LOCK = threading.Lock()
 
 # Token-space bucket boundaries for gen_ai.client.token.usage histogram.
 # These are NOT seconds; the latency buckets ([0.01..60.0]) are wrong for tokens.
-_TOKEN_BUCKETS: list[int] = [
-    10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000
-]
+_TOKEN_BUCKETS: list[int] = [10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000]
 
 
 def setup_telemetry(
@@ -77,8 +76,6 @@ def setup_telemetry(
         ConfigurationError: When called a second time with a *different* config than
             the first call (hash mismatch). Also raised if a ``SimpleSpanProcessor``
             is detected in the constructed ``TracerProvider``'s processor chain.
-        ImportError: When ``config.enable_openlit=True`` but the
-            ``observability-openlit`` extra is not installed.
     """
     global _TRACER_PROVIDER, _METER_PROVIDER, _SUBSCRIPTION_IDS  # noqa: PLW0603
 
@@ -128,16 +125,34 @@ def setup_telemetry(
             }
         )
 
-        # --- 2. TracerProvider ---------------------------------------------------
-        from parrot.observability.exporters import make_span_exporter  # noqa: PLC0415
+        # --- 2. TracerProvider (FEAT-462: one BatchSpanProcessor per OTLP target) -
+        from parrot.observability.config import OtlpTarget  # noqa: PLC0415
+        from parrot.observability.exporters import make_span_exporters  # noqa: PLC0415
 
-        span_exporter = make_span_exporter(config)
+        # Multi-endpoint OTLP export: config.otlp_targets when set, otherwise
+        # wrap the legacy single-endpoint otlp_endpoint into an implicit
+        # single-element target list — identical behavior to the pre-FEAT-462
+        # single-exporter path (verified in test_exporters_multi.py's
+        # test_single_target_matches_make_span_exporter).
+        targets: list[OtlpTarget] = config.otlp_targets or [
+            OtlpTarget(
+                name="default",
+                endpoint=config.otlp_endpoint,
+                headers=config.otlp_headers,
+            )
+        ]
         tracer_provider = TracerProvider(
             resource=resource,
             sampler=TraceIdRatioBased(config.sampling_ratio),
         )
-        bsp = BatchSpanProcessor(span_exporter)
-        tracer_provider.add_span_processor(bsp)
+        span_exporters = make_span_exporters(targets, protocol=config.otlp_protocol)
+        for target, exporter in zip(targets, span_exporters):
+            tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+            logger.info(
+                "setup_telemetry: attached OTLP target '%s' -> %s",
+                target.name,
+                target.endpoint,
+            )
         # Defensive: verify NO SimpleSpanProcessor slipped in via monkey-patching.
         # NOTE: _active_span_processor._span_processors is a private attribute of
         # SynchronousMultiSpanProcessor from opentelemetry-sdk<2.0. This access is
@@ -163,9 +178,7 @@ def setup_telemetry(
         # --- 3. MeterProvider with histogram Views --------------------------------
         from parrot.observability.exporters import make_metric_exporter  # noqa: PLC0415
 
-        buckets: list[float] = config.histogram_buckets or [
-            0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0
-        ]
+        buckets: list[float] = config.histogram_buckets or [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]
         _latency_histogram_names = [
             "gen_ai.client.operation.duration",
             "parrot.tool.execution.duration",
@@ -182,9 +195,7 @@ def setup_telemetry(
         views.append(
             View(
                 instrument_name="gen_ai.client.token.usage",
-                aggregation=ExplicitBucketHistogramAggregation(
-                    boundaries=_TOKEN_BUCKETS
-                ),
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=_TOKEN_BUCKETS),
             )
         )
         metric_exporter = make_metric_exporter(config)
@@ -212,13 +223,10 @@ def setup_telemetry(
 
                     override = nav_config.get("PARROT_PRICING_PATH", fallback=None)
                 except ImportError:
-                    logger.debug(
-                        "navconfig not available; skipping PARROT_PRICING_PATH lookup."
-                    )
+                    logger.debug("navconfig not available; skipping PARROT_PRICING_PATH lookup.")
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "navconfig raised an unexpected error during PARROT_PRICING_PATH "
-                        "lookup: %s",
+                        "navconfig raised an unexpected error during PARROT_PRICING_PATH " "lookup: %s",
                         exc,
                     )
             cost_calc = CostCalculator(override_path=override)
@@ -262,22 +270,14 @@ def setup_telemetry(
         subscription_ids = get_global_registry().add_provider(provider)
         _SUBSCRIPTION_IDS.extend(subscription_ids)
 
-        # --- 7. OpenLIT (lazy) ----------------------------------------------------
-        if config.enable_openlit:
-            from parrot.observability.openlit_integration import init_openlit  # noqa: PLC0415
-
-            init_openlit(config)
-
         _STATE[cfg_hash] = provider
         logger.info(
-            "setup_telemetry: observability active for '%s' (traces=%s, metrics=%s, "
-            "cost=%s, openlit=%s) → %s",
+            "setup_telemetry: observability active for '%s' (traces=%s, metrics=%s, " "cost=%s, otlp_targets=%d)",
             config.service_name,
             config.enable_traces,
             config.enable_metrics,
             config.enable_cost_tracking,
-            config.enable_openlit,
-            config.otlp_endpoint,
+            len(targets),
         )
         return provider
 
@@ -293,13 +293,6 @@ def shutdown_telemetry() -> None:
 
     This function is safe to call when ``setup_telemetry`` was never called, or
     after a previous ``shutdown_telemetry`` — it is fully idempotent.
-
-    Note:
-        OpenLIT cannot be safely re-initialized after shutdown. If
-        ``setup_telemetry(enable_openlit=True)`` is called again after
-        ``shutdown_telemetry()``, the OpenLIT instrumentation will not be
-        re-applied. Use ``openlit_integration._reset_for_tests()`` only in
-        test contexts.
     """
     global _TRACER_PROVIDER, _METER_PROVIDER, _SUBSCRIPTION_IDS  # noqa: PLW0603
 
@@ -362,6 +355,4 @@ def _get_parrot_version() -> str:
 
 def _hash_config(config: ObservabilityConfig) -> str:
     """Return a stable SHA-256 hex digest of the serialised *config*."""
-    return hashlib.sha256(
-        json.dumps(config.model_dump(), sort_keys=True, default=str).encode()
-    ).hexdigest()
+    return hashlib.sha256(json.dumps(config.model_dump(), sort_keys=True, default=str).encode()).hexdigest()

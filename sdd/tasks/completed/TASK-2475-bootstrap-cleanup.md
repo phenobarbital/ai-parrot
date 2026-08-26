@@ -40,7 +40,8 @@ Implements spec §3 Module 6.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/observability/bootstrap.py` | MODIFY | Remove traceloop/openlit branching, add recorder path |
-| `packages/ai-parrot/tests/observability/test_bootstrap_cleanup.py` | CREATE | Unit tests |
+| `packages/ai-parrot/tests/unit/observability/test_bootstrap_cleanup.py` | CREATE | Unit tests (corrected path — see TASK-2470) |
+| `packages/ai-parrot/tests/unit/observability/test_bootstrap.py` | MODIFY (not originally listed) | 3 pre-existing tests (`test_openlit_escalates_to_otel`, `test_traceloop_backend_activates`, `test_traceloop_and_openlit_are_mutually_exclusive`) asserted the OLD branching this task explicitly removes; replaced with tests asserting the new no-op behavior. Unavoidable direct consequence of this task's own acceptance criteria — not scope creep. |
 
 ---
 
@@ -171,10 +172,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Removed the `enable_traceloop`/`enable_openlit` mutual-exclusivity
+and backend-escalation branching from `_do_bootstrap()` (replaced with a
+comment explaining the deprecated flags are now no-ops and that
+`usage_backend="traceloop"` is already remapped to `"otel"` by
+`ObservabilityConfig`'s `model_validator`). Removed the
+`if backend == "traceloop": setup_traceloop(...)` branch entirely — dead
+code, since `usage_backend` can never be `"traceloop"` after config
+validation. Removed the Traceloop-specific `try/except` flush block from
+`shutdown_observability()`. Did NOT modify the "otel" branch's early
+return or the lightweight-path recorder wiring — `build_recorders_from_config()`
+(TASK-2473) already additively includes `OpenLitUsageRecorder` whenever
+`openlit_recorder_endpoint` is set, for any backend that reaches the
+lightweight path, with no bootstrap.py changes needed for that AC. 7 new
+unit tests added (`test_bootstrap_cleanup.py`): no-traceloop-reference
+source scans, no-init_openlit scan, openlit-recorder factory + bootstrap
+subscriber wiring, and an otel-backward-compat regression check. Also
+updated 3 pre-existing `test_bootstrap.py` tests that asserted the removed
+behavior (openlit escalation, traceloop activation, mutual exclusivity) to
+assert the new no-op behavior, plus added a 4th test confirming the
+`usage_backend="traceloop"` → `"otel"` config-level remap still reaches
+the otel path. Full `tests/unit/observability/` suite (171 tests) passes.
+`ruff check` on `bootstrap.py` shows 22 pre-existing violations (down from
+25 before this change — net negative, 0 new); `test_bootstrap.py` shows 3
+(down from 5 baseline — 0 new); `test_bootstrap_cleanup.py` is fully clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) Test file path corrected to
+`tests/unit/observability/` (same correction as prior FEAT-462 tasks).
+(2) Modified `test_bootstrap.py` (not originally listed) — required
+because 3 of its pre-existing tests directly asserted the OLD branching
+this task's own acceptance criteria mandate removing; see the note added
+to the task's Files to Create/Modify table.

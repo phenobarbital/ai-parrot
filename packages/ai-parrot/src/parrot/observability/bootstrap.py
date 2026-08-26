@@ -10,6 +10,11 @@ writing any code:
 - ``prometheus``: lazy ``prometheus_client`` exposition.
 - ``otel``: delegates to ``setup_telemetry`` (full OTLP traces + metrics).
 
+FEAT-462: ``OBSERVABILITY_OPENLIT_RECORDER=true`` additively enables
+``OpenLitUsageRecorder`` on top of the ``logging``/``prometheus`` path (via
+``build_recorders_from_config``) — pushing usage as GenAI SemConv OTel spans
+to an OpenLIT endpoint without requiring the ``otel`` backend.
+
 Idempotent and near-zero cost when disabled: the very first line is a boolean
 check; after the first construction the env is never re-read.
 """
@@ -64,34 +69,12 @@ def _do_bootstrap() -> None:
         logger.debug("Observability auto-boot: OBSERVABILITY_ENABLED is false.")
         return
 
-    # Traceloop (OpenLLMetry) and OpenLIT are mutually exclusive — both
-    # auto-instrument the LLM SDKs and would double-instrument together. Traceloop
-    # wins when both are requested (it owns the whole trace pipeline).
-    if config.enable_traceloop:
-        if config.enable_openlit:
-            logger.warning(
-                "Both OBSERVABILITY_TRACELOOP and OBSERVABILITY_OPENLIT are set; "
-                "using Traceloop and disabling OpenLIT (they are mutually exclusive)."
-            )
-            config = config.model_copy(update={"enable_openlit": False})
-        if config.usage_backend != "traceloop":
-            logger.info(
-                "Observability auto-boot: enable_traceloop=true → forcing backend "
-                "from %r to 'traceloop'.",
-                config.usage_backend,
-            )
-            config = config.model_copy(update={"usage_backend": "traceloop"})
-    # OpenLIT requires the global TracerProvider that only the "otel" path builds
-    # (so its auto-spans inherit the provider and nest under the caller's span).
-    # Escalate to "otel" when the user asked for OpenLIT but left the backend on a
-    # lightweight path, so OBSERVABILITY_OPENLIT=true "just works".
-    elif config.enable_openlit and config.usage_backend != "otel":
-        logger.info(
-            "Observability auto-boot: enable_openlit=true → escalating backend "
-            "from %r to 'otel'.",
-            config.usage_backend,
-        )
-        config = config.model_copy(update={"usage_backend": "otel"})
+    # FEAT-462: the enable_traceloop/enable_openlit mutual-exclusivity and
+    # backend-escalation branching that used to live here is removed —
+    # OpenLIT and Traceloop are deprecated, no-op flags now (see
+    # ObservabilityConfig._warn_deprecated_flags). usage_backend="traceloop"
+    # is already remapped to "otel" (with a deprecation log) by that same
+    # model_validator, so no local escalation logic is needed.
 
     # Resolve "none" → "logging" when explicitly enabled, so OBSERVABILITY_ENABLED
     # alone yields structured cost logs.
@@ -100,22 +83,28 @@ def _do_bootstrap() -> None:
         backend = "logging"
         config = config.model_copy(update={"usage_backend": backend})
 
-    if backend == "traceloop":
-        from parrot.observability.traceloop_integration import (  # noqa: PLC0415
-            setup_traceloop,
-        )
-
-        setup_traceloop(config)
-        _register_atexit_flush()
-        logger.info("Observability auto-boot: Traceloop (OpenLLMetry) backend active.")
-        return
-
     if backend == "otel":
         from parrot.observability.setup import setup_telemetry  # noqa: PLC0415
 
         setup_telemetry(config)
         _register_atexit_flush()
         logger.info("Observability auto-boot: OTel backend active.")
+        if config.openlit_recorder_endpoint:
+            # FEAT-462: the OpenLitUsageRecorder fan-out only wires in on
+            # the lightweight (logging/prometheus) path below — the otel
+            # backend returns here before reaching it. The OTel trace
+            # pipeline already carries cost/usage data as span attributes,
+            # so this is intentional, not a bug; log it so a user who set
+            # OBSERVABILITY_OPENLIT_RECORDER expecting the separate usage-
+            # span fan-out isn't left silently guessing why it never fires.
+            logger.debug(
+                "Observability auto-boot: openlit_recorder_endpoint=%r is "
+                "set but ignored on the 'otel' backend path — "
+                "OpenLitUsageRecorder only activates on the lightweight "
+                "(logging/prometheus) path. The otel TracerProvider "
+                "already carries usage/cost data as span attributes.",
+                config.openlit_recorder_endpoint,
+            )
         return
 
     # Lightweight pluggable path (logging / prometheus) — no OTel SDK import.
@@ -134,9 +123,7 @@ def _do_bootstrap() -> None:
 
     recorders = build_recorders_from_config(config)
     if not recorders:
-        logger.debug(
-            "Observability auto-boot: backend=%r produced no recorders.", backend
-        )
+        logger.debug("Observability auto-boot: backend=%r produced no recorders.", backend)
         return
 
     subscriber = UsageRecordingSubscriber(
@@ -179,10 +166,9 @@ def shutdown_observability() -> None:
     """Flush and tear down every active observability path. Idempotent + defensive.
 
     Aggregates every shutdown surface so callers need not know which backend is
-    active: the OTel path (``shutdown_telemetry``), the Traceloop path
-    (``shutdown_traceloop``), and the lightweight logging/prometheus path
-    (``shutdown_usage_recording``). Safe to call when observability was never
-    started; never raises.
+    active: the OTel path (``shutdown_telemetry``) and the lightweight
+    logging/prometheus/openlit-recorder path (``shutdown_usage_recording``).
+    Safe to call when observability was never started; never raises.
     """
     try:
         from parrot.observability.setup import shutdown_telemetry  # noqa: PLC0415
@@ -192,20 +178,9 @@ def shutdown_observability() -> None:
         logger.debug("shutdown_observability: OTel teardown failed.", exc_info=True)
 
     try:
-        from parrot.observability.traceloop_integration import (  # noqa: PLC0415
-            shutdown_traceloop,
-        )
-
-        shutdown_traceloop()
-    except Exception:  # noqa: BLE001
-        logger.debug("shutdown_observability: Traceloop teardown failed.", exc_info=True)
-
-    try:
         shutdown_usage_recording()
     except Exception:  # noqa: BLE001
-        logger.debug(
-            "shutdown_observability: usage-recording teardown failed.", exc_info=True
-        )
+        logger.debug("shutdown_observability: usage-recording teardown failed.", exc_info=True)
 
 
 def shutdown_usage_recording() -> None:

@@ -65,7 +65,7 @@ def post_fork(server, worker):
     )
 '''
 
-SUPERVISORD_CONFIG_TEMPLATE = '''\
+SUPERVISORD_CONFIG_TEMPLATE = """\
 ; ==========================================================================
 ; Supervisor program: {agent_name}
 ; ==========================================================================
@@ -106,9 +106,9 @@ stdout_logfile_backups=10
 stderr_logfile=/var/log/{agent_name}/{agent_name}_err.log
 stderr_logfile_maxbytes=50MB
 stderr_logfile_backups=10
-'''
+"""
 
-SYSTEMD_SERVICE_TEMPLATE = '''\
+SYSTEMD_SERVICE_TEMPLATE = """\
 # ==========================================================================
 # systemd unit: {agent_name}
 # ==========================================================================
@@ -150,7 +150,7 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-'''
+"""
 
 SAMPLE_AGENT_TEMPLATE = '''\
 """Sample AutonomousOrchestrator agent.
@@ -251,10 +251,13 @@ async def create_app() -> web.Application:
 
     # Ensure clean shutdown.
     # Observability auto-boots from env (OBSERVABILITY_ENABLED=true,
-    # OBSERVABILITY_BACKEND=otel, OBSERVABILITY_OPENLIT=true,
-    # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318) the first time an agent
-    # is built. orchestrator.stop() flushes the final OTLP batch; an atexit hook
-    # is also registered as a safety net for non-orchestrated exits.
+    # OBSERVABILITY_BACKEND=otel,
+    # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318) the first time an
+    # agent is built. Point OTEL_EXPORTER_OTLP_ENDPOINT (or OTLP_TARGETS for
+    # multiple destinations) at an OpenLIT collector to see spans there — the
+    # OBSERVABILITY_OPENLIT flag is deprecated and no longer needed (FEAT-462).
+    # orchestrator.stop() flushes the final OTLP batch; an atexit hook is also
+    # registered as a safety net for non-orchestrated exits.
     async def on_cleanup(_app: web.Application) -> None:
         await orchestrator.stop()
 

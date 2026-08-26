@@ -60,7 +60,9 @@ async def main() -> None:
             enable_traces=True,
             enable_metrics=True,
             enable_cost_tracking=True,
-            enable_openlit=True,        # auto-instrument via OpenLIT
+            # FEAT-462: no enable_openlit flag needed — pointing otlp_endpoint
+            # (above) at an OpenLIT collector is all that's required. OpenLIT
+            # is a pure OTLP endpoint now, not an SDK to auto-instrument with.
             capture_completions=False,  # PII guard
             sampling_ratio=1.0,
         )
@@ -90,10 +92,7 @@ async def main() -> None:
             logger.info("Answer: %s", answer[:120])
 
     except ImportError:
-        logger.warning(
-            "openai package not installed — running in no-op demo mode. "
-            "Install with: pip install openai"
-        )
+        logger.warning("openai package not installed — running in no-op demo mode. " "Install with: pip install openai")
         # Emit synthetic events so the observability stack still sees something
         from opentelemetry import trace  # noqa: PLC0415
 
