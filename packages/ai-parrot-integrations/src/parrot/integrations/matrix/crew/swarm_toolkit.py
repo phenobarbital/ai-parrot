@@ -194,4 +194,9 @@ class AgentSwarmToolkit(AbstractToolkit):
         if not room_id or not trigger_event:
             return
         message = f"🔒 *{self._agent_name}* asked *{target}* a question"
-        await self._as.send_reply_as_agent(self._agent_name, room_id, message, trigger_event)
+        try:
+            await self._as.send_reply_as_agent(self._agent_name, room_id, message, trigger_event)
+        except Exception as exc:
+            # A transient failure posting the echo must never block the
+            # actual tunnel question that follows this call.
+            logger.debug("Failed to post ask_agent echo: %s", exc)

@@ -108,9 +108,22 @@ class AgentTunnel:
             metadata={"requester": requester},
         )
         fut = self._registry.register_future(task.correlation_id)
-        await self._registry.appservice.send_custom_event_as_agent(
-            requester, self.room_id, ParrotEventType.TASK, task.model_dump()
-        )
+        try:
+            await self._registry.appservice.send_custom_event_as_agent(
+                requester, self.room_id, ParrotEventType.TASK, task.model_dump()
+            )
+        except Exception as exc:
+            # Never leak the registered future when the send itself fails
+            # (as opposed to the wait below timing out).
+            self._registry.discard_future(task.correlation_id)
+            return AgentAnswer(
+                answer=None,
+                metadata={
+                    "status": "error",
+                    "error": str(exc),
+                    "correlation_id": task.correlation_id,
+                },
+            )
         try:
             result: ResultEventContent = await asyncio.wait_for(
                 fut, timeout or cfg.default_timeout

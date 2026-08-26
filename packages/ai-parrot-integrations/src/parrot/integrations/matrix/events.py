@@ -8,7 +8,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 try:
     from mautrix.types import EventType, SerializableAttrs
@@ -244,7 +244,13 @@ class AgentAnswer(BaseModel):
             except (json.JSONDecodeError, ValueError):
                 data = None
             if isinstance(data, dict) and "answer" in data:
-                return cls(**data)
+                try:
+                    return cls(**data)
+                except ValidationError:
+                    # A near-miss structured reply (e.g. "sources" as a
+                    # string instead of a list) must not raise out of
+                    # from_text() — fall back to wrapping the raw text.
+                    pass
         return cls(answer=text)
 
 

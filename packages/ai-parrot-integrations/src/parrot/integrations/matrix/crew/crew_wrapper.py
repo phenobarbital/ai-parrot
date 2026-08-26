@@ -206,9 +206,18 @@ class MatrixCrewAgentWrapper:
                 raise RuntimeError(
                     f"Agent '{self._config.chatbot_id}' not found in BotManager"
                 )
-            text: str = await asyncio.wait_for(
+            response_obj = await asyncio.wait_for(
                 agent.ask(self._build_task_prompt(task)), timeout
             )
+            # AbstractBot.ask() returns an AIMessage, not a str — extract
+            # the text the same way session.py's _call_agent_with_timeout /
+            # _synthesize_phase do.
+            if hasattr(response_obj, "to_text"):
+                text = response_obj.to_text
+            elif hasattr(response_obj, "content"):
+                text = str(response_obj.content)
+            else:
+                text = str(response_obj)
             result = ResultEventContent(
                 task_id=task.task_id, content=text, success=True, metadata=meta
             )

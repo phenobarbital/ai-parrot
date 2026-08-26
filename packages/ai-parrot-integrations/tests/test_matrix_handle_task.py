@@ -80,3 +80,19 @@ async def test_correlation_falls_back_to_task_id(wrapper):
             TaskEventContent(task_id="legacy", content="q", target_agent="writer"), "!r:s"
         )
     assert svc.send_custom_event_as_agent.call_args.args[3]["metadata"]["correlation_id"] == "legacy"
+
+
+async def test_handles_aimessage_response(wrapper):
+    """AbstractBot.ask() returns an AIMessage, not a plain str — handle_task
+    must extract .to_text the same way session.py's _call_agent_with_timeout
+    does, not pass the object itself as ResultEventContent.content."""
+    w, svc, _ = wrapper
+    ai_message = MagicMock()
+    ai_message.to_text = '{"answer": "ok", "confidence": 0.9, "sources": []}'
+    bot = MagicMock()
+    bot.ask = AsyncMock(return_value=ai_message)
+    with patch("parrot.manager.BotManager.get_bot", AsyncMock(return_value=bot)):
+        await w.handle_task(_task(), "!tun:s")
+    result = svc.send_custom_event_as_agent.call_args.args[3]
+    assert result["success"] is True
+    assert result["content"] == ai_message.to_text
