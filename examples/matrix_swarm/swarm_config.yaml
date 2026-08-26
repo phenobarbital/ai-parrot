@@ -1,0 +1,129 @@
+# Matrix Swarm Sample Configuration (FEAT-464)
+#
+# Self-contained swarm configuration for the matrix-swarm-sample demo.
+# This file defines:
+#   - Homeserver connection details (from docker-compose.matrix.yml)
+#   - 4 agents with different LLM providers
+#   - 2 declared channels (general: swarm, finance: mention)
+#   - Private agent-to-agent tunnels
+#   - Collaborative mode with synthesizer
+#
+# All environment variables are sourced from .env.example.
+# See docker-compose.matrix.yml and scripts/matrix/bootstrap.sh for setup.
+
+# ============================================================================
+# HOMESERVER CONNECTION
+# ============================================================================
+# These settings point to the local Synapse instance from docker-compose.yml.
+# The URLs must be accessible from the appservice container.
+
+homeserver_url: "http://localhost:8008"        # Local Synapse endpoint
+server_name: "parrot.local"                    # Matrix server domain (must match registration)
+as_token: "${MATRIX_AS_TOKEN}"                 # Appservice token (from bootstrap.sh)
+hs_token: "${MATRIX_HS_TOKEN}"                 # Homeserver token (from bootstrap.sh)
+bot_mxid: "@parrot-bot:parrot.local"           # Bot's Matrix ID (fixed for local dev)
+general_room_id: "${MATRIX_GENERAL_ROOM_ID}"   # General channel room (can be auto-created)
+appservice_port: 8449                          # Appservice listening port
+
+# ============================================================================
+# AGENTS
+# ============================================================================
+# 4 agents with different LLM providers (from agents.yaml).
+# Must match chatbot_ids and display names exactly.
+# mxid_localpart determines the agent's Matrix user ID (e.g., @parrot-researcher:parrot.local).
+
+agents:
+  web-researcher:
+    chatbot_id: "web-researcher"               # Must match agents.yaml key
+    display_name: "🔍 Researcher"              # Emoji + name shown in Matrix
+    mxid_localpart: "parrot-researcher"
+
+  financial-analyst:
+    chatbot_id: "financial-analyst"            # Must match agents.yaml key
+    display_name: "📊 Analyst"                 # Emoji + name shown in Matrix
+    mxid_localpart: "parrot-analyst"
+
+  report-writer:
+    chatbot_id: "report-writer"                # Must match agents.yaml key
+    display_name: "✍️ Writer"                  # Emoji + name shown in Matrix
+    mxid_localpart: "parrot-writer"
+
+  synthesis-agent:
+    chatbot_id: "synthesis-agent"              # Must match agents.yaml key
+    display_name: "🧠 Synthesizer"             # Emoji + name shown in Matrix
+    mxid_localpart: "parrot-synthesizer"
+
+# ============================================================================
+# CHANNELS
+# ============================================================================
+# Declared channels are materialized as Matrix rooms at MatrixCrewTransport.start().
+# Each channel has an answer_policy determining which agents can respond:
+#   - swarm: all agents can respond; un-mentioned questions trigger collaborative sessions
+#   - mention: only directly mentioned agents respond
+
+channels:
+  - name: general
+    visibility: public                         # Public room (joinable by anyone)
+    agents: [web-researcher, financial-analyst, report-writer, synthesis-agent]  # All agents
+    answer_policy: swarm                       # Auto-swarm on un-mentioned questions
+    topic: "🤖 AI-Parrot Multi-Agent Swarm (FEAT-464 demo)"
+
+  - name: finance
+    visibility: private                        # Private room (invite-only)
+    agents: [financial-analyst]                # Only analyst responds
+    answer_policy: mention                     # Only on @mention
+    topic: "📈 Financial Analysis (mention @analyst)"
+
+# ============================================================================
+# AGENT-TO-AGENT TUNNELS
+# ============================================================================
+# Private 2-agent rooms for inter-agent collaboration.
+# Lazily created when agents call ask_agent tool.
+# Settings control timeout, TTL, and whether summaries are echoed back to the channel.
+
+tunnels:
+  enabled: true                                # Enable private agent tunnels
+  ttl_minutes: 120                             # Tunnel room auto-deletes after 2 hours
+  max_hops: 3                                  # Max chain length (A→B→C→D)
+  default_timeout: 60.0                        # Timeout per agent response (seconds)
+  echo_summary_to_channel: true                # Post summary back to originating channel
+
+# ============================================================================
+# MATRIX SPACE (OPTIONAL)
+# ============================================================================
+# Optional: group channels and tunnels in a Matrix Space.
+# Off by default for simplicity; enable to auto-create a space at startup.
+
+space:
+  enabled: false                               # Disabled for demo
+  name: "Parrot Swarm"
+
+# ============================================================================
+# COLLABORATIVE SESSIONS
+# ============================================================================
+# Settings for multi-agent collaborative sessions (auto-triggered in swarm channels
+# when a human sends an un-mentioned message).
+# The synthesizer agent produces a final summary after all agents contribute.
+
+collaborative:
+  command_prefix: "!investigate"               # Explicit session trigger (any room)
+  max_rounds: 1                                # Max conversation rounds per session
+  agent_timeout: 120.0                         # Timeout per agent per round (seconds)
+  session_timeout: 600.0                       # Max total session duration (seconds)
+  summarizer_agent: "synthesis-agent"          # Agent to produce final summary
+  session_verbosity: "full"                    # Include all agent reasoning
+  include_chat_context: true                   # Include Matrix chat history
+  max_concurrent_sessions: 3                   # Max parallel swarms per room
+  cooldown_seconds: 10.0                       # Min wait between session starts
+
+# ============================================================================
+# BRIDGED HUMAN PATTERNS (OPTIONAL)
+# ============================================================================
+# Matrix user ID patterns for bridged humans (Signal/Slack/Discord puppets).
+# Classified identically to native humans by MatrixCrewRegistry.is_human().
+# Leave empty for dev/demo (only native Matrix users).
+
+human_namespace_patterns:
+  - "^@signal_"                                # Signal bridge puppets
+  - "^@slack_"                                 # Slack bridge puppets
+  - "^@discord_"                               # Discord bridge puppets
