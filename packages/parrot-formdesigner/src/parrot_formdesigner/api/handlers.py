@@ -1457,6 +1457,18 @@ class FormAPIHandler:
            (submitted values override cached; skipped silently if no store or
            no cached partial).
         4. Validate submission data (422 if invalid).
+        4a. Apply the ``form.unknown_fields`` policy (FEAT-458) to
+            ``result.extra_data`` — the undeclared top-level payload keys
+            the validator reported but did not judge:
+            ``reject`` fails the submission with ``422`` (``onError``
+            dispatched best-effort first, nothing persisted); ``keep``
+            enforces the extras cap (``422`` on ``ExtrasCapExceeded``) and
+            attaches the extras to the ``FormSubmission`` (``None``, never
+            ``{}``); ``drop`` discards them with a debug log recording the
+            count — no longer silent. The forwarded body and the
+            ``onAfterSubmit`` payload are widened to
+            ``{**sanitized_data, **extras}`` under ``keep`` (declared
+            answers win any collision); ``drop`` is untouched.
         5. Persist the submission — EXCLUSIVELY (FEAT-457): when
            ``form.persistence`` is set, resolve the form's own sink via
            ``sink_factory``, ``ensure_target()`` it, map the submission
@@ -1474,11 +1486,13 @@ class FormAPIHandler:
         import uuid
         from datetime import datetime, timezone
 
+        from ..core.schema import UnknownFieldsPolicy
         from ..services.metadata_enricher import (
             MetadataResolutionError,
             enrich_submission,
         )
         from ..services.submissions import FormSubmission
+        from ..services.unknown_fields import ExtrasCapExceeded, enforce_extras_cap
 
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
@@ -1584,6 +1598,79 @@ class FormAPIHandler:
                     status=422,
                 )
 
+            # FEAT-458 — apply the unknown-fields policy to the payload-side
+            # diff the validator reported (and never judged). The ORDER here
+            # is load-bearing and already guaranteed by the code above:
+            # `result.extra_data` was computed from `data` AFTER
+            # _extract_visit_context and AFTER onBeforeSubmit may have
+            # replaced the payload — do not move this branch earlier.
+            policy = form.unknown_fields
+            extras: dict[str, Any] = {}
+
+            if result.extra_data:
+                if policy is UnknownFieldsPolicy.REJECT:
+                    _unknown_exc = ValueError(f"Unknown fields rejected: {sorted(result.extra_data)}")
+                    try:
+                        await dispatch(
+                            "onError",
+                            form=form,
+                            request=request,
+                            tenant=tenant,
+                            auth_context=_auth_ctx,
+                            error=_unknown_exc,
+                        )
+                    except Exception as _meta_exc:
+                        self.logger.exception(
+                            "onError handler raised during unknown-field reject: %s", _meta_exc
+                        )
+                    return JSONResponse(
+                        {"is_valid": False, "errors": {"__unknown__": sorted(result.extra_data)}},
+                        status=422,
+                    )
+                if policy is UnknownFieldsPolicy.KEEP:
+                    try:
+                        enforce_extras_cap(result.extra_data)
+                    except ExtrasCapExceeded as exc:
+                        try:
+                            await dispatch(
+                                "onError",
+                                form=form,
+                                request=request,
+                                tenant=tenant,
+                                auth_context=_auth_ctx,
+                                error=exc,
+                            )
+                        except Exception as _meta_exc:
+                            self.logger.exception(
+                                "onError handler raised during extras cap rejection: %s", _meta_exc
+                            )
+                        return JSONResponse(
+                            {
+                                "is_valid": False,
+                                "errors": {
+                                    "__unknown__": [
+                                        f"extras {exc.limit} cap exceeded: {exc.actual} > {exc.maximum}"
+                                    ]
+                                },
+                            },
+                            status=422,
+                        )
+                    extras = result.extra_data
+                else:  # DROP — today's behaviour, but no longer silent
+                    self.logger.debug(
+                        "Discarded %d undeclared field(s) for form %s (unknown_fields=drop)",
+                        len(result.extra_data),
+                        form.form_id,
+                    )
+
+            # Storage/wire asymmetry is DELIBERATE: extras are stored in
+            # their own column but flat-merged into the outbound payload,
+            # because the integrator's/lifecycle-handler's contract is the
+            # caller's own payload shape. Declared answers win a key
+            # collision (defensive, not load-bearing — extras cannot
+            # collide with a declared field_id by construction).
+            outbound = {**result.sanitized_data, **extras} if extras else result.sanitized_data
+
             # Build submission record. FormSubmission.form_uid is required
             # (TASK-1979) — form.form_uid is the loaded form's stable
             # identity; form.form_id is its (possibly renamed) slug.
@@ -1595,6 +1682,7 @@ class FormAPIHandler:
                 data=result.sanitized_data,
                 is_valid=True,
                 created_at=datetime.now(timezone.utc),
+                extra_data=extras or None,
             )
 
             # Metadata enrichment runs between validation and storage so the
@@ -1690,12 +1778,16 @@ class FormAPIHandler:
                     submission.submission_id,
                 )
 
-            # Forward to endpoint (if form has endpoint action and forwarder configured)
+            # Forward to endpoint (if form has endpoint action and forwarder configured).
+            # FEAT-458: `outbound` flat-merges extras on top of the validated
+            # answers under `keep` — split at rest (its own column), flat on
+            # the wire, DELIBERATELY: the integrator's contract is its own
+            # payload shape. Do not "fix" this asymmetry.
             forwarded = False
             forward_status = None
             forward_error = None
             if form.submit is not None and form.submit.action_type == "endpoint" and self._forwarder is not None:
-                fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
+                fwd_result = await self._forwarder.forward(outbound, form.submit)
                 forwarded = fwd_result.success
                 forward_status = fwd_result.status_code
                 forward_error = fwd_result.error
@@ -1723,14 +1815,20 @@ class FormAPIHandler:
                         exc,
                     )
 
-            # lifecycle: onAfterSubmit — side-effects only; failures routed via onError
+            # lifecycle: onAfterSubmit — side-effects only; failures routed via onError.
+            # FEAT-458: under `keep`, a lifecycle handler sees the same merged
+            # view the endpoint sees — `{**submission.data, **extra_data}`.
+            # Based on `submission.data` (not `result.sanitized_data`) so any
+            # metadata-enrichment `extra_flat` merge (:1610-1613 pre-FEAT-458)
+            # is preserved exactly as before under `drop`.
+            after_submit_payload = {**submission.data, **extras} if extras else submission.data
             await dispatch(
                 "onAfterSubmit",
                 form=form,
                 request=request,
                 tenant=tenant,
                 auth_context=_auth_ctx,
-                payload=submission.data,
+                payload=after_submit_payload,
             )
 
             return JSONResponse(
