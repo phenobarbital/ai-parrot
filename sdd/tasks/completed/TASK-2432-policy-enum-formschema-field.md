@@ -228,10 +228,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Added `UnknownFieldsPolicy(str, Enum)` (DROP/KEEP/REJECT) to
+`core/schema.py` immediately after `FormType`, mirroring its shape. Added
+`unknown_fields: UnknownFieldsPolicy = UnknownFieldsPolicy.DROP` to
+`FormSchema`, positioned after `persistence` (FEAT-457, confirmed landed)
+with a `# FEAT-458 — Unknown-Field Capture` comment matching the
+`# FEAT-241` style, plus a docstring `Attributes:` entry. Exported
+`UnknownFieldsPolicy` from `core/__init__.py` alongside `FormType` (both
+import and `__all__`). 6 new unit tests in
+`tests/unit/core/test_unknown_fields_policy.py`, all passing. Verified no
+regression: `pytest packages/parrot-formdesigner/tests/ -k schema` — 235
+passed, 2 pre-existing unrelated failures
+(`test_field_schema_snippets_cover_all_types`, `test_endpoint_matches_schema`)
+confirmed identical via `git stash` comparison. `ruff check` clean on all
+3 changed/created files (pre-existing unrelated `UP037`/`I001` findings in
+untouched parts of `schema.py`/`core/__init__.py` confirmed via `git stash`
+to predate this task and left alone, per file-fidelity scope).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

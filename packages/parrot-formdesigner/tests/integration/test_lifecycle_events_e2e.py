@@ -137,6 +137,7 @@ def _make_handler(
     vr.is_valid = valid
     vr.errors = validation_errors or ({} if valid else {"field": ["required"]})
     vr.sanitized_data = {"name": "Alice"} if valid else {}
+    vr.extra_data = {}
     handler.validator = MagicMock()
     handler.validator.validate = AsyncMock(return_value=vr)
 

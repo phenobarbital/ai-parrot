@@ -39,6 +39,7 @@ from .schema import (
     RenderedForm,
     SectionItem,
     SubmitAction,
+    UnknownFieldsPolicy,
     walk_fields,
 )
 from .style import (
@@ -85,6 +86,7 @@ __all__ = [
     "SubmitAction",
     "FormSchema",
     "FormType",
+    "UnknownFieldsPolicy",
     "FormMetadataField",
     "MetadataSource",
     "BUILTIN_METADATA_SOURCE_NAMES",

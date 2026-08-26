@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 from typing import Any, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
@@ -21,6 +21,7 @@ from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
+from .unknown_fields import compute_extra_data
 
 logger = logging.getLogger(__name__)
 
@@ -160,11 +161,17 @@ class ValidationResult(BaseModel):
         is_valid: Whether the entire submission passed validation.
         errors: Field-level error messages keyed by field_id.
         sanitized_data: Type-coerced and sanitized form data.
+        extra_data: Top-level payload keys with no matching declared
+            ``field_id`` (FEAT-458). REPORTED, never judged — the validator
+            reads no policy field. ``{}`` when the payload matches the
+            schema exactly, or on the ``__circular__``/``__rules__`` early
+            returns.
     """
 
     is_valid: bool
     errors: dict[str, list[str]]
     sanitized_data: dict[str, Any]
+    extra_data: dict[str, Any] = Field(default_factory=dict)
 
 
 class FormValidator:
@@ -290,10 +297,32 @@ class FormValidator:
                     if coerced is not None:
                         sanitized[field.field_id] = coerced
 
+        # FEAT-458 — payload-side diff, reported (not judged) into extra_data.
+        #
+        # Two ordering rules the caller guarantees:
+        #   1. `data` arrives AFTER _extract_visit_context (api/handlers.py),
+        #      so the reserved `visit_context` envelope key is already gone
+        #      and is never reported as an extra.
+        #   2. `data` arrives AFTER the onBeforeSubmit hook, which may replace
+        #      the payload wholesale, so a hook injecting declared fields is
+        #      not punished.
+        #
+        # The trap this MUST avoid: derive the id set from `all_fields`,
+        # NEVER from `sanitized.keys()`. The loop above omits a declared
+        # field whose coerced value is None; keying off `sanitized` would
+        # reclassify every empty optional answer as caller junk.
+        # `_declared_field_ids_for_extras` additionally folds in each ARRAY
+        # field's `item_template` field_id (code-review fix, spec AC9) —
+        # NOT via `all_fields` itself, which must stay exactly the set the
+        # main per-field validate/coerce loop above already iterated.
+        declared_ids = self._declared_field_ids_for_extras(all_fields)
+        extra_data = compute_extra_data(data, declared_ids)
+
         return ValidationResult(
             is_valid=len(errors) == 0,
             errors=errors,
             sanitized_data=sanitized,
+            extra_data=extra_data,
         )
 
     async def validate_field(
@@ -1132,7 +1161,18 @@ class FormValidator:
         return fields
 
     def _collect_nested_fields(self, field: FormField) -> list[FormField]:
-        """Recursively collect child fields of a GROUP or ARRAY field.
+        """Recursively collect child fields of a GROUP field.
+
+        Deliberately excludes ``item_template`` — it is a template for
+        ARRAY *elements*, never a top-level submission key, so it must
+        NOT join ``all_fields`` (the per-field validate/coerce loop at
+        :meth:`validate`, ``validate_rules``, and the circular-dependency
+        pass all share this traversal via ``all_fields`` and would start
+        validating/coercing/rule-checking a nonexistent top-level
+        "item_template.field_id" key if it did). Use
+        :meth:`_declared_field_ids_for_extras` for the FEAT-458
+        unknown-fields diff, which needs item_template's field_id in its
+        declared set WITHOUT it becoming a real top-level field.
 
         Args:
             field: FormField to traverse.
@@ -1146,6 +1186,52 @@ class FormValidator:
                 nested.append(child)
                 nested.extend(self._collect_nested_fields(child))
         return nested
+
+    def _item_template_field_ids(self, field: FormField) -> set[str]:
+        """Recursively collect field_ids reachable via ``item_template``
+        chains (an ARRAY's element template, which may itself be a GROUP
+        or another ARRAY).
+
+        Args:
+            field: FormField whose ``item_template`` (if any) to walk.
+
+        Returns:
+            The field_id of ``field.item_template``, its GROUP children,
+            and any further-nested ``item_template`` — empty when
+            ``field.item_template`` is ``None``.
+        """
+        if field.item_template is None:
+            return set()
+        template = field.item_template
+        ids = {template.field_id}
+        ids.update(f.field_id for f in self._collect_nested_fields(template))
+        ids.update(self._item_template_field_ids(template))
+        return ids
+
+    def _declared_field_ids_for_extras(self, all_fields: list[FormField]) -> set[str]:
+        """Return every field_id considered "declared" for the FEAT-458
+        unknown-fields diff — ``all_fields`` (GROUP children included)
+        plus each ARRAY field's ``item_template`` field_id (and its own
+        nested GROUP/ARRAY structure).
+
+        A separate traversal from ``all_fields`` on purpose: unlike a
+        GROUP child, an ARRAY's ``item_template`` is a template for
+        repeated *elements*, never itself a real top-level submission
+        key — it must count as "declared" for the extras diff (spec
+        AC9) without joining ``all_fields`` and being validated/coerced
+        as an ordinary top-level field (see :meth:`_collect_nested_fields`).
+
+        Args:
+            all_fields: The flat field list already built for this
+                validation pass (from ``_collect_fields``).
+
+        Returns:
+            The declared-field_id set for :func:`compute_extra_data`.
+        """
+        ids = {f.field_id for f in all_fields}
+        for field in all_fields:
+            ids.update(self._item_template_field_ids(field))
+        return ids
 
     # ------------------------------------------------------------------
     # Rule-integrity pass (FEAT-234)

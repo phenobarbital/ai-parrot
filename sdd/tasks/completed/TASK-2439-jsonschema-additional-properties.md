@@ -250,10 +250,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Added `UnknownFieldsPolicy` to the existing top-level
+`from ..core.schema import (...)` in `renderers/jsonschema.py`. In
+`_build_structural_schema`'s assembly block, added
+`if form.unknown_fields is UnknownFieldsPolicy.REJECT: schema[
+"additionalProperties"] = False` right after the existing `if required`
+conditional-key line, matching that style exactly (identity comparison,
+no key emitted for `drop`/`keep`). Extended the class docstring with a
+paragraph documenting the new emission. 7 new unit tests in
+`tests/unit/test_jsonschema_additional_properties.py` (local `_form()`
+helper matching the `test_jsonschema_post_depends.py` precedent, no
+`form_factory` fixture existed in the codebase so one was not assumed).
+No merge conflict encountered with FEAT-456/TASK-2414's `x-relation`
+emission (both landed cleanly). Regression: `pytest -k jsonschema` — 99
+passed, same 9 pre-existing unrelated collection errors; full-suite
+`git stash` diff — zero new failures. `ruff check`: 0 new findings (the
+file's 1 pre-existing `UP037` finding, confirmed via `git stash`, is
+untouched; my own import addition required wrapping into the existing
+multi-line style to stay `I001`-clean).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none.
 
-**Deviations from spec**: none | describe if any
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+Same `is` → `==` finding as TASK-2436's addendum applies to this task's
+`form.unknown_fields is UnknownFieldsPolicy.REJECT` comparison in
+`_build_structural_schema`. Fixed in commit `d09f2ac9b` alongside
+TASK-2436/2437's sites. New test:
+`test_reject_emits_false_when_policy_is_a_raw_string` in
+`test_jsonschema_additional_properties.py`.

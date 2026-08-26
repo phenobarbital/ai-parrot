@@ -175,6 +175,12 @@ class TestDDL:
     def test_jsonb_uses_text_cast(self, sink):
         assert "::text::jsonb" in sink._insert_sql()
 
+    def test_extra_data_column_is_jsonb_not_text(self, sink):
+        """FEAT-458 — the reserved extra_data column must be JSONB, matching
+        `context`, not fall through to the TEXT default."""
+        create_sql = sink._create_table_sql()
+        assert '"extra_data" JSONB' in create_sql
+
     def test_full_capability_set(self, sink):
         assert sink.capabilities == frozenset(
             {
@@ -214,6 +220,22 @@ class TestReadWrite:
         result = await sink.write(submission, {"comment": "great"})
         assert result == submission.submission_id
 
+    async def test_write_casts_extra_data_column(self, sink, fake_pool, submission):
+        """FEAT-458 — writing an "extra_data" column uses the ::text::jsonb
+        cast, the same double-encoding-hazard fix as "context"."""
+        import json as json_module
+
+        await sink.write(
+            submission,
+            {"comment": "great", "extra_data": json_module.dumps({"legacy_id": 42})},
+        )
+        insert_sql = fake_pool.executed[-1]
+        assert '"extra_data"' in insert_sql
+        # The placeholder position for extra_data must carry the cast.
+        columns = ["comment", "extra_data"]
+        placeholder_index = columns.index("extra_data") + 1
+        assert f"${placeholder_index}::text::jsonb" in insert_sql
+
     async def test_write_read_roundtrip(self, sink, fake_pool, submission):
         await sink.write(
             submission,
@@ -246,3 +268,83 @@ class TestReadWrite:
     async def test_read_missing_returns_none(self, sink, fake_pool):
         fake_pool.fetchrow_result = None
         assert await sink.read("nonexistent") is None
+
+    async def test_read_reconstructs_extra_data_dict(self, sink, fake_pool, submission):
+        """Code-review fix — _row_to_submission previously dropped
+        extra_data entirely on read, even though write() stores it."""
+        fake_pool.fetchrow_result = {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": {"legacy_id": 42},
+            "comment": "great",
+        }
+        result = await sink.read(submission.submission_id)
+        assert result is not None
+        assert result.extra_data == {"legacy_id": 42}
+
+    async def test_read_reconstructs_extra_data_from_json_string(self, sink, fake_pool, submission):
+        """A codec-less pool hands back JSONB as a str — must still parse."""
+        import json
+
+        fake_pool.fetchrow_result = {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": json.dumps({"legacy_id": 42}),
+            "comment": "great",
+        }
+        result = await sink.read(submission.submission_id)
+        assert result is not None
+        assert result.extra_data == {"legacy_id": 42}
+
+    async def test_read_extra_data_null_stays_none(self, sink, fake_pool, submission):
+        fake_pool.fetchrow_result = {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": None,
+            "comment": "great",
+        }
+        result = await sink.read(submission.submission_id)
+        assert result is not None
+        assert result.extra_data is None

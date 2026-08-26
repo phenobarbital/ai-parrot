@@ -285,10 +285,83 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: FEAT-457 had merged; `services/sinks/mapper.py` existed exactly
+as the contract's PLANNED section described (263 lines, `RESERVED_COLUMNS`
+frozenset + `_RESERVED_COLUMN_ORDER` tuple driving a shared
+`_reserved_values()` getattr helper used by both `flatten_submission` and
+`nest_submission`). Added `"extra_data"` to both `RESERVED_COLUMNS` and
+`_RESERVED_COLUMN_ORDER` (the latter automatically threads it through
+`column_names_for()` too, since that function is just
+`list(_RESERVED_COLUMN_ORDER) + ...`). Because `_reserved_values()` is
+shared, its raw `getattr(submission, "extra_data")` value is exactly right
+for `nest_submission` (nested object, unstringified) but wrong for
+`flatten_submission` (needs `json.dumps`, mirroring ARRAY) — so
+`flatten_submission` overrides `row["extra_data"]` post-hoc with the
+serialize-or-None logic, rather than special-casing the shared helper.
+`core/schema.py`'s `_validate_persistence` model_validator already imports
+`RESERVED_COLUMNS` directly (verified, no second hard-coded list), so
+AC15's authoring-time collision check came for free. 8 new tests + 1
+updated fixture in `tests/unit/test_submission_mapper.py`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: Two files NOT in this task's Files table were
+touched, both justified by explicit text elsewhere in the task itself
+(Scope: "Confirm the type inference ... if the inference is driven by a
+name→type map, register extra_data there"; References: "a Postgres sink
+writing JSONB is subject to the same double-encoding hazard" as
+`services/submissions.py:254-282`). Verified `postgres_table.py` DOES
+drive `ensure_target()`'s DDL from exactly such a map
+(`_RESERVED_COLUMN_DDL: dict[str, str]`) — without an entry, `extra_data`
+would silently fall through to the `TEXT` default (violating the AC
+"provisions the column with a JSON-ish type, not TEXT") AND its INSERT
+would use a bare `$n` placeholder instead of `$n::text::jsonb` (the exact
+double-encoding hazard the references warn about, since `flatten_submission`
+already hands `write()` a pre-`json.dumps`'d string). Added
+`"extra_data": "JSONB"` to `_RESERVED_COLUMN_DDL` and `"extra_data"` to
+`write()`'s `jsonb_columns` base set (alongside `"context"`). Verified
+BigQuery's `asyncdb_store.py` needs NO change — `ensure_target()` types
+every `column_names_for()` entry uniformly as `STRING` (no per-column map
+to register against, confirmed by inspection), and Mongo/Arango document
+writes never stringify or cast. Added matching tests to
+`tests/unit/test_postgres_table_sink.py` (2 new: DDL type + write-cast).
+**NOT fixed** (flagged, not silently expanded): neither
+`postgres_table.py`'s `_row_to_submission` nor `asyncdb_store.py`'s
+`_doc_to_submission` reconstruct `FormSubmission.extra_data` from a stored
+row/document — both were already missing this before this task (same gap
+pre-existed for zero other reserved JSONB columns being read back through
+"has an entry but the read path doesn't propagate it" — actually `context`
+IS reconstructed in both). This means `PostgresTableSink.read()` /
+`AsyncDBSink.read()` will return `extra_data=None` even when a row/doc
+genuinely has extras stored — a real but narrow gap, out of this task's
+explicit Files list (`FormSubmissionStorage` read-path is TASK-2435's,
+and these two sink read-paths were never named anywhere in this task).
+Full-suite regression diff (`git stash` before/after): zero new failures.
+`ruff check` on all 4 changed files: clean, zero findings.
 
-**Deviations from spec**: none | describe if any
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+This task's own Completion Note already flagged, as a deliberate
+NOT-fixed deviation, that neither `PostgresTableSink._row_to_submission`
+nor `AsyncDBSink._doc_to_submission` reconstructed `extra_data` on read
+(write-side was correct). An independent adversarial review (codex)
+surfaced the same gap and recommended fixing it — on reconsideration,
+agreed: a sink whose `read()`/`list_revisions()` silently returns
+`extra_data=None` even when the column/field genuinely holds data is a
+real defect, not merely an unrequested nicety, and both fixes are narrow
+and mechanical (mirroring `context`'s existing str-vs-dict guard).
+
+Fixed in commit `d09f2ac9b`:
+- `postgres_table.py::_row_to_submission` — added the same
+  str-or-dict JSON-load guard `context` already gets, and threads
+  `extra_data=` into the `FormSubmission(...)` construction.
+- `asyncdb_store.py::_doc_to_submission` — same guard (needed for both
+  shapes: `nest_submission` keeps it a native dict for mongo/arango,
+  `flatten_submission` JSON-serializes it for bigquery); added the
+  missing `import json`.
+
+New tests: `test_read_reconstructs_extra_data_dict` /
+`_from_json_string` / `test_read_extra_data_null_stays_none` in
+`test_postgres_table_sink.py`; a new `TestDocToSubmission` class
+(`test_dict_passthrough` / `test_json_string_parsed` / `test_none_stays_none`)
+in `test_asyncdb_sink.py`.

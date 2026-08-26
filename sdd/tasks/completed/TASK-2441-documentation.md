@@ -235,10 +235,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Corrected a stale Codebase Contract assumption FIRST (per Agent
+Instructions step 3): the Files table pointed at
+`packages/parrot-formdesigner/docs/…`, but `ls`ing it showed only
+`frontend/` and `lifecycle-events.md` — no `metadata`/`persistence` doc
+lives there. The ACTUAL existing convention for a feature-level
+`FormSchema` reference doc (confirmed via FEAT-457's own doc) is
+repo-root `docs/formdesigner-<feature>.md`
+(`docs/formdesigner-autonomous-persistence.md`, 351 lines, numbered
+`## N.` sections, an opening `!!! warning` admonition, worked-examples
+section). Created `docs/formdesigner-unknown-fields-capture.md` at that
+same location, mirroring its structure and depth: the three policies
+table, the module-level caps with reject-not-truncate stated explicitly,
+the storage/wire asymmetry with its reason, the `/submit` vs `/partial`
+asymmetry with its reason, the `extra_data`-is-unvalidated-and-
+unauthenticated-reachable warning (as an admonition, matching the source
+doc's own admonition style) with the no-retention-mechanism statement,
+the `additionalProperties: false` / no-other-client-exposure fact, a
+worked `keep` example (payload → `data` → `extra_data` → forwarded body),
+and a `navigator.form_data` schema-reference section with the
+`ALTER TABLE ... ADD COLUMN` statement and the `::text::jsonb` mandate.
+Every code path referenced was verified with `grep`/`Read` against the
+actual landed code (not assumed): `MAX_EXTRA_KEYS`/`MAX_EXTRA_BYTES`
+values, `_finish_session`, `FormAPIHandler.submit_data`/`.validate`
+existence. Also updated `docs/formdesigner-autonomous-persistence.md`
+§8's `RESERVED_COLUMNS` text listing (now stale after TASK-2438 added
+`extra_data`) with a cross-link to the new doc — this satisfies the
+task's own "Add the extra_data column to any existing table/schema
+reference doc" instruction, since that §8 list is exactly such a
+reference. No README.md exists in `packages/parrot-formdesigner/` at all
+(`ls` confirmed) — the "mention the policy if the README enumerates
+form-level options" instruction was conditional on the README's
+existence, so this is a no-op, not a gap.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `version.py.__version__` was left at `0.11.0`
+(NOT bumped to `0.12.0`), per the task's own explicit instruction to
+check convention first. `git log -S '__version__ = "0.11.0"' --
+packages/parrot-formdesigner/src/parrot_formdesigner/version.py` shows
+the 0.10.0→0.11.0 bump landed in a single repo-wide `chore: release
+vX.Y.Z` commit (`6220e616b`), NOT inside any individual FEAT-457 feature
+task commit — release tooling owns this package's version bump, not
+feature branches. Documented per the task's own fallback instruction
+("otherwise leave it and note that release tooling owns the bump").

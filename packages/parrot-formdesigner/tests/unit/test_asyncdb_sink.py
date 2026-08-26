@@ -200,6 +200,50 @@ class TestExplicitPayload:
         assert fake_driver.written[-1] == {"submission_id": "abc"}
 
 
+class TestDocToSubmission:
+    """Code-review fix — _doc_to_submission previously dropped extra_data
+    entirely on read, even though write() (via nest_submission /
+    flatten_submission) stores it."""
+
+    def _doc(self, submission: FormSubmission, *, extra_data) -> dict:
+        return {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": extra_data,
+            "data": {"comment": "great"},
+        }
+
+    def test_dict_passthrough(self, mongo_sink, submission):
+        """nest_submission (mongo/arango) keeps extra_data a native dict."""
+        result = mongo_sink._doc_to_submission(self._doc(submission, extra_data={"legacy_id": 42}))
+        assert result.extra_data == {"legacy_id": 42}
+
+    def test_json_string_parsed(self, bigquery_sink, submission):
+        """flatten_submission (bigquery) JSON-serializes extra_data."""
+        import json
+
+        result = bigquery_sink._doc_to_submission(self._doc(submission, extra_data=json.dumps({"legacy_id": 42})))
+        assert result.extra_data == {"legacy_id": 42}
+
+    def test_none_stays_none(self, mongo_sink, submission):
+        result = mongo_sink._doc_to_submission(self._doc(submission, extra_data=None))
+        assert result.extra_data is None
+
+
 class TestImportGuard:
     def test_module_imports_without_google_cloud_bigquery(self):
         # The module itself never imports google.cloud.bigquery at module

@@ -353,10 +353,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Added `extra_data: dict[str, Any] | None = None` to
+`FormSubmission` (documented in `Attributes:`), `extra_data JSONB` to
+`_create_table_sql` next to `context`, `ADD COLUMN IF NOT EXISTS extra_data
+JSONB` to `_alter_table_sql`, extended `_insert_sql` with the column and
+`$22::text::jsonb` (updated the cast comment to mention it), added the
+`extra_data_json` serialization block in `store()` mirroring
+`context_json`, extended `_SELECT_COLUMNS`, and added
+`extra_data=_load_json(row["extra_data"])` to `_row_to_submission` (no
+`or {}`, matching `context`'s pattern — AC23). 11 new unit tests in
+`tests/unit/services/test_submission_extra_data.py`, all passing (a local
+`_FakePool`/`_FakeConn`/`_AcquireCtx` triple was needed for the `TestStore`
+cases — no existing fixture captured `execute()`'s positional args, only
+`fetch()`-based ones did). `ruff check` clean on the new test file (2
+pre-existing findings in `submissions.py` — `TC005` empty type-checking
+block, `UP017` — confirmed unchanged via `git stash` and left alone).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Two files NOT listed in this task's Files
+table required minimal fixture updates to keep passing, per the task's own
+"Existing submission tests still pass (no regression)" acceptance
+criterion: `tests/unit/test_submission_revisions.py`'s `_db_row()` helper
+(whose own docstring says "shaped like an asyncpg Record for the SELECT
+column set") gained an `extra_data` keyword parameter/key, since
+`_row_to_submission` now does `row["extra_data"]` unconditionally and a
+plain dict (unlike a real `asyncpg.Record` reading a nullable column)
+raises `KeyError` on a missing key rather than returning `NULL`.
+`tests/unit/test_submission_metadata_storage.py`'s
+`test_insert_has_twenty_one_placeholders` asserted the pre-FEAT-458
+invariant "21 placeholders, no `$22`" — renamed to
+`test_insert_has_twenty_two_placeholders` and updated to assert 22/no
+`$23`, since this task's own Key Constraints section mandates the 22nd
+`$22::text::jsonb` parameter. Both are mechanical fixture/assertion
+updates with no change to their test intent; verified via `git stash` that
+all 4 failures were caused exactly by this task's `submissions.py` change
+and did not pre-exist.
