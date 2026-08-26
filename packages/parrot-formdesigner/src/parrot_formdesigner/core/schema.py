@@ -48,6 +48,20 @@ class FormType(str, Enum):
     SURVEY = "survey"
 
 
+class UnknownFieldsPolicy(str, Enum):
+    """Policy for top-level submission keys the schema does not declare.
+
+    Attributes:
+        DROP: Discard silently (default — pre-FEAT-458 behaviour).
+        KEEP: Capture into ``FormSubmission.extra_data``, subject to caps.
+        REJECT: Fail the submission with 422.
+    """
+
+    DROP = "drop"  # discard silently (default — pre-FEAT-458 behaviour)
+    KEEP = "keep"  # capture into FormSubmission.extra_data, subject to caps
+    REJECT = "reject"  # fail the submission with 422
+
+
 class FormField(BaseModel):
     """A single field within a form section.
 
@@ -410,6 +424,10 @@ class FormSchema(BaseModel):
             definition body) is written to the declared destination instead
             of the generic shared storage. ``None`` (default) preserves
             today's behaviour exactly — no breaking change.
+        unknown_fields: Policy for top-level submission payload keys the
+            schema does not declare (FEAT-458). Defaults to
+            ``UnknownFieldsPolicy.DROP`` — discard silently, identical to
+            pre-FEAT-458 behaviour.
     """
 
     form_uid: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -433,6 +451,8 @@ class FormSchema(BaseModel):
     is_public: bool = False
     # FEAT-457 — Autonomous FormSchema Persistence
     persistence: FormPersistenceConfig | None = None
+    # FEAT-458 — Unknown-Field Capture
+    unknown_fields: UnknownFieldsPolicy = UnknownFieldsPolicy.DROP
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections.
