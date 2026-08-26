@@ -91,7 +91,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "The integration point: needs all four upstream tasks. Externally blocked on FEAT-457/TASK-2428, which replaces api/handlers.py:1615-1622 wholesale. Folds spec Module 7 (forwarder merge) in — it is one line inside this same branch.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2436-submit-path-policy-branch.md"
+      "completed_at": "2026-08-26T13:39:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2436-submit-path-policy-branch.md"
     },
     {
       "id": "TASK-2437",

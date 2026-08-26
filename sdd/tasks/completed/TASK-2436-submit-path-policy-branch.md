@@ -387,10 +387,61 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: FEAT-457 had already merged (verified `form.persistence`/sink
+branch present at `api/handlers.py`). Added local imports
+(`UnknownFieldsPolicy`, `ExtrasCapExceeded`, `enforce_extras_cap`) inside
+`submit_data`, matching its existing local-import style. Inserted the
+policy branch after the `not result.is_valid` early return and before the
+`FormSubmission` construction: `reject` + extras → `onError` best-effort
+then `422` with `errors["__unknown__"]` (sorted offending keys); `keep` →
+`enforce_extras_cap()`, `422` naming `exc.limit`/`exc.actual`/`exc.maximum`
+on `ExtrasCapExceeded`, else `extras = result.extra_data`; `drop` → debug
+log with the discarded count. `FormSubmission(..., extra_data=extras or
+None)`. Computed `outbound = {**result.sanitized_data, **extras} if
+extras else result.sanitized_data` and used it for the forwarder call
+(AC12). Computed a SEPARATE `after_submit_payload = {**submission.data,
+**extras} if extras else submission.data` for the `onAfterSubmit` dispatch
+(AC21) — deliberately NOT reusing `outbound`, because `submission.data`
+can differ from `result.sanitized_data` after metadata-enrichment's
+`extra_flat` merge (`:1610-1613`-equivalent), and AC21 is stated in terms
+of `submission.data` while AC12 is stated in terms of `sanitized_data` —
+matching the pre-existing (pre-FEAT-458) asymmetry between the two call
+sites rather than "fixing" it. Added the deliberate-asymmetry comment at
+the forwarder call site and updated the `submit_data` docstring flow list
+with a `4a.` step. 17 new unit tests in
+`tests/unit/api/test_submit_unknown_fields.py` (mocked-handler pattern
+from `tests/unit/test_submit_path_branch.py`; 3 tests use the REAL
+`FormValidator` — not mocked — to prove the visit_context/onBeforeSubmit
+wiring inside `submit_data` itself, matching the spec's own Module-5 unit
+test table), all passing. Full-suite regression diff (`git stash`
+before/after on the complete `pytest packages/parrot-formdesigner/tests/`
+run): 114 pre-existing failures, byte-identical set before and after —
+zero new failures, zero fixed. `ruff check` on `handlers.py`: 0 new
+findings beyond the pre-existing 46 (confirmed via normalized before/after
+diff); the 2 new `TRY401` occurrences on my added `self.logger.exception(
+"... %s", _meta_exc)` calls are the file's own established pattern,
+repeated verbatim per the task's "mirror the existing failure shape"
+instruction — not a new category of finding.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Three files NOT listed in this task's Files
+table required a mechanical one-line fixture fix, per the task's own "No
+regression" acceptance criterion:
+`tests/integration/test_lifecycle_events_submit.py` and
+`tests/integration/test_lifecycle_events_e2e.py` each build their
+mocked `ValidationResult` via `MagicMock(spec=ValidationResult)` without
+setting `.extra_data`; since `spec=` only allows reading attributes that
+are explicitly set OR resolvable via `dir()` on the class, and pydantic
+v2 model fields are not class-level descriptors, reading the now-required
+`result.extra_data` in the new policy branch raised
+`AttributeError: Mock object has no attribute 'extra_data'` on every
+pre-existing test using that helper. Added `validation_result.extra_data
+= {}` / `vr.extra_data = {}` next to the existing `.sanitized_data`
+assignment in each helper — same rationale and pattern as TASK-2435's
+`test_submission_revisions.py` fix. Swept the whole test tree for any
+other `MagicMock(spec=ValidationResult)` site — these two were the only
+ones. Verified via `git stash` that these were the only NEW failures
+introduced (before this fix: 4 new failures in these two files; after:
+0), and that the pre-existing `test_persistence_wiring.py` failures (2)
+predate this task entirely and are unrelated.
