@@ -85,6 +85,9 @@ class FormSubmission(BaseModel):
             legacy rows.
         context: Optional per-revision audit context (free-form JSONB), e.g.
             geofence status, GPS coordinates, and a post-visit flag.
+        extra_data: Captured undeclared submission keys, verbatim (FEAT-458).
+            ``None`` when the policy was not ``keep``, or when ``keep`` was
+            active and no extras arrived — never ``{}``.
     """
 
     submission_id: str = Field(
@@ -113,6 +116,7 @@ class FormSubmission(BaseModel):
     root_submission_id: str | None = None
     revision: int | None = None
     context: dict[str, Any] | None = None
+    extra_data: dict[str, Any] | None = None
 
 
 class FormSubmissionStorage:
@@ -203,6 +207,7 @@ class FormSubmissionStorage:
             root_submission_id VARCHAR(255),
             revision INTEGER,
             context JSONB,
+            extra_data JSONB,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS "{idx_name}"
@@ -244,7 +249,8 @@ class FormSubmissionStorage:
             ADD COLUMN IF NOT EXISTS locale VARCHAR(35),
             ADD COLUMN IF NOT EXISTS root_submission_id VARCHAR(255),
             ADD COLUMN IF NOT EXISTS revision INTEGER,
-            ADD COLUMN IF NOT EXISTS context JSONB;
+            ADD COLUMN IF NOT EXISTS context JSONB,
+            ADD COLUMN IF NOT EXISTS extra_data JSONB;
         CREATE INDEX IF NOT EXISTS "{form_uid_idx_name}"
             ON "{schema}"."{self._table}"(form_uid);
         CREATE INDEX IF NOT EXISTS "{root_idx_name}"
@@ -253,11 +259,12 @@ class FormSubmissionStorage:
 
     def _insert_sql(self, tenant: str | None) -> str:
         qt = self._qualified(tenant)
-        # `$n::text::jsonb`, NOT a bare `$n`: `data` ($5) and `context` ($21)
-        # are JSON TEXT (`json.dumps`) by the time they reach here. On a plain
-        # pool a bare parameter is fine, but a HOST-provided pool may register
-        # a json/jsonb codec (encoder=json.dumps) — which then re-encodes the
-        # value, storing a double-encoded jsonb STRING instead of an object
+        # `$n::text::jsonb`, NOT a bare `$n`: `data` ($5), `context` ($21) and
+        # `extra_data` ($22) are JSON TEXT (`json.dumps`) by the time they
+        # reach here. On a plain pool a bare parameter is fine, but a
+        # HOST-provided pool may register a json/jsonb codec
+        # (encoder=json.dumps) — which then re-encodes the value, storing a
+        # double-encoded jsonb STRING instead of an object
         # (`jsonb_typeof = 'string'`). Typing the parameter as TEXT keeps any
         # codec out of the way; the explicit cast parses it server-side,
         # identically under both pool regimes.
@@ -275,11 +282,11 @@ class FormSubmissionStorage:
             is_valid, forwarded, forward_status, forward_error,
             tenant, created_at,
             user_id, username, org_id, submitted_at, ip, user_agent, locale,
-            root_submission_id, revision, context
+            root_submission_id, revision, context, extra_data
         ) VALUES (
             $1, $2, $3, $4, $5::text::jsonb, $6, $7, $8, $9, $10, $11,
             $12, $13, $14, $15, $16, $17, $18,
-            $19, $20, $21::text::jsonb
+            $19, $20, $21::text::jsonb, $22::text::jsonb
         )
         """
 
@@ -330,6 +337,11 @@ class FormSubmissionStorage:
             if submission.context is not None
             else None
         )
+        extra_data_json = (
+            json.dumps(submission.extra_data)
+            if submission.extra_data is not None
+            else None
+        )
         async with self._pool.acquire() as conn:
             await conn.execute(
                 self._insert_sql(effective_tenant),
@@ -354,6 +366,7 @@ class FormSubmissionStorage:
                 submission.root_submission_id,
                 submission.revision,
                 context_json,
+                extra_data_json,
             )
         self.logger.debug(
             "Stored submission %s for form %s in %s",
@@ -373,7 +386,7 @@ class FormSubmissionStorage:
         "submission_id, form_uid, form_id, form_version, data, is_valid, "
         "forwarded, forward_status, forward_error, tenant, created_at, "
         "user_id, username, org_id, submitted_at, ip, user_agent, locale, "
-        "root_submission_id, revision, context"
+        "root_submission_id, revision, context, extra_data"
     )
 
     @staticmethod
@@ -413,6 +426,7 @@ class FormSubmissionStorage:
             root_submission_id=row["root_submission_id"],
             revision=row["revision"],
             context=_load_json(row["context"]),
+            extra_data=_load_json(row["extra_data"]),
         )
 
     async def get_submission(

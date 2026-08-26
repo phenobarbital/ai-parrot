@@ -52,8 +52,9 @@ class TestInitializeDDL:
 
 class TestStoreInsertsMetadata:
     @pytest.mark.asyncio
-    async def test_insert_has_twenty_one_placeholders(self) -> None:
-        """form_uid (FEAT-389) + 17 metadata/revision columns = 21 placeholders."""
+    async def test_insert_has_twenty_two_placeholders(self) -> None:
+        """form_uid (FEAT-389) + 17 metadata/revision columns + extra_data
+        (FEAT-458) = 22 placeholders."""
         pool = _RecordingPool()
         storage = FormSubmissionStorage(pool=pool)
         await storage.store(
@@ -62,9 +63,9 @@ class TestStoreInsertsMetadata:
             )
         )
         sql, args = pool.conn.executed[0]
-        assert "$21" in sql
-        assert "$22" not in sql
-        assert len(args) == 21
+        assert "$22" in sql
+        assert "$23" not in sql
+        assert len(args) == 22
 
     @pytest.mark.asyncio
     async def test_insert_carries_metadata_values_in_order(self) -> None:

@@ -58,6 +58,7 @@ def _db_row(
     root_submission_id: str | None = None,
     revision: int | None = None,
     context: str | None = None,
+    extra_data: str | None = None,
     data: str = '{"q1": "yes"}',
     form_uid: str | None = _TEST_FORM_UID,
 ) -> dict:
@@ -88,6 +89,7 @@ def _db_row(
         "root_submission_id": root_submission_id,
         "revision": revision,
         "context": context,
+        "extra_data": extra_data,
     }
 
 
