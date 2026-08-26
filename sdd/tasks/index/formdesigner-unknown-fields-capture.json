@@ -73,7 +73,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -81,8 +81,8 @@
       "parallelism_notes": "Sole owner of services/submissions.py in this spec; shares no file with any other FEAT-458 task and needs nothing from FEAT-457. Can run concurrently with TASK-2433.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2435-submission-extra-data-column.md"
+      "completed_at": "2026-08-26T13:30:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2435-submission-extra-data-column.md"
     },
     {
       "id": "TASK-2436",
