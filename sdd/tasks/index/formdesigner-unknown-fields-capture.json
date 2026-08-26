@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-24T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-26T14:02:43+00:00",
   "blocked_on": [
     "FEAT-457"
   ],
@@ -199,7 +199,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -209,8 +209,8 @@
       "parallelism_notes": "Documents behaviour only after the suite proves it. Touches docs and possibly version.py; no production code.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2441-documentation.md"
+      "completed_at": "2026-08-26T14:02:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2441-documentation.md"
     }
   ]
 }
