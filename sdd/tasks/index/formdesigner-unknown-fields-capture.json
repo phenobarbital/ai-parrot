@@ -136,7 +136,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "Sole owner of services/sinks/mapper.py in this spec. Hard SEMANTIC block on FEAT-457/TASK-2420, which creates that file — not merely a merge conflict. Parallelizable once FEAT-457 has landed.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2438-sink-mapper-extra-data.md"
+      "completed_at": "2026-08-26T13:48:16+00:00",
+      "file": "sdd/tasks/completed/TASK-2438-sink-mapper-extra-data.md"
     },
     {
       "id": "TASK-2439",
