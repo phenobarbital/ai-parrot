@@ -201,8 +201,10 @@ finance = [
 # FlowtTask DAG execution (pulls asyncdb[all] — heavy)
 # 5.12.3 relaxes its requests pin (==2.32.4 -> >=2.33.0), compatible with
 # the workspace's requests>=2.33,<2.34 pin (intersection with arxiv>=3.0.0).
+# 5.12.14 loosens azure-identity (==1.20.0 -> >=1.20.0,<2) and
+# msal (>=1.30.0 -> >=1.30.0,<2), unblocking async-notify>=1.6.0.
 flowtask = [
-    "flowtask>=5.12.3",
+    "flowtask>=5.12.14",
 ]
 
 # GraphIndex knowledge graph indexing (FEAT-187)
