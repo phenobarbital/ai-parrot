@@ -92,7 +92,10 @@ async def expand_action(
         )
 
     action = await catalog.get_action(site, name)
-    resolved_params = resolve_params(action.params, params)
+    try:
+        resolved_params = resolve_params(action.params, params)
+    except ValueError as exc:
+        raise ValueError(f"action {name!r}: {exc}") from exc
     sequence: List[ResolvedAction] = []
 
     inner_state = _ExpandState(

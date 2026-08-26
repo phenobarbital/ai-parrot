@@ -38,9 +38,43 @@ python examples/webbrowsing/browsing_agent.py "dame las citas del tag love"
 python examples/webbrowsing/browsing_agent.py "inicia sesión en quotes y lista la portada"
 ```
 
-The agent flow is: `list_sites` → `list_site_actions` (match intent →
-action + params) → `run_site_action` / `run_site_sequence`. The LLM only
-decides **which** script to run and with **what** parameters — the steps
+## The structured contract (`execute_web_task`)
+
+The core agentic pattern: from "register a customer at hooba" the LLM
+prepares ONE structured request — it never improvises navigation —
+
+```json
+{"site": "hooba", "action": "register-customer",
+ "data": {"name": "ACME S.L.", "vat": "B12345678"}}
+```
+
+and `execute_web_task` resolves the site's catalog, loads the script and
+replays it deterministically (prerequisites like `login` injected once).
+Multi-step flows use `plan` instead of `action`:
+
+```json
+{"site": "hooba", "data": {"customer": "ACME"},
+ "plan": [{"action": "goto-crm"},
+          {"action": "search-customer"},
+          {"action": "new-invoice-draft"}]}
+```
+
+Failures come back **structured and repairable** instead of raising, so
+the LLM can self-correct in one round-trip:
+
+| `error.code` | Hint included |
+|---|---|
+| `unknown_site` | `known_sites` (slug, title, aliases) |
+| `unknown_action` | `available_actions` (name, description, params) |
+| `missing_params` | `expected_params` per action + `provided_data` |
+| `invalid_request` / `invalid_plan` | validation message |
+
+`WebTaskRequest` (`parrot_tools.browsing`) is a Pydantic model, so it
+also works as a structured-output schema for the LLM directly.
+
+The discovery tools (`list_sites`, `list_site_actions`,
+`run_site_action`, `run_site_sequence`) remain available — the LLM only
+ever decides **which** script to run and with **what** data; the steps
 themselves are replayed exactly as catalogued.
 
 ## Using a real Chrome profile

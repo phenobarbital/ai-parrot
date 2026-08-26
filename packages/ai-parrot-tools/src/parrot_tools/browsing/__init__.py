@@ -25,6 +25,8 @@ from .models import (
     SequenceRunResult,
     SiteAction,
     SiteInfo,
+    WebTaskEntry,
+    WebTaskRequest,
 )
 from .templating import render_steps, validate_loop_bounds
 from .toolkit import WebBrowsingToolkit
@@ -39,6 +41,8 @@ __all__ = (
     "SiteAction",
     "SiteInfo",
     "WebBrowsingToolkit",
+    "WebTaskEntry",
+    "WebTaskRequest",
     "expand_action",
     "expand_sequence",
     "render_steps",

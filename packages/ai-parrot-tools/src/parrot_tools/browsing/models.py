@@ -300,6 +300,58 @@ class SiteAction(BaseModel):
         }
 
 
+class WebTaskEntry(BaseModel):
+    """One step of a :class:`WebTaskRequest` plan.
+
+    Args:
+        action: Catalogued action name to execute.
+        data: Parameter values for that action.
+    """
+
+    action: str
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WebTaskRequest(BaseModel):
+    """Structured browsing request an LLM prepares from natural language.
+
+    This is the single, deterministic contract between an agent and the
+    toolkit: the LLM turns "register a customer at hooba" into
+    ``{"site": "hooba", "action": "register-customer", "data": {...}}``
+    and the toolkit resolves the site's catalog, loads the script and
+    replays it with the provided data — no improvised navigation.
+
+    Exactly ONE of ``action`` (single intent) or ``plan`` (ordered
+    multi-action flow) must be set.
+
+    Args:
+        site: Site reference — slug, alias, domain or title ("hooba").
+        action: Catalogued action to execute (single-intent form).
+        data: Parameter values for ``action``; with ``plan``, shared
+            values applied to every entry (entry data wins).
+        plan: Ordered entries for a multi-action flow (alternative to
+            ``action``).
+        include_requires: Auto-run prerequisite actions (e.g. login).
+        stop_on_error: Abort remaining actions when one fails.
+    """
+
+    site: str
+    action: Optional[str] = None
+    data: Dict[str, Any] = Field(default_factory=dict)
+    plan: Optional[List[WebTaskEntry]] = None
+    include_requires: bool = True
+    stop_on_error: bool = True
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "WebTaskRequest":
+        if bool(self.action) == bool(self.plan):
+            raise ValueError(
+                "Provide exactly one of 'action' (single intent) or "
+                "'plan' (ordered multi-action flow)."
+            )
+        return self
+
+
 class ActionRunSummary(BaseModel):
     """Outcome of executing ONE resolved action within a sequence.
 

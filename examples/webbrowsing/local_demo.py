@@ -161,6 +161,32 @@ async def main() -> None:
             assert result["success"], result
             assert result["extracted_data"]["top_tags"] == TOP_TAGS
 
+            # Structured agentic contract: the LLM prepares ONE structured
+            # request ({site, action, data}) and execute_web_task resolves
+            # catalog -> script -> deterministic run. Errors come back
+            # structured and repairable instead of raising.
+            task = {
+                "site": "quotes",
+                "action": "quotes-by-tag",
+                "data": {"tag": "choices"},
+            }
+            out = await toolkit.execute_web_task(task)
+            print("\nexecute_web_task(quotes-by-tag, tag=choices):")
+            print(json.dumps(out["result"]["extracted_data"], indent=2,
+                             ensure_ascii=False))
+            assert out["status"] == "ok", out
+
+            # A repairable error: unknown action -> the response lists the
+            # site's catalog so the LLM can self-correct deterministically.
+            out = await toolkit.execute_web_task(
+                {"site": "quotes", "action": "buy-book", "data": {}}
+            )
+            assert out["status"] == "error"
+            assert out["error"]["code"] == "unknown_action"
+            print("\nexecute_web_task(unknown action) -> repairable error:")
+            print(" ", out["error"]["message"].splitlines()[0])
+            print("  available:", [a["name"] for a in out["error"]["available_actions"]])
+
             print("\nDemo OK — catalog scripts executed deterministically.")
         finally:
             await toolkit.close_browser()

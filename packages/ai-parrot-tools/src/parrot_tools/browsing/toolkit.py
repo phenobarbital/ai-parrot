@@ -45,6 +45,7 @@ from .models import (
     SequenceRunResult,
     SiteAction,
     SiteInfo,
+    WebTaskRequest,
 )
 from .templating import (
     collect_placeholders,
@@ -112,7 +113,12 @@ class WebBrowsingToolkit(WebScrapingToolkit):
     """
 
     confirming_tools: frozenset = frozenset(
-        {"delete_site_action", "run_site_action", "run_site_sequence"}
+        {
+            "delete_site_action",
+            "run_site_action",
+            "run_site_sequence",
+            "execute_web_task",
+        }
     )
 
     def __init__(
@@ -452,6 +458,127 @@ class WebBrowsingToolkit(WebScrapingToolkit):
         return await self._run_resolved_sequence(
             site, requested, sequence, stop_on_error=stop_on_error
         )
+
+    async def execute_web_task(
+        self,
+        request: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Execute one structured browsing request against the catalog.
+
+        This is the single deterministic entry point for agentic flows:
+        the LLM turns natural language ("register a customer at hooba")
+        into a structured request and the toolkit resolves the site's
+        catalog, loads the named script(s) and replays them with the
+        provided data — no improvised navigation.
+
+        Request shape (:class:`~parrot_tools.browsing.models.WebTaskRequest`)::
+
+            {"site": "hooba",
+             "action": "register-customer",
+             "data": {"name": "ACME", "vat": "B123..."}}
+
+        or, for a multi-step flow::
+
+            {"site": "hooba",
+             "plan": [{"action": "goto-crm"},
+                      {"action": "register-customer", "data": {...}}],
+             "data": {...shared values...}}
+
+        Every failure returns a structured, repairable error instead of
+        raising: an unknown site lists the known sites, an unknown action
+        lists the site's catalog, and missing parameters include each
+        requested action's declared parameter spec — so the calling LLM
+        can correct its request deterministically.
+
+        Args:
+            request: The structured request (validated against
+                ``WebTaskRequest``).
+
+        Returns:
+            ``{"status": "ok", "result": {...SequenceRunResult...}}`` on
+            success; ``{"status": "error", "error": {"code", "message",
+            ...hints}}`` otherwise.
+        """
+        from pydantic import ValidationError
+
+        def _error(code: str, message: str, **hints: Any) -> Dict[str, Any]:
+            return {"status": "error", "error": {"code": code, "message": message, **hints}}
+
+        try:
+            req = WebTaskRequest.model_validate(request)
+        except ValidationError as exc:
+            return _error("invalid_request", str(exc))
+
+        try:
+            site_info = await self._catalog.resolve_site(req.site)
+        except KeyError as exc:
+            sites = await self._catalog.list_sites()
+            return _error(
+                "unknown_site",
+                str(exc.args[0] if exc.args else exc),
+                known_sites=[
+                    {"site": s.site, "title": s.title, "aliases": s.aliases}
+                    for s in sites
+                ],
+            )
+        except ValueError as exc:
+            return _error("ambiguous_site", str(exc))
+
+        if req.action:
+            requested = [req.action]
+            plan: List[Union[str, Dict[str, Any]]] = [
+                {"action": req.action, "params": req.data}
+            ]
+            shared: Optional[Dict[str, Any]] = None
+        else:
+            requested = [entry.action for entry in req.plan or []]
+            plan = [
+                {"action": entry.action, "params": entry.data}
+                for entry in req.plan or []
+            ]
+            shared = req.data or None
+
+        try:
+            sequence = await expand_sequence(
+                self._catalog,
+                site_info.site,
+                plan,
+                shared_params=shared,
+                include_requires=req.include_requires,
+            )
+        except KeyError as exc:
+            actions = await self._catalog.list_actions(site_info.site)
+            return _error(
+                "unknown_action",
+                str(exc.args[0] if exc.args else exc),
+                available_actions=[a.summary() for a in actions],
+            )
+        except ValueError as exc:
+            message = str(exc)
+            code = (
+                "missing_params"
+                if "Missing required parameter" in message
+                else "invalid_plan"
+            )
+            hints: Dict[str, Any] = {}
+            if code == "missing_params":
+                expected: Dict[str, Any] = {}
+                for name in requested:
+                    try:
+                        summary = (
+                            await self._catalog.get_action(site_info.site, name)
+                        ).summary()
+                        expected[summary["name"]] = summary["params"]
+                    except KeyError:
+                        continue
+                hints["expected_params"] = expected
+                hints["provided_data"] = sorted(req.data)
+            return _error(code, message, **hints)
+
+        result = await self._run_resolved_sequence(
+            site_info.site, requested, sequence, stop_on_error=req.stop_on_error
+        )
+        return {"status": "ok", "result": result}
 
     # ── Internal execution helpers ────────────────────────────────────
 
