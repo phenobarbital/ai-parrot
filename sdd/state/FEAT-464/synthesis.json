@@ -1,0 +1,133 @@
+{
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "FEAT-463 (matrix-agents-swarm) provides all infrastructure: full docker-compose dev stack, bootstrap script, example YAML configs, and runner scripts. However, the example cannot run end-to-end because swarm_example.py has stub agent registration (_setup_bots logs a warning instead of creating real agents). FEAT-464 fills this gap: a complete, self-contained sample with real Agent instances, system prompts, tools, and an agents.yaml definition file — so that a user can go from `git clone` to agents talking on Matrix in under 5 minutes.",
+
+  "localization": [
+    {
+      "path": "examples/matrix_crew/swarm_example.py",
+      "symbol": "_setup_bots",
+      "lines": "115-140",
+      "role": "Gap — stub agent registration, no real agents created",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/matrix_crew/swarm_crew.yaml",
+      "symbol": null,
+      "lines": "all",
+      "role": "Existing swarm config — complete, reusable as-is",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "path": "docker-compose.matrix.yml",
+      "symbol": null,
+      "lines": "all",
+      "role": "Full dev stack — Synapse, Postgres, Element Web, bridges",
+      "evidence": ["F002"],
+      "confidence": "high"
+    },
+    {
+      "path": "scripts/matrix/bootstrap.sh",
+      "symbol": null,
+      "lines": "all",
+      "role": "6-step automated setup — reusable, no changes needed",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/matrix_crew/MATRIX_CREW_GUIDE.md",
+      "symbol": null,
+      "lines": "all",
+      "role": "Comprehensive guide — needs swarm quickstart addendum",
+      "evidence": ["F003"],
+      "confidence": "high"
+    }
+  ],
+
+  "hypotheses": [
+    {
+      "statement": "The sample needs: (1) an agents.yaml defining the 4 swarm agents with real LLM backends and system prompts, (2) a complete swarm_example.py that instantiates real agents from BotManager, (3) a step-by-step README.md quickstart, and (4) optionally a Makefile or script for one-command demo launch.",
+      "confidence": "high",
+      "supporting_evidence": ["F001", "F002", "F003", "F004", "F005"],
+      "reasoning": "All infrastructure exists. The only gap is agent definitions and the glue to go from config to running agents."
+    }
+  ],
+
+  "scope": {
+    "in_scope": [
+      "examples/matrix_swarm/ — standalone sample directory",
+      "examples/matrix_swarm/agents.yaml — 4 agent definitions with system prompts, tools, LLM config",
+      "examples/matrix_swarm/swarm_demo.py — runnable demo with real Agent instances from BotManager",
+      "examples/matrix_swarm/README.md — step-by-step quickstart from zero to running swarm",
+      "examples/matrix_swarm/Makefile — convenience targets: setup, start, stop, logs, demo",
+      "examples/matrix_swarm/.env.example — all required environment variables with descriptions"
+    ],
+    "out_of_scope": [
+      "Core swarm Python modules (FEAT-463 scope)",
+      "docker-compose.matrix.yml modifications (already complete)",
+      "scripts/matrix/bootstrap.sh modifications (already complete)",
+      "Bridge configuration (already in FEAT-463 TASK-2486)"
+    ],
+    "confidence": "high"
+  },
+
+  "constraints": [
+    {
+      "type": "dependency",
+      "description": "FEAT-464 depends on FEAT-463 core modules being implemented (at minimum TASK-2478 config models + TASK-2484 transport wiring + TASK-2483 toolkit). The sample imports these.",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "type": "pattern",
+      "description": "Must follow existing example patterns: argparse CLI, async with transport, signal handlers. See swarm_example.py and collaborative_example.py for the established pattern.",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "type": "pattern",
+      "description": "Agent definitions must use chatbot_ids matching swarm_crew.yaml: web-researcher, financial-analyst, report-writer, synthesis-agent",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "type": "licensing",
+      "description": "Synapse/Element/mautrix are AGPL-3.0, run as containers only. Never imported by MIT-licensed ai-parrot Python code.",
+      "evidence": ["F002"],
+      "confidence": "high"
+    }
+  ],
+
+  "confidence_map": [
+    {"claim": "Docker dev stack is complete and ready to use", "confidence": "high", "evidence": ["F002", "F004"]},
+    {"claim": "swarm_crew.yaml config is complete for 4-agent swarm", "confidence": "high", "evidence": ["F005"]},
+    {"claim": "swarm_example.py needs real agent registration to be runnable", "confidence": "high", "evidence": ["F003"]},
+    {"claim": "FEAT-463 core modules are not yet implemented (all tasks in-progress)", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "A standalone sample directory with README will make the feature accessible", "confidence": "high", "evidence": ["F003", "F006"]},
+    {"claim": "agents.yaml can define agents with system prompts + tool config for BotManager", "confidence": "medium", "evidence": ["F005"]}
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the sample create a NEW standalone directory (examples/matrix_swarm/) or extend the existing examples/matrix_crew/ with the missing pieces?",
+      "affects_claims": ["standalone sample directory"],
+      "user_answer": "New examples/matrix_swarm/ — standalone directory",
+      "resolved": true
+    },
+    {
+      "id": "U2",
+      "question": "Which LLM provider should the sample default to? The sample needs at least one working backend.",
+      "affects_claims": ["real agent registration"],
+      "user_answer": "4 agents with different clients — OpenAI (researcher), Anthropic (analyst), Gemini (writer), Nvidia NIM (summarizer). Showcases vendor-agnostic architecture.",
+      "resolved": true
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "/sdd-spec",
+    "rationale": "High-confidence localization with clear scope. The sample has well-defined boundaries (examples directory, real agent setup, README) and a clear dependency on FEAT-463. Ready for spec + task decomposition."
+  }
+}
