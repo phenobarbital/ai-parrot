@@ -32,7 +32,7 @@
       "feature_id": "FEAT-464",
       "feature": "matrix-swarm-sample",
       "spec": "sdd/specs/matrix-swarm-sample.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-2488 chatbot_ids; also the primary Python code — must run after agent definitions are set.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2489-swarm-config-and-demo-script.md"
+      "completed_at": "2026-08-26T15:19:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2489-swarm-config-and-demo-script.md"
     },
     {
       "id": "TASK-2490",
