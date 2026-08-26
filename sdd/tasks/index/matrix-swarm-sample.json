@@ -73,7 +73,7 @@
       "feature_id": "FEAT-464",
       "feature": "matrix-swarm-sample",
       "spec": "sdd/specs/matrix-swarm-sample.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Tests validate YAML + script created by prior tasks — must run after those are committed.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2491-swarm-sample-tests.md"
+      "completed_at": "2026-08-26T15:45:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2491-swarm-sample-tests.md"
     }
   ]
 }
