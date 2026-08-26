@@ -303,10 +303,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Added `Field` to the pydantic import and
+`from .unknown_fields import compute_extra_data` to `validators.py`. Added
+`extra_data: dict[str, Any] = Field(default_factory=dict)` to
+`ValidationResult` with a documented `Attributes:` entry. In `validate()`,
+after the per-field loop and before the final return, built
+`declared_ids = {f.field_id for f in all_fields}` and called
+`compute_extra_data(data, declared_ids)`, threading the result into the
+returned `ValidationResult`; added the comment block recording both
+ordering rules (post-`_extract_visit_context`, post-`onBeforeSubmit`) and
+the `sanitized.keys()` trap. The two early returns (`__circular__`,
+`__rules__`) are untouched and keep the default `{}`. 8 new unit tests in
+`tests/unit/services/test_validator_extra_data.py`, all passing (local
+fixtures for `simple_form`/`form_with_optional_field`/
+`form_with_group_and_array`/`circular_form`, the last requiring
+`resolve_rule_references()` per the FEAT-393 field_uid-keyed rule
+resolution — not called out in the task's Codebase Contract but required
+by the existing `_detect_circular_dependencies` implementation, confirmed
+against `tests/unit/services/test_rule_validation.py`'s own helper).
+Regression-verified: `pytest -k validator` (105 passed, same 9 pre-existing
+unrelated collection errors — missing `aiogram`/pdf deps) and the full
+`tests/unit/services/` suite (264 passed, 3 pre-existing unrelated
+failures from a missing `jsonpath_ng` dependency, confirmed via
+`git stash`). `ruff check` on `validators.py` shows the same 14
+pre-existing findings as before this change (confirmed via `git stash`)
+— zero new findings; the new test file is ruff-clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: AC16's literal `grep -c "unknown_fields"
+services/validators.py` returns 1, not 0 — the match is the required
+`from .unknown_fields import compute_extra_data` import line (the module
+name itself contains the substring "unknown_fields"), not a reference to
+`form.unknown_fields`. The Codebase Contract explicitly mandates this
+import. Verified the actual AC16 intent holds: `validate()` never reads
+`form.unknown_fields` or any policy attribute (confirmed by
+`test_policy_blind`, which asserts identical `extra_data` across all three
+policies on the same payload) and `grep -n "form\.unknown_fields"
+services/validators.py` returns nothing. Flagging this as a false-positive
+in the AC's chosen grep proxy rather than a real violation.

@@ -53,7 +53,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Imports compute_extra_data from TASK-2433. Shares services/validators.py with FEAT-456/TASK-2415 (relational shape validation) — textual conflict likely, semantic conflict not.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2434-validator-extra-data-diff.md"
+      "completed_at": "2026-08-26T13:25:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2434-validator-extra-data-diff.md"
     },
     {
       "id": "TASK-2435",
