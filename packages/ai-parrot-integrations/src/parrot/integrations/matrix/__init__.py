@@ -17,6 +17,12 @@ if TYPE_CHECKING:
     from .a2a_transport import MatrixA2ATransport
     from .appservice import MatrixAppService
     from .models import MatrixAppServiceConfig
+    from .events import (
+        AgentAnswer,
+        ChannelStateContent,
+        FeedbackEventContent,
+        TunnelStateContent,
+    )
     from .crew import (
         MatrixCrewTransport,
         MatrixCrewConfig,
@@ -41,6 +47,10 @@ def __getattr__(name: str):
         "ResultEventContent": ".events",
         "StatusEventContent": ".events",
         "AgentCardEventContent": ".events",
+        "AgentAnswer": ".events",
+        "FeedbackEventContent": ".events",
+        "ChannelStateContent": ".events",
+        "TunnelStateContent": ".events",
         "generate_registration": ".registration",
         "generate_tokens": ".registration",
         # Crew (FEAT-044)
@@ -69,6 +79,10 @@ __all__ = [
     "ResultEventContent",
     "StatusEventContent",
     "AgentCardEventContent",
+    "AgentAnswer",
+    "FeedbackEventContent",
+    "ChannelStateContent",
+    "TunnelStateContent",
     "generate_registration",
     "generate_tokens",
     # Crew (FEAT-044)

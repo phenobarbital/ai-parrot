@@ -18,6 +18,7 @@
 7. [Advanced Usage](#7-advanced-usage)
 8. [Production Deployment](#8-production-deployment)
 9. [Troubleshooting](#9-troubleshooting)
+14. [Matrix Agents Swarm (FEAT-463)](#14-matrix-agents-swarm-feat-463)
 
 ---
 
@@ -1501,5 +1502,225 @@ The Matrix crew mirrors the Telegram crew structure. Key differences:
 
 ---
 
+## 14. Matrix Agents Swarm (FEAT-463)
+
+Turns the crew (N agents on one homeserver) into a real **agents swarm**:
+declared public/private channels with an answer policy, private
+agent-to-agent tunnels, and collaborative answers to un-mentioned human
+questions — reachable from Slack/Signal/Discord through bridges. Builds
+directly on the crew (§1–9) and collaborative sessions (§7.x /
+`!investigate`) documented above; everything there keeps working
+unchanged with existing YAML.
+
+See `examples/matrix_crew/swarm_crew.yaml` / `swarm_example.py` for a
+complete runnable config, and `docker-compose.matrix.yml` /
+`scripts/matrix/bootstrap.sh` for the one-command dev stack these
+features run against.
+
+### 14.1 Channels & policies
+
+A **channel** is a declared, named Matrix room with membership and an
+`answer_policy` — materialised (created or reconciled) by `ChannelManager`
+at `MatrixCrewTransport.start()`:
+
+```yaml
+channels:
+  - name: general
+    visibility: public      # public | private — join rule + room directory visibility
+    agents: [researcher, analyst, writer]
+    answer_policy: swarm    # mention | swarm | silent
+    topic: "AI-Parrot swarm — ask anything"
+  - name: finance
+    visibility: private
+    agents: [analyst]
+    answer_policy: mention
+```
+
+`answer_policy` controls how un-mentioned human text is handled in that
+channel:
+
+| Policy | Behaviour |
+|---|---|
+| `mention` | Ignored unless a member agent is `@mentioned` (same as a FEAT-044 room). |
+| `swarm` | Starts a collaborative session automatically — see §14.3. Requires `collaborative:` to be configured. |
+| `silent` | Never responds to un-mentioned text (`!investigate` and `@mention` still work). |
+
+`router` is **not** a valid policy in this release (deferred to a
+follow-up) — it is rejected at config validation time.
+
+Every channel is materialised with an alias (`#<name>:<server_name>`),
+the correct join rule, member agents invited/joined, and an
+`m.parrot.channel` state event describing the policy (read by external
+tooling; the transport itself reads policy from config, the source of
+truth). Existing rooms are reconciled (state updated, never deleted) if
+their `m.parrot.channel` state has drifted from config.
+
+### 14.2 Tunnels & `ask_agent`
+
+A **tunnel** is a private, lazily-created 2-member room shared by an
+unordered pair of agents, carrying `m.parrot.task` / `m.parrot.result` /
+`m.parrot.feedback` events:
+
+```yaml
+tunnels:
+  enabled: true
+  ttl_minutes: 120      # idle tunnel → both agents leave + tombstone; 0 = keep forever
+  max_hops: 3            # loop guard for A→B→A chains
+  default_timeout: 60.0
+  echo_summary_to_channel: true   # post a one-line "🔒 X asked Y a question" reply-to the trigger
+```
+
+Every agent gets an `AgentSwarmToolkit` attached to its `ToolManager` at
+startup, exposing 5 tools to the LLM:
+
+- **`ask_agent(agent, question, expected_schema=None, timeout=None)`** —
+  ask a peer a question through a private tunnel; returns
+  `{answer, confidence, sources, metadata}` (`metadata.status` is `"ok"`,
+  or one of `timeout` / `error` / `schema_error` / `hop_limit` /
+  `unknown_agent` / `self_ask_rejected`). Pass `expected_schema` (a JSON
+  Schema) to require a structured `answer`.
+- **`send_feedback(agent, about_event_id, rating, comment=None)`** — rate
+  a prior tunnel answer (`rating` -1..5).
+- **`list_agents()`** — discover valid agent names + status.
+- **`list_channels()`** — list channels visible to this agent (public +
+  its own private memberships).
+- **`post_to_channel(channel, text)`** — post as this agent; rejected
+  with a `"forbidden: ..."` message if not a member.
+
+Tunnels are torn down by a periodic sweeper once idle longer than
+`ttl_minutes` (both agents leave, the room is tombstoned). Set
+`ttl_minutes: 0` to keep tunnels forever (no sweeping) — useful for a
+small, stable swarm where tunnel-room churn isn't a concern.
+
+### 14.3 Swarm sessions
+
+In a `swarm`-policy channel, plain human text (no `@mention`, no
+`!investigate`) starts a `MatrixCollaborativeSession` automatically. This
+is the same phased investigation described in §7 (INVESTIGATING →
+CROSS_POLLINATING → SYNTHESIZING), extended by FEAT-463 in three ways:
+
+1. **Concurrent per room.** Multiple sessions may run at once in the same
+   room, bounded by `collaborative.max_concurrent_sessions` (default 3);
+   beyond the cap, new triggers get a "🐦 Swarm is busy" reply instead of
+   silently failing. `collaborative.cooldown_seconds` (default 10)
+   suppresses rapid re-triggers from the same room (`!investigate` is
+   exempt from the cooldown, only the concurrency cap applies to it).
+2. **Reply-to the trigger.** When a session was started by a human
+   message (as opposed to a bare programmatic session), every
+   announcement and the final synthesis are posted as a reply
+   (`m.in_reply_to`) to that triggering event, prefixed with the short
+   session id (e.g. `🐦 [#ab12] Starting investigation…`).
+3. **Cross-pollination via tunnels.** When `tunnels` is configured, each
+   agent privately asks its peers (in parallel, never blocking on one
+   peer's timeout) to clarify their prior finding — through the same
+   `ask_agent` mechanism above — instead of visible `@mention`s in the
+   channel. A one-line echo is posted by default
+   (`tunnels.echo_summary_to_channel: true`), suppressed entirely when
+   `session_verbosity: "silent"`.
+
+```yaml
+collaborative:
+  command_prefix: "!investigate"
+  max_rounds: 1
+  summarizer_agent: "summarizer"
+  max_concurrent_sessions: 3
+  cooldown_seconds: 10.0
+```
+
+`!investigate <question>` still works in **any** room, channel or not —
+unchanged FEAT-195 behaviour, now dispatched through the same concurrent
+session manager.
+
+### 14.4 Bridged users
+
+Humans connected through Slack/Signal/Discord puppets (via the bridges
+in `docker-compose.matrix.yml` — see `docs/integrations/matrix/BRIDGES.md`)
+are treated **exactly like native Matrix humans**: mentions and
+`swarm`-policy channels behave identically. Classification is via
+`MatrixCrewRegistry.is_human(mxid)` — any MXID that isn't a registered
+agent or the coordinator bot is human; `human_namespace_patterns`
+confirms known bridge puppet namespaces but isn't required for the
+classification itself:
+
+```yaml
+human_namespace_patterns:
+  - "^@signal_"
+  - "^@slack_"
+  - "^@discord_"
+```
+
+### 14.5 Coordinator commands
+
+Three new commands work in any room (human senders only):
+
+| Command | Output |
+|---|---|
+| `!channels` | Every declared channel: name, visibility, policy, member agents. |
+| `!agents` | Every registered agent's status line (same format as the pinned board). |
+| `!tunnels` | Every active tunnel: agent pair, room id, last-used timestamp. |
+
+### 14.6 Dev stack quickstart
+
+The fastest way to try the swarm end-to-end is the bundled dev stack
+(Synapse + Postgres + Element Web + `.well-known` sidecar, optionally
+Slack/Signal/Discord bridges):
+
+```bash
+cp docker/matrix/.env.example docker/matrix/.env
+# edit docker/matrix/.env — at minimum set POSTGRES_PASSWORD and the
+# Synapse secrets; register_new_matrix_user needs a coordinator password too
+
+./scripts/matrix/bootstrap.sh            # core stack: synapse, postgres, element-web, well-known
+./scripts/matrix/bootstrap.sh --bridges  # also start the bridges profile
+
+python swarm_example.py --config swarm_crew.yaml
+```
+
+Then open Element Web at `http://localhost:8080` (or any client from
+`docs/integrations/matrix/CLIENTS.md`), log in as the coordinator user
+printed by `bootstrap.sh`, join the `general` channel, and send a plain
+question (no `@mention`) to see a swarm session start.
+
+### 14.7 Troubleshooting (swarm-specific)
+
+**AppService namespace errors on startup ("Could not create room" /
+"alias not allowed").** Channel and tunnel room *aliases* must fall
+under the AppService's registered aliases namespace, and virtual agent
+users under its `namespace_regex` users namespace — both configured in
+the generated `registration.yaml` (see §9 / §11 for the general
+namespace-restriction guidance). If you renamed agents or channels after
+first registering the AppService, regenerate the registration:
+
+```bash
+python -m parrot.integrations.matrix.registration > docker/matrix/synapse/appservices/parrot.yaml
+# then restart Synapse so it re-reads app_service_config_files
+docker compose -f docker-compose.matrix.yml restart synapse
+```
+
+**Element X can't discover the homeserver.** Element X needs
+`/.well-known/matrix/client` (served by the `well-known` sidecar
+container on `:8448`) and Synapse ≥1.114 for native sliding sync — both
+are already satisfied by the pinned dev-stack image, but a mobile device
+must be able to reach that well-known endpoint over the network (not just
+`localhost`) — see `docs/integrations/matrix/CLIENTS.md` for the full
+login walkthrough.
+
+**A channel with `answer_policy: swarm` never starts a session.** Confirm
+`collaborative:` is configured in the YAML — a `swarm` channel without it
+fails config validation at load time (`ValidationError`), so this
+usually means the human sender was misclassified as an agent (check
+`human_namespace_patterns` and that the sender isn't accidentally a
+registered agent's MXID), or the room is at its
+`max_concurrent_sessions` cap.
+
+**Tunnel rooms keep accumulating.** Expected for an active swarm with
+many distinct agent pairs (O(N²) worst case) — the periodic sweeper
+tombstones tunnels idle longer than `ttl_minutes` (default 120). Lower
+`ttl_minutes` for a chattier swarm, or accept the cost and set
+`ttl_minutes: 0` only for small, stable swarms.
+
+---
+
 *Generated by AI-Parrot SDD — FEAT-044: Matrix Multi-Agent Crew Integration*
-*Version 1.6.0 — 2026-03-11*
+*Extended by FEAT-463: Matrix Agents Swarm (§14)*
+*Version 1.7.0 — 2026-08-26*

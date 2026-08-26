@@ -18,6 +18,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Dict, Optional
 
+from . import context as ctx
 from .config import CollaborativeConfig
 from .mention import parse_mention
 from .session_models import (
@@ -33,8 +34,10 @@ except ImportError:
 
 if TYPE_CHECKING:
     from ..appservice import MatrixAppService
+    from ..events import AgentAnswer
     from .crew_wrapper import MatrixCrewAgentWrapper
     from .registry import MatrixAgentCard, MatrixCrewRegistry
+    from .tunnel import TunnelRegistry
 
 
 class MatrixCollaborativeSession:
@@ -65,6 +68,9 @@ class MatrixCollaborativeSession:
         registry: "MatrixCrewRegistry",
         wrappers: Dict[str, "MatrixCrewAgentWrapper"],
         server_name: str,
+        *,
+        trigger_event_id: Optional[str] = None,
+        tunnels: Optional["TunnelRegistry"] = None,
     ) -> None:
         self._session_id = session_id
         self._room_id = room_id
@@ -74,6 +80,12 @@ class MatrixCollaborativeSession:
         self._registry = registry
         self._wrappers = wrappers
         self._server_name = server_name
+        # FEAT-463: the human message that triggered this session (used to
+        # reply-to announcements/synthesis) and the tunnel registry used for
+        # cross-pollination — both optional, keyword-only, and default to
+        # `None` so FEAT-195 callers are unaffected.
+        self._trigger_event_id = trigger_event_id
+        self._tunnels = tunnels
         self._state = CollaborativeSessionState(
             session_id=session_id,
             room_id=room_id,
@@ -283,23 +295,50 @@ class MatrixCollaborativeSession:
                 )
 
     async def _cross_pollinate_phase(self, round_num: int) -> None:
-        """Inject enriched context from prior results, call all agents."""
-        agents = await self._registry.all_agents()
-        tasks = []
-        for card in agents:
-            if card.agent_name == self._config.summarizer_agent:
-                continue
-            wrapper = self._wrappers.get(card.agent_name)
-            if wrapper:
-                enriched_prompt = self._build_enriched_context(
-                    round_num, card.agent_name
-                )
-                tasks.append(
-                    self._call_agent_with_timeout(
-                        card, wrapper, enriched_prompt, round_number=round_num
-                    )
-                )
+        """Inject enriched context from prior results, call all agents.
 
+        When a ``TunnelRegistry`` is attached, each agent first privately
+        asks its peers to clarify their prior finding (via
+        :meth:`_ask_peer`, in parallel, never blocking on a peer's
+        timeout) and the peer answers are folded into the enriched prompt.
+        Without tunnels, falls back to the original FEAT-195 behaviour
+        (peer results are only visible through the enriched prompt text
+        and public ``@mention``).
+        """
+        prev = {
+            name: results[-1]
+            for name, results in self._state.agent_results.items()
+            if results
+        }
+        agents = await self._registry.all_agents()
+
+        async def _enrich(card: "MatrixAgentCard") -> Optional[AgentRoundResult]:
+            wrapper = self._wrappers.get(card.agent_name)
+            if not wrapper:
+                return None
+            peer_answers: Dict[str, str] = {}
+            if self._tunnels is not None:
+                peers = [p for p in prev if p != card.agent_name]
+                asks = [
+                    self._ask_peer(card.agent_name, peer, prev[peer]) for peer in peers
+                ]
+                for peer, ans in zip(
+                    peers, await asyncio.gather(*asks, return_exceptions=True)
+                ):
+                    if not isinstance(ans, Exception) and ans is not None and ans.answer is not None:
+                        peer_answers[peer] = str(ans.answer)
+            enriched_prompt = self._build_enriched_context(
+                round_num, card.agent_name, peer_answers=peer_answers or None
+            )
+            return await self._call_agent_with_timeout(
+                card, wrapper, enriched_prompt, round_number=round_num
+            )
+
+        tasks = [
+            _enrich(card)
+            for card in agents
+            if card.agent_name != self._config.summarizer_agent
+        ]
         if not tasks:
             return
 
@@ -309,6 +348,57 @@ class MatrixCollaborativeSession:
                 self.logger.warning(
                     "Agent task raised exception during cross-pollination: %s", result
                 )
+
+    async def _ask_peer(
+        self, requester: str, target: str, their_result: AgentRoundResult
+    ) -> "AgentAnswer":
+        """Privately ask a peer agent to clarify their prior finding.
+
+        Uses the attached ``TunnelRegistry`` to get (or lazily create) a
+        private tunnel between ``requester`` and ``target``, and posts an
+        optional one-line echo (reply-to the session trigger) when
+        ``TunnelConfig.echo_summary_to_channel`` is set and verbosity is
+        not ``silent``.
+
+        Args:
+            requester: Name of the agent asking the question.
+            target: Name of the peer agent being asked.
+            their_result: The peer's most recent round result to clarify.
+
+        Returns:
+            The peer's ``AgentAnswer``.
+        """
+        tunnel = await self._tunnels.get_or_create(requester, target)
+        if (
+            self._tunnels.config.echo_summary_to_channel
+            and self._config.session_verbosity != "silent"
+        ):
+            reply_to = self._trigger_event_id or their_result.event_id
+            try:
+                await self._appservice.send_reply_as_agent(
+                    requester,
+                    self._room_id,
+                    f"🔒 asked {target} to clarify their findings",
+                    reply_to,
+                )
+            except Exception as exc:
+                self.logger.debug(
+                    "Session %s: failed to post cross-pollination echo: %s",
+                    self._session_id,
+                    exc,
+                )
+        question = (
+            f"Regarding your finding: {their_result.result_text[:800]}\n"
+            "What evidence supports it and what would change your view?"
+        )
+        return await tunnel.ask(
+            requester,
+            target,
+            question,
+            origin_session=self._session_id,
+            hops=0,
+            timeout=self._config.agent_timeout,
+        )
 
     async def _synthesize_phase(self) -> None:
         """Call the summarizer agent with a structured payload."""
@@ -338,10 +428,21 @@ class MatrixCollaborativeSession:
                     f"Summarizer '{summarizer_wrapper._config.chatbot_id}' not found"
                 )
 
-            synthesis = await asyncio.wait_for(
-                agent.ask(payload),
-                timeout=self._config.agent_timeout,
-            )
+            # FEAT-463: same swarm request context propagation as
+            # _call_agent_with_timeout, so an ask_agent tool call made by
+            # the summarizer itself carries origin_session/echo context.
+            session_token = ctx.current_session.set(self._session_id)
+            room_token = ctx.current_channel_room.set(self._room_id)
+            trigger_token = ctx.current_trigger_event.set(self._trigger_event_id)
+            try:
+                synthesis = await asyncio.wait_for(
+                    agent.ask(payload),
+                    timeout=self._config.agent_timeout,
+                )
+            finally:
+                ctx.current_session.reset(session_token)
+                ctx.current_channel_room.reset(room_token)
+                ctx.current_trigger_event.reset(trigger_token)
             # Extract text from AIMessage if needed; otherwise coerce to str
             if hasattr(synthesis, "to_text"):
                 synthesis_text = synthesis.to_text
@@ -350,11 +451,19 @@ class MatrixCollaborativeSession:
             else:
                 synthesis_text = str(synthesis)
 
-            event_id = await self._appservice.send_as_agent(
-                self._config.summarizer_agent,
-                self._room_id,
-                synthesis_text,
-            )
+            if self._trigger_event_id:
+                event_id = await self._appservice.send_reply_as_agent(
+                    self._config.summarizer_agent,
+                    self._room_id,
+                    synthesis_text,
+                    self._trigger_event_id,
+                )
+            else:
+                event_id = await self._appservice.send_as_agent(
+                    self._config.summarizer_agent,
+                    self._room_id,
+                    synthesis_text,
+                )
 
             self._state.final_synthesis = synthesis_text
             self.logger.info(
@@ -405,10 +514,21 @@ class MatrixCollaborativeSession:
                     f"Agent '{wrapper._config.chatbot_id}' not found"
                 )
 
-            response_obj = await asyncio.wait_for(
-                agent.ask(prompt),
-                timeout=self._config.agent_timeout,
-            )
+            # FEAT-463: propagate swarm request context around the LLM call
+            # so any AgentSwarmToolkit.ask_agent tool call it makes carries
+            # `origin_session` and echoes to the right room.
+            session_token = ctx.current_session.set(self._session_id)
+            room_token = ctx.current_channel_room.set(self._room_id)
+            trigger_token = ctx.current_trigger_event.set(self._trigger_event_id)
+            try:
+                response_obj = await asyncio.wait_for(
+                    agent.ask(prompt),
+                    timeout=self._config.agent_timeout,
+                )
+            finally:
+                ctx.current_session.reset(session_token)
+                ctx.current_channel_room.reset(room_token)
+                ctx.current_trigger_event.reset(trigger_token)
             # Extract text from AIMessage if needed; otherwise coerce to str
             if hasattr(response_obj, "to_text"):
                 response_text = response_obj.to_text
@@ -469,7 +589,12 @@ class MatrixCollaborativeSession:
             )
             return None
 
-    def _build_enriched_context(self, round_num: int, requesting_agent: str) -> str:
+    def _build_enriched_context(
+        self,
+        round_num: int,
+        requesting_agent: str,
+        peer_answers: Optional[Dict[str, str]] = None,
+    ) -> str:
         """Build the enriched context prompt for a cross-pollination round.
 
         Includes the original question and a summary of all other agents'
@@ -480,6 +605,8 @@ class MatrixCollaborativeSession:
             round_num: Current cross-pollination round number.
             requesting_agent: Agent that will receive this prompt (their own
                 prior results are excluded to reduce repetition).
+            peer_answers: Optional clarifications obtained privately via
+                tunnel (FEAT-463) — ``{peer_agent_name: answer_text}``.
 
         Returns:
             Enriched prompt string.
@@ -504,6 +631,12 @@ class MatrixCollaborativeSession:
         if len(lines) == 2:
             # No other agents had results
             lines.append("(No other agent results available yet)")
+
+        if peer_answers:
+            lines.append("")
+            lines.append("Peer clarifications obtained via private tunnel:")
+            for peer, answer in peer_answers.items():
+                lines.append(f"- [{peer}]: {answer[:500]}")
 
         lines.extend([
             "",
@@ -570,7 +703,12 @@ class MatrixCollaborativeSession:
             lines.append("")
 
         summary = "\n".join(lines)
-        await self._appservice.send_as_bot(self._room_id, summary)
+        if self._trigger_event_id:
+            await self._appservice.send_reply_as_bot(
+                self._room_id, summary, self._trigger_event_id
+            )
+        else:
+            await self._appservice.send_as_bot(self._room_id, summary)
         self._state.final_synthesis = summary
 
     def _has_any_results(self) -> bool:
@@ -602,7 +740,13 @@ class MatrixCollaborativeSession:
                 return
 
         try:
-            await self._appservice.send_as_bot(self._room_id, message)
+            if self._trigger_event_id:
+                text = f"🐦 [#{self._session_id[:4]}] {message}"
+                await self._appservice.send_reply_as_bot(
+                    self._room_id, text, self._trigger_event_id
+                )
+            else:
+                await self._appservice.send_as_bot(self._room_id, message)
         except Exception as exc:
             # Use DEBUG when the session is already in a terminal phase to
             # avoid noisy WARNING logs from cascading send failures.

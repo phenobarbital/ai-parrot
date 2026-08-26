@@ -367,3 +367,14 @@ corpus/compliance_soc2_hipaa/raw/
 corpus/compliance_soc2_hipaa/trees/
 # parrot LLM-wiki state (local retrieval plane)
 .parrot/
+
+#MCP Custom Local configs
+.mcp.json
+
+# Matrix dev stack — generated secrets / homeserver state (FEAT-463)
+docker/matrix/**/registration.yaml
+docker/matrix/synapse/*.signing.key
+docker/matrix/synapse/homeserver.yaml
+docker/matrix/synapse/appservices/
+docker/matrix/synapse/media_store/
+docker/matrix/.env
