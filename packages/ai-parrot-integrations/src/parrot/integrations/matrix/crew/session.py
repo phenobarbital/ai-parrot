@@ -428,10 +428,21 @@ class MatrixCollaborativeSession:
                     f"Summarizer '{summarizer_wrapper._config.chatbot_id}' not found"
                 )
 
-            synthesis = await asyncio.wait_for(
-                agent.ask(payload),
-                timeout=self._config.agent_timeout,
-            )
+            # FEAT-463: same swarm request context propagation as
+            # _call_agent_with_timeout, so an ask_agent tool call made by
+            # the summarizer itself carries origin_session/echo context.
+            session_token = ctx.current_session.set(self._session_id)
+            room_token = ctx.current_channel_room.set(self._room_id)
+            trigger_token = ctx.current_trigger_event.set(self._trigger_event_id)
+            try:
+                synthesis = await asyncio.wait_for(
+                    agent.ask(payload),
+                    timeout=self._config.agent_timeout,
+                )
+            finally:
+                ctx.current_session.reset(session_token)
+                ctx.current_channel_room.reset(room_token)
+                ctx.current_trigger_event.reset(trigger_token)
             # Extract text from AIMessage if needed; otherwise coerce to str
             if hasattr(synthesis, "to_text"):
                 synthesis_text = synthesis.to_text

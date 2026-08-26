@@ -350,6 +350,38 @@ class MatrixCrewConfig(BaseModel):
                 )
         return self
 
+    @model_validator(mode="after")
+    def validate_unique_chatbot_ids(self) -> "MatrixCrewConfig":
+        """Ensure no two agents share the same ``chatbot_id``.
+
+        FEAT-463 attaches a per-agent ``AgentSwarmToolkit`` to each
+        agent's bot (resolved via ``BotManager.get_bot(chatbot_id)``) at
+        ``MatrixCrewTransport.start()``. If two agents shared a
+        ``chatbot_id``, both would resolve to the same bot instance and
+        the second toolkit's same-named tools would be silently skipped
+        by ``ToolManager.register_tool()`` (a tool-name collision,
+        warn-and-skip since ``AgentSwarmToolkit`` sets no
+        ``tool_prefix``) — leaving that bot's ``ask_agent`` /
+        ``post_to_channel`` tool calls permanently bound to the *other*
+        agent's identity.
+
+        Returns:
+            Self after validation.
+
+        Raises:
+            ValueError: If two or more agents declare the same ``chatbot_id``.
+        """
+        seen: Dict[str, str] = {}
+        for agent_name, entry in self.agents.items():
+            if entry.chatbot_id in seen:
+                raise ValueError(
+                    f"agents '{seen[entry.chatbot_id]}' and '{agent_name}' share "
+                    f"chatbot_id '{entry.chatbot_id}' — each agent must have a "
+                    "unique chatbot_id"
+                )
+            seen[entry.chatbot_id] = agent_name
+        return self
+
     @classmethod
     def from_yaml(cls, path: str) -> "MatrixCrewConfig":
         """Load configuration from a YAML file with ``${ENV_VAR}`` substitution.

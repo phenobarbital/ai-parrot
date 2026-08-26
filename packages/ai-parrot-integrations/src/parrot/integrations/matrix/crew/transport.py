@@ -436,8 +436,24 @@ class MatrixCrewTransport:
         """Resolve the active session for an inter-agent message bypass.
 
         Prefers the session named by the ``current_session`` swarm context
-        (set around ``handle_task`` for tunnel-originated calls); falls back
-        to any active session in ``room_id``.
+        (set around ``handle_task`` for tunnel-originated calls). That
+        context is essentially never populated for this dispatch path in
+        practice, though: the inbound room-message event that carries an
+        agent's inter-agent ``@mention`` arrives through the AppService's
+        own HTTP callback — a fresh coroutine invocation decoupled from
+        whatever ``contextvars`` chain was active when the agent's LLM
+        call (that produced the mention) ran. Absent that context, this
+        falls back to the *most recently started* active session in
+        ``room_id`` (Python dicts preserve insertion order, so iterating
+        in reverse means "newest first") — a session freshly started is
+        more likely to still be mid cross-pollination (and so still
+        generating inter-agent @mention traffic) than an older one that
+        has likely already moved on to synthesis. This is a heuristic,
+        not a guarantee: with 2+ concurrent sessions genuinely both
+        awaiting a reply in the same room, correctly attributing the
+        message would need a durable, per-message session tag (e.g. a
+        reply-to relation back to a session-authored event) that the
+        current wire format doesn't carry.
 
         Args:
             room_id: The room the inter-agent message arrived in.
@@ -452,7 +468,7 @@ class MatrixCrewTransport:
                 if origin_session_id in room_sessions:
                     return room_sessions[origin_session_id]
         room_sessions = active_sessions.get(room_id, {})
-        for session in room_sessions.values():
+        for session in reversed(list(room_sessions.values())):
             if session.is_active:
                 return session
         return None

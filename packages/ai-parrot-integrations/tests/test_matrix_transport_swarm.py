@@ -87,3 +87,28 @@ async def test_bridged_user_is_human():
     t = _transport()
     await t.on_room_message("!gen:parrot.local", "@slack_U123:parrot.local", "from slack", "$1")
     assert t._build_session.call_count == 1
+
+
+async def test_resolve_active_session_prefers_most_recent():
+    """With no `current_session` swarm context (the common case for this
+    dispatch path — see _resolve_active_session's docstring), the most
+    recently started active session in the room wins over an older one."""
+    t = _transport()
+    old_session = MagicMock(is_active=True)
+    new_session = MagicMock(is_active=True)
+    t._active_sessions["!gen:parrot.local"] = {"old": old_session, "new": new_session}
+    assert t._resolve_active_session("!gen:parrot.local") is new_session
+
+
+async def test_inter_agent_mention_routes_to_most_recent_session():
+    t = _transport()
+    old_session = MagicMock(is_active=True, handle_inter_agent_message=AsyncMock())
+    new_session = MagicMock(is_active=True, handle_inter_agent_message=AsyncMock())
+    t._active_sessions["!gen:parrot.local"] = {"old": old_session, "new": new_session}
+
+    await t.on_room_message(
+        "!gen:parrot.local", "@parrot-analyst:parrot.local", "@writer can you check this?", "$e1"
+    )
+
+    new_session.handle_inter_agent_message.assert_awaited_once()
+    old_session.handle_inter_agent_message.assert_not_awaited()

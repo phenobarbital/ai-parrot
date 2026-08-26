@@ -33,8 +33,9 @@ class AgentTunnel:
     """A private, lazily created 2-agent tunnel room.
 
     Attributes:
-        last_used: Timestamp of the last successful ``ask()`` completion or
-            tunnel creation; used by the TTL sweeper to detect idle tunnels.
+        last_used: Timestamp of the last lookup, ``ask()`` start, or
+            ``ask()`` completion; used by the TTL sweeper to detect idle
+            tunnels.
     """
 
     def __init__(
@@ -54,6 +55,7 @@ class AgentTunnel:
         self._agents = agents
         self._registry = registry
         self.last_used: datetime = datetime.now(timezone.utc)
+        self._inflight: int = 0
 
     @property
     def room_id(self) -> str:
@@ -64,6 +66,15 @@ class AgentTunnel:
     def agents(self) -> Tuple[str, str]:
         """The unordered pair of agent names, sorted."""
         return self._agents
+
+    @property
+    def inflight(self) -> bool:
+        """Whether this tunnel has at least one in-progress ``ask()``.
+
+        Consulted by :meth:`TunnelRegistry._sweep_once` so an idle-looking
+        tunnel is never tombstoned while an ``ask()`` is still mid-flight.
+        """
+        return self._inflight > 0
 
     async def ask(
         self,
@@ -97,61 +108,67 @@ class AgentTunnel:
         if hops + 1 > cfg.max_hops:
             return AgentAnswer(answer=None, metadata={"status": "hop_limit", "hops": hops})
 
-        task = TaskEventContent(
-            task_id=str(uuid.uuid4()),
-            correlation_id=str(uuid.uuid4()),
-            content=question,
-            target_agent=target,
-            hops=hops + 1,
-            origin_session=origin_session,
-            expected_schema=expected_schema,
-            metadata={"requester": requester},
-        )
-        fut = self._registry.register_future(task.correlation_id)
-        try:
-            await self._registry.appservice.send_custom_event_as_agent(
-                requester, self.room_id, ParrotEventType.TASK, task.model_dump()
-            )
-        except Exception as exc:
-            # Never leak the registered future when the send itself fails
-            # (as opposed to the wait below timing out).
-            self._registry.discard_future(task.correlation_id)
-            return AgentAnswer(
-                answer=None,
-                metadata={
-                    "status": "error",
-                    "error": str(exc),
-                    "correlation_id": task.correlation_id,
-                },
-            )
-        try:
-            result: ResultEventContent = await asyncio.wait_for(
-                fut, timeout or cfg.default_timeout
-            )
-        except asyncio.TimeoutError:
-            self._registry.discard_future(task.correlation_id)
-            return AgentAnswer(
-                answer=None,
-                metadata={"status": "timeout", "correlation_id": task.correlation_id},
-            )
-
+        # Mark the tunnel active *before* any I/O — combined with
+        # `inflight`, this closes the race where the TTL sweeper reaps a
+        # tunnel between its idle check and this ask() actually landing.
         self.last_used = datetime.now(timezone.utc)
-
-        if not result.success:
-            return AgentAnswer(answer=None, metadata={"status": "error", "error": result.error})
-
-        answer = AgentAnswer.from_text(result.content)
+        self._inflight += 1
         try:
-            answer.validate_against(expected_schema)
-        except ValueError as exc:
-            answer.metadata.update(status="schema_error", error=str(exc))
-        else:
-            answer.metadata.setdefault("status", "ok")
-        answer.metadata.update(
-            correlation_id=task.correlation_id,
-            result_event_id=result.metadata.get("event_id"),
-        )
-        return answer
+            task = TaskEventContent(
+                task_id=str(uuid.uuid4()),
+                correlation_id=str(uuid.uuid4()),
+                content=question,
+                target_agent=target,
+                hops=hops + 1,
+                origin_session=origin_session,
+                expected_schema=expected_schema,
+                metadata={"requester": requester},
+            )
+            fut = self._registry.register_future(task.correlation_id)
+            try:
+                await self._registry.appservice.send_custom_event_as_agent(
+                    requester, self.room_id, ParrotEventType.TASK, task.model_dump()
+                )
+            except Exception as exc:
+                # Never leak the registered future when the send itself fails
+                # (as opposed to the wait below timing out).
+                self._registry.discard_future(task.correlation_id)
+                return AgentAnswer(
+                    answer=None,
+                    metadata={
+                        "status": "error",
+                        "error": str(exc),
+                        "correlation_id": task.correlation_id,
+                    },
+                )
+            try:
+                result: ResultEventContent = await asyncio.wait_for(fut, timeout or cfg.default_timeout)
+            except asyncio.TimeoutError:
+                self._registry.discard_future(task.correlation_id)
+                return AgentAnswer(
+                    answer=None,
+                    metadata={"status": "timeout", "correlation_id": task.correlation_id},
+                )
+
+            self.last_used = datetime.now(timezone.utc)
+
+            if not result.success:
+                return AgentAnswer(answer=None, metadata={"status": "error", "error": result.error})
+
+            answer = AgentAnswer.from_text(result.content)
+            try:
+                answer.validate_against(expected_schema)
+            except ValueError as exc:
+                answer.metadata.update(status="schema_error", error=str(exc))
+            else:
+                answer.metadata.setdefault("status", "ok")
+            answer.metadata.update(
+                correlation_id=task.correlation_id,
+                result_event_id=result.metadata.get("event_id"),
+            )
+            return answer
+        finally:
+            self._inflight -= 1
 
     async def send_feedback(
         self,
@@ -253,12 +270,16 @@ class TunnelRegistry:
         """
         key = tuple(sorted((agent_a, agent_b)))
         if key in self._tunnels:
-            return self._tunnels[key]
+            tunnel = self._tunnels[key]
+            tunnel.last_used = datetime.now(timezone.utc)
+            return tunnel
 
         lock = self._locks.setdefault(key, asyncio.Lock())
         async with lock:
             if key in self._tunnels:
-                return self._tunnels[key]
+                tunnel = self._tunnels[key]
+                tunnel.last_used = datetime.now(timezone.utc)
+                return tunnel
 
             agent_mxids = self._as.list_agents()
             invitees = [agent_mxids[a] for a in key if a in agent_mxids]
@@ -368,6 +389,15 @@ class TunnelRegistry:
             sender: The MXID of the event sender.
         """
         if event_type == ParrotEventType.RESULT:
+            # A legitimate result can only ever arrive in the tunnel room
+            # AgentTunnel.ask() sent the matching task in — restricting to
+            # known tunnel rooms is defense-in-depth against a forged
+            # correlation_id resolving a future from an unrelated room.
+            if not self.is_tunnel_room(room_id):
+                self.logger.warning(
+                    "Ignoring m.parrot.result in non-tunnel room %s from %s", room_id, sender
+                )
+                return
             try:
                 result = ResultEventContent(**content)
             except Exception:
@@ -380,6 +410,11 @@ class TunnelRegistry:
             return
 
         if event_type == ParrotEventType.FEEDBACK:
+            if not self.is_tunnel_room(room_id):
+                self.logger.warning(
+                    "Ignoring m.parrot.feedback in non-tunnel room %s from %s", room_id, sender
+                )
+                return
             try:
                 feedback = FeedbackEventContent(**content)
             except Exception:
@@ -389,12 +424,28 @@ class TunnelRegistry:
             return
 
         if event_type == ParrotEventType.TASK:
-            if not self.is_tunnel_room(room_id):
+            key = self._room_to_key.get(room_id)
+            if key is None:
                 return
             try:
                 task = TaskEventContent(**content)
             except Exception:
                 self.logger.warning("Malformed m.parrot.task in %s: %s", room_id, content)
+                return
+            # The sender and the declared target must both be one of this
+            # tunnel's two agents — rejects a task forged/misrouted for a
+            # different pair (e.g. hops/origin_session reset onto someone
+            # else's tunnel).
+            sender_agent = self._agent_name_for_mxid(sender)
+            if sender_agent not in key or task.target_agent not in key:
+                self.logger.warning(
+                    "Rejecting m.parrot.task in tunnel %s: sender=%s (%s), target=%s, pair=%s",
+                    room_id,
+                    sender,
+                    sender_agent,
+                    task.target_agent,
+                    key,
+                )
                 return
             wrapper = self._wrappers.get(task.target_agent) if task.target_agent else None
             handler = getattr(wrapper, "handle_task", None)
@@ -407,6 +458,20 @@ class TunnelRegistry:
                 return
             await handler(task, room_id)
             return
+
+    def _agent_name_for_mxid(self, mxid: str) -> Optional[str]:
+        """Reverse-lookup a registered agent's name from its MXID.
+
+        Args:
+            mxid: A full ``@user:server`` Matrix ID.
+
+        Returns:
+            The matching agent name, or ``None`` if not a registered agent.
+        """
+        for name, agent_mxid in self._as.list_agents().items():
+            if agent_mxid == mxid:
+                return name
+        return None
 
     async def start_sweeper(self) -> None:
         """Start the periodic idle-tunnel sweeper.
@@ -445,7 +510,11 @@ class TunnelRegistry:
 
         now = datetime.now(timezone.utc)
         ttl = timedelta(minutes=self._config.ttl_minutes)
-        expired = [key for key, t in self._tunnels.items() if (now - t.last_used) > ttl]
+        expired = [
+            key
+            for key, t in self._tunnels.items()
+            if not t.inflight and (now - t.last_used) > ttl
+        ]
 
         count = 0
         for key in expired:

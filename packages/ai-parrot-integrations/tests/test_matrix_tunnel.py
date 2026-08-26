@@ -7,7 +7,11 @@ import pytest
 
 from parrot.integrations.matrix.crew.config import TunnelConfig
 from parrot.integrations.matrix.crew.tunnel import TunnelRegistry
-from parrot.integrations.matrix.events import ParrotEventType, ResultEventContent
+from parrot.integrations.matrix.events import (
+    ParrotEventType,
+    ResultEventContent,
+    TaskEventContent,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -124,3 +128,91 @@ async def test_ttl_zero_never_sweeps(reg):
     t = await r.get_or_create("a", "b")
     t.last_used = datetime.now(timezone.utc) - timedelta(days=30)
     assert await r._sweep_once() == 0
+
+
+async def test_sweeper_skips_inflight_tunnel(reg):
+    """A tunnel with an in-progress ask() must never be reaped, even if
+    its last_used timestamp is (artificially) stale — closes the race
+    where the sweeper could tombstone a room mid-ask()."""
+    r, svc = reg
+    t = await r.get_or_create("a", "b")
+
+    started = asyncio.Event()
+
+    async def slow_send(*args, **kwargs):
+        started.set()
+        await asyncio.sleep(0.5)
+        return "$task"
+
+    svc.send_custom_event_as_agent.side_effect = slow_send
+    ask_task = asyncio.create_task(t.ask("a", "b", "q", timeout=1.0))
+    await started.wait()
+
+    # Force last_used stale *after* ask() already marked itself in-flight,
+    # to isolate the `inflight` guard from the `last_used` refresh.
+    t.last_used = datetime.now(timezone.utc) - timedelta(minutes=500)
+    assert t.inflight is True
+    assert await r._sweep_once() == 0
+    assert r.is_tunnel_room("!tun:parrot.local")
+
+    ask_task.cancel()
+    try:
+        await ask_task
+    except asyncio.CancelledError:
+        pass
+
+
+async def test_result_rejected_from_non_tunnel_room(reg):
+    """A RESULT delivered outside the tunnel room it belongs to must not
+    resolve the pending future (defense-in-depth against a forged
+    correlation_id in an unrelated room)."""
+    r, svc = reg
+    t = await r.get_or_create("a", "b")
+
+    async def deliver_wrong_room():
+        await asyncio.sleep(0.01)
+        sent = svc.send_custom_event_as_agent.call_args.args[3]
+        await r.on_custom_event(
+            ParrotEventType.RESULT,
+            ResultEventContent(
+                task_id=sent["task_id"],
+                content="ignored",
+                metadata={"correlation_id": sent["correlation_id"]},
+            ).model_dump(),
+            "!not-a-tunnel:parrot.local",
+            "@parrot-b:parrot.local",
+        )
+
+    asyncio.create_task(deliver_wrong_room())
+    ans = await t.ask("a", "b", "meaning?")
+    assert ans.metadata["status"] == "timeout"
+
+
+async def test_task_rejected_when_sender_or_target_not_in_pair(reg):
+    """A TASK routed into a tunnel room must be rejected when the sender
+    or the declared target isn't one of that tunnel's two agents."""
+    r, svc = reg
+    await r.get_or_create("a", "b")
+
+    wrapper = AsyncMock()
+    r._wrappers["a"] = wrapper
+    r._wrappers["b"] = wrapper
+
+    task_content = TaskEventContent(
+        task_id="t1", content="q", target_agent="a", correlation_id="c1"
+    ).model_dump()
+
+    # Sender is not part of the ("a", "b") pair at all.
+    await r.on_custom_event(
+        ParrotEventType.TASK, task_content, "!tun:parrot.local", "@stranger:parrot.local"
+    )
+    wrapper.handle_task.assert_not_awaited()
+
+    # Sender is legitimate but the declared target isn't part of the pair.
+    forged_content = TaskEventContent(
+        task_id="t2", content="q", target_agent="someone-else", correlation_id="c2"
+    ).model_dump()
+    await r.on_custom_event(
+        ParrotEventType.TASK, forged_content, "!tun:parrot.local", "@parrot-a:parrot.local"
+    )
+    wrapper.handle_task.assert_not_awaited()

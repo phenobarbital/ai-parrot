@@ -63,6 +63,19 @@ def test_duplicate_channel_names():
         MatrixCrewConfig(**BASE, channels=[ChannelConfig(name="a"), ChannelConfig(name="a")])
 
 
+def test_duplicate_chatbot_id_rejected():
+    agents = {
+        "analyst": MatrixCrewAgentEntry(
+            chatbot_id="shared-bot", display_name="Analyst", mxid_localpart="parrot-analyst"
+        ),
+        "writer": MatrixCrewAgentEntry(
+            chatbot_id="shared-bot", display_name="Writer", mxid_localpart="parrot-writer"
+        ),
+    }
+    with pytest.raises(ValidationError, match="chatbot_id"):
+        MatrixCrewConfig(**BASE, agents=agents)
+
+
 def test_examples_still_load():
     for f in (
         "examples/matrix_crew/matrix_crew.yaml",
