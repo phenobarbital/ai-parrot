@@ -14,7 +14,7 @@
       "feature_id": "FEAT-464",
       "feature": "matrix-swarm-sample",
       "spec": "sdd/specs/matrix-swarm-sample.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Pure data files (YAML + .env.example) with no code dependencies — can run in parallel with any other spec's tasks.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2488-agent-defs-and-env-template.md"
+      "completed_at": "2026-08-26T14:59:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2488-agent-defs-and-env-template.md"
     },
     {
       "id": "TASK-2489",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2488"],
+      "depends_on": [
+        "TASK-2488"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-2488 chatbot_ids; also the primary Python code — must run after agent definitions are set.",
       "assigned_to": null,
@@ -53,7 +55,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2488", "TASK-2489"],
+      "depends_on": [
+        "TASK-2488",
+        "TASK-2489"
+      ],
       "parallel": false,
       "parallelism_notes": "README references actual file structure and demo script flags — must run after core files exist.",
       "assigned_to": null,
@@ -71,7 +76,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2488", "TASK-2489"],
+      "depends_on": [
+        "TASK-2488",
+        "TASK-2489"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests validate YAML + script created by prior tasks — must run after those are committed.",
       "assigned_to": null,
