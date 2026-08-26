@@ -10,9 +10,9 @@ Manual additions are also supported — the script preserves manual entries.
 from .version import __version__, __title__, __description__
 
 TOOL_REGISTRY: dict[str, str] = {
-    "audio_note_capture": "parrot_tools.audio_note_capture.AudioNoteCaptureToolkit",
     "arango_db_search": "parrot_tools.arangodbsearch.ArangoDBSearchTool",
     "arxiv": "parrot_tools.arxiv_tool.ArxivTool",
+    "audio_note_capture": "parrot_tools.audio_note_capture.AudioNoteCaptureToolkit",
     "cloud_watch": "parrot_tools.aws.cloudwatch.CloudWatchToolkit",
     "document_db": "parrot_tools.aws.documentdb.DocumentDBToolkit",
     "ec2": "parrot_tools.aws.ec2.EC2Toolkit",
@@ -31,6 +31,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "bing_search": "parrot_tools.bingsearch.BingSearchTool",
     "bloomberg": "parrot_tools.bloomberg.BloombergTool",
     "break_even_analysis": "parrot_tools.breakeven.BreakEvenAnalysisTool",
+    "business_automation": "parrot_tools.business_automation.toolkit.BusinessAutomationToolkit",
     "calculator": "parrot_tools.calculator.tool.CalculatorTool",
     "chart": "parrot_tools.chart.ChartTool",
     "cloud_sploit": "parrot_tools.cloudsploit.toolkit.CloudSploitToolkit",
@@ -63,6 +64,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "gig_smart": "parrot_tools.gigsmart.toolkit.GigSmartToolkit",
     "git": "parrot_tools.gittoolkit.GitToolkit",
     "google_base": "parrot_tools.google.base.GoogleBaseTool",
+    "google_calendar": "parrot_tools.google.calendar.GoogleCalendarToolkit",
     "google_business": "parrot_tools.google.places.GoogleBusinessTool",
     "google_places_base": "parrot_tools.google.tools.GooglePlacesBaseTool",
     "google_search": "parrot_tools.google.tools.GoogleSearchTool",
