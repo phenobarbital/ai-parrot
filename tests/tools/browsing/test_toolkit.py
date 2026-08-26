@@ -92,6 +92,32 @@ class TestCatalogTools:
         actions = await toolkit.list_site_actions("hooba")
         assert {a["name"] for a in actions} == {"login"}
 
+    async def test_save_rejects_literal_password(self, toolkit):
+        with pytest.raises(ValueError, match="literal credentials"):
+            await toolkit.save_site_action(
+                site="hooba",
+                name="bad-auth",
+                description="x",
+                steps=[{"action": "authenticate", "password": "hunter2"}],
+            )
+
+    async def test_composite_rejects_undeclared_binding_placeholder(
+        self, toolkit
+    ):
+        with pytest.raises(ValueError, match="undeclared placeholder"):
+            await toolkit.save_site_action(
+                site="hooba",
+                name="bad-flow",
+                description="x",
+                kind="composite",
+                compose=[
+                    {
+                        "action": "search-customer",
+                        "params": {"customer": "{{typo}}"},
+                    }
+                ],
+            )
+
     async def test_composite_save_and_listing(self, toolkit):
         out = await toolkit.save_site_action(
             site="hooba",
@@ -172,6 +198,25 @@ class TestRunTools:
         with pytest.raises(KeyError, match="No catalogued site"):
             await toolkit.run_site_action("desconocido", "login")
 
+    async def test_merge_later_action_wins_and_preserves_earlier(
+        self, toolkit
+    ):
+        results = iter(
+            [
+                make_result({"rows": ["from-login"]}),
+                make_result({"rows": ["from-search"]}),
+            ]
+        )
+        executor = AsyncMock(side_effect=lambda *a, **k: next(results))
+        with patch(
+            "parrot_tools.browsing.toolkit.execute_plan_steps", executor
+        ):
+            result = await toolkit.run_site_action(
+                "hooba", "search-customer", params={"customer": "ACME"}
+            )
+        assert result["extracted_data"]["rows"] == ["from-search"]
+        assert result["extracted_data"]["login.rows"] == ["from-login"]
+
 
 class TestConfiguration:
     async def test_user_data_dir_reaches_driver_config(self, tmp_path):
@@ -203,6 +248,20 @@ class TestConfiguration:
         } <= names
         # Inherited scraping tools remain available
         assert {"scrape", "crawl"} <= names
+
+    async def test_run_tools_require_confirmation_by_default(self, tmp_path):
+        tk = WebBrowsingToolkit(catalog_dir=tmp_path / "c")
+        assert {
+            "run_site_action",
+            "run_site_sequence",
+            "delete_site_action",
+        } <= tk.confirming_tools
+
+    async def test_confirm_runs_false_keeps_delete_gated(self, tmp_path):
+        tk = WebBrowsingToolkit(catalog_dir=tmp_path / "c", confirm_runs=False)
+        assert tk.confirming_tools == frozenset({"delete_site_action"})
+        # Class-level default untouched for other instances
+        assert "run_site_action" in WebBrowsingToolkit.confirming_tools
 
     async def test_close_browser(self, tmp_path):
         tk = WebBrowsingToolkit(catalog_dir=tmp_path / "c")

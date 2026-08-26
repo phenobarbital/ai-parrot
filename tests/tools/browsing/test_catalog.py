@@ -1,4 +1,6 @@
 """Tests for the disk-backed ActionCatalog."""
+import asyncio
+
 import pytest
 
 from parrot_tools.browsing.catalog import ActionCatalog
@@ -108,6 +110,17 @@ class TestActions:
         await catalog.save_action("hooba", make_login())
         with pytest.raises(KeyError, match="login"):
             await catalog.get_action("hooba", "nope")
+
+    async def test_concurrent_saves_only_one_wins(self, catalog):
+        """The write lock closes the exists()-then-write TOCTOU window."""
+        await register_hooba(catalog)
+        outcomes = await asyncio.gather(
+            catalog.save_action("hooba", make_login()),
+            catalog.save_action("hooba", make_login()),
+            return_exceptions=True,
+        )
+        errors = [o for o in outcomes if isinstance(o, FileExistsError)]
+        assert len(errors) == 1, outcomes
 
     async def test_delete_action(self, catalog):
         await register_hooba(catalog)

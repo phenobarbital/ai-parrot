@@ -4,6 +4,8 @@ import pytest
 from parrot_tools.browsing.models import ActionParam
 from parrot_tools.browsing.templating import (
     collect_placeholders,
+    collect_value_placeholders,
+    find_literal_credentials,
     render_steps,
     render_value,
     resolve_params,
@@ -75,6 +77,55 @@ class TestCollectPlaceholders:
         ]
         assert collect_placeholders(steps) == {"city"}
 
+    def test_value_name_scoped_to_its_loop_subtree(self):
+        # "row" is a loop value_name INSIDE the loop, but it is also used
+        # as a placeholder OUTSIDE the loop — that outer use is a real
+        # undeclared parameter and must be reported.
+        steps = [
+            {
+                "action": "loop",
+                "values": ["a"],
+                "value_name": "row",
+                "actions": [
+                    {"action": "fill", "selector": "#f", "value": "{{row}}"}
+                ],
+            },
+            {"action": "fill", "selector": "#g", "value": "{{row}}"},
+        ]
+        assert collect_placeholders(steps) == {"row"}
+
+
+class TestCollectValuePlaceholders:
+    def test_nested_values(self):
+        params = {"customer": "{{customer}}", "meta": {"x": ["{{other}}"]}}
+        assert collect_value_placeholders(params) == {"customer", "other"}
+
+
+class TestFindLiteralCredentials:
+    def test_flags_literal_password(self):
+        steps = [{"action": "authenticate", "password": "secret123"}]
+        warnings = find_literal_credentials(steps)
+        assert len(warnings) == 1
+        assert "secret123" not in warnings[0]
+
+    def test_flags_nested_authenticate(self):
+        steps = [
+            {
+                "action": "loop",
+                "iterations": 1,
+                "actions": [
+                    {"action": "authenticate", "password": "secret123"}
+                ],
+            }
+        ]
+        assert len(find_literal_credentials(steps)) == 1
+
+    def test_broker_based_auth_is_clean(self):
+        steps = [
+            {"action": "authenticate", "credential_provider": "hooba"}
+        ]
+        assert find_literal_credentials(steps) == []
+
 
 class TestValidateLoopBounds:
     def test_strict_rejects_excess_iterations(self):
@@ -103,6 +154,30 @@ class TestValidateLoopBounds:
         assert out[0]["max_iterations"] == 50
         # Original untouched
         assert steps[0]["iterations"] == 500
+
+    def test_strict_rejects_non_positive_cap(self):
+        steps = [
+            {"action": "loop", "iterations": 1, "max_iterations": 0,
+             "actions": []}
+        ]
+        with pytest.raises(ValueError, match="must be >= 1"):
+            validate_loop_bounds(steps, 50, strict=True)
+
+    def test_non_strict_clamps_non_positive_cap_to_one(self):
+        steps = [
+            {"action": "loop", "iterations": 1, "max_iterations": -3,
+             "actions": []}
+        ]
+        out = validate_loop_bounds(steps, 50, strict=False)
+        assert out[0]["max_iterations"] == 1
+
+    def test_author_supplied_tighter_cap_is_kept(self):
+        steps = [
+            {"action": "loop", "iterations": 2, "max_iterations": 5,
+             "actions": []}
+        ]
+        out = validate_loop_bounds(steps, 50, strict=True)
+        assert out[0]["max_iterations"] == 5
 
     def test_nested_loops_checked(self):
         steps = [

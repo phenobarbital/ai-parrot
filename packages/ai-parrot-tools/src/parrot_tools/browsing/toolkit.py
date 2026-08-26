@@ -25,6 +25,7 @@ Key traits:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -47,6 +48,8 @@ from .models import (
 )
 from .templating import (
     collect_placeholders,
+    collect_value_placeholders,
+    find_literal_credentials,
     render_steps,
     validate_loop_bounds,
 )
@@ -88,15 +91,29 @@ class WebBrowsingToolkit(WebScrapingToolkit):
         human_channel: Optional ``HumanChannel`` for ``await_human``
             steps (e.g. MFA challenges mid-script).
         session_based: Reuse a single browser session across every run
-            (default ``True`` here, unlike the scraping parent).
+            (default ``True`` here, unlike the scraping parent). Note:
+            catalogued runs (``run_site_action`` / ``run_site_sequence``)
+            ALWAYS use session mode regardless of this flag — the
+            persistent session is the point of the toolkit — so this
+            only influences the inherited ``scrape``/``crawl`` behaviour
+            before the first catalogued run.
         headless: Run headless. Defaults to ``False`` — catalogued flows
             typically operate real, logged-in user sessions.
+        confirm_runs: Mark ``run_site_action`` / ``run_site_sequence``
+            with ``requires_confirmation`` routing metadata (HITL
+            confirmation where the surface supports it). Default
+            ``True``: these tools act on a real, possibly authenticated
+            browser session (form submissions, account changes), which
+            is a larger blast radius than any catalog edit. Set to
+            ``False`` only for trusted, fully-automated pipelines.
         **kwargs: Everything ``WebScrapingToolkit`` accepts
             (``driver_type``, ``browser``, ``plans_dir``, ``llm_client``,
             timeouts, ...). The driver backend is fixed at construction.
     """
 
-    confirming_tools: frozenset = frozenset({"delete_site_action"})
+    confirming_tools: frozenset = frozenset(
+        {"delete_site_action", "run_site_action", "run_site_sequence"}
+    )
 
     def __init__(
         self,
@@ -109,6 +126,7 @@ class WebBrowsingToolkit(WebScrapingToolkit):
         human_channel: Optional[Any] = None,
         session_based: bool = True,
         headless: bool = False,
+        confirm_runs: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -125,6 +143,14 @@ class WebBrowsingToolkit(WebScrapingToolkit):
         self._max_loop_iterations = max(1, int(max_loop_iterations))
         self._credential_resolver = credential_resolver
         self._human_channel = human_channel
+        if not confirm_runs:
+            # Instance-level shadow: keep only the destructive catalog
+            # edit under confirmation for trusted automated pipelines.
+            self.confirming_tools = frozenset({"delete_site_action"})
+        #: Serializes catalogued runs — the persistent browser session is
+        #: a single page/tab; concurrent sequences would interleave their
+        #: navigations and fills.
+        self._run_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
     # ── Lifecycle ─────────────────────────────────────────────────────
@@ -304,9 +330,26 @@ class WebBrowsingToolkit(WebScrapingToolkit):
                     f"{', '.join(sorted(undeclared))}. Declare them in "
                     "'params' so callers know what to provide."
                 )
+            credential_leaks = find_literal_credentials(action.steps)
+            if credential_leaks:
+                raise ValueError(
+                    "Refusing to save a script with literal credentials:\n"
+                    + "\n".join(credential_leaks)
+                )
             action.steps = validate_loop_bounds(
                 action.steps, self._max_loop_iterations, strict=True
             )
+        if action.compose:
+            bound_placeholders = set()
+            for ref in action.compose:
+                bound_placeholders |= collect_value_placeholders(ref.params)
+            undeclared = bound_placeholders - set(action.params)
+            if undeclared:
+                raise ValueError(
+                    "Composite bindings use undeclared placeholder(s): "
+                    f"{', '.join(sorted(undeclared))}. Declare them in "
+                    "'params' so callers know what to provide."
+                )
 
         path = await self._catalog.save_action(site, action, overwrite=overwrite)
         return {
@@ -420,27 +463,34 @@ class WebBrowsingToolkit(WebScrapingToolkit):
         *,
         stop_on_error: bool,
     ) -> Dict[str, Any]:
-        """Execute an expanded sequence against the session driver."""
+        """Execute an expanded sequence against the session driver.
+
+        The whole sequence runs under ``self._run_lock``: the persistent
+        browser session drives a single page, so concurrent sequences
+        must not interleave their navigations.
+        """
         site_info = await self._catalog.resolve_site(site)
-        driver = await self._ensure_session_driver()
 
         executed: List[ActionRunSummary] = []
         merged: Dict[str, Any] = {}
+        writers: Dict[str, str] = {}
         stopped_early = False
 
-        for resolved in sequence:
-            summary = await self._run_one(driver, site_info, resolved)
-            executed.append(summary)
-            for key, value in summary.extracted_data.items():
-                target = (
-                    f"{summary.action}.{key}"
-                    if key in merged and merged[key] != value
-                    else key
-                )
-                merged[target] = value
-            if not summary.success and stop_on_error:
-                stopped_early = len(executed) < len(sequence)
-                break
+        async with self._run_lock:
+            driver = await self._ensure_session_driver()
+            for resolved in sequence:
+                summary = await self._run_one(driver, site_info, resolved)
+                executed.append(summary)
+                for key, value in summary.extracted_data.items():
+                    # Later actions win the bare key; a displaced earlier
+                    # value stays reachable under "{earlier_action}.{key}".
+                    if key in merged and merged[key] != value:
+                        merged[f"{writers[key]}.{key}"] = merged[key]
+                    merged[key] = value
+                    writers[key] = summary.action
+                if not summary.success and stop_on_error:
+                    stopped_early = len(executed) < len(sequence)
+                    break
 
         result = SequenceRunResult(
             success=all(item.success for item in executed) and not stopped_early,

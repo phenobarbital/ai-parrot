@@ -331,9 +331,10 @@ class SequenceRunResult(BaseModel):
         site: Site slug the sequence ran against.
         requested: What the caller asked for (action names, in order).
         executed: Per-action outcomes, in execution order.
-        extracted_data: Merged extraction output (later actions win on
-            key conflicts; keys are namespaced ``{action}.{key}`` when a
-            conflict is detected).
+        extracted_data: Merged extraction output. Later actions win the
+            bare key on conflicts; each displaced earlier value remains
+            reachable under ``{earlier_action}.{key}`` (per-action data
+            is also kept intact on each ``executed`` entry).
         stopped_early: True when execution aborted on a failed action.
     """
 

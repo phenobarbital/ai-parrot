@@ -10,9 +10,14 @@ Layout (one folder per site, one JSON file per action)::
             goto-dashboard.json
             create-invoice-draft.json
 
-All I/O is async (aiofiles). Site and action names are slugified before
-touching the filesystem, so catalog entries can never escape the catalog
-directory.
+All I/O is async: file contents go through aiofiles and filesystem
+metadata operations run in a worker thread (``asyncio.to_thread``), so
+the event loop is never blocked. Mutating operations are serialized by a
+write lock, so concurrent tool calls cannot interleave a check-then-write
+(e.g. two ``save_action(overwrite=False)`` for the same action).
+
+Site and action names are slugified before touching the filesystem, so
+catalog entries can never escape the catalog directory.
 """
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import aiofiles
 
@@ -43,7 +48,10 @@ class ActionCatalog:
         self._dir = Path(catalog_dir)
         self._sites: Dict[str, SiteInfo] = {}
         self._loaded = False
-        self._lock = asyncio.Lock()
+        self._load_lock = asyncio.Lock()
+        #: Serializes every mutating operation (register/save/delete) so
+        #: check-then-write sequences cannot interleave across coroutines.
+        self._write_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -59,30 +67,38 @@ class ActionCatalog:
         Args:
             force: Re-scan even when already loaded.
         """
-        async with self._lock:
+        async with self._load_lock:
             if self._loaded and not force:
                 return
-            self._sites = {}
-            if self._dir.is_dir():
-                for site_dir in sorted(self._dir.iterdir()):
-                    site_file = site_dir / _SITE_FILE
-                    if not site_dir.is_dir() or not site_file.is_file():
-                        continue
-                    try:
-                        async with aiofiles.open(site_file, "r") as f:
-                            content = await f.read()
-                        info = SiteInfo.model_validate_json(content)
-                        self._sites[info.site] = info
-                    except Exception as exc:  # noqa: BLE001
-                        self.logger.warning(
-                            "Skipping unreadable site metadata %s: %s",
-                            site_file, exc,
-                        )
+            sites: Dict[str, SiteInfo] = {}
+            site_files = await asyncio.to_thread(self._scan_site_files)
+            for site_file in site_files:
+                try:
+                    async with aiofiles.open(site_file, "r") as f:
+                        content = await f.read()
+                    info = SiteInfo.model_validate_json(content)
+                    sites[info.site] = info
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "Skipping unreadable site metadata %s: %s",
+                        site_file, exc,
+                    )
+            self._sites = sites
             self._loaded = True
             self.logger.info(
                 "ActionCatalog loaded: %d site(s) from %s",
                 len(self._sites), self._dir,
             )
+
+    def _scan_site_files(self) -> List[Path]:
+        """Blocking helper: list every ``_site.json`` (worker thread)."""
+        if not self._dir.is_dir():
+            return []
+        return [
+            site_dir / _SITE_FILE
+            for site_dir in sorted(self._dir.iterdir())
+            if site_dir.is_dir() and (site_dir / _SITE_FILE).is_file()
+        ]
 
     # ── Sites ─────────────────────────────────────────────────────────
 
@@ -103,23 +119,24 @@ class ActionCatalog:
             The stored :class:`SiteInfo`.
         """
         await self.load()
-        existing = self._sites.get(info.site)
-        if existing is not None and not overwrite:
-            raise ValueError(f"Site {info.site!r} already exists")
-        if existing is not None:
-            info = info.model_copy(
-                update={
-                    "created_at": existing.created_at,
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            )
-        site_dir = self._site_dir(info.site)
-        site_dir.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(site_dir / _SITE_FILE, "w") as f:
-            await f.write(info.model_dump_json(indent=2))
-        self._sites[info.site] = info
-        self.logger.info("Registered site %r at %s", info.site, site_dir)
-        return info
+        async with self._write_lock:
+            existing = self._sites.get(info.site)
+            if existing is not None and not overwrite:
+                raise ValueError(f"Site {info.site!r} already exists")
+            if existing is not None:
+                info = info.model_copy(
+                    update={
+                        "created_at": existing.created_at,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                )
+            site_dir = self._site_dir(info.site)
+            await asyncio.to_thread(site_dir.mkdir, parents=True, exist_ok=True)
+            async with aiofiles.open(site_dir / _SITE_FILE, "w") as f:
+                await f.write(info.model_dump_json(indent=2))
+            self._sites[info.site] = info
+            self.logger.info("Registered site %r at %s", info.site, site_dir)
+            return info
 
     async def list_sites(self) -> List[SiteInfo]:
         """Return every registered site's metadata."""
@@ -176,7 +193,14 @@ class ActionCatalog:
             info = await self.resolve_site(query)
         except KeyError:
             return False
-        site_dir = self._site_dir(info.site)
+        async with self._write_lock:
+            site_dir = self._site_dir(info.site)
+            await asyncio.to_thread(self._remove_site_dir, site_dir)
+            self._sites.pop(info.site, None)
+            return True
+
+    def _remove_site_dir(self, site_dir: Path) -> None:
+        """Blocking helper: delete a site folder's JSON files + folder."""
         for path in sorted(site_dir.glob("*.json")):
             path.unlink(missing_ok=True)
         try:
@@ -185,8 +209,6 @@ class ActionCatalog:
             self.logger.warning(
                 "Site folder %s not empty after delete; leaving it", site_dir
             )
-        self._sites.pop(info.site, None)
-        return True
 
     # ── Actions ───────────────────────────────────────────────────────
 
@@ -218,21 +240,24 @@ class ActionCatalog:
         """
         info = await self.resolve_site(site_query)
         action.validate_steps()
-        path = self._action_path(info.site, action.name)
-        if path.exists():
-            if not overwrite:
-                raise FileExistsError(
-                    f"Action {action.name!r} already exists for site "
-                    f"{info.site!r}. Pass overwrite=True to replace it."
+        async with self._write_lock:
+            path = self._action_path(info.site, action.name)
+            if await asyncio.to_thread(path.exists):
+                if not overwrite:
+                    raise FileExistsError(
+                        f"Action {action.name!r} already exists for site "
+                        f"{info.site!r}. Pass overwrite=True to replace it."
+                    )
+                action = action.model_copy(
+                    update={"updated_at": datetime.now(timezone.utc)}
                 )
-            action = action.model_copy(
-                update={"updated_at": datetime.now(timezone.utc)}
+            stored = action.model_copy(update={"site": info.site})
+            async with aiofiles.open(path, "w") as f:
+                await f.write(stored.model_dump_json(indent=2))
+            self.logger.info(
+                "Saved action %s/%s -> %s", info.site, action.name, path
             )
-        stored = action.model_copy(update={"site": info.site})
-        async with aiofiles.open(path, "w") as f:
-            await f.write(stored.model_dump_json(indent=2))
-        self.logger.info("Saved action %s/%s -> %s", info.site, action.name, path)
-        return path
+            return path
 
     async def get_action(self, site_query: str, name: str) -> SiteAction:
         """Load one action script.
@@ -249,7 +274,7 @@ class ActionCatalog:
         """
         info = await self.resolve_site(site_query)
         path = self._action_path(info.site, name)
-        if not path.is_file():
+        if not await asyncio.to_thread(path.is_file):
             available = ", ".join(
                 a.name for a in await self.list_actions(info.site)
             ) or "(none)"
@@ -272,10 +297,11 @@ class ActionCatalog:
         """
         info = await self.resolve_site(site_query)
         site_dir = self._site_dir(info.site)
+        action_files = await asyncio.to_thread(
+            self._scan_action_files, site_dir
+        )
         actions: List[SiteAction] = []
-        for path in sorted(site_dir.glob("*.json")):
-            if path.name == _SITE_FILE:
-                continue
+        for path in action_files:
             try:
                 async with aiofiles.open(path, "r") as f:
                     content = await f.read()
@@ -285,6 +311,15 @@ class ActionCatalog:
                     "Skipping unreadable action file %s: %s", path, exc
                 )
         return actions
+
+    @staticmethod
+    def _scan_action_files(site_dir: Path) -> List[Path]:
+        """Blocking helper: list a site's action JSONs (worker thread)."""
+        return [
+            path
+            for path in sorted(site_dir.glob("*.json"))
+            if path.name != _SITE_FILE
+        ]
 
     async def delete_action(self, site_query: str, name: str) -> bool:
         """Remove one action script from disk.
@@ -297,12 +332,13 @@ class ActionCatalog:
             ``True`` when the file existed and was removed.
         """
         info = await self.resolve_site(site_query)
-        path = self._action_path(info.site, name)
-        if not path.is_file():
-            return False
-        path.unlink()
-        self.logger.info("Deleted action %s/%s", info.site, name)
-        return True
+        async with self._write_lock:
+            path = self._action_path(info.site, name)
+            if not await asyncio.to_thread(path.is_file):
+                return False
+            await asyncio.to_thread(path.unlink)
+            self.logger.info("Deleted action %s/%s", info.site, name)
+            return True
 
     # ── Internal ──────────────────────────────────────────────────────
 

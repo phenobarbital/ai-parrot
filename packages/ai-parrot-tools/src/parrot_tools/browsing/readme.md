@@ -115,11 +115,19 @@ await toolkit.run_site_sequence(
   enter the catalog.
 - **Bounded loops at run time**: loop limits are clamped again before
   execution (defense in depth).
-- **No credentials in scripts**: use `authenticate` steps with
-  `credential_provider` + a `credential_resolver` (CredentialBroker) —
-  never literal passwords in catalog JSON.
+- **No credentials in scripts**: `save_site_action` refuses any
+  `authenticate` step carrying a literal `password` (recursively, loops
+  and conditionals included). Use `credential_provider` + a
+  `credential_resolver` (CredentialBroker) instead.
 - **Cycle/depth guards**: composite expansion detects reference cycles and
   caps nesting depth.
+- **HITL confirmation on runs**: `run_site_action` / `run_site_sequence`
+  (and `delete_site_action`) carry `requires_confirmation` routing
+  metadata by default — they act on a real, possibly authenticated
+  browser session. Pass `confirm_runs=False` for trusted pipelines.
+- **Sequential execution**: catalogued runs are serialized on an internal
+  lock — the persistent session drives one page, so concurrent sequences
+  cannot interleave.
 
 ## Recording new actions
 

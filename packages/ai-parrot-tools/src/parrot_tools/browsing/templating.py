@@ -106,9 +106,10 @@ def render_steps(
 def collect_placeholders(steps: List[Dict[str, Any]]) -> Set[str]:
     """Collect every ``{{name}}`` placeholder appearing in *steps*.
 
-    Loop-reserved names (``index``, ``index_1``, ``value``) and each
-    loop's declared ``value_name`` are excluded — those are runtime
-    placeholders owned by the Loop executor, not action parameters.
+    Loop-reserved names (``index``, ``index_1``, ``value``) are excluded
+    globally; a loop's declared ``value_name`` is excluded only INSIDE
+    that loop's own subtree — those are runtime placeholders owned by
+    the Loop executor, not action parameters.
 
     Args:
         steps: Raw DSL step dicts.
@@ -117,24 +118,95 @@ def collect_placeholders(steps: List[Dict[str, Any]]) -> Set[str]:
         Set of parameter-like placeholder names.
     """
     found: Set[str] = set()
-    loop_names: Set[str] = set(RESERVED_PLACEHOLDERS)
+
+    def _walk(node: Any, excluded: frozenset[str]) -> None:
+        if isinstance(node, str):
+            found.update(
+                name
+                for name in _PLACEHOLDER_RE.findall(node)
+                if name not in excluded
+            )
+            return
+        if isinstance(node, dict):
+            child_excluded = excluded
+            if node.get("action") == "loop" and node.get("value_name"):
+                child_excluded = excluded | {str(node["value_name"])}
+            for key, v in node.items():
+                # The loop's value_name only shadows placeholders inside
+                # its own nested actions, not sibling fields elsewhere.
+                _walk(v, child_excluded if key == "actions" else excluded)
+            return
+        if isinstance(node, list):
+            for item in node:
+                _walk(item, excluded)
+
+    _walk(steps, frozenset(RESERVED_PLACEHOLDERS))
+    return found
+
+
+def collect_value_placeholders(value: Any) -> Set[str]:
+    """Collect ``{{name}}`` placeholders in an arbitrary nested value.
+
+    Used to validate composite parameter bindings
+    (``ComposedRef.params``), where no loop-runtime placeholders exist.
+
+    Args:
+        value: Any string/dict/list structure.
+
+    Returns:
+        Set of placeholder names found.
+    """
+    found: Set[str] = set()
 
     def _walk(node: Any) -> None:
         if isinstance(node, str):
             found.update(_PLACEHOLDER_RE.findall(node))
-            return
-        if isinstance(node, dict):
-            if node.get("action") == "loop" and node.get("value_name"):
-                loop_names.add(str(node["value_name"]))
+        elif isinstance(node, dict):
             for v in node.values():
                 _walk(v)
-            return
-        if isinstance(node, list):
+        elif isinstance(node, list):
             for item in node:
                 _walk(item)
 
-    _walk(steps)
-    return found - loop_names
+    _walk(value)
+    return found
+
+
+def find_literal_credentials(steps: List[Dict[str, Any]]) -> List[str]:
+    """Flag ``authenticate`` steps carrying a literal password, recursively.
+
+    Catalogued scripts are files at rest — a literal password inside one
+    is a stored secret. Authentication must go through
+    ``credential_provider`` (CredentialBroker) instead. Unlike
+    :func:`parrot_tools.scraping.models.lint_literal_credentials`, this
+    walk also descends into Loop/Conditional nested action lists.
+
+    Args:
+        steps: Raw DSL step dicts.
+
+    Returns:
+        One warning per offending step path (never the credential value).
+    """
+    warnings: List[str] = []
+
+    def _walk(items: Any, path: str) -> None:
+        if not isinstance(items, list):
+            return
+        for idx, node in enumerate(items):
+            if not isinstance(node, dict):
+                continue
+            here = f"{path}[{idx}]"
+            if node.get("action") == "authenticate" and node.get("password"):
+                warnings.append(
+                    f"{here}: Authenticate carries a literal 'password' — "
+                    "use credential_provider (CredentialBroker) instead"
+                )
+            for key in _NESTED_KEYS:
+                if key in node:
+                    _walk(node[key], f"{here}.{key}")
+
+    _walk(steps, "steps")
+    return warnings
 
 
 def validate_loop_bounds(
@@ -182,7 +254,16 @@ def validate_loop_bounds(
                     f"exceeding the allowed maximum of {max_iterations}"
                 )
             node["values"] = values[:max_iterations]
-        if not isinstance(cap, int) or cap > max_iterations or cap < 1:
+        if isinstance(cap, int) and cap < 1:
+            # An author-supplied non-positive cap is invalid, not a
+            # license to loosen: fail closed on save, clamp to the
+            # tightest bound on run.
+            if strict:
+                raise ValueError(
+                    f"{path}: loop max_iterations={cap} must be >= 1"
+                )
+            node["max_iterations"] = 1
+        elif not isinstance(cap, int) or cap > max_iterations:
             if strict and isinstance(cap, int) and cap > max_iterations:
                 raise ValueError(
                     f"{path}: loop max_iterations={cap} exceeds the "
