@@ -1001,7 +1001,16 @@ class FormAPIHandler:
         return JSONResponse(resolution.model_dump(mode="json", exclude_none=True))
 
     async def validate(self, request: web.Request) -> web.Response:
-        """POST /api/v1/forms/{form_uid}/validate — Validate form submission."""
+        """POST /api/v1/forms/{form_uid}/validate — Validate form submission (dry-run).
+
+        FEAT-458: a `reject` form's undeclared payload keys are surfaced here
+        too, under the reserved `errors["__unknown__"]` key, so a client
+        pre-flighting a submission is not told `200` for a payload `/submit`
+        would then `422`. `drop` and `keep` responses are unchanged — this
+        route never stores anything, so `keep` needs no cap check here.
+        """
+        from ..core.schema import UnknownFieldsPolicy
+
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
@@ -1018,10 +1027,15 @@ class FormAPIHandler:
 
         data, visit_context = self._extract_visit_context(form, body)
         result = await self.validator.validate(form, data, visit_context=visit_context)
-        status = 200 if result.is_valid else 422
+
+        errors = dict(result.errors)
+        if form.unknown_fields is UnknownFieldsPolicy.REJECT and result.extra_data:
+            errors["__unknown__"] = sorted(result.extra_data)
+
+        is_valid = not errors
         return JSONResponse(
-            {"is_valid": result.is_valid, "errors": result.errors},
-            status=status,
+            {"is_valid": is_valid, "errors": errors},
+            status=200 if is_valid else 422,
         )
 
     async def create_blank_form(self, request: web.Request) -> web.Response:
