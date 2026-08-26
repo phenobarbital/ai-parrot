@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-464
 **Date**: 2026-08-26
 **Author**: Jesus Lara / AI-Parrot Team
-**Status**: draft
+**Status**: approved
 **Target version**: 0.28.0 (next minor — ships with FEAT-463)
 **Proposal**: `sdd/proposals/matrix-swarm-sample.proposal.md`
 **Depends on**: FEAT-463 (`matrix-agents-swarm`) — core swarm modules must be implemented first
@@ -509,12 +509,12 @@ class MatrixCrewConfig(BaseModel):                       # :139
 
 ### Remaining
 
-- [ ] Should `swarm_demo.py` include a `--mock` flag for running with echo/stub
+- [x] Should `swarm_demo.py` include a `--mock` flag for running with echo/stub
   agents (no API keys needed)? — *Owner: implementation agent*
-  Recommendation: yes — makes the demo accessible without 4 API keys.
+  Recommendation: yes — makes the demo accessible without 4 API keys: No, is not
 
-- [ ] Which specific tools from `parrot_tools` should be attached to researcher
-  and analyst? Verify what exists before assigning. — *Owner: implementation agent*
+- [x] Which specific tools from `parrot_tools` should be attached to researcher
+  and analyst? Verify what exists before assigning. — *Owner: implementation agent*: WikiToolkit and WorkingMemoryToolkit
 
 ---
 
