@@ -1,4 +1,5 @@
 """Tests for swarm config models — FEAT-463 TASK-2478."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -47,9 +48,7 @@ def test_swarm_requires_collaborative():
         MatrixCrewConfig(
             **BASE,
             agents=AGENTS,
-            channels=[
-                ChannelConfig(name="g", agents=["analyst"], answer_policy="swarm")
-            ],
+            channels=[ChannelConfig(name="g", agents=["analyst"], answer_policy="swarm")],
         )
 
 
@@ -68,9 +67,7 @@ def test_duplicate_chatbot_id_rejected():
         "analyst": MatrixCrewAgentEntry(
             chatbot_id="shared-bot", display_name="Analyst", mxid_localpart="parrot-analyst"
         ),
-        "writer": MatrixCrewAgentEntry(
-            chatbot_id="shared-bot", display_name="Writer", mxid_localpart="parrot-writer"
-        ),
+        "writer": MatrixCrewAgentEntry(chatbot_id="shared-bot", display_name="Writer", mxid_localpart="parrot-writer"),
     }
     with pytest.raises(ValidationError, match="chatbot_id"):
         MatrixCrewConfig(**BASE, agents=agents)

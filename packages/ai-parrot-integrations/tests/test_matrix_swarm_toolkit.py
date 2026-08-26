@@ -1,4 +1,5 @@
 """Tests for AgentSwarmToolkit — FEAT-463 TASK-2483."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -18,9 +19,7 @@ def tk():
 
     registry = AsyncMock()
     registry.get.side_effect = lambda n: MagicMock(agent_name=n) if n in ("writer", "analyst") else None
-    registry.all_agents.return_value = [
-        MagicMock(agent_name="writer", display_name="W", status="ready", skills=[])
-    ]
+    registry.all_agents.return_value = [MagicMock(agent_name="writer", display_name="W", status="ready", skills=[])]
 
     channels = MagicMock()
     channels.is_member.side_effect = lambda a, c: c == "general"

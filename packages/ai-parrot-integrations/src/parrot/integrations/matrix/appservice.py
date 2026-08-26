@@ -6,6 +6,7 @@ Wraps mautrix.appservice.AppService to provide:
 - HookEvent emission compatible with AutonomousOrchestrator
 - Lifecycle management (start/stop)
 """
+
 from __future__ import annotations
 import inspect
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
@@ -22,13 +23,13 @@ try:
         UserID,
         StateEvent,
     )
+
     HAS_MAUTRIX = True
 except ImportError:
     HAS_MAUTRIX = False
 
 from .models import MatrixAppServiceConfig
 from .events import ParrotEventType
-
 
 # Type alias for event handler callbacks
 EventCallback = Callable[[str, str, str, Any], Coroutine[Any, Any, None]]
@@ -65,8 +66,7 @@ class MatrixAppService:
     def __init__(self, config: MatrixAppServiceConfig) -> None:
         if not HAS_MAUTRIX:
             raise ImportError(
-                "mautrix is required for Matrix integration. "
-                "Install with: uv pip install 'ai-parrot[matrix]'"
+                "mautrix is required for Matrix integration. " "Install with: uv pip install 'ai-parrot[matrix]'"
             )
         self._config = config
         self._appservice: Optional[MautrixAppService] = None
@@ -115,9 +115,7 @@ class MatrixAppService:
                 await self.bot_intent.ensure_joined(RoomID(room_id))
                 self.logger.info("Bot joined room %s", room_id)
             except Exception as exc:
-                self.logger.warning(
-                    f"Failed to join room {room_id}: {exc}"
-                )
+                self.logger.warning(f"Failed to join room {room_id}: {exc}")
 
     async def stop(self) -> None:
         """Stop the Application Service HTTP server."""
@@ -171,10 +169,7 @@ class MatrixAppService:
         self._registered_agents[agent_name] = mxid
         self._agent_rooms.setdefault(mxid, set())
 
-        self.logger.info(
-            f"Registered agent '{agent_name}' as {mxid} "
-            f"(displayname: {display})"
-        )
+        self.logger.info(f"Registered agent '{agent_name}' as {mxid} " f"(displayname: {display})")
         return mxid
 
     async def unregister_agent(self, agent_name: str) -> None:
@@ -207,27 +202,20 @@ class MatrixAppService:
         """
         mxid = self._registered_agents.get(agent_name)
         if not mxid:
-            raise ValueError(
-                f"Agent '{agent_name}' not registered. "
-                f"Call register_agent() first."
-            )
+            raise ValueError(f"Agent '{agent_name}' not registered. " f"Call register_agent() first.")
 
         intent = self._get_intent(mxid)
 
         # Bot invites, then agent joins
         try:
-            await self.bot_intent.invite_user(
-                RoomID(room_id), UserID(mxid)
-            )
+            await self.bot_intent.invite_user(RoomID(room_id), UserID(mxid))
         except Exception:
             pass  # Already invited or member
 
         await intent.ensure_joined(RoomID(room_id))
         self._agent_rooms.setdefault(mxid, set()).add(room_id)
 
-        self.logger.info(
-            f"Agent '{agent_name}' joined room {room_id}"
-        )
+        self.logger.info(f"Agent '{agent_name}' joined room {room_id}")
 
     def list_agents(self) -> Dict[str, str]:
         """Return mapping of registered agent_name → mxid."""
@@ -309,9 +297,7 @@ class MatrixAppService:
 
     async def send_as_bot(self, room_id: str, message: str) -> str:
         """Send a message as the bot user."""
-        event_id = await self.bot_intent.send_text(
-            RoomID(room_id), message
-        )
+        event_id = await self.bot_intent.send_text(RoomID(room_id), message)
         return str(event_id)
 
     async def send_custom_event_as_agent(
@@ -336,14 +322,10 @@ class MatrixAppService:
 
         mxid = self._registered_agents.get(agent_name)
         if not mxid:
-            self.logger.warning(
-                "send_custom_event_as_agent: unknown agent %s", agent_name
-            )
+            self.logger.warning("send_custom_event_as_agent: unknown agent %s", agent_name)
             return None
         intent = self._get_intent(mxid)
-        custom_type = MxEventType.find(
-            event_type, t_class=MxEventType.Class.MESSAGE
-        )
+        custom_type = MxEventType.find(event_type, t_class=MxEventType.Class.MESSAGE)
         event_id = await intent.send_message_event(RoomID(room_id), custom_type, content)
         return str(event_id)
 
@@ -385,9 +367,7 @@ class MatrixAppService:
             msgtype=MessageType.TEXT,
             body=message,
         )
-        content["m.relates_to"] = {
-            "m.in_reply_to": {"event_id": reply_to_event_id}
-        }
+        content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to_event_id}}
         event_id = await intent.send_message(RoomID(room_id), content)
         return str(event_id)
 
@@ -419,9 +399,7 @@ class MatrixAppService:
             msgtype=MessageType.TEXT,
             body=message,
         )
-        content["m.relates_to"] = {
-            "m.in_reply_to": {"event_id": reply_to_event_id}
-        }
+        content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to_event_id}}
         event_id = await self.bot_intent.send_message(RoomID(room_id), content)
         return str(event_id)
 
@@ -481,9 +459,7 @@ class MatrixAppService:
             initial_state=initial_state,
             creation_content=creation_content,
         )
-        self.logger.info(
-            "Created room %s (alias=%s, direct=%s)", room_id, alias_localpart, is_direct
-        )
+        self.logger.info("Created room %s (alias=%s, direct=%s)", room_id, alias_localpart, is_direct)
         return str(room_id)
 
     async def set_room_state_as_bot(
@@ -507,9 +483,7 @@ class MatrixAppService:
         from mautrix.types import EventType as MxEventType, RoomID
 
         et = MxEventType.find(event_type, t_class=MxEventType.Class.STATE)
-        event_id = await self.bot_intent.send_state_event(
-            RoomID(room_id), et, content, state_key=state_key
-        )
+        event_id = await self.bot_intent.send_state_event(RoomID(room_id), et, content, state_key=state_key)
         return str(event_id)
 
     async def get_room_state_as_bot(
@@ -532,13 +506,9 @@ class MatrixAppService:
 
         et = MxEventType.find(event_type, t_class=MxEventType.Class.STATE)
         try:
-            content = await self.bot_intent.get_state_event(
-                RoomID(room_id), et, state_key=state_key
-            )
+            content = await self.bot_intent.get_state_event(RoomID(room_id), et, state_key=state_key)
         except Exception as exc:
-            self.logger.debug(
-                "get_room_state_as_bot: no state %s in %s (%s)", event_type, room_id, exc
-            )
+            self.logger.debug("get_room_state_as_bot: no state %s in %s (%s)", event_type, room_id, exc)
             return None
         if content is None:
             return None
@@ -626,9 +596,7 @@ class MatrixAppService:
                 ``(event_type, content)``.
         """
         params = list(inspect.signature(callback).parameters.values())
-        has_var_positional = any(
-            p.kind == inspect.Parameter.VAR_POSITIONAL for p in params
-        )
+        has_var_positional = any(p.kind == inspect.Parameter.VAR_POSITIONAL for p in params)
         positional_params = [
             p
             for p in params
@@ -703,9 +671,7 @@ class MatrixAppService:
                 await self._event_callback(room_id, sender, body, event)
 
         except Exception as exc:
-            self.logger.error(
-                f"Error handling event: {exc}", exc_info=True
-            )
+            self.logger.error(f"Error handling event: {exc}", exc_info=True)
 
     async def _query_user(self, user_id: str) -> Optional[dict]:
         """Respond to homeserver user existence queries."""
@@ -714,6 +680,7 @@ class MatrixAppService:
         localpart = str(user).split(":")[0].lstrip("@")
 
         import re
+
         if re.match(self._config.namespace_regex, localpart):
             return {}
         return None

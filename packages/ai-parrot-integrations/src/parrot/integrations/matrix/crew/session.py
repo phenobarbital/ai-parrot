@@ -11,6 +11,7 @@ collaborative investigation triggered by ``!investigate`` in a Matrix room:
 4. **COMPLETED** (or **FAILED** on error) — Session archived, transport
    returns to normal routing.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -140,18 +141,12 @@ class MatrixCollaborativeSession:
                 self._config.session_timeout,
             )
             self._state.phase = SessionPhase.FAILED
-            await self._announce(
-                f"Session timed out after {self._config.session_timeout:.0f} seconds."
-            )
+            await self._announce(f"Session timed out after {self._config.session_timeout:.0f} seconds.")
         except Exception as exc:
-            self.logger.error(
-                "Session %s failed: %s", self._session_id, exc, exc_info=True
-            )
+            self.logger.error("Session %s failed: %s", self._session_id, exc, exc_info=True)
             if self._state.phase != SessionPhase.FAILED:
                 self._state.phase = SessionPhase.FAILED
-                await self._announce(
-                    f"Collaborative session failed: {exc}"
-                )
+                await self._announce(f"Collaborative session failed: {exc}")
 
         self._state.completed_at = datetime.now(timezone.utc)
         return self._state
@@ -189,9 +184,7 @@ class MatrixCollaborativeSession:
             target_wrapper = self._wrappers[card.agent_name]
 
         if not target_wrapper:
-            self.logger.debug(
-                "No wrapper found for @%s during session", localpart
-            )
+            self.logger.debug("No wrapper found for @%s during session", localpart)
             return
 
         self.logger.info(
@@ -218,9 +211,7 @@ class MatrixCollaborativeSession:
         self._state.phase = SessionPhase.FAILED
         self._state.completed_at = datetime.now(timezone.utc)
         await self._announce(f"Collaborative session cancelled: {reason}")
-        self.logger.info(
-            "Session %s cancelled: %s", self._session_id, reason
-        )
+        self.logger.info("Session %s cancelled: %s", self._session_id, reason)
 
     # ------------------------------------------------------------------
     # Internal lifecycle
@@ -239,9 +230,7 @@ class MatrixCollaborativeSession:
         # Check if all agents failed
         if not self._has_any_results():
             self._state.phase = SessionPhase.FAILED
-            await self._announce(
-                "All agents failed to respond. Cannot continue session."
-            )
+            await self._announce("All agents failed to respond. Cannot continue session.")
             return
 
         # Phase 2: CROSS_POLLINATING (N rounds)
@@ -250,9 +239,7 @@ class MatrixCollaborativeSession:
                 return
             self._state.phase = SessionPhase.CROSS_POLLINATING
             self._state.current_round = round_num
-            await self._announce(
-                f"Cross-pollination round {round_num}/{self._config.max_rounds}…"
-            )
+            await self._announce(f"Cross-pollination round {round_num}/{self._config.max_rounds}…")
             await self._cross_pollinate_phase(round_num)
 
         if self._cancelled:
@@ -276,23 +263,17 @@ class MatrixCollaborativeSession:
                 continue  # Skip summarizer during investigation
             wrapper = self._wrappers.get(card.agent_name)
             if wrapper:
-                tasks.append(
-                    self._call_agent_with_timeout(card, wrapper, self._question, round_number=0)
-                )
+                tasks.append(self._call_agent_with_timeout(card, wrapper, self._question, round_number=0))
 
         if not tasks:
-            self.logger.warning(
-                "Session %s: no agents found for investigation", self._session_id
-            )
+            self.logger.warning("Session %s: no agents found for investigation", self._session_id)
             return
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
             if isinstance(result, Exception):
-                self.logger.warning(
-                    "Agent task raised exception: %s", result
-                )
+                self.logger.warning("Agent task raised exception: %s", result)
 
     async def _cross_pollinate_phase(self, round_num: int) -> None:
         """Inject enriched context from prior results, call all agents.
@@ -305,11 +286,7 @@ class MatrixCollaborativeSession:
         (peer results are only visible through the enriched prompt text
         and public ``@mention``).
         """
-        prev = {
-            name: results[-1]
-            for name, results in self._state.agent_results.items()
-            if results
-        }
+        prev = {name: results[-1] for name, results in self._state.agent_results.items() if results}
         agents = await self._registry.all_agents()
 
         async def _enrich(card: "MatrixAgentCard") -> Optional[AgentRoundResult]:
@@ -319,39 +296,25 @@ class MatrixCollaborativeSession:
             peer_answers: Dict[str, str] = {}
             if self._tunnels is not None:
                 peers = [p for p in prev if p != card.agent_name]
-                asks = [
-                    self._ask_peer(card.agent_name, peer, prev[peer]) for peer in peers
-                ]
-                for peer, ans in zip(
-                    peers, await asyncio.gather(*asks, return_exceptions=True)
-                ):
+                asks = [self._ask_peer(card.agent_name, peer, prev[peer]) for peer in peers]
+                for peer, ans in zip(peers, await asyncio.gather(*asks, return_exceptions=True)):
                     if not isinstance(ans, Exception) and ans is not None and ans.answer is not None:
                         peer_answers[peer] = str(ans.answer)
             enriched_prompt = self._build_enriched_context(
                 round_num, card.agent_name, peer_answers=peer_answers or None
             )
-            return await self._call_agent_with_timeout(
-                card, wrapper, enriched_prompt, round_number=round_num
-            )
+            return await self._call_agent_with_timeout(card, wrapper, enriched_prompt, round_number=round_num)
 
-        tasks = [
-            _enrich(card)
-            for card in agents
-            if card.agent_name != self._config.summarizer_agent
-        ]
+        tasks = [_enrich(card) for card in agents if card.agent_name != self._config.summarizer_agent]
         if not tasks:
             return
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception):
-                self.logger.warning(
-                    "Agent task raised exception during cross-pollination: %s", result
-                )
+                self.logger.warning("Agent task raised exception during cross-pollination: %s", result)
 
-    async def _ask_peer(
-        self, requester: str, target: str, their_result: AgentRoundResult
-    ) -> "AgentAnswer":
+    async def _ask_peer(self, requester: str, target: str, their_result: AgentRoundResult) -> "AgentAnswer":
         """Privately ask a peer agent to clarify their prior finding.
 
         Uses the attached ``TunnelRegistry`` to get (or lazily create) a
@@ -369,10 +332,7 @@ class MatrixCollaborativeSession:
             The peer's ``AgentAnswer``.
         """
         tunnel = await self._tunnels.get_or_create(requester, target)
-        if (
-            self._tunnels.config.echo_summary_to_channel
-            and self._config.session_verbosity != "silent"
-        ):
+        if self._tunnels.config.echo_summary_to_channel and self._config.session_verbosity != "silent":
             reply_to = self._trigger_event_id or their_result.event_id
             try:
                 await self._appservice.send_reply_as_agent(
@@ -420,13 +380,9 @@ class MatrixCollaborativeSession:
         payload = self._build_synthesizer_payload()
 
         try:
-            agent = await BotManager.get_bot(  # type: ignore[union-attr]
-                summarizer_wrapper._config.chatbot_id
-            )
+            agent = await BotManager.get_bot(summarizer_wrapper._config.chatbot_id)  # type: ignore[union-attr]
             if agent is None:
-                raise RuntimeError(
-                    f"Summarizer '{summarizer_wrapper._config.chatbot_id}' not found"
-                )
+                raise RuntimeError(f"Summarizer '{summarizer_wrapper._config.chatbot_id}' not found")
 
             # FEAT-463: same swarm request context propagation as
             # _call_agent_with_timeout, so an ask_agent tool call made by
@@ -479,9 +435,7 @@ class MatrixCollaborativeSession:
             await self._announce("Summarizer timed out. Posting raw results.")
             await self._post_raw_results()
         except Exception as exc:
-            self.logger.error(
-                "Session %s: synthesizer failed: %s", self._session_id, exc
-            )
+            self.logger.error("Session %s: synthesizer failed: %s", self._session_id, exc)
             await self._announce(f"Synthesis failed: {exc}. Posting raw results.")
             await self._post_raw_results()
 
@@ -510,9 +464,7 @@ class MatrixCollaborativeSession:
         try:
             agent = await BotManager.get_bot(wrapper._config.chatbot_id)
             if agent is None:
-                raise RuntimeError(
-                    f"Agent '{wrapper._config.chatbot_id}' not found"
-                )
+                raise RuntimeError(f"Agent '{wrapper._config.chatbot_id}' not found")
 
             # FEAT-463: propagate swarm request context around the LLM call
             # so any AgentSwarmToolkit.ask_agent tool call it makes carries
@@ -575,9 +527,7 @@ class MatrixCollaborativeSession:
                 card.agent_name,
                 round_number,
             )
-            await self._announce(
-                f"{card.display_name} timed out, skipping."
-            )
+            await self._announce(f"{card.display_name} timed out, skipping.")
             return None
 
         except Exception as exc:
@@ -638,11 +588,13 @@ class MatrixCollaborativeSession:
             for peer, answer in peer_answers.items():
                 lines.append(f"- [{peer}]: {answer[:500]}")
 
-        lines.extend([
-            "",
-            "Review your peers' findings and refine your analysis. You may @mention"
-            " a colleague to ask them a question or request them to use a tool.",
-        ])
+        lines.extend(
+            [
+                "",
+                "Review your peers' findings and refine your analysis. You may @mention"
+                " a colleague to ask them a question or request them to use a tool.",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -661,9 +613,7 @@ class MatrixCollaborativeSession:
         """
         if self._config.include_chat_context:
             # TODO(FEAT-195): fetch recent room messages via appservice and prepend to context
-            self.logger.debug(
-                "include_chat_context=True but room history fetch not yet implemented"
-            )
+            self.logger.debug("include_chat_context=True but room history fetch not yet implemented")
 
         lines = [
             "Synthesize the following investigation results for the question:",
@@ -680,11 +630,13 @@ class MatrixCollaborativeSession:
             lines.append(f"\n[{latest.display_name}]:")
             lines.append(latest.result_text)
 
-        lines.extend([
-            "",
-            "Provide a comprehensive synthesis of these findings, highlighting"
-            " agreements, discrepancies, and actionable conclusions.",
-        ])
+        lines.extend(
+            [
+                "",
+                "Provide a comprehensive synthesis of these findings, highlighting"
+                " agreements, discrepancies, and actionable conclusions.",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -704,18 +656,14 @@ class MatrixCollaborativeSession:
 
         summary = "\n".join(lines)
         if self._trigger_event_id:
-            await self._appservice.send_reply_as_bot(
-                self._room_id, summary, self._trigger_event_id
-            )
+            await self._appservice.send_reply_as_bot(self._room_id, summary, self._trigger_event_id)
         else:
             await self._appservice.send_as_bot(self._room_id, summary)
         self._state.final_synthesis = summary
 
     def _has_any_results(self) -> bool:
         """Return True if at least one agent produced a result."""
-        return any(
-            bool(results) for results in self._state.agent_results.values()
-        )
+        return any(bool(results) for results in self._state.agent_results.values())
 
     async def _announce(self, message: str) -> None:
         """Post a phase announcement via the coordinator bot.
@@ -733,27 +681,20 @@ class MatrixCollaborativeSession:
         # In minimal mode, only post errors/important messages (simplified heuristic)
         if verbosity == "minimal":
             lower = message.lower()
-            if not any(
-                kw in lower
-                for kw in ("fail", "error", "cancel", "timeout", "complete")
-            ):
+            if not any(kw in lower for kw in ("fail", "error", "cancel", "timeout", "complete")):
                 return
 
         try:
             if self._trigger_event_id:
                 text = f"🐦 [#{self._session_id[:4]}] {message}"
-                await self._appservice.send_reply_as_bot(
-                    self._room_id, text, self._trigger_event_id
-                )
+                await self._appservice.send_reply_as_bot(self._room_id, text, self._trigger_event_id)
             else:
                 await self._appservice.send_as_bot(self._room_id, message)
         except Exception as exc:
             # Use DEBUG when the session is already in a terminal phase to
             # avoid noisy WARNING logs from cascading send failures.
             level = (
-                logging.DEBUG
-                if self._state.phase in (SessionPhase.FAILED, SessionPhase.COMPLETED)
-                else logging.WARNING
+                logging.DEBUG if self._state.phase in (SessionPhase.FAILED, SessionPhase.COMPLETED) else logging.WARNING
             )
             self.logger.log(
                 level,

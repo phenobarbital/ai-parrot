@@ -6,20 +6,17 @@ session id, and the channel/trigger-event a request originated from — from
 ``AgentSwarmToolkit`` tool calls (e.g. ``ask_agent``), without threading
 extra parameters through every intermediate layer.
 """
+
 import contextvars
 from typing import Optional
 
 #: Number of tunnel hops already taken in the current request chain.
 #: Defaults to ``0`` for top-level (human-triggered) requests.
-current_hops: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "current_hops", default=0
-)
+current_hops: contextvars.ContextVar[int] = contextvars.ContextVar("current_hops", default=0)
 
 #: The originating collaborative session id, when the current request was
 #: triggered from a ``MatrixCollaborativeSession`` cross-pollination round.
-current_session: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "current_session", default=None
-)
+current_session: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("current_session", default=None)
 
 #: The room id of the channel the current request originated from, when
 #: applicable — used to post the optional tunnel-question echo line.
