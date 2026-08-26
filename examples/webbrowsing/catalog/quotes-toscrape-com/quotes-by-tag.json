@@ -1,0 +1,46 @@
+{
+  "site": "quotes-toscrape-com",
+  "name": "quotes-by-tag",
+  "title": "Citas por etiqueta",
+  "description": "Open the listing for one tag (e.g. 'love', 'inspirational', 'life') and extract its quotes.",
+  "kind": "operation",
+  "params": {
+    "tag": {
+      "description": "Tag slug to browse",
+      "required": true,
+      "default": null,
+      "example": "love"
+    }
+  },
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://quotes.toscrape.com/tag/{{tag}}/"
+    },
+    {
+      "action": "extract",
+      "selector": "div.quote",
+      "multiple": true,
+      "extract_name": "quotes",
+      "fields": {
+        "text": {
+          "selector": "span.text"
+        },
+        "author": {
+          "selector": "small.author"
+        },
+        "tags": {
+          "selector": "div.tags a.tag",
+          "multiple": true
+        }
+      }
+    }
+  ],
+  "compose": [],
+  "requires": [],
+  "tags": [],
+  "version": "1.0",
+  "source": "llm",
+  "created_at": "2026-08-26T10:03:30.405121Z",
+  "updated_at": "2026-08-26T10:03:30.405691Z"
+}
