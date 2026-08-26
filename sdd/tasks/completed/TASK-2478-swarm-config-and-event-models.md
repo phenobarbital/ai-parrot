@@ -295,9 +295,25 @@ def test_feedback_rating_bounds():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Implemented exactly per skeleton in the task's Implementation
+Notes. Added `ChannelConfig`, `TunnelConfig`, `SpaceConfig` to `crew/config.py`,
+extended `CollaborativeConfig` (`max_concurrent_sessions`, `cooldown_seconds`)
+and `MatrixCrewConfig` (`channels`, `tunnels`, `space`,
+`human_namespace_patterns`) with the `validate_channels` model validator.
+Added `ParrotEventType.CHANNEL/TUNNEL/FEEDBACK` (+ mautrix `*_EVENT` objects
+with STATE/MESSAGE t_class per event kind, None fallback without mautrix),
+`AgentAnswer` (with `validate_against` using `jsonschema` when installed,
+minimal fallback otherwise, and `from_text`), `FeedbackEventContent`,
+`ChannelStateContent`, `TunnelStateContent` to `events.py`; extended
+`TaskEventContent` with `correlation_id`, `hops`, `origin_session`,
+`expected_schema`. Exported new config models from `crew/__init__.py` and
+new event models via the lazy `__getattr__` map in `matrix/__init__.py`.
+12/12 new tests pass; existing `test_matrix_collaborative_config.py` (25)
+and `test_matrix_crew.py` (23) pass unchanged (48/48); example YAMLs load
+unmodified. `ruff check` shows only pre-existing baseline lint categories
+(I001/RUF022/F401/SIM102/UP006/UP045/UP035) extended in the same style
+already present in these files — no new categories introduced (verified
+via `git stash` diff against baseline).
 **Deviations from spec**: none

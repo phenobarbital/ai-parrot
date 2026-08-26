@@ -203,7 +203,36 @@ Same as TASK-2478.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: `MatrixCollaborativeSession.__init__` gained keyword-only
+`trigger_event_id`/`tunnels` (both default `None`, FEAT-195 callers
+unaffected). `_announce`, `_synthesize_phase`'s summarizer-success branch,
+and `_post_raw_results` now use `send_reply_as_bot`/`send_reply_as_agent`
+(reply-to `trigger_event_id`) instead of plain sends when it is set;
+`_announce` also prefixes with the short session id
+(`🐦 [#<sid[:4]>] ...`) in that case. `_cross_pollinate_phase` was
+rewritten per the skeleton's `enrich()`/`_ask_peer` pattern: when
+`tunnels` is attached, each agent privately asks its peers (in parallel
+via `asyncio.gather(..., return_exceptions=True)`, never blocking on one
+peer's timeout) to clarify their prior finding through
+`TunnelRegistry.get_or_create().ask()`, posting an optional one-line echo
+(reply-to trigger, suppressed when `echo_summary_to_channel=False` or
+`session_verbosity="silent"`) via `_ask_peer`; peer answers fold into
+`_build_enriched_context`'s new optional `peer_answers` param. Without
+`tunnels`, cross-pollination is byte-for-byte the original FEAT-195
+behaviour. `_call_agent_with_timeout` now sets/resets
+`current_session`/`current_channel_room`/`current_trigger_event` around
+`agent.ask()` so LLM-issued `AgentSwarmToolkit.ask_agent` calls inherit
+the session's origin. `transport.py::_build_session` was simplified to
+pass `trigger_event_id`/`tunnels` directly (the `inspect.signature` guard
+added defensively in TASK-2484 is no longer needed now that the
+constructor accepts them; `inspect` import removed as it became unused).
+4/4 new tests pass; full acceptance-criteria run (`test_matrix_session_tunnel.py`
++ `test_matrix_collaborative_session.py` + `test_matrix_transport_collaborative.py`)
+41/41 pass; full `pytest -k matrix` 228/234 pass (6 pre-existing
+`test_matrix_hook.py` failures, unrelated, unchanged since TASK-2478).
+`ruff check` shows only proportional increases in the same pre-existing
+categories already established in `session.py`/`transport.py` (verified
+via `git stash`) — no new categories.
 **Deviations from spec**: none

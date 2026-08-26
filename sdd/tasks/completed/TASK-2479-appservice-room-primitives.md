@@ -213,7 +213,25 @@ Same as TASK-2478 (read spec, verify contract, implement, test, move file, updat
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Added `create_room_as_bot`, `set_room_state_as_bot`,
+`get_room_state_as_bot`, `resolve_alias`, `leave_as_agent` to
+`MatrixAppService` per the skeleton. `_handle_event` now routes
+`ParrotEventType.FEEDBACK` alongside TASK/RESULT to the custom callback
+with `(event_type, content, room_id, sender)`. `set_custom_event_callback`
+inspects the callback's positional-parameter arity (excluding `*args`) to
+decide whether to wrap a legacy 2-arg callback (e.g.
+`HybridDelegator.on_custom_event`) in a 4→2 adapter — refined beyond the
+task's naive `len(params) <= 2` skeleton because `inspect.signature` on an
+`AsyncMock` yields `(*args, **kwargs)` (2 params) and would otherwise be
+misclassified as legacy; the fix checks for `VAR_POSITIONAL` and only
+counts POSITIONAL_ONLY/POSITIONAL_OR_KEYWORD params. 5/5 new tests pass;
+`test_matrix_appservice.py` (18) and `test_matrix_delegation.py` (14) pass
+unchanged (37/37 total). `ruff check` shows only pre-existing baseline
+categories with proportionate counts (verified via `git stash` diff) — no
+new categories introduced.
+**Deviations from spec**: Arity-detection logic in `set_custom_event_callback`
+is more robust than the task's literal skeleton (see Notes) to correctly
+handle `AsyncMock`-based test callbacks; behavior for real 2-arg and 4-arg
+callables is unchanged from the spec's intent.

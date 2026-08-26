@@ -196,7 +196,31 @@ Same as TASK-2478.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Added `handle_task` and `_build_task_prompt` to
+`MatrixCrewAgentWrapper` per the skeleton — the first producer of
+`m.parrot.result` in the package. Runs the agent via
+`BotManager.get_bot(chatbot_id)` + `agent.ask(prompt)` under
+`asyncio.wait_for(timeout)`, registry status busy→ready around the call,
+and always replies via `send_custom_event_as_agent` with a
+`ResultEventContent` whose `metadata` carries `correlation_id` (falls
+back to `task_id` for legacy/no-correlation callers), `origin_session`,
+`hops`. Any exception/timeout is caught and reported as
+`success=False, error=str(exc)` — never propagates. 4/4 new tests pass;
+full matrix regression 208/214 (6 pre-existing `test_matrix_hook.py`
+failures, unrelated); `test_matrix_crew.py` (23) unaffected.
+`ruff check` matches the pre-existing baseline exactly (verified via
+`git stash`) after removing two redundant quoted forward-refs on the new
+`TaskEventContent` params (the type is imported unconditionally in this
+module, unlike the TYPE_CHECKING-only params already in `__init__`).
+Environment note: `patch("parrot.manager.BotManager.get_bot", ...)`
+transitively imports compiled Cython extensions
+(`parrot.utils.types`, `parrot.utils.parsers.toml`) that exist as
+prebuilt `.so` files in the main repo checkout but only as uncompiled
+`.pyx` sources in this worktree (a known worktree/Cython gotcha — the
+root `conftest.py` intentionally prepends worktree `src/` dirs ahead of
+the main-repo editable install). Copied the two missing gitignored
+`.so` build artifacts from the main repo into the worktree to unblock
+these tests; no source files were touched to work around this.
 **Deviations from spec**: none

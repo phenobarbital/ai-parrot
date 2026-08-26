@@ -7,7 +7,8 @@ Wraps mautrix.appservice.AppService to provide:
 - Lifecycle management (start/stop)
 """
 from __future__ import annotations
-from typing import Any, Callable, Coroutine, Dict, Optional, Set
+import inspect
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
 
 from navconfig.logging import logging
 
@@ -425,6 +426,172 @@ class MatrixAppService:
         return str(event_id)
 
     # ------------------------------------------------------------------
+    # Room primitives (FEAT-463)
+    # ------------------------------------------------------------------
+
+    async def create_room_as_bot(
+        self,
+        *,
+        name: Optional[str] = None,
+        alias_localpart: Optional[str] = None,
+        topic: Optional[str] = None,
+        is_direct: bool = False,
+        preset: str = "private_chat",
+        visibility: str = "private",
+        invitees: Optional[List[str]] = None,
+        initial_state: Optional[List[dict]] = None,
+        creation_content: Optional[dict] = None,
+    ) -> str:
+        """Create a room as the AppService bot and return its room_id.
+
+        ``preset`` / ``visibility`` are the Matrix string values (mapped to
+        the corresponding mautrix enums).
+
+        Args:
+            name: Optional room name (``m.room.name``).
+            alias_localpart: Optional alias local part; a room alias
+                ``#<alias_localpart>:<server_name>`` is created and mapped
+                to the new room.
+            topic: Optional room topic (``m.room.topic``).
+            is_direct: Whether to flag the room as a direct message.
+            preset: Matrix room creation preset string (``private_chat``,
+                ``trusted_private_chat``, or ``public_chat``).
+            visibility: Room directory visibility (``private`` or ``public``).
+            invitees: Optional list of MXIDs to invite at creation time.
+            initial_state: Optional list of initial state event dicts.
+            creation_content: Optional extra ``m.room.create`` content, e.g.
+                ``{"type": "m.space"}`` to create a Matrix Space room.
+
+        Returns:
+            The newly created room's id.
+
+        Raises:
+            RuntimeError: If the AppService has not been started.
+        """
+        from mautrix.types import RoomCreatePreset, RoomDirectoryVisibility, UserID
+
+        room_id = await self.bot_intent.create_room(
+            alias_localpart=alias_localpart,
+            name=name,
+            topic=topic,
+            is_direct=is_direct,
+            preset=RoomCreatePreset(preset),
+            visibility=RoomDirectoryVisibility(visibility),
+            invitees=[UserID(u) for u in invitees or []],
+            initial_state=initial_state,
+            creation_content=creation_content,
+        )
+        self.logger.info(
+            "Created room %s (alias=%s, direct=%s)", room_id, alias_localpart, is_direct
+        )
+        return str(room_id)
+
+    async def set_room_state_as_bot(
+        self,
+        room_id: str,
+        event_type: str,
+        content: dict,
+        state_key: str = "",
+    ) -> str:
+        """Send a state event to a room as the AppService bot.
+
+        Args:
+            room_id: Target room id.
+            event_type: The Matrix state event type string.
+            content: The state event content dict.
+            state_key: The state key (default ``""``).
+
+        Returns:
+            The id of the state event that was sent.
+        """
+        from mautrix.types import EventType as MxEventType, RoomID
+
+        et = MxEventType.find(event_type, t_class=MxEventType.Class.STATE)
+        event_id = await self.bot_intent.send_state_event(
+            RoomID(room_id), et, content, state_key=state_key
+        )
+        return str(event_id)
+
+    async def get_room_state_as_bot(
+        self,
+        room_id: str,
+        event_type: str,
+        state_key: str = "",
+    ) -> Optional[dict]:
+        """Fetch a state event from a room as the AppService bot.
+
+        Args:
+            room_id: Target room id.
+            event_type: The Matrix state event type string.
+            state_key: The state key (default ``""``).
+
+        Returns:
+            The state event content dict, or ``None`` if it does not exist.
+        """
+        from mautrix.types import EventType as MxEventType, RoomID
+
+        et = MxEventType.find(event_type, t_class=MxEventType.Class.STATE)
+        try:
+            content = await self.bot_intent.get_state_event(
+                RoomID(room_id), et, state_key=state_key
+            )
+        except Exception as exc:
+            self.logger.debug(
+                "get_room_state_as_bot: no state %s in %s (%s)", event_type, room_id, exc
+            )
+            return None
+        if content is None:
+            return None
+        if hasattr(content, "serialize"):
+            return content.serialize()
+        return dict(content)
+
+    async def resolve_alias(self, alias: str) -> Optional[str]:
+        """Resolve a room alias to a room id.
+
+        Args:
+            alias: A full room alias, e.g. ``#general:parrot.local``.
+
+        Returns:
+            The resolved room id, or ``None`` if the alias does not exist.
+        """
+        from mautrix.types import RoomAlias
+
+        try:
+            info = await self.bot_intent.resolve_room_alias(RoomAlias(alias))
+        except Exception as exc:
+            self.logger.debug("resolve_alias: %s not found (%s)", alias, exc)
+            return None
+        if not info or not info.room_id:
+            return None
+        return str(info.room_id)
+
+    async def leave_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        reason: Optional[str] = None,
+    ) -> None:
+        """Leave a room as a specific registered agent.
+
+        Args:
+            agent_name: Name of a registered agent.
+            room_id: Room to leave.
+            reason: Optional leave reason.
+
+        Raises:
+            ValueError: If the agent is not registered.
+        """
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            raise ValueError(f"Agent '{agent_name}' not registered")
+
+        intent = self._get_intent(mxid)
+        await intent.leave_room(RoomID(room_id), reason=reason)
+        self._agent_rooms.get(mxid, set()).discard(room_id)
+        self.logger.info("Agent '%s' left room %s", agent_name, room_id)
+
+    # ------------------------------------------------------------------
     # Event handling
     # ------------------------------------------------------------------
 
@@ -444,14 +611,41 @@ class MatrixAppService:
     def set_custom_event_callback(self, callback: Callable) -> None:
         """Set the callback for incoming custom ``m.parrot.*`` events.
 
-        The callback is invoked for ``m.parrot.task`` and ``m.parrot.result``
-        events with signature:
-            async def handler(event_type: str, content: dict) -> None
+        The callback is invoked for ``m.parrot.task``, ``m.parrot.result``
+        and ``m.parrot.feedback`` events with signature:
+            async def handler(event_type: str, content: dict, room_id: str, sender: str) -> None
+
+        For backward compatibility, a legacy 2-arg callback
+        (``async def handler(event_type: str, content: dict) -> None``, as
+        used by ``HybridDelegator.on_custom_event``) is automatically
+        wrapped in an adapter that drops ``room_id``/``sender``.
 
         Args:
-            callback: Async callable accepting ``(event_type, content)``.
+            callback: Async callable accepting either
+                ``(event_type, content, room_id, sender)`` or the legacy
+                ``(event_type, content)``.
         """
-        self._custom_event_callback = callback
+        params = list(inspect.signature(callback).parameters.values())
+        has_var_positional = any(
+            p.kind == inspect.Parameter.VAR_POSITIONAL for p in params
+        )
+        positional_params = [
+            p
+            for p in params
+            if p.kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+        ]
+        if not has_var_positional and len(positional_params) <= 2:
+
+            async def _adapter(event_type, content, room_id, sender):
+                await callback(event_type, content)
+
+            self._custom_event_callback = _adapter
+        else:
+            self._custom_event_callback = callback
 
     async def _handle_event(self, event: Event) -> None:
         """Process events pushed by the homeserver."""
@@ -459,7 +653,11 @@ class MatrixAppService:
             event_type_str = str(event.type)
 
             # Route custom m.parrot.* events to the custom callback
-            if event_type_str in (ParrotEventType.TASK, ParrotEventType.RESULT):
+            if event_type_str in (
+                ParrotEventType.TASK,
+                ParrotEventType.RESULT,
+                ParrotEventType.FEEDBACK,
+            ):
                 if self._custom_event_callback:
                     content_dict: Dict[str, Any] = {}
                     if hasattr(event, "content") and event.content is not None:
@@ -467,7 +665,12 @@ class MatrixAppService:
                             content_dict = dict(event.content)
                         except Exception:
                             content_dict = {}
-                    await self._custom_event_callback(event_type_str, content_dict)
+                    await self._custom_event_callback(
+                        event_type_str,
+                        content_dict,
+                        str(event.room_id),
+                        str(event.sender),
+                    )
                 return
 
             # Only handle room messages

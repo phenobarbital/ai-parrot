@@ -8,7 +8,7 @@ configurable rate limit.
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from .registry import MatrixAgentCard, MatrixCrewRegistry
 
@@ -146,6 +146,65 @@ class MatrixCoordinator:
             self.logger.error(
                 "Failed to refresh status board: %s", exc, exc_info=True
             )
+
+    # ------------------------------------------------------------------
+    # Swarm listing commands (FEAT-463): !channels / !agents / !tunnels
+    # ------------------------------------------------------------------
+
+    def render_channels(self, channels: List[dict]) -> str:
+        """Render the ``!channels`` listing text.
+
+        Args:
+            channels: List of channel dicts as returned by
+                ``ChannelManager.list_channels`` — ``{name, visibility,
+                answer_policy, agents, room_id}``.
+
+        Returns:
+            Multi-line text describing every declared channel.
+        """
+        if not channels:
+            return "No channels declared."
+        lines = ["Channels:"]
+        for ch in channels:
+            agents = ", ".join(ch.get("agents") or []) or "-"
+            lines.append(
+                f"- #{ch.get('name')} ({ch.get('visibility')}, "
+                f"policy={ch.get('answer_policy')}) — agents: {agents}"
+            )
+        return "\n".join(lines)
+
+    async def render_agents(self) -> str:
+        """Render the ``!agents`` listing text from the current registry state.
+
+        Returns:
+            Multi-line text with one status line per registered agent.
+        """
+        agents = await self._registry.all_agents()
+        if not agents:
+            return "No agents registered."
+        lines = ["Agents:"] + [card.to_status_line() for card in agents]
+        return "\n".join(lines)
+
+    def render_tunnels(self, tunnels: List[dict]) -> str:
+        """Render the ``!tunnels`` listing text.
+
+        Args:
+            tunnels: List of tunnel dicts as returned by
+                ``TunnelRegistry.list_tunnels`` — ``{agents, room_id, last_used}``.
+
+        Returns:
+            Multi-line text describing every active tunnel.
+        """
+        if not tunnels:
+            return "No active tunnels."
+        lines = ["Tunnels:"]
+        for t in tunnels:
+            agents = t.get("agents") or []
+            pair = " <-> ".join(agents) if agents else "?"
+            lines.append(
+                f"- {pair} (room {t.get('room_id')}, last used {t.get('last_used')})"
+            )
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Internal helpers

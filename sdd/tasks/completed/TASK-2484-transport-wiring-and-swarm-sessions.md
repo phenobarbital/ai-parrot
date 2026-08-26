@@ -249,7 +249,61 @@ Same as TASK-2478.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-26
+**Notes**: Implemented per skeleton. `MatrixCrewTransport` gained
+`_channels`/`_tunnels`/`_swarm` and `_active_sessions` became
+`Dict[str, Dict[str, MatrixCollaborativeSession]]` (room → session_id →
+session). `start()` now (after wrappers/coordinator, before the
+event-callback registration): sets registry human classification
+(`set_bot_mxid`/`set_human_patterns`), materialises channels
+(`ChannelManager.ensure_channels()`), creates `TunnelRegistry` +
+`start_sweeper()` when `tunnels.enabled`, creates `SwarmSessionManager`
+when `collaborative` is configured, attaches an `AgentSwarmToolkit` per
+resolvable bot (`BotManager.get_bot` + `tool_manager.register_toolkit`,
+skip+warn otherwise), and registers `_on_custom_event` via
+`set_custom_event_callback` (dispatches to `TunnelRegistry.on_custom_event`
++ an optional `HybridDelegator`). `on_room_message` was rewritten per the
+8-step order in the docstring: self-filter now resolves the active
+session via `current_session` context or any active session in the room
+(`_resolve_active_session`); added `!channels`/`!agents`/`!tunnels`
+listing commands; `!investigate` and the new swarm-channel-policy branch
+both go through `SwarmSessionManager.maybe_start`/`_build_session`
+(inspect.signature-guarded for the TASK-2485 `trigger_event_id`/`tunnels`
+constructor params); `unaddressed_agent` precedence kept exactly before
+the new policy branch. `_run_session` now removes the session by identity
+from its room's inner dict (robust against mocks lacking a real
+`session_id`). `MatrixCrewRegistry` gained `set_bot_mxid` /
+`set_human_patterns` / `is_human` (sync; any MXID that isn't a known
+agent or the bot is human — bridge patterns only annotate, per spec).
+`MatrixCoordinator` gained `render_channels`/`render_agents`/
+`render_tunnels` (pure text formatters). `stop()` now cancels active
+sessions and stops the tunnel sweeper. 15/15 new tests pass (8 in
+`test_matrix_transport_swarm.py`, 1 in `test_matrix_registry_human.py`,
+counted together above); full `pytest -k matrix` run: 224/230 pass (6
+pre-existing `test_matrix_hook.py` failures, confirmed unrelated —
+untouched file, same baseline failures since TASK-2478).
+**Deviations from spec**: (1) Added defensive `getattr(self, "_x", default)`
+guards for `_active_sessions`/`_channels`/`_tunnels`/`_swarm` in
+`on_room_message`/`_resolve_active_session` because `test_matrix_crew.py`
+constructs `MatrixCrewTransport.__new__(MatrixCrewTransport)` (bypassing
+`__init__`) — mirrors the original code's own
+`getattr(self, "_active_sessions", {})` pattern for the same reason.
+(2) Added lazy `SwarmSessionManager` creation in the `!investigate`
+branch when `self._swarm` is still `None` but `collaborative` is
+configured, so `!investigate` keeps working on a transport driven
+directly (without calling `start()`) — required for FEAT-195 backward
+compatibility and to keep the pre-existing collaborative test suite
+passing without calling `start()`.
+(3) Modified `tests/test_matrix_transport_collaborative.py` (not in this
+task's file list) to update 4 tests that directly poke `_active_sessions`
+in the old flat `room_id → session` shape to the new nested
+`room_id → session_id → session` shape mandated by this task's own
+skeleton, and rewrote `test_concurrent_session_rejected` →
+`test_concurrent_session_cap_rejected` to assert the new
+concurrency-cap-then-busy-reply behavior instead of the old
+one-session-per-room singleton rejection — the singleton behavior this
+test asserted is exactly what TASK-2484 replaces (see spec §3 Module 6,
+"Known Risks: Session refactor"). Required to satisfy this task's own
+explicit acceptance criterion that all existing matrix tests keep
+passing; no other test files were touched.

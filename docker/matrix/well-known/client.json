@@ -1,0 +1,8 @@
+{
+  "m.homeserver": {
+    "base_url": "http://localhost:8008"
+  },
+  "org.matrix.msc3575.proxy": {
+    "url": "http://localhost:8008"
+  }
+}

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-25T22:34:43.122686+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-25T23:48:29+00:00",
   "tasks": [
     {
       "id": "TASK-2478",
@@ -14,16 +14,16 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation models imported by every other code task",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2478-swarm-config-and-event-models.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:01:16+00:00",
+      "file": "sdd/tasks/completed/TASK-2478-swarm-config-and-event-models.md"
     },
     {
       "id": "TASK-2479",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,9 +41,9 @@
       "parallel": false,
       "parallelism_notes": "Edits appservice.py used by 2480/2481",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2479-appservice-room-primitives.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:04:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2479-appservice-room-primitives.md"
     },
     {
       "id": "TASK-2480",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,9 +62,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on room primitives",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2480-channel-manager-and-space.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:07:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2480-channel-manager-and-space.md"
     },
     {
       "id": "TASK-2481",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -84,9 +84,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on room primitives + channels (space link)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2481-tunnel-registry.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:11:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2481-tunnel-registry.md"
     },
     {
       "id": "TASK-2482",
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,9 +105,9 @@
       "parallel": false,
       "parallelism_notes": "Edits crew_wrapper.py; tunnel dispatches to it",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2482-inbound-task-handler.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:16:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2482-inbound-task-handler.md"
     },
     {
       "id": "TASK-2483",
@@ -116,7 +116,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -127,9 +127,9 @@
       "parallel": false,
       "parallelism_notes": "Uses tunnel/channels; adds contextvars edited in crew_wrapper.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2483-agent-swarm-toolkit.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:20:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2483-agent-swarm-toolkit.md"
     },
     {
       "id": "TASK-2484",
@@ -138,7 +138,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -150,9 +150,9 @@
       "parallel": false,
       "parallelism_notes": "Integrates all prior modules in transport.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2484-transport-wiring-and-swarm-sessions.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:31:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2484-transport-wiring-and-swarm-sessions.md"
     },
     {
       "id": "TASK-2485",
@@ -161,7 +161,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -171,9 +171,9 @@
       "parallel": false,
       "parallelism_notes": "Edits session.py + transport._build_session",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2485-session-tunnel-cross-pollination.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:36:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2485-session-tunnel-cross-pollination.md"
     },
     {
       "id": "TASK-2486",
@@ -182,16 +182,16 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Zero overlap with Python tasks (compose, docker/matrix/**, scripts/matrix/, registration.py __main__ only) — separate worktree OK",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2486-matrix-dev-stack-compose.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:42:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2486-matrix-dev-stack-compose.md"
     },
     {
       "id": "TASK-2487",
@@ -200,7 +200,7 @@
       "feature_id": "FEAT-463",
       "feature": "matrix-agents-swarm",
       "spec": "sdd/specs/matrix-agents-swarm.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -210,9 +210,9 @@
       "parallel": true,
       "parallelism_notes": "CLIENTS.md/BRIDGES.md can be drafted in parallel; example/guide finalize after 2485",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2487-docs-clients-bridges-examples.md"
+      "started_at": "2026-08-25T22:55:57+00:00",
+      "completed_at": "2026-08-25T23:48:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2487-docs-clients-bridges-examples.md"
     }
   ]
 }
