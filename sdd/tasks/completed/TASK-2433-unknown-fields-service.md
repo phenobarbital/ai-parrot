@@ -265,10 +265,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Created `services/unknown_fields.py` with `MAX_EXTRA_KEYS=256`,
+`MAX_EXTRA_BYTES=256*1024`, `ExtrasCapExceeded(ValueError)` (carrying
+`limit`/`actual`/`maximum`), `compute_extra_data()` (dict-comprehension
+diff, order-preserving, non-mutating) and `enforce_extras_cap()` (checks
+key-count before serializing, then UTF-8-encoded byte length; raises,
+never truncates). Module imports nothing from the package namespace
+(`grep -c "parrot_formdesigner" services/unknown_fields.py` → 0). 14 new
+unit tests in `tests/unit/services/test_unknown_fields.py`, all passing.
+`ruff check` clean on both files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

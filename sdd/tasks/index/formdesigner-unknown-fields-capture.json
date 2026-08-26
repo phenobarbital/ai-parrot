@@ -35,7 +35,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -43,8 +43,8 @@
       "parallelism_notes": "New leaf module with zero parrot_formdesigner imports. Shares no file with any other task and is independent of FEAT-457 — safe to run in its own worktree, and the only task startable today.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2433-unknown-fields-service.md"
+      "completed_at": "2026-08-26T13:21:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2433-unknown-fields-service.md"
     },
     {
       "id": "TASK-2434",
