@@ -17,14 +17,14 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Touches core/schema.py, contended by FEAT-456/TASK-2411 and FEAT-457/TASK-2421. Externally blocked on FEAT-457/TASK-2421 (same insertion point at core/schema.py:374).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2432-policy-enum-formschema-field.md"
     },
@@ -35,14 +35,14 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New leaf module with zero parrot_formdesigner imports. Shares no file with any other task and is independent of FEAT-457 — safe to run in its own worktree, and the only task startable today.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2433-unknown-fields-service.md"
     },
@@ -53,7 +53,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": false,
       "parallelism_notes": "Imports compute_extra_data from TASK-2433. Shares services/validators.py with FEAT-456/TASK-2415 (relational shape validation) — textual conflict likely, semantic conflict not.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2434-validator-extra-data-diff.md"
     },
@@ -73,14 +73,14 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Sole owner of services/submissions.py in this spec; shares no file with any other FEAT-458 task and needs nothing from FEAT-457. Can run concurrently with TASK-2433.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2435-submission-extra-data-column.md"
     },
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": false,
       "parallelism_notes": "The integration point: needs all four upstream tasks. Externally blocked on FEAT-457/TASK-2428, which replaces api/handlers.py:1615-1622 wholesale. Folds spec Module 7 (forwarder merge) in — it is one line inside this same branch.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2436-submit-path-policy-branch.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -125,7 +125,7 @@
       "parallel": false,
       "parallelism_notes": "Shares api/handlers.py with TASK-2436, so sequential with it despite touching a different method. Does not need the storage column.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2437-validate-endpoint-reject.md"
     },
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,7 +145,7 @@
       "parallel": true,
       "parallelism_notes": "Sole owner of services/sinks/mapper.py in this spec. Hard SEMANTIC block on FEAT-457/TASK-2420, which creates that file — not merely a merge conflict. Parallelizable once FEAT-457 has landed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2438-sink-mapper-extra-data.md"
     },
@@ -156,7 +156,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -165,7 +165,7 @@
       "parallel": true,
       "parallelism_notes": "Sole owner of renderers/jsonschema.py in this spec; needs only the enum. Shares that file with FEAT-456/TASK-2414 (x-relation emission) — rebase, do not wait.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2439-jsonschema-additional-properties.md"
     },
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -188,7 +188,7 @@
       "parallel": false,
       "parallelism_notes": "Barrier task: asserts the cross-layer claims (AC1 baseline identity, AC13 codec round trip, AC14 sink coverage) that no unit test can reach. Needs every implementation task done.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2440-integration-suite.md"
     },
@@ -199,7 +199,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -208,7 +208,7 @@
       "parallel": false,
       "parallelism_notes": "Documents behaviour only after the suite proves it. Touches docs and possibly version.py; no production code.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-26T13:14:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2441-documentation.md"
     }
