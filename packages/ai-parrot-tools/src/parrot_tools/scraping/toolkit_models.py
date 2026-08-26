@@ -31,6 +31,14 @@ class DriverConfig(BaseModel):
         overlay_housekeeping: Dismiss overlays/popups between actions.
         disable_images: Block image loading for faster scraping.
         custom_user_agent: Override the default user agent string.
+        user_data_dir: Path to a browser user-data directory (e.g. a
+            Google Chrome profile root) so the automated browser reuses
+            its cookies, saved sessions and credential store.
+        profile_directory: Profile folder inside ``user_data_dir``
+            (Chrome: ``"Default"``, ``"Profile 1"``, ...).
+        browser_channel: Playwright browser channel (e.g. ``"chrome"``,
+            ``"msedge"``) to launch a real installed browser instead of
+            the bundled engine. Ignored by the Selenium backend.
     """
 
     driver_type: Literal["selenium", "playwright"] = "selenium"
@@ -47,6 +55,9 @@ class DriverConfig(BaseModel):
     overlay_housekeeping: bool = True
     disable_images: bool = False
     custom_user_agent: Optional[str] = None
+    user_data_dir: Optional[str] = None
+    profile_directory: Optional[str] = None
+    browser_channel: Optional[str] = None
 
     def merge(self, overrides: Optional[Dict[str, Any]] = None) -> DriverConfig:
         """Return a new DriverConfig with overrides applied.
