@@ -272,3 +272,12 @@ untouched; my own import addition required wrapping into the existing
 multi-line style to stay `I001`-clean).
 
 **Deviations from spec**: none.
+
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+Same `is` → `==` finding as TASK-2436's addendum applies to this task's
+`form.unknown_fields is UnknownFieldsPolicy.REJECT` comparison in
+`_build_structural_schema`. Fixed in commit `d09f2ac9b` alongside
+TASK-2436/2437's sites. New test:
+`test_reject_emits_false_when_policy_is_a_raw_string` in
+`test_jsonschema_additional_properties.py`.

@@ -445,3 +445,36 @@ ones. Verified via `git stash` that these were the only NEW failures
 introduced (before this fix: 4 new failures in these two files; after:
 0), and that the pre-existing `test_persistence_wiring.py` failures (2)
 predate this task entirely and are unrelated.
+
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+An independent adversarial review (codex) found and I confirmed by live
+reproduction: `policy is UnknownFieldsPolicy.REJECT` / `is
+UnknownFieldsPolicy.KEEP` in the policy branch silently fail when
+`form.unknown_fields` is a raw `str` rather than the enum member —
+reproducible via `form.model_copy(update={"unknown_fields": "reject"})`,
+which pydantic v2 does not re-validate. No shipped call site actually
+triggers this today, but it is one PATCH-policy endpoint away from a real
+bug, and the codebase's own established convention elsewhere compares
+str-Enum fields with `==`, never `is`.
+
+Fixed in commit `d09f2ac9b`: both comparisons switched to `==`. New test:
+`test_reject_fires_when_policy_is_a_raw_string` in
+`test_submit_unknown_fields.py`.
+
+Also fixed (found independently while verifying the review, not part of
+its findings): `test_on_after_submit_sees_merged_view_under_keep` and
+`test_on_after_submit_unchanged_under_drop` did a test-body-local `import
+parrot_formdesigner.api.handlers as hm` and patched that reference. An
+unrelated pre-existing test
+(`tests/unit/api/test_no_navigator_auth_fails_at_import.py`)
+unconditionally pops `parrot_formdesigner.api.*` from `sys.modules`
+elsewhere in the same directory's suite with no restoration (no
+`monkeypatch.setitem`), so when the FULL `tests/unit/api/` directory runs
+in one process, a test-time-local import can resolve to a stale module
+object relative to `FormAPIHandler` (imported at file-collection time),
+making the monkeypatch a silent no-op — the two tests passed in isolation
+and via this task's own literal AC command (`pytest ... -k "submit or
+handler"`) but failed only in the full-directory run. Switched both to the
+file's existing top-level `handlers_module` reference, matching the
+pattern every other test in the file already used.

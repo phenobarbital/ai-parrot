@@ -338,3 +338,30 @@ explicit Files list (`FormSubmissionStorage` read-path is TASK-2435's,
 and these two sink read-paths were never named anywhere in this task).
 Full-suite regression diff (`git stash` before/after): zero new failures.
 `ruff check` on all 4 changed files: clean, zero findings.
+
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+This task's own Completion Note already flagged, as a deliberate
+NOT-fixed deviation, that neither `PostgresTableSink._row_to_submission`
+nor `AsyncDBSink._doc_to_submission` reconstructed `extra_data` on read
+(write-side was correct). An independent adversarial review (codex)
+surfaced the same gap and recommended fixing it — on reconsideration,
+agreed: a sink whose `read()`/`list_revisions()` silently returns
+`extra_data=None` even when the column/field genuinely holds data is a
+real defect, not merely an unrequested nicety, and both fixes are narrow
+and mechanical (mirroring `context`'s existing str-vs-dict guard).
+
+Fixed in commit `d09f2ac9b`:
+- `postgres_table.py::_row_to_submission` — added the same
+  str-or-dict JSON-load guard `context` already gets, and threads
+  `extra_data=` into the `FormSubmission(...)` construction.
+- `asyncdb_store.py::_doc_to_submission` — same guard (needed for both
+  shapes: `nest_submission` keeps it a native dict for mongo/arango,
+  `flatten_submission` JSON-serializes it for bigquery); added the
+  missing `import json`.
+
+New tests: `test_read_reconstructs_extra_data_dict` /
+`_from_json_string` / `test_read_extra_data_null_stays_none` in
+`test_postgres_table_sink.py`; a new `TestDocToSubmission` class
+(`test_dict_passthrough` / `test_json_string_parsed` / `test_none_stays_none`)
+in `test_asyncdb_sink.py`.

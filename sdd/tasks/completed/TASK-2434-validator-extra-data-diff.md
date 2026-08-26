@@ -342,3 +342,25 @@ import. Verified the actual AC16 intent holds: `validate()` never reads
 policies on the same payload) and `grep -n "form\.unknown_fields"
 services/validators.py` returns nothing. Flagging this as a false-positive
 in the AC's chosen grep proxy rather than a real violation.
+
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+An independent adversarial review (codex, dispatched during FEAT-458's
+completion phase) found and I confirmed by live reproduction: this task's
+`declared_ids = {f.field_id for f in all_fields}` did NOT include ARRAY
+`item_template` field_ids, because `_collect_nested_fields` never walked
+`field.item_template` (only `field.children`) — contradicting spec AC9 and
+this task's own (incorrectly optimistic) Codebase Contract claim that the
+traversal already included it. A top-level payload key literally matching
+an item_template's field_id was misclassified as an extra.
+
+Fixed in commit `d09f2ac9b` (after TASK-2440/2441 closed): added
+`_item_template_field_ids()` + `_declared_field_ids_for_extras()`, a
+traversal used ONLY by the extras diff — deliberately NOT merged into
+`_collect_nested_fields`/`all_fields` itself, since that list is shared
+with the main per-field validate/coerce loop, `validate_rules`, and
+circular-dependency detection; adding item_template there would have
+started validating/coercing it as a real top-level field (verified as a
+genuine regression before isolating the fix). New test:
+`test_array_item_template_field_id_not_an_extra` in
+`test_validator_extra_data.py`.

@@ -251,3 +251,11 @@ failure set to the TASK-2436 baseline — zero new failures. `ruff check`
 on `handlers.py`: 0 new findings (normalized before/after diff empty).
 
 **Deviations from spec**: none.
+
+### Post-completion addendum (adversarial code review, 2026-08-26)
+
+Same `is` → `==` finding as TASK-2436's addendum applies to this task's
+`form.unknown_fields is UnknownFieldsPolicy.REJECT` comparison in
+`validate()`. Fixed in commit `d09f2ac9b` alongside TASK-2436/2439's sites.
+New test: `test_reject_fires_when_policy_is_a_raw_string` in
+`test_validate_endpoint_unknown_fields.py`.
