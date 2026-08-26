@@ -1,4 +1,5 @@
 """Tests for MatrixAppService room primitives — FEAT-463 TASK-2479."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -37,10 +38,7 @@ async def test_create_room_as_bot_forwards_args(svc):
 
 
 async def test_set_room_state_as_bot(svc):
-    assert (
-        await svc.set_room_state_as_bot("!r:s", ParrotEventType.CHANNEL, {"name": "g"})
-        == "$state"
-    )
+    assert await svc.set_room_state_as_bot("!r:s", ParrotEventType.CHANNEL, {"name": "g"}) == "$state"
 
 
 async def test_leave_as_agent(svc):
@@ -63,9 +61,7 @@ async def test_feedback_routed_with_room_and_sender(svc):
     cb = AsyncMock()
     svc.set_custom_event_callback(cb)
     await svc._handle_event(_evt(ParrotEventType.FEEDBACK))
-    cb.assert_awaited_once_with(
-        ParrotEventType.FEEDBACK, {"task_id": "1"}, "!t:s", "@parrot-analyst:parrot.local"
-    )
+    cb.assert_awaited_once_with(ParrotEventType.FEEDBACK, {"task_id": "1"}, "!t:s", "@parrot-analyst:parrot.local")
 
 
 async def test_legacy_two_arg_callback_adapted(svc):

@@ -1,4 +1,5 @@
 """Tests for ChannelManager — FEAT-463 TASK-2480."""
+
 from unittest.mock import AsyncMock
 
 import pytest
@@ -84,10 +85,7 @@ async def test_reconcile_existing_state_warns(svc, caplog):
     cm = ChannelManager(_cfg(), svc)
     with caplog.at_level("WARNING"):
         await cm.ensure_channels()
-    assert any(
-        c.args and c.args[1] == ParrotEventType.CHANNEL
-        for c in svc.set_room_state_as_bot.await_args_list
-    )
+    assert any(c.args and c.args[1] == ParrotEventType.CHANNEL for c in svc.set_room_state_as_bot.await_args_list)
     assert "reconcil" in caplog.text.lower()
 
 
