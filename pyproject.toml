@@ -82,64 +82,18 @@ environments = [
     "sys_platform == 'linux'",
 ]
 
-# `gemma4` pins transformers>=5.0 (and huggingface_hub>=1.0), which is
-# incompatible with the `images`/`all` extras and with whisperx-based audio
-# pipelines. Declaring conflicts lets `uv lock` build a universal lock by
-# resolving these extras in separate splits.
+# gemma4 conflicts REMOVED — the gemma4 extra was dropped from
+# ai-parrot (8 conflict pairs eliminated, major resolver speedup).
 conflicts = [
-    [
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot", extra = "all" },
-    ],
-    [
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot", extra = "images" },
-    ],
-    [
-        # `dev` pulls optimum[onnxruntime]>=2.0, whose transitive
-        # optimum-onnx chain cannot coexist with transformers>=5.0.
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot", extra = "dev" },
-    ],
-    [
-        # `security` pins huggingface_hub>=0.24,<1.0 (via pytector==0.2.0),
-        # while gemma4's transformers>=5.0 requires huggingface-hub>=1.3.
-        # Without this pair `uv lock` has no satisfiable universal solution
-        # and every CI run fails at `uv sync --all-packages`.
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot", extra = "security" },
-    ],
-    [
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot-loaders", extra = "audio" },
-    ],
-    [
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot-loaders", extra = "ml" },
-    ],
-    [
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot-loaders", extra = "ml-heavy" },
-    ],
-    [
-        { package = "ai-parrot", extra = "gemma4" },
-        { package = "ai-parrot-loaders", extra = "all" },
-    ],
     # FEAT-462: the 11 `observability-openlit` conflicting-groups entries that
     # used to live here (openlit>=1.40 caps openai<3.0.0, conflicting with
     # every openai>=3.3.1-pinning extra) are removed — `observability-openlit`
     # no longer installs the `openlit` SDK at all. OpenLIT is now a pure OTLP
     # endpoint configuration (see ObservabilityConfig.otlp_targets /
     # OpenLitUsageRecorder), eliminating the version conflict entirely.
-    [
-        # flowtask 5.12.3 pins azure-identity==1.20.0, while async-notify[all]
-        # (pulled by all-fast) needs azure-identity>=1.23.0. Unbounded
-        # requires-python (>=3.11) makes uv explore a python>=3.14 split where
-        # both are required at once, so an uncached `uv sync --all-packages`
-        # is unsatisfiable and every CI/CodeQL run fails at install.
-        { package = "ai-parrot", extra = "all-fast" },
-        { package = "ai-parrot", extra = "flowtask" },
-    ],
+    # REMOVED: all-fast x flowtask conflict — flowtask 5.12.14 loosens
+    # azure-identity (==1.20.0 → >=1.20.0,<2), so the constraint is no
+    # longer mutually exclusive with async-notify[all]>=1.6.0.
     # flowtask/psutil vs liveavatar-voice — RESOLVED (flowtask 5.12.1).
     # openlit vs liveavatar-voice otel — RESOLVED via override-dependencies:
     # livekit-agents 1.6.1 pins otel~=1.39.0 (<1.40), but otel 1.39→1.42 is
@@ -158,24 +112,10 @@ override-dependencies = [
     "folium==0.20.0",
     "emoji==1.7.0",
     "babel>=2.16.0",
-    "msal==1.32.0",
-    # flowtask pins azure-identity==1.20.0 in EVERY published version
-    # (checked up to 5.12.13), while async-notify[all]>=1.6.0 — pulled by
-    # ai-parrot[all-fast] via [integrations] — requires >=1.23.0. The two meet
-    # in the same split (ai-parrot[all-fast] + ai-parrot-tools[all], whose
-    # [flowtask] extra brings flowtask in), so `uv sync` is unsatisfiable and
-    # every CI job fails at install. The conflicts entry added for
-    # ai-parrot[all-fast] x ai-parrot[flowtask] does not cover this path:
-    # flowtask arrives through ai-parrot-tools[flowtask], a different package
-    # extra. An override is preferable to more conflict pairs here — extra
-    # splits push an already OOM-prone resolution (45GB RSS locally) over the
-    # edge. 1.20 -> 1.23 is a minor, API-compatible bump.
-    # Pinned EXACTLY at 1.23.0, not >=: with an open floor uv picks 1.25.3,
-    # which requires msal>=1.35.1 and would silently contradict the
-    # msal==1.32.0 override above. 1.23.0 needs only msal>=1.30.0.
-    # Remove once flowtask relaxes its azure-identity pin (fix in progress in
-    # the flowtask repository).
-    "azure-identity==1.23.0",
+    # navigator-auth<=0.22.12 pins msal<=1.32.0, but
+    # microsoft-agents-authentication-msal>=0.9.0 requires msal>=1.34.0.
+    # Override to >=1.28.0,<2 until navigator-auth loosens its pin.
+    "msal>=1.28.0,<2",
     "numba>=0.57.0",
     "llvmlite>=0.40.0",
     "openpyxl>=3.1.2,<=3.1.5",

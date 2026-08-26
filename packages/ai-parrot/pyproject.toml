@@ -422,8 +422,8 @@ mcp = [
 # NOTE: torchvision/transformers are aligned with whisperx 3.8.5 so that
 # `audio` (ai-parrot-loaders) and `images` can coexist on the same server.
 # whisperx 3.8.5 pins `torchvision~=0.23.0` and `huggingface-hub<1.0`
-# (which blocks transformers>=5.0). For Gemma 4 / transformers 5.x workloads
-# use the mutually-exclusive `gemma4` extra on a separate environment.
+# (which blocks transformers>=5.0). For transformers 5.x workloads
+# install transformers>=5.0 + torch>=2.13 in a dedicated venv.
 images = [
     "torchvision>=0.23.0,<0.24",
     "timm==1.0.15",
@@ -583,15 +583,10 @@ xai = [
     "xai-sdk>=1.12.0",
 ]
 
-# WARNING: `gemma4` is MUTUALLY EXCLUSIVE with `audio` / `ml-heavy` / `images`.
-# Gemma 4 requires transformers>=5.0 + huggingface_hub>=1.0 + torch 2.11,
-# but whisperx 3.8.5 (used by the audio pipeline) pins huggingface-hub<1.0
-# and torch~=2.8.0. Install this extra in a dedicated environment.
-gemma4 = [
-    "transformers>=5.0.0",
-    "torch>=2.13.0",
-    "accelerate>=1.9.0",
-]
+# REMOVED: gemma4 extra — was mutually exclusive with audio/images/all/dev/
+# security/ml-heavy (8 conflict pairs), causing massive resolver backtracking.
+# Not used in any deployment. If needed again, install transformers>=5.0 +
+# torch>=2.13 + accelerate>=1.9 in a dedicated venv.
 
 deploy = [
     "gunicorn>=23.0.0",
