@@ -10,6 +10,7 @@ dispatch, template-source resolution, and error mapping — plus the
 concrete route-registration test the spec does provide verbatim.
 """
 
+import re
 import json
 import uuid
 from datetime import UTC, datetime
@@ -255,6 +256,16 @@ class _FakeBatchConn:
     paginated, aggregated batch list (query contains ``ORDER BY``), then the
     total-batch-count query (no ``ORDER BY``). Distinguishing on that
     substring avoids coupling the test to exact SQL text.
+
+    **The signature mirrors asyncdb's ``fetchall(sentence, *args)`` on
+    purpose.** It previously read ``fetchall(self, query, params=None)``,
+    which accepted a single tuple of parameters — something the real driver
+    rejects, because a tuple counts as one argument. That made this double
+    more permissive than production and let the endpoint ship failing every
+    request with "the server expects 2 arguments for this query, 1 was
+    passed". The placeholder count is validated here for the same reason: a
+    fake that cannot reproduce the driver's own error cannot catch this class
+    of bug again.
     """
 
     def __init__(self, list_rows: list, total: int):
@@ -262,8 +273,14 @@ class _FakeBatchConn:
         self.total = total
         self.queries: list = []
 
-    async def fetchall(self, query, params=None):
-        self.queries.append((query, params))
+    async def fetchall(self, query, *args):
+        self.queries.append((query, args))
+        expected = len({placeholder for placeholder in re.findall(r"\$\d+", query)})
+        if len(args) != expected:
+            raise RuntimeError(
+                f"Error on Fetch: the server expects {expected} arguments for "
+                f"this query, {len(args)} was passed"
+            )
         if "ORDER BY" in query:
             return self.list_rows
         return [{"total": self.total}]
@@ -421,6 +438,57 @@ class TestGetBatches:
         assert batch["publishing"] == 0
         assert batch["template_ref"] == "monthly-report"
         assert batch["provider"] == "email"
+
+    async def test_query_params_are_splatted_not_passed_as_a_tuple(self, monkeypatch):
+        """Regression: every request used to fail before reaching Postgres.
+
+        asyncdb's signature is ``fetchall(sentence, *args)``, so
+        ``fetchall(query, (limit, offset))`` hands it a single tuple and the
+        driver refuses with "the server expects 2 arguments for this query, 1
+        was passed". The endpoint shipped that way and returned 500 for every
+        request, with any combination of filters, until this was fixed.
+
+        Asserting the shape of the captured arguments — rather than only that
+        the values are present somewhere — is what makes the tuple form fail
+        here instead of in production.
+        """
+        import parrot.handlers.comm_center as comm_center_module
+
+        conn = _FakeBatchConn(list_rows=[], total=0)
+        monkeypatch.setattr(comm_center_module, "_get_db", lambda: _FakeBatchAsyncDB(conn))
+
+        handler = CommCenterHandler()
+        response = await _call_get_batches(
+            handler, _fake_request({"status": "queued", "limit": "10", "offset": "5"})
+        )
+
+        assert response.status == 200
+        list_query, list_args = conn.queries[0]
+        # One argument per placeholder, flat: the filter value, then limit, then offset.
+        assert list_args == ("queued", 10, 5)
+        assert len(list_args) == len({p for p in re.findall(r"\$\d+", list_query)})
+        # The count query carries only the filter values — no limit/offset.
+        _count_query, count_args = conn.queries[1]
+        assert count_args == ("queued",)
+
+    async def test_unfiltered_count_query_takes_no_arguments(self, monkeypatch):
+        """With no filters the count query has no placeholders at all.
+
+        ``fetchall(count_query, tuple(params))`` passed an empty tuple, which
+        is still one argument for a query that takes none — the second half of
+        the same bug.
+        """
+        import parrot.handlers.comm_center as comm_center_module
+
+        conn = _FakeBatchConn(list_rows=[], total=0)
+        monkeypatch.setattr(comm_center_module, "_get_db", lambda: _FakeBatchAsyncDB(conn))
+
+        handler = CommCenterHandler()
+        response = await _call_get_batches(handler, _fake_request({}))
+
+        assert response.status == 200
+        _count_query, count_args = conn.queries[1]
+        assert count_args == ()
 
     async def test_publishing_status_counted_and_included(self, monkeypatch):
         """Code-review fix: a batch with an in-flight (``publishing``) row
