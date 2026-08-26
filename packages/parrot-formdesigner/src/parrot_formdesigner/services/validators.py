@@ -13,7 +13,7 @@ import re
 from datetime import datetime
 from typing import Any, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
@@ -21,6 +21,7 @@ from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
+from .unknown_fields import compute_extra_data
 
 logger = logging.getLogger(__name__)
 
@@ -160,11 +161,17 @@ class ValidationResult(BaseModel):
         is_valid: Whether the entire submission passed validation.
         errors: Field-level error messages keyed by field_id.
         sanitized_data: Type-coerced and sanitized form data.
+        extra_data: Top-level payload keys with no matching declared
+            ``field_id`` (FEAT-458). REPORTED, never judged — the validator
+            reads no policy field. ``{}`` when the payload matches the
+            schema exactly, or on the ``__circular__``/``__rules__`` early
+            returns.
     """
 
     is_valid: bool
     errors: dict[str, list[str]]
     sanitized_data: dict[str, Any]
+    extra_data: dict[str, Any] = Field(default_factory=dict)
 
 
 class FormValidator:
@@ -290,10 +297,28 @@ class FormValidator:
                     if coerced is not None:
                         sanitized[field.field_id] = coerced
 
+        # FEAT-458 — payload-side diff, reported (not judged) into extra_data.
+        #
+        # Two ordering rules the caller guarantees:
+        #   1. `data` arrives AFTER _extract_visit_context (api/handlers.py),
+        #      so the reserved `visit_context` envelope key is already gone
+        #      and is never reported as an extra.
+        #   2. `data` arrives AFTER the onBeforeSubmit hook, which may replace
+        #      the payload wholesale, so a hook injecting declared fields is
+        #      not punished.
+        #
+        # The trap this MUST avoid: derive the id set from `all_fields`,
+        # NEVER from `sanitized.keys()`. The loop above omits a declared
+        # field whose coerced value is None; keying off `sanitized` would
+        # reclassify every empty optional answer as caller junk.
+        declared_ids = {f.field_id for f in all_fields}
+        extra_data = compute_extra_data(data, declared_ids)
+
         return ValidationResult(
             is_valid=len(errors) == 0,
             errors=errors,
             sanitized_data=sanitized,
+            extra_data=extra_data,
         )
 
     async def validate_field(
