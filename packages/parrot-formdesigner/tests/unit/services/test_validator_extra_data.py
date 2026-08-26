@@ -5,6 +5,7 @@ Covers the new attribute's default, the diff's correctness for basic,
 declared-but-empty, and nested (GROUP/ARRAY) cases, policy-blindness
 (spec AC16), and the early-return paths.
 """
+
 import pytest
 from parrot_formdesigner.core.constraints import (
     ConditionOperator,
@@ -82,9 +83,7 @@ def test_validation_result_extra_data_defaults_empty():
 
 class TestValidateReportsExtras:
     async def test_reports_undeclared_keys(self, simple_form):
-        result = await FormValidator().validate(
-            simple_form, {"name": "Ana", "legacy_id": 42, "_client_ms": 1180}
-        )
+        result = await FormValidator().validate(simple_form, {"name": "Ana", "legacy_id": 42, "_client_ms": 1180})
         assert result.extra_data == {"legacy_id": 42, "_client_ms": 1180}
         assert "legacy_id" not in result.sanitized_data
 

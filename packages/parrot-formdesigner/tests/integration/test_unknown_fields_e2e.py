@@ -134,7 +134,9 @@ def _form(
         form_id="test-form",
         title="Test Form",
         tenant=_TEST_TENANT,
-        sections=[FormSection(section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")])],
+        sections=[
+            FormSection(section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")])
+        ],
         unknown_fields=policy,
         persistence=persistence,
         submit=submit,
@@ -306,9 +308,7 @@ async def test_e2e_keep_stores_and_forwards(storage: FormSubmissionStorage, pool
     form = _form(policy="keep", submit=submit)
     handler = _make_handler(form, submission_storage=storage, forwarder=SubmissionForwarder())
 
-    resp = await handler.submit_data(
-        _make_request(body={"name": "Ana", "legacy_id": 42}, form_uid=form.form_uid)
-    )
+    resp = await handler.submit_data(_make_request(body={"name": "Ana", "legacy_id": 42}, form_uid=form.form_uid))
     body = json.loads(resp.body)
     assert resp.status == 200
     assert body["forwarded"] is True
@@ -335,8 +335,7 @@ async def test_e2e_legacy_table_gains_column_on_initialize(pool: Any) -> None:
     # column _create_table_sql's CREATE INDEX statements depend on, EXCEPT
     # extra_data) — genuinely exercises ADD COLUMN IF NOT EXISTS.
     async with pool.acquire() as conn:
-        await conn.execute(
-            f"""
+        await conn.execute(f"""
             CREATE TABLE "{SCHEMA}".form_data (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 submission_id VARCHAR(255) NOT NULL UNIQUE,
@@ -361,8 +360,7 @@ async def test_e2e_legacy_table_gains_column_on_initialize(pool: Any) -> None:
                 context JSONB,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
-            """
-        )
+            """)
         legacy_form_uid = uuid.uuid4()
         await conn.execute(
             f'INSERT INTO "{SCHEMA}".form_data '
@@ -411,9 +409,7 @@ async def test_e2e_reject_blocks_submission(storage: FormSubmissionStorage, pool
     form = _form(policy="reject")
     handler = _make_handler(form, submission_storage=storage)
 
-    resp = await handler.submit_data(
-        _make_request(body={"name": "Ana", "junk": 1}, form_uid=form.form_uid)
-    )
+    resp = await handler.submit_data(_make_request(body={"name": "Ana", "junk": 1}, form_uid=form.form_uid))
     body = json.loads(resp.body)
 
     assert resp.status == 422
@@ -445,9 +441,7 @@ async def test_e2e_persistence_form_captures_extras(storage: FormSubmissionStora
     form = _form(policy="keep", persistence=persistence)
     handler = _make_handler(form, submission_storage=storage, sink_factory=_SingleSinkFactory(sink))
 
-    resp = await handler.submit_data(
-        _make_request(body={"name": "Ana", "legacy_id": 42}, form_uid=form.form_uid)
-    )
+    resp = await handler.submit_data(_make_request(body={"name": "Ana", "legacy_id": 42}, form_uid=form.form_uid))
     assert resp.status == 200
 
     if driver == "tabular":
@@ -497,8 +491,7 @@ async def test_e2e_codec_registered_pool_roundtrip() -> None:
 
         async with codec_pool.acquire() as conn:
             row = await conn.fetchrow(
-                f'SELECT jsonb_typeof(extra_data) AS kind '
-                f'FROM "{SCHEMA}_codec".form_data WHERE submission_id = $1',
+                f"SELECT jsonb_typeof(extra_data) AS kind " f'FROM "{SCHEMA}_codec".form_data WHERE submission_id = $1',
                 submission.submission_id,
             )
         assert row["kind"] == "object", "extra_data stored as a jsonb STRING — the double-encoding defect is back"
@@ -618,9 +611,7 @@ async def test_e2e_keep_over_cap_rejects_and_stores_nothing(storage: FormSubmiss
     handler = _make_handler(form, submission_storage=storage)
     extras = {f"k{i}": i for i in range(MAX_EXTRA_KEYS + 1)}
 
-    resp = await handler.submit_data(
-        _make_request(body={"name": "Ana", **extras}, form_uid=form.form_uid)
-    )
+    resp = await handler.submit_data(_make_request(body={"name": "Ana", **extras}, form_uid=form.form_uid))
     assert resp.status == 422
 
     async with pool.acquire() as conn:
@@ -633,8 +624,6 @@ async def test_e2e_keep_at_cap_accepts(storage: FormSubmissionStorage, pool: Any
     handler = _make_handler(form, submission_storage=storage)
     extras = {f"k{i}": i for i in range(MAX_EXTRA_KEYS)}
 
-    resp = await handler.submit_data(
-        _make_request(body={"name": "Ana", **extras}, form_uid=form.form_uid)
-    )
+    resp = await handler.submit_data(_make_request(body={"name": "Ana", **extras}, form_uid=form.form_uid))
     assert resp.status == 200
     assert MAX_EXTRA_BYTES > 0  # constant imported and used, not hardcoded

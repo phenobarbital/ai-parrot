@@ -4,6 +4,7 @@ Covers the two pure functions in isolation: compute_extra_data() (the
 payload-side diff) and enforce_extras_cap() (hard rejection, never
 truncation).
 """
+
 import json
 
 import pytest

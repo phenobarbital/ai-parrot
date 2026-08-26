@@ -12,7 +12,9 @@ def _form(*, unknown_fields: str = "drop") -> FormSchema:
     return FormSchema(
         form_id="test-form",
         title="Test Form",
-        sections=[FormSection(section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")])],
+        sections=[
+            FormSection(section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")])
+        ],
         unknown_fields=unknown_fields,
     )
 

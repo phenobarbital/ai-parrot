@@ -33,9 +33,7 @@ class ExtrasCapExceeded(ValueError):
         self.limit = limit
         self.actual = actual
         self.maximum = maximum
-        super().__init__(
-            f"Captured extras exceed the {limit} cap: {actual} > {maximum}"
-        )
+        super().__init__(f"Captured extras exceed the {limit} cap: {actual} > {maximum}")
 
 
 def compute_extra_data(

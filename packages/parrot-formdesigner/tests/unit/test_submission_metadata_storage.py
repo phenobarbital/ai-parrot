@@ -45,9 +45,7 @@ class TestInitializeDDL:
         await FormSubmissionStorage(pool=pool).initialize()
         alter_sql = pool.conn.executed[1][0]
         for col in CORE_METADATA_COLUMNS:
-            assert (
-                f"ADD COLUMN IF NOT EXISTS {col}" in alter_sql
-            ), f"alter does not add {col!r}"
+            assert f"ADD COLUMN IF NOT EXISTS {col}" in alter_sql, f"alter does not add {col!r}"
 
 
 class TestStoreInsertsMetadata:
@@ -58,9 +56,7 @@ class TestStoreInsertsMetadata:
         pool = _RecordingPool()
         storage = FormSubmissionStorage(pool=pool)
         await storage.store(
-            FormSubmission(
-                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
-            )
+            FormSubmission(form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True)
         )
         sql, args = pool.conn.executed[0]
         assert "$22" in sql
@@ -107,9 +103,7 @@ class TestStoreInsertsMetadata:
         """Submissions without metadata still insert NULLs for the new columns."""
         pool = _RecordingPool()
         await FormSubmissionStorage(pool=pool).store(
-            FormSubmission(
-                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
-            )
+            FormSubmission(form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True)
         )
         _, args = pool.conn.executed[0]
         for idx in range(11, 18):
@@ -119,9 +113,7 @@ class TestStoreInsertsMetadata:
 class TestFormSubmissionBackCompat:
     def test_minimal_construction_still_works(self) -> None:
         """Pre-metadata callers (only form_uid added) must keep constructing."""
-        sub = FormSubmission(
-            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
-        )
+        sub = FormSubmission(form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True)
         assert sub.user_id is None
         assert sub.username is None
         assert sub.org_id is None

@@ -308,9 +308,7 @@ class FormSubmissionStorage:
         async with self._pool.acquire() as conn:
             await conn.execute(self._create_table_sql(tenant))
             await conn.execute(self._alter_table_sql(tenant))
-        self.logger.info(
-            "FormSubmissionStorage: %s ensured", self._qualified(tenant)
-        )
+        self.logger.info("FormSubmissionStorage: %s ensured", self._qualified(tenant))
 
     async def store(
         self,
@@ -329,19 +327,9 @@ class FormSubmissionStorage:
         Returns:
             The ``submission_id`` of the persisted record.
         """
-        effective_tenant = (
-            tenant if tenant is not None else submission.tenant
-        )
-        context_json = (
-            json.dumps(submission.context)
-            if submission.context is not None
-            else None
-        )
-        extra_data_json = (
-            json.dumps(submission.extra_data)
-            if submission.extra_data is not None
-            else None
-        )
+        effective_tenant = tenant if tenant is not None else submission.tenant
+        context_json = json.dumps(submission.context) if submission.context is not None else None
+        extra_data_json = json.dumps(submission.extra_data) if submission.extra_data is not None else None
         async with self._pool.acquire() as conn:
             await conn.execute(
                 self._insert_sql(effective_tenant),
@@ -474,10 +462,7 @@ class FormSubmissionStorage:
             The chain ordered by ``revision`` ascending (empty if none).
         """
         qt = self._qualified(tenant)
-        sql = (
-            f"SELECT {self._SELECT_COLUMNS} FROM {qt} "
-            "WHERE root_submission_id = $1 ORDER BY revision ASC"
-        )
+        sql = f"SELECT {self._SELECT_COLUMNS} FROM {qt} " "WHERE root_submission_id = $1 ORDER BY revision ASC"
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(sql, root_submission_id)
         return [self._row_to_submission(row) for row in rows]

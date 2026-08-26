@@ -1634,9 +1634,7 @@ class FormAPIHandler:
                             error=_unknown_exc,
                         )
                     except Exception as _meta_exc:
-                        self.logger.exception(
-                            "onError handler raised during unknown-field reject: %s", _meta_exc
-                        )
+                        self.logger.exception("onError handler raised during unknown-field reject: %s", _meta_exc)
                     return JSONResponse(
                         {"is_valid": False, "errors": {"__unknown__": sorted(result.extra_data)}},
                         status=422,
@@ -1655,16 +1653,12 @@ class FormAPIHandler:
                                 error=exc,
                             )
                         except Exception as _meta_exc:
-                            self.logger.exception(
-                                "onError handler raised during extras cap rejection: %s", _meta_exc
-                            )
+                            self.logger.exception("onError handler raised during extras cap rejection: %s", _meta_exc)
                         return JSONResponse(
                             {
                                 "is_valid": False,
                                 "errors": {
-                                    "__unknown__": [
-                                        f"extras {exc.limit} cap exceeded: {exc.actual} > {exc.maximum}"
-                                    ]
+                                    "__unknown__": [f"extras {exc.limit} cap exceeded: {exc.actual} > {exc.maximum}"]
                                 },
                             },
                             status=422,

@@ -28,7 +28,9 @@ def _make_form(*, policy: str = "drop") -> FormSchema:
         form_id="test-form",
         title="Test Form",
         tenant=_TEST_TENANT,
-        sections=[FormSection(section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")])],
+        sections=[
+            FormSection(section_id="s1", fields=[FormField(field_id="name", field_type=FieldType.TEXT, label="Name")])
+        ],
         unknown_fields=policy,
     )
 

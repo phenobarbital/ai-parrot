@@ -591,6 +591,7 @@ class FormSchema(BaseModel):
 
         return self
 
+
 def derive_stable_identities(schema: FormSchema, form_uid: uuid.UUID) -> None:
     """Re-derive a schema's child identities from ``form_uid``, in place.
 

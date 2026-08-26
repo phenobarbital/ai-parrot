@@ -34,7 +34,9 @@ _TEST_TENANT = "test-tenant"
 _FORM_UID = "11111111-1111-1111-1111-111111111111"
 
 
-def _make_form(*, policy: str = "drop", with_endpoint: bool = False, real_visit_context_field: bool = False) -> FormSchema:
+def _make_form(
+    *, policy: str = "drop", with_endpoint: bool = False, real_visit_context_field: bool = False
+) -> FormSchema:
     fields = [FormField(field_id="name", field_type=FieldType.TEXT, label="Name")]
     if real_visit_context_field:
         fields.append(FormField(field_id="visit_context", field_type=FieldType.TEXT, label="Visit Context"))
@@ -45,9 +47,7 @@ def _make_form(*, policy: str = "drop", with_endpoint: bool = False, real_visit_
         sections=[FormSection(section_id="s1", fields=fields)],
         unknown_fields=policy,
         submit=(
-            SubmitAction(action_type="endpoint", action_ref="https://example.test/hook")
-            if with_endpoint
-            else None
+            SubmitAction(action_type="endpoint", action_ref="https://example.test/hook") if with_endpoint else None
         ),
     )
 
@@ -320,9 +320,7 @@ class TestOrderingWithRealValidator:
         storage = MagicMock(spec=FormSubmissionStorage)
         storage.store = AsyncMock()
         handler = _make_handler(form, submission_storage=storage, use_real_validator=True)
-        await handler.submit_data(
-            _make_request({"name": "Ana", "visit_context": {"store_groups": [1]}})
-        )
+        await handler.submit_data(_make_request({"name": "Ana", "visit_context": {"store_groups": [1]}}))
         stored_submission = storage.store.call_args.args[0]
         assert stored_submission.extra_data is None
 

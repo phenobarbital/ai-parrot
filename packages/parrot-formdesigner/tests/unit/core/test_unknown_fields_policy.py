@@ -6,6 +6,7 @@ Tests cover:
 - String coercion, invalid values, round-tripping
 - Legacy form JSON (no unknown_fields key) still loads and defaults to DROP
 """
+
 import pytest
 from parrot_formdesigner.core.schema import FormSchema, UnknownFieldsPolicy
 

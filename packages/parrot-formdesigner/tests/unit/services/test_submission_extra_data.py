@@ -5,6 +5,7 @@ Covers the model field, the SQL builders (DDL, ALTER, insert cast),
 store()'s serialization, and _row_to_submission's mapping — including the
 "NULL never becomes {}" rule (spec AC23).
 """
+
 import json
 import uuid
 from datetime import UTC, datetime
