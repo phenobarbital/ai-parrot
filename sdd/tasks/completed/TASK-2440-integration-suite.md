@@ -271,10 +271,70 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Corrected a stale Codebase Contract assumption FIRST (per Agent
+Instructions step 3): `tests/integration/` in this package tests WITHOUT a
+live database throughout (verified by inspection — `conftest.py` only
+re-exports fake-pool fixtures from `tests/fixtures/persistence.py`, and
+every existing file in that directory, e.g. `test_autonomous_persistence.py`,
+explicitly documents "Postgres scenarios use a fake asyncpg-pool"). The
+package's actual real-Postgres convention (`SCRATCH_DSN` env var +
+`pytest.mark.skipif`, dedicated disposable schema, drop-on-teardown) lives
+in top-level `tests/` (`test_submission_jsonb_shape.py`,
+`test_jsonb_object_storage.py`) — the exact precedent this task's own
+References section points at for the codec hazard. Followed that
+precedent instead (module-level skip, schema `pfd_unknown_fields_e2e_test`,
+create/drop-cascade per test via a `pool` fixture), placing the file at
+the path the Files table specifies.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Implemented all 8 named tests plus 2 extra cap-boundary tests (over/at
+`MAX_EXTRA_KEYS`, imported from `services.unknown_fields`, never
+hardcoded). Called `submit_data`/`validate`/`save_partial` directly on a
+`FormAPIHandler` built with a real (unmocked) `FormValidator` (its default
+per `__init__`), a real `FormSubmissionStorage` against the scratch
+schema, a real `SubmissionForwarder` against a stub `aiohttp_server`
+(pytest-aiohttp, already a project dependency — confirmed by the
+`aiohttp-1.1.1` plugin already active in the suite's own pytest output),
+and a real `PostgresTableSink` (pool passed directly, bypassing DSN/alias
+resolution) for the tabular leg of the persistence-sink test. For the
+document leg, used a fake `AbstractSubmissionSink` double (matching
+FEAT-457's own `_FakeSink` pattern from `test_submit_path_branch.py`) —
+no live Mongo/Arango container exists in this repo's test infra (verified:
+only Postgres and Redis containers running locally), and the property
+under test (exclusivity: nothing written to `form_data`) is independent
+of which document driver receives the write. For the partial+merge test,
+reused FEAT-393's own `InMemoryPartialStore` pattern (a real
+`PartialSaveStore` subclass backed by an in-memory fake Redis client,
+copied from `tests/unit/api/test_partial_saves_uid.py`) — exercises the
+real save/merge logic without a live Redis dependency. For the audio-path
+test, called `AudioFormWSHandler._finish_session` directly (bypassing WS
+protocol framing) against a real `FormSubmissionStorage`.
 
-**Deviations from spec**: none | describe if any
+**Verification**: ran the full suite against the locally running
+`docker-postgres-1` container (`SCRATCH_DSN=postgresql://postgres:***@
+localhost:5432/postgres`, disposable schema, confirmed dropped after the
+run via `\dn` — no trace left in the shared dev database) — all 11 tests
+passed for real, not just skipped. Also ran without `SCRATCH_DSN` — all
+11 skip cleanly (`11 skipped`), satisfying "a developer without a
+database still gets a green unit run." One production-adjacent bug was
+found in my OWN test fixture, not production code (`test_e2e_
+legacy_table_gains_column_on_initialize`'s hand-written legacy DDL was
+missing several columns `_create_table_sql`'s trailing `CREATE INDEX`
+statements reference), fixed in the test file per this task's own "fix
+test bugs here, production defects in the owning task" rule — no
+production code was touched by this task. Full-suite regression
+(`git stash` diff, without `SCRATCH_DSN`): zero new failures. `ruff
+check`: clean (0 findings after `--fix` on import ordering/`datetime.UTC`,
+matching the file's own new-code style, not touching any other file).
+
+**Deviations from spec**: `tests/integration/conftest.py` was NOT
+modified. The Files table listed it for "fixtures the suite needs,
+reusing existing ones," but nothing in `conftest.py` (fake-pool-only
+fixtures) is relevant to a real-DB suite, and no other file in
+`tests/integration/` shares this suite's real-Postgres concern to
+justify a shared fixture — the closest actual precedent
+(`test_submission_jsonb_shape.py`) keeps its `pool` fixture entirely
+local to itself for the same reason. Kept `pool`/`storage` local to
+`test_unknown_fields_e2e.py` instead of adding an unused shared fixture
+to `conftest.py`.

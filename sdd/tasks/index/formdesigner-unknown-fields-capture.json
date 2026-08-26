@@ -176,7 +176,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -189,8 +189,8 @@
       "parallelism_notes": "Barrier task: asserts the cross-layer claims (AC1 baseline identity, AC13 codec round trip, AC14 sink coverage) that no unit test can reach. Needs every implementation task done.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2440-integration-suite.md"
+      "completed_at": "2026-08-26T13:59:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2440-integration-suite.md"
     },
     {
       "id": "TASK-2441",
