@@ -1029,7 +1029,7 @@ class FormAPIHandler:
         result = await self.validator.validate(form, data, visit_context=visit_context)
 
         errors = dict(result.errors)
-        if form.unknown_fields is UnknownFieldsPolicy.REJECT and result.extra_data:
+        if form.unknown_fields == UnknownFieldsPolicy.REJECT and result.extra_data:
             errors["__unknown__"] = sorted(result.extra_data)
 
         is_valid = not errors
@@ -1622,7 +1622,7 @@ class FormAPIHandler:
             extras: dict[str, Any] = {}
 
             if result.extra_data:
-                if policy is UnknownFieldsPolicy.REJECT:
+                if policy == UnknownFieldsPolicy.REJECT:
                     _unknown_exc = ValueError(f"Unknown fields rejected: {sorted(result.extra_data)}")
                     try:
                         await dispatch(
@@ -1639,7 +1639,7 @@ class FormAPIHandler:
                         {"is_valid": False, "errors": {"__unknown__": sorted(result.extra_data)}},
                         status=422,
                     )
-                if policy is UnknownFieldsPolicy.KEEP:
+                if policy == UnknownFieldsPolicy.KEEP:
                     try:
                         enforce_extras_cap(result.extra_data)
                     except ExtrasCapExceeded as exc:

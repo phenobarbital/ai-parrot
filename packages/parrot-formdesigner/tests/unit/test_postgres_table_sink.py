@@ -268,3 +268,83 @@ class TestReadWrite:
     async def test_read_missing_returns_none(self, sink, fake_pool):
         fake_pool.fetchrow_result = None
         assert await sink.read("nonexistent") is None
+
+    async def test_read_reconstructs_extra_data_dict(self, sink, fake_pool, submission):
+        """Code-review fix — _row_to_submission previously dropped
+        extra_data entirely on read, even though write() stores it."""
+        fake_pool.fetchrow_result = {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": {"legacy_id": 42},
+            "comment": "great",
+        }
+        result = await sink.read(submission.submission_id)
+        assert result is not None
+        assert result.extra_data == {"legacy_id": 42}
+
+    async def test_read_reconstructs_extra_data_from_json_string(self, sink, fake_pool, submission):
+        """A codec-less pool hands back JSONB as a str — must still parse."""
+        import json
+
+        fake_pool.fetchrow_result = {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": json.dumps({"legacy_id": 42}),
+            "comment": "great",
+        }
+        result = await sink.read(submission.submission_id)
+        assert result is not None
+        assert result.extra_data == {"legacy_id": 42}
+
+    async def test_read_extra_data_null_stays_none(self, sink, fake_pool, submission):
+        fake_pool.fetchrow_result = {
+            "submission_id": submission.submission_id,
+            "form_uid": submission.form_uid,
+            "form_id": submission.form_id,
+            "form_version": submission.form_version,
+            "created_at": submission.created_at,
+            "tenant": None,
+            "user_id": None,
+            "username": None,
+            "org_id": None,
+            "submitted_at": None,
+            "ip": None,
+            "user_agent": None,
+            "locale": None,
+            "root_submission_id": None,
+            "revision": None,
+            "context": None,
+            "extra_data": None,
+            "comment": "great",
+        }
+        result = await sink.read(submission.submission_id)
+        assert result is not None
+        assert result.extra_data is None

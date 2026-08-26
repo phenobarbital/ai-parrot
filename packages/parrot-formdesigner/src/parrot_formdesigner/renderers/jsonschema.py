@@ -320,7 +320,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
     - x-placeholder: placeholder text
     - x-read-only: read-only flag
 
-    Under ``form.unknown_fields is UnknownFieldsPolicy.REJECT`` (FEAT-458),
+    Under ``form.unknown_fields == UnknownFieldsPolicy.REJECT`` (FEAT-458),
     the top-level schema also emits ``additionalProperties: false`` — the
     server will 422 an undeclared key, so a standards-compliant client can
     validate that locally. ``drop`` and ``keep`` emit nothing, keeping the
@@ -460,7 +460,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
             schema["description"] = _resolve(form.description, locale)
         if required:
             schema["required"] = required
-        if form.unknown_fields is UnknownFieldsPolicy.REJECT:
+        if form.unknown_fields == UnknownFieldsPolicy.REJECT:
             # The server will 422 an undeclared key, so say so in the schema: a
             # standards-compliant client validates locally instead of round-tripping
             # a submission that cannot succeed. `drop`/`keep` emit nothing, keeping

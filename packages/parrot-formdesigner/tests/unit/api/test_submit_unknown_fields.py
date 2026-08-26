@@ -240,6 +240,22 @@ class TestRejectPolicy:
         resp = await handler.submit_data(_make_request({"name": "Ana"}))
         assert resp.status == 200
 
+    async def test_reject_fires_when_policy_is_a_raw_string(self, reject_form):
+        """Code-review fix — pydantic v2's model_copy(update=...) does not
+        re-validate, so a policy set that way is a plain str, not the enum.
+        The policy branch must use == (value equality, which str-Enum
+        supports), not `is` (identity, which fails here)."""
+        from parrot_formdesigner.core.schema import UnknownFieldsPolicy
+
+        raw_string_form = reject_form.model_copy(update={"unknown_fields": "reject"})
+        assert not isinstance(raw_string_form.unknown_fields, UnknownFieldsPolicy)
+        handler = _make_handler(
+            raw_string_form,
+            validation_result=_make_validation_result(extras={"junk": 1}),
+        )
+        resp = await handler.submit_data(_make_request({"name": "Ana", "junk": 1}))
+        assert resp.status == 422
+
 
 class TestForwardAndNotify:
     async def test_forward_body_flat_merges_under_keep(self, keep_form):
@@ -269,7 +285,7 @@ class TestForwardAndNotify:
         outbound = forwarder.forward.call_args.args[0]
         assert outbound == {"name": "Ana"}
 
-    async def test_on_after_submit_sees_merged_view_under_keep(self, keep_form):
+    async def test_on_after_submit_sees_merged_view_under_keep(self, keep_form, monkeypatch):
         events: dict[str, dict] = {}
 
         async def spy_dispatch(event_name, **kwargs):
@@ -277,19 +293,25 @@ class TestForwardAndNotify:
                 events["payload"] = kwargs.get("payload")
             return EventResolution()
 
-        import parrot_formdesigner.api.handlers as hm
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(hm, "dispatch", spy_dispatch)
-            handler = _make_handler(
-                keep_form,
-                validation_result=_make_validation_result(extras={"legacy_id": 42}),
-            )
-            await handler.submit_data(_make_request({"name": "Ana", "legacy_id": 42}))
+        # Use the module-level `handlers_module` reference (imported at
+        # collection time, same as `FormAPIHandler` above), NOT a fresh
+        # `import ... as hm` inside the test body: an unrelated test
+        # (test_no_navigator_auth_fails_at_import.py) unconditionally pops
+        # `parrot_formdesigner.api.*` from sys.modules elsewhere in this
+        # directory's suite, so a test-time-local import can silently
+        # resolve to a DIFFERENT module object than the one `FormAPIHandler`
+        # (and its `submit_data`'s `dispatch` name lookup) actually uses —
+        # a patch on the stale reference is then a silent no-op.
+        monkeypatch.setattr(handlers_module, "dispatch", spy_dispatch)
+        handler = _make_handler(
+            keep_form,
+            validation_result=_make_validation_result(extras={"legacy_id": 42}),
+        )
+        await handler.submit_data(_make_request({"name": "Ana", "legacy_id": 42}))
 
         assert events["payload"] == {"name": "Ana", "legacy_id": 42}
 
-    async def test_on_after_submit_unchanged_under_drop(self, drop_form):
+    async def test_on_after_submit_unchanged_under_drop(self, drop_form, monkeypatch):
         events: dict[str, dict] = {}
 
         async def spy_dispatch(event_name, **kwargs):
@@ -297,15 +319,14 @@ class TestForwardAndNotify:
                 events["payload"] = kwargs.get("payload")
             return EventResolution()
 
-        import parrot_formdesigner.api.handlers as hm
-
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(hm, "dispatch", spy_dispatch)
-            handler = _make_handler(
-                drop_form,
-                validation_result=_make_validation_result(extras={"junk": 1}),
-            )
-            await handler.submit_data(_make_request({"name": "Ana", "junk": 1}))
+        # See test_on_after_submit_sees_merged_view_under_keep — same
+        # module-identity reasoning for using `handlers_module` here.
+        monkeypatch.setattr(handlers_module, "dispatch", spy_dispatch)
+        handler = _make_handler(
+            drop_form,
+            validation_result=_make_validation_result(extras={"junk": 1}),
+        )
+        await handler.submit_data(_make_request({"name": "Ana", "junk": 1}))
 
         assert events["payload"] == {"name": "Ana"}
 

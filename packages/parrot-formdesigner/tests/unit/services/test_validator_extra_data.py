@@ -104,6 +104,20 @@ class TestValidateReportsExtras:
         )
         assert result.extra_data == {"junk": 1}
 
+    async def test_array_item_template_field_id_not_an_extra(self, form_with_group_and_array):
+        """Code-review fix — a top-level payload key literally matching an
+        ARRAY's item_template field_id ("item") must not be misclassified
+        as an extra (spec AC9), and must NOT be validated/coerced as an
+        ordinary top-level field either (it stays absent from sanitized_data,
+        since item_template is a template for repeated elements, not a real
+        submission key)."""
+        result = await FormValidator().validate(
+            form_with_group_and_array,
+            {"address_street": "Main 1", "items": [], "item": "sneaky", "junk": 1},
+        )
+        assert result.extra_data == {"junk": 1}
+        assert "item" not in result.sanitized_data
+
     async def test_policy_blind(self, simple_form):
         """Spec AC16 — same result under every policy."""
         payload = {"name": "Ana", "junk": 1}

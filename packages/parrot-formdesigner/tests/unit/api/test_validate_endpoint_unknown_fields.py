@@ -105,6 +105,17 @@ class TestValidateEndpointPolicy:
         assert "__unknown__" in body["errors"]
         assert "name" in body["errors"]
 
+    async def test_reject_fires_when_policy_is_a_raw_string(self):
+        """Code-review fix — model_copy(update=...) leaves a plain str,
+        not the enum; the branch must use == , not `is`."""
+        from parrot_formdesigner.core.schema import UnknownFieldsPolicy
+
+        form = _make_form(policy="drop").model_copy(update={"unknown_fields": "reject"})
+        assert not isinstance(form.unknown_fields, UnknownFieldsPolicy)
+        handler = _make_handler(form, validation_result=_make_validation_result(extras={"junk": 1}))
+        resp = await handler.validate(_make_request({"name": "Ana", "junk": 1}))
+        assert resp.status == 422
+
     @pytest.mark.parametrize("policy", ["drop", "keep"])
     async def test_non_reject_policies_unchanged(self, policy):
         form = _make_form(policy=policy)

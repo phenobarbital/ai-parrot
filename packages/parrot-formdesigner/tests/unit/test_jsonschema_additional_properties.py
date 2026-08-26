@@ -50,3 +50,13 @@ class TestAdditionalProperties:
     async def test_style_output_unaffected(self):
         result = await JsonSchemaRenderer().render(_form(unknown_fields="reject"))
         assert result.style_output is None
+
+    async def test_reject_emits_false_when_policy_is_a_raw_string(self):
+        """Code-review fix — model_copy(update=...) leaves a plain str,
+        not the enum; the branch must use == , not `is`."""
+        from parrot_formdesigner.core.schema import UnknownFieldsPolicy
+
+        form = _form(unknown_fields="drop").model_copy(update={"unknown_fields": "reject"})
+        assert not isinstance(form.unknown_fields, UnknownFieldsPolicy)
+        result = await JsonSchemaRenderer().render(form)
+        assert result.content["additionalProperties"] is False

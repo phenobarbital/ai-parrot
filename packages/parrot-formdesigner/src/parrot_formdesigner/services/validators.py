@@ -311,7 +311,11 @@ class FormValidator:
         # NEVER from `sanitized.keys()`. The loop above omits a declared
         # field whose coerced value is None; keying off `sanitized` would
         # reclassify every empty optional answer as caller junk.
-        declared_ids = {f.field_id for f in all_fields}
+        # `_declared_field_ids_for_extras` additionally folds in each ARRAY
+        # field's `item_template` field_id (code-review fix, spec AC9) —
+        # NOT via `all_fields` itself, which must stay exactly the set the
+        # main per-field validate/coerce loop above already iterated.
+        declared_ids = self._declared_field_ids_for_extras(all_fields)
         extra_data = compute_extra_data(data, declared_ids)
 
         return ValidationResult(
@@ -1157,7 +1161,18 @@ class FormValidator:
         return fields
 
     def _collect_nested_fields(self, field: FormField) -> list[FormField]:
-        """Recursively collect child fields of a GROUP or ARRAY field.
+        """Recursively collect child fields of a GROUP field.
+
+        Deliberately excludes ``item_template`` — it is a template for
+        ARRAY *elements*, never a top-level submission key, so it must
+        NOT join ``all_fields`` (the per-field validate/coerce loop at
+        :meth:`validate`, ``validate_rules``, and the circular-dependency
+        pass all share this traversal via ``all_fields`` and would start
+        validating/coercing/rule-checking a nonexistent top-level
+        "item_template.field_id" key if it did). Use
+        :meth:`_declared_field_ids_for_extras` for the FEAT-458
+        unknown-fields diff, which needs item_template's field_id in its
+        declared set WITHOUT it becoming a real top-level field.
 
         Args:
             field: FormField to traverse.
@@ -1171,6 +1186,52 @@ class FormValidator:
                 nested.append(child)
                 nested.extend(self._collect_nested_fields(child))
         return nested
+
+    def _item_template_field_ids(self, field: FormField) -> set[str]:
+        """Recursively collect field_ids reachable via ``item_template``
+        chains (an ARRAY's element template, which may itself be a GROUP
+        or another ARRAY).
+
+        Args:
+            field: FormField whose ``item_template`` (if any) to walk.
+
+        Returns:
+            The field_id of ``field.item_template``, its GROUP children,
+            and any further-nested ``item_template`` — empty when
+            ``field.item_template`` is ``None``.
+        """
+        if field.item_template is None:
+            return set()
+        template = field.item_template
+        ids = {template.field_id}
+        ids.update(f.field_id for f in self._collect_nested_fields(template))
+        ids.update(self._item_template_field_ids(template))
+        return ids
+
+    def _declared_field_ids_for_extras(self, all_fields: list[FormField]) -> set[str]:
+        """Return every field_id considered "declared" for the FEAT-458
+        unknown-fields diff — ``all_fields`` (GROUP children included)
+        plus each ARRAY field's ``item_template`` field_id (and its own
+        nested GROUP/ARRAY structure).
+
+        A separate traversal from ``all_fields`` on purpose: unlike a
+        GROUP child, an ARRAY's ``item_template`` is a template for
+        repeated *elements*, never itself a real top-level submission
+        key — it must count as "declared" for the extras diff (spec
+        AC9) without joining ``all_fields`` and being validated/coerced
+        as an ordinary top-level field (see :meth:`_collect_nested_fields`).
+
+        Args:
+            all_fields: The flat field list already built for this
+                validation pass (from ``_collect_fields``).
+
+        Returns:
+            The declared-field_id set for :func:`compute_extra_data`.
+        """
+        ids = {f.field_id for f in all_fields}
+        for field in all_fields:
+            ids.update(self._item_template_field_ids(field))
+        return ids
 
     # ------------------------------------------------------------------
     # Rule-integrity pass (FEAT-234)
