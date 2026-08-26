@@ -114,7 +114,7 @@
       "feature_id": "FEAT-458",
       "feature": "formdesigner-unknown-fields-capture",
       "spec": "sdd/specs/formdesigner-unknown-fields-capture.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Shares api/handlers.py with TASK-2436, so sequential with it despite touching a different method. Does not need the storage column.",
       "assigned_to": null,
       "started_at": "2026-08-26T13:14:39+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2437-validate-endpoint-reject.md"
+      "completed_at": "2026-08-26T13:42:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2437-validate-endpoint-reject.md"
     },
     {
       "id": "TASK-2438",

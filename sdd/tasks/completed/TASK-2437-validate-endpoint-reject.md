@@ -227,10 +227,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-26
+**Notes**: Added a local `from ..core.schema import UnknownFieldsPolicy`
+import inside `validate()` (mirrors `submit_data`'s local-import style; a
+separate local import, not a duplicate — TASK-2436 imported it inside
+`submit_data`, a different method). Replaced the `status = 200 if
+result.is_valid else 422` / plain-`result.errors` response with: copy
+`result.errors` into a fresh `errors` dict, add
+`errors["__unknown__"] = sorted(result.extra_data)` when
+`form.unknown_fields is UnknownFieldsPolicy.REJECT and result.extra_data`,
+then derive both `is_valid` and the status code from the merged `errors`
+dict so they cannot drift. Added a docstring paragraph documenting the
+FEAT-458 behaviour. No lifecycle dispatch added (route stays minimal, per
+Does-Not-Exist). 7 new unit tests in
+`tests/unit/api/test_validate_endpoint_unknown_fields.py` (mocked-handler
+pattern matching TASK-2436's test file), all passing, including an
+explicit `test_result_errors_not_mutated` (asserts `vr.errors` is
+untouched) and `test_no_lifecycle_dispatch` (spies on `dispatch`, asserts
+zero calls). Full-suite regression diff (`git stash` before/after on the
+complete `pytest packages/parrot-formdesigner/tests/` run): identical
+failure set to the TASK-2436 baseline — zero new failures. `ruff check`
+on `handlers.py`: 0 new findings (normalized before/after diff empty).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
