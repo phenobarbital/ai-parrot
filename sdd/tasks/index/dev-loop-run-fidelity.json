@@ -32,7 +32,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches run_bundle.py, qa.py, development.py:_find_feature_slug, deployment_handoff.py:_build_title and adds a helper to nodes/base.py. Overlaps 2505 (nodes/base.py) and 2506 (development.py) — if run concurrently, land this one FIRST since its edits are additive and small.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2503-feat-id-empty-fallbacks.md"
+      "completed_at": "2026-08-27T15:31:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2503-feat-id-empty-fallbacks.md"
     },
     {
       "id": "TASK-2504",
