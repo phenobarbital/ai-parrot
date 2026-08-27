@@ -375,10 +375,19 @@ class TestResolveFlowValidation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: Added `WORK_KIND_FLOW` + `resolve_flow()` to `scripts/sdd/sdd_meta.py`
+exactly per the provided implementation notes, plus a co-located test file
+`tests/sdd_scripts/test_sdd_meta_resolve_flow.py` (an existing
+`tests/sdd_scripts/test_sdd_meta.py` was found via the documented grep, so no
+new `tests/sdd/` directory was created). All 21 tests pass (13 new + 8
+existing regression), `python -c "from scripts.sdd.sdd_meta import
+resolve_flow; print(resolve_flow(kind='bug'))"` works from repo root. `ruff
+check scripts/sdd/sdd_meta.py` reports one pre-existing UP037 finding at
+`_hotfix_implies_main` (line 48, unrelated to this task's diff — verified via
+`git diff` that the changed lines are only the new `resolve_flow`/
+`WORK_KIND_FLOW` additions); left untouched per "do not alter existing
+behaviour".
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

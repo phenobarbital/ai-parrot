@@ -14,7 +14,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Pure function in scripts/sdd/sdd_meta.py; shares no files with any other task. Dependency root of the feature — 2504 and 2507 need it.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2502-resolve-flow-mapping.md"
+      "completed_at": "2026-08-27T15:24:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2502-resolve-flow-mapping.md"
     },
     {
       "id": "TASK-2503",
