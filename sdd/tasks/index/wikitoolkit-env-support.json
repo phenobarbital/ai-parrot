@@ -72,7 +72,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +80,8 @@
       "parallelism_notes": "Touches only store.py/arango_store.py/tests — no file overlap with TASK-2462/2463/2464; safe to run in a separate worktree if ever needed, though per-spec sequential is the plan.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2465-updated-at-surfacing.md"
+      "completed_at": "2026-08-27T00:50:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2465-updated-at-surfacing.md"
     },
     {
       "id": "TASK-2466",
