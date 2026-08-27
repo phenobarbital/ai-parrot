@@ -6,9 +6,18 @@ Draft ``.py`` content lives on disk at ``AGENTS_DIR/_drafts/<name>.py``
 ONLY the lifecycle state/audit trail (status, validation findings,
 ownership) — never the source itself. Pattern:
 ``scheduler/models.py::AgentSchedule``.
-"""
-from __future__ import annotations
 
+NOTE: deliberately NOT using ``from __future__ import annotations`` —
+asyncdb's Model/datamodel Cython field processor introspects
+``__annotations__`` directly (no ``typing.get_type_hints()``
+resolution) and requires REAL type objects, not the postponed-
+evaluation string literals the future import would produce; with it,
+constructing ``StudioDraft(...)`` raises ``TypeError: Expected type,
+got str`` inside ``datamodel.validation`` (confirmed empirically —
+matches the working, future-import-free ``scheduler/models.py::
+AgentSchedule`` pattern). Python 3.12's native ``X | None`` syntax
+(PEP 604) is used below instead, which needs no future import.
+"""
 import uuid
 from datetime import datetime
 

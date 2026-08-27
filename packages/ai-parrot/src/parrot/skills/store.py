@@ -8,12 +8,14 @@ Provides:
 - Auto-extraction of skills from conversations
 """
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Tuple, Union
+
 import asyncio
 import difflib
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 from navconfig.logging import logging
 
@@ -34,14 +36,14 @@ except ImportError:
     Redis = None
 
 from .models import (
-    Skill,
-    SkillVersion,
-    SkillMetadata,
-    SkillCategory,
-    SkillStatus,
     ContentType,
-    SkillSearchResult,
     ExtractedSkill,
+    Skill,
+    SkillCategory,
+    SkillMetadata,
+    SkillSearchResult,
+    SkillStatus,
+    SkillVersion,
 )
 
 
@@ -120,23 +122,33 @@ def apply_unified_diff(base_content: str, diff_content: str) -> str:
 class SkillRegistry:
     """
     Git-like versioned skill registry.
-    
+
     Features:
     - Create/update skills with automatic versioning
     - Store diffs for space efficiency
     - Reconstruct any historical version
     - Vector search for skill discovery
     - Agent-driven skill extraction
+
+    Namespace convention: ``"<org_id>/<agent_id>"`` isolates skills to a
+    single agent (the default, existing usage). FEAT-467 (Agent Studio)
+    additionally uses the reserved agent segment ``"_shared"`` —
+    ``"<org_id>/_shared"`` — for the org-wide shared skills catalog. No
+    behavioral special-casing is needed here: a shared-namespace registry
+    is constructed and used exactly like any other (see
+    ``handlers/studio/skills_catalog.py``'s dual-write with the NEW
+    ``navigator.ai_skills_catalog`` Postgres table, the durable record and
+    SQL query plane for that catalog).
     """
     
     def __init__(
         self,
         namespace: str = "default",
-        embedding_model: Union[str, Any] = "sentence-transformers/all-mpnet-base-v2",
+        embedding_model: str | Any = "sentence-transformers/all-mpnet-base-v2",
         dimension: int = 768,
-        redis_url: Optional[str] = None,
-        persistence_path: Optional[Path] = None,
-        extraction_llm: Optional[Any] = None,
+        redis_url: str | None = None,
+        persistence_path: Path | None = None,
+        extraction_llm: Any | None = None,
         min_diff_threshold: int = 50,  # Min chars changed to create new version
     ):
         """
@@ -162,16 +174,16 @@ class SkillRegistry:
         
         # Storage
         self.redis_url = redis_url
-        self._redis: Optional[Redis] = None
+        self._redis: Redis | None = None
         self._use_redis = bool(redis_url) and REDIS_AVAILABLE
         
         # In-memory storage
-        self._skills: Dict[str, Skill] = {}
-        self._versions: Dict[str, List[SkillVersion]] = {}  # skill_id -> versions
+        self._skills: dict[str, Skill] = {}
+        self._versions: dict[str, list[SkillVersion]] = {}  # skill_id -> versions
         
         # FAISS index for search
-        self._faiss_index: Optional[Any] = None
-        self._skill_ids: List[str] = []  # Maps index position to skill_id
+        self._faiss_index: Any | None = None
+        self._skill_ids: list[str] = []  # Maps index position to skill_id
         
         # Persistence
         self.persistence_path = Path(persistence_path) if persistence_path else None
@@ -185,8 +197,8 @@ class SkillRegistry:
     
     async def configure(
         self,
-        extraction_llm: Optional[Any] = None,
-        embedding_model: Optional[Any] = None,
+        extraction_llm: Any | None = None,
+        embedding_model: Any | None = None,
     ) -> None:
         """Configure the registry."""
         if self._configured:
@@ -266,16 +278,17 @@ class SkillRegistry:
         content: str,
         agent_id: str,
         description: str = "",
-        category: Union[SkillCategory, str] = SkillCategory.GENERAL,
-        tags: Optional[List[str]] = None,
-        triggers: Optional[List[str]] = None,
-        related_tools: Optional[List[str]] = None,
+        category: SkillCategory | str = SkillCategory.GENERAL,
+        tags: list[str] | None = None,
+        triggers: list[str] | None = None,
+        related_tools: list[str] | None = None,
         commit_message: str = "",
-        skill_id: Optional[str] = None,
-    ) -> Tuple[Skill, SkillVersion]:
+        skill_id: str | None = None,
+        owner_user_id: str = "",
+    ) -> tuple[Skill, SkillVersion]:
         """
         Upload a new skill or new version of existing skill.
-        
+
         Args:
             name: Skill name
             content: Full skill content (Markdown)
@@ -286,24 +299,32 @@ class SkillRegistry:
             triggers: Activation patterns
             related_tools: Tools this skill uses
             commit_message: Why this version was created
-            skill_id: Existing skill to update (None for new)
-            
+            skill_id: Existing skill to update (looked up in ``self._skills``);
+                when NOT found, also used as the NEW skill's id instead of
+                auto-generating one (FEAT-467 TASK-2515 — lets an external
+                system-of-record, e.g. a Postgres catalog row, mirror this
+                registry's ``skill_id`` 1:1). ``None`` still auto-generates.
+            owner_user_id: Session-user owner stamp (FEAT-467 TASK-2515 —
+                distinct from ``agent_id``/``owner_agent_id``, which tracks
+                the creating AGENT). Only applied when creating a NEW skill;
+                an update preserves the existing skill's owner_user_id.
+
         Returns:
             Tuple of (Skill, SkillVersion)
         """
         if not self._configured:
             await self.configure()
-        
+
         async with self._lock:
             # Normalize category
             if isinstance(category, str):
                 category = SkillCategory(category.lower())
-            
+
             # Check if updating existing skill
             existing_skill = None
             if skill_id and skill_id in self._skills:
                 existing_skill = self._skills[skill_id]
-            
+
             if existing_skill:
                 # Update existing skill
                 return await self._create_new_version(
@@ -326,6 +347,8 @@ class SkillRegistry:
                     name=name,
                     description=description,
                     category=category,
+                    skill_id=skill_id,
+                    owner_user_id=owner_user_id,
                     tags=tags or [],
                     triggers=triggers or [],
                     related_tools=related_tools or [],
@@ -339,11 +362,13 @@ class SkillRegistry:
         name: str,
         description: str,
         category: SkillCategory,
-        tags: List[str],
-        triggers: List[str],
-        related_tools: List[str],
+        tags: list[str],
+        triggers: list[str],
+        related_tools: list[str],
         commit_message: str,
-    ) -> Tuple[Skill, SkillVersion]:
+        skill_id: str | None = None,
+        owner_user_id: str = "",
+    ) -> tuple[Skill, SkillVersion]:
         """Create a new skill with version 0."""
         # Create metadata
         metadata = SkillMetadata(
@@ -354,17 +379,24 @@ class SkillRegistry:
             triggers=triggers,
             related_tools=related_tools,
         )
-        
-        # Create skill
-        skill = Skill(
-            namespace=self.namespace,
-            owner_agent_id=agent_id,
-            metadata=metadata,
-            status=SkillStatus.ACTIVE,
-            current_version=0,
-            version_count=1,
-        )
-        
+
+        # Create skill. `skill_id` lets an external system-of-record
+        # (FEAT-467's Postgres skills catalog) mirror this registry's id
+        # 1:1 — falls back to Skill's own default_factory (a fresh uuid4)
+        # when not provided.
+        skill_kwargs = {
+            "namespace": self.namespace,
+            "owner_agent_id": agent_id,
+            "owner_user_id": owner_user_id,
+            "metadata": metadata,
+            "status": SkillStatus.ACTIVE,
+            "current_version": 0,
+            "version_count": 1,
+        }
+        if skill_id:
+            skill_kwargs["skill_id"] = skill_id
+        skill = Skill(**skill_kwargs)
+
         # Create version 0 (full content)
         version = SkillVersion(
             skill_id=skill.skill_id,
@@ -404,11 +436,11 @@ class SkillRegistry:
         name: str,
         description: str,
         category: SkillCategory,
-        tags: Optional[List[str]],
-        triggers: Optional[List[str]],
-        related_tools: Optional[List[str]],
+        tags: list[str] | None,
+        triggers: list[str] | None,
+        related_tools: list[str] | None,
         commit_message: str,
-    ) -> Tuple[Skill, SkillVersion]:
+    ) -> tuple[Skill, SkillVersion]:
         """Create new version of existing skill."""
         # Get current content
         current_content = await self.read_skill(skill.skill_id)
@@ -475,7 +507,7 @@ class SkillRegistry:
     async def read_skill(
         self,
         skill_id: str,
-        version: Optional[int] = None,
+        version: int | None = None,
     ) -> str:
         """
         Read skill content, reconstructing from diffs if needed.
@@ -518,11 +550,11 @@ class SkillRegistry:
     async def search_skills(
         self,
         query: str,
-        category: Optional[SkillCategory] = None,
-        tags: Optional[List[str]] = None,
+        category: SkillCategory | None = None,
+        tags: list[str] | None = None,
         include_deprecated: bool = False,
         max_results: int = 5,
-    ) -> List[SkillSearchResult]:
+    ) -> list[SkillSearchResult]:
         """
         Search for relevant skills.
         
@@ -553,7 +585,7 @@ class SkillRegistry:
             search_k,
         )
         
-        results: List[SkillSearchResult] = []
+        results: list[SkillSearchResult] = []
         
         for idx, distance in zip(indices[0], distances[0]):
             if idx < 0 or idx >= len(self._skill_ids):
@@ -599,7 +631,7 @@ class SkillRegistry:
     async def get_skill_versions(
         self,
         skill_id: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get version history for a skill."""
         if skill_id not in self._versions:
             return []
@@ -655,8 +687,8 @@ class SkillRegistry:
         self,
         conversation: str,
         agent_id: str,
-        context: Optional[str] = None,
-    ) -> Optional[Tuple[Skill, SkillVersion]]:
+        context: str | None = None,
+    ) -> tuple[Skill, SkillVersion] | None:
         """
         Use LLM to extract a skill from conversation.
         
@@ -774,7 +806,7 @@ If nothing worth saving, respond with {{"confidence": 0.0}}"""
     async def list_skills(
         self,
         include_deprecated: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List all skills with summary info."""
         skills = []
         for skill in self._skills.values():
@@ -893,8 +925,8 @@ If nothing worth saving, respond with {{"confidence": 0.0}}"""
 
 def create_skill_registry(
     namespace: str,
-    persistence_path: Optional[str] = None,
-    redis_url: Optional[str] = None,
+    persistence_path: str | None = None,
+    redis_url: str | None = None,
     **kwargs,
 ) -> SkillRegistry:
     """Factory function for SkillRegistry."""

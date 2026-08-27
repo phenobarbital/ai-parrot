@@ -67,3 +67,27 @@ def setup_studio_routes(app: web.Application) -> None:
         f"{STUDIO_PREFIX}/agents/{{name}}/files/{{kind}}/{{filename:.*}}",
         StudioFilesHandler,
     )
+
+    # Shared skills catalog (FEAT-467 TASK-2515): org-wide publish/list/
+    # read/update/delete/import/resync.
+    from .skills_catalog import (
+        StudioSkillsCatalogHandler,
+        StudioSkillsImportHandler,
+        StudioSkillsResyncHandler,
+        reconcile_skills_catalog,
+    )
+
+    app.router.add_view(f"{STUDIO_PREFIX}/skills", StudioSkillsCatalogHandler)
+    # NOTE: the literal /skills/resync route MUST be registered before the
+    # dynamic /skills/{id} route below — aiohttp's UrlDispatcher matches
+    # routes in registration order, and {id} would otherwise swallow
+    # "resync" as an id.
+    app.router.add_view(f"{STUDIO_PREFIX}/skills/resync", StudioSkillsResyncHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/skills/{{id}}", StudioSkillsCatalogHandler)
+    app.router.add_view(
+        f"{STUDIO_PREFIX}/agents/{{name}}/skills/import/{{id}}",
+        StudioSkillsImportHandler,
+    )
+    # Startup reconciliation pass: repair any search_index_stale rows
+    # left over from a prior registry outage (spec §7 "Dual-write drift").
+    app.on_startup.append(reconcile_skills_catalog)

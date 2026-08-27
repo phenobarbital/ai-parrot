@@ -8,14 +8,16 @@ Git-like versioned skill/knowledge registry that allows:
 - Provenance tracking (who created/updated)
 """
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+
+import hashlib
+import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar
+
 from pydantic import BaseModel, Field, field_validator
-import hashlib
-import uuid
 
 
 class SkillStatus(str, Enum):
@@ -58,15 +60,15 @@ class SkillDefinition(BaseModel):
     """
     name: str
     description: str
-    triggers: List[str]
+    triggers: list[str]
     source: SkillSource = SkillSource.AUTHORED
     priority: int = 90
     version: str = "1.0"
-    category: Optional[str] = None
+    category: str | None = None
     template_body: str
     token_count: int
     file_path: Path
-    assets_dir: Optional[Path] = Field(
+    assets_dir: Path | None = Field(
         default=None,
         description="Filesystem dir for composite skills; None for single-file.",
     )
@@ -90,17 +92,17 @@ class SkillMetadata:
     name: str
     description: str
     category: SkillCategory = SkillCategory.GENERAL
-    tags: List[str] = field(default_factory=list)
-    triggers: List[str] = field(default_factory=list)  # Patterns that activate this skill
-    related_tools: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    triggers: list[str] = field(default_factory=list)  # Patterns that activate this skill
+    related_tools: list[str] = field(default_factory=list)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data['category'] = self.category.value
         return data
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SkillMetadata":
+    def from_dict(cls, data: dict[str, Any]) -> SkillMetadata:
         data = data.copy()
         if 'category' in data:
             data['category'] = SkillCategory(data['category'])
@@ -130,7 +132,7 @@ class SkillVersion:
     commit_message: str = ""  # Why this version was created
     
     # Parent reference (for delta reconstruction)
-    parent_version_id: Optional[str] = None
+    parent_version_id: str | None = None
     
     def __post_init__(self):
         if not self.content_hash and self.content:
@@ -140,14 +142,14 @@ class SkillVersion:
     def _compute_hash(content: str) -> str:
         return hashlib.sha256(content.encode()).hexdigest()[:16]
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data['content_type'] = self.content_type.value
         data['created_at'] = self.created_at.isoformat()
         return data
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SkillVersion":
+    def from_dict(cls, data: dict[str, Any]) -> SkillVersion:
         data = data.copy()
         data['content_type'] = ContentType(data['content_type'])
         data['created_at'] = datetime.fromisoformat(data['created_at'])
@@ -165,8 +167,13 @@ class Skill:
     skill_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
     # Ownership
-    namespace: str = "default"  # org_id/agent_id
-    owner_agent_id: str = ""    # Original creator
+    namespace: str = "default"  # org_id/agent_id, or "org_id/_shared" for the
+                                 # org-wide shared skills catalog (FEAT-467)
+    owner_agent_id: str = ""    # Original creator (AGENT identity)
+    owner_user_id: str = ""     # Original creator (session USER identity —
+                                 # FEAT-467 TASK-2515: the shared catalog's
+                                 # per-entry human owner, distinct from
+                                 # owner_agent_id which tracks the agent)
     
     # Metadata (mutable, updated with latest version)
     metadata: SkillMetadata = field(default_factory=lambda: SkillMetadata(
@@ -190,13 +197,14 @@ class Skill:
     usefulness_score: float = 0.0  # Can be updated based on feedback
     
     # Vector embedding of current content (for search)
-    embedding: Optional[List[float]] = field(default=None, repr=False)
+    embedding: list[float] | None = field(default=None, repr=False)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         data = {
             'skill_id': self.skill_id,
             'namespace': self.namespace,
             'owner_agent_id': self.owner_agent_id,
+            'owner_user_id': self.owner_user_id,
             'metadata': self.metadata.to_dict(),
             'status': self.status.value,
             'current_version': self.current_version,
@@ -209,7 +217,7 @@ class Skill:
         return data
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Skill":
+    def from_dict(cls, data: dict[str, Any]) -> Skill:
         data = data.copy()
         data['metadata'] = SkillMetadata.from_dict(data['metadata'])
         data['status'] = SkillStatus(data['status'])
@@ -252,17 +260,17 @@ class UploadSkillArgs(BaseModel):
     content: str = Field(..., description="Full skill content in Markdown")
     description: str = Field(default="", description="Brief description of what this skill does")
     category: str = Field(default="general", description="Category: tool_usage, workflow, domain, error_handling, etc.")
-    tags: List[str] = Field(default_factory=list, description="Tags for search")
-    triggers: List[str] = Field(default_factory=list, description="Patterns that should activate this skill")
+    tags: list[str] = Field(default_factory=list, description="Tags for search")
+    triggers: list[str] = Field(default_factory=list, description="Patterns that should activate this skill")
     commit_message: str = Field(default="", description="Why this version was created")
-    skill_id: Optional[str] = Field(default=None, description="Existing skill_id to update, or None for new")
+    skill_id: str | None = Field(default=None, description="Existing skill_id to update, or None for new")
 
 
 class SearchSkillArgs(BaseModel):
     """Arguments for searching skills."""
     query: str = Field(..., description="Search query")
-    category: Optional[str] = Field(default=None, description="Filter by category")
-    tags: Optional[List[str]] = Field(default=None, description="Filter by tags (any match)")
+    category: str | None = Field(default=None, description="Filter by category")
+    tags: list[str] | None = Field(default=None, description="Filter by tags (any match)")
     include_deprecated: bool = Field(default=False, description="Include deprecated skills")
     max_results: int = Field(default=5, ge=1, le=20, description="Maximum results")
 
@@ -270,7 +278,7 @@ class SearchSkillArgs(BaseModel):
 class ReadSkillArgs(BaseModel):
     """Arguments for reading a skill."""
     skill_id: str = Field(..., description="Skill ID to read")
-    version: Optional[int] = Field(default=None, description="Specific version, or None for latest")
+    version: int | None = Field(default=None, description="Specific version, or None for latest")
 
 
 class SkillVersionsArgs(BaseModel):
@@ -292,6 +300,6 @@ class ExtractedSkill(BaseModel):
     description: str = Field(..., description="What this skill does (1-2 sentences)")
     content: str = Field(..., description="Full skill content in Markdown format")
     category: str = Field(default="general", description="Skill category")
-    tags: List[str] = Field(default_factory=list, description="Relevant tags")
-    triggers: List[str] = Field(default_factory=list, description="When to use this skill")
+    tags: list[str] = Field(default_factory=list, description="Relevant tags")
+    triggers: list[str] = Field(default_factory=list, description="When to use this skill")
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Confidence this is worth saving")
