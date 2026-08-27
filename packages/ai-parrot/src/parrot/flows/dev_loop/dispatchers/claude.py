@@ -347,13 +347,25 @@ class ClaudeCodeDispatcher:
         this lets the additive ``sdd-codereview`` gate review a checkout that
         legitimately lives outside ``WORKTREE_BASE_PATH``.
 
+        A second, narrower waiver: a profile with
+        ``allow_project_root_cwd=True`` may run at EXACTLY
+        ``conf.PROJECT_ROOT``. That is the base checkout, which is the
+        legitimate workspace for a dispatch that authors and commits on the
+        base branch before any feature worktree exists (``IdeationNode``).
+
         Raises:
             DispatchExecutionError: when the path check fails.
         """
         if profile is not None and _claude_profile_is_read_only(profile):
             return
-        base = os.path.abspath(conf.WORKTREE_BASE_PATH)
         target = os.path.abspath(cwd)
+        if (
+            profile is not None
+            and getattr(profile, "allow_project_root_cwd", False)
+            and target == os.path.abspath(str(conf.PROJECT_ROOT))
+        ):
+            return
+        base = os.path.abspath(conf.WORKTREE_BASE_PATH)
         try:
             common = os.path.commonpath([base, target])
         except ValueError:

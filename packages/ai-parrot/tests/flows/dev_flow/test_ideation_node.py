@@ -10,11 +10,14 @@ fail-fast, and the gateless autonomous fallback.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import pytest
+from parrot import conf
 from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
 from parrot.flows.dev_flow.nodes.ideation import IdeationNode
+from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DevAgentSpec, FeatureBrief, JudgePanelConfig
 from parrot.flows.dev_loop.session_state import SessionHost
 
@@ -191,6 +194,27 @@ async def test_dispatch_payload_and_profile(doc):
     assert profile.permission_mode == "acceptEdits"
     for tool in ("Read", "Write", "Edit", "Bash"):
         assert tool in profile.allowed_tools
+
+
+@pytest.mark.asyncio
+async def test_dispatch_runs_at_project_root_with_the_waiver(doc):
+    # The document is committed to base_branch and no feature worktree
+    # exists yet, so the dispatch runs at the base checkout — which the
+    # dispatcher's WORKTREE_BASE_PATH guard only tolerates for a profile
+    # that explicitly asks for it. Without the flag every dev-flow run dies
+    # at ideation with "cwd ... is not under WORKTREE_BASE_PATH".
+    dispatcher = ScriptedDispatcher([_output()])
+    node = IdeationNode(dispatcher=dispatcher)
+
+    await node.execute({"run_id": RUN_ID, "dev_brief": _brief("new_feature")})
+
+    call = dispatcher.calls[0]
+    assert call["cwd"] == str(Path(conf.PROJECT_ROOT).resolve())
+    assert call["profile"].allow_project_root_cwd is True
+    # And the real guard accepts exactly that pairing.
+    ClaudeCodeDispatcher._enforce_cwd_under_worktree_base(
+        object.__new__(ClaudeCodeDispatcher), call["cwd"], call["profile"],
+    )
 
 
 # ---------------------------------------------------------------------------

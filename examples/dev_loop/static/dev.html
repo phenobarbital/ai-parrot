@@ -525,7 +525,17 @@ function foldAction(a) {
   const s = app.s;
   switch (a.type) {
     case "run/created":   s.createdAt = a.ts; s.phase = "created"; break;
-    case "run/closed":    s.finishedAt = a.ts; s.phase = a.phase || "closed"; break;
+    case "run/closed":    s.finishedAt = a.ts;
+                          // `RunClosed` names the field `outcome`, not `phase`
+                          // — and it is the authoritative last word on both
+                          // terminal projections: the runner reads them off the
+                          // Handoff node's own response, so they land even when
+                          // the flow-event `run/prLinked` never fires. Mirrors
+                          // the server reducer's `action.pr_url or state.pr_url`.
+                          s.phase = a.outcome || "closed";
+                          if (a.pr_url) s.prUrl = a.pr_url;
+                          if (a.jira_issue_key) s.jiraKey = a.jira_issue_key;
+                          break;
     case "run/cancelled": s.phase = "cancelled"; break;
 
     case "node/started":   { const n = node(a.node_id); n.status = "running"; n.started_at = a.ts; break; }

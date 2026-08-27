@@ -416,7 +416,7 @@ const app = {
     affectedComponent: "", existingIssueKey: "", jiraIssueKey: "",
     logGroup: "", timeWindow: "60",
     devAgents: [], devIsolation: "shared",
-    judges: [], skipQa: false, skipJira: false,
+    judges: [], skipQa: false, skipJira: false, skipCloudwatch: false,
   },
 };
 
@@ -498,7 +498,17 @@ function foldAction(a) {
   const s = app.s;
   switch (a.type) {
     case "run/created":   s.createdAt = a.ts; s.phase = "created"; break;
-    case "run/closed":    s.finishedAt = a.ts; s.phase = a.phase || "closed"; break;
+    case "run/closed":    s.finishedAt = a.ts;
+                          // `RunClosed` names the field `outcome`, not `phase`
+                          // — and it is the authoritative last word on both
+                          // terminal projections: the runner reads them off the
+                          // Handoff node's own response, so they land even when
+                          // the flow-event `run/prLinked` never fires. Mirrors
+                          // the server reducer's `action.pr_url or state.pr_url`.
+                          s.phase = a.outcome || "closed";
+                          if (a.pr_url) s.prUrl = a.pr_url;
+                          if (a.jira_issue_key) s.jiraKey = a.jira_issue_key;
+                          break;
     case "run/cancelled": s.phase = "cancelled"; break;
 
     case "node/started":   { const n = node(a.node_id); n.status = "running"; n.started_at = a.ts; break; }
@@ -1153,6 +1163,15 @@ function tabBodyHtml(tab) {
         <label for="t-window">Window (minutes)</label>
         <input id="t-window" class="input mono" type="number" min="1" max="1440" data-form="timeWindow" value="${esc(f.timeWindow)}" />
         <p class="hint">1 – 1440, counted back from dispatch.</p>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="chk-skip-cloudwatch" ${f.skipCloudwatch ? "checked" : ""} style="width:16px;height:16px" ${d.cloudwatch_enabled === false ? "disabled" : ""} />
+          <span class="field-label" style="margin:0">Skip CloudWatch for this run</span>
+        </label>
+        <p class="hint">${d.cloudwatch_enabled === false
+          ? `CloudWatch is off server-wide (<span class="mono">DEV_LOOP_CLOUDWATCH_ENABLED=false</span>) — no bug run queries it.`
+          : `Bug runs attach a CloudWatch source by default. Tick this when you are reproducing locally and the AWS query is only latency — research then triages from the description and the codebase. Non-bug kinds never query CloudWatch at all.`}</p>
       </div>`);
   }
   if (tab === "jira") {
@@ -1337,6 +1356,7 @@ function buildPayload() {
     time_window_minutes: parseInt(f.timeWindow || "60", 10),
   };
   if (f.logGroup.trim()) payload.log_group = f.logGroup.trim();
+  if (f.skipCloudwatch) payload.skip_cloudwatch = true;
   if (f.existingIssueKey.trim()) payload.existing_issue_key = f.existingIssueKey.trim();
   if (f.devAgents.length) {
     payload.dev_agents = f.devAgents;
@@ -1531,6 +1551,10 @@ document.addEventListener("click", (e) => {
       app.form.skipJira = t.checked;
       renderReady();
       break;
+    case "chk-skip-cloudwatch":
+      app.form.skipCloudwatch = t.checked;
+      renderReady();
+      break;
   }
 });
 
@@ -1583,6 +1607,8 @@ $("request-form").addEventListener("submit", submit);
   }
   app.form.timeWindow = String(app.config.defaults?.time_window_minutes ?? 60);
   app.form.skipQa = !!app.config.defaults?.skip_qa;
+  // Server-wide kill switch pre-ticks (and disables) the per-run toggle.
+  app.form.skipCloudwatch = app.config.defaults?.cloudwatch_enabled === false;
   applyMode();
   render();
 })();

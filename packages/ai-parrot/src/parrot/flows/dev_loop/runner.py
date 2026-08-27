@@ -393,6 +393,13 @@ class DevLoopRunner:
         # the periodic sweep alongside gate expiry.
         self._pending_retention: Dict[str, float] = {}
         self._sweep_task: Optional[asyncio.Task] = None
+        # run_id -> FIFO of envelopes awaiting their XADD, plus the SINGLE
+        # writer task draining it. One writer per run is what makes the
+        # actions stream's order match `server_seq` — see
+        # :meth:`_make_envelope_sink`. `None` on the queue is the shutdown
+        # sentinel pushed by :meth:`_flush_actions_queue`.
+        self._actions_queues: Dict[str, "asyncio.Queue[Any]"] = {}
+        self._actions_writers: Dict[str, asyncio.Task] = {}
 
     # ── AHP-style host registry (FEAT-322) ──────────────────────────────────
 
@@ -477,10 +484,22 @@ class DevLoopRunner:
 
         ``SessionHost.apply`` invokes this callback synchronously (never
         awaited) and swallows any exception it raises. Because the actual
-        Redis XADD is async I/O, this schedules a best-effort background
-        task rather than blocking the reducer — the in-memory fold has
-        already happened by the time this is called, so a slow/failing
-        sink can never affect run correctness (never-break-a-run).
+        Redis XADD is async I/O, the envelope is handed to ``run_id``'s
+        single background writer rather than blocking the reducer — the
+        in-memory fold has already happened by the time this is called, so
+        a slow/failing sink can never affect run correctness
+        (never-break-a-run).
+
+        ORDER MATTERS, and one writer per run is what guarantees it. This
+        used to spawn an independent task per envelope; concurrent tasks on
+        a pooled client each take their own connection, so arrival order at
+        Redis did not have to match ``server_seq``. Any envelope that landed
+        after ``run/closed`` was then lost to every console, because
+        ``FlowStreamMultiplexer.state_tail`` stops on the first terminal
+        action it sees — which is how a completed Handoff node stayed
+        "running" with its PR link dropped. Enqueueing is synchronous and
+        happens inside ``apply``'s single-writer slice, so the queue is in
+        ``server_seq`` order by construction and the writer preserves it.
 
         FEAT-377 TASK-1917 (G6): also the park/resume trigger point — this
         is the ONE place every gate open/resolve passes through regardless
@@ -490,13 +509,7 @@ class DevLoopRunner:
 
         def _sink(envelope: ActionEnvelope) -> None:
             if self._redis_url:
-                try:
-                    asyncio.get_running_loop().create_task(
-                        self._xadd_envelope(run_id, envelope)
-                    )
-                except RuntimeError:
-                    # No running loop (e.g. sync test harness) — drop silently.
-                    pass
+                self._enqueue_envelope(run_id, envelope)
 
             t = envelope.action.type
             if t == "gate/opened":

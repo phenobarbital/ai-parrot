@@ -21,6 +21,14 @@ os.environ['GRPC_VERBOSITY'] = 'ERROR'
 # setting it here kills the noise at the earliest possible moment.
 logging.getLogger("botocore").setLevel(logging.INFO)
 logging.getLogger("aiobotocore").setLevel(logging.INFO)
+# aiosqlite logs every connector callable + the full SQL and bind params at
+# DEBUG ("executing <function connect.<locals>.connector ...>"), which both
+# floods the console and leaks payloads into stdout/CloudWatch. Several call
+# sites silence it locally (storage/backends/sqlite.py, knowledge/wiki/cli.py)
+# but only once THAT module is imported; the wiki store, graphindex readers
+# and memory planes hit aiosqlite without them. conf is imported first by
+# everything, so this is the one place the silence is guaranteed.
+logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 # Silence JAX/XLA compilation diagnostics when the app root logger runs at DEBUG.
 logging.getLogger("jax").setLevel(logging.WARNING)
 logging.getLogger("jaxlib").setLevel(logging.WARNING)
@@ -1157,6 +1165,19 @@ DEV_LOOP_WIKI_PAGE_INGEST: bool = config.getboolean(
 #   "never"  — never call a remote log backend, not even for bugs.
 DEV_LOOP_LOG_FETCH_MODE: str = config.get(
     "DEV_LOOP_LOG_FETCH_MODE", fallback="auto"
+)
+
+# Server-wide CloudWatch kill switch for the dev-loop console. ``False``
+# stops the console building a ``CloudWatchToolkit`` at all AND stops it
+# attaching a ``cloudwatch`` log source to a bug brief — the case for a
+# laptop run with no AWS profile, where the query is pure latency and a
+# guaranteed credential error. Orthogonal to ``DEV_LOOP_LOG_FETCH_MODE``:
+# that one decides for WHICH work kinds a remote fetch is allowed, this one
+# decides whether CloudWatch is available at all. A run may also opt out
+# individually via the console's "Skip CloudWatch" toggle
+# (``skip_cloudwatch`` on the request payload).
+DEV_LOOP_CLOUDWATCH_ENABLED: bool = config.getboolean(
+    "DEV_LOOP_CLOUDWATCH_ENABLED", fallback=True
 )
 
 # FEAT-405: Nova (AWS Bedrock) dev-loop backend. The dev-seat coding loop
