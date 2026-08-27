@@ -40,8 +40,8 @@ from parrot.knowledge.wiki.context import qualify_id, split_namespaced_id
 from parrot.knowledge.wiki.project import (
     WikiNamespaceConfig,
     WikiProjectConfig,
+    load_effective_config,
     load_global_registry,
-    load_project_config,
     merge_namespaces,
     resolve_arango_params,
     resolve_entry_base,
@@ -225,7 +225,10 @@ async def _open_project_plane(
     """
     if not project_root.is_dir():
         raise FileNotFoundError(f"namespace {name!r} root does not exist: {project_root}")
-    foreign = load_project_config(project_root)
+    # The FOREIGN root's own environment/overlay applies here, not the
+    # local project's — env still resolves from the process environment
+    # only (FEAT-461).
+    foreign = load_effective_config(project_root).config
     if foreign.backend == "arangodb":
         store = await _open_arango(
             arango_params=resolve_arango_params(foreign),

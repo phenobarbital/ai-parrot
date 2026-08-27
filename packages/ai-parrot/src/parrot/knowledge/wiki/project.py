@@ -781,7 +781,15 @@ def load_effective_config(
             f"Invalid wiki overlay at {path} — fix or remove it: {exc}"
         ) from exc
 
-    updates = overlay.model_dump(exclude={"namespaces"}, exclude_none=True)
+    # Built from the overlay's own (already-validated) attribute values —
+    # NOT `overlay.model_dump()` — because `model_copy(update=...)` never
+    # re-validates: a dumped nested model (e.g. `claude`) would land on
+    # `merged` as a plain dict instead of a `ClaudeIntegrationConfig`.
+    updates = {
+        name: value
+        for name in overlay.__class__.model_fields
+        if name != "namespaces" and (value := getattr(overlay, name)) is not None
+    }
     merged = base.model_copy(update=updates)
     if overlay.namespaces is not None:
         merged_namespaces = dict(merged.namespaces)

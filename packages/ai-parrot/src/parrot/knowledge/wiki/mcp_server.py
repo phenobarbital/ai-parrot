@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     find_project_root,
-    load_project_config,
+    load_effective_config,
 )
 from parrot.knowledge.wiki.store import create_wiki_store
 from parrot.knowledge.wiki.tools import create_wiki_tools
@@ -105,7 +105,7 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         from parrot.mcp.local_server import StdioMCPServer
         from parrot.mcp.server_base import LocalServerConfig
 
-    config = load_project_config(root)
+    config = load_effective_config(root).config
     # NOTE: storage_dir is config.storage_path(root) (".parrot/wiki" by
     # default, or wherever wiki.json points it), NOT a bare "root/.parrot"
     # — matching how `wikitoolkit build`/`query`/etc. resolve the plane
@@ -211,7 +211,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        config = load_project_config(root)
+        config = load_effective_config(root).config
     except WikiConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

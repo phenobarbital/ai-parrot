@@ -33,7 +33,7 @@ from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiProjectConfig,
     config_path,
-    load_project_config,
+    load_effective_config,
     save_project_config,
 )
 
@@ -491,7 +491,7 @@ def install_claude_integration(
         Human-readable list of actions performed.
     """
     root = root.resolve()
-    config = config or load_project_config(root)
+    config = config or load_effective_config(root).config
     existed = config_path(root).exists()
     # Migrate an older config's nudge tools to include ``Bash`` so shell
     # searches are nudged after an upgrade — but only from the exact old
@@ -667,7 +667,7 @@ def integration_status(root: Path) -> dict[str, Any]:
     """
     root = root.resolve()
     try:
-        config = load_project_config(root)
+        config = load_effective_config(root).config
     except WikiConfigError:
         # Status is read-only — report against defaults rather than fail.
         config = WikiProjectConfig(wiki_name=root.name or "codebase")

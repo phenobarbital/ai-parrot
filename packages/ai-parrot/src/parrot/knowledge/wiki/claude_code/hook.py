@@ -32,7 +32,7 @@ from parrot.knowledge.wiki.claude_code.assets import NUDGE_TEXT
 from parrot.knowledge.wiki.project import (
     WikiProjectConfig,
     find_project_root,
-    load_project_config,
+    load_effective_config,
 )
 from parrot.knowledge.wiki.repo_scan import CODE_SUFFIXES, DOC_SUFFIXES
 
@@ -183,7 +183,7 @@ def build_nudge(
         root = find_project_root(cwd)
     if root is None:
         return None
-    config = config or load_project_config(root)
+    config = config or load_effective_config(root).config
 
     if tool_name not in config.claude.nudge_tools:
         return None

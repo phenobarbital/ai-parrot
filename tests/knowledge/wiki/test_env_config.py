@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from parrot.knowledge.wiki.project import (
+    ClaudeIntegrationConfig,
     WikiConfigError,
     WikiEffectiveConfig,
     WikiEnvOverlay,
@@ -85,6 +86,22 @@ class TestEffectiveConfig:
         assert effective.config.arango_database == "wiki_x"
         # Untouched base field survives.
         assert effective.config.arango_text_analyzer == "text_en"
+
+    def test_overlay_merges_nested_model_as_validated_instance(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: a nested-model overlay field (e.g. `claude`) must
+        stay a validated instance after merge, not a raw dict left behind
+        by `model_copy(update=overlay.model_dump())`."""
+        overlay_file = tmp_path / ".parrot" / "wiki.dev.json"
+        overlay_file.parent.mkdir(parents=True)
+        overlay_file.write_text(
+            json.dumps({"claude": {"nudge_tools": ["Grep"]}}),
+            encoding="utf-8",
+        )
+        effective = load_effective_config(tmp_path, env="dev")
+        assert isinstance(effective.config.claude, ClaudeIntegrationConfig)
+        assert effective.config.claude.nudge_tools == ["Grep"]
 
     def test_namespaces_merge_per_key(self, tmp_path: Path) -> None:
         base_config = WikiProjectConfig(

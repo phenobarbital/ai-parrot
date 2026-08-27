@@ -26,7 +26,7 @@ from parrot.knowledge.wiki.claude_code.installer import (
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     find_project_root,
-    load_project_config,
+    load_effective_config,
 )
 
 
@@ -92,7 +92,7 @@ def install(
     """
     root = _resolve_root(path_)
     try:
-        config = load_project_config(root)
+        config = load_effective_config(root).config
         actions = install_claude_integration(
             root, config, git_hook=git_hook, gitignore=gitignore
         )
