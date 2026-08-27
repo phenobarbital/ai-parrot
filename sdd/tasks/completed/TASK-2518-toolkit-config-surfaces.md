@@ -200,10 +200,71 @@ class TestToolkitSurfaces:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `StudioToolkitsHandler` (GET `toolkits/{slug}/schema`, POST
+  `agents/{name}/toolkits`) implemented in `handlers/studio/toolkits.py`;
+  routes appended to `setup_studio_routes`.
+- Schema: `_introspect_params()` walks `inspect.signature(cls.__init__)`
+  (skips `self`/`**kwargs`), marking `required`/`server_managed`/`type`/
+  `default` per param. Wiki's `config` param is enriched with the real
+  `WikiConfig.model_json_schema()`; `pageindex_toolkit`/
+  `graphindex_toolkit`/`okf_toolkit` marked `server_managed`.
+  `infographic`'s `artifact_store` marked required+`server_managed`.
+  Generic slugs resolve via `discover_from_registry()` (declarative
+  `TOOL_REGISTRY` only, per Codebase Contract) + `resolve_class()`.
+- Wiki assignment: reuse-else-build resolved as specified —
+  `getattr(bot, '_pageindex_toolkit'/'_graphindex_toolkit', None)`
+  checked first; when absent, `pageindex_toolkit` is built fresh via
+  `PageIndexToolkit(adapter=PageIndexLLMAdapter(client=bot.get_client()),
+  storage_dir=.../pageindex)` and `graphindex_toolkit` via the (grepped,
+  not pre-pinned in the contract) `build_graph_memory_toolkit()` factory
+  in `parrot/knowledge/graphindex/factory.py` — an "open or create"
+  helper that already handles the empty/nonexistent-plane case cleanly
+  (zero nodes/edges, `HashingGraphEmbedder` fallback). Response reports
+  `pageindex_source`/`graphindex_source` as `"reused"`/`"built"`.
+- `storage_dir` validation: no dedicated wiki-storage-root config exists
+  anywhere in the codebase (grepped `parrot/conf.py` and
+  `knowledge/wiki/project.py`) — absolute paths are accepted after a
+  system-path denylist check (`/etc`, `/root`, `/bin`, etc. — deliberately
+  NOT `/` itself, since `/` is an ancestor of every absolute path and
+  would reject all of them); relative paths are sandboxed under
+  `AGENTS_DIR / "wiki_storage"` via the existing TASK-2511
+  `resolve_safe_path` helper.
+- Infographic assignment wires `app['artifact_store']`, 422
+  `server_managed` with `details.missing=["artifact_store"]` when absent.
+- `dataset_manager` and the generic path both proactively compute missing
+  required params via signature introspection BEFORE instantiating (422
+  `server_managed`), falling back to a `TypeError` catch as a safety net.
+- Tests (14, all passing): schema shape for all three first-class
+  toolkits + generic introspection + unknown-slug 404; wiki assignment
+  both reuse and build-fresh paths (real `LLMWikiToolkit` +
+  `build_graph_memory_toolkit` machinery against `tmp_path` — real
+  SQLite/local-file backends, no network) + invalid-config 422;
+  infographic wiring + missing-artifact_store 422; generic success +
+  missing-params 422 + unknown-slug 404 + ownership 403. Full
+  `packages/ai-parrot-server/tests/studio/` suite (136 tests) passes.
+  `ruff check handlers/studio/` clean except the same pervasive
+  pre-existing `BLE001` fail-open pattern noted in every other file in
+  this directory (one instance in this task's own `except Exception:
+  invalid JSON` guard, matching the established convention).
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- No bot-level capture attribute exists for the OKF toolkit anywhere in
+  the codebase (only `_pageindex_toolkit`/`_graphindex_toolkit`/
+  `_llmwiki_toolkit` are declared on `AbstractBot`), and `OKFToolkit`
+  cannot be constructed from a bare `WikiConfig` — it requires an
+  already-ingested, OKF-enriched PageIndex tree
+  (`tree`/`graph`/`content_store`/`tree_name`, all required, no trivial
+  "empty" degenerate form analogous to `PyDiGraph()`/`IndexFlatL2()`).
+  `LLMWikiToolkit.__init__` only stores `okf_toolkit` — verified it is
+  never touched during construction — so `None` is passed for it on
+  BOTH the reuse and build-fresh wiki paths; OKF-specific wiki tools
+  are unavailable until a real OKF toolkit is wired in through a
+  separate mechanism. This narrows "reuse-else-build" (as literally
+  worded in the task) to the two toolkits that actually have a
+  capture point / a real fresh-build factory.
+- `_WIKI_STORAGE_ROOT` (`AGENTS_DIR / "wiki_storage"`) is a new,
+  task-local convention — no existing wiki-storage-root config was
+  found to reuse (see Notes above).

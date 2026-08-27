@@ -195,7 +195,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,8 @@
       "parallelism_notes": "Assignment path may trigger reload; shares the studio route file.",
       "assigned_to": null,
       "started_at": "2026-08-27T18:50:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2518-toolkit-config-surfaces.md"
+      "completed_at": "2026-08-27T19:01:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2518-toolkit-config-surfaces.md"
     },
     {
       "id": "TASK-2519",
