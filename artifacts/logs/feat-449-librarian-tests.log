@@ -1,5 +1,5 @@
 === FEAT-449 legal-librarian-answer-layer — evidence log ===
-Generated: 2026-08-27T03:04:19Z
+Generated: 2026-08-27T03:25:30Z (post code-review remediation)
 
 ### pytest packages/ai-parrot-tools/tests/legal/ -v ###
 ============================= test session starts ==============================
@@ -11,7 +11,7 @@ rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-li
 configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
 plugins: anyio-4.14.2, aiohttp-1.1.1, assume-2.4.3, asyncio-1.4.0, mock-3.15.1, xdist-3.3.1, Faker-40.36.0, hypothesis-6.165.10, benchmark-5.2.3
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 149 items
+collecting ... collected 150 items
 
 packages/ai-parrot-tools/tests/legal/test_as_of.py::test_extract_as_of_regex_first[vigente a 2021-06-01-expected0] PASSED [  0%]
 packages/ai-parrot-tools/tests/legal/test_as_of.py::test_extract_as_of_regex_first[el 15/03/2020 qu\xe9 dec\xeda-expected1] PASSED [  1%]
@@ -88,77 +88,78 @@ packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_t
 packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_sanitizes_multi_word_accented_designator PASSED [ 48%]
 packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_strips_disallowed_punctuation PASSED [ 49%]
 packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_ascii_passthrough PASSED [ 50%]
-packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_transliterates_accents PASSED [ 51%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_transliterates_accents PASSED [ 50%]
 packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_transliterates_ordinal_indicator PASSED [ 51%]
 packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_collapses_disallowed_run_to_single_underscore PASSED [ 52%]
-packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_strips_leading_and_trailing_underscores PASSED [ 53%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_strips_leading_and_trailing_underscores PASSED [ 52%]
 packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_empty_or_all_disallowed_falls_back_to_underscore PASSED [ 53%]
 packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_has_no_write_tools PASSED [ 54%]
-packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_r2_invariant_in_class_docstring PASSED [ 55%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_r2_invariant_in_class_docstring PASSED [ 54%]
 packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_system_prompt_forbids_offsets_and_unlisted_keys PASSED [ 55%]
 packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_low_temperature PASSED [ 56%]
-packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_uses_custom_system_prompt PASSED [ 57%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_uses_custom_system_prompt PASSED [ 56%]
 packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_draft_is_stateless_no_conversation_history PASSED [ 57%]
 packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_reingest_seals_hashes_end_to_end PASSED [ 58%]
-packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_librarian_answers_with_anchored_guide PASSED [ 59%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_librarian_answers_with_anchored_guide PASSED [ 58%]
 packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_librarian_honest_not_found PASSED [ 59%]
 packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_fabricated_span_cannot_survive PASSED [ 60%]
-packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_mangled_quote_cannot_survive PASSED [ 61%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_mangled_quote_cannot_survive PASSED [ 60%]
 packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_tampered_payload_cannot_survive PASSED [ 61%]
 packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_no_vector_code_paths PASSED [ 62%]
-packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestGraphRetrieve::test_explicit_boe_id_resolved_first PASSED [ 63%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestGraphRetrieve::test_explicit_boe_id_resolved_first PASSED [ 62%]
 packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestDossierBuild::test_dossier_build_order_and_truncation PASSED [ 63%]
 packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_prunes_fabricated_payload_key PASSED [ 64%]
-packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_prunes_mangled_quote PASSED [ 65%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_prunes_mangled_quote PASSED [ 64%]
 packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_no_encontre_on_empty_retrieval PASSED [ 65%]
 packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_ground_suppresses_contradicted_atom PASSED [ 66%]
-packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_as_of_equals_graph_retrieve_date PASSED [ 67%]
-packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_span_key_format PASSED [ 67%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_as_of_equals_graph_retrieve_date PASSED [ 66%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestBuildLegalLibrarianCrew::test_registers_all_six_nodes_with_expected_dependencies PASSED [ 67%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_span_key_format PASSED [ 68%]
 packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_legal_answer_defaults PASSED [ 68%]
 packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_reading_note_requires_at_least_one_span PASSED [ 69%]
-packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_reading_note_requires_at_least_one_span PASSED [ 69%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_reading_note_requires_at_least_one_span PASSED [ 70%]
 packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_span_is_key_and_quote_only PASSED [ 70%]
 packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_payload_entry_shape PASSED [ 71%]
-packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_suppression_record_reason_is_closed_literal PASSED [ 71%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_suppression_record_reason_is_closed_literal PASSED [ 72%]
 packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_answer_and_conflict_note_roundtrip PASSED [ 72%]
 packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_conflict_note_final_shape PASSED [ 73%]
-packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_token_guard PASSED [ 73%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_token_guard PASSED [ 74%]
 packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_token_guard_skipped_for_short_queries PASSED [ 74%]
 packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_search_articles_temporal_filter PASSED [ 75%]
-packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_search_articles_binds_and_pattern PASSED [ 75%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_search_articles_binds_and_pattern PASSED [ 76%]
 packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_missing_pattern_raises_key_error PASSED [ 76%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_hash_mismatch_prunes PASSED [ 77%]
-packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_quote_mismatch_prunes PASSED [ 77%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_quote_mismatch_prunes PASSED [ 78%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_unknown_key_prunes PASSED [ 78%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_offsets_are_first_occurrence_and_slice_equals_quote PASSED [ 79%]
-packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_reading_note_loses_all_anchors_is_suppressed PASSED [ 79%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_reading_note_loses_all_anchors_is_suppressed PASSED [ 80%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_conflict_with_pruned_side_dropped PASSED [ 80%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_conflict_with_both_sides_surviving_kept PASSED [ 81%]
-packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_empty_dossier_is_no_encontre PASSED [ 81%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_empty_dossier_is_no_encontre PASSED [ 82%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_reading_order_filtered_silently PASSED [ 82%]
 packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_dossier_deduped_by_span_key PASSED [ 83%]
-packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_suppression_log_append_only PASSED [ 83%]
+packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_suppression_log_append_only PASSED [ 84%]
 packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_append_inserts_into_span_suppressions PASSED [ 84%]
 packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_suppression_id_increments_per_instance PASSED [ 85%]
-packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_binds_as_of_and_key PASSED [ 85%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_binds_as_of_and_key PASSED [ 86%]
 packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_returns_none_when_no_version PASSED [ 86%]
 packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_uses_pattern_from_ontology_not_inline_aql PASSED [ 87%]
-packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_no_python_date_comparison PASSED [ 87%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_no_python_date_comparison PASSED [ 88%]
 packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_selects_correct_version_of_three PASSED [ 88%]
 packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_boundary_valid_from_inclusive PASSED [ 89%]
-packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_boundary_valid_to_exclusive_selects_next PASSED [ 89%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_boundary_valid_to_exclusive_selects_next PASSED [ 90%]
 packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_currently_in_force_has_null_valid_to PASSED [ 90%]
 packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_missing_pattern_raises_key_error PASSED [ 91%]
-packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestReadOnly::test_write_methods_raise PASSED [ 91%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestReadOnly::test_write_methods_raise PASSED [ 92%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestReadOnly::test_search_vector_returns_empty_never_raises PASSED [ 92%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestSearchFts::test_search_fts_stub_shape PASSED [ 93%]
-packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestSearchFts::test_search_fts_non_articulo_category_returns_empty PASSED [ 93%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestSearchFts::test_search_fts_non_articulo_category_returns_empty PASSED [ 94%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_returns_body_and_title PASSED [ 94%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_excludes_body_when_requested PASSED [ 95%]
-packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_missing_returns_none PASSED [ 95%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_missing_returns_none PASSED [ 96%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestListPages::test_list_pages_includes_both_categories_by_default PASSED [ 96%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestListPages::test_list_pages_filters_by_category PASSED [ 97%]
-packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestNeighbors::test_neighbors_finds_incoming_edge PASSED [ 97%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestNeighbors::test_neighbors_finds_incoming_edge PASSED [ 98%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestLintApi::test_lint_methods_return_empty PASSED [ 98%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestStats::test_stats_counts PASSED [ 99%]
 packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestFactory::test_factory_raises_when_database_unbuilt PASSED [100%]
@@ -174,7 +175,7 @@ packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveNamespaceF
     lambda: runtest_hook(item=item, **kwds),
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-================== 146 passed, 3 skipped, 3 warnings in 9.32s ==================
+================== 147 passed, 3 skipped, 3 warnings in 9.56s ==================
 
 ### pytest packages/ai-parrot/tests/knowledge/ontology/ -v ###
 ============================= test session starts ==============================
@@ -414,7 +415,7 @@ tests/knowledge/ontology/concept_catalog/test_http.py::TestListConcepts::test_re
     class AuthCredential(BaseModel):
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 206 passed, 8 warnings in 2.29s ========================
+======================= 206 passed, 8 warnings in 2.27s ========================
 
 ### pytest packages/ai-parrot/tests/knowledge/wiki/ -v ###
 ============================= test session starts ==============================
@@ -657,8 +658,8 @@ packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestForeignPageWrite
 =================================== FAILURES ===================================
 _______________ TestMCPJsonInstall.test_install_creates_mcp_json _______________
 
-self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x75f8fee92b10>
-repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-10/test_install_creates_mcp_json0')
+self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x7961ee4bef00>
+repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-17/test_install_creates_mcp_json0')
 
     def test_install_creates_mcp_json(self, repo_root):
         install_claude_integration(repo_root)
@@ -675,8 +676,8 @@ E         + /home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit
 /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:26: AssertionError
 _____________ TestMCPJsonInstall.test_install_updates_stale_entry ______________
 
-self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x75f8fee92e40>
-repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-10/test_install_updates_stale_ent0')
+self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x7961ee4bec00>
+repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-17/test_install_updates_stale_ent0')
 
     def test_install_updates_stale_entry(self, repo_root):
         mcp_json = repo_root / ".mcp.json"
@@ -744,4 +745,4 @@ tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_co
 =========================== short test summary info ============================
 FAILED packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_creates_mcp_json
 FAILED packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_updates_stale_entry
-================= 2 failed, 223 passed, 23 warnings in 12.03s ==================
+================= 2 failed, 223 passed, 23 warnings in 11.56s ==================

@@ -4,7 +4,12 @@ from datetime import date
 
 import pytest
 from parrot_tools.legal.boe.hashing import seal_hash
-from parrot_tools.legal.librarian.flow import answer, dossier_build, graph_retrieve
+from parrot_tools.legal.librarian.flow import (
+    answer,
+    build_legal_librarian_crew,
+    dossier_build,
+    graph_retrieve,
+)
 from parrot_tools.legal.librarian.models import DraftAnswer, DraftReadingNote, DraftSpan
 
 
@@ -221,3 +226,36 @@ class TestAnswerFlow:
             log=FakeLog(),
         )
         assert ans.as_of == date(2022, 5, 5)
+
+
+class TestBuildLegalLibrarianCrew:
+    """Structural-only coverage — see build_legal_librarian_crew's docstring
+    Warning: the returned crew is NOT executable via run_flow() (no kwargs
+    template wiring on the ToolNodes); answer() is the tested/executed path.
+    """
+
+    def test_registers_all_six_nodes_with_expected_dependencies(
+        self, fake_store, legal_tenant_ctx
+    ):
+        from parrot_tools.legal.librarian.agent import LegalLibrarianAgent
+
+        agent = LegalLibrarianAgent()
+        crew = build_legal_librarian_crew(agent, fake_store, legal_tenant_ctx, FakeLog())
+
+        assert set(crew.workflow_graph) == {
+            "as_of_extract",
+            "graph_retrieve",
+            "dossier_build",
+            "librarian",
+            "span_verify",
+            "ground",
+        }
+        assert crew.workflow_graph["as_of_extract"].dependencies == set()
+        assert crew.workflow_graph["graph_retrieve"].dependencies == {"as_of_extract"}
+        assert crew.workflow_graph["dossier_build"].dependencies == {
+            "as_of_extract",
+            "graph_retrieve",
+        }
+        assert crew.workflow_graph["librarian"].dependencies == {"dossier_build"}
+        assert crew.workflow_graph["span_verify"].dependencies == {"librarian", "dossier_build"}
+        assert crew.workflow_graph["ground"].dependencies == {"span_verify"}

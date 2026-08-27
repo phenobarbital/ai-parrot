@@ -500,6 +500,19 @@ def build_legal_librarian_crew(agent: LibrarianLike, store: Any, ctx: Any, log: 
     crew's ``run_flow`` — is the tested/executed path; see the module
     docstring for why.
 
+    Warning:
+        The returned crew is NOT executable via ``run_flow()``. Each
+        ``ToolNode`` is registered with ``kwargs=None`` (no template
+        placeholders) — flow mode's ``{input}``/``{nodes.<id>.output}``
+        single-value placeholder substitution cannot express this
+        pipeline's multi-input fan-in (e.g. ``dossier_build`` needs BOTH
+        ``graph_retrieve``'s hits AND ``as_of_extract``'s ``as_of``, and
+        neither is a plain string). Calling ``crew.run_flow(...)`` on
+        this object will raise (e.g. a ``KeyError`` inside the wrapped
+        callables) rather than run the pipeline. This function exists
+        purely as an inspectable/discoverable artifact (dependency graph,
+        node registration) — call ``answer()`` to actually run the flow.
+
     Args:
         agent: The librarian agent.
         store: The tenant's graph store.
@@ -507,7 +520,8 @@ def build_legal_librarian_crew(agent: LibrarianLike, store: Any, ctx: Any, log: 
         log: The append-only suppression log.
 
     Returns:
-        The assembled ``AgentCrew``.
+        The assembled ``AgentCrew`` (structural inspection only — see
+        the Warning above; do not call ``run_flow()`` on it).
     """
     crew = AgentCrew(
         name="legal_librarian_crew",
