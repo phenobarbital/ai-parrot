@@ -417,14 +417,90 @@ class TestServerPayloadParsing:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: Added `WorkBrief.flow_type`/`.base_branch` (Optional, matching
+`dev_agents`/`dev_isolation`'s exact style). Threaded the operator override
+into `ResearchNode._resolve_base_branch` (TASK-2504) with precedence
+`brief.base_branch` (explicit) > committed spec frontmatter > kind mapping
+> `"dev"` default — the same precedence `resolve_flow()` documents, kept as
+a local reimplementation per TASK-2504's `scripts.sdd` decision. Confirmed
+(did not assume) `brief.model_dump_json()` at `dispatchers/claude.py:538`
+already serialises the whole brief, so no dispatcher change was needed.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Added a shared `_apply_flow_override(payload, form)` helper in
+`server.py` (mirrors the `dev_isolation` validation idiom verbatim: closed
+set for `flow_type`, open string for `base_branch`) and wired it into all
+three payload builders: `_build_brief_from_form` (bug/enhancement/
+new_feature), `_build_feature_brief_from_form` (feature — payload keys are
+currently silently dropped by `FeatureBrief`'s default `extra="ignore"`,
+since `FeatureBrief` was intentionally NOT given these fields per this
+task's Files-to-Modify list; parsed anyway per the explicit "do the same"
+instruction to keep every builder symmetric), and `server_dev.py`'s
+`_build_dev_brief_from_form` (reused via `ops_server._apply_flow_override`,
+also currently inert on `DevRequestBrief` for the same reason — this
+console never handles `kind="bug"` either). Both consoles: added
+`flowType`/`baseBranch` form state (default `"auto"`), a `resolvedFlow()`
+JS helper mirroring `WORK_KIND_FLOW`, segmented controls in the "Agents &
+models" tab (the closest existing analog to a "flow settings" tab — there
+is no dedicated one), payload wiring that omits `"auto"`, and a `flow`
+summary row showing the *resolved* value (never the literal `"auto"`).
 
-**afd.html finding**:
+**Found and fixed a real gap during implementation**: the guard as
+initially written (§F) only restricted `base_branch` choices once the
+operator explicitly clicked "hotfix" — but on a `kind="bug"` run with
+`flowType` left on `"auto"`, the *effective* type is already `"hotfix"`
+(via `WORK_KIND_FLOW`), and the naive guard would have let the operator
+pick `base_branch="dev"` directly, producing exactly the PR #1250
+motivating scenario's invalid combination (`hotfix`+`dev`) without ever
+touching the `flowType` control. Fixed by filtering the base-branch choices
+on `resolvedFlow().type` (the *resolved* type) rather than the literal
+`flowType` field, and centralizing the reset logic in a
+`sanitizeFlowOverride()` helper called from both the flow-type-seg click
+handler AND the kind-picker click handler (switching `kind` to `"bug"`
+while an incompatible `base_branch` was set now resets it too). Verified
+with a standalone Node.js simulation of the extracted logic (5 scenarios,
+including the PR #1250 case: operator must set `flowType="feature"`
+explicitly to unlock a non-`main` base on a bug run — matches spec §8's
+resolved framing that the override is a genuine operator decision, not an
+automatic base-branch-only escape hatch) — all passed. Both consoles'
+inline `<script>` blocks verified with `node --check` after every edit
+(syntactically valid).
 
-**Observed payloads (manual console run)**:
+Full `pytest packages/ai-parrot/tests/flows/dev_loop/
+packages/ai-parrot/tests/flows/dev_flow/` run: 1287 passed (up from 1104
+pre-task), same 3 pre-existing unrelated failures as every prior task in
+this feature (confirmed unrelated, not touched). `ruff check`: `research.py`,
+`server.py`, `server_dev.py` unchanged finding counts; `models/base.py` +2
+(UP045 `Optional`, consistent with its own `dev_agents`/`dev_isolation`
+fields directly above using the same style); new test file matches the
+identical pre-existing I001/C408 pattern already present in every sibling
+`_brief`-style test helper. `mypy` times out project-wide (60s) — same
+environment limitation noted in every prior task of this feature, not
+confirmed clean.
 
-**Deviations from spec**: none | describe if any
+**afd.html finding**: `examples/dev_loop/static/afd.html` is a **static
+design-system mockup/prototype**, not a functional console — verified via
+`grep` for `fetch(`/`POST`/`buildPayload`/`api/flow`: zero matches. It uses
+a `<x-dc>`/`sc-for`/`onChange="{{...}}"` templating syntax bound to a
+design-system bundle (`_ds/industry-.../\_ds\_bundle.js`) with hardcoded
+demo event streams (`['flow.intake_validated', {kind:'bug', ...}], 620]`)
+— it never posts a real payload to `/api/flow/run`. Confirmed out of scope;
+left untouched.
+
+**Observed payloads (simulated console run — see the Node.js simulation
+above in lieu of a live server, which requires Jira/Redis dependencies not
+available in this sandboxed environment)**: `auto`/`auto` on a `kind="bug"`
+brief sends `{kind:"bug"}` only (no `flow_type`/`base_branch` keys — spec
+resolves hotfix/main from the mapping); `flowType="feature"`,
+`baseBranch="dev"` on the same brief sends
+`{kind:"bug", flow_type:"feature", base_branch:"dev"}`; `flowType="hotfix"`
+alone sends `{flow_type:"hotfix"}` (base_branch omitted, resolves to main).
+
+**Deviations from spec**: None on the Python/model side. On the console
+side, the guard implementation differs from the task's literal §F wording
+("when flowType === 'hotfix', restrict the base-branch select to main") —
+implemented instead against the *resolved* effective type
+(`resolvedFlow().type`), which is strictly more correct and is required to
+actually close the PR #1250 gap (see the "gap found and fixed" note
+above). Documented here rather than silently deviating.

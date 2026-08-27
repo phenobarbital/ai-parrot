@@ -390,10 +390,27 @@ class TestPrTitle:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: Added `run_label()` to `nodes/base.py` per spec, wired it into
+`_build_title` (deployment_handoff.py, drops the dangling `": "` when both
+identifiers are empty) and `run_bundle.py`'s `feature_id`. Extended
+`qa.py:417`'s chain with `jira_issue_key` (consistent with :194/:342).
+`_find_feature_slug` short-circuits to `None` on empty `feat_id` before
+touching the filesystem. Re-ran the full audit grep per the Agent
+Instructions; found `development.py:204,217,628` also reference
+`research.feat_id` but only inside internal WARNING/error log strings (no
+PR/bundle-facing text, no lookup semantics) — left untouched as out of
+scope for this task's explicit 4-site list. Added
+`packages/ai-parrot/tests/flows/dev_loop/test_empty_feat_id.py` (10 tests,
+all passing) following `test_deployment_handoff.py`'s node-construction
+fixtures. Full `pytest packages/ai-parrot/tests/flows/dev_loop/` run:
+1091 passed, 3 pre-existing failures confirmed unrelated (identical
+failures reproduced on the unmodified baseline via `git stash`) — no
+regressions introduced. `ruff check` on all 5 changed files shows the
+same or fewer findings than the unmodified baseline versions (pre-existing
+UP00x/S110 style debt, none attributable to this diff). `mypy` timed out
+on the whole-project run (pre-existing project-wide slowness, not
+specific to these files) — best-effort, not confirmed clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

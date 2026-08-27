@@ -4,8 +4,13 @@ Scaffold a new Feature Specification using the SDD methodology.
 
 ## Usage
 ```
-/sdd-spec <feature-name> [-- free-form description and notes]
+/sdd-spec <feature-name> [--type feature|hotfix] [--base-branch <branch>] [-- free-form description and notes]
 ```
+
+`--type` / `--base-branch` are explicit overrides for the flow resolved in
+§2d — they win over any brainstorm/proposal frontmatter and over the
+`WorkKind` mapping (FEAT-466). Omit both to let §2d resolve the flow from
+the exploration doc (or default to `feature`/`dev` when none exists).
 
 ## Guardrails
 - Always use the official template at `sdd/templates/spec.md`.
@@ -127,24 +132,48 @@ Loaded brainstorm: sdd/proposals/<feature-name>.brainstorm.md
 
 If K is zero, proceed directly to §4 without asking anything.
 
-#### 2d. Sync the Base Branch (FEAT-145)
+#### 2d. Sync the Base Branch (FEAT-145, resolver added FEAT-466)
 
-Read the brainstorm/proposal frontmatter (or default to `feature`/`dev` when
-no exploration doc exists) via `scripts.sdd.sdd_meta`:
+Resolve `(TYPE, BASE_BRANCH)` deterministically via
+`scripts.sdd.sdd_meta.resolve_flow()` — explicit `--type`/`--base-branch`
+flags win over the brainstorm/proposal frontmatter, which wins over the
+default (`feature`/`dev`). Unlike a bare `parse()` call, `resolve_flow()`
+does NOT raise `FileNotFoundError` when no exploration doc exists — that is
+exactly the dev-loop bug path's normal situation (no brainstorm, no
+proposal), and it is why this step no longer calls `parse()` directly:
 
 ```bash
-META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<brainstorm-or-proposal-path>')); print(m.type, m.base_branch)")
+META=$(python -c "
+from pathlib import Path
+from scripts.sdd.sdd_meta import resolve_flow
+m = resolve_flow(
+    doc_path=Path('<brainstorm-or-proposal-path>') if '<exploration-doc-exists>' else None,
+    type_override='<--type value, or empty string if not passed>' or None,
+    base_branch_override='<--base-branch value, or empty string if not passed>' or None,
+)
+print(m.type, m.base_branch)")
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 ```
 
-**Validation:** if `TYPE == "hotfix"` and `BASE_BRANCH != "main"`, abort:
+**Validation (hotfix/main):** `resolve_flow()` enforces `type='hotfix' ⇒
+base_branch='main'` internally (it returns a `FlowMeta`, whose own
+cross-field validator raises `ValueError` — this is NOT re-derived as a
+separate bash check). The `python -c` call above therefore exits non-zero
+and prints a traceback when a `--type hotfix --base-branch dev`-style
+combination (or hotfix frontmatter with a non-`main` base) is resolved. On
+that failure, abort with the same message as before:
 ```
 ⚠️  type='hotfix' requires base_branch='main' (got base_branch='<value>').
-   Fix the brainstorm/proposal frontmatter and re-run /sdd-spec.
+   Fix the brainstorm/proposal frontmatter (or --base-branch flag) and
+   re-run /sdd-spec.
 ```
 
-**Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
+**Validation (feature/not-main):** `FlowMeta` does NOT reject
+`type='feature', base_branch='main'` at the schema layer (that refusal is
+intentionally a command-layer guard, FEAT-187) — so this check stays a
+manual bash condition after the resolver returns successfully. If
+`TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
 ```
 ⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
    or staging (during a release freeze). For changes that must base on
@@ -238,8 +267,23 @@ This step prevents AI hallucinations during implementation. You MUST:
      #   skip the reserve_ids.py call below and use this ID verbatim.
      ---
      ```
-   - **Feature ID** — reserve via the ledger allocator (FEAT-387), never
-     hand-compute by checking existing specs and incrementing the last one:
+   - **Feature ID — SKIP ENTIRELY when `TYPE == "hotfix"` (FEAT-466).** A
+     bugfix is not a feature and reserves no `FEAT-<NNN>`: ledger ids exist
+     for features and the brainstorm → spec → task SDD flow, and a hotfix is
+     identified by its **Jira issue key** instead. Do NOT call
+     `reserve_ids.py --kind feature` on the hotfix path — write no
+     `FEAT-<NNN>` anywhere in the spec, and use the Jira key as the
+     document's identity line (`**Jira**: <KEY>` in place of `**Feature
+     ID**: FEAT-<NNN>`). This is not an oversight to fix later: it is the
+     whole point — the allocator's "current branch must equal
+     `--base-branch`" precondition (`reserve_ids.py:140`) would otherwise be
+     unreachable for a hotfix that has to reserve on `main` while another
+     worktree already has `main` checked out. Skipping reservation removes
+     the problem rather than solving it.
+
+     For `TYPE == "feature"`, reserve via the ledger allocator (FEAT-387),
+     never hand-compute by checking existing specs and incrementing the
+     last one:
      ```bash
      FEAT_ID=$(python -m scripts.sdd.reserve_ids --kind feature --count 1 \
        --base-branch "$BASE_BRANCH" --label <feature-name>)
@@ -307,6 +351,8 @@ git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
 ```
 
 ### 7. Output
+
+**`TYPE == "feature"`:**
 ```
 ✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
 
@@ -321,6 +367,26 @@ Next:
   1. Review the spec — check Acceptance Criteria and Architectural Design.
   2. Mark status: approved when ready.
   3. Run /sdd-task sdd/specs/<feature-name>.spec.md
+```
+
+**`TYPE == "hotfix"` (FEAT-466 — no id reserved):**
+```
+✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
+
+   Identity: Jira <KEY> (no FEAT-<NNN> reserved — a bugfix is not a feature)
+   Base branch: main
+
+   To create the worktree (origin/main, never HEAD/dev):
+     git worktree add -b hotfix-<KEY>-<feature-name> \
+       .claude/worktrees/hotfix-<KEY>-<feature-name> origin/main
+
+Next:
+  1. Review the spec — check Acceptance Criteria and Architectural Design.
+  2. Mark status: approved when ready.
+  3. Normally: skip /sdd-task and dispatch straight to development (the
+     single-agent path handles a one-or-two-commit hotfix directly from
+     the spec). Only run /sdd-task if this hotfix genuinely needs
+     decomposition — it will not reserve TASK-<NNN> ids either.
 ```
 
 ## Reference

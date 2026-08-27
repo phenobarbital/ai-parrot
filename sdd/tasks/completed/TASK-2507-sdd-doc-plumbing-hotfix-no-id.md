@@ -336,12 +336,65 @@ into it — but do not invent one here.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: Edited all 5 target files (§A–D of Scope). `/sdd-spec.md`: added
+`--type`/`--base-branch` flags, rewrote §2d to call `resolve_flow()` instead
+of a bare `parse()` (keeping both existing abort messages verbatim, with a
+short note that the hotfix/main check is now raised by `FlowMeta`'s
+validator rather than a separate bash condition), added the hotfix
+FEAT-ID-skip instruction to §5, and split §7's output block into
+feature/hotfix variants (the original single block printed `FEAT-<ID>`
+unconditionally, which would have been wrong for a hotfix — caught during
+the "read all five files end to end" pass and fixed, per the task's own
+warning about exactly this failure mode). `/sdd-task.md`: added the
+"hotfix normally never reaches this command" note to §1, split §4's id
+reservation into feature/hotfix branches, added the hotfix index-header
+clarification, and updated §6/§7 similarly. `sdd-research.md`: passes
+`--type`/`--base-branch` flags derived from `brief.kind`, skips `/sdd-task`
+for `type: hotfix`, uses `hotfix-<JIRA-KEY>-<slug>` naming from
+`origin/main`, and the `ResearchOutput` example shows both the feature and
+hotfix (`feat_id: ""`) shapes. The `_subagent_data` mirror was byte-copied
+after editing the primary copy and `diff` confirmed identical (they were
+already byte-identical before this task, so no intentional differences
+existed to preserve). `CLAUDE.md` gained the worktree carve-out (explicit
+feature-vs-hotfix `git worktree add` commands, explaining `HEAD` is
+shorthand for "current base", not a hotfix-safe default) and the
+auto-commit-table hotfix note. Verification-by-execution (paste-and-run,
+per the task's Test Specification): reproduced the `parse()` crash on a
+missing path, then ran the documented `resolve_flow()` snippet for all 4
+cases (`kind=bug` → `hotfix main`; `kind=enhancement` → `feature dev`;
+explicit `--type hotfix --base-branch main` override; missing doc path
+with `kind=bug` → `hotfix main`, no crash) — all matched expectations
+exactly. `git diff --stat scripts/sdd/reserve_ids.py` is empty (confirmed
+untouched). Dispatched a fresh general-purpose subagent with ZERO prior
+context to read only `.claude/agents/sdd-research.md` cold and answer 6
+questions about a `kind="bug"` brief (Jira workflow, exact `/sdd-spec`
+command, whether an id is reserved, whether `/sdd-task` runs, the exact
+`git worktree add` command + base ref, and the final JSON's `feat_id`) —
+it derived every answer correctly, citing the exact lines, with no
+guessing. Full transcript summary preserved in this note.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Hotfix task-numbering decision**: **A hotfix normally produces NO task
+artifacts at all.** `sdd-research.md` skips `/sdd-task` entirely for
+`type: hotfix` (spec §3 Module 2's "Interaction with Module 7": no
+per-spec task index ⇒ `DevelopmentNode._build_scheduler` returns `None` ⇒
+single-agent dispatch, made to honour the operator's declared dev agent by
+TASK-2506 — the correct shape for a one-or-two-commit fix). `/sdd-task.md`
+itself is updated defensively for the rare case a human invokes it
+directly against a hotfix spec anyway: it skips
+`reserve_ids.py --kind task` and numbers tasks locally as
+`HOTFIX-<JIRA-KEY>-1`, `-2`, … — literal string ids scoped to that spec's
+own index file, never drawn from or compared against the ledger's
+`TASK-<NNN>` namespace. This resolves both halves of the task's "pick one
+and state it explicitly" instruction: the *normal* flow is "no artifacts";
+the *defensive* fallback (if invoked anyway) is local numbering.
 
-**Hotfix task-numbering decision**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Extended two output blocks (`/sdd-spec.md` §7,
+`/sdd-task.md` §6/§7) beyond the task's literal file-section list — they
+were not named in Scope, but both printed a `FEAT-<ID>`/worktree-naming
+template that is unconditionally wrong for a hotfix run and would have
+directly contradicted the new hotfix instructions three sections earlier
+in the same file. Fixed per the task's own explicit warning ("a local edit
+that contradicts a paragraph three sections away is the exact failure mode
+this task is fixing") rather than leaving a known contradiction in place.

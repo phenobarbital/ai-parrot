@@ -24,8 +24,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import yaml
 from navconfig import BASE_DIR
 
 from parrot import conf
@@ -49,6 +51,16 @@ from parrot.flows.dev_loop.nodes.base import (
     transition_issue_with_candidates,
 )
 
+# FEAT-466 TASK-2504: WorkKind -> base branch, used ONLY as the fallback
+# when the committed spec's frontmatter cannot be read. Deliberately a
+# LOCAL copy of scripts/sdd/sdd_meta.WORK_KIND_FLOW's base-branch half
+# (not an import — `scripts.sdd` is not importable from this package's
+# actual install/test context; see TASK-2504 Completion Note).
+_WORK_KIND_BASE_BRANCH: Dict[str, str] = {
+    "bug": "main",
+    "enhancement": "dev",
+    "new_feature": "dev",
+}
 
 # Atlassian caps the description field at 32 767 chars; leave a 2K
 # headroom for the rest of the JSON body and any unicode-byte expansion.
@@ -140,6 +152,45 @@ def _plan_llm_default() -> str:
     return _summarizer_llm_default()
 
 
+def _parse_flow_frontmatter(spec_path: Path) -> Optional[str]:
+    """Read the ``base_branch`` declared in a spec's YAML frontmatter.
+
+    FEAT-466 TASK-2504: mirrors ``scripts/sdd/sdd_meta.parse()``'s body
+    locally rather than importing it — ``scripts.sdd`` is not importable
+    from this package's actual install/test context (verified: it fails
+    once the interpreter's cwd is anything other than the repo root,
+    which is the normal case for an installed ``parrot`` package and for
+    this package's own test suite, run from ``packages/ai-parrot``). See
+    TASK-2504 Completion Note for the full verification.
+
+    Args:
+        spec_path: Path to the committed spec markdown file.
+
+    Returns:
+        The frontmatter's ``base_branch`` string when present and
+        non-empty, else ``None`` (missing file, no frontmatter, malformed
+        YAML, or a non-string/empty value) — callers must treat ``None``
+        as "unresolved", never as an error.
+    """
+    try:
+        text = spec_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    try:
+        block = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(block, dict):
+        return None
+    base = block.get("base_branch")
+    return base if isinstance(base, str) and base else None
+
+
 @register_dev_loop_node("dev_loop.research")
 class ResearchNode(DevLoopNode):
     """Second node — Jira + log fetch + sdd-research dispatch.
@@ -187,8 +238,7 @@ class ResearchNode(DevLoopNode):
         mode = (log_fetch_mode or "").strip().lower() or _log_fetch_mode_default()
         if mode not in _LOG_FETCH_MODES:
             raise ValueError(
-                f"Invalid log_fetch_mode {log_fetch_mode!r}; "
-                f"expected one of {sorted(_LOG_FETCH_MODES)}."
+                f"Invalid log_fetch_mode {log_fetch_mode!r}; " f"expected one of {sorted(_LOG_FETCH_MODES)}."
             )
         object.__setattr__(self, "_log_fetch_mode", mode)
         object.__setattr__(self, "_summarizer_llm", summarizer_llm or _summarizer_llm_default())
@@ -234,8 +284,7 @@ class ResearchNode(DevLoopNode):
         if skip_jira:
             issue_key = "SKIP-0"
             self.logger.info(
-                "Jira bypass enabled (skip_jira=True) for run_id=%s — "
-                "no ticket created.",
+                "Jira bypass enabled (skip_jira=True) for run_id=%s — " "no ticket created.",
                 shared.get("run_id", "?"),
             )
         else:
@@ -252,7 +301,8 @@ class ResearchNode(DevLoopNode):
                 issue_key = existing_key
                 self.logger.info(
                     "Re-using existing Jira ticket %s for run_id=%s",
-                    issue_key, shared.get("run_id", "?"),
+                    issue_key,
+                    shared.get("run_id", "?"),
                 )
                 await self._comment_retriggered(
                     issue_key=issue_key,
@@ -262,9 +312,7 @@ class ResearchNode(DevLoopNode):
             else:
                 reporter_fields = await self._reporter_fields(brief.reporter)
                 # FEAT-132: pick the issuetype from the kind→type mapping.
-                issuetype = _ISSUE_TYPE_BY_KIND.get(
-                    getattr(brief, "kind", "bug"), "Bug"
-                )
+                issuetype = _ISSUE_TYPE_BY_KIND.get(getattr(brief, "kind", "bug"), "Bug")
                 jira_resp = await self._jira.jira_create_issue(
                     summary=brief.summary,
                     issuetype=issuetype,
@@ -275,14 +323,14 @@ class ResearchNode(DevLoopNode):
                 issue_key = self._extract_issue_key(jira_resp)
                 self.logger.info(
                     "Created new Jira ticket %s (kind=%s) for run_id=%s",
-                    issue_key, getattr(brief, "kind", "bug"), shared.get("run_id", "?"),
+                    issue_key,
+                    getattr(brief, "kind", "bug"),
+                    shared.get("run_id", "?"),
                 )
                 # FEAT-132 G4: post plan-summary as first comment on new tickets.
                 run_id = shared.get("run_id", "")
                 plan = await self._build_plan_summary(brief, excerpts)
-                await self._post_plan_summary_comment(
-                    issue_key=issue_key, plan=plan, run_id=run_id
-                )
+                await self._post_plan_summary_comment(issue_key=issue_key, plan=plan, run_id=run_id)
         shared["jira_issue_key"] = issue_key
 
         # Transition the ticket out of Backlog so downstream nodes
@@ -302,7 +350,8 @@ class ResearchNode(DevLoopNode):
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "Initial Jira transition failed for %s (continuing): %s",
-                    issue_key, exc,
+                    issue_key,
+                    exc,
                 )
 
         # 3. FEAT-253: Provision repos BEFORE the sdd-research dispatch so
@@ -312,12 +361,12 @@ class ResearchNode(DevLoopNode):
         # configured (local fallback) and the clone path otherwise.
         repo_path = await self._provision_repos(shared.get("run_id", ""))
         is_clone = bool(self._repos and self._git_toolkit is not None)
-        dispatch_cwd: str = (
-            repo_path if is_clone else os.path.abspath(conf.WORKTREE_BASE_PATH)
-        )
+        dispatch_cwd: str = repo_path if is_clone else os.path.abspath(conf.WORKTREE_BASE_PATH)
         self.logger.info(
             "Base repository: %s (clone=%s), dispatch cwd: %s",
-            repo_path, is_clone, dispatch_cwd,
+            repo_path,
+            is_clone,
+            dispatch_cwd,
         )
 
         # 4. Dispatch the sdd-research subagent.
@@ -328,7 +377,12 @@ class ResearchNode(DevLoopNode):
             # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
             # for triage, Bash for git worktree plumbing.
             allowed_tools=[
-                "Read", "Grep", "Glob", "Bash", "Write", "SlashCommand",
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash",
+                "Write",
+                "SlashCommand",
             ],
             model="claude-sonnet-4-6",
         )
@@ -360,11 +414,11 @@ class ResearchNode(DevLoopNode):
 
         dispatch_brief = brief
         if extra_context_parts:
-            dispatch_brief = brief.model_copy(update={
-                "description": (
-                    brief.description + "\n\n" + "\n\n".join(extra_context_parts)
-                ).strip(),
-            })
+            dispatch_brief = brief.model_copy(
+                update={
+                    "description": (brief.description + "\n\n" + "\n\n".join(extra_context_parts)).strip(),
+                }
+            )
 
         research_out: ResearchOutput = await self._dispatcher.dispatch(
             brief=dispatch_brief,
@@ -381,17 +435,13 @@ class ResearchNode(DevLoopNode):
 
         # 5. If the subagent left jira_issue_key blank, inject ours.
         if not research_out.jira_issue_key:
-            research_out = research_out.model_copy(
-                update={"jira_issue_key": issue_key}
-            )
+            research_out = research_out.model_copy(update={"jira_issue_key": issue_key})
 
         # 6. Spec §7 R5 (relaxed) — reuse existing worktree if it's
         # already a registered git worktree on the expected branch;
         # fail fast only on the unsafe shapes (untracked directory or
         # mismatched branch).
-        worktree_reused = await self._ensure_worktree_safe(
-            research_out.branch_name
-        )
+        worktree_reused = await self._ensure_worktree_safe(research_out.branch_name)
 
         # 6b. When reusing a worktree, assess existing work so
         # DevelopmentNode can skip already-completed changes.
@@ -403,8 +453,7 @@ class ResearchNode(DevLoopNode):
             if prior:
                 shared["prior_work_context"] = prior
                 self.logger.info(
-                    "Prior work detected in reused worktree: %d commit(s), "
-                    "%d file(s) changed.",
+                    "Prior work detected in reused worktree: %d commit(s), " "%d file(s) changed.",
                     prior.get("commit_count", 0),
                     prior.get("files_changed", 0),
                 )
@@ -413,12 +462,83 @@ class ResearchNode(DevLoopNode):
         # repo_path is str(BASE_DIR) (local) or the clone path (declared
         # repo). worktree_path remains the per-run worktree — distinct from
         # repo_path (FEAT-253 G2/G3).
-        research_out = research_out.model_copy(
-            update={"repo_path": repo_path}
-        )
+        research_out = research_out.model_copy(update={"repo_path": repo_path})
+
+        # 8. FEAT-466 TASK-2504: stamp the deterministically-resolved base
+        # branch — read from the COMMITTED spec, never trusted from the
+        # subagent's self-report. See _resolve_base_branch.
+        research_out = research_out.model_copy(update={"base_branch": self._resolve_base_branch(research_out, brief)})
 
         shared["research_output"] = research_out
         return research_out
+
+    def _resolve_base_branch(self, research_out: ResearchOutput, brief: WorkBrief) -> str:
+        """Resolve the run's base branch.
+
+        Precedence, highest first (mirrors ``scripts.sdd.sdd_meta.
+        resolve_flow``'s documented precedence, FEAT-466 TASK-2508 — kept as
+        a local reimplementation here rather than an import; see TASK-2504's
+        Completion Note for why ``scripts.sdd`` is not importable from this
+        package's context):
+
+        1. ``brief.base_branch`` — an explicit operator override from the
+           console (FEAT-466 TASK-2508). This is genuine human intent
+           supplied *before* the run started, not an LLM self-report, so it
+           is trusted directly.
+        2. The committed spec's frontmatter — authoritative for everything
+           else: it was written and committed by ``/sdd-spec``, whereas
+           anything on ``research_out`` was produced by an LLM and may have
+           drifted.
+        3. The work-kind mapping, when the spec cannot be read — logged
+           loudly, because a wrong base branch is what FEAT-466 exists to
+           prevent.
+
+        Args:
+            research_out: The validated dispatch output (for ``spec_path``
+                and ``worktree_path``).
+            brief: This run's brief, for the ``base_branch`` override and the
+                ``kind`` fallback.
+
+        Returns:
+            The resolved base branch name; never ``""``.
+
+        Note (code-review follow-up, FEAT-466 TASK-2505): because this
+        always falls back to the work-kind mapping when the spec is
+        unreadable, ``ResearchOutput.base_branch`` never actually reaches
+        ``DeploymentHandoffNode`` as ``""`` in normal operation — that
+        node's "block on empty" branch is defensive-only (see its own
+        NOTE), not a path a legitimate run ever takes today.
+        """
+        spec_path = Path(research_out.spec_path)
+        if not spec_path.is_absolute():
+            spec_path = Path(research_out.worktree_path) / spec_path
+
+        override = (getattr(brief, "base_branch", None) or "").strip()
+        if override:
+            resolved = override
+        else:
+            resolved = _parse_flow_frontmatter(spec_path)
+            if resolved is None:
+                kind = getattr(brief, "kind", None)
+                resolved = _WORK_KIND_BASE_BRANCH.get(kind, "dev")
+                self.logger.warning(
+                    "Could not resolve base_branch from spec %s; falling back "
+                    "to the kind mapping for kind=%r -> %r.",
+                    spec_path,
+                    kind,
+                    resolved,
+                )
+
+        reported = (research_out.base_branch or "").strip()
+        if reported and reported != resolved:
+            self.logger.warning(
+                "sdd-research reported base_branch=%r but the committed "
+                "spec %s resolves to %r; using the spec's value.",
+                reported,
+                spec_path,
+                resolved,
+            )
+        return resolved
 
     # ------------------------------------------------------------------
     # Internal — repo provisioning (FEAT-250)
@@ -443,14 +563,10 @@ class ResearchNode(DevLoopNode):
         Never logs tokens — :class:`GitToolkit` handles scrubbing internally.
         """
         if not self._repos or self._git_toolkit is None:
-            self.logger.info(
-                "No repos declared; base repository = BASE_DIR (%s)", BASE_DIR
-            )
+            self.logger.info("No repos declared; base repository = BASE_DIR (%s)", BASE_DIR)
             return str(BASE_DIR)
 
-        base = os.path.join(
-            os.path.abspath(conf.DEV_LOOP_REPO_BASE_PATH), run_id or "run"
-        )
+        base = os.path.join(os.path.abspath(conf.DEV_LOOP_REPO_BASE_PATH), run_id or "run")
         os.makedirs(base, exist_ok=True)
 
         primary_path = ""
@@ -461,13 +577,15 @@ class ResearchNode(DevLoopNode):
             # against any normpath escape that slips through at the OS level.
             if not os.path.normpath(dest).startswith(os.path.normpath(base)):
                 raise ValueError(
-                    f"RepoSpec alias {repo.alias!r} would escape the clone "
-                    f"base {base!r} — refusing to provision."
+                    f"RepoSpec alias {repo.alias!r} would escape the clone " f"base {base!r} — refusing to provision."
                 )
 
             self.logger.info(
                 "Provisioning repo %r → %s (branch=%s, private=%s)",
-                repo.alias, dest, repo.branch, repo.private,
+                repo.alias,
+                dest,
+                repo.branch,
+                repo.private,
             )
             try:
                 result = await self._git_toolkit.clone_repo(
@@ -478,9 +596,10 @@ class ResearchNode(DevLoopNode):
                 )
             except Exception as exc:
                 self.logger.error(
-                    "Failed to provision repo %r → %s: %s. "
-                    "Falling back to local BASE_DIR checkout.",
-                    repo.alias, dest, exc,
+                    "Failed to provision repo %r → %s: %s. " "Falling back to local BASE_DIR checkout.",
+                    repo.alias,
+                    dest,
+                    exc,
                 )
                 return str(BASE_DIR)
             path = result.get("path", dest) if isinstance(result, dict) else dest
@@ -539,22 +658,19 @@ class ResearchNode(DevLoopNode):
                     "Skipping %s log fetch for %r (kind=%s, "
                     "log_fetch_mode=%s) — remote log fetching is only for "
                     "bug runs.",
-                    src.kind, src.locator, kind, self._log_fetch_mode,
+                    src.kind,
+                    src.locator,
+                    kind,
+                    self._log_fetch_mode,
                 )
                 continue
             try:
-                excerpts.extend(
-                    await self._fetch_logs(src, affected_component)
-                )
+                excerpts.extend(await self._fetch_logs(src, affected_component))
             except Exception as exc:  # never block the flow on log fetch
-                self.logger.warning(
-                    "Log fetch failed for %s/%s: %s", src.kind, src.locator, exc
-                )
+                self.logger.warning("Log fetch failed for %s/%s: %s", src.kind, src.locator, exc)
         return excerpts
 
-    async def _fetch_logs(
-        self, source: LogSource, affected_component: str = ""
-    ) -> List[str]:
+    async def _fetch_logs(self, source: LogSource, affected_component: str = "") -> List[str]:
         if source.kind == "inline":
             # The locator IS the pasted log/stack-trace text — nothing to
             # fetch. Keep the tail so oversized pastes don't bloat the
@@ -576,9 +692,7 @@ class ResearchNode(DevLoopNode):
             if source.locator and source.locator != toolkit.default_log_group:
                 kwargs["log_group_name"] = source.locator
             if affected_component:
-                kwargs["query_string"] = self._build_cw_query(
-                    affected_component
-                )
+                kwargs["query_string"] = self._build_cw_query(affected_component)
             result = await toolkit.aws_cloudwatch_query_logs(**kwargs)
             return self._tail_text(result)
         if source.kind == "elasticsearch":
@@ -594,9 +708,7 @@ class ResearchNode(DevLoopNode):
         if source.kind == "attached_file":
             # Blocking I/O off the event loop — large attached log files
             # would otherwise stall every concurrent flow run.
-            content = await asyncio.to_thread(
-                self._read_file_tail, source.locator, 4000
-            )
+            content = await asyncio.to_thread(self._read_file_tail, source.locator, 4000)
             return [content]
         raise ValueError(f"Unknown log source kind: {source.kind}")
 
@@ -613,9 +725,7 @@ class ResearchNode(DevLoopNode):
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
     @classmethod
-    def _build_cw_query(
-        cls, affected_component: str, limit: int = 100
-    ) -> str:
+    def _build_cw_query(cls, affected_component: str, limit: int = 100) -> str:
         """Build a CloudWatch Insights query filtered by the affected component.
 
         Extracts the leaf name (e.g. ``MSWordLoader`` from
@@ -634,18 +744,10 @@ class ResearchNode(DevLoopNode):
         escaped_leaf = cls._escape_cw_string(leaf)
         if leaf != affected_component:
             escaped_full = cls._escape_cw_string(affected_component)
-            filter_clause = (
-                f'filter @message like "{escaped_full}" '
-                f'or @message like "{escaped_leaf}"'
-            )
+            filter_clause = f'filter @message like "{escaped_full}" ' f'or @message like "{escaped_leaf}"'
         else:
             filter_clause = f'filter @message like "{escaped_leaf}"'
-        return (
-            "fields @timestamp, @message "
-            f"| {filter_clause} "
-            "| sort @timestamp desc "
-            f"| limit {limit}"
-        )
+        return "fields @timestamp, @message " f"| {filter_clause} " "| sort @timestamp desc " f"| limit {limit}"
 
     @staticmethod
     def _read_file_tail(path: str, max_bytes: int) -> str:
@@ -697,18 +799,12 @@ class ResearchNode(DevLoopNode):
         formatted: List[str] = []
         for row in rows:
             if isinstance(row, dict):
-                fields = {
-                    k: v for k, v in row.items() if k not in _LOG_DROP_FIELDS
-                }
-                message = str(
-                    fields.get("@message") or fields.get("message") or ""
-                ).strip()
+                fields = {k: v for k, v in row.items() if k not in _LOG_DROP_FIELDS}
+                message = str(fields.get("@message") or fields.get("message") or "").strip()
                 if not message:
                     # No message field — keep a compact repr of the rest.
                     message = str(fields).strip()
-                timestamp = str(
-                    fields.get("@timestamp") or fields.get("timestamp") or ""
-                ).strip()
+                timestamp = str(fields.get("@timestamp") or fields.get("timestamp") or "").strip()
                 line = f"[{timestamp}] {message}" if timestamp else message
             else:
                 line = str(row).strip()
@@ -721,9 +817,7 @@ class ResearchNode(DevLoopNode):
             return []
         return ["\n".join(kept)]
 
-    async def _build_description(
-        self, brief: BugBrief, excerpts: List[str]
-    ) -> str:
+    async def _build_description(self, brief: BugBrief, excerpts: List[str]) -> str:
         """Render the Jira description, summarizing logs if it overflows.
 
         Progressive degradation:
@@ -744,7 +838,8 @@ class ResearchNode(DevLoopNode):
         if len(body) > _MAX_DESCRIPTION_CHARS:
             self.logger.info(
                 "Description %d chars > %d cap; summarizing log excerpts",
-                len(body), _MAX_DESCRIPTION_CHARS,
+                len(body),
+                _MAX_DESCRIPTION_CHARS,
             )
             digest = await self._summarize_excerpts(excerpts)
             body = self._render_body(
@@ -752,20 +847,16 @@ class ResearchNode(DevLoopNode):
                 [
                     "(Auto-summarized: the raw log excerpts exceeded "
                     "Jira's 32 767-char limit. The digest below was "
-                    f"produced by {self._summarizer_llm}.)\n\n"
-                    + digest
+                    f"produced by {self._summarizer_llm}.)\n\n" + digest
                 ],
             )
         if len(body) > _MAX_DESCRIPTION_CHARS:
             self.logger.warning(
-                "Description still %d chars after summarization; "
-                "hard-truncating to %d.",
-                len(body), _MAX_DESCRIPTION_CHARS,
+                "Description still %d chars after summarization; " "hard-truncating to %d.",
+                len(body),
+                _MAX_DESCRIPTION_CHARS,
             )
-            body = (
-                body[: _MAX_DESCRIPTION_CHARS - 32].rstrip()
-                + "\n\n... (truncated)"
-            )
+            body = body[: _MAX_DESCRIPTION_CHARS - 32].rstrip() + "\n\n... (truncated)"
         return body
 
     @staticmethod
@@ -776,20 +867,12 @@ class ResearchNode(DevLoopNode):
         def _fmt_criterion(c: Any) -> str:
             kind = getattr(c, "kind", "?")
             name = getattr(c, "name", "?")
-            detail = (
-                getattr(c, "command", None)
-                or getattr(c, "task_path", None)
-                or getattr(c, "text", "")
-            )
+            detail = getattr(c, "command", None) or getattr(c, "task_path", None) or getattr(c, "text", "")
             return f"- [{kind}] {name}: {detail}"
 
-        criteria_lines = "\n".join(
-            _fmt_criterion(c) for c in brief.acceptance_criteria
-        )
+        criteria_lines = "\n".join(_fmt_criterion(c) for c in brief.acceptance_criteria)
         excerpts_block = "\n---\n".join(excerpts) if excerpts else "(none)"
-        details_block = (
-            f"Details:\n{brief.description}\n\n" if brief.description else ""
-        )
+        details_block = f"Details:\n{brief.description}\n\n" if brief.description else ""
         return (
             f"Affected component: {brief.affected_component}\n\n"
             f"{details_block}"
@@ -831,9 +914,9 @@ class ResearchNode(DevLoopNode):
                 return text
         except Exception as exc:  # noqa: BLE001 - degraded fallback
             self.logger.warning(
-                "Log summarization via %s failed (%s); "
-                "falling back to deterministic tail",
-                self._summarizer_llm, exc,
+                "Log summarization via %s failed (%s); " "falling back to deterministic tail",
+                self._summarizer_llm,
+                exc,
             )
         # Deterministic fallback: keep the tail of each excerpt up to
         # the target budget.
@@ -850,9 +933,7 @@ class ResearchNode(DevLoopNode):
     # FEAT-132 — Plan-summary helpers
     # ------------------------------------------------------------------
 
-    async def _build_plan_summary(
-        self, brief: WorkBrief, excerpts: List[str]
-    ) -> str:
+    async def _build_plan_summary(self, brief: WorkBrief, excerpts: List[str]) -> str:
         """Generate a short action-oriented plan for the Jira ticket comment.
 
         Uses the plan LLM (``DEV_LOOP_PLAN_LLM`` or falls back to the
@@ -875,16 +956,14 @@ class ResearchNode(DevLoopNode):
                 return text
         except Exception as exc:  # noqa: BLE001 - degraded fallback
             self.logger.warning(
-                "Plan summarization via %s failed (%s); "
-                "falling back to deterministic stub",
-                self._plan_llm, exc,
+                "Plan summarization via %s failed (%s); " "falling back to deterministic stub",
+                self._plan_llm,
+                exc,
             )
         return self._deterministic_plan_stub(brief)
 
     @staticmethod
-    def _compose_plan_prompt(
-        brief: WorkBrief, excerpts: List[str]
-    ) -> str:
+    def _compose_plan_prompt(brief: WorkBrief, excerpts: List[str]) -> str:
         """Build the plan-generation prompt consumed by the plan LLM.
 
         Args:
@@ -905,8 +984,7 @@ class ResearchNode(DevLoopNode):
             f"Summary: {brief.summary}\n"
             f"Component: {brief.affected_component}\n"
             f"Description: {brief.description or '(none)'}\n"
-            "Log excerpts (truncated):\n"
-            + ("\n---\n".join(excerpts) if excerpts else "(none)")
+            "Log excerpts (truncated):\n" + ("\n---\n".join(excerpts) if excerpts else "(none)")
         )
 
     @staticmethod
@@ -945,7 +1023,8 @@ class ResearchNode(DevLoopNode):
         except Exception as exc:  # noqa: BLE001 - non-fatal
             self.logger.warning(
                 "Could not post plan-summary comment on %s: %s",
-                issue_key, exc,
+                issue_key,
+                exc,
             )
 
     def _get_plan_client(self) -> Any:
@@ -978,22 +1057,20 @@ class ResearchNode(DevLoopNode):
                 result = await self._jira.jira_get_issue(brief.existing_issue_key)
             except Exception as exc:  # noqa: BLE001 - degrade to lookup
                 self.logger.warning(
-                    "existing_issue_key=%r could not be fetched (%s); "
-                    "falling back to summary search",
-                    brief.existing_issue_key, exc,
+                    "existing_issue_key=%r could not be fetched (%s); " "falling back to summary search",
+                    brief.existing_issue_key,
+                    exc,
                 )
             else:
                 # Toolkit responses carry a "status" key; treat a missing
                 # key as success so a bare issue payload also counts as a hit.
-                status = (
-                    result.get("status", "ok")
-                    if isinstance(result, dict) else "ok"
-                )
+                status = result.get("status", "ok") if isinstance(result, dict) else "ok"
                 if status == "ok":
                     return brief.existing_issue_key
                 self.logger.warning(
                     "existing_issue_key=%r returned %s; falling back",
-                    brief.existing_issue_key, status,
+                    brief.existing_issue_key,
+                    status,
                 )
 
         # 2. Summary search inside the configured project.
@@ -1023,25 +1100,24 @@ class ResearchNode(DevLoopNode):
             issues = result["data"]["issues"]
         else:
             self.logger.warning(
-                "Jira lookup failed: %s", result["message"],
+                "Jira lookup failed: %s",
+                result["message"],
             )
             return None
         # JQL `~` is fuzzy — verify the exact summary post-fetch so we
         # don't mistakenly merge unrelated tickets that share keywords.
         exact_matches = [
-            issue for issue in issues
-            if (
-                (issue.get("fields") or {}).get("summary") == brief.summary
-                or issue.get("summary") == brief.summary
-            )
+            issue
+            for issue in issues
+            if ((issue.get("fields") or {}).get("summary") == brief.summary or issue.get("summary") == brief.summary)
         ]
         if not exact_matches:
             return None
         if len(exact_matches) > 1:
             self.logger.warning(
-                "Found %d open Jira tickets with summary=%r; reusing "
-                "the most recently created one",
-                len(exact_matches), brief.summary,
+                "Found %d open Jira tickets with summary=%r; reusing " "the most recently created one",
+                len(exact_matches),
+                brief.summary,
             )
         chosen = exact_matches[0]
         return chosen.get("key") or chosen.get("issue_key")
@@ -1070,12 +1146,11 @@ class ResearchNode(DevLoopNode):
         except Exception as exc:  # noqa: BLE001 - non-fatal
             self.logger.warning(
                 "Could not post re-trigger comment on %s: %s",
-                issue_key, exc,
+                issue_key,
+                exc,
             )
 
-    async def _reporter_fields(
-        self, reporter: str
-    ) -> Optional[Dict[str, Any]]:
+    async def _reporter_fields(self, reporter: str) -> Optional[Dict[str, Any]]:
         """Build the ``fields={"reporter": {...}}`` blob for create_issue.
 
         Accepts either an email or an accountId. Emails are resolved to an
@@ -1125,8 +1200,9 @@ class ResearchNode(DevLoopNode):
             result = await self._jira.jira_find_user(reporter)
         except Exception as exc:  # noqa: BLE001 — never fail ticket creation
             self.logger.warning(
-                "Could not resolve reporter %r to an accountId: %s; "
-                "omitting reporter field", reporter, exc,
+                "Could not resolve reporter %r to an accountId: %s; " "omitting reporter field",
+                reporter,
+                exc,
             )
             return ""
         matches = (result or {}).get("matches") or []
@@ -1183,7 +1259,10 @@ class ResearchNode(DevLoopNode):
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "git", "worktree", "list", "--porcelain",
+                "git",
+                "worktree",
+                "list",
+                "--porcelain",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1193,15 +1272,13 @@ class ResearchNode(DevLoopNode):
             stdout = stdout_bytes.decode()
         except FileNotFoundError as exc:
             raise RuntimeError(
-                f"Path {path!r} exists but `git worktree list` "
-                f"failed: {exc}. Investigate manually before retrying."
+                f"Path {path!r} exists but `git worktree list` " f"failed: {exc}. Investigate manually before retrying."
             ) from exc
         except RuntimeError:
             raise
         except Exception as exc:
             raise RuntimeError(
-                f"Path {path!r} exists but `git worktree list` "
-                f"failed: {exc}. Investigate manually before retrying."
+                f"Path {path!r} exists but `git worktree list` " f"failed: {exc}. Investigate manually before retrying."
             ) from exc
 
         info = self._find_worktree_entry(stdout, os.path.abspath(path))
@@ -1220,14 +1297,13 @@ class ResearchNode(DevLoopNode):
             )
         self.logger.info(
             "Reusing existing worktree %s on branch %s",
-            path, branch_name,
+            path,
+            branch_name,
         )
         return True
 
     @staticmethod
-    def _find_worktree_entry(
-        porcelain: str, abs_path: str
-    ) -> Optional[Dict[str, str]]:
+    def _find_worktree_entry(porcelain: str, abs_path: str) -> Optional[Dict[str, str]]:
         """Parse ``git worktree list --porcelain`` output for a path.
 
         Returns a dict with the entry's fields (notably ``branch``,
@@ -1247,7 +1323,7 @@ class ResearchNode(DevLoopNode):
             else:
                 key, value = line, ""
             if key == "branch" and value.startswith("refs/heads/"):
-                value = value[len("refs/heads/"):]
+                value = value[len("refs/heads/") :]
             current[key] = value
         if current.get("worktree") == abs_path:
             return current
@@ -1272,10 +1348,12 @@ class ResearchNode(DevLoopNode):
         The returned dict is stored in ``shared["prior_work_context"]``
         and consumed by ``DevelopmentNode`` to avoid repeating work.
         """
+
         async def _run_git(*args: str) -> Optional[str]:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "git", *args,
+                    "git",
+                    *args,
                     cwd=worktree_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -1288,36 +1366,44 @@ class ResearchNode(DevLoopNode):
             return None
 
         merge_base = await _run_git(
-            "merge-base", "HEAD", "origin/dev",
+            "merge-base",
+            "HEAD",
+            "origin/dev",
         )
         if not merge_base:
             merge_base = await _run_git(
-                "merge-base", "HEAD", "origin/main",
+                "merge-base",
+                "HEAD",
+                "origin/main",
             )
         if not merge_base:
             return None
 
         log_output = await _run_git(
-            "log", "--oneline", "--no-decorate",
+            "log",
+            "--oneline",
+            "--no-decorate",
             f"{merge_base}..HEAD",
         )
         diff_stat = await _run_git(
-            "diff", "--stat", f"{merge_base}..HEAD",
+            "diff",
+            "--stat",
+            f"{merge_base}..HEAD",
         )
         diff_names = await _run_git(
-            "diff", "--name-only", "--diff-filter=d",
+            "diff",
+            "--name-only",
+            "--diff-filter=d",
             f"{merge_base}..HEAD",
         )
         uncommitted_diff = await _run_git(
-            "diff", "--stat", "HEAD",
+            "diff",
+            "--stat",
+            "HEAD",
         )
 
-        commits = [
-            line for line in (log_output or "").splitlines() if line.strip()
-        ]
-        changed_files = [
-            f for f in (diff_names or "").splitlines() if f.strip()
-        ]
+        commits = [line for line in (log_output or "").splitlines() if line.strip()]
+        changed_files = [f for f in (diff_names or "").splitlines() if f.strip()]
 
         if not commits and not changed_files and not uncommitted_diff:
             return None

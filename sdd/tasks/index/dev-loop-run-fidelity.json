@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-27T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-27T17:17:32+00:00",
   "tasks": [
     {
       "id": "TASK-2502",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Pure function in scripts/sdd/sdd_meta.py; shares no files with any other task. Dependency root of the feature — 2504 and 2507 need it.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2502-resolve-flow-mapping.md"
+      "completed_at": "2026-08-27T15:24:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2502-resolve-flow-mapping.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2503",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Touches run_bundle.py, qa.py, development.py:_find_feature_slug, deployment_handoff.py:_build_title and adds a helper to nodes/base.py. Overlaps 2505 (nodes/base.py) and 2506 (development.py) — if run concurrently, land this one FIRST since its edits are additive and small.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2503-feat-id-empty-fallbacks.md"
+      "completed_at": "2026-08-27T15:31:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2503-feat-id-empty-fallbacks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2504",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Needs resolve_flow() from 2502. Its Completion Note records the scripts.sdd import decision that 2505 and 2508 both depend on, so it must finish before either starts.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2504-research-output-base-branch.md"
+      "completed_at": "2026-08-27T15:47:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2504-research-output-base-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2505",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Reads ResearchOutput.base_branch from 2504. Also edits nodes/base.py, which 2503 touches — sequence after 2503 when both are in flight.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2505-sibling-overlap-guard.md"
+      "completed_at": "2026-08-27T16:37:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2505-sibling-overlap-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2506",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -98,8 +102,9 @@
       "parallelism_notes": "Problem B — fully independent of the base-branch chain. Only shares development.py with 2503's one-line _find_feature_slug guard. Safe to run first or concurrently.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2506-single-agent-honours-dev-agent.md"
+      "completed_at": "2026-08-27T15:39:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2506-single-agent-honours-dev-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2507",
@@ -108,7 +113,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -118,8 +123,9 @@
       "parallelism_notes": "Markdown only (.claude/commands/*, .claude/agents/*, _subagent_data/*, CLAUDE.md) so it conflicts with no Python task — but it must follow 2502 because it documents calling resolve_flow(), and it should follow 2503 because it starts PRODUCING feat_id == \"\" runs that 2503 makes safe.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2507-sdd-doc-plumbing-hotfix-no-id.md"
+      "completed_at": "2026-08-27T15:53:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2507-sdd-doc-plumbing-hotfix-no-id.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2508",
@@ -128,7 +134,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -138,8 +144,9 @@
       "parallelism_notes": "Adds WorkBrief.flow_type/.base_branch and threads them into 2504's _resolve_base_branch, so it must follow 2504. Console edits (index.html, dev.html) and the example servers are otherwise untouched by every other task.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2508-console-base-branch-override.md"
+      "completed_at": "2026-08-27T16:10:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2508-console-base-branch-override.md",
+      "verification": "verified"
     }
   ]
 }

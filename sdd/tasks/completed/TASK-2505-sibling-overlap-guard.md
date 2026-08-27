@@ -541,10 +541,95 @@ class TestFeatureHandoffWiring:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: Added `BaseBranchMismatch` + `assert_base_is_clean()` as
+module-level names in `nodes/base.py`, plus a private `_git()` subprocess
+helper and a local `_LONG_LIVED_BRANCHES` frozenset (not importing
+`scripts.sdd.KNOWN_BRANCHES` — per TASK-2504's documented import
+decision). `DeploymentHandoffNode`: deleted the `kind == "bug"` override
+block entirely; sources `_base_branch` from `research.base_branch`,
+blocking with `status="blocked"` when it's `""`; calls the guard after
+`_push_branch`, before PR creation. `FeatureHandoffNode`: same shape,
+sourced via a NEW private `_resolve_base_branch()` static method + a local
+`_parse_flow_frontmatter()` (NOT a `PlannerOutput.base_branch` field —
+see Deviations below for the reasoning). `test_ancestry_alone_would_pass`
+built and confirmed FIRST per the Agent Instructions, using a real (local,
+no-network) git repo reproducing the exact PR #1250 topology.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Two deviations found and fixed during implementation** (both discovered
+via empirical, real-git testing — not assumed):
 
-**Deviations from spec**: none | describe if any
+1. **The task's own reference `own` calculation is buggy.** The Pattern-
+   to-Follow snippet computes `own` via
+   `git rev-list --count origin/<base>..<branch> --not origin/<sib1> --not
+   origin/<sib2> ...` (chained `--not` flags). Verified with a real repo
+   (3 independent experiments, documented in this note's git history) that
+   chaining 2+ `--not` flags after a `..` range gives WRONG counts — each
+   `--not` toggles interesting/uninteresting state for what follows rather
+   than accumulating exclusions, so results are silently order- and
+   count-dependent (e.g. same inputs gave `own=1` one way and `own=2` the
+   other, both wrong). Fixed by switching `own`'s calculation to explicit
+   `^`-prefixed exclusions (`git rev-list --count <branch> ^origin/<base>
+   ^origin/<sib1> ^origin/<sib2> ...`), confirmed correct across the clean-
+   branch, incident-topology, and cherry-pick scenarios. Documented
+   prominently in `assert_base_is_clean`'s docstring so nobody
+   "simplifies" it back to the `--not` form.
+2. **`PlannerOutput` did NOT gain a `base_branch` field** — per the task's
+   own NOT-in-scope guidance ("unless `FeatureHandoffNode` genuinely needs
+   it... mirror TASK-2504's approach and say so"). Since `PlannerNode` is
+   not in this task's file list and `PlannerOutput.spec_path`/
+   `.worktree_path` were already sufficient, `FeatureHandoffNode` instead
+   gained a local, private `_resolve_base_branch()` (reads the committed
+   spec's frontmatter directly, mirroring `ResearchNode`'s TASK-2504
+   pattern) with a hardcoded `"dev"` fallback (feature-mode's `kind` is a
+   fixed `Literal["feature"]` — there is no kind-derived hotfix path here,
+   unlike bug-mode). This never returns `""`, so the empty-base block path
+   in `FeatureHandoffNode` is currently unreachable dead code, kept only
+   for symmetry/defensiveness with `DeploymentHandoffNode`.
+
+**Real-environment hazard found and fixed (unrelated to the guard's
+logic):** `assert_base_is_clean`'s real `asyncio.create_subprocess_exec`
+calls, combined with `test_gate_integration.py`'s manually-scheduled
+concurrent tasks (`asyncio.ensure_future`) and uvloop, hung the event loop
+across test boundaries (single test passed in 0.48s; two together hung
+indefinitely — confirmed via `faulthandler`/`SIGABRT` traceback dump
+showing the loop stuck, and via a clean git-stash bisection proving the
+hang did not exist on the pre-task baseline). Fixed by extending that
+file's existing `_patch_push` autouse fixture to also mock
+`assert_base_is_clean` — those are gate-mechanism tests, not base-branch
+guard tests (which have dedicated coverage here), so no real git plumbing
+belongs there, matching the existing rationale for mocking `_push_branch`/
+`_create_pr` in the same fixture.
+
+**Existing fixture updates (necessary regression fixes, not scope creep —
+required by the explicit "all tests pass" acceptance criterion, same
+pattern as TASK-2506):** `test_deployment_handoff.py`'s `ctx` fixture and
+`test_gate_integration.py`'s `handoff_ctx` fixture construct
+`ResearchOutput` without `base_branch`, which now defaults to `""` and
+trips the new blocking behavior — added `base_branch="dev"` to both.
+
+Full `pytest packages/ai-parrot/tests/flows/dev_loop/
+packages/ai-parrot/tests/flows/dev_flow/` run (bounded timeout after the
+hang investigation): 1299 passed (up from 1287 pre-task), same 3
+pre-existing unrelated failures as every prior task in this feature
+(confirmed not touched). `ruff check`: `deployment_handoff.py`,
+`test_deployment_handoff.py`, `test_gate_integration.py` unchanged finding
+counts; `nodes/base.py` +4 (`List`/`Tuple`/`Optional`-style findings,
+consistent with the file's pervasive existing use of those forms, not
+`list`/`tuple`/`X | None`); `feature_handoff.py`'s one new import-order
+(I001) finding was auto-fixed via `ruff check --fix --select I001`
+(mechanical reorder only, re-verified tests still pass), leaving +1
+(`Optional`-style, same file-convention reasoning). New test file matches
+the same pre-existing I001/C408 pattern already present in every sibling
+`_brief`-style test helper. `mypy` times out project-wide (60s) — same
+environment limitation noted in every prior task of this feature, not
+confirmed clean.
+
+**Deviations from spec**: (1) `own`'s rev-list form changed from chained
+`--not` flags to explicit `^`-prefixed exclusions — a proven correctness
+fix, not a design change (documented above and in the docstring). (2)
+`FeatureHandoffNode` sources its base from a local frontmatter reader
+instead of a new `PlannerOutput.base_branch` field — explicitly
+pre-authorized by the task's own NOT-in-scope guidance, with the reasoning
+recorded here per that guidance's request.

@@ -28,7 +28,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+import yaml
 
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
@@ -43,7 +46,9 @@ from parrot.flows.dev_loop.models import (
     SynthesisReport,
 )
 from parrot.flows.dev_loop.nodes.base import (
+    BaseBranchMismatch,
     DevLoopNode,
+    assert_base_is_clean,
     register_dev_loop_node,
     scrub_git_output,
     transition_issue_with_candidates,
@@ -57,6 +62,40 @@ def _slugify(text: str) -> str:
     """Lowercase, hyphen-separated fallback slug (no external deps)."""
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug or "feature"
+
+
+def _parse_flow_frontmatter(spec_path: Path) -> Optional[str]:
+    """Read the ``base_branch`` declared in a spec's YAML frontmatter.
+
+    FEAT-466 TASK-2505: local duplicate of
+    ``nodes.research._parse_flow_frontmatter`` (not a shared import —
+    ``research.py`` is not in this task's file list, and ``scripts.sdd`` is
+    not importable from this package's context; see TASK-2504's Completion
+    Note). Feature-mode always resolves ``type: feature`` (``FeatureBrief.
+    kind`` is a fixed literal), so unlike ``ResearchNode`` there is no
+    ``kind``-derived hotfix path here — the only question is which base a
+    pre-existing spec (``document_kind == "spec"``) already declares (e.g.
+    ``staging`` during a release freeze). Returns ``None`` — never raises —
+    when the file is missing, has no frontmatter, or is malformed; the
+    caller falls back to ``"dev"``.
+    """
+    try:
+        text = spec_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    try:
+        block = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(block, dict):
+        return None
+    base = block.get("base_branch")
+    return base if isinstance(base, str) and base else None
 
 
 @register_dev_loop_node("dev_loop.feature_handoff")
@@ -110,16 +149,16 @@ class FeatureHandoffNode(DevLoopNode):
         object.__setattr__(self, "_wiki", wiki_toolkit)
         object.__setattr__(self, "_wiki_name", wiki_name)
         object.__setattr__(self, "_gh_cli_path", gh_cli_path)
-        object.__setattr__(
-            self, "_target_repo", target_repo or os.environ.get("GITHUB_REPOSITORY", "")
-        )
+        object.__setattr__(self, "_target_repo", target_repo or os.environ.get("GITHUB_REPOSITORY", ""))
         object.__setattr__(self, "_base_branch", base_branch)
         object.__setattr__(
-            self, "_docs_artifact_dir",
+            self,
+            "_docs_artifact_dir",
             docs_artifact_dir or conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
         )
         object.__setattr__(
-            self, "_wiki_page_ingest",
+            self,
+            "_wiki_page_ingest",
             conf.DEV_LOOP_WIKI_PAGE_INGEST if wiki_page_ingest is None else wiki_page_ingest,
         )
         # FEAT-377 TASK-1915 (G2 seam 3): opt-in graph write-back, built
@@ -163,21 +202,55 @@ class FeatureHandoffNode(DevLoopNode):
         if feedback is not None and feedback.decision == "accept_with_notes":
             accept_notes = feedback.notes
 
+        # FEAT-466: source the base from the committed spec's frontmatter —
+        # the same "resolve once, record it, read the record" principle as
+        # DeploymentHandoffNode, never the hardcoded "dev" constructor
+        # default (never overridden by factories.py:244 today).
+        #
+        # NOTE (code-review follow-up, mirrors DeploymentHandoffNode's
+        # equivalent note): _resolve_base_branch below always falls back to
+        # "dev" when the spec is unreadable, so this never actually
+        # produces "" in normal operation today — the block below is
+        # defensive-only (exercised directly by
+        # test_base_branch_guard.py::TestFeatureHandoffWiring via a
+        # hand-constructed empty base), kept for symmetry with
+        # DeploymentHandoffNode and as the correct behavior should a future
+        # resolver genuinely leave the base unresolved.
+        base = self._resolve_base_branch(planner)
+        if not base:
+            error = (
+                "Could not resolve a base branch for this feature run — " "refusing to guess a PR target (FEAT-466)."
+            )
+            self.logger.error(error)
+            await self._mark_blocked(issue_key, error)
+            return {"status": "blocked", "error": error}
+        object.__setattr__(self, "_base_branch", base)
+
         # 1. Push.
         try:
-            await self._run_git(
-                planner.worktree_path, "push", "-u", "origin", planner.branch_name
-            )
+            await self._run_git(planner.worktree_path, "push", "-u", "origin", planner.branch_name)
         except RuntimeError as exc:
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
             return {"status": "blocked", "error": f"push: {exc}"}
 
+        # FEAT-466: sibling-overlap guard — the backstop. Same shared
+        # implementation DeploymentHandoffNode calls.
+        try:
+            await assert_base_is_clean(
+                planner.branch_name,
+                self._base_branch,
+                planner.worktree_path,
+                logger=self.logger,
+            )
+        except BaseBranchMismatch as exc:
+            self.logger.error("base-branch guard blocked the PR: %s", exc)
+            await self._mark_blocked(issue_key, str(exc))
+            return {"status": "blocked", "error": str(exc)}
+
         # 2. Open draft PR with retry-once (mirrors DeploymentHandoffNode).
         title = self._build_title(planner)
-        body = await self._build_body_async(
-            planner, development, synthesis, qa_report, accept_notes
-        )
+        body = await self._build_body_async(planner, development, synthesis, qa_report, accept_notes)
         pr_url: Optional[str] = None
         last_error: Optional[str] = None
         for attempt in range(2):
@@ -188,7 +261,9 @@ class FeatureHandoffNode(DevLoopNode):
                 last_error = str(exc)
                 if attempt == 0:
                     self.logger.warning(
-                        "PR create failed (attempt %s), retrying: %s", attempt + 1, exc,
+                        "PR create failed (attempt %s), retrying: %s",
+                        attempt + 1,
+                        exc,
                     )
                     await asyncio.sleep(2)
                 else:
@@ -203,7 +278,12 @@ class FeatureHandoffNode(DevLoopNode):
         # 3. Docs artifact — generate, commit, push to the PR branch.
         docs_path = self._docs_rel_path(planner)
         docs_content = self._build_docs_content(
-            planner, development, synthesis, qa_report, accept_notes, pr_url,
+            planner,
+            development,
+            synthesis,
+            qa_report,
+            accept_notes,
+            pr_url,
         )
         try:
             await self._write_and_push_docs(planner.worktree_path, docs_path, docs_content)
@@ -227,7 +307,9 @@ class FeatureHandoffNode(DevLoopNode):
         if session_host is not None:
             session_host.apply(
                 DocsArtifactLinked(
-                    docs_path=docs_path, wiki_page_id=wiki_page_id, pr_url=pr_url,
+                    docs_path=docs_path,
+                    wiki_page_id=wiki_page_id,
+                    pr_url=pr_url,
                 )
             )
 
@@ -235,7 +317,9 @@ class FeatureHandoffNode(DevLoopNode):
         if issue_key and self._jira is not None:
             try:
                 await transition_issue_with_candidates(
-                    self._jira, issue_key, conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
+                    self._jira,
+                    issue_key,
+                    conf.DEV_LOOP_JIRA_TRANSITIONS_READY,
                     logger=self.logger,
                 )
             except Exception as exc:  # noqa: BLE001 - degraded path
@@ -257,6 +341,32 @@ class FeatureHandoffNode(DevLoopNode):
         }
 
     # ------------------------------------------------------------------
+    # Internal — base-branch resolution (FEAT-466 TASK-2505)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_base_branch(planner: PlannerOutput) -> str:
+        """Resolve this feature run's base branch from the committed spec.
+
+        The spec on disk is authoritative — same principle as
+        ``ResearchNode._resolve_base_branch`` (TASK-2504). Feature-mode
+        always resolves ``type: feature`` (no ``kind``-derived hotfix path
+        exists here), so an unreadable/absent spec falls back to ``"dev"``
+        rather than a kind mapping — this never returns ``""``.
+
+        Args:
+            planner: The upstream planner output (for ``spec_path`` and
+                ``worktree_path``).
+
+        Returns:
+            The resolved base branch name; never ``""``.
+        """
+        spec_path = Path(planner.spec_path)
+        if not spec_path.is_absolute():
+            spec_path = Path(planner.worktree_path) / spec_path
+        return _parse_flow_frontmatter(spec_path) or "dev"
+
+    # ------------------------------------------------------------------
     # Internal — git plumbing (mirrors DeploymentHandoffNode's subprocess pattern)
     # ------------------------------------------------------------------
 
@@ -267,15 +377,16 @@ class FeatureHandoffNode(DevLoopNode):
         this node ever issues are ``push``, ``add``, and ``commit``.
         """
         proc = await asyncio.create_subprocess_exec(
-            "git", "-C", cwd, *args,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "git",
+            "-C",
+            cwd,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"git {' '.join(args)} failed: "
-                f"{scrub_git_output(err.decode(errors='replace'))}"
-            )
+            raise RuntimeError(f"git {' '.join(args)} failed: " f"{scrub_git_output(err.decode(errors='replace'))}")
         return out.decode(errors="replace")
 
     # ------------------------------------------------------------------
@@ -301,14 +412,24 @@ class FeatureHandoffNode(DevLoopNode):
     async def _create_pr_with_gh(self, branch: str, title: str, body: str) -> str:
         gh_path = self._gh_cli_path or "gh"
         proc = await asyncio.create_subprocess_exec(
-            gh_path, "pr", "create", "--draft",
-            "--base", self._base_branch, "--head", branch,
-            "--title", title, "--body", body,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            gh_path,
+            "pr",
+            "create",
+            "--draft",
+            "--base",
+            self._base_branch,
+            "--head",
+            branch,
+            "--title",
+            title,
+            "--body",
+            body,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(f"gh pr create failed: {err.decode(errors='replace')}")
+            raise RuntimeError(f"gh pr create failed: " f"{scrub_git_output(err.decode(errors='replace'))}")
         text = out.decode().strip()
         return text.splitlines()[-1] if text else ""
 
@@ -317,13 +438,14 @@ class FeatureHandoffNode(DevLoopNode):
 
         token = os.environ.get("GITHUB_TOKEN", "")
         if not self._target_repo or not token:
-            raise RuntimeError(
-                "GitHub REST fallback requires target_repo + GITHUB_TOKEN"
-            )
+            raise RuntimeError("GitHub REST fallback requires target_repo + GITHUB_TOKEN")
         url = f"https://api.github.com/repos/{self._target_repo}/pulls"
         payload = {
-            "title": title, "body": body, "head": branch,
-            "base": self._base_branch, "draft": True,
+            "title": title,
+            "body": body,
+            "head": branch,
+            "base": self._base_branch,
+            "draft": True,
         }
         headers = {
             "Authorization": f"Bearer {token}",
@@ -335,7 +457,7 @@ class FeatureHandoffNode(DevLoopNode):
             async with session.post(url, json=payload, headers=headers) as resp:
                 data = await resp.json()
                 if resp.status >= 300:
-                    raise RuntimeError(f"GitHub REST {resp.status}: {data}")
+                    raise RuntimeError(f"GitHub REST {resp.status}: {scrub_git_output(str(data))}")
                 return data.get("html_url", "")
 
     # ------------------------------------------------------------------
@@ -347,14 +469,17 @@ class FeatureHandoffNode(DevLoopNode):
             return
         try:
             await transition_issue_with_candidates(
-                self._jira, issue_key, conf.DEV_LOOP_JIRA_TRANSITIONS_BLOCKED,
+                self._jira,
+                issue_key,
+                conf.DEV_LOOP_JIRA_TRANSITIONS_BLOCKED,
                 logger=self.logger,
             )
         except Exception as exc:  # noqa: BLE001 - degraded path
             self.logger.warning("Blocked transition failed: %s", exc)
         try:
             await self._jira.jira_add_comment(
-                issue=issue_key, body=f"flow-bot: handoff blocked — {error}",
+                issue=issue_key,
+                body=f"flow-bot: handoff blocked — {error}",
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Blocked comment failed: %s", exc)
@@ -399,10 +524,7 @@ class FeatureHandoffNode(DevLoopNode):
         )
         notes_block = accept_notes or "(none)"
         test_block = (
-            "\n".join(
-                f"- {r.name}: {'PASS' if r.passed else 'FAIL'}"
-                for r in qa_report.criterion_results
-            )
+            "\n".join(f"- {r.name}: {'PASS' if r.passed else 'FAIL'}" for r in qa_report.criterion_results)
             if qa_report and qa_report.criterion_results
             else "(no acceptance-criteria evidence recorded)"
         )
@@ -419,9 +541,7 @@ class FeatureHandoffNode(DevLoopNode):
             f"---\n_Generated by flow-bot via the dev-loop (feature-mode)._\n"
         )
 
-    async def _write_and_push_docs(
-        self, worktree_path: str, docs_rel_path: str, content: str
-    ) -> None:
+    async def _write_and_push_docs(self, worktree_path: str, docs_rel_path: str, content: str) -> None:
         """Write, commit, and push the docs artifact to the feature branch.
 
         Args:
@@ -443,18 +563,14 @@ class FeatureHandoffNode(DevLoopNode):
             fh.write(content)
 
         await self._run_git(worktree_path, "add", docs_rel_path)
-        await self._run_git(
-            worktree_path, "commit", "-m", f"docs: add feature handoff artifact ({docs_rel_path})"
-        )
+        await self._run_git(worktree_path, "commit", "-m", f"docs: add feature handoff artifact ({docs_rel_path})")
         await self._run_git(worktree_path, "push", "origin", "HEAD")
 
     # ------------------------------------------------------------------
     # Internal — wiki ingest (optional, degrades independently)
     # ------------------------------------------------------------------
 
-    async def _ingest_wiki_page(
-        self, planner: PlannerOutput, content: str
-    ) -> Optional[str]:
+    async def _ingest_wiki_page(self, planner: PlannerOutput, content: str) -> Optional[str]:
         """Ingest the docs artifact as a wiki page, when enabled and available.
 
         Returns:
@@ -482,7 +598,8 @@ class FeatureHandoffNode(DevLoopNode):
         except Exception as exc:  # noqa: BLE001 - wiki ingest is best-effort
             self.logger.warning(
                 "Wiki page ingest failed for %s (degrading): %s",
-                planner.feat_id, exc,
+                planner.feat_id,
+                exc,
             )
             return None
 
@@ -513,7 +630,10 @@ class FeatureHandoffNode(DevLoopNode):
         if self._graph_memory is None:
             return
         await self._graph_memory.publish_run_outcome(
-            run_id, qa_report, "succeeded", summary,
+            run_id,
+            qa_report,
+            "succeeded",
+            summary,
         )
 
     # ------------------------------------------------------------------
@@ -542,9 +662,7 @@ class FeatureHandoffNode(DevLoopNode):
         try:
             summary = await summarize_pr_changes(body, logger=self.logger)
         except Exception:  # noqa: BLE001 - enrichment must never break handoff
-            self.logger.warning(
-                "PR summary enrichment failed; using template only.", exc_info=True
-            )
+            self.logger.warning("PR summary enrichment failed; using template only.", exc_info=True)
             summary = ""
         if not summary:
             return body
@@ -562,9 +680,7 @@ class FeatureHandoffNode(DevLoopNode):
         qa_report: Optional[QAReport],
         accept_notes: str,
     ) -> str:
-        files = (
-            ", ".join(development.files_changed[:10]) if development else "(none)"
-        )
+        files = ", ".join(development.files_changed[:10]) if development else "(none)"
         criteria = (
             "\n".join(
                 f"- {r.name}: {'PASS' if r.passed else 'FAIL'}"
@@ -573,9 +689,7 @@ class FeatureHandoffNode(DevLoopNode):
             or "(none)"
         )
         notes_section = f"\n\n## Notes\n\n{accept_notes}" if accept_notes else ""
-        reconciliation = (
-            f"\n\n## Synthesis\n\n{synthesis.summary}" if synthesis else ""
-        )
+        reconciliation = f"\n\n## Synthesis\n\n{synthesis.summary}" if synthesis else ""
         return (
             f"## Summary\n\n"
             f"Spec: `{planner.spec_path}`\n"
