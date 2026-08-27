@@ -265,6 +265,51 @@ jobs:
         with:
           python-version: "3.12"
 
+      # FEAT-468: build the embedded Admin UI BEFORE `uv build`, or the
+      # wheel ships with no UI at all — packages/ai-parrot-server/pyproject.toml's
+      # package-data glob ("parrot.server.ui" = ["dist/*", "dist/assets/*"],
+      # TASK-2523) only picks up files that already exist in
+      # src/parrot/server/ui/dist/ at build time; that directory is
+      # gitignored and produced solely by this Node/pnpm build. This is the
+      # FIRST frontend build stage in the release pipeline — locked in by
+      # packages/ai-parrot-server/tests/test_wheel_layout.py::TestWheelContainsAdminUI
+      # (@pytest.mark.wheel_build), which fails if this stage is skipped.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable pnpm via corepack
+        run: corepack enable && corepack prepare pnpm@9 --activate
+
+      - name: Install Admin UI dependencies
+        working-directory: packages/ai-parrot-server/ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Admin UI types
+        working-directory: packages/ai-parrot-server/ui
+        run: pnpm generate
+
+      - name: Build Admin UI
+        working-directory: packages/ai-parrot-server/ui
+        run: pnpm build
+
+      - name: Assert Admin UI build output exists
+        run: test -f packages/ai-parrot-server/src/parrot/server/ui/dist/index.html
+
+      # FEAT-468: the @pytest.mark.wheel_build tests in test_wheel_layout.py
+      # build their own throwaway wheel (via the satellite_wheel_path fixture's
+      # `uv build --wheel`, independent of the "Build package" step below) and
+      # assert the Admin UI's dist/index.html + dist/assets/* actually make it
+      # into the wheel's package-data glob, plus the PEP 420 no-__init__.py
+      # invariants. This is the enforcement referenced in the comment above —
+      # without this step the "Assert Admin UI build output exists" check only
+      # proves the src/ tree has the files, not that packaging picks them up.
+      - name: Run wheel-content tests (Admin UI + PEP 420)
+        run: |
+          uv sync --package ai-parrot-server
+          uv run pytest -m wheel_build packages/ai-parrot-server/tests/test_wheel_layout.py -q --tb=short
+
       - name: Build package
         run: |
           cd packages/ai-parrot-server
