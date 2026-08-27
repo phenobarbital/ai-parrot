@@ -189,14 +189,12 @@ async def assert_base_is_clean(
         if _cwd_is_unusable_repo(err):
             if logger:
                 logger.info(
-                    "%r is not a usable git repository; skipping "
-                    "base-branch guard.",
+                    "%r is not a usable git repository; skipping " "base-branch guard.",
                     cwd,
                 )
             return
         raise RuntimeError(
-            f"assert_base_is_clean: could not fetch origin/{base} — "
-            f"refusing to guess: {scrub_git_output(err)}"
+            f"assert_base_is_clean: could not fetch origin/{base} — " f"refusing to guess: {scrub_git_output(err)}"
         )
 
     # Fetch candidates, and keep only refs that actually exist — `staging`
@@ -214,8 +212,7 @@ async def assert_base_is_clean(
             if "couldn't find remote ref" in err.lower():
                 continue
             raise RuntimeError(
-                f"assert_base_is_clean: could not fetch origin/{sib} — "
-                f"refusing to guess: {scrub_git_output(err)}"
+                f"assert_base_is_clean: could not fetch origin/{sib} — " f"refusing to guess: {scrub_git_output(err)}"
             )
         rc, _, _ = await _git(cwd, "rev-parse", "--verify", f"origin/{sib}")
         if rc == 0:

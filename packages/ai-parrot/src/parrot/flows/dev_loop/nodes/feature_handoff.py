@@ -429,10 +429,7 @@ class FeatureHandoffNode(DevLoopNode):
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"gh pr create failed: "
-                f"{scrub_git_output(err.decode(errors='replace'))}"
-            )
+            raise RuntimeError(f"gh pr create failed: " f"{scrub_git_output(err.decode(errors='replace'))}")
         text = out.decode().strip()
         return text.splitlines()[-1] if text else ""
 
@@ -460,9 +457,7 @@ class FeatureHandoffNode(DevLoopNode):
             async with session.post(url, json=payload, headers=headers) as resp:
                 data = await resp.json()
                 if resp.status >= 300:
-                    raise RuntimeError(
-                        f"GitHub REST {resp.status}: {scrub_git_output(str(data))}"
-                    )
+                    raise RuntimeError(f"GitHub REST {resp.status}: {scrub_git_output(str(data))}")
                 return data.get("html_url", "")
 
     # ------------------------------------------------------------------

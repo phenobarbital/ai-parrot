@@ -126,13 +126,9 @@ class TestGuard:
         monkeypatch.setattr(base_module, "_git", _fail_base_fetch)
 
         with pytest.raises(RuntimeError, match="could not fetch origin/dev"):
-            await assert_base_is_clean(
-                "feat-465", "dev", str(incident_repo), siblings=["main"]
-            )
+            await assert_base_is_clean("feat-465", "dev", str(incident_repo), siblings=["main"])
 
-    async def test_sibling_transient_fetch_failure_raises_not_skips(
-        self, incident_repo, monkeypatch
-    ):
+    async def test_sibling_transient_fetch_failure_raises_not_skips(self, incident_repo, monkeypatch):
         """A sibling fetch failing for a reason OTHER than 'ref does not
         exist' must raise, never be silently treated the same as a
         genuinely-absent sibling — that would let exactly the sibling that
@@ -149,19 +145,13 @@ class TestGuard:
         monkeypatch.setattr(base_module, "_git", _flaky_sibling_fetch)
 
         with pytest.raises(RuntimeError, match="could not fetch origin/main"):
-            await assert_base_is_clean(
-                "feat-465", "dev", str(incident_repo), siblings=["main"]
-            )
+            await assert_base_is_clean("feat-465", "dev", str(incident_repo), siblings=["main"])
 
-    async def test_sibling_genuinely_absent_still_skipped(
-        self, incident_repo, monkeypatch
-    ):
+    async def test_sibling_genuinely_absent_still_skipped(self, incident_repo, monkeypatch):
         """The English 'couldn't find remote ref' shape (forced by LC_ALL=C)
         is still correctly treated as 'not applicable' — regression guard
         for the fetch-failure-vs-absent distinction above."""
-        await assert_base_is_clean(
-            "feat-465", "dev", str(incident_repo), siblings=["definitely-not-a-branch"]
-        )
+        await assert_base_is_clean("feat-465", "dev", str(incident_repo), siblings=["definitely-not-a-branch"])
 
     async def test_no_existing_siblings_passes(self, incident_repo, caplog):
         logger = MagicMock()
