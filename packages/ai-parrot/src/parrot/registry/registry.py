@@ -14,7 +14,7 @@ import hashlib
 from types import ModuleType
 import importlib
 import inspect
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, is_dataclass
 import yaml
 try:
     from parrot import yaml_rs
@@ -535,11 +535,19 @@ class AgentRegistry:
         **kwargs: Any
     ) -> None:
         """Register a bot class with the registry."""
-        if name in self._registered_agents and not replace:
-            self.logger.warning(
-                f"Bot {name} already registered, use replace=True to overwrite"
-            )
-            return
+        existing = self._registered_agents.get(name)
+        if existing is not None:
+            if not replace:
+                self.logger.warning(
+                    f"Bot {name} already registered, use replace=True to overwrite"
+                )
+                return
+            # Replace-safe re-registration (TASK-2509): drop the stale
+            # cached instance on the entry being replaced so any caller
+            # still holding a reference to the OLD BotMetadata cannot
+            # keep serving a zombie instance after the swap. BotManager
+            # .reload_agent (TASK-2510) relies on this contract.
+            existing._instance = None
 
         if not issubclass(factory, AbstractBot):
             raise ValueError(
@@ -620,6 +628,30 @@ class AgentRegistry:
 
     def has(self, name: str) -> bool:
         return name in self._registered_agents
+
+    def unregister(self, name: str) -> bool:
+        """Remove a single agent from the registry.
+
+        Drops both the :class:`BotMetadata` entry and its cached
+        ``_instance`` for ``name``. Works for agents registered via either
+        :meth:`register` or :meth:`register_instance`. This is the
+        per-agent counterpart to :meth:`clear_registry` (which wipes
+        everything and is test-only) and to :meth:`delete_factory_agent`
+        (which additionally deletes the on-disk YAML and is origin-gated).
+
+        Args:
+            name: Registered agent name.
+
+        Returns:
+            ``True`` if an entry was removed, ``False`` if ``name`` was not
+            registered. Never raises for an unknown name.
+        """
+        metadata = self._registered_agents.pop(name, None)
+        if metadata is None:
+            return False
+        metadata._instance = None
+        self.logger.info("Unregistered bot: %s", name)
+        return True
 
     def get_metadata(self, name: str) -> Optional[BotMetadata]:
         """Return the :class:`BotMetadata` for ``name`` or ``None`` if absent.
@@ -1052,7 +1084,26 @@ class AgentRegistry:
 
     def create_agent_definition(self, config: BotConfig, category: str = "general") -> Path:
         """
-        Save a BotConfig as a YAML definition file.
+        Save a BotConfig as a lossless YAML agent definition file.
+
+        Serializes the FULL ``BotConfig`` (including ``toolkits``,
+        ``prompt``, ``vector_store``, ``tags``, ``policies``,
+        ``mcp_servers``, ``priority``, ``at_startup``, ``config``,
+        ``singleton`` and ``startup_config``) into the ``agent:``-keyed
+        YAML format consumed by :meth:`load_agent_definitions`, so the
+        round-trip ``BotConfig -> create_agent_definition ->
+        load_agent_definitions`` is lossless (FEAT-467 TASK-2509). Fields
+        that were never populated are simply omitted, so previously
+        written YAML remains readable by both the old and new reader.
+
+        Args:
+            config: Fully- or partially-populated agent configuration to
+                persist.
+            category: Sub-directory under ``AGENTS_DIR/agents/`` to write
+                into.
+
+        Returns:
+            Path to the written YAML file.
         """
         base_dir = AGENTS_DIR.joinpath('agents', category)
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -1060,27 +1111,52 @@ class AgentRegistry:
         filename = f"{config.name.lower()}.yaml"
         file_path = base_dir / filename
 
-        # Construct YAML structure
-        data = {
-            "agent": {
-                "name": config.name,
-                "class_name": config.class_name,
-                "module": config.module,
-                "description": config.config.get('description', ''),
-                "enabled": config.enabled,
-                "origin": config.origin,
-                "version": "1.0.0"
-            }
+        # Core `agent:` block — every plain BotConfig field not already
+        # broken out into its own top-level YAML section (model / tools /
+        # system_prompt / prompt) round-trips through here, since the
+        # reader passes this whole block straight into `BotConfig(**...)`.
+        agent_section: Dict[str, Any] = {
+            "name": config.name,
+            "class_name": config.class_name,
+            "module": config.module,
+            "description": config.config.get('description', ''),
+            "enabled": config.enabled,
+            "origin": config.origin,
+            "version": "1.0.0",
+            "config": config.config,
+            "toolkits": list(config.toolkits),
+            "mcp_servers": config.mcp_servers,
+            "tags": sorted(config.tags) if config.tags else [],
+            "singleton": config.singleton,
+            "at_startup": config.at_startup,
+            "startup_config": config.startup_config,
+            "priority": config.priority,
         }
 
+        if config.vector_store is not None:
+            store = config.vector_store
+            agent_section["vector_store"] = (
+                asdict(store) if is_dataclass(store) else dict(store)
+            )
+
+        if config.policies:
+            agent_section["policies"] = [
+                policy.model_dump(exclude_none=True) for policy in config.policies
+            ]
+
+        data: Dict[str, Any] = {"agent": agent_section}
+
         if config.model:
-            data["model"] = config.model.dict()
+            data["model"] = config.model.model_dump(exclude_none=True)
 
         if config.tools:
-             data["tools"] = config.tools.dict(exclude_none=True)
+            data["tools"] = config.tools.model_dump(exclude_none=True)
 
         if config.system_prompt:
-             data["system_prompt"] = config.system_prompt
+            data["system_prompt"] = config.system_prompt
+
+        if config.prompt:
+            data["prompt"] = config.prompt.model_dump(exclude_none=True)
 
         with open(file_path, 'w') as f:
             yaml.dump(data, f)
