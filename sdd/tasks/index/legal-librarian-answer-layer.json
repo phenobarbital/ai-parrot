@@ -50,7 +50,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Requires SearchViewDef from TASK-2493 to parse the YAML.",
       "assigned_to": null,
       "started_at": "2026-08-27T02:03:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2494-legal-ontology-v1-1-view-pattern-suppression.md"
+      "completed_at": "2026-08-27T02:17:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2494-legal-ontology-v1-1-view-pattern-suppression.md"
     },
     {
       "id": "TASK-2495",

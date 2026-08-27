@@ -218,10 +218,57 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `legal.ontology.yaml`: bumped `version: "1.1"`, added `SpanSuppression`
+  entity (`collection: span_suppressions`, `key_field: suppression_id`,
+  all 7 properties per spec §3 M3 — `SpanSuppression` has NO `source`
+  key, matching the `Materia` no-source pattern for app-written/static
+  entities), the top-level `search_views.legal_articulos_view` (links
+  `Articulo`/`versions[*].text` and `Norma`/`titulo`, both
+  `["text_es", "text_en"]`), and `traversal_patterns.search_articles`
+  with the description/trigger_intents/query_template verbatim from
+  spec §3 M3 (view name + analyzer names literal, `post_action: none`).
+- Extended `test_legal_ontology.py`: `SpanSuppression`/`span_suppressions`
+  presence and no-source assertions, `legal_articulos_view` link/field/
+  analyzer assertions, `search_articles` presence + `validate_aql`
+  unchanged + BM25/view-name + temporal-filter-pair assertions +
+  `post_action == "none"`, plus the pre-existing `article_in_force`
+  tests all still pass unchanged.
+- `pytest packages/ai-parrot/tests/knowledge/ontology/ -v` → 206 passed
+  (20 new/extended in `test_legal_ontology.py` + 186 pre-existing).
+  `pytest packages/ai-parrot-tools/tests/legal/ -v` → 76 passed
+  (regression check — `article_in_force`/BOE parsing untouched).
+  `ruff check packages/ai-parrot/tests/knowledge/ontology/
+  test_legal_ontology.py` → clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: two, both discovered while verifying the
+Codebase Contract before writing code, both minimal and documented
+in-line:
+1. **`created_at` property type**: spec §3 M3's YAML block declares
+   `type: datetime` for `SpanSuppression.created_at`, but
+   `PropertyDef.type` (`schema.py:30`) is a closed
+   `Literal["string", "int", "float", "boolean", "date", "list",
+   "dict"]` with no `"datetime"` member — using it raises a
+   `pydantic.ValidationError` at ontology load time (confirmed by
+   running the parser). Declared as `type: string` instead (ISO-8601
+   datetime string), matching how the rest of the bundled ontologies
+   represent timestamp fields as strings; documented in the property's
+   own `description` in the YAML.
+2. **`test_version_bumped`**: the task's Test Specification asserts
+   `merged.version == "1.1"` on the MERGED ontology. Verified against
+   `merger.py` that `OntologyMerger.merge()` (and `merge_definitions`/
+   `merge_with_overlay`) hardcode `MergedOntology.version = "1.0"`
+   literally at all three construction sites — none derive it from the
+   source layers' own `version` field, and no consumer in the ontology
+   package reads `merged.version` at all. Rewrote the test to assert the
+   LAYER's own declared version via `OntologyParser.load(...).version`
+   instead (still asserting "1.1" — the actual thing this task bumped),
+   with an in-test docstring explaining why. This is a merger.py
+   behavior, out of this task's Files-to-Modify list (only
+   `legal.ontology.yaml` and `test_legal_ontology.py`) — NOT touched.
+   Flagging as a possible follow-up: if `MergedOntology.version` is
+   meant to reflect the last-merged layer's version, that is a
+   cross-cutting `merger.py` fix affecting every domain, better suited
+   to its own task than a change bundled into this one.
