@@ -14,7 +14,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Python-only files (parrot/server/ui/, manager.py, pyproject); shares no files with the UI scaffold lane (TASK-2525).",
       "assigned_to": null,
       "started_at": "2026-08-27T17:00:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2523-admin-ui-serving.md"
+      "completed_at": "2026-08-27T17:04:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2523-admin-ui-serving.md"
     },
     {
       "id": "TASK-2524",

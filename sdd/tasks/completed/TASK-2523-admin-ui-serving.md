@@ -215,10 +215,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-27
+**Notes**: Implemented `setup_admin_ui(app, *, prefix="/admin")` in
+`parrot/server/ui/serving.py`, package-relative dist resolution via
+`_dist_dir()` (monkeypatchable), static asset mount, catch-all SPA
+fallback anchored at the prefix, and a best-effort navigator-auth
+exclude-list registration that no-ops (debug log) when
+`AUTH_EXCLUDE_LIST_KEY` is absent from the app. Wired into
+`BotManager.setup()` next to the other `setup_*_routes` calls. Added
+`"parrot.server.ui" = ["dist/*", "dist/assets/*"]` package-data entry and
+gitignored the dist output. 6/6 unit tests pass
+(`pytest packages/ai-parrot-server/tests/test_admin_ui_serving.py -v`);
+`ruff check` clean on all new/modified files (pre-existing lint debt in
+`manager.py` untouched by this diff).
 
 **Deviations from spec**: none
