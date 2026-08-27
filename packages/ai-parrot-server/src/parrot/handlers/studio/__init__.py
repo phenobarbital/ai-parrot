@@ -11,9 +11,9 @@ code naming (this package, ``AgentStudio*`` classes) is unaffected.
 
 Each functional area (agents, drafts, files, testing, toolkits,
 skills_catalog, byok, catalog, meta_agent) is added by its own follow-up
-task (TASK-2512 through TASK-2521); THIS task (TASK-2511) only scaffolds
-the package and the registration function — no concrete endpoints are
-registered yet.
+task (TASK-2512 through TASK-2521). TASK-2511 scaffolded the package and
+this registration function; TASK-2512 is the first to add concrete
+routes (agent lifecycle).
 """
 from __future__ import annotations
 
@@ -28,11 +28,7 @@ def setup_studio_routes(app: web.Application) -> None:
     Each handler module is imported lazily (inside this function, not at
     module import time) so that a not-yet-implemented area never breaks
     app startup. Later tasks add their own ``app.router.add_view(...)``
-    calls here as they land, e.g.::
-
-        from .agents import StudioAgentsHandler
-        app.router.add_view(f"{STUDIO_PREFIX}/agents", StudioAgentsHandler)
-        app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}", StudioAgentsHandler)
+    calls here as they land.
 
     Deliberately uses plain ``app.router.add_view()`` (not
     ``AbstractModel.configure()``) for every Studio route — the latter
@@ -43,6 +39,11 @@ def setup_studio_routes(app: web.Application) -> None:
         app: The aiohttp Application (the same instance ``BotManager
             .setup`` operates on).
     """
-    # No concrete Studio views exist yet — TASK-2512..TASK-2521 append
-    # their `add_view` calls here.
-    return
+    # Agent lifecycle (FEAT-467 TASK-2512): create/list/read/reload/delete.
+    from .agents import StudioAgentReloadHandler, StudioAgentsHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/agents", StudioAgentsHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}", StudioAgentsHandler)
+    app.router.add_view(
+        f"{STUDIO_PREFIX}/agents/{{name}}/reload", StudioAgentReloadHandler
+    )

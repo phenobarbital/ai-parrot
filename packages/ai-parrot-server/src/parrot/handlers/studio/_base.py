@@ -137,6 +137,29 @@ class StudioBaseView(BaseView):
 
     _logger_name = "Parrot.AgentStudio"
 
+    async def _resolve_session(self) -> Any:
+        """Resolve the current session, decorated or not.
+
+        ``navigator_auth.decorators.user_session()``'s class-method wrapper
+        OVERWRITES ``self.session`` with the already-resolved session
+        VALUE (a dict/mapping) before the handler body runs — it does not
+        leave the inherited ``BaseView.session()`` coroutine method in
+        place. Concrete Studio handlers are always decorated
+        ``@user_session()`` (see :class:`StudioBaseView` docstring), so by
+        the time a real handler calls this, ``self.session`` is that
+        already-resolved value. Undecorated/programmatic callers (unit
+        tests instantiating a view directly) still see the original
+        callable ``BaseView.session`` method — call it in that case.
+
+        Returns:
+            The resolved session (a dict/mapping), or whatever
+            ``self.session()`` returns for undecorated call sites.
+        """
+        session_attr = self.session
+        if callable(session_attr):
+            return await session_attr()
+        return session_attr
+
     async def _get_user(self) -> StudioUser:
         """Resolve the authenticated caller's identity from the session.
 
@@ -148,7 +171,7 @@ class StudioBaseView(BaseView):
         Raises:
             web.HTTPUnauthorized: No usable session, or no ``user_id`` in it.
         """
-        session = await self.session()
+        session = await self._resolve_session()
         if not session:
             raise web.HTTPUnauthorized(reason="Session not available.")
         user_id = await self.get_userid(session)
