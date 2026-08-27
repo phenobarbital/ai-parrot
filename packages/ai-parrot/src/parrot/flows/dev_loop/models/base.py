@@ -374,6 +374,16 @@ class ResearchOutput(BaseModel):
         default_factory=list,
         description="Short, redacted log excerpts gathered during research.",
     )
+    base_branch: str = Field(
+        default="",
+        description=(
+            "Branch this run's branch was cut from, resolved deterministically "
+            "by ResearchNode from the COMMITTED spec frontmatter — never from "
+            "the subagent's self-report. '' means unresolved; handoff nodes "
+            "must block rather than guess a default (FEAT-466)."
+        ),
+        validation_alias=AliasChoices("base_branch", "base"),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

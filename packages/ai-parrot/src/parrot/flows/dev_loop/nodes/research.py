@@ -24,8 +24,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import yaml
 from navconfig import BASE_DIR
 
 from parrot import conf
@@ -49,6 +51,17 @@ from parrot.flows.dev_loop.nodes.base import (
     transition_issue_with_candidates,
 )
 
+
+# FEAT-466 TASK-2504: WorkKind -> base branch, used ONLY as the fallback
+# when the committed spec's frontmatter cannot be read. Deliberately a
+# LOCAL copy of scripts/sdd/sdd_meta.WORK_KIND_FLOW's base-branch half
+# (not an import — `scripts.sdd` is not importable from this package's
+# actual install/test context; see TASK-2504 Completion Note).
+_WORK_KIND_BASE_BRANCH: Dict[str, str] = {
+    "bug": "main",
+    "enhancement": "dev",
+    "new_feature": "dev",
+}
 
 # Atlassian caps the description field at 32 767 chars; leave a 2K
 # headroom for the rest of the JSON body and any unicode-byte expansion.
@@ -138,6 +151,45 @@ def _plan_llm_default() -> str:
     if pinned:
         return pinned
     return _summarizer_llm_default()
+
+
+def _parse_flow_frontmatter(spec_path: Path) -> Optional[str]:
+    """Read the ``base_branch`` declared in a spec's YAML frontmatter.
+
+    FEAT-466 TASK-2504: mirrors ``scripts/sdd/sdd_meta.parse()``'s body
+    locally rather than importing it — ``scripts.sdd`` is not importable
+    from this package's actual install/test context (verified: it fails
+    once the interpreter's cwd is anything other than the repo root,
+    which is the normal case for an installed ``parrot`` package and for
+    this package's own test suite, run from ``packages/ai-parrot``). See
+    TASK-2504 Completion Note for the full verification.
+
+    Args:
+        spec_path: Path to the committed spec markdown file.
+
+    Returns:
+        The frontmatter's ``base_branch`` string when present and
+        non-empty, else ``None`` (missing file, no frontmatter, malformed
+        YAML, or a non-string/empty value) — callers must treat ``None``
+        as "unresolved", never as an error.
+    """
+    try:
+        text = spec_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    try:
+        block = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(block, dict):
+        return None
+    base = block.get("base_branch")
+    return base if isinstance(base, str) and base else None
 
 
 @register_dev_loop_node("dev_loop.research")
@@ -417,8 +469,61 @@ class ResearchNode(DevLoopNode):
             update={"repo_path": repo_path}
         )
 
+        # 8. FEAT-466 TASK-2504: stamp the deterministically-resolved base
+        # branch — read from the COMMITTED spec, never trusted from the
+        # subagent's self-report. See _resolve_base_branch.
+        research_out = research_out.model_copy(
+            update={"base_branch": self._resolve_base_branch(research_out, brief)}
+        )
+
         shared["research_output"] = research_out
         return research_out
+
+    def _resolve_base_branch(
+        self, research_out: ResearchOutput, brief: WorkBrief
+    ) -> str:
+        """Resolve the run's base branch from the committed spec.
+
+        The spec file on disk is authoritative: it was written and committed
+        by ``/sdd-spec``, whereas anything on ``research_out`` was produced by
+        an LLM and may have drifted. When the spec cannot be read we fall
+        back to the work-kind mapping and say so loudly, because a wrong base
+        branch is what FEAT-466 exists to prevent.
+
+        Args:
+            research_out: The validated dispatch output (for ``spec_path``
+                and ``worktree_path``).
+            brief: This run's brief, for the ``kind`` fallback.
+
+        Returns:
+            The resolved base branch name; never ``""``.
+        """
+        spec_path = Path(research_out.spec_path)
+        if not spec_path.is_absolute():
+            spec_path = Path(research_out.worktree_path) / spec_path
+
+        resolved = _parse_flow_frontmatter(spec_path)
+        if resolved is None:
+            kind = getattr(brief, "kind", None)
+            resolved = _WORK_KIND_BASE_BRANCH.get(kind, "dev")
+            self.logger.warning(
+                "Could not resolve base_branch from spec %s; falling back "
+                "to the kind mapping for kind=%r -> %r.",
+                spec_path,
+                kind,
+                resolved,
+            )
+
+        reported = (research_out.base_branch or "").strip()
+        if reported and reported != resolved:
+            self.logger.warning(
+                "sdd-research reported base_branch=%r but the committed "
+                "spec %s resolves to %r; using the spec's value.",
+                reported,
+                spec_path,
+                resolved,
+            )
+        return resolved
 
     # ------------------------------------------------------------------
     # Internal — repo provisioning (FEAT-250)
