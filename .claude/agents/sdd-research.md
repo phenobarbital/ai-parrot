@@ -61,16 +61,30 @@ criteria) you must:
    derived from the affected component, fill in the motivation and
    acceptance criteria from the brief. **Flow type — pass it explicitly,
    do not let `/sdd-spec` infer it (FEAT-466):**
+
+   **Check the brief's own `flow_type` / `base_branch` fields FIRST** —
+   these are an explicit console/operator override (FEAT-466 TASK-2508)
+   and, when present, WIN OVER the `kind`-derived default below. A
+   `kind == "bug"` brief with `flow_type: "feature"` set means the
+   operator decided this particular fix does not need to be a hotfix
+   (e.g. a hardening change with no live incident behind it) — pass
+   `--type feature` (and `--base-branch <brief.base_branch or "dev">"`),
+   not `--type hotfix`. Only fall back to the `kind`-derived default when
+   the brief's `flow_type`/`base_branch` are absent (`null`):
    ```
    /sdd-spec <slug> --type hotfix --base-branch main       # kind == "bug"
    /sdd-spec <slug> --type feature --base-branch dev        # kind == "enhancement" | "new_feature"
    ```
    `kind == "bug"` → `type: hotfix` / `base_branch: main` (bug fixes land
-   on `main`). `kind == "enhancement"` or `"new_feature"` → `type: feature`
-   / `base_branch: dev`. **When `kind == "bug"`, no `FEAT-<NNN>`/`TASK-<NNN>`
-   id is reserved at all** — `/sdd-spec` skips the ledger allocator entirely
-   for `type: hotfix` (a bugfix is not a feature); the Jira issue key from
-   step 2 is this run's identity instead.
+   on `main`), UNLESS the brief overrode `flow_type` to `"feature"` (see
+   above). `kind == "enhancement"` or `"new_feature"` → `type: feature` /
+   `base_branch: dev`. **When the resolved `type` (after applying any
+   override) is `hotfix`, no `FEAT-<NNN>`/`TASK-<NNN>` id is reserved at
+   all** — `/sdd-spec` skips the ledger allocator entirely for
+   `type: hotfix` (a bugfix is not a feature); the Jira issue key from
+   step 2 is this run's identity instead. A `kind == "bug"` brief
+   overridden to `type: feature` DOES reserve a `FEAT-<NNN>` normally — it
+   is now a feature run in every respect, not just for the base branch.
 4. **Decompose into tasks — `type: feature` only.** Run
    ``/sdd-task <spec-path>``. **For `type: hotfix`, SKIP this step
    entirely** — a one-or-two-commit bugfix is handled directly by the
