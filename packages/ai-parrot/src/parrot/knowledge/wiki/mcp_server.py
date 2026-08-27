@@ -6,6 +6,7 @@ mcp` exposes the codebase knowledge graph as a first-class MCP tool —
 equal standing with Grep/Read at tool-selection time (see the spec's
 Problem Statement for why the Bash-invoked CLI alone was not enough).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -126,9 +127,7 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         )
     else:
         storage.mkdir(parents=True, exist_ok=True)
-        store = create_wiki_store(
-            storage, wiki_name=config.wiki_name, backend=config.backend
-        )
+        store = create_wiki_store(storage, wiki_name=config.wiki_name, backend=config.backend)
     # Federated namespaces (FEAT-450): the read tools inherit them
     # through the store they already hold. Resolution runs under the same
     # stdout-redirect discipline as every other import here — opening a
@@ -143,14 +142,10 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         try:
             handles, skipped = _run_sync(resolve_namespaces(root, config))
         except Exception as exc:  # noqa: BLE001 — namespaces are optional
-            logging.getLogger(__name__).warning(
-                "Could not resolve wiki namespaces: %s", exc
-            )
+            logging.getLogger(__name__).warning("Could not resolve wiki namespaces: %s", exc)
             handles, skipped = [], []
     if handles or skipped:
-        read_store = FederatedWikiStore(
-            store, config.wiki_name, handles, skipped
-        )
+        read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
     tools = create_wiki_tools(read_store, root=root, config=config)
 
     # Obsidian vault exposure: when the project has a vault (explicit
@@ -178,16 +173,16 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
             toolkit = ObsidianToolkit(vault_path=vault)
             vault_tools = list(toolkit.get_tools_sync())
             vault_tools.append(VaultIngestTool(store, root=root, config=config))
-            description += (
-                f" — plus Obsidian vault management for {vault.name!r}"
-            )
+            description += f" — plus Obsidian vault management for {vault.name!r}"
     _ensure_stderr_logging()
 
-    server = StdioMCPServer(LocalServerConfig(
-        name="wikitoolkit",
-        version="1.0.0",
-        description=description,
-    ))
+    server = StdioMCPServer(
+        LocalServerConfig(
+            name="wikitoolkit",
+            version="1.0.0",
+            description=description,
+        )
+    )
     server.register_tools(tools)
     if vault_tools:
         server.register_tools(vault_tools)
@@ -218,8 +213,7 @@ def main() -> None:
 
     if not config.is_built(root):
         print(
-            f"Error: wiki not built yet for {root}. "
-            "Run `wikitoolkit build` first.",
+            f"Error: wiki not built yet for {root}. " "Run `wikitoolkit build` first.",
             file=sys.stderr,
         )
         sys.exit(1)

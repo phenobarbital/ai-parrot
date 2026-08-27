@@ -70,9 +70,7 @@ def _build(runner: CliRunner, repo: Path, *extra: str):
 
 
 class TestLocalDefaultNoArango:
-    def test_e2e_local_default_no_arango(
-        self, runner: CliRunner, repo: Path, mock_arango_driver
-    ) -> None:
+    def test_e2e_local_default_no_arango(self, runner: CliRunner, repo: Path, mock_arango_driver) -> None:
         """No ENV + a local overlay -> sqlite plane, no Arango attempted."""
         parrot_dir = repo / ".parrot"
         parrot_dir.mkdir()
@@ -86,9 +84,7 @@ class TestLocalDefaultNoArango:
             ),
             encoding="utf-8",
         )
-        (parrot_dir / "wiki.local.json").write_text(
-            json.dumps({"backend": "sqlite"}), encoding="utf-8"
-        )
+        (parrot_dir / "wiki.local.json").write_text(json.dumps({"backend": "sqlite"}), encoding="utf-8")
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=mock_arango_driver,
@@ -98,9 +94,7 @@ class TestLocalDefaultNoArango:
             # were NOT honoured, this build would have opened Arango.
             mock_arango_driver.connection.assert_not_awaited()
 
-            result = runner.invoke(
-                wiki, ["query", "store", "--path", str(repo), "--json"]
-            )
+            result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         rows = json.loads(result.output)
         assert any("file:pkg/store.py" in r.get("concept_id", "") for r in rows)
@@ -110,9 +104,7 @@ class TestLocalDefaultNoArango:
 
 
 class TestOfflineNamespaceSkip:
-    def test_e2e_offline_namespace_skip(
-        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_e2e_offline_namespace_skip(self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Local sqlite primary + unreachable Arango namespace: bounded
         skip, local results still returned."""
 
@@ -133,24 +125,24 @@ class TestOfflineNamespaceSkip:
         add_ns = runner.invoke(
             wiki,
             [
-                "ns", "add", "shared",
-                "--database", "wiki_shared",
-                "--path", str(repo),
+                "ns",
+                "add",
+                "shared",
+                "--database",
+                "wiki_shared",
+                "--path",
+                str(repo),
             ],
         )
         assert add_ns.exit_code == 0, add_ns.output
 
         start = time.monotonic()
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         elapsed = time.monotonic() - start
         assert result.exit_code == 0, result.output
         # federation.DEFAULT_ARANGO_TIMEOUT is 5s — well under a generous bound.
         assert elapsed < 15
-        skip_note = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo)]
-        )
+        skip_note = runner.invoke(wiki, ["query", "store", "--path", str(repo)])
         assert "shared" in skip_note.output
         assert "skipped" in skip_note.output
 
@@ -178,9 +170,7 @@ class TestProdBuildGeneratesOverlay:
 
 
 class TestSyncRoundtrip:
-    def test_e2e_sync_roundtrip_two_planes(
-        self, runner: CliRunner, repo: Path
-    ) -> None:
+    def test_e2e_sync_roundtrip_two_planes(self, runner: CliRunner, repo: Path) -> None:
         """remember -> push -> mutate remote -> pull; LWW + author filter
         + note union all observed, driven by the real CLI end-to-end."""
         # "dev" overlay points at a sibling directory — an independent
@@ -196,16 +186,19 @@ class TestSyncRoundtrip:
         remembered = runner.invoke(
             wiki,
             [
-                "remember", "The sky is blue.",
-                "--title", "sky-fact", "--path", str(repo), "--json",
+                "remember",
+                "The sky is blue.",
+                "--title",
+                "sky-fact",
+                "--path",
+                str(repo),
+                "--json",
             ],
         )
         assert remembered.exit_code == 0, remembered.output
         page_id = json.loads(remembered.output)["page_id"]
 
-        pushed = runner.invoke(
-            wiki, ["sync", "push", "--path", str(repo), "--env", "dev"]
-        )
+        pushed = runner.invoke(wiki, ["sync", "push", "--path", str(repo), "--env", "dev"])
         assert pushed.exit_code == 0, pushed.output
         assert "created=1" in pushed.output
 
@@ -240,15 +233,11 @@ class TestSyncRoundtrip:
 
         asyncio.run(_add_remote_note())
 
-        pulled = runner.invoke(
-            wiki, ["sync", "pull", "--path", str(repo), "--env", "dev"]
-        )
+        pulled = runner.invoke(wiki, ["sync", "pull", "--path", str(repo), "--env", "dev"])
         assert pulled.exit_code == 0, pulled.output
         assert "updated=1" in pulled.output  # remote is strictly newer
 
-        page_after = runner.invoke(
-            wiki, ["page", page_id, "--path", str(repo), "--json"]
-        )
+        page_after = runner.invoke(wiki, ["page", page_id, "--path", str(repo), "--json"])
         assert page_after.exit_code == 0, page_after.output
         merged = json.loads(page_after.output)["body"]
         assert "The sky is blue." in merged

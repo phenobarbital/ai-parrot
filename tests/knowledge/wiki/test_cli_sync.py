@@ -43,13 +43,15 @@ class TestSyncCli:
                 local_identity=local_identity,
             )
             return SyncReport(
-                direction="push", env=target_env, created=1, updated=2,
-                skipped_older=3, dry_run=dry_run,
+                direction="push",
+                env=target_env,
+                created=1,
+                updated=2,
+                skipped_older=3,
+                dry_run=dry_run,
             )
 
-        monkeypatch.setattr(
-            "parrot.knowledge.wiki.sync.sync_push", _fake_sync_push
-        )
+        monkeypatch.setattr("parrot.knowledge.wiki.sync.sync_push", _fake_sync_push)
         result = runner.invoke(
             wiki,
             ["sync", "push", "--path", str(repo), "--env", "prod", "--dry-run"],
@@ -63,60 +65,47 @@ class TestSyncCli:
         assert "updated=2" in result.output
         assert "skipped-older=3" in result.output
 
-    def test_pull_all_maps_to_include_own(
-        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_pull_all_maps_to_include_own(self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: dict = {}
 
         async def _fake_sync_pull(root, *, target_env, include_own, dry_run, local_identity):
             captured.update(include_own=include_own, target_env=target_env)
             return SyncReport(direction="pull", env=target_env)
 
-        monkeypatch.setattr(
-            "parrot.knowledge.wiki.sync.sync_pull", _fake_sync_pull
-        )
-        result = runner.invoke(
-            wiki, ["sync", "pull", "--path", str(repo), "--env", "dev", "--all"]
-        )
+        monkeypatch.setattr("parrot.knowledge.wiki.sync.sync_pull", _fake_sync_pull)
+        result = runner.invoke(wiki, ["sync", "pull", "--path", str(repo), "--env", "dev", "--all"])
         assert result.exit_code == 0, result.output
         assert captured["include_own"] is True
         assert captured["target_env"] == "dev"
 
-    def test_pull_default_env_and_no_all(
-        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_pull_default_env_and_no_all(self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: dict = {}
 
         async def _fake_sync_pull(root, *, target_env, include_own, dry_run, local_identity):
             captured.update(include_own=include_own, target_env=target_env)
             return SyncReport(direction="pull", env=target_env)
 
-        monkeypatch.setattr(
-            "parrot.knowledge.wiki.sync.sync_pull", _fake_sync_pull
-        )
+        monkeypatch.setattr("parrot.knowledge.wiki.sync.sync_pull", _fake_sync_pull)
         result = runner.invoke(wiki, ["sync", "pull", "--path", str(repo)])
         assert result.exit_code == 0, result.output
         assert captured["include_own"] is False
         assert captured["target_env"] == "dev"
 
-    def test_summary_rendering(
-        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_summary_rendering(self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         async def _fake_sync_pull(root, *, target_env, include_own, dry_run, local_identity):
             return SyncReport(
-                direction="pull", env=target_env, created=4, updated=5,
-                skipped_older=6, skipped_own=7,
+                direction="pull",
+                env=target_env,
+                created=4,
+                updated=5,
+                skipped_older=6,
+                skipped_own=7,
             )
 
-        monkeypatch.setattr(
-            "parrot.knowledge.wiki.sync.sync_pull", _fake_sync_pull
-        )
+        monkeypatch.setattr("parrot.knowledge.wiki.sync.sync_pull", _fake_sync_pull)
         result = runner.invoke(wiki, ["sync", "pull", "--path", str(repo)])
         assert result.exit_code == 0, result.output
-        assert (
-            "pulled: created=4 updated=5 skipped-older=6 skipped-own=7"
-            in result.output
-        )
+        assert "pulled: created=4 updated=5 skipped-older=6 skipped-own=7" in result.output
 
     def test_unreachable_remote_clean_exit(
         self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
@@ -124,19 +113,13 @@ class TestSyncCli:
         async def _fake_sync_push(root, *, target_env, dry_run, local_identity):
             raise SyncError(f"Could not reach the remote wiki plane for env {target_env!r}")
 
-        monkeypatch.setattr(
-            "parrot.knowledge.wiki.sync.sync_push", _fake_sync_push
-        )
-        result = runner.invoke(
-            wiki, ["sync", "push", "--path", str(repo), "--env", "prod"]
-        )
+        monkeypatch.setattr("parrot.knowledge.wiki.sync.sync_push", _fake_sync_push)
+        result = runner.invoke(wiki, ["sync", "push", "--path", str(repo), "--env", "prod"])
         assert result.exit_code != 0
         assert "Could not reach" in result.output
         assert "Traceback" not in result.output
 
-    def test_sync_help_documents_env_default_and_author_filter(
-        self, runner: CliRunner
-    ) -> None:
+    def test_sync_help_documents_env_default_and_author_filter(self, runner: CliRunner) -> None:
         group_help = runner.invoke(wiki, ["sync", "--help"])
         assert group_help.exit_code == 0
         assert "human:" in group_help.output

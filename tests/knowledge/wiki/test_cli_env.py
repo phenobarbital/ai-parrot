@@ -48,12 +48,8 @@ def repo_with_overlays(repo: Path) -> Path:
     """
     parrot_dir = repo / ".parrot"
     parrot_dir.mkdir()
-    (parrot_dir / "wiki.json").write_text(
-        json.dumps({"backend": "memory"}), encoding="utf-8"
-    )
-    (parrot_dir / "wiki.dev.json").write_text(
-        json.dumps({"backend": "sqlite"}), encoding="utf-8"
-    )
+    (parrot_dir / "wiki.json").write_text(json.dumps({"backend": "memory"}), encoding="utf-8")
+    (parrot_dir / "wiki.dev.json").write_text(json.dumps({"backend": "sqlite"}), encoding="utf-8")
     return repo
 
 

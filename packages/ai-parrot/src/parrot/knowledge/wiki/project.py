@@ -135,9 +135,7 @@ class ClaudeIntegrationConfig(BaseModel):
     """
 
     nudge_cooldown_seconds: int = Field(default=60, ge=0)
-    nudge_tools: list[str] = Field(
-        default_factory=lambda: ["Grep", "Glob", "Read", "Bash"]
-    )
+    nudge_tools: list[str] = Field(default_factory=lambda: ["Grep", "Glob", "Read", "Bash"])
 
 
 def validate_namespace_name(name: str) -> str:
@@ -162,8 +160,7 @@ def validate_namespace_name(name: str) -> str:
         raise ValueError("Namespace name must not be empty")
     if name in RESERVED_NAMESPACE_NAMES:
         raise ValueError(
-            f"Namespace name {name!r} is reserved "
-            f"(reserved: {', '.join(sorted(RESERVED_NAMESPACE_NAMES))})"
+            f"Namespace name {name!r} is reserved " f"(reserved: {', '.join(sorted(RESERVED_NAMESPACE_NAMES))})"
         )
     if NS_SEPARATOR in name:
         raise ValueError(
@@ -171,10 +168,7 @@ def validate_namespace_name(name: str) -> str:
             "— it separates the namespace from the page id"
         )
     if not _NAMESPACE_NAME_RE.match(name):
-        raise ValueError(
-            f"Invalid namespace name {name!r}: must match "
-            f"{_NAMESPACE_NAME_RE.pattern}"
-        )
+        raise ValueError(f"Invalid namespace name {name!r}: must match " f"{_NAMESPACE_NAME_RE.pattern}")
     return name
 
 
@@ -209,28 +203,18 @@ class WikiNamespaceConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    path: str | None = Field(
-        default=None, description="Another wiki project root"
-    )
-    store: str | None = Field(
-        default=None, description="Pre-built store directory"
-    )
+    path: str | None = Field(default=None, description="Another wiki project root")
+    store: str | None = Field(default=None, description="Pre-built store directory")
     backend: Literal["sqlite", "memory", "arangodb"] = Field(
         default="sqlite", description="Backend for a `store` entry"
     )
-    database: str | None = Field(
-        default=None, description="ArangoDB database name"
-    )
+    database: str | None = Field(default=None, description="ArangoDB database name")
     credentials_env: str = Field(
         default="ARANGODB",
         description="Env var prefix for ArangoDB credentials",
     )
-    vault: str | None = Field(
-        default=None, description="Obsidian vault root"
-    )
-    description: str = Field(
-        default="", description="Shown by `wikitoolkit ns list`"
-    )
+    vault: str | None = Field(default=None, description="Obsidian vault root")
+    description: str = Field(default="", description="Shown by `wikitoolkit ns list`")
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
 
     #: Source fields, in :attr:`kind` resolution order.
@@ -239,15 +223,10 @@ class WikiNamespaceConfig(BaseModel):
     @model_validator(mode="after")
     def _check_exactly_one_source(self) -> WikiNamespaceConfig:
         """Enforce exactly one source field and derive the backend."""
-        present = [
-            name
-            for name in ("path", "store", "database", "vault")
-            if getattr(self, name)
-        ]
+        present = [name for name in ("path", "store", "database", "vault") if getattr(self, name)]
         if len(present) != 1:
             raise ValueError(
-                "Exactly one of path / store / database / vault must be set "
-                f"(got: {', '.join(present) or 'none'})"
+                "Exactly one of path / store / database / vault must be set " f"(got: {', '.join(present) or 'none'})"
             )
         if self.database:
             # A `database` entry is ArangoDB by construction.
@@ -284,9 +263,7 @@ class GlobalWikiRegistry(BaseModel):
 
     @field_validator("namespaces")
     @classmethod
-    def _validate_names(
-        cls, value: dict[str, WikiNamespaceConfig]
-    ) -> dict[str, WikiNamespaceConfig]:
+    def _validate_names(cls, value: dict[str, WikiNamespaceConfig]) -> dict[str, WikiNamespaceConfig]:
         for name in value:
             validate_namespace_name(name)
         return value
@@ -329,9 +306,7 @@ class WikiProjectConfig(BaseModel):
     exclude_dirs: list[str] = Field(default_factory=list)
     body_max_chars: int = Field(default=16_000, ge=1_000)
     max_file_kb: int = Field(default=512, ge=1)
-    claude: ClaudeIntegrationConfig = Field(
-        default_factory=ClaudeIntegrationConfig
-    )
+    claude: ClaudeIntegrationConfig = Field(default_factory=ClaudeIntegrationConfig)
     sync_graph: bool = Field(default=False)
     arango_database: str | None = Field(
         default=None,
@@ -339,10 +314,7 @@ class WikiProjectConfig(BaseModel):
     )
     arango_credentials_env: str = Field(
         default="ARANGODB",
-        description=(
-            "Env var prefix for credentials (e.g. ARANGODB -> "
-            "ARANGODB_HOST, ARANGODB_PASSWORD)"
-        ),
+        description=("Env var prefix for credentials (e.g. ARANGODB -> " "ARANGODB_HOST, ARANGODB_PASSWORD)"),
     )
     arango_text_analyzer: str = Field(
         default="text_en",
@@ -366,9 +338,7 @@ class WikiProjectConfig(BaseModel):
 
     @field_validator("namespaces")
     @classmethod
-    def _validate_namespace_names(
-        cls, value: dict[str, WikiNamespaceConfig]
-    ) -> dict[str, WikiNamespaceConfig]:
+    def _validate_namespace_names(cls, value: dict[str, WikiNamespaceConfig]) -> dict[str, WikiNamespaceConfig]:
         """Reject reserved/invalid namespace names at load time."""
         for name in value:
             validate_namespace_name(name)
@@ -536,9 +506,7 @@ def resolve_vault_dir(
         return None
     candidate = candidate.resolve()
     if not candidate.is_dir():
-        logger.warning(
-            "Configured Obsidian vault directory does not exist: %s", candidate
-        )
+        logger.warning("Configured Obsidian vault directory does not exist: %s", candidate)
         return None
     return candidate
 
@@ -596,9 +564,7 @@ def load_project_config(root: Path) -> WikiProjectConfig:
             data = json.loads(path.read_text(encoding="utf-8"))
             return WikiProjectConfig.model_validate(data)
         except (OSError, ValueError) as exc:
-            raise WikiConfigError(
-                f"Invalid wiki config at {path} — fix or remove it: {exc}"
-            ) from exc
+            raise WikiConfigError(f"Invalid wiki config at {path} — fix or remove it: {exc}") from exc
     return WikiProjectConfig(wiki_name=root.name or "codebase")
 
 
@@ -726,10 +692,7 @@ def resolve_wiki_env(env: str | None = None) -> str:
     """
     value = env or os.environ.get("WIKI_ENV") or os.environ.get("ENV") or "local"
     if not _NAMESPACE_NAME_RE.match(value):
-        raise WikiConfigError(
-            f"Invalid wiki environment name {value!r}: must match "
-            f"{_NAMESPACE_NAME_RE.pattern}"
-        )
+        raise WikiConfigError(f"Invalid wiki environment name {value!r}: must match " f"{_NAMESPACE_NAME_RE.pattern}")
     return value
 
 
@@ -738,9 +701,7 @@ def overlay_path(root: Path, env: str) -> Path:
     return root / PARROT_DIR / f"wiki.{env}.json"
 
 
-def load_effective_config(
-    root: Path, env: str | None = None
-) -> WikiEffectiveConfig:
+def load_effective_config(root: Path, env: str | None = None) -> WikiEffectiveConfig:
     """Load the base config, merged with the active environment's overlay.
 
     The base ``.parrot/wiki.json`` is loaded via :func:`load_project_config`
@@ -777,9 +738,7 @@ def load_effective_config(
         data = json.loads(path.read_text(encoding="utf-8"))
         overlay = WikiEnvOverlay.model_validate(data)
     except (OSError, ValueError) as exc:
-        raise WikiConfigError(
-            f"Invalid wiki overlay at {path} — fix or remove it: {exc}"
-        ) from exc
+        raise WikiConfigError(f"Invalid wiki overlay at {path} — fix or remove it: {exc}") from exc
 
     # Built from the overlay's own (already-validated) attribute values —
     # NOT `overlay.model_dump()` — because `model_copy(update=...)` never
@@ -841,13 +800,8 @@ def save_env_overlay(root: Path, env: str, overlay: WikiEnvOverlay) -> Path:
     """
     target = overlay_path(root, env)
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = (
-        json.dumps(overlay.model_dump(exclude_none=True, mode="json"), indent=2)
-        + "\n"
-    )
-    handle, tmp_name = tempfile.mkstemp(
-        dir=str(target.parent), prefix=f".wiki.{env}-", suffix=".json"
-    )
+    payload = json.dumps(overlay.model_dump(exclude_none=True, mode="json"), indent=2) + "\n"
+    handle, tmp_name = tempfile.mkstemp(dir=str(target.parent), prefix=f".wiki.{env}-", suffix=".json")
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
@@ -902,14 +856,10 @@ def load_global_registry(path: Path | None = None) -> GlobalWikiRegistry:
         data = json.loads(target.read_text(encoding="utf-8"))
         return GlobalWikiRegistry.model_validate(data)
     except (OSError, ValueError) as exc:
-        raise WikiConfigError(
-            f"Invalid global wiki registry at {target} — fix or remove it: {exc}"
-        ) from exc
+        raise WikiConfigError(f"Invalid global wiki registry at {target} — fix or remove it: {exc}") from exc
 
 
-def save_global_registry(
-    registry: GlobalWikiRegistry, path: Path | None = None
-) -> Path:
+def save_global_registry(registry: GlobalWikiRegistry, path: Path | None = None) -> Path:
     """Persist the per-user namespace registry atomically.
 
     The file may name private ArangoDB databases and paths outside the
@@ -927,9 +877,7 @@ def save_global_registry(
     target = path or global_registry_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(registry.model_dump(mode="json"), indent=2) + "\n"
-    handle, tmp_name = tempfile.mkstemp(
-        dir=str(target.parent), prefix=".wikis-", suffix=".json"
-    )
+    handle, tmp_name = tempfile.mkstemp(dir=str(target.parent), prefix=".wikis-", suffix=".json")
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
@@ -959,9 +907,7 @@ def merge_namespaces(
         Mapping ``name -> (config, origin)`` where ``origin`` is
         ``"repo"`` or ``"global"``.
     """
-    merged: dict[str, tuple[WikiNamespaceConfig, str]] = {
-        name: (cfg, "global") for name, cfg in global_.items()
-    }
+    merged: dict[str, tuple[WikiNamespaceConfig, str]] = {name: (cfg, "global") for name, cfg in global_.items()}
     merged.update({name: (cfg, "repo") for name, cfg in repo.items()})
     return merged
 

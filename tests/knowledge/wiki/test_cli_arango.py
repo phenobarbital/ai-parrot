@@ -57,9 +57,7 @@ def mock_arango_driver():
 
 
 def _build_arangodb(runner: CliRunner, repo: Path, *extra: str):
-    return runner.invoke(
-        wiki, ["build", "--path", str(repo), "--no-git", "--backend", "arangodb", *extra]
-    )
+    return runner.invoke(wiki, ["build", "--path", str(repo), "--no-git", "--backend", "arangodb", *extra])
 
 
 class TestBuildBackendChoice:
@@ -74,9 +72,7 @@ class TestBuildBackendChoice:
         assert result.exit_code == 0, result.output
         mock_arango_driver.connection.assert_awaited()
 
-    def test_build_backend_arangodb_saved_to_config(
-        self, runner, repo, mock_arango_driver
-    ):
+    def test_build_backend_arangodb_saved_to_config(self, runner, repo, mock_arango_driver):
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=mock_arango_driver,
@@ -86,9 +82,7 @@ class TestBuildBackendChoice:
         config = load_project_config(repo)
         assert config.backend == "arangodb"
 
-    def test_build_creates_collections_and_view(
-        self, runner, repo, mock_arango_driver
-    ):
+    def test_build_creates_collections_and_view(self, runner, repo, mock_arango_driver):
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=mock_arango_driver,
@@ -111,9 +105,7 @@ class TestBuildBackendChoice:
 class TestQueryBackendArango:
     """``query --backend arangodb`` resolves via project config."""
 
-    def test_query_backend_arangodb_uses_project_config(
-        self, runner, repo, mock_arango_driver
-    ):
+    def test_query_backend_arangodb_uses_project_config(self, runner, repo, mock_arango_driver):
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=mock_arango_driver,
@@ -156,9 +148,7 @@ class TestQueryBackendArango:
 
     def test_unreachable_arangodb_gives_clear_error(self, runner, repo):
         broken_driver = MagicMock()
-        broken_driver.connection = AsyncMock(
-            side_effect=RuntimeError("connection refused")
-        )
+        broken_driver.connection = AsyncMock(side_effect=RuntimeError("connection refused"))
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=broken_driver,
@@ -169,9 +159,7 @@ class TestQueryBackendArango:
                 save_project_config,
             )
 
-            save_project_config(
-                repo, WikiProjectConfig(wiki_name=repo.name, backend="arangodb")
-            )
+            save_project_config(repo, WikiProjectConfig(wiki_name=repo.name, backend="arangodb"))
             result = runner.invoke(
                 wiki,
                 ["query", "some question", "--path", str(repo), "--backend", "arangodb"],
@@ -183,9 +171,7 @@ class TestQueryBackendArango:
 class TestStatusBackendArango:
     """``status`` reports ArangoDB backend + stats after an arangodb build."""
 
-    def test_status_shows_arangodb_backend(
-        self, runner, repo, mock_arango_driver, monkeypatch
-    ):
+    def test_status_shows_arangodb_backend(self, runner, repo, mock_arango_driver, monkeypatch):
         # FEAT-461: with no ENV/WIKI_ENV, `build` auto-generates the missing
         # `local` overlay (`{"backend": "sqlite"}` — the no-VPN default),
         # which `status` (no `--backend` option of its own) would then
@@ -200,9 +186,7 @@ class TestStatusBackendArango:
             build_result = _build_arangodb(runner, repo, "--no-graph", "--no-export")
             assert build_result.exit_code == 0, build_result.output
 
-            result = runner.invoke(
-                wiki, ["status", "--path", str(repo), "--json"]
-            )
+            result = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         payload = json.loads(result.output)
         assert payload["backend"] == "arangodb"

@@ -127,9 +127,7 @@ _MIGRATION_COLUMNS: dict[str, list[tuple[str, str]]] = {
 #: Tables ``WIKI_SCHEMA_SQL`` creates. The per-connection presence probe
 #: replays the schema when ANY of them is missing (fresh plane, external
 #: replacement, or a partial legacy database), not just ``pages``.
-_SCHEMA_TABLES = frozenset(
-    {"meta", "sources", "pages", "edges", "pages_fts", "embeddings"}
-)
+_SCHEMA_TABLES = frozenset({"meta", "sources", "pages", "edges", "pages_fts", "embeddings"})
 
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
@@ -332,15 +330,11 @@ class BaseWikiStore(ABC):
     async def delete_page(self, concept_id: str) -> bool: ...
 
     @abstractmethod
-    async def upsert_embedding(
-        self, concept_id: str, vector: list[float], model: str = ""
-    ) -> None: ...
+    async def upsert_embedding(self, concept_id: str, vector: list[float], model: str = "") -> None: ...
 
     # -- read ------------------------------------------------------------
     @abstractmethod
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> Optional[dict[str, Any]]: ...
+    async def get_page(self, concept_id: str, include_body: bool = True) -> Optional[dict[str, Any]]: ...
 
     @abstractmethod
     async def list_pages(
@@ -351,14 +345,10 @@ class BaseWikiStore(ABC):
     ) -> list[dict[str, Any]]: ...
 
     @abstractmethod
-    async def search_fts(
-        self, query: str, category: Optional[str] = None, limit: int = 10
-    ) -> list[dict[str, Any]]: ...
+    async def search_fts(self, query: str, category: Optional[str] = None, limit: int = 10) -> list[dict[str, Any]]: ...
 
     @abstractmethod
-    async def search_vector(
-        self, embedding: list[float], limit: int = 10
-    ) -> list[dict[str, Any]]: ...
+    async def search_vector(self, embedding: list[float], limit: int = 10) -> list[dict[str, Any]]: ...
 
     @abstractmethod
     async def neighbors(
@@ -506,10 +496,7 @@ class SQLiteWikiStore(BaseWikiStore):
         if code is not None:
             return code in cls._READONLY_ENV_CODES
         msg = str(exc)
-        return (
-            "readonly database" in msg
-            or "unable to open database file" in msg
-        )
+        return "readonly database" in msg or "unable to open database file" in msg
 
     def __init__(
         self,
@@ -524,9 +511,7 @@ class SQLiteWikiStore(BaseWikiStore):
             # An unbuilt plane must fail here, not on the first query,
             # so the namespace resolver can classify it as "unbuilt".
             if not self._db_path.is_file():
-                raise FileNotFoundError(
-                    f"read-only wiki store has no plane at {self._db_path}"
-                )
+                raise FileNotFoundError(f"read-only wiki store has no plane at {self._db_path}")
         else:
             try:
                 self._db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -535,11 +520,15 @@ class SQLiteWikiStore(BaseWikiStore):
                 # plane can plausibly be served read-only; otherwise
                 # nothing can work and the caller should see the real
                 # error now.
-                if exc.errno not in (
-                    errno.EROFS,
-                    errno.EACCES,
-                    errno.EPERM,
-                ) or not self._db_path.is_file():
+                if (
+                    exc.errno
+                    not in (
+                        errno.EROFS,
+                        errno.EACCES,
+                        errno.EPERM,
+                    )
+                    or not self._db_path.is_file()
+                ):
                     raise
         self._wiki_name = wiki_name
         self._warned_read_only = False
@@ -563,9 +552,7 @@ class SQLiteWikiStore(BaseWikiStore):
             PermissionError: When the store is read-only.
         """
         if self._read_only:
-            raise PermissionError(
-                f"read-only wiki store: {self._db_path}"
-            )
+            raise PermissionError(f"read-only wiki store: {self._db_path}")
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -630,8 +617,7 @@ class SQLiteWikiStore(BaseWikiStore):
             async with aiosqlite.connect(str(self._db_path)) as conn:
                 conn.row_factory = aiosqlite.Row
                 cur = await conn.execute(
-                    "SELECT count(*) FROM sqlite_master"
-                    f" WHERE type = 'table' AND name IN ({placeholders})",
+                    "SELECT count(*) FROM sqlite_master" f" WHERE type = 'table' AND name IN ({placeholders})",
                     sorted(_SCHEMA_TABLES),
                 )
                 if (await cur.fetchone())[0] < len(_SCHEMA_TABLES):
@@ -641,14 +627,12 @@ class SQLiteWikiStore(BaseWikiStore):
                     async with self._init_lock:
                         await conn.executescript(WIKI_SCHEMA_SQL)
                         await conn.execute(
-                            "INSERT OR IGNORE INTO meta (key, value)"
-                            " VALUES (?, ?)",
+                            "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
                             ("schema_version", SCHEMA_VERSION),
                         )
                         if self._wiki_name:
                             await conn.execute(
-                                "INSERT OR IGNORE INTO meta (key, value)"
-                                " VALUES (?, ?)",
+                                "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
                                 ("wiki_name", self._wiki_name),
                             )
                         await conn.commit()
@@ -660,11 +644,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 yield conn
             return
         except sqlite3.OperationalError as exc:
-            if (
-                yielded
-                or not self._db_path.is_file()
-                or not self._is_readonly_env_error(exc)
-            ):
+            if yielded or not self._db_path.is_file() or not self._is_readonly_env_error(exc):
                 raise
         async with self._connect_readonly() as conn:
             yield conn
@@ -702,9 +682,7 @@ class SQLiteWikiStore(BaseWikiStore):
             A read-only connection.
         """
         base = f"file:{quote(str(self._db_path))}"
-        async with aiosqlite.connect(
-            f"{base}?mode=ro&immutable=1", uri=True
-        ) as conn:
+        async with aiosqlite.connect(f"{base}?mode=ro&immutable=1", uri=True) as conn:
             conn.row_factory = aiosqlite.Row
             # The file open is lazy — force it before yielding.
             await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
@@ -774,9 +752,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 ) from plain_ro_error
         yielded = False
         try:
-            async with aiosqlite.connect(
-                f"{base}?mode=ro&immutable=1", uri=True
-            ) as conn:
+            async with aiosqlite.connect(f"{base}?mode=ro&immutable=1", uri=True) as conn:
                 conn.row_factory = aiosqlite.Row
                 await conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
                 self._log_read_only_once()
@@ -800,8 +776,7 @@ class SQLiteWikiStore(BaseWikiStore):
         if not self._warned_read_only:
             self._warned_read_only = True
             self.logger.warning(
-                "Wiki database %s is not writable; serving read-only"
-                " connections.",
+                "Wiki database %s is not writable; serving read-only" " connections.",
                 self._db_path,
             )
 
@@ -817,9 +792,7 @@ class SQLiteWikiStore(BaseWikiStore):
                 existing = {row["name"] for row in await cur.fetchall()}
             for name, col_type in columns:
                 if name not in existing:
-                    await conn.execute(
-                        f"ALTER TABLE {table} ADD COLUMN {name} {col_type}"
-                    )
+                    await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {col_type}")
 
     async def _upsert_pages_conn(
         self,
@@ -863,8 +836,7 @@ class SQLiteWikiStore(BaseWikiStore):
             [(p.concept_id,) for p in pages],
         )
         await conn.executemany(
-            "INSERT INTO pages_fts (concept_id, title, summary, body)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO pages_fts (concept_id, title, summary, body)" " VALUES (?, ?, ?, ?)",
             [(p.concept_id, p.title, p.summary, p.body) for p in pages],
         )
 
@@ -879,13 +851,9 @@ class SQLiteWikiStore(BaseWikiStore):
         ``'extracted'``) and ``(src, dst, rel, provenance)`` tuples —
         the 4th element marks agent/human-authored edges ``'asserted'``.
         """
-        rows = [
-            (e[0], e[1], e[2], e[3] if len(e) > 3 else "extracted")
-            for e in edges
-        ]
+        rows = [(e[0], e[1], e[2], e[3] if len(e) > 3 else "extracted") for e in edges]
         await conn.executemany(
-            "INSERT OR REPLACE INTO edges (src, dst, rel, provenance)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO edges (src, dst, rel, provenance)" " VALUES (?, ?, ?, ?)",
             rows,
         )
 
@@ -981,15 +949,13 @@ class SQLiteWikiStore(BaseWikiStore):
                 old_set = set(old_ids)
                 placeholders = ",".join("?" for _ in old_ids)
                 async with conn.execute(
-                    "SELECT src, dst, rel FROM edges"
-                    f" WHERE dst IN ({placeholders})",
+                    "SELECT src, dst, rel FROM edges" f" WHERE dst IN ({placeholders})",
                     old_ids,
                 ) as cur:
                     preserved = [
                         (row["src"], row["dst"], row["rel"])
                         for row in await cur.fetchall()
-                        if row["src"] not in old_set
-                        and row["dst"] in new_ids
+                        if row["src"] not in old_set and row["dst"] in new_ids
                     ]
                 await conn.executemany(
                     "DELETE FROM pages_fts WHERE concept_id = ?",
@@ -1003,9 +969,7 @@ class SQLiteWikiStore(BaseWikiStore):
                     "DELETE FROM edges WHERE src = ? OR dst = ?",
                     [(cid, cid) for cid in old_ids],
                 )
-                await conn.execute(
-                    "DELETE FROM pages WHERE source_id = ?", (source_id,)
-                )
+                await conn.execute("DELETE FROM pages WHERE source_id = ?", (source_id,))
 
             await self._upsert_pages_conn(conn, pages)
             await self._insert_edges_conn(conn, edges)
@@ -1039,16 +1003,10 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         self._assert_writable()
         async with self._connect() as conn:
-            cur = await conn.execute(
-                "DELETE FROM pages WHERE concept_id = ?", (concept_id,)
-            )
+            cur = await conn.execute("DELETE FROM pages WHERE concept_id = ?", (concept_id,))
             deleted = cur.rowcount > 0
-            await conn.execute(
-                "DELETE FROM pages_fts WHERE concept_id = ?", (concept_id,)
-            )
-            await conn.execute(
-                "DELETE FROM embeddings WHERE concept_id = ?", (concept_id,)
-            )
+            await conn.execute("DELETE FROM pages_fts WHERE concept_id = ?", (concept_id,))
+            await conn.execute("DELETE FROM embeddings WHERE concept_id = ?", (concept_id,))
             await conn.execute(
                 "DELETE FROM edges WHERE src = ? OR dst = ?",
                 (concept_id, concept_id),
@@ -1075,8 +1033,7 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         async with self._connect() as conn:
             await conn.execute(
-                "INSERT OR REPLACE INTO embeddings (concept_id, vector, model)"
-                " VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO embeddings (concept_id, vector, model)" " VALUES (?, ?, ?)",
                 (concept_id, _pack_vector(vector), model),
             )
             await conn.commit()
@@ -1085,9 +1042,7 @@ class SQLiteWikiStore(BaseWikiStore):
     # Read API
     # ------------------------------------------------------------------
 
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> Optional[dict[str, Any]]:
+    async def get_page(self, concept_id: str, include_body: bool = True) -> Optional[dict[str, Any]]:
         """Fetch a single page by ``concept_id`` (falls back to ``node_id``).
 
         Args:
@@ -1144,9 +1099,7 @@ class SQLiteWikiStore(BaseWikiStore):
             clauses.append("category = ?")
             params += (category,)
         if origin:
-            clauses.append(
-                f"origin IN ({', '.join('?' for _ in origin)})"
-            )
+            clauses.append(f"origin IN ({', '.join('?' for _ in origin)})")
             params += tuple(origin)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
@@ -1306,9 +1259,7 @@ class SQLiteWikiStore(BaseWikiStore):
     async def dump_edges(self) -> list[dict[str, Any]]:
         """Return every edge row (bulk export path)."""
         async with self._connect() as conn:
-            async with conn.execute(
-                "SELECT src, dst, rel FROM edges ORDER BY src, dst, rel"
-            ) as cur:
+            async with conn.execute("SELECT src, dst, rel FROM edges ORDER BY src, dst, rel") as cur:
                 return [dict(row) for row in await cur.fetchall()]
 
     async def stats(self) -> dict[str, Any]:
@@ -1330,12 +1281,8 @@ class SQLiteWikiStore(BaseWikiStore):
                 async with conn.execute(sql) as cur:
                     row = await cur.fetchone()
                     out[key] = row[0] if row else 0
-            async with conn.execute(
-                "SELECT category, COUNT(*) AS n FROM pages GROUP BY category"
-            ) as cur:
-                out["categories"] = {
-                    row["category"]: row["n"] for row in await cur.fetchall()
-                }
+            async with conn.execute("SELECT category, COUNT(*) AS n FROM pages GROUP BY category") as cur:
+                out["categories"] = {row["category"]: row["n"] for row in await cur.fetchall()}
         return out
 
     # ------------------------------------------------------------------
@@ -1365,9 +1312,7 @@ class SQLiteWikiStore(BaseWikiStore):
     async def missing_bodies(self) -> list[str]:
         """Pages with an empty body (stub rows without content)."""
         async with self._connect() as conn:
-            async with conn.execute(
-                "SELECT concept_id FROM pages WHERE body = ''"
-            ) as cur:
+            async with conn.execute("SELECT concept_id FROM pages WHERE body = ''") as cur:
                 return [row["concept_id"] for row in await cur.fetchall()]
 
 
@@ -1430,7 +1375,4 @@ def create_wiki_store(
             wiki_name=wiki_name,
             text_analyzer=kwargs.get("text_analyzer", "text_en"),
         )
-    raise ValueError(
-        f"Unknown wiki storage backend {backend!r} — expected 'sqlite',"
-        " 'memory', or 'arangodb'"
-    )
+    raise ValueError(f"Unknown wiki storage backend {backend!r} — expected 'sqlite'," " 'memory', or 'arangodb'")

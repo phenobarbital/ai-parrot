@@ -55,9 +55,7 @@ def two_planes(tmp_path: Path) -> tuple[Path, BaseWikiStore, BaseWikiStore]:
     root = tmp_path
     parrot_dir = root / ".parrot"
     parrot_dir.mkdir()
-    (parrot_dir / "wiki.json").write_text(
-        json.dumps({"backend": "sqlite"}), encoding="utf-8"
-    )
+    (parrot_dir / "wiki.json").write_text(json.dumps({"backend": "sqlite"}), encoding="utf-8")
     (parrot_dir / "wiki.dev.json").write_text(
         json.dumps({"backend": "sqlite", "storage_dir": ".parrot/wiki-remote"}),
         encoding="utf-8",
@@ -72,9 +70,7 @@ def two_planes(tmp_path: Path) -> tuple[Path, BaseWikiStore, BaseWikiStore]:
 class TestSelection:
     async def test_push_moves_memory_pages_only(self, two_planes) -> None:
         root, local, remote = two_planes
-        await local.upsert_pages(
-            [_page("mem-1", origin="memory"), _page("ingest-1", origin="ingest")]
-        )
+        await local.upsert_pages([_page("mem-1", origin="memory"), _page("ingest-1", origin="ingest")])
         report = await sync_push(root, target_env="dev")
         assert report.created == 1
         remote_ids = {p["concept_id"] for p in await remote.list_pages(limit=1000)}
@@ -82,9 +78,7 @@ class TestSelection:
 
     async def test_push_moves_asserted_edges_of_synced_pages(self, two_planes) -> None:
         root, local, remote = two_planes
-        await local.upsert_pages(
-            [_page("mem-1"), _page("mem-2"), _page("ingest-1", origin="ingest")]
-        )
+        await local.upsert_pages([_page("mem-1"), _page("mem-2"), _page("ingest-1", origin="ingest")])
         await local.add_edges(
             [
                 ("mem-1", "mem-2", "references", "asserted"),
@@ -93,9 +87,7 @@ class TestSelection:
         )
         await sync_push(root, target_env="dev")
         remote_edges = await remote.dump_edges()
-        assert ("mem-1", "mem-2", "references") in {
-            (e["src"], e["dst"], e["rel"]) for e in remote_edges
-        }
+        assert ("mem-1", "mem-2", "references") in {(e["src"], e["dst"], e["rel"]) for e in remote_edges}
         # The extracted edge's src ("ingest-1") was never synced as a page,
         # so its edge must not appear at the destination either.
         assert not any(e["src"] == "ingest-1" for e in remote_edges)
@@ -104,12 +96,8 @@ class TestSelection:
 class TestLWW:
     async def test_newer_source_wins_and_preserves_stamp(self, two_planes) -> None:
         root, local, remote = two_planes
-        await remote.upsert_pages(
-            [_page("mem-1", body="old", updated_at="2020-01-01T00:00:00+00:00")]
-        )
-        await local.upsert_pages(
-            [_page("mem-1", body="new", updated_at="2025-01-01T00:00:00+00:00")]
-        )
+        await remote.upsert_pages([_page("mem-1", body="old", updated_at="2020-01-01T00:00:00+00:00")])
+        await local.upsert_pages([_page("mem-1", body="new", updated_at="2025-01-01T00:00:00+00:00")])
         report = await sync_push(root, target_env="dev")
         assert report.updated == 1
         page = await remote.get_page("mem-1")
@@ -118,12 +106,8 @@ class TestLWW:
 
     async def test_equal_or_older_skipped(self, two_planes) -> None:
         root, local, remote = two_planes
-        await remote.upsert_pages(
-            [_page("mem-1", body="remote", updated_at="2025-01-01T00:00:00+00:00")]
-        )
-        await local.upsert_pages(
-            [_page("mem-1", body="local-older", updated_at="2020-01-01T00:00:00+00:00")]
-        )
+        await remote.upsert_pages([_page("mem-1", body="remote", updated_at="2025-01-01T00:00:00+00:00")])
+        await local.upsert_pages([_page("mem-1", body="local-older", updated_at="2020-01-01T00:00:00+00:00")])
         report = await sync_push(root, target_env="dev")
         assert report.skipped_older == 1
         assert report.updated == 0
@@ -160,16 +144,9 @@ class TestNoteMerge:
         root, local, remote = two_planes
         base_body = "# mem-1\n\nMain content."
         remote_body = base_body + "\n\n> **Note (2024-01-01, human:alice):** Remote note."
-        local_body = (
-            base_body
-            + "\n\n> **Note (2024-02-01, human:bob):** Local note."
-        )
-        await remote.upsert_pages(
-            [_page("mem-1", body=remote_body, updated_at="2020-01-01T00:00:00+00:00")]
-        )
-        await local.upsert_pages(
-            [_page("mem-1", body=local_body, updated_at="2025-01-01T00:00:00+00:00")]
-        )
+        local_body = base_body + "\n\n> **Note (2024-02-01, human:bob):** Local note."
+        await remote.upsert_pages([_page("mem-1", body=remote_body, updated_at="2020-01-01T00:00:00+00:00")])
+        await local.upsert_pages([_page("mem-1", body=local_body, updated_at="2025-01-01T00:00:00+00:00")])
         report = await sync_push(root, target_env="dev")
         assert report.updated == 1
         merged = (await remote.get_page("mem-1"))["body"]
@@ -181,9 +158,7 @@ class TestNoteMerge:
     async def test_note_merge_idempotent(self, two_planes) -> None:
         root, local, remote = two_planes
         body = "# mem-1\n\nContent.\n\n> **Note (2024-01-01, human:alice):** A note."
-        await local.upsert_pages(
-            [_page("mem-1", body=body, updated_at="2025-01-01T00:00:00+00:00")]
-        )
+        await local.upsert_pages([_page("mem-1", body=body, updated_at="2025-01-01T00:00:00+00:00")])
         first = await sync_push(root, target_env="dev")
         assert first.created == 1
         first_body = (await remote.get_page("mem-1"))["body"]
@@ -206,9 +181,7 @@ class TestSafety:
 
     async def test_report_counts_accurate(self, two_planes) -> None:
         root, local, remote = two_planes
-        await remote.upsert_pages(
-            [_page("mem-old", updated_at="2020-01-01T00:00:00+00:00")]
-        )
+        await remote.upsert_pages([_page("mem-old", updated_at="2020-01-01T00:00:00+00:00")])
         await local.upsert_pages(
             [
                 _page("mem-new"),
@@ -241,9 +214,7 @@ class TestAudit:
 
 
 class TestUnreachableRemote:
-    async def test_unreachable_arango_raises_clean_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_unreachable_arango_raises_clean_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         class _HangingArango:
             def __init__(self, **kwargs) -> None:
                 pass
@@ -260,9 +231,7 @@ class TestUnreachableRemote:
         root = tmp_path
         parrot_dir = root / ".parrot"
         parrot_dir.mkdir()
-        (parrot_dir / "wiki.json").write_text(
-            json.dumps({"backend": "sqlite"}), encoding="utf-8"
-        )
+        (parrot_dir / "wiki.json").write_text(json.dumps({"backend": "sqlite"}), encoding="utf-8")
         (parrot_dir / "wiki.prod.json").write_text(
             json.dumps({"backend": "arangodb", "arango_database": "wiki_x"}),
             encoding="utf-8",

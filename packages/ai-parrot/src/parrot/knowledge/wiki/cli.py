@@ -3005,10 +3005,7 @@ def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
         raise click.ClickException(str(exc)) from exc
     if report.dry_run:
         click.echo("DRY RUN — nothing applied")
-    click.echo(
-        f"pushed: created={report.created} updated={report.updated} "
-        f"skipped-older={report.skipped_older}"
-    )
+    click.echo(f"pushed: created={report.created} updated={report.updated} " f"skipped-older={report.skipped_older}")
 
 
 @sync.command("pull")
@@ -3030,9 +3027,7 @@ def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
         "— default excludes them so your own memories stay authoritative."
     ),
 )
-def sync_pull_cmd(
-    path_: str | None, target_env: str, dry_run: bool, include_own: bool
-) -> None:
+def sync_pull_cmd(path_: str | None, target_env: str, dry_run: bool, include_own: bool) -> None:
     """Pull memories/notes/asserted edges from the ENV plane.
 
     By default, records authored by the local identity (``human:<user>``)
@@ -3804,7 +3799,9 @@ def ingest_jira(
         try:
             concurrency = int(env_concurrency)
         except ValueError as exc:
-            raise click.ClickException(f"JIRA_WIKI_CONCURRENCY must be an integer (got {env_concurrency!r}): {exc}") from exc
+            raise click.ClickException(
+                f"JIRA_WIKI_CONCURRENCY must be an integer (got {env_concurrency!r}): {exc}"
+            ) from exc
         # The env var must clear the same bar as --concurrency: the sweep's
         # resident-task bound is `concurrency * 2`.
         if not 1 <= concurrency <= MAX_SWEEP_CONCURRENCY:

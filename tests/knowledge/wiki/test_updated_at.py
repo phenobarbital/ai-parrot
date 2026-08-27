@@ -49,9 +49,7 @@ class TestSqliteUpdatedAt:
         page = await store.get_page("intro")
         assert page["updated_at"] == stamp
 
-    async def test_get_page_and_list_pages_return_updated_at(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_get_page_and_list_pages_return_updated_at(self, tmp_path: Path) -> None:
         store = SQLiteWikiStore(tmp_path / "wiki.db", wiki_name="w")
         await store.upsert_pages([_page("intro")])
         page = await store.get_page("intro")
@@ -59,18 +57,14 @@ class TestSqliteUpdatedAt:
         stubs = await store.list_pages()
         assert "updated_at" in stubs[0]
 
-    async def test_created_at_survives_conflict_update(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_created_at_survives_conflict_update(self, tmp_path: Path) -> None:
         store = SQLiteWikiStore(tmp_path / "wiki.db", wiki_name="w")
         await store.upsert_pages([_page("intro")])
         first = await store.get_page("intro")
         created_at = first["created_at"]
         # Second upsert of the SAME concept_id (conflict path) with an
         # explicit, different updated_at.
-        await store.upsert_pages(
-            [_page("intro", updated_at="2099-01-01T00:00:00+00:00")]
-        )
+        await store.upsert_pages([_page("intro", updated_at="2099-01-01T00:00:00+00:00")])
         second = await store.get_page("intro")
         assert second["created_at"] == created_at
         assert second["updated_at"] == "2099-01-01T00:00:00+00:00"
@@ -137,9 +131,7 @@ class TestArangoUpdatedAt:
         docs = mock_db.execute.call_args.kwargs["bind_vars"]["docs"]
         assert _is_iso_utc(docs[0]["updated_at"])
 
-    async def test_upsert_preserves_explicit_stamp(
-        self, arango_store, mock_db
-    ) -> None:
+    async def test_upsert_preserves_explicit_stamp(self, arango_store, mock_db) -> None:
         stamp = "2020-01-01T00:00:00+00:00"
         await arango_store.upsert_pages([_page("intro", updated_at=stamp)])
         docs = mock_db.execute.call_args.kwargs["bind_vars"]["docs"]

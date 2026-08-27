@@ -54,9 +54,18 @@ def _should_nudge_read(tool_input: dict[str, Any]) -> bool:
 
 #: Shell executables that *search* the repository — an unambiguous signal
 #: that the assistant is scanning source instead of querying the wiki.
-_BASH_SEARCH_TOOLS = frozenset({
-    "grep", "egrep", "fgrep", "rg", "ag", "ack", "ripgrep", "find",
-})
+_BASH_SEARCH_TOOLS = frozenset(
+    {
+        "grep",
+        "egrep",
+        "fgrep",
+        "rg",
+        "ag",
+        "ack",
+        "ripgrep",
+        "find",
+    }
+)
 
 #: Shell executables that *read* files — nudged only when an argument
 #: looks like a source/doc file (so ``cat wiki.db`` or ``cat /etc/hosts``
@@ -103,8 +112,7 @@ def _should_nudge_bash(tool_input: dict[str, Any]) -> bool:
         if exe in _BASH_SEARCH_TOOLS:
             return True
         if exe in _BASH_READ_TOOLS and any(
-            PurePosixPath(tok).suffix.lower() in _READ_NUDGE_SUFFIXES
-            for tok in tokens[1:]
+            PurePosixPath(tok).suffix.lower() in _READ_NUDGE_SUFFIXES for tok in tokens[1:]
         ):
             return True
     return False

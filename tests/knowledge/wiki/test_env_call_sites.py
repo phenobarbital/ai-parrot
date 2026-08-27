@@ -57,19 +57,13 @@ def repo(tmp_path: Path) -> Path:
 
 
 class TestCallSiteMigration:
-    def test_mcp_server_uses_effective_config(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_mcp_server_uses_effective_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("WIKI_ENV", raising=False)
         monkeypatch.delenv("ENV", raising=False)
         parrot_dir = tmp_path / ".parrot"
         parrot_dir.mkdir()
-        (parrot_dir / "wiki.json").write_text(
-            json.dumps({"backend": "memory"}), encoding="utf-8"
-        )
-        (parrot_dir / "wiki.local.json").write_text(
-            json.dumps({"backend": "sqlite"}), encoding="utf-8"
-        )
+        (parrot_dir / "wiki.json").write_text(json.dumps({"backend": "memory"}), encoding="utf-8")
+        (parrot_dir / "wiki.local.json").write_text(json.dumps({"backend": "sqlite"}), encoding="utf-8")
         (parrot_dir / "wiki" / "pages").mkdir(parents=True)
         (parrot_dir / "wiki" / "wiki.db").touch()
         server = create_wiki_mcp_server(tmp_path)
@@ -79,9 +73,7 @@ class TestCallSiteMigration:
         # effective (merged) config, not the base alone.
         assert isinstance(store, SQLiteWikiStore)
 
-    def test_hook_uses_effective_config(
-        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_hook_uses_effective_config(self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("WIKI_ENV", raising=False)
         monkeypatch.delenv("ENV", raising=False)
         _build(runner, repo)
@@ -91,26 +83,16 @@ class TestCallSiteMigration:
         (repo / ".parrot" / "wiki.local.json").write_text(
             json.dumps({"claude": {"nudge_tools": ["Grep"]}}), encoding="utf-8"
         )
-        assert (
-            build_nudge({"tool_name": "Glob", "tool_input": {}, "cwd": str(repo)}, root=repo)
-            is None
-        )
-        assert (
-            build_nudge({"tool_name": "Grep", "tool_input": {}, "cwd": str(repo)}, root=repo)
-            is not None
-        )
+        assert build_nudge({"tool_name": "Glob", "tool_input": {}, "cwd": str(repo)}, root=repo) is None
+        assert build_nudge({"tool_name": "Grep", "tool_input": {}, "cwd": str(repo)}, root=repo) is not None
 
-    def test_installer_uses_effective_config(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_installer_uses_effective_config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("WIKI_ENV", raising=False)
         monkeypatch.delenv("ENV", raising=False)
         parrot_dir = tmp_path / ".parrot"
         parrot_dir.mkdir()
         # No base wiki.json yet (fresh install) — only a local overlay.
-        (parrot_dir / "wiki.local.json").write_text(
-            json.dumps({"backend": "memory"}), encoding="utf-8"
-        )
+        (parrot_dir / "wiki.local.json").write_text(json.dumps({"backend": "memory"}), encoding="utf-8")
         actions = install_claude_integration(tmp_path, git_hook=False, gitignore=False)
         assert "backend memory" in actions[0]
         assert load_project_config(tmp_path).backend == "memory"
@@ -132,18 +114,12 @@ class TestCallSiteMigration:
         base = load_project_config(foreign_root)
         assert base.backend == "sqlite"
         (foreign_root / ".parrot" / "wiki" / "pages").mkdir(parents=True)
-        (foreign_root / ".parrot" / "wiki.local.json").write_text(
-            json.dumps({"backend": "memory"}), encoding="utf-8"
-        )
+        (foreign_root / ".parrot" / "wiki.local.json").write_text(json.dumps({"backend": "memory"}), encoding="utf-8")
 
         local_root = tmp_path / "local"
         local_root.mkdir()
-        config = WikiProjectConfig(
-            namespaces={"other": WikiNamespaceConfig(path=str(foreign_root))}
-        )
-        handles, skipped = asyncio.run(
-            resolve_namespaces(local_root, config, registry_path=tmp_path / "absent.json")
-        )
+        config = WikiProjectConfig(namespaces={"other": WikiNamespaceConfig(path=str(foreign_root))})
+        handles, skipped = asyncio.run(resolve_namespaces(local_root, config, registry_path=tmp_path / "absent.json"))
         assert skipped == []
         assert isinstance(handles[0].store, InMemoryWikiStore)
 
@@ -161,9 +137,9 @@ class TestGuard:
     _ALLOWED_FILES = frozenset({"cli.py", "project.py"})
 
     def test_no_stray_consumer_load_project_config_calls(self) -> None:
-        wiki_pkg = Path(
-            __file__
-        ).resolve().parents[3] / "packages" / "ai-parrot" / "src" / "parrot" / "knowledge" / "wiki"
+        wiki_pkg = (
+            Path(__file__).resolve().parents[3] / "packages" / "ai-parrot" / "src" / "parrot" / "knowledge" / "wiki"
+        )
         assert wiki_pkg.is_dir(), wiki_pkg
         pattern = re.compile(r"\bload_project_config\(")
         offenders: list[str] = []
@@ -178,15 +154,12 @@ class TestGuard:
                 if pattern.search(line) and "def load_project_config" not in line:
                     offenders.append(f"{path.relative_to(wiki_pkg)}:{lineno}: {stripped}")
         assert offenders == [], (
-            "Found consumer load_project_config(...) calls outside the "
-            f"allowed write paths: {offenders}"
+            "Found consumer load_project_config(...) calls outside the " f"allowed write paths: {offenders}"
         )
 
 
 class TestOfflineDegradation:
-    def test_unreachable_namespace_skipped_bounded(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unreachable_namespace_skipped_bounded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Local sqlite primary + unreachable Arango namespace: still
         answers from the local plane, the foreign namespace just skips."""
 
@@ -208,14 +181,8 @@ class TestOfflineDegradation:
         # Effective config for `tmp_path` (no base wiki.json): defaults to
         # sqlite — the local, no-VPN plane — with one shared namespace
         # pointing at an (unreachable) ArangoDB.
-        config = WikiProjectConfig(
-            namespaces={"shared": WikiNamespaceConfig(database="wiki_shared")}
-        )
-        handles, skipped = asyncio.run(
-            resolve_namespaces(
-                tmp_path, config, registry_path=tmp_path / "absent.json"
-            )
-        )
+        config = WikiProjectConfig(namespaces={"shared": WikiNamespaceConfig(database="wiki_shared")})
+        handles, skipped = asyncio.run(resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json"))
         assert handles == []
         assert skipped[0].name == "shared"
         assert skipped[0].reason == "unreachable"

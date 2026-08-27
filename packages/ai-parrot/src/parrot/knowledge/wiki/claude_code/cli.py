@@ -29,11 +29,9 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
 )
 
-
 #: Shared `--path` option — every command resolves the repo root the same way.
-path_option = click.option(
-    "--path", "path_", default=None, help="Repo root (default: auto-detect)."
-)
+path_option = click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")
+
 
 def _resolve_root(path: Optional[str]) -> Path:
     """Resolve the target repository root or abort with guidance."""
@@ -44,10 +42,7 @@ def _resolve_root(path: Optional[str]) -> Path:
         return root
     found = find_project_root()
     if found is None:
-        raise click.ClickException(
-            "No repository found upwards from here — run inside a git "
-            "repo or pass --path."
-        )
+        raise click.ClickException("No repository found upwards from here — run inside a git " "repo or pass --path.")
     return found
 
 
@@ -93,9 +88,7 @@ def install(
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
-        actions = install_claude_integration(
-            root, config, git_hook=git_hook, gitignore=gitignore
-        )
+        actions = install_claude_integration(root, config, git_hook=git_hook, gitignore=gitignore)
     except (RuntimeError, WikiConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -110,8 +103,7 @@ def install(
         ctx.invoke(wiki_build, path_=str(root), quiet=True)
 
     click.secho(
-        "Claude Code integration installed. Try: "
-        "`wikitoolkit query \"<question>\"` or /parrotwiki in Claude Code.",
+        "Claude Code integration installed. Try: " '`wikitoolkit query "<question>"` or /parrotwiki in Claude Code.',
         fg="green",
     )
 

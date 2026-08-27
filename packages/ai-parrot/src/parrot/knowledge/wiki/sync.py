@@ -182,9 +182,7 @@ async def _synced_memory_pages(store: BaseWikiStore) -> list[dict[str, Any]]:
     return pages
 
 
-async def _sync_edges(
-    source: BaseWikiStore, destination: BaseWikiStore, concept_ids: set[str]
-) -> int:
+async def _sync_edges(source: BaseWikiStore, destination: BaseWikiStore, concept_ids: set[str]) -> int:
     """Copy `asserted` edges whose src is one of `concept_ids`.
 
     `add_edges` is an idempotent upsert on every backend (``INSERT OR
@@ -199,11 +197,7 @@ async def _sync_edges(
     # whose src is a memory page is only ever created via the `asserted`
     # path (`remember()`'s related-page links, toolkit.py:993) — so
     # filtering by src membership IS the provenance filter here.
-    to_write = [
-        (edge["src"], edge["dst"], edge["rel"], "asserted")
-        for edge in all_edges
-        if edge["src"] in concept_ids
-    ]
+    to_write = [(edge["src"], edge["dst"], edge["rel"], "asserted") for edge in all_edges if edge["src"] in concept_ids]
     if not to_write:
         return 0
     return await destination.add_edges(to_write)
