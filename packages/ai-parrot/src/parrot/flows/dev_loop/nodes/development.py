@@ -495,6 +495,13 @@ class DevelopmentNode(DevLoopNode):
             The ``feature`` slug, or ``None`` if no matching index is found
             (or the index dir does not exist / no file is readable).
         """
+        if not feat_id:
+            # FEAT-466: hotfix runs carry feat_id == "" and have no per-spec
+            # task index. Returning None here (rather than scanning) keeps us
+            # from matching an unrelated index whose feature_id key is absent
+            # — json .get() returns None, and None == "" is False, but a file
+            # with an explicit "feature_id": "" would match.
+            return None
         index_dir = Path(worktree_path) / "sdd" / "tasks" / "index"
         if not index_dir.is_dir():
             return None

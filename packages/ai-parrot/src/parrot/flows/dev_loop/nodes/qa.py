@@ -414,7 +414,13 @@ class QANode(DevLoopNode):
         """
         feature_brief = shared.get("feature_brief")
         document = getattr(feature_brief, "document_path", "") or ""
-        return document or research.spec_path or research.feat_id or ""
+        return (
+            document
+            or research.spec_path
+            or research.feat_id
+            or research.jira_issue_key
+            or ""
+        )
 
     async def _run_deterministic_qa(
         self,

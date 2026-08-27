@@ -171,6 +171,31 @@ def condense_qa_failure(report: QAReport, *, max_chars: int = 2000) -> str:
     return summary[:max_chars]
 
 
+def run_label(output: Any, *, default: str = "run") -> str:
+    """Return the best available human label for a run.
+
+    FEAT-466: a hotfix reserves no ``FEAT-<NNN>`` (a bugfix is not a
+    feature), so ``feat_id`` is legitimately ``""`` on those runs and the
+    Jira issue key carries the identity. Follows the precedence already used
+    at ``nodes/qa.py:194,342``.
+
+    Args:
+        output: Any object exposing ``feat_id`` / ``jira_issue_key``
+            (``ResearchOutput`` or ``PlannerOutput``).
+        default: Returned when neither identifier is available, so callers
+            never interpolate an empty string into user-facing text.
+
+    Returns:
+        ``feat_id`` when set, else ``jira_issue_key`` when set, else
+        ``default``.
+    """
+    for attr in ("feat_id", "jira_issue_key"):
+        value = (getattr(output, attr, "") or "").strip()
+        if value:
+            return value
+    return default
+
+
 def register_dev_loop_node(name: str):
     """Idempotent ``@register_node`` for the dev-loop node types (FEAT-250).
 

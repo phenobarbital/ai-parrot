@@ -22,6 +22,7 @@ from typing import Any, List, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from parrot.flows.dev_loop.nodes.base import run_label
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     GateKind,
@@ -307,7 +308,7 @@ def build_run_bundle(
         or getattr(primary_output, "jira_issue_key", "") or "",
         pr_url=state.pr_url or "",
         pr_number=deployment_result.get("pr_number") or revision_result.get("pr_number"),
-        feature_id=getattr(primary_output, "feat_id", "") or "",
+        feature_id=run_label(primary_output, default=""),
         spec_path=getattr(primary_output, "spec_path", "") or "",
         worktree_path=getattr(primary_output, "worktree_path", "") or "",
         branch=getattr(primary_output, "branch_name", "") or "",

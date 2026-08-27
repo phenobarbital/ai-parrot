@@ -39,6 +39,7 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.nodes.base import (
     DevLoopNode,
     register_dev_loop_node,
+    run_label,
     scrub_git_output,
     transition_issue_with_candidates,
 )
@@ -502,7 +503,8 @@ class DeploymentHandoffNode(DevLoopNode):
     @staticmethod
     def _build_title(brief: BugBrief, research: ResearchOutput) -> str:
         first_line = brief.summary.splitlines()[0][:80]
-        return f"{research.feat_id}: {first_line}"
+        label = run_label(research, default="")
+        return f"{label}: {first_line}" if label else first_line
 
     @staticmethod
     def _build_body(
