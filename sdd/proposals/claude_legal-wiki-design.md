@@ -314,8 +314,9 @@ Existence verification requires `content_hash` sealed at ingest. **Retrofit deci
 field (sha256 over the normalized version text) and the BOE corpus is **re-ingested**
 via `sync_boe()` — the corpus is fully reproducible from source, so re-ingest beats
 hash-on-read backfill (single origin of truth for hashes). Chunks carry the parent
-version's hash + their offsets (§3.2). The normalization applied before hashing must be
-frozen and versioned **before** the re-ingest (OQ7).
+version's hash + their offsets (§3.2). The normalization applied before hashing is
+frozen (OQ7 closed): Unicode NFC + newline normalization only, sealed with
+`hash_norm_version: 1` — see §6.
 
 The existing groundedness subsystem (`EvidenceIndex`/`GroundednessScorer`,
 `parrot/security/groundedness/`) is **atom-based** (money/percent/number/date/
@@ -379,15 +380,15 @@ anchor; resolution of conflicts; ontological absence claims; upgraded confidence
 
 ---
 
-## 6. Open questions (close before `/sdd-proposal`)
-- ~~OQ1~~ **Closed:** single Arango DB, GraphIndex namespaces. `⚠️ VERIFY` that current GraphIndex supports multiple namespaces over shared collections or needs a `namespace` filter added.
+## 6. Open questions (all decidable OQs closed 2026-08-27)
+- ~~OQ1~~ **Superseded by proposal D1** (FEAT-449). The original "Closed: single Arango DB, GraphIndex namespaces over shared collections" was **refuted against the repo**: GraphIndex has no namespace concept; the only isolation unit is `TenantContext` (one ArangoDB database per tenant). Standing decision: **one ontology tenant per materia**, wiki namespaces (FEAT-450) above for brain selection. Recorded here so this skeleton stops contradicting the proposal.
 - ~~OQ2~~ **Closed:** single `articulo` node with embedded `versions[]`; chunks per version; `aplica_articulo` stores `version_n`.
-- **OQ3** → **spike confirmed**, checklist in §2.5.1. `verify`/`fetch` can be specced in parallel; `search` is gated on the filter check.
-- **OQ4** → **spike confirmed**, checklist in §3.5. Blocks EUR-Lex ingestion in Sprint 1; BOE is not blocked.
-- **OQ5** Where does `as_of` extraction live: router (deterministic date parsing) or a tiny structured LLM call? Proposal: regex first, LLM only if none found.
-- **OQ6** Lazy ingestion from `cendoj_fetch`: synchronous within the request, or enqueued (qworker) after answering?
-- **OQ7** (rev. 2026-08-27) Canonical normalization before hashing: exactly what transform (Unicode NFC? whitespace collapse? none?) is applied to a version/sentencia text before `sha256` and before offsets are computed. Must be frozen and versioned (`hash_norm_version` field?) before the BOE re-ingest — changing it later invalidates every stored span. Proposal: NFC + newline normalization only; no whitespace collapse (offsets must match the text shown to the lawyer).
-- **OQ8** (rev. 2026-08-27) How the librarian emits anchored sentences reliably: structured output where each `ReadingNote` carries its span ids (proposal: `ask(structured_output=LegalAnswer)` with the dossier's span ids enumerated in the prompt), vs. free text + post-hoc alignment. Post-hoc alignment reintroduces stochastic matching — prefer structured-first. Also: does a high `suppressed_count` (e.g. >50% of sentences) trigger a single regeneration of the guide, or is the pruned guide always returned as-is? Proposal: return as-is in v1; regeneration is tuning, not correctness.
+- **OQ3** → **remains a spike** (checklist §2.5.1) — it resolves by running, not by discussion. With the reordered roadmap (§7) it blocks **Sprint 4 only**, not Sprints 1.5–2. `verify`/`fetch` can be specced in parallel; `search` is gated on the filter check.
+- **OQ4** → **remains a spike** (checklist §3.5) — blocks EUR-Lex ingestion only; BOE and the answer layer are not blocked.
+- ~~OQ5~~ **Closed (2026-08-27): regex first, LLM fallback.** Deterministic date parsing in the router; only when no date is found, one structured micro-call (single field `date | null`). No date at all ⇒ default to today. In every case the `as_of` actually used is stated back in the answer (already part of the `LegalAnswer` contract).
+- ~~OQ6~~ **Closed (2026-08-27): fully synchronous within the request.** `cendoj_fetch` → parse → atomic graph ingest (`replace_document_slice`) before the answer is produced. Rationale: simplest and idempotent; with the §2.5.1 budgets (max 2 fetches per execution) latency is bounded; and the existence gate needs the sealed hash in the store before the answer can cite the document — synchronous ingest guarantees that ordering by construction. The autonomous orchestrator (non-idempotent re-enqueue, C13) is deliberately NOT used here.
+- ~~OQ7~~ **Closed (2026-08-27): NFC + newline normalization, versioned.** Canonical transform = Unicode NFC + newline normalization (`\r\n`/`\r` → `\n`) and nothing else — **no whitespace collapse**, so offsets index text identical to what the lawyer is shown. Every hashed payload carries `hash_norm_version: 1` alongside `content_hash`; any future change of the transform bumps the version and forces re-seal, never silent reinterpretation. Frozen before the Sprint 1.5 re-ingest.
+- ~~OQ8~~ **Closed (2026-08-27): structured-first, pruned guide returned as-is.** The librarian emits via `ask(structured_output=LegalAnswer)` with the dossier's span ids enumerated in the prompt; each `ReadingNote` carries its anchors — no free text, no post-hoc alignment (that would reintroduce stochastic matching exactly where the invariant demands determinism). After suppression the guide is returned as-is in v1, whatever remains; the dossier (primary payload) is never affected by pruning. Regeneration-on-heavy-pruning is explicitly deferred as tuning, not correctness.
 
 ---
 
@@ -403,8 +404,9 @@ contract instead of retrofitting one.
    `sdd/specs/legal-norms-graph-boe.spec.md`, 8/8 tasks, 2026-08-23): BOE ingestion,
    `versions[]`, `article_in_force`. EUR-Lex was deferred (spike OQ4 still open).
 2. **Sprint 1.5 — Evidence retrofit.** `content_hash` sealing in the BOE pipeline
-   (`ArticleVersion` + chunks), normalization frozen (OQ7), full re-run of
-   `sync_boe()`. Small, blocking for everything below.
+   (`ArticleVersion` + chunks), normalization per OQ7 (closed: NFC + newlines,
+   `hash_norm_version: 1`), full re-run of `sync_boe()`. Small, blocking for
+   everything below.
 3. **Sprint 2 — Librarian answer layer over norms only.** `SpanRef` / `LegalAnswer` /
    `ReadingNote` contracts, the deterministic span verifier, the fail-closed
    suppression gate + `AuditLedger` records, minimal router (single materia), retrieval
@@ -413,8 +415,9 @@ contract instead of retrofitting one.
    honest "no encontré en el corpus consultado".
 4. **Sprint 3 — Case law bulk.** TC + CJEU + HUDOC lazy; regex-only edges (`cita`,
    `confirma`/`revoca`); sentencias enter the same hashed-payload evidence model.
-5. **Sprint 4 — CENDOJ toolkit + authority gate.** `verify` first, `fetch` with lazy
-   ingest, `search` last. Adds the authority tier on top of the existing existence gate.
+5. **Sprint 4 — CENDOJ toolkit + authority gate.** `verify` first, `fetch` with
+   synchronous in-request ingest (OQ6 closed), `search` last. Adds the authority tier
+   on top of the existing existence gate. Gated on the OQ3 spike.
 6. **Sprint 5 — LLM-extracted edges.** `interpreta`, `aplica_articulo`, `distingue` —
    only after verified citations work end-to-end; LLM edges stay excluded from the
    verified tier unless corroborated.
@@ -436,6 +439,16 @@ hallucination framing), ratified by the operator on 2026-08-27.
 | R6 | **Roadmap reordered**: answer layer ships next over the norms-only corpus (Sprints 1.5 + 2), before any case-law ingestion. (§7) |
 | R7 | Sprint 1 BOE corpus is **re-ingested** with sealed hashes (reproducible from source) rather than hash-on-read backfill. (§5.1) |
 | R8 | `distingue` added to the typed-edge vocabulary alongside `confirma`/`revoca`. (§3.3) |
+
+OQ-closure round (same day, operator decisions):
+
+| # | Decision |
+|---|---|
+| R9 | OQ5: `as_of` extraction is regex-first in the router with a structured LLM micro-call (`date \| null`) only as fallback; default today; the `as_of` used is always stated back. (§6) |
+| R10 | OQ6: `cendoj_fetch` ingests **synchronously within the request** (atomic `replace_document_slice`), so the sealed hash exists in the store before the answer cites it; budgets bound the latency. Autonomous-orchestrator enqueueing rejected (non-idempotent re-enqueue). (§6) |
+| R11 | OQ7: hash normalization = Unicode NFC + newline normalization only, no whitespace collapse; sealed with `hash_norm_version: 1`; frozen before the Sprint 1.5 re-ingest. (§5.1, §6) |
+| R12 | OQ8: librarian output is structured-first (`structured_output=LegalAnswer`, anchors per `ReadingNote`); post-hoc alignment rejected; the pruned guide is returned as-is in v1 (dossier never affected by pruning). (§5.2, §6) |
+| R13 | OQ1's original closure formally superseded in this document by proposal decision D1 (tenant per materia; FEAT-450 namespaces above). (§6) |
 
 ## External sources
 - BOE datos abiertos / API: https://www.boe.es/datosabiertos/
