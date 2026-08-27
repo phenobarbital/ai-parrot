@@ -32,7 +32,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Core-only change (ontology/schema.py, merger.py, graph_store.py); domain-agnostic, no legal files. Independent of TASK-2492.",
       "assigned_to": null,
       "started_at": "2026-08-27T02:03:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2493-ontology-search-views-schema.md"
+      "completed_at": "2026-08-27T02:13:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2493-ontology-search-views-schema.md"
     },
     {
       "id": "TASK-2494",
