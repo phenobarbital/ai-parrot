@@ -545,7 +545,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 "origin": p.origin,
                 "asserted_by": p.asserted_by,
                 "created_at": now,
-                "updated_at": now,
+                "updated_at": p.updated_at or now,
             }
             for p in pages
         ]
