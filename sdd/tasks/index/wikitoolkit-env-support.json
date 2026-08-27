@@ -14,7 +14,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module in project.py; every other task consumes it.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2462-env-resolution-and-effective-config.md"
+      "completed_at": "2026-08-27T00:07:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2462-env-resolution-and-effective-config.md"
     },
     {
       "id": "TASK-2463",
