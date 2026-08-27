@@ -47,3 +47,12 @@ def setup_studio_routes(app: web.Application) -> None:
     app.router.add_view(
         f"{STUDIO_PREFIX}/agents/{{name}}/reload", StudioAgentReloadHandler
     )
+
+    # Draft pipeline (FEAT-467 TASK-2513): save/list/read/activate/delete.
+    from .drafts import StudioDraftActivateHandler, StudioDraftsHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/drafts", StudioDraftsHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/drafts/{{name}}", StudioDraftsHandler)
+    app.router.add_view(
+        f"{STUDIO_PREFIX}/drafts/{{name}}/activate", StudioDraftActivateHandler
+    )

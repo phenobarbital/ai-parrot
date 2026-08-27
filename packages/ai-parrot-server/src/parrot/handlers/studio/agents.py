@@ -17,18 +17,17 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
-from navigator_auth.decorators import is_authenticated, user_session
-from pydantic import ValidationError
 from asyncdb.exceptions import NoDataFound
-
+from navigator_auth.decorators import is_authenticated, user_session
 from parrot.clients.factory import LLMFactory
 from parrot.conf import AGENTS_DIR
+from parrot.manager.manager import AgentNotFoundError, AgentReloadError
 from parrot.models.basic import ModelConfig
 from parrot.registry.registry import BotConfig
-from parrot.manager.manager import AgentNotFoundError, AgentReloadError
 from parrot.utils.naming import slugify_name
+from pydantic import ValidationError
 
 from ..models import BotModel
 from ._base import StudioBaseView
@@ -47,7 +46,7 @@ class _StudioAgentsMixin:
         manager = self._manager()
         return manager.registry if manager else None
 
-    async def _get_db_agent(self, name: str) -> Optional[BotModel]:
+    async def _get_db_agent(self, name: str) -> BotModel | None:
         """Query a single database-origin agent by name.
 
         Args:
@@ -71,7 +70,7 @@ class _StudioAgentsMixin:
             self.logger.error("Studio: failed to query DB agent '%s': %s", name, exc)
             return None
 
-    async def _get_all_db_agents(self) -> List[BotModel]:
+    async def _get_all_db_agents(self) -> list[BotModel]:
         """Return every enabled database-origin agent."""
         db = self.request.app.get("database")
         if db is None:
@@ -85,7 +84,7 @@ class _StudioAgentsMixin:
             self.logger.error("Studio: failed to list DB agents: %s", exc)
             return []
 
-    async def _check_duplicate(self, name: str) -> Optional[str]:
+    async def _check_duplicate(self, name: str) -> str | None:
         """Return the source ('registry'/'database') if ``name`` is taken.
 
         Args:
@@ -102,7 +101,7 @@ class _StudioAgentsMixin:
         return None
 
     @staticmethod
-    def _registry_agent_owner(meta: Any) -> Optional[str]:
+    def _registry_agent_owner(meta: Any) -> str | None:
         """Extract the ``created_by`` owner stamped in ``bot_config.config``.
 
         There is no ``owner`` column on ``BotMetadata`` — ownership is
@@ -146,7 +145,7 @@ class _StudioAgentsMixin:
             "chatbot_id": str(agent.chatbot_id),
         }
 
-    def _error(self, message: str, *, status: int, code: Optional[str] = None):
+    def _error(self, message: str, *, status: int, code: str | None = None):
         """Return a JSON error response shaped like :class:`StudioError`.
 
         ``BaseHandler.error()`` only maps a fixed status whitelist
@@ -190,7 +189,7 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
 
     async def _get_all(self):
-        agents: List[dict] = []
+        agents: list[dict] = []
         seen: set = set()
         for db_agent in await self._get_all_db_agents():
             agents.append(self._db_agent_to_dict(db_agent))
