@@ -535,6 +535,91 @@ class DevLoopRunner:
 
         return _sink
 
+    def _enqueue_envelope(self, run_id: str, envelope: ActionEnvelope) -> None:
+        """Hand one envelope to ``run_id``'s single actions-stream writer.
+
+        Synchronous on purpose: it runs inside ``SessionHost.apply``, so the
+        queue ends up in ``server_seq`` order by construction. The writer
+        task is created on first use and lives until
+        :meth:`_flush_actions_queue` retires it, so there is no
+        empty-queue/exit race that could strand a late envelope.
+
+        Args:
+            run_id: The run whose actions stream the envelope belongs to.
+            envelope: The sequenced envelope to publish.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (e.g. sync test harness) — drop silently, same
+            # contract as the per-envelope task this replaced.
+            return
+        queue = self._actions_queues.get(run_id)
+        if queue is None:
+            queue = asyncio.Queue()
+            self._actions_queues[run_id] = queue
+        queue.put_nowait(envelope)
+        writer = self._actions_writers.get(run_id)
+        if writer is None or writer.done():
+            self._actions_writers[run_id] = loop.create_task(
+                self._drain_actions_queue(run_id, queue)
+            )
+
+    async def _drain_actions_queue(
+        self, run_id: str, queue: "asyncio.Queue[Any]"
+    ) -> None:
+        """XADD ``run_id``'s envelopes one at a time, in ``server_seq`` order.
+
+        Awaiting each XADD before pulling the next entry is the whole point:
+        it serialises the writes onto one connection's command order. Returns
+        on the ``None`` sentinel from :meth:`_flush_actions_queue`.
+
+        Args:
+            run_id: The run being published.
+            queue: That run's envelope FIFO.
+        """
+        while True:
+            envelope = await queue.get()
+            if envelope is None:
+                return
+            await self._xadd_envelope(run_id, envelope)
+
+    async def _flush_actions_queue(
+        self, run_id: str, timeout: float = 5.0
+    ) -> None:
+        """Publish ``run_id``'s remaining envelopes, then retire its writer.
+
+        Called from :meth:`_close_host` so a finished run's stream is
+        complete — ``run/closed`` is enqueued before the sentinel, so it is
+        genuinely the last entry and a console tailing the stream can stop on
+        it without truncating anything.
+
+        Args:
+            run_id: The run to flush.
+            timeout: Upper bound in seconds. A wedged Redis leaves the writer
+                to be garbage-collected rather than holding up the caller —
+                the actions stream is a best-effort mirror of state already
+                folded in memory.
+        """
+        queue = self._actions_queues.pop(run_id, None)
+        writer = self._actions_writers.pop(run_id, None)
+        if queue is not None:
+            queue.put_nowait(None)
+        if writer is None or writer.done():
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(writer), timeout=timeout)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            self.logger.debug(
+                "dev-loop actions-stream flush for run %s did not finish in "
+                "%.1fs — remaining envelopes dropped", run_id, timeout,
+            )
+        except Exception:  # noqa: BLE001 - actions publish must never break a run
+            self.logger.debug(
+                "dev-loop actions-stream flush failed for run %s",
+                run_id, exc_info=True,
+            )
+
     async def _ensure_actions_redis(self) -> Any:
         """Return a cached async Redis client for the actions stream."""
         if self._actions_redis is None:
