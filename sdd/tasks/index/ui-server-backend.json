@@ -70,7 +70,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,9 +80,9 @@
       "parallel": false,
       "parallelism_notes": "Bridges both lanes: imports TASK-2524 models, wires pnpm scripts from TASK-2525.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2526-pydantic-ts-codegen.md"
+      "started_at": "2026-08-27T17:45:30+00:00",
+      "completed_at": "2026-08-27T17:46:31+00:00",
+      "file": "sdd/tasks/completed/TASK-2526-pydantic-ts-codegen.md"
     },
     {
       "id": "TASK-2527",
