@@ -17,7 +17,8 @@ synchronous access to the human owner was available; the already-verified
 real BOE chain from TASK-2372 was reused rather than fabricating new data).
 """
 
-from datetime import date
+import os
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,14 +26,18 @@ import parrot_tools.legal.boe  # noqa: F401 — registers "boe" with DataSourceF
 import pytest
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import RelationDiscovery
+from parrot.knowledge.ontology.graph_store import OntologyGraphStore
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.refresh import OntologyRefreshPipeline
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
 from parrot.knowledge.ontology.validators import validate_aql
+from parrot.knowledge.wiki.federation import open_namespace_store
+from parrot.knowledge.wiki.project import WikiNamespaceConfig
 from parrot_loaders.extractors.factory import DataSourceFactory
 from parrot_tools.legal.boe.datasource import BOEDataSource
-from parrot_tools.legal.boe.queries import article_in_force
+from parrot_tools.legal.boe.queries import article_in_force, search_articles
 from parrot_tools.legal.boe.sync import _sync_provenance_edges
+from parrot_tools.legal.wiki_store import OntologyLegalWikiStore
 
 from .conftest import BOE_FIXTURE_ID
 
@@ -249,3 +254,113 @@ class TestProvenanceEdgeSync:
         assert stats == {}
         assert errors
         assert any("network down" in e for e in errors)
+
+
+# ---------------------------------------------------------------------------
+# TASK-2499: live-ArangoDB integration tests (search_views, search_articles,
+# the FEAT-450 namespace) — skip cleanly without a reachable dev tenant.
+# ---------------------------------------------------------------------------
+
+
+def _arango_params_from_env() -> dict:
+    """Resolve live ArangoDB connection params, or skip the test.
+
+    Mirrors the ``TEST_ARANGO_HOST``-gated skip convention used by
+    ``packages/ai-parrot/tests/integration/rag/test_store_router_integration.py``.
+    """
+    host = os.environ.get("ARANGODB_HOST") or os.environ.get("TEST_ARANGO_HOST")
+    if not host:
+        pytest.skip("ARANGODB_HOST/TEST_ARANGO_HOST not set — live ArangoDB tests skipped")
+    return {
+        "host": host,
+        "port": int(os.environ.get("ARANGODB_PORT", "8529")),
+        "protocol": os.environ.get("ARANGODB_PROTOCOL", "http"),
+        "username": os.environ.get("ARANGODB_USERNAME", "root"),
+        "password": os.environ.get("ARANGODB_PASSWORD", ""),
+    }
+
+
+@pytest.fixture
+def live_arango_ctx():
+    """A real ``OntologyGraphStore`` + ``TenantContext`` against a dev tenant.
+
+    Skips cleanly when ``ARANGODB_HOST``/``TEST_ARANGO_HOST`` is unset or
+    the driver is unavailable; individual tests additionally skip on a
+    live connection failure (server unreachable).
+    """
+    params = _arango_params_from_env()
+    try:
+        from asyncdb import AsyncDB
+
+        client = AsyncDB("arangodb", params=params)
+    except Exception as exc:  # pragma: no cover - environment-dependent
+        pytest.skip(f"ArangoDB driver unavailable: {exc}")
+    manager = TenantOntologyManager(ontology_dir=OntologyParser.get_defaults_dir())
+    ctx = manager.resolve("legal_e2e_tenant", domain="legal")
+    store = OntologyGraphStore(arango_client=client)
+    return store, ctx
+
+
+@pytest.mark.integration
+class TestLiveArangoSearchViews:
+    """Spec §4: ``test_search_view_provisioned_idempotently``."""
+
+    async def test_search_view_provisioned_idempotently(self, live_arango_ctx):
+        store, ctx = live_arango_ctx
+        try:
+            await store.initialize_tenant(ctx)
+            await store.initialize_tenant(ctx)
+        except Exception as exc:  # pragma: no cover - environment-dependent
+            pytest.skip(f"ArangoDB not reachable: {exc}")
+
+        db = await store._get_db(ctx)
+        connection = db._connection
+        views = await connection.views()
+        matches = [v for v in views if v.get("name") == "legal_articulos_view"]
+        assert len(matches) == 1
+
+
+@pytest.mark.integration
+class TestLiveSearchArticlesTemporalFilter:
+    """Spec §4: ``test_search_articles_live_temporal_filter``."""
+
+    async def test_search_articles_live_temporal_filter(self, live_arango_ctx):
+        store, ctx = live_arango_ctx
+        try:
+            await store.initialize_tenant(ctx)
+        except Exception as exc:  # pragma: no cover - environment-dependent
+            pytest.skip(f"ArangoDB not reachable: {exc}")
+
+        today = datetime.now(UTC).date()
+        hits_now = await search_articles(store, ctx, "convenios", today, limit=5)
+        assert isinstance(hits_now, list)
+        for hit in hits_now:
+            # The AQL's own temporal FILTER pair already guarantees this;
+            # re-asserted here as the live end-to-end proof (repealed
+            # wordings for this as_of would violate it).
+            assert hit.version.valid_from <= today
+            assert hit.version.valid_to is None or hit.version.valid_to > today
+
+
+@pytest.mark.integration
+class TestLiveNamespaceFederation:
+    """Spec §4: ``test_namespace_exposes_legal_corpus``."""
+
+    async def test_namespace_exposes_legal_corpus(self, live_arango_ctx):
+        _, ctx = live_arango_ctx
+        cfg = WikiNamespaceConfig(database=ctx.arango_db, backend="ontology_legal")
+        try:
+            store, storage_dir = await open_namespace_store("legal", cfg, base_dir=Path("."))
+        except FileNotFoundError as exc:
+            pytest.skip(f"legal tenant not built: {exc}")
+        except Exception as exc:  # pragma: no cover - environment-dependent
+            pytest.skip(f"ArangoDB not reachable: {exc}")
+
+        assert storage_dir is None
+        assert isinstance(store, OntologyLegalWikiStore)
+
+        rows = await store.search_fts("convenios", limit=5)
+        assert isinstance(rows, list)
+
+        with pytest.raises(NotImplementedError):
+            await store.upsert_pages([])

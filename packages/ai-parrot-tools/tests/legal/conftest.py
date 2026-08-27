@@ -13,6 +13,8 @@ No live ArangoDB and no network access anywhere in this suite:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,14 @@ from parrot.knowledge.ontology.graph_store import UpsertResult
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
+from parrot_tools.legal.boe.hashing import seal_hash
+from parrot_tools.legal.boe.parser import parse_consolidated
+from parrot_tools.legal.librarian.models import (
+    DraftAnswer,
+    DraftReadingNote,
+    DraftSpan,
+    PayloadEntry,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 BOE_FIXTURE_PATH = FIXTURE_DIR / "boe_consolidated_sample.xml"
@@ -232,3 +242,160 @@ class FakeGraphStore:
 @pytest.fixture
 def fake_store() -> FakeGraphStore:
     return FakeGraphStore()
+
+
+# ---------------------------------------------------------------------------
+# TASK-2499: end-to-end librarian fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def seeded_store(boe_corpus: str, legal_tenant_ctx: TenantContext) -> FakeGraphStore:
+    """A ``FakeGraphStore`` seeded by parsing the TASK-2372 fixture.
+
+    Runs ``parse_consolidated`` (TASK-2492 sealed-hash path) over the
+    checked-in BOE fixture and upserts the resulting norma/articulo
+    records — every non-``supresion`` version carries a verifiable
+    ``content_hash``, exactly like a real re-ingest.
+    """
+    parsed = parse_consolidated(boe_corpus)
+    store = FakeGraphStore()
+    if parsed.norma:
+        await store.upsert_nodes(legal_tenant_ctx, "norma", [parsed.norma], key_field="boe_id")
+    if parsed.articulos:
+        await store.upsert_nodes(
+            legal_tenant_ctx, "articulo", parsed.articulos, key_field="articulo_key"
+        )
+    return store
+
+
+@pytest.fixture
+def tampered_payload_entry() -> PayloadEntry:
+    """A ``PayloadEntry`` whose text was mutated AFTER its hash was sealed.
+
+    Simulates store tampering/drift since ingest — ``content_hash`` still
+    carries the ORIGINAL text's sealed hash, but ``payload`` holds
+    different text, so ``seal_hash(payload) != content_hash``
+    (``SpanVerifier``'s defence-in-depth check, TASK-2495).
+    """
+    original_text = "El plazo sera de tres meses."
+    sealed_hash = seal_hash(original_text)
+    tampered_text = "El plazo sera de VEINTE meses."
+    return PayloadEntry(
+        payload_key="BOE-A-2015-10566:50:0",
+        payload=tampered_text,
+        content_hash=sealed_hash,
+        title="Ley 40/2015 art. 50",
+        url="https://www.boe.es/buscar/act.php?id=BOE-A-2015-10566",
+        as_of=date(2019, 6, 1),
+        version_n=0,
+        articulo_key="BOE-A-2015-10566:50",
+        basis="retrieval",
+    )
+
+
+class _CannedAgent:
+    """Stands in for ``LegalLibrarianAgent`` — returns a fixed ``DraftAnswer``.
+
+    ``ask`` raises if called: every e2e test query states its ``as_of``
+    explicitly (e.g. "... a 2019-06-01") so ``extract_as_of`` never needs
+    the LLM fallback — a call here would mean a test query regressed.
+    """
+
+    def __init__(self, draft: DraftAnswer) -> None:
+        self._draft = draft
+
+    async def draft(self, enumerated_dossier: str, query: str, as_of: date) -> DraftAnswer:
+        return self._draft
+
+    async def ask(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("as_of fallback must not be needed in deterministic e2e tests")
+
+
+@dataclass
+class CannedDrafts:
+    """Four canned librarian agents for the fail-closed invariant e2e tests."""
+
+    anchored: _CannedAgent
+    fabricated: _CannedAgent
+    mangled: _CannedAgent
+    empty: _CannedAgent
+
+
+# The real, in-force (as of 2019-06-01) wording of BOE-A-2015-10566:50
+# version 0 (see boe_consolidated_sample.xml) — quoted VERBATIM so the
+# "anchored" canned draft cites a real fixture substring.
+ANCHORED_QUOTE = (
+    "será necesario que el convenio se acompañe de una memoria "
+    "justificativa donde se analice su necesidad y oportunidad"
+)
+
+
+@pytest.fixture
+def canned_drafts() -> CannedDrafts:
+    """Canned ``DraftAnswer``s exercising the fail-closed invariant end-to-end."""
+    anchored = DraftAnswer(
+        reading_order=["BOE-A-2015-10566:50:0"],
+        conflicts=[],
+        not_found=[],
+        reading_guide=[
+            DraftReadingNote(
+                text="El convenio debe acompañarse de una memoria justificativa.",
+                basis="llm",
+                spans=[
+                    DraftSpan(payload_key="BOE-A-2015-10566:50:0", quote=ANCHORED_QUOTE)
+                ],
+            )
+        ],
+    )
+    fabricated = DraftAnswer(
+        reading_order=["BOE-A-9999-1:art99:0"],
+        conflicts=[],
+        not_found=[],
+        reading_guide=[
+            DraftReadingNote(
+                text="Dice algo inventado.",
+                basis="llm",
+                spans=[DraftSpan(payload_key="BOE-A-9999-1:art99:0", quote="inventado")],
+            )
+        ],
+    )
+    mangled = DraftAnswer(
+        reading_order=["BOE-A-2015-10566:50:0"],
+        conflicts=[],
+        not_found=[],
+        reading_guide=[
+            DraftReadingNote(
+                text="Texto distinto al original.",
+                basis="llm",
+                spans=[
+                    DraftSpan(
+                        payload_key="BOE-A-2015-10566:50:0",
+                        quote="texto que no existe en absoluto en el payload",
+                    )
+                ],
+            )
+        ],
+    )
+    empty = DraftAnswer(reading_order=[], conflicts=[], reading_guide=[], not_found=[])
+    return CannedDrafts(
+        anchored=_CannedAgent(anchored),
+        fabricated=_CannedAgent(fabricated),
+        mangled=_CannedAgent(mangled),
+        empty=_CannedAgent(empty),
+    )
+
+
+class FakeLog:
+    """Records every appended ``SuppressionRecord`` — stands in for ``SuppressionLog``."""
+
+    def __init__(self) -> None:
+        self.records: list[Any] = []
+
+    async def append(self, record: Any) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture
+def fake_log() -> FakeLog:
+    return FakeLog()
