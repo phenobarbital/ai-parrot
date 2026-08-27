@@ -172,6 +172,8 @@ def handoff_ctx() -> dict:
             branch_name="feat-130-fix",
             worktree_path="/tmp/feat-130-fix",
             log_excerpts=[],
+            # FEAT-466 TASK-2505: DeploymentHandoffNode now blocks on "".
+            base_branch="dev",
         ),
         "bug_brief": BugBrief(
             summary="customer sync drops the last row",
@@ -207,6 +209,18 @@ def _patch_push(monkeypatch):
     monkeypatch.setattr(
         DeploymentHandoffNode, "_create_pr",
         AsyncMock(return_value="https://github.com/x/y/pull/42"),
+    )
+    # FEAT-466 TASK-2505: these are gate-mechanism tests, not base-branch
+    # guard tests (that logic has its own dedicated coverage in
+    # test_base_branch_guard.py) — no real git plumbing here, same
+    # rationale as patching _push_branch/_create_pr above. Also sidesteps a
+    # real environment hazard: assert_base_is_clean's real
+    # asyncio.create_subprocess_exec calls, combined with this file's
+    # manually-scheduled concurrent tasks (asyncio.ensure_future) and
+    # uvloop, were observed to hang the event loop across test boundaries.
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.nodes.deployment_handoff.assert_base_is_clean",
+        AsyncMock(return_value=None),
     )
 
 

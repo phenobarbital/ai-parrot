@@ -37,7 +37,9 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.base import (
+    BaseBranchMismatch,
     DevLoopNode,
+    assert_base_is_clean,
     register_dev_loop_node,
     run_label,
     scrub_git_output,
@@ -129,9 +131,22 @@ class DeploymentHandoffNode(DevLoopNode):
         qa_report: QAReport = shared.get("qa_report")
         issue_key = research.jira_issue_key
 
-        # Bug fixes branch from main; the PR target must match.
-        if getattr(brief, "kind", "bug") == "bug":
-            object.__setattr__(self, "_base_branch", "main")
+        # FEAT-466: the base branch is READ from the deterministically
+        # resolved record (TASK-2504), never guessed from `brief.kind` —
+        # that guess is what produced PR #1250 (branch cut from `dev`, PR
+        # opened against `main`). "" means nothing resolved it; block
+        # rather than silently default to the "dev" constructor default.
+        base = (getattr(research, "base_branch", "") or "").strip()
+        if not base:
+            error = (
+                "research_output.base_branch is empty — the run's base "
+                "branch was never resolved. Refusing to guess a PR target "
+                "(FEAT-466)."
+            )
+            self.logger.error(error)
+            await self._mark_blocked(issue_key, error)
+            return {"status": "blocked", "error": error}
+        object.__setattr__(self, "_base_branch", base)
 
         # 1. Push.
         try:
@@ -142,6 +157,21 @@ class DeploymentHandoffNode(DevLoopNode):
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
             return {"status": "blocked", "error": f"push: {exc}"}
+
+        # FEAT-466: sibling-overlap guard — the backstop. Blocks before any
+        # PR is opened when the branch carries commits that already live on
+        # a sibling long-lived branch (the exact #1250 shape).
+        try:
+            await assert_base_is_clean(
+                research.branch_name,
+                self._base_branch,
+                research.worktree_path,
+                logger=self.logger,
+            )
+        except BaseBranchMismatch as exc:
+            self.logger.error("base-branch guard blocked the PR: %s", exc)
+            await self._mark_blocked(issue_key, str(exc))
+            return {"status": "blocked", "error": str(exc)}
 
         # 2. Open PR with retry-once.
         title = self._build_title(brief, research)

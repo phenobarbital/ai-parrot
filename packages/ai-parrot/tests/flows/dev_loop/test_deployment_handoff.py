@@ -30,6 +30,10 @@ def ctx() -> dict:
             branch_name="feat-130-fix",
             worktree_path="/tmp/feat-130-fix",
             log_excerpts=[],
+            # FEAT-466 TASK-2505: DeploymentHandoffNode now blocks when this
+            # is "" (nothing resolved the base) rather than silently
+            # defaulting — the fixture must carry a resolved value.
+            base_branch="dev",
         ),
         "bug_brief": BugBrief(
             summary="customer sync drops the last row",

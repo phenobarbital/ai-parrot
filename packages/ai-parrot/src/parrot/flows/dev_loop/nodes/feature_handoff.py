@@ -28,7 +28,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+import yaml
 
 from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
@@ -43,7 +46,9 @@ from parrot.flows.dev_loop.models import (
     SynthesisReport,
 )
 from parrot.flows.dev_loop.nodes.base import (
+    BaseBranchMismatch,
     DevLoopNode,
+    assert_base_is_clean,
     register_dev_loop_node,
     scrub_git_output,
     transition_issue_with_candidates,
@@ -57,6 +62,40 @@ def _slugify(text: str) -> str:
     """Lowercase, hyphen-separated fallback slug (no external deps)."""
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug or "feature"
+
+
+def _parse_flow_frontmatter(spec_path: Path) -> Optional[str]:
+    """Read the ``base_branch`` declared in a spec's YAML frontmatter.
+
+    FEAT-466 TASK-2505: local duplicate of
+    ``nodes.research._parse_flow_frontmatter`` (not a shared import —
+    ``research.py`` is not in this task's file list, and ``scripts.sdd`` is
+    not importable from this package's context; see TASK-2504's Completion
+    Note). Feature-mode always resolves ``type: feature`` (``FeatureBrief.
+    kind`` is a fixed literal), so unlike ``ResearchNode`` there is no
+    ``kind``-derived hotfix path here — the only question is which base a
+    pre-existing spec (``document_kind == "spec"``) already declares (e.g.
+    ``staging`` during a release freeze). Returns ``None`` — never raises —
+    when the file is missing, has no frontmatter, or is malformed; the
+    caller falls back to ``"dev"``.
+    """
+    try:
+        text = spec_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not text.startswith("---"):
+        return None
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return None
+    try:
+        block = yaml.safe_load(parts[1]) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(block, dict):
+        return None
+    base = block.get("base_branch")
+    return base if isinstance(base, str) and base else None
 
 
 @register_dev_loop_node("dev_loop.feature_handoff")
@@ -163,6 +202,24 @@ class FeatureHandoffNode(DevLoopNode):
         if feedback is not None and feedback.decision == "accept_with_notes":
             accept_notes = feedback.notes
 
+        # FEAT-466: source the base from the committed spec's frontmatter —
+        # the same "resolve once, record it, read the record" principle as
+        # DeploymentHandoffNode, never the hardcoded "dev" constructor
+        # default (never overridden by factories.py:244 today). "" (never
+        # actually produced by _resolve_base_branch below, which always
+        # falls back to "dev") blocks defensively for symmetry with
+        # DeploymentHandoffNode rather than silently guessing.
+        base = self._resolve_base_branch(planner)
+        if not base:
+            error = (
+                "Could not resolve a base branch for this feature run — "
+                "refusing to guess a PR target (FEAT-466)."
+            )
+            self.logger.error(error)
+            await self._mark_blocked(issue_key, error)
+            return {"status": "blocked", "error": error}
+        object.__setattr__(self, "_base_branch", base)
+
         # 1. Push.
         try:
             await self._run_git(
@@ -172,6 +229,20 @@ class FeatureHandoffNode(DevLoopNode):
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
             return {"status": "blocked", "error": f"push: {exc}"}
+
+        # FEAT-466: sibling-overlap guard — the backstop. Same shared
+        # implementation DeploymentHandoffNode calls.
+        try:
+            await assert_base_is_clean(
+                planner.branch_name,
+                self._base_branch,
+                planner.worktree_path,
+                logger=self.logger,
+            )
+        except BaseBranchMismatch as exc:
+            self.logger.error("base-branch guard blocked the PR: %s", exc)
+            await self._mark_blocked(issue_key, str(exc))
+            return {"status": "blocked", "error": str(exc)}
 
         # 2. Open draft PR with retry-once (mirrors DeploymentHandoffNode).
         title = self._build_title(planner)
@@ -255,6 +326,32 @@ class FeatureHandoffNode(DevLoopNode):
             "docs_path": docs_path,
             "wiki_page_id": wiki_page_id,
         }
+
+    # ------------------------------------------------------------------
+    # Internal — base-branch resolution (FEAT-466 TASK-2505)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_base_branch(planner: PlannerOutput) -> str:
+        """Resolve this feature run's base branch from the committed spec.
+
+        The spec on disk is authoritative — same principle as
+        ``ResearchNode._resolve_base_branch`` (TASK-2504). Feature-mode
+        always resolves ``type: feature`` (no ``kind``-derived hotfix path
+        exists here), so an unreadable/absent spec falls back to ``"dev"``
+        rather than a kind mapping — this never returns ``""``.
+
+        Args:
+            planner: The upstream planner output (for ``spec_path`` and
+                ``worktree_path``).
+
+        Returns:
+            The resolved base branch name; never ``""``.
+        """
+        spec_path = Path(planner.spec_path)
+        if not spec_path.is_absolute():
+            spec_path = Path(planner.worktree_path) / spec_path
+        return _parse_flow_frontmatter(spec_path) or "dev"
 
     # ------------------------------------------------------------------
     # Internal — git plumbing (mirrors DeploymentHandoffNode's subprocess pattern)

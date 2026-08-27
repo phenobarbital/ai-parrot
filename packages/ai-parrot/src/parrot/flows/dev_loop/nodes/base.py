@@ -17,10 +17,11 @@ Cross-node payloads (``bug_brief``, ``research_output``,
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from pydantic import Field
 
@@ -36,6 +37,13 @@ from parrot.flows.dev_loop.models import QAReport
 # clones — so a token can never surface in git CLI error output (R2).
 _GIT_URL_USERINFO_RE = re.compile(r"(https://)[^@/\s]+:[^@/\s]+@")
 
+# FEAT-466 TASK-2505: the Git Parrot Flow's long-lived branches. Deliberately
+# a LOCAL copy of scripts.sdd.sdd_meta.KNOWN_BRANCHES — NOT an import.
+# `scripts.sdd` is not importable from this package's actual install/test
+# context (verified in TASK-2504's Completion Note: it fails once the
+# interpreter's cwd is anything other than the repo root).
+_LONG_LIVED_BRANCHES: frozenset[str] = frozenset({"main", "staging", "dev"})
+
 
 def scrub_git_output(text: str) -> str:
     """Redact credentials from raw git CLI output before surfacing it.
@@ -49,6 +57,132 @@ def scrub_git_output(text: str) -> str:
     if token:
         redacted = redacted.replace(token, "***")
     return redacted
+
+
+class BaseBranchMismatch(RuntimeError):
+    """The head branch was cut from the wrong base (FEAT-466)."""
+
+
+async def _git(cwd: str, *args: str) -> Tuple[int, str, str]:
+    """Run a git subcommand, returning ``(returncode, stdout, stderr)``.
+
+    Mirrors the subprocess idiom used by ``DeploymentHandoffNode._push_branch``
+    — ``asyncio.create_subprocess_exec``, never a blocking call.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "git", "-C", cwd, *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    return (
+        proc.returncode,
+        out.decode(errors="replace").strip(),
+        err.decode(errors="replace").strip(),
+    )
+
+
+async def assert_base_is_clean(
+    branch: str,
+    base: str,
+    cwd: str,
+    *,
+    siblings: Optional[Iterable[str]] = None,
+    logger: Any = None,
+) -> None:
+    """Raise when ``branch`` carries commits belonging to a sibling branch.
+
+    FEAT-466: the backstop for any path that still drifts. An ancestry check
+    is deliberately NOT the test. Measured on the FEAT-466 incident (PR
+    #1250): ``git merge-base --is-ancestor <old main> <feat-465 tip>``
+    returns true, because ``main`` was an ancestor of ``dev`` — so a branch
+    cut from ``dev`` still descends from ``origin/main``. The discriminating
+    signal is commit *membership*:
+
+        adds = git rev-list --count origin/<base>..<branch>
+        own  = git rev-list --count <branch> ^origin/<base> ^origin/<sib>...
+        adds != own  =>  the branch carries a sibling's history.
+
+    NOTE on the ``own`` form: this uses explicit ``^origin/<ref>`` exclusion
+    prefixes, NOT ``origin/<base>..<branch> --not origin/<sib1> --not
+    origin/<sib2> ...``. Empirically verified (real git repos, FEAT-466
+    TASK-2505) that chaining multiple ``--not`` flags after a ``..`` range
+    shorthand gives WRONG counts — each ``--not`` toggles the
+    interesting/uninteresting state for what follows rather than
+    accumulating exclusions, so two or more sibling refs chained this way
+    can silently over- or under-count. The ``^``-prefixed form does not
+    have this failure mode and was confirmed correct across the same
+    scenarios (clean branch, incident topology, cherry-pick, 2+ siblings).
+
+    Cherry-picked commits have distinct SHAs and therefore do not count as
+    sibling commits, so a legitimately back-ported hotfix is not flagged.
+
+    Args:
+        branch: Local head branch name.
+        base: Resolved base branch (no ``origin/`` prefix).
+        cwd: Repository or worktree directory to run git in.
+        siblings: Long-lived branches to treat as foreign. Defaults to
+            ``_LONG_LIVED_BRANCHES`` minus ``base``, filtered to refs that
+            exist on the remote.
+        logger: Optional logger for the INFO/measurement trail.
+
+    Raises:
+        BaseBranchMismatch: When the branch carries sibling commits.
+        RuntimeError: When a git command fails outright.
+    """
+    candidates = [
+        s for s in (siblings if siblings is not None else _LONG_LIVED_BRANCHES)
+        if s != base
+    ]
+
+    # Fetch base + candidates, and keep only refs that actually exist —
+    # `staging` may not exist on the remote, and passing a missing ref as an
+    # exclusion bound fails the entire command.
+    await _git(cwd, "fetch", "origin", base)
+    existing: List[str] = []
+    for sib in sorted(candidates):
+        rc, _, _ = await _git(cwd, "fetch", "origin", sib)
+        if rc != 0:
+            continue
+        rc, _, _ = await _git(cwd, "rev-parse", "--verify", f"origin/{sib}")
+        if rc == 0:
+            existing.append(sib)
+
+    if not existing:
+        if logger:
+            logger.info(
+                "No sibling branches to check against base %r; guard passes.",
+                base,
+            )
+        return
+
+    rng = f"origin/{base}..{branch}"
+    rc, adds_out, err = await _git(cwd, "rev-list", "--count", rng)
+    if rc != 0:
+        raise RuntimeError(f"git rev-list failed: {scrub_git_output(err)}")
+
+    # Explicit ^-prefixed exclusions — NOT `rng --not origin/<sib1> --not
+    # origin/<sib2>`. See the docstring NOTE: chained --not flags proved
+    # order-sensitive and gave wrong counts with 2+ siblings.
+    exclude_args = [f"^origin/{base}"] + [f"^origin/{sib}" for sib in existing]
+    rc, own_out, err = await _git(cwd, "rev-list", "--count", branch, *exclude_args)
+    if rc != 0:
+        raise RuntimeError(f"git rev-list failed: {scrub_git_output(err)}")
+
+    adds, own = int(adds_out or 0), int(own_out or 0)
+    if logger:
+        logger.info(
+            "Base check for %s onto %s: adds=%d own=%d siblings=%s",
+            branch, base, adds, own, existing,
+        )
+    if adds != own:
+        raise BaseBranchMismatch(
+            f"branch {branch!r} would add {adds} commit(s) to {base!r} but "
+            f"only {own} are its own work — the remaining {adds - own} "
+            f"already exist on {existing}. The branch was almost certainly "
+            f"cut from the wrong base. Re-cut it from origin/{base} and "
+            "re-run."
+        )
 
 
 async def transition_issue_with_candidates(
