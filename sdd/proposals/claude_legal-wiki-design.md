@@ -182,7 +182,7 @@ class CendojDocument(BaseModel):
 | `tribunal` | slug | name, level, jurisdiction |
 | `concepto` | namespaced `concept_id` (FEAT-200 convention) | label, aliases[], materia_refs[] |
 | `materia` | slug | label, parent |
-| `chunk` | `{parent_key}:{version_n}:{n}` | text, embedding ref, parent_ref, version_n, valid_from, valid_to, offset, content_hash — chunks are per article version so vector retrieval can filter by `as_of`; `offset` + parent `content_hash` make every chunk a resolvable span into its parent payload (rev. 2026-08-27) |
+| `chunk` | `{parent_key}:{version_n}:{n}` | ~~text, embedding ref …~~ **DROPPED for the norms corpus (R14, 2026-08-27)** — with graph-only retrieval there is no embedding to chunk for; spans (`SpanRef`, §5.1) index **directly into the normalized version payload** on `articulo.versions[]`. Revisit only if a future corpus (case-law full texts) needs sub-document retrieval units |
 
 ### 3.3 Edge collections
 | Edge | From → To | Attributes |
@@ -246,15 +246,15 @@ versions[n] = {
 
 ### 4.1 Router (deterministic-first, per FEAT-200)
 1. Concept vocabulary match (L0 aliases) → `Materia` candidates and `concept_id`s.
-2. Embedding fallback (`Qwen3-Embedding-0.6B` `[assumed]` per existing recommendation) only when vocabulary match is empty/ambiguous.
+2. ~~Embedding fallback (`Qwen3-Embedding-0.6B`)~~ **REJECTED (R14, 2026-08-27)** — no semantic vector search anywhere in this system. When vocabulary match is empty/ambiguous, fall back to lexical FTS inside the graph (ArangoSearch, if available in the stack) and, failing that, an honest "no encontré" — never an embedding lookup.
 3. Output: `RoutingDecision { materias[], concept_ids[], graphs[], verifiers[], as_of: date | None }`. `as_of` is extracted from the query (date of facts) or defaults to today and is **stated back to the user**.
 
 ### 4.2 Retrieval DAG (AgentCrew, `ToolNode`s before any agent)
 ```
 query
   → ToolNode route            (RoutingDecision)
-  → ToolNode graph_retrieve   (L1 articles in force as_of + L2 sentencias via traversals)
-  → ToolNode vector_retrieve  (chunks, filtered by materia + as_of)
+  → ToolNode graph_retrieve   (L1 articles in force as_of + L2 sentencias via traversals,
+                               concept/materia edges, lexical FTS assist — graph-only; R14)
   → ToolNode verify           (cendoj_verify on every ES sentencia lacking verified=True; budget-capped)
   → ToolNode merge            (source precedence + dedupe by id)
   → LegalLibrarianAgent       (structured_output=LegalAnswer, read-only toolkits; §5.2)
@@ -313,8 +313,8 @@ Existence verification requires `content_hash` sealed at ingest. **Retrofit deci
 `ArticleVersion` (Sprint 1, `parrot_tools/legal/boe/models.py`) gains a `content_hash`
 field (sha256 over the normalized version text) and the BOE corpus is **re-ingested**
 via `sync_boe()` — the corpus is fully reproducible from source, so re-ingest beats
-hash-on-read backfill (single origin of truth for hashes). Chunks carry the parent
-version's hash + their offsets (§3.2). The normalization applied before hashing is
+hash-on-read backfill (single origin of truth for hashes). Spans index directly into
+the normalized version payload — no chunk layer (R14). The normalization applied before hashing is
 frozen (OQ7 closed): Unicode NFC + newline normalization only, sealed with
 `hash_norm_version: 1` — see §6.
 
@@ -404,9 +404,9 @@ contract instead of retrofitting one.
    `sdd/specs/legal-norms-graph-boe.spec.md`, 8/8 tasks, 2026-08-23): BOE ingestion,
    `versions[]`, `article_in_force`. EUR-Lex was deferred (spike OQ4 still open).
 2. **Sprint 1.5 — Evidence retrofit.** `content_hash` sealing in the BOE pipeline
-   (`ArticleVersion` + chunks), normalization per OQ7 (closed: NFC + newlines,
-   `hash_norm_version: 1`), full re-run of `sync_boe()`. Small, blocking for
-   everything below.
+   (`ArticleVersion`; no chunk layer, R14), normalization per OQ7 (closed: NFC +
+   newlines, `hash_norm_version: 1`), full re-run of `sync_boe()`. Small, blocking
+   for everything below.
 3. **Sprint 2 — Librarian answer layer over norms only.** `SpanRef` / `LegalAnswer` /
    `ReadingNote` contracts, the deterministic span verifier, the fail-closed
    suppression gate + `AuditLedger` records, minimal router (single materia), retrieval
@@ -449,6 +449,7 @@ OQ-closure round (same day, operator decisions):
 | R11 | OQ7: hash normalization = Unicode NFC + newline normalization only, no whitespace collapse; sealed with `hash_norm_version: 1`; frozen before the Sprint 1.5 re-ingest. (§5.1, §6) |
 | R12 | OQ8: librarian output is structured-first (`structured_output=LegalAnswer`, anchors per `ReadingNote`); post-hoc alignment rejected; the pruned guide is returned as-is in v1 (dossier never affected by pruning). (§5.2, §6) |
 | R13 | OQ1's original closure formally superseded in this document by proposal decision D1 (tenant per materia; FEAT-450 namespaces above). (§6) |
+| R14 | **Graph-only retrieval — no semantic vector search anywhere.** BOE is downloaded once into the ArangoDB ontology tenant and every query is answered from the graph (concept vocabulary, typed edges, deterministic traversals, lexical FTS assist at most). Rejected, not deferred: `vector_retrieve`, per-version chunk embeddings, and the router's embedding fallback. NL retrieval over norms = L0 concept layer + `Materia` taxonomy; the BOE consolidated XML `analisis` block provides deterministic, metadata-driven materia/concept assignment — no LLM. (§3.2, §4.1, §4.2) |
 
 ## External sources
 - BOE datos abiertos / API: https://www.boe.es/datosabiertos/
