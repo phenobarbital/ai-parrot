@@ -3,23 +3,29 @@ Chatbot Manager.
 
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
+
 from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 from importlib import import_module
+from pathlib import Path
 import contextlib
 import time
 import asyncio
 import copy
 from aiohttp import web
+from pydantic import BaseModel, Field
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
+
 # Navigator:
 from navconfig.logging import logging
+
 # FEAT-153: PBAC agent-access enforcement
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
 from asyncdb.exceptions import NoDataFound
+
 # FEAT-133: reranker + parent-searcher factories
 from ..rerankers.factory import create_reranker
 from ..stores.parents.factory import create_parent_searcher
-from ..exceptions import ConfigError
+from ..exceptions import ConfigError, ParrotError
 from ..bots.abstract import AbstractBot
 from ..bots.basic import BasicBot
 from ..bots.chatbot import Chatbot
@@ -56,8 +62,10 @@ from ..handlers.dashboard_handler import (
     _ensure_dashboard_indexes,
 )
 from ..handlers.models import BotModel, UserBotModel
+
 # Per-user bot HTTP handler (PUT/PATCH/GET/DELETE)
 from ..handlers.agents.users import UserAgentHandler
+
 # FEAT-149: Ephemeral user agent handler + tool catalog
 from ..handlers.agents.ephemeral import EphemeralUserAgentHandler
 from ..handlers.tools_catalog import ToolCatalogHandler
@@ -65,6 +73,7 @@ from ..handlers.prompt import PromptTunerHandler
 from ..handlers.stream import StreamHandler
 from ..handlers.knowledge import AgentKnowledgeHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
+
 # Crew:
 from ..bots.flows.crew import AgentCrew
 from ..models.crew_definition import CrewDefinition
@@ -87,23 +96,72 @@ from ..conf import (
     ENABLE_SWAGGER,
     REDIS_URL,
 )
+
 # Credentials handler
 from ..handlers.credentials import setup_credentials_routes
+
+# Agent Studio — /api/v1/astudio/* route registration (FEAT-467)
+from ..handlers.studio import setup_studio_routes
+
 # CommCenter bulk notification sender (FEAT-417) — method-based handler,
 # mirrors ScrapingInfoHandler's instantiate-then-.setup(app) convention.
 from ..handlers.comm_center import CommCenterHandler
+
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
+
 # Thales research flow handler (FEAT-425): POST + polling + artifact listing
 from ..handlers.thales import setup_thales_routes
+# Embedded Admin UI (FEAT-468): serves the compiled Svelte 5 SPA when present
+from ..server.ui import setup_admin_ui
 # FEAT-146: Web HITL response endpoint + bootstrap
 from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
+
 # Telegram integration
 # Integrations (Telegram, MS Teams) — imported lazily inside on_startup
 # because IntegrationBotManager pulls aiogram (~1.5s); we only need it
 # when the app starts serving traffic.
 if TYPE_CHECKING:
     from parrot.integrations import IntegrationBotManager
+
+
+class AgentNotFoundError(ParrotError):
+    """Raised by :meth:`BotManager.reload_agent` for an unknown agent name.
+
+    Neither ``self.registry`` nor ``self._bots`` know this name — callers
+    (e.g. the Studio reload endpoint, FEAT-467 TASK-2512) map this to
+    HTTP 404.
+    """
+
+
+class AgentReloadError(ParrotError):
+    """Raised by :meth:`BotManager.reload_agent` when a rebuild fails.
+
+    Raised for a corrupt YAML definition, a module re-import error, an
+    invalid database-origin bot config, or an agent whose registration has
+    no reloadable origin. The previous registration and instance are left
+    untouched — callers (e.g. FEAT-467 TASK-2512) map this to HTTP 422.
+    """
+
+
+class ReloadResult(BaseModel):
+    """Outcome of :meth:`BotManager.reload_agent`.
+
+    Attributes:
+        name: The reloaded agent's registered name.
+        reloaded: Always ``True`` on return — ``reload_agent`` raises
+            (:class:`AgentNotFoundError` / :class:`AgentReloadError`)
+            rather than returning a falsy result on failure.
+        previous_instance_closed: ``True`` when the previous instance's
+            ``cleanup()``/``close()`` was found and invoked successfully.
+        warnings: Non-fatal issues encountered during the reload (e.g. the
+            previous instance's close raised).
+    """
+
+    name: str
+    reloaded: bool
+    previous_instance_closed: bool
+    warnings: List[str] = Field(default_factory=list)
 
 
 class BotManager:
@@ -113,6 +171,7 @@ class BotManager:
     Deploy and manage chatbots and agents using a RESTful API.
 
     """
+
     app: web.Application = None
 
     def __init__(
@@ -143,9 +202,7 @@ class BotManager:
         self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
         self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
         self._cleaned_up: set[str] = set()  # Idempotency guard for _safe_cleanup
-        self.logger = logging.getLogger(
-            name='Parrot.Manager'
-        )
+        self.logger = logging.getLogger(name="Parrot.Manager")
         self.registry: AgentRegistry = agent_registry
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
         # Store flags as instance attributes
@@ -181,8 +238,7 @@ class BotManager:
         if ":" not in key:
             # Handle legacy or malformed keys gracefully instead of raising ValueError
             self.logger.warning(
-                "Malformed or legacy crew key without tenant prefix: %r. "
-                "Assuming global tenant.",
+                "Malformed or legacy crew key without tenant prefix: %r. " "Assuming global tenant.",
                 key,
             )
             return self._normalize_tenant(None), key
@@ -205,9 +261,7 @@ class BotManager:
             Bot class if found, None otherwise
         """
         if not bot_name:
-            self.logger.warning(
-                "Empty bot_name provided to get_bot_class, defaulting to 'BasicAgent'"
-            )
+            self.logger.warning("Empty bot_name provided to get_bot_class, defaulting to 'BasicAgent'")
             bot_name = "BasicAgent"
 
         # First, try to import from core bots
@@ -230,9 +284,7 @@ class BotManager:
             if hasattr(module, bot_name):
                 return getattr(module, bot_name)
 
-        self.logger.warning(
-            f"Warning: Bot class '{bot_name}' not found in parrot.bots or parrot.agents"
-        )
+        self.logger.warning(f"Warning: Bot class '{bot_name}' not found in parrot.bots or parrot.agents")
         return None
 
     def _resolve_database_bot_class(self, bot_model: Any) -> Type[AbstractBot]:
@@ -252,8 +304,7 @@ class BotManager:
         bot_class = self.get_bot_class(bot_class_name)
         if bot_class is None or not callable(bot_class):
             self.logger.error(
-                "Database bot %r configured bot_class %r could not be resolved; "
-                "using default %s.",
+                "Database bot %r configured bot_class %r could not be resolved; " "using default %s.",
                 bot_name,
                 bot_class_name,
                 BasicBot.__name__,
@@ -278,8 +329,7 @@ class BotManager:
             return {}
         if permissions and "permissions" not in permissions:
             self.logger.warning(
-                "Bot %r has legacy 'permissions' JSON without canonical "
-                "'permissions' key; ignoring keys %r.",
+                "Bot %r has legacy 'permissions' JSON without canonical " "'permissions' key; ignoring keys %r.",
                 bot_name,
                 list(permissions.keys()),
             )
@@ -312,26 +362,20 @@ class BotManager:
         """Log the final state of bot loading."""
         registry_info = self.registry.get_registration_info()
         self.logger.notice("=== Bot Loading Complete ===")
-        self.logger.notice("Registered agents: %s", registry_info['total_registered'])
+        self.logger.notice("Registered agents: %s", registry_info["total_registered"])
         # self.logger.info("Startup agents: %s", startup_info['total_startup_agents'])
         self.logger.notice("Active bots: %s", len(self._bots))
 
     async def _process_startup_results(self, startup_results: Dict[str, Any]) -> None:
         """Process startup instantiation results."""
         for agent_name, result in startup_results.items():
-            self.logger.debug(
-                "Agent startup result: %s -> %s", agent_name, result
-            )
+            self.logger.debug("Agent startup result: %s -> %s", agent_name, result)
             if result["status"] == "success":
                 if instance := result.get("instance"):
                     self._bots[agent_name] = instance
-                    self.logger.info(
-                        f"Added startup agent to active bots: {agent_name}"
-                    )
+                    self.logger.info(f"Added startup agent to active bots: {agent_name}")
             else:
-                self.logger.error(
-                    f"Startup agent {agent_name} failed: {result['error']}"
-                )
+                self.logger.error(f"Startup agent {agent_name} failed: {result['error']}")
 
     async def load_bots(self, app: web.Application) -> None:
         """Load and register all bots using the registry and optional database.
@@ -352,207 +396,213 @@ class BotManager:
 
             # Step 2: Register config-based agents
             config_count = self.registry.discover_config_agents()
-            self.logger.info(
-                f"Registered {config_count} agents from config"
-            )
+            self.logger.info(f"Registered {config_count} agents from config")
 
             # Step 2b: Load YAML agent definitions from agents/agents/
             definitions_dir = self.registry.agents_dir / "agents"
             if definitions_dir.is_dir():
                 def_count = self.registry.load_agent_definitions(definitions_dir)
-                self.logger.info(
-                    f"Loaded {def_count} agents from YAML definitions"
-                )
+                self.logger.info(f"Loaded {def_count} agents from YAML definitions")
 
             # Step 3: Instantiate startup agents
             startup_results = await self.registry.instantiate_startup_agents(app)
             await self._process_startup_results(startup_results)
         else:
-            self.logger.info(
-                "AgentRegistry loading skipped (enable_registry_bots=False)"
-            )
+            self.logger.info("AgentRegistry loading skipped (enable_registry_bots=False)")
 
         # Step 4: Load database bots
         if self.enable_database_bots:
             await self._load_database_bots(app)
         else:
-            self.logger.debug(
-                "Database bot loading skipped (enable_database_bots=False)"
-            )
+            self.logger.debug("Database bot loading skipped (enable_database_bots=False)")
 
         # Step 5: Report final state
         self._log_final_state()
 
+    async def _build_database_bot(self, bot_model: Any, app: web.Application) -> AbstractBot:
+        """Construct, configure, and finalize a single database-origin bot.
+
+        Extracted from ``_load_database_bots`` (FEAT-467 TASK-2510) so the
+        startup loader and :meth:`reload_agent` share one construction
+        path — a DB-origin agent rebuild is guaranteed byte-for-byte
+        identical to how the agent was first loaded at startup. Does NOT
+        call :meth:`add_bot` — the caller decides when (or if) to install
+        the returned instance into ``self._bots``.
+
+        Args:
+            bot_model: A loaded ``BotModel`` row (``navigator.ai_bots``).
+            app: The aiohttp Application — used for ``configure(app)`` and
+                for reranker/parent-searcher construction.
+
+        Returns:
+            A fully constructed, configured ``AbstractBot`` instance.
+
+        Raises:
+            ConfigError: Invalid ``reranker_config`` / ``parent_searcher_config``.
+            ValidationError: Bot constructor validation failure.
+            ValueError: Malformed ``permissions`` JSON (see
+                :meth:`AgentRegistry.register_db_bot_policies`).
+            Exception: Any other construction/configure failure.
+        """
+        # Use the factory function from models.py or create bot directly
+        class_name = self._resolve_database_bot_class(bot_model)
+        bot_permissions = self._normalize_database_bot_permissions(bot_model)
+
+        # FEAT-133 Step 1: Build reranker BEFORE bot construction.
+        # Reranker has no dependency on the store — can be resolved now.
+        try:
+            reranker = create_reranker(
+                bot_model.reranker_config,
+                bot_llm_client=None,  # patched post-construction if type=llm
+            )
+        except ConfigError as exc:
+            self.logger.error(
+                "Bot '%s': invalid reranker_config: %s",
+                bot_model.name,
+                exc,
+            )
+            raise
+
+        # Prompt preset: optional, declared in ai_bots.prompt_config.
+        # Mutations (remove/add/customize) are applied post-init,
+        # before configure(), to mirror the YAML registry flow.
+        prompt_config_dict = bot_model.prompt_config or {}
+        has_prompt_mutations = any(prompt_config_dict.get(key) for key in ("remove", "add", "customize"))
+        prompt_preset_name = prompt_config_dict.get("preset") or ("default" if has_prompt_mutations else None)
+
+        bot_instance = class_name(
+            chatbot_id=bot_model.chatbot_id,
+            name=bot_model.name,
+            description=bot_model.description,
+            prompt_preset=prompt_preset_name,
+            # LLM configuration: ``model_config`` (JSONB) is the
+            # canonical source for model/temperature/max_tokens/
+            # top_k/top_p. AbstractBot resolves them from there.
+            use_llm=bot_model.llm,
+            model_config=bot_model.model_config,
+            # Bot personality
+            role=bot_model.role,
+            goal=bot_model.goal,
+            backstory=bot_model.backstory,
+            rationale=bot_model.rationale,
+            capabilities=bot_model.capabilities,
+            # Prompt configuration
+            system_prompt=bot_model.system_prompt_template,
+            human_prompt=bot_model.human_prompt_template,
+            pre_instructions=bot_model.pre_instructions,
+            # Vector store configuration — embedding model is
+            # carried inside ``vector_store_config['embedding_model']``.
+            use_vectorstore=bot_model.use_vector,
+            vector_store_config=bot_model.vector_store_config,
+            context_search_limit=bot_model.context_search_limit,
+            context_score_threshold=bot_model.context_score_threshold,
+            # Tool and agent configuration
+            tools_enabled=bot_model.tools_enabled,
+            auto_tool_detection=bot_model.auto_tool_detection,
+            tool_threshold=bot_model.tool_threshold,
+            available_tools=bot_model.tools,
+            operation_mode=bot_model.operation_mode,
+            # Memory configuration
+            memory_type=bot_model.memory_type,
+            memory_config=bot_model.memory_config,
+            max_context_turns=bot_model.max_context_turns,
+            use_conversation_history=bot_model.use_conversation_history,
+            # Security and permissions
+            permissions=bot_permissions,
+            # Metadata
+            language=bot_model.language,
+            disclaimer=bot_model.disclaimer,
+            # FEAT-133: reranker + expand_to_parent injected at construction.
+            # parent_searcher injected AFTER configure() (needs bot.store).
+            reranker=reranker,
+            expand_to_parent=bool(bot_model.parent_searcher_config.get("expand_to_parent", False)),
+        )
+        # Set the model ID reference
+        bot_instance.model_id = bot_model.chatbot_id
+
+        # Apply prompt-layer mutations BEFORE configure() so
+        # newly-added layers also resolve their CONFIGURE-phase
+        # variables in the same pass.
+        self._apply_prompt_config(bot_instance, prompt_config_dict)
+
+        await bot_instance.configure(app)
+
+        # FEAT-133 Step 2: Patch LLM reranker client now that
+        # bot.llm_client is available (option a from spec §3 Module 5).
+        from ..rerankers.llm import LLMReranker  # noqa: PLC0415
+
+        if isinstance(reranker, LLMReranker) and reranker.client is None:
+            reranker.client = getattr(bot_instance, "llm_client", None)
+
+        # FEAT-133 Step 3: Build parent_searcher AFTER configure()
+        # because InTableParentSearcher requires bot.store.
+        try:
+            parent_searcher = create_parent_searcher(
+                bot_model.parent_searcher_config,
+                store=bot_instance.store,
+            )
+        except ConfigError as exc:
+            self.logger.error(
+                "Bot '%s': invalid parent_searcher_config: %s",
+                bot_model.name,
+                exc,
+            )
+            raise
+
+        if parent_searcher is not None:
+            bot_instance.parent_searcher = parent_searcher
+
+        # FEAT-133: Operational visibility log.
+        self.logger.info(
+            "Bot '%s': reranker=%s, parent_searcher=%s",
+            bot_model.name,
+            type(reranker).__name__ if reranker else None,
+            type(parent_searcher).__name__ if parent_searcher else None,
+        )
+
+        # FEAT-153: Register DB-declared permissions into the evaluator
+        # BEFORE the bot is added so a concurrent get_bot cannot resolve
+        # the bot before its policies are loaded. Raises ValueError on
+        # malformed permissions JSON — propagated to the caller, which
+        # decides whether to skip (startup loader) or surface as a
+        # reload error (reload_agent).
+        n_policies = self.registry.register_db_bot_policies(
+            bot_model.name,
+            bot_permissions,
+        )
+        if n_policies:
+            self.logger.info(
+                "Bot %r: registered %d DB-declared policy rule(s).",
+                bot_model.name,
+                n_policies,
+            )
+
+        return bot_instance
+
     async def _load_database_bots(self, app: web.Application) -> None:
         """Load bots from database."""
         try:
-            # Import here to avoid circular imports
+            # Local import (not the module-level BotModel) so tests can
+            # patch `sys.modules['parrot.handlers.models']` at call time —
+            # preserved from the pre-TASK-2510 implementation.
             from ..handlers.models import BotModel  # pylint: disable=import-outside-toplevel # noqa
-            db = app['database']
+
+            db = app["database"]
             async with await db.acquire() as conn:
                 BotModel.Meta.connection = conn
                 try:
                     all_bots = await BotModel.filter(enabled=True)
                 except Exception as e:
-                    self.logger.error(
-                        f"Failed to load bots from DB: {e}"
-                    )
+                    self.logger.error(f"Failed to load bots from DB: {e}")
                     return
 
             for bot_model in all_bots:
-                self.logger.notice(
-                    f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})..."
-                )
+                self.logger.notice(f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})...")
                 if bot_model.name in self._bots:
-                    self.logger.debug(
-                        f"Bot {bot_model.name} already active, skipping"
-                    )
+                    self.logger.debug(f"Bot {bot_model.name} already active, skipping")
                     continue
                 try:
-                    # Use the factory function from models.py or create bot directly
-                    class_name = self._resolve_database_bot_class(bot_model)
-                    bot_permissions = self._normalize_database_bot_permissions(bot_model)
-
-                    # FEAT-133 Step 1: Build reranker BEFORE bot construction.
-                    # Reranker has no dependency on the store — can be resolved now.
-                    try:
-                        reranker = create_reranker(
-                            bot_model.reranker_config,
-                            bot_llm_client=None,  # patched post-construction if type=llm
-                        )
-                    except ConfigError as exc:
-                        self.logger.error(
-                            "Bot '%s': invalid reranker_config: %s",
-                            bot_model.name,
-                            exc,
-                        )
-                        raise
-
-                    # Prompt preset: optional, declared in ai_bots.prompt_config.
-                    # Mutations (remove/add/customize) are applied post-init,
-                    # before configure(), to mirror the YAML registry flow.
-                    prompt_config_dict = bot_model.prompt_config or {}
-                    has_prompt_mutations = any(
-                        prompt_config_dict.get(key)
-                        for key in ("remove", "add", "customize")
-                    )
-                    prompt_preset_name = (
-                        prompt_config_dict.get("preset")
-                        or ("default" if has_prompt_mutations else None)
-                    )
-
-                    bot_instance = class_name(
-                        chatbot_id=bot_model.chatbot_id,
-                        name=bot_model.name,
-                        description=bot_model.description,
-                        prompt_preset=prompt_preset_name,
-                        # LLM configuration: ``model_config`` (JSONB) is the
-                        # canonical source for model/temperature/max_tokens/
-                        # top_k/top_p. AbstractBot resolves them from there.
-                        use_llm=bot_model.llm,
-                        model_config=bot_model.model_config,
-                        # Bot personality
-                        role=bot_model.role,
-                        goal=bot_model.goal,
-                        backstory=bot_model.backstory,
-                        rationale=bot_model.rationale,
-                        capabilities=bot_model.capabilities,
-                        # Prompt configuration
-                        system_prompt=bot_model.system_prompt_template,
-                        human_prompt=bot_model.human_prompt_template,
-                        pre_instructions=bot_model.pre_instructions,
-                        # Vector store configuration — embedding model is
-                        # carried inside ``vector_store_config['embedding_model']``.
-                        use_vectorstore=bot_model.use_vector,
-                        vector_store_config=bot_model.vector_store_config,
-                        context_search_limit=bot_model.context_search_limit,
-                        context_score_threshold=bot_model.context_score_threshold,
-                        # Tool and agent configuration
-                        tools_enabled=bot_model.tools_enabled,
-                        auto_tool_detection=bot_model.auto_tool_detection,
-                        tool_threshold=bot_model.tool_threshold,
-                        available_tools=bot_model.tools,
-                        operation_mode=bot_model.operation_mode,
-                        # Memory configuration
-                        memory_type=bot_model.memory_type,
-                        memory_config=bot_model.memory_config,
-                        max_context_turns=bot_model.max_context_turns,
-                        use_conversation_history=bot_model.use_conversation_history,
-                        # Security and permissions
-                        permissions=bot_permissions,
-                        # Metadata
-                        language=bot_model.language,
-                        disclaimer=bot_model.disclaimer,
-                        # FEAT-133: reranker + expand_to_parent injected at construction.
-                        # parent_searcher injected AFTER configure() (needs bot.store).
-                        reranker=reranker,
-                        expand_to_parent=bool(
-                            bot_model.parent_searcher_config.get("expand_to_parent", False)
-                        ),
-                    )
-                    # Set the model ID reference
-                    bot_instance.model_id = bot_model.chatbot_id
-
-                    # Apply prompt-layer mutations BEFORE configure() so
-                    # newly-added layers also resolve their CONFIGURE-phase
-                    # variables in the same pass.
-                    self._apply_prompt_config(bot_instance, prompt_config_dict)
-
-                    await bot_instance.configure(app)
-
-                    # FEAT-133 Step 2: Patch LLM reranker client now that
-                    # bot.llm_client is available (option a from spec §3 Module 5).
-                    from ..rerankers.llm import LLMReranker  # noqa: PLC0415
-                    if isinstance(reranker, LLMReranker) and reranker.client is None:
-                        reranker.client = getattr(bot_instance, 'llm_client', None)
-
-                    # FEAT-133 Step 3: Build parent_searcher AFTER configure()
-                    # because InTableParentSearcher requires bot.store.
-                    try:
-                        parent_searcher = create_parent_searcher(
-                            bot_model.parent_searcher_config,
-                            store=bot_instance.store,
-                        )
-                    except ConfigError as exc:
-                        self.logger.error(
-                            "Bot '%s': invalid parent_searcher_config: %s",
-                            bot_model.name,
-                            exc,
-                        )
-                        raise
-
-                    if parent_searcher is not None:
-                        bot_instance.parent_searcher = parent_searcher
-
-                    # FEAT-133: Operational visibility log.
-                    self.logger.info(
-                        "Bot '%s': reranker=%s, parent_searcher=%s",
-                        bot_model.name,
-                        type(reranker).__name__ if reranker else None,
-                        type(parent_searcher).__name__ if parent_searcher else None,
-                    )
-
-                    # FEAT-153: Register DB-declared permissions into the evaluator
-                    # BEFORE adding the bot so a concurrent get_bot cannot resolve
-                    # the bot before its policies are loaded.
-                    try:
-                        n_policies = self.registry.register_db_bot_policies(
-                            bot_model.name,
-                            bot_permissions,
-                        )
-                        if n_policies:
-                            self.logger.info(
-                                "Bot %r: registered %d DB-declared policy rule(s).",
-                                bot_model.name, n_policies,
-                            )
-                    except ValueError as exc:
-                        self.logger.warning(
-                            "Bot %r has malformed 'permissions' JSON: %s. "
-                            "Skipping this bot.",
-                            bot_model.name, exc,
-                        )
-                        continue  # skip — do NOT add to self._bots
-
+                    bot_instance = await self._build_database_bot(bot_model, app)
                     self.add_bot(bot_instance)
                     self.logger.info(
                         f"Successfully loaded bot '{bot_model.name}' "
@@ -563,9 +613,14 @@ class BotManager:
                     # NOT silently registered without its configured features.
                     raise
                 except ValidationError as e:
-                    self.logger.error(
-                        f"Invalid configuration for bot '{bot_model.name}': {e}"
+                    self.logger.error(f"Invalid configuration for bot '{bot_model.name}': {e}")
+                except ValueError as exc:
+                    self.logger.warning(
+                        "Bot %r has malformed 'permissions' JSON: %s. " "Skipping this bot.",
+                        bot_model.name,
+                        exc,
                     )
+                    continue  # skip — do NOT add to self._bots
                 except Exception as e:
                     self.logger.error(
                         "Failed to load database bot %s: %s",
@@ -573,13 +628,9 @@ class BotManager:
                         e,
                         exc_info=True,
                     )
-            self.logger.info(
-                f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
-            )
+            self.logger.info(f":: Bots loaded successfully. Total active bots: {len(self._bots)}")
         except Exception as e:
-            self.logger.error(
-                f"Database bot loading failed: {str(e)}"
-            )
+            self.logger.error(f"Database bot loading failed: {str(e)}")
 
     @staticmethod
     def _apply_prompt_config(bot: AbstractBot, prompt_config: dict) -> None:
@@ -602,12 +653,10 @@ class BotManager:
         if not prompt_config:
             return
         builder = getattr(bot, "_prompt_builder", None)
-        has_prompt_mutations = any(
-            prompt_config.get(key)
-            for key in ("remove", "add", "customize")
-        )
+        has_prompt_mutations = any(prompt_config.get(key) for key in ("remove", "add", "customize"))
         if builder is None and has_prompt_mutations:
             from ..bots.prompts.presets import get_preset
+
             builder = get_preset(prompt_config.get("preset") or "default")
             bot._prompt_builder = builder
         if builder is None:
@@ -624,11 +673,7 @@ class BotManager:
                 builder.add(get_domain_layer(item))
             elif isinstance(item, dict):
                 phase_str = item.get("phase", "configure")
-                phase = (
-                    RenderPhase.CONFIGURE
-                    if phase_str == "configure"
-                    else RenderPhase.REQUEST
-                )
+                phase = RenderPhase.CONFIGURE if phase_str == "configure" else RenderPhase.REQUEST
                 builder.add(
                     PromptLayer(
                         name=item["name"],
@@ -669,12 +714,7 @@ class BotManager:
         self._botdef[bot.name] = bot.__class__
 
     async def get_bot(
-        self,
-        name: str,
-        new: bool = False,
-        session_id: str = "",
-        request: Optional[web.Request] = None,
-        **kwargs
+        self, name: str, new: bool = False, session_id: str = "", request: Optional[web.Request] = None, **kwargs
     ) -> AbstractBot:
         """Get a Bot by name.
 
@@ -715,14 +755,14 @@ class BotManager:
 
             if base_bot:
                 # 1. Inherit LLM Configuration if not explicitly provided
-                if 'use_llm' not in bot_kwargs and hasattr(base_bot, '_llm_raw'):
-                    bot_kwargs['use_llm'] = base_bot._llm_raw
+                if "use_llm" not in bot_kwargs and hasattr(base_bot, "_llm_raw"):
+                    bot_kwargs["use_llm"] = base_bot._llm_raw
 
-                if 'model' not in bot_kwargs and hasattr(base_bot, '_llm_model'):
-                    bot_kwargs['model'] = base_bot._llm_model
+                if "model" not in bot_kwargs and hasattr(base_bot, "_llm_model"):
+                    bot_kwargs["model"] = base_bot._llm_model
 
                 # 2. Clone Tools
-                if 'tools' not in bot_kwargs and hasattr(base_bot, 'tool_manager'):
+                if "tools" not in bot_kwargs and hasattr(base_bot, "tool_manager"):
                     try:
                         # Deep copy tools to ensure isolation
                         base_tools = base_bot.tool_manager.get_all_tools()
@@ -733,26 +773,24 @@ class BotManager:
                                 new_tool = copy.deepcopy(tool)
                                 new_tools.append(new_tool)
                             except Exception as e:
-                                self.logger.warning(
-                                    f"Failed to copy tool {tool.name}, sharing instance. Error: {e}"
-                                )
+                                self.logger.warning(f"Failed to copy tool {tool.name}, sharing instance. Error: {e}")
                                 # Fallback to shared instance
                                 new_tools.append(tool)
-                        bot_kwargs['tools'] = new_tools
+                        bot_kwargs["tools"] = new_tools
                     except Exception as e:
                         self.logger.error("Error cloning tools from %s: %s", name, e)
 
                 # 3. Clone Vector Store Configuration
-                if 'vector_store_config' not in bot_kwargs and hasattr(base_bot, '_vector_store'):
+                if "vector_store_config" not in bot_kwargs and hasattr(base_bot, "_vector_store"):
                     try:
                         if base_bot._vector_store:
-                            bot_kwargs['vector_store_config'] = copy.deepcopy(base_bot._vector_store)
+                            bot_kwargs["vector_store_config"] = copy.deepcopy(base_bot._vector_store)
                     except Exception as e:
                         self.logger.warning("Failed to copy vector store config: %s", e)
-                        bot_kwargs['vector_store_config'] = base_bot._vector_store
+                        bot_kwargs["vector_store_config"] = base_bot._vector_store
 
-                if 'use_vectorstore' not in bot_kwargs and hasattr(base_bot, '_use_vector'):
-                    bot_kwargs['use_vectorstore'] = getattr(base_bot, '_use_vector', False)
+                if "use_vectorstore" not in bot_kwargs and hasattr(base_bot, "_use_vector"):
+                    bot_kwargs["use_vectorstore"] = getattr(base_bot, "_use_vector", False)
 
             # Create new instance with merged configuration
             bot = cls(name=new_name, **bot_kwargs)
@@ -766,21 +804,16 @@ class BotManager:
             # Set expiration time (1 hour from now)
             self._bot_expiration[new_name] = time.time() + 3600
 
-            self.logger.info(
-                f"Created new temporary bot instance '{new_name}' from '{name}' "
-                f"(expires in 1 hour)"
-            )
+            self.logger.info(f"Created new temporary bot instance '{new_name}' from '{name}' " f"(expires in 1 hour)")
 
             return bot
 
         # Existing behavior for getting/creating bots
         if name not in self._bots:
-            self.logger.warning(
-                f"Bot '{name}' not in _bots. Available: {list(self._bots.keys())}"
-            )
+            self.logger.warning(f"Bot '{name}' not in _bots. Available: {list(self._bots.keys())}")
         if name in self._bots:
             _bot = self._bots[name]
-            if not getattr(_bot, 'is_configured', False):
+            if not getattr(_bot, "is_configured", False):
                 self.logger.warning("Bot '%s' found in _bots and is not configured.", name)
                 await _bot.configure(self.app)
             # FEAT-153: Enforce PBAC before returning. AgentAccessDenied propagates.
@@ -793,14 +826,12 @@ class BotManager:
                 bot_instance = await self.registry.get_instance(name)
                 if bot_instance:
                     # Only configure if NOT already configured
-                    if not getattr(bot_instance, 'is_configured', False):
+                    if not getattr(bot_instance, "is_configured", False):
                         self.logger.info("Configuring bot %s on demand.", name)
                         await bot_instance.configure(self.app)
                     self.add_bot(bot_instance)
             except Exception as e:
-                self.logger.error(
-                    f"Failed to get bot instance from registry: {e}"
-                )
+                self.logger.error(f"Failed to get bot instance from registry: {e}")
             if bot_instance:
                 # FEAT-153: Enforce PBAC OUTSIDE the try/except above so that
                 # AgentAccessDenied is NOT swallowed as "Failed to get bot instance".
@@ -813,6 +844,201 @@ class BotManager:
         del self._bots[name]
         # Clean up expiration tracking if it exists (but keep class definition)
         self._bot_expiration.pop(name, None)
+
+    # ------------------------------------------------------------------
+    # Hot reload (FEAT-467 TASK-2510)
+    # ------------------------------------------------------------------
+
+    async def reload_agent(self, name: str) -> ReloadResult:
+        """Hot-swap a registered agent with a freshly rebuilt instance.
+
+        Rebuilds ``name`` from its origin — a YAML/definition file, a
+        decorator/module (``.py``) agent, or a database-origin bot —
+        WITHOUT touching any live state. Only after the rebuild succeeds
+        does this method evict the cached instance and swap the
+        registration, so a failed reload always leaves the previous agent
+        registered and serving (spec §7 "Reload failure must not
+        unregister").
+
+        In-flight requests against the OLD instance are unaffected — they
+        keep running against the object reference they already hold. NEW
+        calls to :meth:`get_bot` resolve the swapped-in instance
+        immediately. Working memory / conversation state is NOT migrated
+        between the old and new instance (spec §7 "Reload memory
+        contract") — this is a deliberate limitation, not a bug.
+
+        Args:
+            name: Registered agent name — known to either ``self.registry``
+                (YAML/decorator-origin) or ``self._bots`` (DB-origin).
+
+        Returns:
+            A :class:`ReloadResult` describing the outcome.
+
+        Raises:
+            AgentNotFoundError: ``name`` is not a known agent.
+            AgentReloadError: The rebuild failed — corrupt YAML, import
+                error, invalid DB config, or an agent whose registration
+                has no reloadable origin. The previous registration and
+                instance are left untouched.
+        """
+        warnings: List[str] = []
+        metadata = self.registry.get_metadata(name)
+
+        if metadata is not None:
+            new_instance = await self._rebuild_registry_agent(name, metadata)
+        elif name in self._bots:
+            new_instance = await self._rebuild_database_agent(name)
+        else:
+            raise AgentNotFoundError(f"Agent '{name}' is not registered.")
+
+        # --- Rebuild succeeded: only now do we touch live state ---
+        old_instance = self._bots.pop(name, None)
+        self._bots[name] = new_instance
+        self._botdef[name] = type(new_instance)
+
+        closed = False
+        if old_instance is not None:
+            closed = await self._safe_cleanup(name, old_instance)
+            if not closed:
+                warnings.append(
+                    f"Previous instance of '{name}' did not close cleanly "
+                    "(timed out or raised) — see logs for details."
+                )
+
+        self.logger.info(
+            "Reloaded agent '%s' (previous_instance_closed=%s, warnings=%d)",
+            name,
+            closed,
+            len(warnings),
+        )
+        return ReloadResult(
+            name=name,
+            reloaded=True,
+            previous_instance_closed=closed,
+            warnings=warnings,
+        )
+
+    async def _rebuild_registry_agent(self, name: str, metadata: Any) -> AbstractBot:
+        """Rebuild a registry-origin (YAML or module/decorator) agent.
+
+        Re-reads the on-disk source of truth and swaps the registry entry
+        BEFORE instantiating, so :meth:`AgentRegistry.get_instance` builds
+        the new instance from the freshly (re-)registered
+        :class:`~parrot.registry.registry.BotMetadata`. Detects rebuild
+        failure by comparing object identity of ``get_metadata(name)``
+        before/after the re-scan: on any parse/import error, ``registry``
+        internals log-and-skip that file WITHOUT touching
+        ``_registered_agents[name]``, so identity is unchanged and this
+        method raises :class:`AgentReloadError` without ever calling
+        :meth:`AgentRegistry.register` — the previous registration is
+        never disturbed.
+
+        Args:
+            name: Registered agent name.
+            metadata: The agent's current ``BotMetadata`` (already
+                resolved by the caller via ``registry.get_metadata``).
+
+        Returns:
+            The rebuilt, configured ``AbstractBot`` instance.
+
+        Raises:
+            AgentReloadError: Rebuild failed for any reason.
+        """
+        file_path = Path(metadata.file_path) if metadata.file_path else None
+        suffix = file_path.suffix.lower() if file_path else ""
+
+        if suffix in (".yaml", ".yml"):
+            before = metadata
+            try:
+                # Per-file (adversarial-review fix): reloading via the
+                # directory scanner re-registered fresh BotMetadata for
+                # EVERY sibling YAML in the category, not just this agent.
+                self.registry.load_agent_definition_file(file_path)
+            except Exception as exc:
+                raise AgentReloadError(f"Failed to reload YAML definition for agent '{name}': {exc}") from exc
+            after = self.registry.get_metadata(name)
+            if after is None or after is before:
+                raise AgentReloadError(
+                    f"Failed to reload agent '{name}': the YAML definition at "
+                    f"{file_path} is invalid, or no longer defines '{name}'."
+                )
+        elif suffix == ".py":
+            before = metadata
+            try:
+                self.registry._import_module_from_path(
+                    file_path,
+                    base_dir=self.registry.agents_dir,
+                )
+            except Exception as exc:
+                raise AgentReloadError(
+                    f"Failed to re-import module agent '{name}' from " f"{file_path}: {exc}"
+                ) from exc
+            after = self.registry.get_metadata(name)
+            if after is None or after is before:
+                raise AgentReloadError(
+                    f"Re-importing {file_path} did not re-register agent "
+                    f"'{name}' — its decorator likely does not pass "
+                    "replace=True, so it cannot be hot-reloaded."
+                )
+        else:
+            # Programmatically-registered agent (plain register()/
+            # register_instance() call, no on-disk definition) — there is
+            # nothing to re-read from, so reload cannot rebuild it safely.
+            raise AgentReloadError(
+                f"Agent '{name}' has no reloadable origin "
+                f"(file_path={file_path!r}); only YAML-definition and "
+                "module (.py) agents can be hot-reloaded."
+            )
+
+        try:
+            new_instance = await self.registry.get_instance(name)
+        except Exception as exc:
+            raise AgentReloadError(f"Rebuilt definition for agent '{name}' failed to " f"instantiate: {exc}") from exc
+        if new_instance is None:
+            raise AgentReloadError(f"Rebuilt agent '{name}' produced no instance.")
+        if not getattr(new_instance, "is_configured", False):
+            await new_instance.configure(self.app)
+        return new_instance
+
+    async def _rebuild_database_agent(self, name: str) -> AbstractBot:
+        """Rebuild a database-origin bot from a freshly-read ``BotModel`` row.
+
+        Reuses :meth:`_build_database_bot` — the exact construction path
+        the startup loader (``_load_database_bots``) uses — so a DB-origin
+        reload is byte-for-byte identical to the agent's first load.
+
+        Args:
+            name: Registered agent name (present in ``self._bots`` but not
+                in ``self.registry``).
+
+        Returns:
+            The rebuilt, configured ``AbstractBot`` instance.
+
+        Raises:
+            AgentReloadError: No database is wired on this manager, the
+                agent no longer exists in the database, or the rebuild
+                failed (invalid config, malformed permissions, etc.).
+        """
+        if self.app is None or "database" not in self.app:
+            raise AgentReloadError(
+                f"Cannot reload database-origin agent '{name}': no database "
+                "connection is available on this BotManager."
+            )
+
+        db = self.app["database"]
+        async with await db.acquire() as conn:
+            BotModel.Meta.connection = conn
+            try:
+                bot_model = await BotModel.get(name=name)
+            except NoDataFound as exc:
+                raise AgentNotFoundError(f"Agent '{name}' is not registered.") from exc
+
+        try:
+            return await self._build_database_bot(bot_model, self.app)
+        except AgentReloadError:
+            raise
+        except Exception as exc:
+            raise AgentReloadError(f"Failed to rebuild database agent '{name}': {exc}") from exc
 
     # ------------------------------------------------------------------
     # User-defined bots (per-user, session-cached)
@@ -830,9 +1056,7 @@ class BotManager:
         async with await db.acquire() as conn:
             UserBotModel.Meta.connection = conn
             try:
-                return await UserBotModel.get(
-                    user_id=user_id, chatbot_id=chatbot_id
-                )
+                return await UserBotModel.get(user_id=user_id, chatbot_id=chatbot_id)
             except NoDataFound:
                 return None
 
@@ -943,6 +1167,7 @@ class BotManager:
             return self.__ephemeral_registry  # type: ignore[attr-defined]
         except AttributeError:
             from ..manager.ephemeral import EphemeralRegistry  # noqa: PLC0415
+
             self.__ephemeral_registry = EphemeralRegistry()
             return self.__ephemeral_registry
 
@@ -996,9 +1221,7 @@ class BotManager:
             owner_id = str(user_id)
             owner_kind = "user"
         elif owner_id is None:
-            raise ValueError(
-                "create_ephemeral_user_bot: either 'user_id' or 'owner_id' is required."
-            )
+            raise ValueError("create_ephemeral_user_bot: either 'user_id' or 'owner_id' is required.")
 
         config = config or {}
         uploaded_paths = uploaded_paths or []
@@ -1017,9 +1240,11 @@ class BotManager:
         # Build UserBotModel in memory — no DB write.
         chatbot_id = _uuid.uuid4()
         try:
-            plain = {k: v for k, v in config.items()
-                     if k not in ("mcp_config", "tools_config",
-                                  "mcp_config_plain", "tools_config_plain")}
+            plain = {
+                k: v
+                for k, v in config.items()
+                if k not in ("mcp_config", "tools_config", "mcp_config_plain", "tools_config_plain")
+            }
             model = UserBotModel(
                 chatbot_id=chatbot_id,
                 user_id=model_user_id,
@@ -1034,9 +1259,10 @@ class BotManager:
                 model.set_tools_config(tools_cfg)
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
-                "create_ephemeral_user_bot: failed to build UserBotModel "
-                "for owner %s: %s",
-                owner_id, exc, exc_info=True,
+                "create_ephemeral_user_bot: failed to build UserBotModel " "for owner %s: %s",
+                owner_id,
+                exc,
+                exc_info=True,
             )
             raise ValueError(f"Invalid ephemeral bot configuration: {exc}") from exc
 
@@ -1050,9 +1276,10 @@ class BotManager:
                 self._apply_prompt_config(bot, prompt_config_dict)
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
-                "create_ephemeral_user_bot: failed to instantiate bot for "
-                "owner %s: %s",
-                owner_id, exc, exc_info=True,
+                "create_ephemeral_user_bot: failed to instantiate bot for " "owner %s: %s",
+                owner_id,
+                exc,
+                exc_info=True,
             )
             raise ValueError(f"Could not instantiate ephemeral bot: {exc}") from exc
 
@@ -1062,6 +1289,7 @@ class BotManager:
         # Create EphemeralAgentStatus with rag_mode derived from vector_config.
         # FIX-13: replace deprecated datetime.utcnow()
         from datetime import timezone as _tz  # noqa: PLC0415
+
         now = datetime.now(_tz.utc).replace(tzinfo=None)
         rag_mode = None
         vector_config = config.get("vector_config") or {}
@@ -1082,10 +1310,14 @@ class BotManager:
         # Fire-and-forget warm-up (completes async in background).
         if self.app is not None:
             # FIX-12: pass remove_bot_callback so _warm_up can clean up on failure
-            asyncio.create_task(_warm_up(
-                bot, status, self.app,
-                remove_bot_callback=lambda cid: self._bots.pop(cid, None),
-            ))
+            asyncio.create_task(
+                _warm_up(
+                    bot,
+                    status,
+                    self.app,
+                    remove_bot_callback=lambda cid: self._bots.pop(cid, None),
+                )
+            )
         else:
             # No app context yet (test / standalone scenario) — mark ready immediately.
             status.phase = "ready"
@@ -1122,9 +1354,7 @@ class BotManager:
             RuntimeError: If ``self.app`` is not set (no DB available).
         """
         if self.app is None:
-            raise RuntimeError(
-                "save_user_bot: BotManager has no app context (DB unavailable)."
-            )
+            raise RuntimeError("save_user_bot: BotManager has no app context (DB unavailable).")
         db = self.app["database"]
         async with await db.acquire() as conn:
             UserBotModel.Meta.connection = conn
@@ -1175,17 +1405,19 @@ class BotManager:
         # Fetch the in-memory bot instance.
         bot = self._bots.get(chatbot_id)
         if bot is None:
-            raise ValueError(
-                f"promote_user_bot: bot {chatbot_id!r} not found in active bots."
-            )
+            raise ValueError(f"promote_user_bot: bot {chatbot_id!r} not found in active bots.")
 
         # Build the UserBotModel from the bot's state for DB persistence.
         # FIX-10: dynamically derive the field set from UserBotModel.model_fields
         # rather than maintaining a hardcoded list.
         try:
             _model_fields = set(UserBotModel.model_fields.keys()) - {
-                "chatbot_id", "user_id", "created_at", "updated_at",
-                "mcp_config", "tools_config",  # handled separately below
+                "chatbot_id",
+                "user_id",
+                "created_at",
+                "updated_at",
+                "mcp_config",
+                "tools_config",  # handled separately below
             }
             field_values = {}
             for field_name in _model_fields:
@@ -1209,6 +1441,7 @@ class BotManager:
                 try:
                     from ...tools.filemanager import FileManagerToolkit  # noqa: PLC0415
                     import os as _os  # noqa: PLC0415
+
                     bucket = _os.environ.get("S3_BUCKET") or _os.environ.get("AWS_S3_BUCKET")
                     if bucket:
                         fm = FileManagerToolkit(manager_type="s3", bucket=bucket)
@@ -1221,12 +1454,11 @@ class BotManager:
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning(
                         "promote_user_bot: FAISS dump failed for %s: %s",
-                        chatbot_id, exc,
+                        chatbot_id,
+                        exc,
                     )
         except Exception as exc:  # noqa: BLE001
-            raise ValueError(
-                f"promote_user_bot: failed to build UserBotModel for {chatbot_id!r}: {exc}"
-            ) from exc
+            raise ValueError(f"promote_user_bot: failed to build UserBotModel for {chatbot_id!r}: {exc}") from exc
 
         # Persist to DB via save_user_bot.
         await self.save_user_bot(model)
@@ -1267,9 +1499,7 @@ class BotManager:
         if owner_id is None and user_id is not None:
             owner_id = str(user_id)
         elif owner_id is None:
-            raise ValueError(
-                "get_ephemeral_status: either 'user_id' or 'owner_id' is required."
-            )
+            raise ValueError("get_ephemeral_status: either 'user_id' or 'owner_id' is required.")
         return self._ephemeral_registry.get(chatbot_id, owner_id=owner_id)
 
     async def discard_ephemeral_user_bot(
@@ -1298,9 +1528,7 @@ class BotManager:
         if owner_id is None and user_id is not None:
             owner_id = str(user_id)
         elif owner_id is None:
-            raise ValueError(
-                "discard_ephemeral_user_bot: either 'user_id' or 'owner_id' is required."
-            )
+            raise ValueError("discard_ephemeral_user_bot: either 'user_id' or 'owner_id' is required.")
         status = self._ephemeral_registry.get(chatbot_id, owner_id=owner_id)
         if status is None:
             return False
@@ -1316,7 +1544,7 @@ class BotManager:
     async def save_agent(self, name: str, **kwargs) -> None:
         """Save a Agent to the DB."""
         self.logger.info("Saving Agent %s into DB ...", name)
-        db = self.app['database']
+        db = self.app["database"]
         async with await db.acquire() as conn:
             BotModel.Meta.connection = conn
             try:
@@ -1333,17 +1561,12 @@ class BotManager:
                 else:
                     self.logger.info("Bot %s not found. Creating new one.", name)
                     # Create a new Bot
-                    new_bot = BotModel(
-                        name=name,
-                        **kwargs
-                    )
+                    new_bot = BotModel(name=name, **kwargs)
                     await new_bot.insert()
                 self.logger.info("Bot %s saved into DB.", name)
                 return True
             except Exception as e:
-                self.logger.error(
-                    f"Failed to Create new Bot {name} from DB: {e}"
-                )
+                self.logger.error(f"Failed to Create new Bot {name} from DB: {e}")
                 return None
 
     def get_app(self) -> web.Application:
@@ -1365,24 +1588,22 @@ class BotManager:
         first command is issued, so the call is safe in a synchronous
         setup path.
         """
-        existing = self.app.get('redis')
+        existing = self.app.get("redis")
         if existing is not None:
             self._redis_owned = False
-            self.logger.info(
-                "BotManager: app['redis'] already set by another "
-                "component — reusing it (owned=False)."
-            )
+            self.logger.info("BotManager: app['redis'] already set by another " "component — reusing it (owned=False).")
             return
 
         import redis.asyncio as aioredis
-        self.app['redis'] = aioredis.from_url(
-            REDIS_URL, decode_responses=True,
+
+        self.app["redis"] = aioredis.from_url(
+            REDIS_URL,
+            decode_responses=True,
         )
         self._redis_owned = True
         self.app.on_cleanup.append(self._cleanup_shared_redis)
         self.logger.info(
-            "BotManager: registered shared Redis client at "
-            "app['redis'] (owned=True, url=%s).",
+            "BotManager: registered shared Redis client at " "app['redis'] (owned=True, url=%s).",
             REDIS_URL,
         )
 
@@ -1455,12 +1676,12 @@ class BotManager:
         """aiohttp cleanup hook: close the shared Redis when we own it."""
         if not self._redis_owned:
             return
-        client = app.pop('redis', None)
+        client = app.pop("redis", None)
         if client is None:
             return
-        close = getattr(client, 'aclose', None) or client.close
+        close = getattr(client, "aclose", None) or client.close
         result = close()
-        if hasattr(result, '__await__'):
+        if hasattr(result, "__await__"):
             await result
 
     def _register_voice_routes(self, router) -> bool:
@@ -1490,7 +1711,7 @@ class BotManager:
             )
             return False
         router.add_view(
-            '/api/v1/agents/voice/{agent_id}',
+            "/api/v1/agents/voice/{agent_id}",
             AgentVoiceTalk,
         )
         return True
@@ -1521,7 +1742,7 @@ class BotManager:
             )
             return False
         router.add_view(
-            '/api/v1/agents/transcribe/{agent_id}',
+            "/api/v1/agents/transcribe/{agent_id}",
             AgentTranscribeOnly,
         )
         self.logger.info("Transcribe-only route registered at /api/v1/agents/transcribe/{agent_id} (Mode B).")
@@ -1598,9 +1819,7 @@ class BotManager:
                     voice=_os.environ.get("LIVEAVATAR_VOICE") or None,
                     language=_os.environ.get("LIVEAVATAR_LANGUAGE") or None,
                 )
-                self.logger.info(
-                    "Avatar voice provider registered (Supertonic loads lazily)."
-                )
+                self.logger.info("Avatar voice provider registered (Supertonic loads lazily).")
             except ImportError as exc:  # voice-supertonic extra missing
                 self.logger.warning(
                     "Avatar voice provider unavailable (%s); the avatar will "
@@ -1663,7 +1882,8 @@ class BotManager:
             from ..handlers.openai_compat import register_openai_compat_routes
         except ImportError as exc:
             self.logger.warning(
-                "OpenAI-compat endpoints disabled (%s).", exc,
+                "OpenAI-compat endpoints disabled (%s).",
+                exc,
             )
             return False
         return register_openai_compat_routes(router)
@@ -1699,51 +1919,28 @@ class BotManager:
         # prior component already set the key, respect it.
         self._register_shared_redis()
         # Add Manager to main Application:
-        self.app['bot_manager'] = self
+        self.app["bot_manager"] = self
         # Register OAuth2 providers after startup (FEAT-144)
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
         self.app.on_startup.append(self._register_oauth2_providers)
         ## Configure Routes
         router = self.app.router
         # Chat Information Router
-        router.add_view(
-            '/api/v1/chats',
-            ChatHandler
-        )
-        router.add_view(
-            '/api/v1/chat/{chatbot_name}',
-            ChatHandler
-        )
-        router.add_view(
-            '/api/v1/chat/{chatbot_name}/{method_name}',
-            ChatHandler
-        )
+        router.add_view("/api/v1/chats", ChatHandler)
+        router.add_view("/api/v1/chat/{chatbot_name}", ChatHandler)
+        router.add_view("/api/v1/chat/{chatbot_name}/{method_name}", ChatHandler)
         # Talk with agents:
-        router.add_view(
-            '/api/v1/agents/chat/{agent_id}',
-            AgentTalk
-        )
-        router.add_view(
-            '/api/v1/agents/chat/{agent_id}/{method_name}',
-            AgentTalk
-        )
+        router.add_view("/api/v1/agents/chat/{agent_id}", AgentTalk)
+        router.add_view("/api/v1/agents/chat/{agent_id}/{method_name}", AgentTalk)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask
         # before matching them as agent IDs.
-        router.add_view(
-            '/api/v1/agents/knowledge/{agent_id}/{action}',
-            AgentKnowledgeHandler
-        )
-        router.add_view(
-            '/api/v1/agents/knowledge/{agent_id}',
-            AgentKnowledgeHandler
-        )
+        router.add_view("/api/v1/agents/knowledge/{agent_id}/{action}", AgentKnowledgeHandler)
+        router.add_view("/api/v1/agents/knowledge/{agent_id}", AgentKnowledgeHandler)
         # FEAT-146: HITL response endpoint (agent-driven human-in-the-loop)
-        router.add_view(
-            '/api/v1/agents/hitl/respond',
-            HITLResponseHandler
-        )
+        router.add_view("/api/v1/agents/hitl/respond", HITLResponseHandler)
+
         # FEAT-146: Bootstrap web HITL stack (idempotent).
         # Deferred to on_startup so that app['user_socket_manager'] is
         # guaranteed to be populated before setup_web_hitl runs.
@@ -1755,114 +1952,102 @@ class BotManager:
         self._setup_structured_output_transport()
         # OAuth2 Integrations routes (FEAT-144)
         router.add_view(
-            '/api/v1/agents/integrations/{agent_id}',
+            "/api/v1/agents/integrations/{agent_id}",
             IntegrationsHandler,
         )
         router.add_view(
-            '/api/v1/agents/integrations/{agent_id}/{provider}/connect',
+            "/api/v1/agents/integrations/{agent_id}/{provider}/connect",
             IntegrationsHandler,
         )
         router.add_view(
-            '/api/v1/agents/integrations/{agent_id}/{provider}/enable',
+            "/api/v1/agents/integrations/{agent_id}/{provider}/enable",
             IntegrationsHandler,
         )
         router.add_view(
-            '/api/v1/agents/integrations/{agent_id}/{provider}',
+            "/api/v1/agents/integrations/{agent_id}/{provider}",
             IntegrationsHandler,
         )
         # User-defined bots: PUT/PATCH/GET/DELETE
-        router.add_view(
-            '/api/v1/user_agents',
-            UserAgentHandler
-        )
-        router.add_view(
-            '/api/v1/user_agents/{chatbot_id}',
-            UserAgentHandler
-        )
+        router.add_view("/api/v1/user_agents", UserAgentHandler)
+        router.add_view("/api/v1/user_agents/{chatbot_id}", UserAgentHandler)
         # FEAT-149: Ephemeral user agents (POST/GET status/PUT promote/DELETE)
         # The status sub-route MUST be registered before the bare {chatbot_id}
         # route so aiohttp resolves /…/{id}/status correctly.
         router.add_view(
-            '/api/v1/agents/user',
+            "/api/v1/agents/user",
             EphemeralUserAgentHandler,
         )
         router.add_view(
-            '/api/v1/agents/user/{chatbot_id}/status',
+            "/api/v1/agents/user/{chatbot_id}/status",
             EphemeralUserAgentHandler,
         )
         router.add_view(
-            '/api/v1/agents/user/{chatbot_id}',
+            "/api/v1/agents/user/{chatbot_id}",
             EphemeralUserAgentHandler,
         )
         # FEAT-149: Tool catalog — read-only TOOL_REGISTRY surface
         router.add_view(
-            '/api/v1/tools/catalog',
+            "/api/v1/tools/catalog",
             ToolCatalogHandler,
         )
         # Prompt fine-tuning console (in-memory system-prompt editing).
         # Literal action sub-routes MUST precede the bare {agent_name} route so
         # aiohttp resolves /suggest, /test and /save before the catch-all.
         router.add_view(
-            '/api/v1/agents/prompt/{agent_name}/suggest',
+            "/api/v1/agents/prompt/{agent_name}/suggest",
             PromptTunerHandler,
         )
         router.add_view(
-            '/api/v1/agents/prompt/{agent_name}/test',
+            "/api/v1/agents/prompt/{agent_name}/test",
             PromptTunerHandler,
         )
         router.add_view(
-            '/api/v1/agents/prompt/{agent_name}/save',
+            "/api/v1/agents/prompt/{agent_name}/save",
             PromptTunerHandler,
         )
         router.add_view(
-            '/api/v1/agents/prompt/{agent_name}',
+            "/api/v1/agents/prompt/{agent_name}",
             PromptTunerHandler,
         )
         # Data Analyst creation route:
-        router.add_view(
-            '/api/v1/agents/analyst',
-            DataAnalystHandler
-        )
+        router.add_view("/api/v1/agents/analyst", DataAnalystHandler)
         # AgentFactory: meta-agent that drafts and registers new agents
         # from a natural-language description (RAG / tool-agent / clone).
-        router.add_view(
-            '/api/v1/agents/factory',
-            AgentFactoryHandler
-        )
+        router.add_view("/api/v1/agents/factory", AgentFactoryHandler)
         # InfographicTalk routes (FEAT-095) — literal resource routes MUST
         # come before the {agent_id} catch-all so aiohttp resolves
         # /templates and /themes before matching them as agent IDs.
         router.add_view(
-            '/api/v1/agents/infographic/{resource:templates}',
+            "/api/v1/agents/infographic/{resource:templates}",
             InfographicTalk,
         )
         router.add_view(
-            '/api/v1/agents/infographic/{resource:templates}/{template_name}',
+            "/api/v1/agents/infographic/{resource:templates}/{template_name}",
             InfographicTalk,
         )
         router.add_view(
-            '/api/v1/agents/infographic/{resource:themes}',
+            "/api/v1/agents/infographic/{resource:themes}",
             InfographicTalk,
         )
         router.add_view(
-            '/api/v1/agents/infographic/{resource:themes}/{theme_name}',
+            "/api/v1/agents/infographic/{resource:themes}/{theme_name}",
             InfographicTalk,
         )
         # Deterministic render route (FEAT-327) — bot-less, LLM-free. The
         # literal `render` resource MUST be registered before the {agent_id}
         # catch-all below, same reasoning as templates/themes above.
         router.add_view(
-            '/api/v1/agents/infographic/{resource:render}',
+            "/api/v1/agents/infographic/{resource:render}",
             InfographicTalk,
         )
         # Async render job polling (FEAT-327, Module 4) — grouped with the
         # render route above; also before {agent_id}.
         router.add_view(
-            '/api/v1/agents/infographic/{resource:render}/jobs/{job_id}',
+            "/api/v1/agents/infographic/{resource:render}/jobs/{job_id}",
             InfographicTalk,
         )
         router.add_view(
-            '/api/v1/agents/infographic/{agent_id}',
+            "/api/v1/agents/infographic/{agent_id}",
             InfographicTalk,
         )
         # AgentVoiceTalk route (FEAT-231) — voice I/O adapter around the text
@@ -1891,74 +2076,32 @@ class BotManager:
         # FULL mode routes since it depends on FULLMODE_SESSIONS_KEY.
         self._register_openai_compat_routes(router)
         # Dataset Manager for agents:
-        router.add_view(
-            '/api/v1/agents/datasets/{agent_id}',
-            DatasetManagerHandler
-        )
-        router.add_view(
-            '/api/v1/agents/datasets/{agent_id}/{dataset_id}',
-            DatasetManagerHandler
-        )
+        router.add_view("/api/v1/agents/datasets/{agent_id}", DatasetManagerHandler)
+        router.add_view("/api/v1/agents/datasets/{agent_id}/{dataset_id}", DatasetManagerHandler)
         # Infographic Recipes (FEAT-324): CRUD + on-demand replay. Unlike
         # DatasetManagerHandler, the recipe store/runner have no per-request
         # cloning path — configure them via
         # ``parrot.handlers.infographic_recipes.register_recipe_routes(app,
         # recipe_store=..., dataset_manager=...)`` at startup; until then the
         # handler returns a clear 500 ("recipe_store is not configured").
-        router.add_view(
-            '/api/v1/infographic_recipes',
-            RecipeHandler
-        )
-        router.add_view(
-            '/api/v1/infographic_recipes/{name}',
-            RecipeHandler
-        )
-        router.add_view(
-            '/api/v1/infographic_recipes/{name}/run',
-            RecipeHandler
-        )
+        router.add_view("/api/v1/infographic_recipes", RecipeHandler)
+        router.add_view("/api/v1/infographic_recipes/{name}", RecipeHandler)
+        router.add_view("/api/v1/infographic_recipes/{name}/run", RecipeHandler)
         # Database Agent metadata:
-        router.add_view(
-            '/api/v1/agents/database/roles',
-            DatabaseRolesHandler
-        )
-        router.add_view(
-            '/api/v1/agents/database/formats',
-            DatabaseFormatsHandler
-        )
-        router.add_view(
-            '/api/v1/agents/database/intents',
-            DatabaseIntentsHandler
-        )
-        router.add_view(
-            '/api/v1/agents/database/drivers',
-            DatabaseDriversHandler
-        )
-        router.add_view(
-            '/api/v1/agents/database/schemas',
-            DatabaseSchemasHandler
-        )
-        router.add_view(
-            '/api/v1/agents/database/schemas/{name}',
-            DatabaseSchemasHandler
-        )
+        router.add_view("/api/v1/agents/database/roles", DatabaseRolesHandler)
+        router.add_view("/api/v1/agents/database/formats", DatabaseFormatsHandler)
+        router.add_view("/api/v1/agents/database/intents", DatabaseIntentsHandler)
+        router.add_view("/api/v1/agents/database/drivers", DatabaseDriversHandler)
+        router.add_view("/api/v1/agents/database/schemas", DatabaseSchemasHandler)
+        router.add_view("/api/v1/agents/database/schemas/{name}", DatabaseSchemasHandler)
         # Utility endpoints
         # Print-to-PDF (FEAT-097)
-        router.add_view(
-            '/api/v1/utilities/print2pdf',
-            PrintPDFHandler
-        )
+        router.add_view("/api/v1/utilities/print2pdf", PrintPDFHandler)
         # ChatBot Manager
-        ChatbotHandler.configure(self.app, '/api/v1/bots')
+        ChatbotHandler.configure(self.app, "/api/v1/bots")
         # Bot Handler
-        router.add_view(
-            '/api/v1/chatbots',
-            BotHandler
-        )
-        router.add_view(
-            '/api/v1/chatbots/{name}',
-            BotHandler
-        )
+        router.add_view("/api/v1/chatbots", BotHandler)
+        router.add_view("/api/v1/chatbots/{name}", BotHandler)
         # Streaming Handler:
         st = StreamHandler()
         st.configure_routes(self.app)
@@ -1966,27 +2109,23 @@ class BotManager:
         # can use it as a fan-out sink for structured-output delivery.
         # Must be set HERE (before on_startup hooks run) so the subscriber's
         # _start hook finds it when it reads app['stream_handler'].
-        self.app['stream_handler'] = st
+        self.app["stream_handler"] = st
         # Crew Configuration
         if ENABLE_CREWS:
-            router.add_view('/api/v1/crew/tools', CrewToolCatalogHandler)
+            router.add_view("/api/v1/crew/tools", CrewToolCatalogHandler)
             # Must register BEFORE CrewHandler.configure — its '{id:.*}'
             # catch-all route would otherwise shadow this path.
-            router.add_view(
-                '/api/v1/crew/special_nodes', CrewSpecialNodeCatalogHandler
-            )
+            router.add_view("/api/v1/crew/special_nodes", CrewSpecialNodeCatalogHandler)
             # Execution-history API (list/detail/replay/schedule/delete).
             # Must register BEFORE CrewHandler.configure — its '{id:.*}'
             # catch-all would otherwise shadow '/api/v1/crew/executions' and
             # resolve 'executions' as a crew id.
-            CrewExecutionHistoryHandler.configure(
-                self.app, '/api/v1/crew/executions'
-            )
-            CrewHandler.configure(self.app, '/api/v1/crew')
-            CrewExecutionHandler.configure(self.app, '/api/v1/crews')
+            CrewExecutionHistoryHandler.configure(self.app, "/api/v1/crew/executions")
+            CrewHandler.configure(self.app, "/api/v1/crew")
+            CrewExecutionHandler.configure(self.app, "/api/v1/crews")
         # AgentsFlow state checkpointing ops surface (FEAT-399): list/history/
         # resume/delete over the CheckpointStore contract.
-        FlowCheckpointHandler.configure(self.app, '/api/v1/flows/checkpoints')
+        FlowCheckpointHandler.configure(self.app, "/api/v1/flows/checkpoints")
         # Graceful-shutdown hook: suspend + dump every active checkpointed
         # flow (checkpoint=True) within FLOW_CHECKPOINT_SHUTDOWN_DEADLINE.
         # AgentsFlow.run_flow() registers/unregisters itself with this
@@ -1995,52 +2134,30 @@ class BotManager:
         # in the example, never actually called by the server).
         get_recovery_service().attach_to_app(self.app)
         # Agent Config CRUD
-        router.add_view(
-            '/api/v1/agents/config',
-            BotConfigHandler
-        )
-        router.add_view(
-            '/api/v1/agents/config/{agent_name}',
-            BotConfigHandler
-        )
+        router.add_view("/api/v1/agents/config", BotConfigHandler)
+        router.add_view("/api/v1/agents/config/{agent_name}", BotConfigHandler)
         # Agent Testing (session-based)
-        router.add_view(
-            '/api/v1/agents/test/{agent_name}',
-            BotConfigTestHandler
-        )
+        router.add_view("/api/v1/agents/test/{agent_name}", BotConfigTestHandler)
         # Chat Interaction Persistence
-        router.add_view(
-            '/api/v1/chat/interactions',
-            ChatInteractionHandler
-        )
-        router.add_view(
-            '/api/v1/chat/interactions/{session_id}',
-            ChatInteractionHandler
-        )
+        router.add_view("/api/v1/chat/interactions", ChatInteractionHandler)
+        router.add_view("/api/v1/chat/interactions/{session_id}", ChatInteractionHandler)
         # Dashboard Persistence
         if ENABLE_DASHBOARDS:
-            router.add_view(
-                '/api/v1/dashboards',
-                DashboardHandler
-            )
-            router.add_view(
-                '/api/v1/dashboards/{dashboard_id}',
-                DashboardHandler
-            )
-            router.add_view(
-                '/api/v1/dashboards/{dashboard_id}/tabs',
-                DashboardTabHandler
-            )
-            router.add_view(
-                '/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}',
-                DashboardTabHandler
-            )
+            router.add_view("/api/v1/dashboards", DashboardHandler)
+            router.add_view("/api/v1/dashboards/{dashboard_id}", DashboardHandler)
+            router.add_view("/api/v1/dashboards/{dashboard_id}/tabs", DashboardTabHandler)
+            router.add_view("/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}", DashboardTabHandler)
         # User credential management routes
         setup_credentials_routes(self.app)
+        # Agent Studio — /api/v1/astudio/* management API (FEAT-467)
+        setup_studio_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
         # Thales research flow routes (FEAT-425): POST + polling + artifacts
         setup_thales_routes(self.app)
+        # Embedded Admin UI (FEAT-468): mounts the compiled SPA when present,
+        # gracefully absent otherwise (install-from-git without Node build).
+        setup_admin_ui(self.app)
         # CommCenter bulk notification sender routes (FEAT-417)
         CommCenterHandler().setup(self.app)
         if self.enable_swagger_api:
@@ -2069,10 +2186,7 @@ Available documentation UIs:
                 current_time = time.time()
 
                 # Find all expired bots
-                expired = [
-                    name for name, expiry in self._bot_expiration.items()
-                    if current_time > expiry
-                ]
+                expired = [name for name, expiry in self._bot_expiration.items() if current_time > expiry]
 
                 # Remove expired bots
                 for name in expired:
@@ -2081,9 +2195,7 @@ Available documentation UIs:
                         self.remove_bot(name)
                         del self._bot_expiration[name]
                     except Exception as e:
-                        self.logger.error(
-                            f"Error removing expired bot '{name}': {e}"
-                        )
+                        self.logger.error(f"Error removing expired bot '{name}': {e}")
                         # Remove from expiration tracking even if removal failed
                         self._bot_expiration.pop(name, None)
 
@@ -2103,23 +2215,19 @@ Available documentation UIs:
                     try:
                         await self._ephemeral_registry.remove(cid)
                         self._bots.pop(cid, None)
-                        self.logger.info(
-                            "Swept expired ephemeral bot: %s", cid
-                        )
+                        self.logger.info("Swept expired ephemeral bot: %s", cid)
                     except Exception as sweep_exc:  # noqa: BLE001
                         self.logger.error(
                             "Error sweeping ephemeral bot %s: %s",
-                            cid, sweep_exc,
+                            cid,
+                            sweep_exc,
                         )
 
             except asyncio.CancelledError:
                 self.logger.info("Cleanup task cancelled")
                 raise
             except Exception as e:
-                self.logger.error(
-                    f"Error in cleanup task: {e}",
-                    exc_info=True
-                )
+                self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
                 # Continue running even if there's an error
 
     async def _register_oauth2_providers(self, app: web.Application) -> None:
@@ -2135,9 +2243,7 @@ Available documentation UIs:
             jira_manager = app.get("jira_oauth_manager")
             if jira_manager is not None:
                 register_oauth2_provider(JiraOAuth2Provider(manager=jira_manager))
-                self.logger.info(
-                    "Registered JiraOAuth2Provider with the global OAuth2ProviderRegistry"
-                )
+                self.logger.info("Registered JiraOAuth2Provider with the global OAuth2ProviderRegistry")
             else:
                 self.logger.warning(
                     "app['jira_oauth_manager'] is not set — "
@@ -2146,8 +2252,7 @@ Available documentation UIs:
                 )
         except Exception:  # noqa: BLE001
             self.logger.exception(
-                "Failed to register OAuth2 providers — integrations endpoints "
-                "will return empty provider lists."
+                "Failed to register OAuth2 providers — integrations endpoints " "will return empty provider lists."
             )
 
     async def on_startup(self, app: web.Application) -> None:
@@ -2160,7 +2265,7 @@ Available documentation UIs:
             backend = await build_conversation_backend()
             await backend.initialize()
             overflow = build_overflow_store()
-            app['artifact_store'] = ArtifactStore(
+            app["artifact_store"] = ArtifactStore(
                 dynamodb=backend,
                 s3_overflow=overflow,
             )
@@ -2181,7 +2286,7 @@ Available documentation UIs:
         await self.load_bots(app)
         # Initialize BotConfigStorage and attach to app
         if self.enable_registry_bots:
-            app['bot_config_storage'] = BotConfigStorage()
+            app["bot_config_storage"] = BotConfigStorage()
         # Load crews from Redis
         if self.enable_crews:
             await self.load_crews()
@@ -2198,7 +2303,7 @@ Available documentation UIs:
         # Initialize Dashboard indexes
         if ENABLE_DASHBOARDS:
             await _ensure_dashboard_indexes(app)
-        app['chat_storage'] = chat_storage
+        app["chat_storage"] = chat_storage
         # Start Integration bots (deferred aiogram import — see top of file).
         # ai-parrot-integrations is an optional satellite distribution: a
         # server install may omit it (or a per-channel SDK may be missing).
@@ -2208,8 +2313,7 @@ Available documentation UIs:
             from parrot.integrations import IntegrationBotManager
         except ImportError as exc:
             self.logger.warning(
-                "Integration bots disabled: %s "
-                "(install 'ai-parrot-integrations[all]' to enable them).",
+                "Integration bots disabled: %s " "(install 'ai-parrot-integrations[all]' to enable them).",
                 exc,
             )
             self._integration_manager = None
@@ -2231,27 +2335,22 @@ Available documentation UIs:
         if self._integration_manager:
             await self._integration_manager.shutdown()
         # Close ChatStorage
-        chat_storage = app.get('chat_storage')
+        chat_storage = app.get("chat_storage")
         if chat_storage:
             await chat_storage.close()
             self.logger.info("ChatStorage closed")
         # Close ArtifactStore backend
-        artifact_store = app.get('artifact_store')
+        artifact_store = app.get("artifact_store")
         if artifact_store is not None:
-            backend = getattr(artifact_store, '_db', None)
-            if backend is not None and hasattr(backend, 'close'):
+            backend = getattr(artifact_store, "_db", None)
+            if backend is not None and hasattr(backend, "close"):
                 try:
                     await backend.close()
                     self.logger.info("ArtifactStore backend closed")
                 except Exception as exc:
                     self.logger.warning("ArtifactStore backend close failed: %s", exc)
 
-    async def add_crew(
-        self,
-        name: str,
-        crew: AgentCrew,
-        crew_def: CrewDefinition
-    ) -> None:
+    async def add_crew(self, name: str, crew: AgentCrew, crew_def: CrewDefinition) -> None:
         """
         Register a crew in the manager and persist to Redis.
 
@@ -2274,8 +2373,7 @@ Available documentation UIs:
         # Persist to Redis (only when Redis-backed persistence is enabled)
         if self.crew_redis is None:
             self.logger.debug(
-                "Crew persistence disabled (ENABLE_CREWS is False); "
-                "crew '%s' registered in memory only",
+                "Crew persistence disabled (ENABLE_CREWS is False); " "crew '%s' registered in memory only",
                 name,
             )
             return
@@ -2289,15 +2387,10 @@ Available documentation UIs:
         except Exception as e:
             self.logger.error("Failed to save crew '%s' to Redis: %s", name, e)
             # Don't fail the operation if Redis fails, crew is still in memory
-            self.logger.info(
-                f"Crew '{name}' registered in memory only (Redis persistence failed)"
-            )
+            self.logger.info(f"Crew '{name}' registered in memory only (Redis persistence failed)")
 
     async def get_crew(
-        self,
-        identifier: str,
-        as_new: bool = False,
-        tenant: Optional[str] = None
+        self, identifier: str, as_new: bool = False, tenant: Optional[str] = None
     ) -> Optional[Tuple[AgentCrew, CrewDefinition]]:
         """
         Get a crew by name or ID. Loads from Redis if not in memory.
@@ -2333,9 +2426,7 @@ Available documentation UIs:
                     new_crew = await self._create_crew_from_definition(crew_def)
                     return (new_crew, crew_def)
                 except Exception as e:
-                    self.logger.error(
-                        f"Failed to create new crew instance: {e}"
-                    )
+                    self.logger.error(f"Failed to create new crew instance: {e}")
                     return (None, None)
             else:
                 return (cached_crew, crew_def)
@@ -2360,10 +2451,7 @@ Available documentation UIs:
                 cache_key = self._get_crew_key(crew_def.tenant, crew_def.name)
                 self._crews[cache_key] = (base_crew, crew_def)
 
-                self.logger.info(
-                    f"Loaded crew '{crew_def.name}' from Redis "
-                    f"(ID: {crew_def.crew_id})"
-                )
+                self.logger.info(f"Loaded crew '{crew_def.name}' from Redis " f"(ID: {crew_def.crew_id})")
 
                 if as_new:
                     return (await self._create_crew_from_definition(crew_def), crew_def)
@@ -2371,17 +2459,12 @@ Available documentation UIs:
                     return (base_crew, crew_def)
 
         except Exception as e:
-            self.logger.error(
-                f"Error loading crew '{identifier}' from Redis: {e}"
-            )
+            self.logger.error(f"Error loading crew '{identifier}' from Redis: {e}")
             return (None, None)
 
         return (None, None)
 
-    def list_crews(
-        self,
-        tenant: Optional[str] = None
-    ) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
+    def list_crews(self, tenant: Optional[str] = None) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
         """
         List all registered crews.
 
@@ -2392,16 +2475,10 @@ Available documentation UIs:
             return self._crews.copy()
         tenant = self._normalize_tenant(tenant)
         return {
-            crew_def.name: (crew, crew_def)
-            for _, (crew, crew_def) in self._crews.items()
-            if crew_def.tenant == tenant
+            crew_def.name: (crew, crew_def) for _, (crew, crew_def) in self._crews.items() if crew_def.tenant == tenant
         }
 
-    async def remove_crew(
-        self,
-        identifier: str,
-        tenant: Optional[str] = None
-    ) -> bool:
+    async def remove_crew(self, identifier: str, tenant: Optional[str] = None) -> bool:
         """
         Remove a crew from the manager and Redis.
 
@@ -2441,27 +2518,15 @@ Available documentation UIs:
                 return True
             try:
                 await self.crew_redis.delete_crew(crew_def.name, crew_def.tenant)
-                self.logger.info(
-                    f"Removed crew '{crew_name}' (ID: {crew_def.crew_id}) "
-                    f"from memory and Redis"
-                )
+                self.logger.info(f"Removed crew '{crew_name}' (ID: {crew_def.crew_id}) " f"from memory and Redis")
             except Exception as e:
-                self.logger.error(
-                    f"Failed to delete crew '{crew_name}' from Redis: {e}"
-                )
-                self.logger.info(
-                    f"Crew '{crew_name}' removed from memory only"
-                )
+                self.logger.error(f"Failed to delete crew '{crew_name}' from Redis: {e}")
+                self.logger.info(f"Crew '{crew_name}' removed from memory only")
             return True
 
         return False
 
-    def update_crew(
-        self,
-        identifier: str,
-        crew: AgentCrew,
-        crew_def: CrewDefinition
-    ) -> bool:
+    def update_crew(self, identifier: str, crew: AgentCrew, crew_def: CrewDefinition) -> bool:
         """
         Update an existing crew.
 
@@ -2495,10 +2560,7 @@ Available documentation UIs:
         all previously saved crews from Redis into memory.
         """
         if self.crew_redis is None:
-            self.logger.debug(
-                "Crew persistence disabled (ENABLE_CREWS is False); "
-                "skipping crew loading from Redis"
-            )
+            self.logger.debug("Crew persistence disabled (ENABLE_CREWS is False); " "skipping crew loading from Redis")
             return
         try:
             # Check Redis connection
@@ -2531,19 +2593,11 @@ Available documentation UIs:
                         f"in {crew_def.execution_mode.value} mode"
                     )
                 except Exception as e:
-                    self.logger.error(
-                        f"Failed to load crew '{crew_def.name}': {e}",
-                        exc_info=True
-                    )
+                    self.logger.error(f"Failed to load crew '{crew_def.name}': {e}", exc_info=True)
 
-            self.logger.info(
-                f":: Crews loaded successfully. Total active crews: {loaded_count}"
-            )
+            self.logger.info(f":: Crews loaded successfully. Total active crews: {loaded_count}")
         except Exception as e:
-            self.logger.error(
-                f"Failed to load crews from Redis: {e}",
-                exc_info=True
-            )
+            self.logger.error(f"Failed to load crews from Redis: {e}", exc_info=True)
 
     async def sync_crews(self) -> None:
         """
@@ -2559,10 +2613,7 @@ Available documentation UIs:
         try:
             # Get all crew names from Redis
             remote_entries = await self.crew_redis.list_all_crews()
-            remote_names = {
-                self._get_crew_key(entry["tenant"], entry["name"])
-                for entry in remote_entries
-            }
+            remote_names = {self._get_crew_key(entry["tenant"], entry["name"]) for entry in remote_entries}
             local_names = set(self._crews.keys())
 
             # Identify additions and removals
@@ -2572,9 +2623,7 @@ Available documentation UIs:
             if not added and not removed:
                 return
 
-            self.logger.debug(
-                f"Syncing crews: {len(added)} to add, {len(removed)} to remove"
-            )
+            self.logger.debug(f"Syncing crews: {len(added)} to add, {len(removed)} to remove")
 
             # Handle additions
             for key in added:
@@ -2588,9 +2637,7 @@ Available documentation UIs:
                 except Exception as e:
                     # Provide more specific diagnostics, especially for malformed keys.
                     if isinstance(e, ValueError):
-                        self.logger.error(
-                            f"Failed to sync crew: invalid key format {key!r}: {e}"
-                        )
+                        self.logger.error(f"Failed to sync crew: invalid key format {key!r}: {e}")
                     else:
                         self.logger.error(
                             f"Failed to sync crew for key {key!r}: {e}",
@@ -2605,10 +2652,7 @@ Available documentation UIs:
         except Exception as e:
             self.logger.error("Error syncing crews: %s", e, exc_info=True)
 
-    async def _create_crew_from_definition(
-        self,
-        crew_def: CrewDefinition
-    ) -> AgentCrew:
+    async def _create_crew_from_definition(self, crew_def: CrewDefinition) -> AgentCrew:
         """Create an AgentCrew from a CrewDefinition.
 
         Delegates to ``AgentCrew.from_definition()``, passing
@@ -2636,27 +2680,25 @@ Available documentation UIs:
             Dictionary with crew statistics
         """
         stats = {
-            'total_crews': len(self._crews),
-            'crews_by_mode': {
-                'sequential': 0,
-                'parallel': 0,
-                'flow': 0
-            },
-            'total_agents': 0,
-            'crews': []
+            "total_crews": len(self._crews),
+            "crews_by_mode": {"sequential": 0, "parallel": 0, "flow": 0},
+            "total_agents": 0,
+            "crews": [],
         }
 
         for name, (crew, crew_def) in self._crews.items():
             mode = crew_def.execution_mode.value
-            stats['crews_by_mode'][mode] = stats['crews_by_mode'].get(mode, 0) + 1
-            stats['total_agents'] += len(crew.agents)
+            stats["crews_by_mode"][mode] = stats["crews_by_mode"].get(mode, 0) + 1
+            stats["total_agents"] += len(crew.agents)
 
-            stats['crews'].append({
-                'name': crew_def.name,
-                'tenant': crew_def.tenant,
-                'crew_id': crew_def.crew_id,
-                'mode': mode,
-                'agent_count': len(crew.agents)
-            })
+            stats["crews"].append(
+                {
+                    "name": crew_def.name,
+                    "tenant": crew_def.tenant,
+                    "crew_id": crew_def.crew_id,
+                    "mode": mode,
+                    "agent_count": len(crew.agents),
+                }
+            )
 
         return stats

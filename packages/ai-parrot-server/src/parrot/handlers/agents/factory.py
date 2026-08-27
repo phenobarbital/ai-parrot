@@ -15,7 +15,18 @@ beforehand (typically wiring a ``WebHumanChannel`` or telegram channel).
 
 IMPORTANT: auto_approve=true is restricted to authenticated users with
 factory:admin role to prevent registry tampering via unvalidated API calls.
+
+THIN ALIAS (FEAT-467 TASK-2521): this endpoint's request/response
+contract is preserved byte-for-byte — it remains the code-generation
+entry point via ``AgentFactoryOrchestrator``. The AgentStudio meta-agent
+(``parrot.bots.studio.AgentStudioAgent``) absorbs the SAME underlying
+YAML-agent flow for its own ``create_yaml_agent`` tool by calling
+``parrot.bots.factory.tools.finalize.finalize_agent_registration``
+directly — the identical function this orchestrator's finalize step
+calls — so both surfaces write agents through one code path. This
+handler is untouched beyond this note; no behavior changed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +51,6 @@ from parrot.human.models import (
     HumanResponse,
     InteractionType,
 )
-
 
 logger = logging.getLogger("Parrot.Handlers.AgentFactory")
 
@@ -76,11 +86,7 @@ class _AutoApproveChannel(HumanChannel):
                 interaction_id=interaction.interaction_id,
                 respondent=recipient,
                 response_type=interaction.interaction_type,
-                value=(
-                    True
-                    if interaction.interaction_type == InteractionType.APPROVAL
-                    else "confirm"
-                ),
+                value=(True if interaction.interaction_type == InteractionType.APPROVAL else "confirm"),
             )
         )
         return True
@@ -121,11 +127,9 @@ class AgentFactoryHandler(BaseView):
             )
 
         try:
-            factory_request = FactoryRequest(**{
-                k: v
-                for k, v in payload.items()
-                if k in {"description", "clone_from", "hints"}
-            })
+            factory_request = FactoryRequest(
+                **{k: v for k, v in payload.items() if k in {"description", "clone_from", "hints"}}
+            )
         except Exception as exc:  # noqa: BLE001
             return JSONResponse(
                 {"status": "error", "message": f"invalid request: {exc}"},
@@ -153,10 +157,7 @@ class AgentFactoryHandler(BaseView):
                     },
                     status=403,
                 )
-            logger.info(
-                "HITL bypassed via auto_approve=true by authenticated user "
-                "with factory:admin role"
-            )
+            logger.info("HITL bypassed via auto_approve=true by authenticated user " "with factory:admin role")
 
         human_manager: HumanInteractionManager | None = request.app.get("human_manager")
         if auto_approve or human_manager is None:

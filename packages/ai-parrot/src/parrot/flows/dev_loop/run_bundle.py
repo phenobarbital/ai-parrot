@@ -22,6 +22,7 @@ from typing import Any, List, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from parrot.flows.dev_loop.nodes.base import run_label
 from parrot.flows.dev_loop.session_state import (
     ActionEnvelope,
     GateKind,
@@ -232,12 +233,8 @@ def build_run_bundle(
                 tool_use_count=dispatch.tool_use_count if dispatch else 0,
                 input_tokens=dispatch.input_tokens if dispatch else None,
                 output_tokens=dispatch.output_tokens if dispatch else None,
-                cache_creation_input_tokens=(
-                    dispatch.cache_creation_input_tokens if dispatch else None
-                ),
-                cache_read_input_tokens=(
-                    dispatch.cache_read_input_tokens if dispatch else None
-                ),
+                cache_creation_input_tokens=(dispatch.cache_creation_input_tokens if dispatch else None),
+                cache_read_input_tokens=(dispatch.cache_read_input_tokens if dispatch else None),
                 total_cost_usd=dispatch.total_cost_usd if dispatch else None,
                 num_turns=dispatch.num_turns if dispatch else None,
                 duration_ms=dispatch.duration_ms if dispatch else None,
@@ -263,11 +260,7 @@ def build_run_bundle(
     # -- totals --
     dispatches = [n.dispatch for n in state.nodes.values() if n.dispatch is not None]
     totals = RunTotals(
-        duration_seconds=(
-            state.finished_at - state.created_at
-            if state.finished_at is not None
-            else None
-        ),
+        duration_seconds=(state.finished_at - state.created_at if state.finished_at is not None else None),
         nodes_completed=sum(1 for n in state.nodes.values() if n.status == "completed"),
         nodes_failed=sum(1 for n in state.nodes.values() if n.status == "failed"),
         nodes_skipped=sum(1 for n in state.nodes.values() if n.status == "skipped"),
@@ -292,9 +285,7 @@ def build_run_bundle(
         task_ids.extend(getattr(worker, "tasks_completed", None) or [])
 
     criteria = [
-        CriterionOutcome(
-            name=c.name, passed=c.passed, duration_seconds=c.duration_seconds
-        )
+        CriterionOutcome(name=c.name, passed=c.passed, duration_seconds=c.duration_seconds)
         for c in (getattr(qa_report, "criterion_results", None) or [])
     ]
 
@@ -303,11 +294,10 @@ def build_run_bundle(
         docs_artifact_path = state.docs_artifacts[-1].docs_path
 
     developed = DevelopedWork(
-        jira_issue_key=state.jira_issue_key
-        or getattr(primary_output, "jira_issue_key", "") or "",
+        jira_issue_key=state.jira_issue_key or getattr(primary_output, "jira_issue_key", "") or "",
         pr_url=state.pr_url or "",
         pr_number=deployment_result.get("pr_number") or revision_result.get("pr_number"),
-        feature_id=getattr(primary_output, "feat_id", "") or "",
+        feature_id=run_label(primary_output, default=""),
         spec_path=getattr(primary_output, "spec_path", "") or "",
         worktree_path=getattr(primary_output, "worktree_path", "") or "",
         branch=getattr(primary_output, "branch_name", "") or "",
@@ -413,9 +403,7 @@ def render_markdown(bundle: RunBundle, usage_markdown: str = "") -> str:
     if bundle.nodes:
         lines.append("## Agents")
         lines.append("")
-        lines.append(
-            "| Node | Status | Duration | Dispatcher | Msgs | Tools | Tokens | Cost |"
-        )
+        lines.append("| Node | Status | Duration | Dispatcher | Msgs | Tools | Tokens | Cost |")
         lines.append("|---|---|---|---|---|---|---|---|")
         for n in bundle.nodes:
             lines.append(
@@ -438,18 +426,22 @@ def render_markdown(bundle: RunBundle, usage_markdown: str = "") -> str:
         lines.append("| Kind | Node | Status | Resolved by | Comment |")
         lines.append("|---|---|---|---|---|")
         for g in bundle.gates:
-            lines.append(
-                f"| {g.kind} | {g.node_id} | {g.status} | {g.resolved_by or 'n/a'} "
-                f"| {g.comment or ''} |"
-            )
+            lines.append(f"| {g.kind} | {g.node_id} | {g.status} | {g.resolved_by or 'n/a'} " f"| {g.comment or ''} |")
         lines.append("")
 
     # -- what was developed --
     has_developed_content = any(
         [
-            d.feature_id, d.spec_path, d.worktree_path, d.branch, d.task_ids,
-            d.qa_passed is not None, d.lint_passed is not None,
-            d.code_review_passed is not None, d.criteria, d.code_review_findings,
+            d.feature_id,
+            d.spec_path,
+            d.worktree_path,
+            d.branch,
+            d.task_ids,
+            d.qa_passed is not None,
+            d.lint_passed is not None,
+            d.code_review_passed is not None,
+            d.criteria,
+            d.code_review_findings,
             d.docs_artifact_path,
         ]
     )
@@ -481,9 +473,7 @@ def render_markdown(bundle: RunBundle, usage_markdown: str = "") -> str:
             lines.append("| Criterion | Passed | Duration |")
             lines.append("|---|---|---|")
             for c in d.criteria:
-                lines.append(
-                    f"| {c.name} | {c.passed} | {_format_duration(c.duration_seconds)} |"
-                )
+                lines.append(f"| {c.name} | {c.passed} | {_format_duration(c.duration_seconds)} |")
         if d.code_review_findings:
             lines.append("")
             lines.append("### Code Review Findings")

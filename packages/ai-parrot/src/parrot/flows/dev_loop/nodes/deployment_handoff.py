@@ -37,8 +37,11 @@ from parrot.flows.dev_loop.models import (
     ResearchOutput,
 )
 from parrot.flows.dev_loop.nodes.base import (
+    BaseBranchMismatch,
     DevLoopNode,
+    assert_base_is_clean,
     register_dev_loop_node,
+    run_label,
     scrub_git_output,
     transition_issue_with_candidates,
 )
@@ -91,9 +94,7 @@ class DeploymentHandoffNode(DevLoopNode):
             target_repo or os.environ.get("GITHUB_REPOSITORY", ""),
         )
         object.__setattr__(self, "_base_branch", base_branch)
-        object.__setattr__(
-            self, "_require_deployment_approval", require_deployment_approval
-        )
+        object.__setattr__(self, "_require_deployment_approval", require_deployment_approval)
 
     # ------------------------------------------------------------------
     # Execute
@@ -128,19 +129,55 @@ class DeploymentHandoffNode(DevLoopNode):
         qa_report: QAReport = shared.get("qa_report")
         issue_key = research.jira_issue_key
 
-        # Bug fixes branch from main; the PR target must match.
-        if getattr(brief, "kind", "bug") == "bug":
-            object.__setattr__(self, "_base_branch", "main")
+        # FEAT-466: the base branch is READ from the deterministically
+        # resolved record (TASK-2504), never guessed from `brief.kind` —
+        # that guess is what produced PR #1250 (branch cut from `dev`, PR
+        # opened against `main`). "" means nothing resolved it; block
+        # rather than silently default to the "dev" constructor default.
+        #
+        # NOTE (code-review follow-up): as of TASK-2504,
+        # ResearchNode._resolve_base_branch always falls back to the
+        # kind-derived mapping (with a loud WARNING) when the spec is
+        # unreadable — it never actually leaves this "". This branch is
+        # therefore defensive-only in normal operation today (exercised
+        # directly by test_base_branch_guard.py::test_blocks_on_empty_base_branch
+        # via a hand-constructed ResearchOutput), not dead code to delete —
+        # it is the correct behavior if a future caller's resolver ever
+        # does legitimately leave base_branch unresolved.
+        base = (getattr(research, "base_branch", "") or "").strip()
+        if not base:
+            error = (
+                "research_output.base_branch is empty — the run's base "
+                "branch was never resolved. Refusing to guess a PR target "
+                "(FEAT-466)."
+            )
+            self.logger.error(error)
+            await self._mark_blocked(issue_key, error)
+            return {"status": "blocked", "error": error}
+        object.__setattr__(self, "_base_branch", base)
 
         # 1. Push.
         try:
-            await self._push_branch(
-                research.branch_name, research.worktree_path
-            )
+            await self._push_branch(research.branch_name, research.worktree_path)
         except RuntimeError as exc:
             self.logger.error("git push failed: %s", exc)
             await self._mark_blocked(issue_key, str(exc))
             return {"status": "blocked", "error": f"push: {exc}"}
+
+        # FEAT-466: sibling-overlap guard — the backstop. Blocks before any
+        # PR is opened when the branch carries commits that already live on
+        # a sibling long-lived branch (the exact #1250 shape).
+        try:
+            await assert_base_is_clean(
+                research.branch_name,
+                self._base_branch,
+                research.worktree_path,
+                logger=self.logger,
+            )
+        except BaseBranchMismatch as exc:
+            self.logger.error("base-branch guard blocked the PR: %s", exc)
+            await self._mark_blocked(issue_key, str(exc))
+            return {"status": "blocked", "error": str(exc)}
 
         # 2. Open PR with retry-once.
         title = self._build_title(brief, research)
@@ -149,9 +186,7 @@ class DeploymentHandoffNode(DevLoopNode):
         last_error: Optional[str] = None
         for attempt in range(2):
             try:
-                pr_url = await self._create_pr(
-                    research.branch_name, title, body
-                )
+                pr_url = await self._create_pr(research.branch_name, title, body)
                 break
             except Exception as exc:  # noqa: BLE001 - retry boundary
                 last_error = str(exc)
@@ -163,14 +198,10 @@ class DeploymentHandoffNode(DevLoopNode):
                     )
                     await asyncio.sleep(2)
                 else:
-                    self.logger.error(
-                        "PR create failed after retry: %s", exc
-                    )
+                    self.logger.error("PR create failed after retry: %s", exc)
 
         if pr_url is None:
-            await self._mark_blocked(
-                issue_key, last_error or "unknown PR error"
-            )
+            await self._mark_blocked(issue_key, last_error or "unknown PR error")
             return {
                 "status": "blocked",
                 "error": last_error or "unknown PR error",
@@ -192,7 +223,10 @@ class DeploymentHandoffNode(DevLoopNode):
         host = shared.get("session_host")
         if self._require_deployment_approval and host is not None:
             gate_status, gate_error = await self._await_deployment_approval(
-                host, shared.get("run_id", ""), issue_key, pr_url,
+                host,
+                shared.get("run_id", ""),
+                issue_key,
+                pr_url,
             )
             if gate_status != "approved":
                 await self._mark_blocked(issue_key, gate_error)
@@ -209,8 +243,8 @@ class DeploymentHandoffNode(DevLoopNode):
         skip_jira = shared.get("skip_jira", False)
         if skip_jira:
             self.logger.info(
-                "Jira bypass enabled (skip_jira=True) — skipping "
-                "transition and comment for %s", pr_url,
+                "Jira bypass enabled (skip_jira=True) — skipping " "transition and comment for %s",
+                pr_url,
             )
         else:
             try:
@@ -221,18 +255,13 @@ class DeploymentHandoffNode(DevLoopNode):
                     logger=self.logger,
                 )
             except Exception as exc:  # noqa: BLE001 - degraded path
-                self.logger.warning(
-                    "Jira transition failed (continuing): %s", exc
-                )
+                self.logger.warning("Jira transition failed (continuing): %s", exc)
 
             # 4. Comment with PR link.
             try:
                 await self._jira.jira_add_comment(
                     issue=issue_key,
-                    body=(
-                        f"flow-bot: PR opened — {pr_url}\n"
-                        f"QA passed all acceptance criteria."
-                    ),
+                    body=(f"flow-bot: PR opened — {pr_url}\n" f"QA passed all acceptance criteria."),
                 )
             except Exception as exc:  # noqa: BLE001 - degraded path
                 self.logger.warning("Jira add_comment failed: %s", exc)
@@ -248,7 +277,11 @@ class DeploymentHandoffNode(DevLoopNode):
     # ------------------------------------------------------------------
 
     async def _await_deployment_approval(
-        self, host: Any, run_id: str, issue_key: str, pr_url: str,
+        self,
+        host: Any,
+        run_id: str,
+        issue_key: str,
+        pr_url: str,
     ) -> tuple[str, str]:
         """Open the ``deployment_approval`` gate and await its resolution.
 
@@ -283,10 +316,7 @@ class DeploymentHandoffNode(DevLoopNode):
         gate = await host.wait_gate(gate_id)
         if gate.status == "approved":
             return "approved", ""
-        reason = (
-            f"deployment_approval {gate.status} by "
-            f"{gate.resolved_by or 'ttl'}"
-        )
+        reason = f"deployment_approval {gate.status} by " f"{gate.resolved_by or 'ttl'}"
         return gate.status, reason
 
     # ------------------------------------------------------------------
@@ -307,9 +337,7 @@ class DeploymentHandoffNode(DevLoopNode):
         )
         _stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"git push failed: {scrub_git_output(stderr.decode(errors='replace'))}"
-            )
+            raise RuntimeError(f"git push failed: {scrub_git_output(stderr.decode(errors='replace'))}")
 
     # ------------------------------------------------------------------
     # Internal — PR creation
@@ -340,14 +368,10 @@ class DeploymentHandoffNode(DevLoopNode):
             try:
                 return await self._create_pr_with_gh(branch, title, body)
             except RuntimeError as exc:
-                self.logger.warning(
-                    "gh CLI failed, falling back to REST API: %s", exc
-                )
+                self.logger.warning("gh CLI failed, falling back to REST API: %s", exc)
         return await self._create_pr_via_rest(branch, title, body)
 
-    async def _create_pr_with_gh(
-        self, branch: str, title: str, body: str
-    ) -> str:
+    async def _create_pr_with_gh(self, branch: str, title: str, body: str) -> str:
         gh_path = self._gh_cli_path or "gh"
         proc = await asyncio.create_subprocess_exec(
             gh_path,
@@ -367,21 +391,22 @@ class DeploymentHandoffNode(DevLoopNode):
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"gh pr create failed: {err.decode(errors='replace')}"
-            )
+            raise RuntimeError(f"gh pr create failed: " f"{scrub_git_output(err.decode(errors='replace'))}")
         text = out.decode().strip()
         # The last line of `gh pr create` output is the PR URL.
         return text.splitlines()[-1] if text else ""
 
-    _GITHUB_REMOTE_RE = re.compile(
-        r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$"
-    )
+    _GITHUB_REMOTE_RE = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/.]+?)(?:\.git)?$")
 
     async def _detect_target_repo(self, cwd: str = ".") -> str:
         """Derive ``owner/repo`` from ``git remote get-url origin``."""
         proc = await asyncio.create_subprocess_exec(
-            "git", "-C", cwd, "remote", "get-url", "origin",
+            "git",
+            "-C",
+            cwd,
+            "remote",
+            "get-url",
+            "origin",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -400,16 +425,16 @@ class DeploymentHandoffNode(DevLoopNode):
         if not shutil.which(gh):
             return ""
         proc = await asyncio.create_subprocess_exec(
-            gh, "auth", "token",
+            gh,
+            "auth",
+            "token",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         out, _ = await proc.communicate()
         return out.decode().strip() if proc.returncode == 0 else ""
 
-    async def _create_pr_via_rest(
-        self, branch: str, title: str, body: str
-    ) -> str:
+    async def _create_pr_via_rest(self, branch: str, title: str, body: str) -> str:
         # Pure HTTP fallback. We import aiohttp lazily so test harnesses
         # can monkeypatch the helper without aiohttp involvement at all.
         import aiohttp  # noqa: WPS433 - intentional lazy import
@@ -417,9 +442,7 @@ class DeploymentHandoffNode(DevLoopNode):
         token = await self._resolve_github_token()
         repo = self._target_repo or await self._detect_target_repo()
         if not repo or not token:
-            raise RuntimeError(
-                "GitHub REST fallback requires target_repo + GITHUB_TOKEN"
-            )
+            raise RuntimeError("GitHub REST fallback requires target_repo + GITHUB_TOKEN")
         url = f"https://api.github.com/repos/{repo}/pulls"
         payload = {
             "title": title,
@@ -435,14 +458,10 @@ class DeploymentHandoffNode(DevLoopNode):
         }
         timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                url, json=payload, headers=headers
-            ) as resp:
+            async with session.post(url, json=payload, headers=headers) as resp:
                 data = await resp.json()
                 if resp.status >= 300:
-                    raise RuntimeError(
-                        f"GitHub REST {resp.status}: {data}"
-                    )
+                    raise RuntimeError(f"GitHub REST {resp.status}: {scrub_git_output(str(data))}")
                 return data.get("html_url", "")
 
     # ------------------------------------------------------------------
@@ -491,9 +510,7 @@ class DeploymentHandoffNode(DevLoopNode):
         try:
             summary = await summarize_pr_changes(body, logger=self.logger)
         except Exception:  # noqa: BLE001 - enrichment must never break handoff
-            self.logger.warning(
-                "PR summary enrichment failed; using template only.", exc_info=True
-            )
+            self.logger.warning("PR summary enrichment failed; using template only.", exc_info=True)
             summary = ""
         if not summary:
             return body
@@ -502,7 +519,8 @@ class DeploymentHandoffNode(DevLoopNode):
     @staticmethod
     def _build_title(brief: BugBrief, research: ResearchOutput) -> str:
         first_line = brief.summary.splitlines()[0][:80]
-        return f"{research.feat_id}: {first_line}"
+        label = run_label(research, default="")
+        return f"{label}: {first_line}" if label else first_line
 
     @staticmethod
     def _build_body(
@@ -510,11 +528,7 @@ class DeploymentHandoffNode(DevLoopNode):
         dev_out: Optional[DevelopmentOutput],
         qa_report: Optional[QAReport],
     ) -> str:
-        files = (
-            ", ".join(dev_out.files_changed[:10])
-            if dev_out
-            else "(none)"
-        )
+        files = ", ".join(dev_out.files_changed[:10]) if dev_out else "(none)"
         criteria = (
             "\n".join(
                 f"- {r.name}: {'PASS' if r.passed else 'FAIL'}"

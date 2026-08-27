@@ -1978,15 +1978,21 @@ def ns_list(path_: str | None, as_json: bool) -> None:
 @click.option(
     "--backend",
     "backend_opt",
-    type=click.Choice(["sqlite", "memory"]),
     default=None,
-    help="Backend of a --store directory (default: sqlite).",
+    help=(
+        "Backend of a --store directory ('sqlite' or 'memory', default: "
+        "sqlite) OR of a --database entry ('arangodb', the default, or a "
+        "satellite-registered backend name — e.g. 'ontology_legal', "
+        "FEAT-449 M7 — see register_wiki_backend in wiki/store.py). Not "
+        "validated against the registry here; an unknown name surfaces "
+        "as a ValueError when the namespace is actually opened."
+    ),
 )
 @click.option(
     "--database",
     "src_database",
     default=None,
-    help="ArangoDB database holding the plane (kind: database).",
+    help="ArangoDB (or a registered extra backend's) database holding the plane (kind: database).",
 )
 @click.option(
     "--credentials-env",
@@ -2037,6 +2043,13 @@ def ns_add(
     except ValueError as exc:
         raise click.ClickException(str(exc)) from exc
     _namespace_source(src_project, src_store, src_database, src_vault)
+    if src_store and backend_opt not in (None, "sqlite", "memory"):
+        raise click.ClickException(
+            f"--backend {backend_opt!r} is not valid for --store — a "
+            "pre-built store directory only supports 'sqlite' or 'memory'. "
+            "Registered extra backends (e.g. 'ontology_legal') are only "
+            "valid for --database entries."
+        )
 
     # `ns add` (non-global) mutates and re-persists the BASE config, so it
     # must resolve the raw base — never the environment-merged one, or an

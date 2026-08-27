@@ -42,6 +42,19 @@ For `type: hotfix`, `BASE` MUST be `main`. For `type: feature`, `BASE` defaults
 to `dev` and may be `staging` (during a release freeze) or any non-main branch
 (sub-features extend a parent feature branch — see `CLAUDE.md`).
 
+**A hotfix normally does not reach this command at all (FEAT-466).**
+`sdd-research.md` skips `/sdd-task` entirely for `type: hotfix` runs — a
+one-or-two-commit bugfix is handled directly by the dev-loop's single-agent
+path (spec §3 Module 2's "Interaction with Module 7": no per-spec task index
+⇒ `DevelopmentNode._build_scheduler` returns `None` ⇒ single-agent dispatch,
+made to honour the operator's declared dev agent by TASK-2506). If a human
+invokes `/sdd-task` directly against a `type: hotfix` spec anyway (e.g. an
+unusually large hotfix that genuinely benefits from decomposition), proceed
+but see §4's hotfix branch below — it does **not** reserve `TASK-<NNN>` ids.
+A hotfix's per-spec index header carries `"feature_id": null` (there is no
+reserved `FEAT-<NNN>`) and a `"jira_issue_key"` field carrying the Jira key
+instead — the identity the rest of the flow labels this run by.
+
 **Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
 ```
 ⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
@@ -101,8 +114,11 @@ explicit, verified code anchors.
 ### 4. Generate Tasks
 1. Ensure `sdd/tasks/active/` directory exists (create if needed).
 2. Read the task template at `sdd/templates/task.md`.
-3. **Reserve `TASK-<NNN>` IDs via the git-native compare-and-swap ledger
-   (FEAT-387) — never scan existing files and increment by hand:**
+3. **Reserve task IDs — the mechanism depends on `TYPE` (FEAT-466):**
+
+   **`TYPE == "feature"`** — reserve `TASK-<NNN>` IDs via the git-native
+   compare-and-swap ledger (FEAT-387), never scan existing files and
+   increment by hand:
    ```bash
    TASK_IDS=$(python -m scripts.sdd.reserve_ids --kind task --count <N> \
      --base-branch "$BASE" --label <feature-slug>)
@@ -122,9 +138,21 @@ explicit, verified code anchors.
    non-zero (retries exhausted, or the working tree wasn't clean), **STOP**
    and report the error to the user — do NOT fall back to hand-computing a
    number.
-4. For each task, create `sdd/tasks/active/TASK-<NNN>-<slug>.md` using the
-   template — consume the reserved IDs from `$TASK_IDS`, in order, one per
-   task. Use each ID verbatim for both the filename and every `id` field
+
+   **`TYPE == "hotfix"`** — do **NOT** call
+   `reserve_ids.py --kind task`. A hotfix is not a feature and reserves no
+   ledger id at all (same rationale as `/sdd-spec` §5's `FEAT-<NNN>` skip).
+   Number tasks **locally within this spec only**, as
+   `HOTFIX-<JIRA-KEY>-1`, `HOTFIX-<JIRA-KEY>-2`, … — these are literal
+   string ids scoped to this hotfix's own index file, never compared
+   against or drawn from `sdd/tasks/.id_ledger.json`'s `TASK-<NNN>`
+   namespace. (Note: this is the defensive path for the rare case a human
+   runs `/sdd-task` directly against a hotfix spec — the *normal* hotfix
+   flow skips `/sdd-task` entirely; see §1 above.)
+4. For each task, create `sdd/tasks/active/<id>-<slug>.md` using the
+   template (`<id>` is `TASK-<NNN>` for a feature, `HOTFIX-<JIRA-KEY>-N`
+   for a hotfix) — consume the reserved/assigned ids in order, one per
+   task. Use each id verbatim for both the filename and every `id` field
    in the per-spec index; never invent, recompute, or reuse a `TASK-<NNN>`
    number outside of what `reserve_ids.py` returned.
 
@@ -190,6 +218,8 @@ mkdir -p "$(dirname "$INDEX")"
 
 **Field clarification:**
 - `feature_id`: Formal Feature ID from the spec (e.g., `"FEAT-014"`).
+  **`null` for a hotfix** (FEAT-466 — no id reserved); use `jira_issue_key`
+  as the identity instead.
 - `feature`: Kebab-case slug (e.g., `"videoreel-visual-changes"`).
 
 ### 5. Commit Tasks and Per-Spec Index to `<BASE>`
@@ -219,29 +249,39 @@ git diff --cached --name-only
 git commit -m "sdd: add <N> tasks for FEAT-<ID> — <feature-name>"
 ```
 
-### 6. Create the Feature Worktree
+### 6. Create the Worktree
 
-After committing to `dev`, create the worktree so it inherits the tasks:
+After committing to `<BASE>`, create the worktree so it inherits the tasks.
+Naming and base ref depend on `TYPE` (FEAT-466 — a hotfix has no reserved
+id, so it is named from its Jira key, and always branches from
+`origin/main`, never `HEAD`):
 
 ```bash
+# type: feature
 git worktree add -b feat-<FEAT-ID>-<slug> \
   .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD
+
+# type: hotfix (the rare case /sdd-task ran directly against a hotfix spec)
+git worktree add -b hotfix-<JIRA-KEY>-<slug> \
+  .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main
 ```
 
 ### 7. Output
 ```
 ✅ Generated and committed <N> tasks for FEAT-<ID> — <feature-name>
+   (hotfix: for Jira <KEY> — <feature-name>, no FEAT-<NNN>/TASK-<NNN> reserved)
 
 Tasks created:
-  TASK-<NNN> — <title> [<priority>/<effort>]
-  ...
+  TASK-<NNN> — <title> [<priority>/<effort>]      # feature
+  HOTFIX-<JIRA-KEY>-<N> — <title> [<priority>/<effort>]  # hotfix
 
-Feature worktree created:
-  .claude/worktrees/feat-<FEAT-ID>-<slug>
+Worktree created:
+  .claude/worktrees/feat-<FEAT-ID>-<slug>              # feature
+  .claude/worktrees/hotfix-<JIRA-KEY>-<slug>           # hotfix
 
 Next:
-  cd .claude/worktrees/feat-<FEAT-ID>-<slug>
-  /sdd-start TASK-<NNN>   # begin first task
+  cd .claude/worktrees/<worktree-name>
+  /sdd-start <task-id>   # begin first task
 ```
 
 ## Reference

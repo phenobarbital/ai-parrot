@@ -295,6 +295,12 @@ class AgentsFlow(PersistenceMixin):
         self._nodes: dict[str, Node] = {}
         self._edges: list[FlowEdge] = []
         self._node_event_listeners: list[Callable[[str, str, Dict[str, Any]], Any]] = []
+        # Fire-and-forget tasks spawned for async listeners. Tracked (not just
+        # scheduled) so ``run_flow`` can drain them before it returns —
+        # otherwise the last events of a run (a node failing, then the
+        # terminal node) can still be in flight when the caller snapshots
+        # its own state from them.
+        self._pending_event_tasks: "set[asyncio.Task[Any]]" = set()
         if on_node_event is not None:
             if callable(on_node_event):
                 self._node_event_listeners.append(on_node_event)
@@ -424,6 +430,8 @@ class AgentsFlow(PersistenceMixin):
                 outcome = callback(event, node_id, info)
                 if asyncio.iscoroutine(outcome):
                     task = asyncio.ensure_future(outcome)
+                    self._pending_event_tasks.add(task)
+                    task.add_done_callback(self._pending_event_tasks.discard)
                     task.add_done_callback(self._log_event_task_error)
             except Exception as exc:  # noqa: BLE001 - telemetry must not break runs
                 self.logger.warning(
@@ -440,6 +448,31 @@ class AgentsFlow(PersistenceMixin):
         exc = task.exception()
         if exc is not None:
             self.logger.warning("async on_node_event callback raised: %s", exc)
+
+    async def _drain_event_tasks(self, timeout: float = 5.0) -> None:
+        """Await the in-flight async node-event tasks (bounded, never raises).
+
+        ``_notify_node_event`` schedules async listeners fire-and-forget so a
+        slow listener cannot stall the scheduler. That is right *during* a
+        run and wrong at the *end* of one: the events describing how a run
+        finished (``node_failed`` on the node that broke, then the terminal
+        node's own lifecycle) are emitted within milliseconds of
+        ``run_flow`` returning, and a caller that folds those events into its
+        own state — the dev-loop ``SessionHost`` — would snapshot before they
+        landed. A failed node then stays "running" in the console forever.
+
+        Args:
+            timeout: Upper bound in seconds. A listener still running past it
+                is left alone (its own done-callback logs any error); the run
+                result is never held hostage to telemetry.
+        """
+        pending = [t for t in self._pending_event_tasks if not t.done()]
+        if not pending:
+            return
+        try:
+            await asyncio.wait(pending, timeout=timeout)
+        except Exception as exc:  # noqa: BLE001 - telemetry must not break runs
+            self.logger.warning("draining node-event tasks raised: %s", exc)
 
     # ── Class-method factory (placeholder — TASK-1068) ────────────────────
 
@@ -2035,6 +2068,10 @@ class AgentsFlow(PersistenceMixin):
                 await hook(ctx, aggregated)
             except Exception as exc:
                 self.logger.warning("on_complete hook raised: %s", exc)
+
+        # Let the async node-event listeners finish before handing the result
+        # back — the caller's own terminal bookkeeping is built from them.
+        await self._drain_event_tasks()
 
         return aggregated
 

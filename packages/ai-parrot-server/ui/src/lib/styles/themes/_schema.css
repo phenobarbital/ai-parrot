@@ -1,0 +1,86 @@
+/* =============================================================
+ * Theme Slot Schema — canonical list of every variable a theme
+ * file MUST define. The `check-theme-slots.mjs` lint (TASK-361)
+ * parses this file and asserts each theme defines all slots.
+ *
+ * No selectors are emitted with effective specificity. Wrapped
+ * in :where() (zero-specificity) so any real theme file
+ * overrides cleanly. The lint script extracts property names
+ * regardless of value.
+ * ============================================================= */
+
+:where(html) {
+  /* --- Tier 1 — Global tokens (shadcn-aligned) --- */
+  --background: ;
+  --foreground: ;
+  --card: ;
+  --card-foreground: ;
+  --popover: ;
+  --popover-foreground: ;
+  --primary: ;
+  --primary-foreground: ;
+  --secondary: ;
+  --secondary-foreground: ;
+  --muted: ;
+  --muted-foreground: ;
+  --accent: ;
+  --accent-foreground: ;
+  --destructive: ;
+  --destructive-foreground: ;
+  --border: ;
+  --input: ;
+  --ring: ;
+  --chart-1: ;
+  --chart-2: ;
+  --chart-3: ;
+  --chart-4: ;
+  --chart-5: ;
+  --sidebar: ;
+  --sidebar-foreground: ;
+  --sidebar-primary: ;
+  --sidebar-primary-foreground: ;
+  --sidebar-accent: ;
+  --sidebar-accent-foreground: ;
+  --sidebar-border: ;
+  --sidebar-ring: ;
+  --radius: ;
+
+  /* --- Tier 2 — Base color tokens (legacy DaisyUI-style) --- */
+  --color-base-100: ;
+  --color-base-200: ;
+  --color-base-300: ;
+  --color-base-content: ;
+
+  /* --- Tier 3 — Component slots (namespaced per surface) --- */
+  /* AgentChat */
+  --agent-chat-header-bg: ;
+  --agent-chat-header-fg: ;
+  --agent-chat-input-bg: ;
+  --agent-chat-input-fg: ;
+  --agent-chat-input-border: ;
+  --agent-chat-bubble-user-bg: ;
+  --agent-chat-bubble-user-fg: ;
+  --agent-chat-bubble-assistant-bg: ;
+  --agent-chat-bubble-assistant-fg: ;
+  --agent-chat-bubble-system-bg: ;
+  --agent-chat-bubble-system-fg: ;
+  --agent-chat-sidebar-bg: ;
+  --agent-chat-sidebar-fg: ;
+  --agent-chat-sidebar-item-active-bg: ;
+  --agent-chat-sidebar-item-active-fg: ;
+  --agent-chat-sidebar-item-hover-bg: ;
+  --agent-chat-code-bg: ;
+  --agent-chat-code-fg: ;
+
+  /* FormDesigner — new namespaced slots (legacy --form-color-* aliased in forms.css) */
+  --form-canvas-bg: ;
+  --form-canvas-grid: ;
+  --form-palette-bg: ;
+  --form-palette-fg: ;
+  --form-palette-item-hover-bg: ;
+  --form-field-editor-bg: ;
+  --form-field-editor-fg: ;
+  --form-field-editor-border: ;
+  --form-section-bg: ;
+  --form-section-border: ;
+}

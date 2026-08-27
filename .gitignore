@@ -280,7 +280,6 @@ examples/knowledge_wiki/store/
 
 # Custom Agents:
 plugins/agents/
-!/crew-builder/src/routes/agents/
 # restored 2026-06-18 after FEAT-240 (odoo-pageindex-documentation-agent) landed.
 # Odoo agent files committed during the feature stay tracked (gitignore does not
 # untrack); only NEW agent files are ignored again.
@@ -385,3 +384,11 @@ docker/matrix/synapse/homeserver.yaml
 docker/matrix/synapse/appservices/
 docker/matrix/synapse/media_store/
 docker/matrix/.env
+
+# Embedded Admin UI build output (FEAT-468) — built by release CI (Node 24
+# LTS + pnpm 9) into package-data; never committed to git.
+packages/ai-parrot-server/src/parrot/server/ui/dist/
+
+# Embedded Admin UI frontend project deps (TASK-2525) — pnpm-lock.yaml IS
+# committed for reproducible CI builds, but node_modules/ is not.
+packages/ai-parrot-server/ui/node_modules/

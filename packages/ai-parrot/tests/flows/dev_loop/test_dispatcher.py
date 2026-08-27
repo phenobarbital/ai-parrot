@@ -7,11 +7,13 @@ can run without ``claude-agent-sdk`` or a live Redis.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, AsyncIterator, List
 from unittest.mock import AsyncMock
 
 import pytest
 
+from parrot import conf
 from parrot.flows.dev_loop import (
     ClaudeCodeDispatcher,
     ClaudeCodeDispatchProfile,
@@ -304,6 +306,47 @@ class TestCwdSafetyCheck:
         # Backward-compat: called without a profile, the guard stays strict.
         with pytest.raises(DispatchExecutionError):
             dispatcher._enforce_cwd_under_worktree_base("/etc")
+
+    def test_project_root_waiver_allows_the_base_checkout(self, dispatcher):
+        # FEAT-412: ideation is write-capable and must run at the base
+        # checkout — the SDD document is committed to base_branch before any
+        # feature worktree exists.
+        ideation = ClaudeCodeDispatchProfile(
+            subagent=None,
+            permission_mode="acceptEdits",
+            allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit"],
+            allow_project_root_cwd=True,
+        )
+        # Must NOT raise.
+        dispatcher._enforce_cwd_under_worktree_base(
+            str(conf.PROJECT_ROOT), ideation
+        )
+
+    def test_project_root_waiver_is_exactly_one_path(self, dispatcher):
+        # The waiver names a single directory. A parent, a sibling, or any
+        # other path outside the worktree base still raises.
+        ideation = ClaudeCodeDispatchProfile(
+            subagent=None,
+            permission_mode="acceptEdits",
+            allowed_tools=["Write", "Edit"],
+            allow_project_root_cwd=True,
+        )
+        for bad in ("/etc", str(Path(conf.PROJECT_ROOT).parent)):
+            with pytest.raises(DispatchExecutionError):
+                dispatcher._enforce_cwd_under_worktree_base(bad, ideation)
+
+    def test_project_root_waiver_is_opt_in(self, dispatcher):
+        # Without the flag, PROJECT_ROOT is just another path outside the
+        # worktree base.
+        write = ClaudeCodeDispatchProfile(
+            subagent="sdd-worker",
+            permission_mode="acceptEdits",
+            allowed_tools=["Read", "Edit", "Write"],
+        )
+        with pytest.raises(DispatchExecutionError):
+            dispatcher._enforce_cwd_under_worktree_base(
+                str(conf.PROJECT_ROOT), write
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -46,7 +46,7 @@ import heapq
 import json
 import logging
 import time
-from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, Iterator, List, Literal, Optional, Tuple
 
 from aiohttp import web
 
@@ -259,11 +259,17 @@ class FlowStreamMultiplexer:
     async def _read_action_envelopes(self) -> List[Tuple[str, ActionEnvelope]]:
         """Read + parse every entry on the actions stream, in stream order.
 
-        Returns ``(entry_id, envelope)`` pairs. Malformed entries (parse
-        failure) are logged and skipped — forward-compat: an unknown/newer
-        action type inside an envelope must never crash the view. Order is
-        NOT re-sorted: ``server_seq`` ordering comes free from the Redis
-        stream (single writer per run, TASK-1851's sink).
+        Returns ``(entry_id, envelope)`` pairs in RAW STREAM order, which is
+        not necessarily ``server_seq`` order — callers that fold them must
+        sort first (see :meth:`state_replay`). ``DevLoopRunner``'s sink now
+        serialises its XADDs through one writer per run, so the two orders
+        agree for anything written by a current build; they can still differ
+        on a stream written when the sink spawned a task per envelope, and
+        those streams stay replayable for their whole retention window.
+
+        Malformed entries (parse failure) are logged and skipped —
+        forward-compat: an unknown/newer action type inside an envelope must
+        never crash the view.
         """
         entries = await self._redis.xrange(self._actions_key, min="-", max="+")
         out: List[Tuple[str, ActionEnvelope]] = []
@@ -299,21 +305,29 @@ class FlowStreamMultiplexer:
           yields only envelopes with ``server_seq > last_seen`` — no gaps,
           no duplicates.
 
-        Sets ``self._state_cursor`` to the last raw stream entry id seen,
-        so a subsequent :meth:`state_tail` call continues from exactly
-        where this method left off.
+        Sets ``self._state_cursor`` to the last raw stream entry id seen (in
+        stream order, not fold order), so a subsequent :meth:`state_tail`
+        call continues from exactly where this method left off.
         """
         entries = await self._read_action_envelopes()
+
+        # The cursor is a stream position, so it must come from the last entry
+        # in STREAM order — before the fold order is normalised below.
+        if entries:
+            self._state_cursor = entries[-1][0]
+
+        # `reduce` is order-sensitive (`run/closed` is terminal-sticky, node
+        # lifecycle is last-write-wins), so fold by `server_seq` rather than
+        # trusting stream arrival order.
+        ordered = sorted(entries, key=lambda pair: pair[1].server_seq)
+
         state = DevLoopSessionState(
             run_id=self._run_id, channel=session_channel(self._run_id)
         )
         from_seq = 0
-        for _entry_id, envelope in entries:
+        for _entry_id, envelope in ordered:
             state = reduce(state, envelope.action)
-            from_seq = envelope.server_seq
-
-        if entries:
-            self._state_cursor = entries[-1][0]
+            from_seq = max(from_seq, envelope.server_seq)
 
         if last_seen is None:
             snapshot = Snapshot(
@@ -330,7 +344,7 @@ class FlowStreamMultiplexer:
             }
             return
 
-        for _entry_id, envelope in entries:
+        for _entry_id, envelope in ordered:
             if envelope.server_seq <= last_seen:
                 continue
             yield {
@@ -345,6 +359,54 @@ class FlowStreamMultiplexer:
     # tail sees one it yields the envelope and stops.
     _TERMINAL_ACTION_TYPES = frozenset({"run/closed", "run/cancelled"})
 
+    def _iter_action_frames(
+        self, response: Any
+    ) -> Iterator[Tuple[Dict[str, Any], bool]]:
+        """Yield ``(frame, is_terminal)`` per entry of an ``XREAD`` response.
+
+        Advances ``self._state_cursor`` past every entry it sees — including
+        malformed ones, which are logged and skipped rather than retried
+        forever (same forward-compat contract as
+        :meth:`_read_action_envelopes`).
+
+        Args:
+            response: A redis-py ``XREAD`` response (list of
+                ``(stream_key, entries)`` pairs).
+
+        Yields:
+            The websocket frame for the entry, and whether its action is
+            terminal for the run.
+        """
+        for stream_key, stream_entries in response:
+            if isinstance(stream_key, bytes):
+                stream_key = stream_key.decode("utf-8")
+            for entry_id, fields in stream_entries:
+                if isinstance(entry_id, bytes):
+                    entry_id = entry_id.decode("utf-8")
+                self._state_cursor = entry_id
+                raw = fields.get("envelope") if isinstance(fields, dict) else None
+                if raw is None:
+                    continue
+                try:
+                    envelope = ActionEnvelope.model_validate_json(raw)
+                except Exception:  # noqa: BLE001 - forward-compat
+                    logger.debug(
+                        "state view: skipping malformed live entry %s "
+                        "for run=%s", entry_id, self._run_id, exc_info=True,
+                    )
+                    continue
+                frame = {
+                    "source": "state",
+                    "node_id": None,
+                    "event_kind": "action",
+                    "ts": envelope.action.ts,
+                    "payload": envelope.model_dump(),
+                }
+                yield frame, (
+                    getattr(envelope.action, "type", None)
+                    in self._TERMINAL_ACTION_TYPES
+                )
+
     async def state_tail(self) -> AsyncIterator[Dict[str, Any]]:
         """``view="state"`` live continuation after :meth:`state_replay`.
 
@@ -353,9 +415,16 @@ class FlowStreamMultiplexer:
         was never called). Malformed entries are logged and skipped, same
         forward-compat contract as :meth:`_read_action_envelopes`.
 
-        Stops automatically when a terminal action (``run/closed`` or
-        ``run/cancelled``) arrives, so the WebSocket handler exits
-        cleanly.
+        Stops when a terminal action (``run/closed`` or ``run/cancelled``)
+        arrives, so the WebSocket handler exits cleanly — but only after one
+        final non-blocking sweep of whatever is already on the stream. That
+        sweep is the safety net for the truncation this used to cause: a
+        terminal action is the last envelope a well-ordered stream carries
+        (``DevLoopRunner._close_host`` flushes the run's envelope queue
+        before it returns), yet on a stream written when the sink spawned a
+        task per envelope, a node's ``node/completed`` could land *after*
+        ``run/closed`` — and stopping on sight dropped it, leaving a finished
+        node stuck "running" in the console with its projections lost.
         """
         while not self._closed.is_set():
             try:
@@ -370,35 +439,27 @@ class FlowStreamMultiplexer:
                 continue
             if not response:
                 continue
-            for stream_key, stream_entries in response:
-                if isinstance(stream_key, bytes):
-                    stream_key = stream_key.decode("utf-8")
-                for entry_id, fields in stream_entries:
-                    if isinstance(entry_id, bytes):
-                        entry_id = entry_id.decode("utf-8")
-                    self._state_cursor = entry_id
-                    raw = fields.get("envelope") if isinstance(fields, dict) else None
-                    if raw is None:
-                        continue
-                    try:
-                        envelope = ActionEnvelope.model_validate_json(raw)
-                    except Exception:  # noqa: BLE001 - forward-compat
-                        logger.debug(
-                            "state view: skipping malformed live entry %s "
-                            "for run=%s", entry_id, self._run_id, exc_info=True,
-                        )
-                        continue
-                    out = {
-                        "source": "state",
-                        "node_id": None,
-                        "event_kind": "action",
-                        "ts": envelope.action.ts,
-                        "payload": envelope.model_dump(),
-                    }
-                    yield out
-                    if getattr(envelope.action, "type", None) in self._TERMINAL_ACTION_TYPES:
-                        self._closed.set()
-                        return
+            saw_terminal = False
+            for frame, is_terminal in self._iter_action_frames(response):
+                yield frame
+                saw_terminal = saw_terminal or is_terminal
+            if not saw_terminal:
+                continue
+            # Final sweep — no BLOCK, so this costs one round-trip and never
+            # delays the close.
+            try:
+                trailing = await self._redis.xread(
+                    streams={self._actions_key: self._state_cursor},
+                    count=100,
+                )
+            except Exception as exc:  # pragma: no cover - transport errors
+                logger.warning("state-view final sweep failed: %s", exc)
+                trailing = None
+            if trailing:
+                for frame, _is_terminal in self._iter_action_frames(trailing):
+                    yield frame
+            self._closed.set()
+            return
 
     # ------------------------------------------------------------------
     # Envelope helpers

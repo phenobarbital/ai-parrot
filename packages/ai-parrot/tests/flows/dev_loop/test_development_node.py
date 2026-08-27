@@ -67,15 +67,15 @@ class FakeDispatcher:
         self.calls = []
         self.fail_ids = set(fail_ids)
 
-    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd):
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kwargs):
+        # **_kwargs tolerates the single-agent path's ``session_host=``
+        # (FEAT-466 TASK-2506); the pool path never passes it.
         task_id = getattr(brief, "task_id", None)
         self.calls.append((task_id, node_id, cwd))
         if task_id in self.fail_ids:
             self.fail_ids.discard(task_id)
             raise RuntimeError("boom")
-        return DevelopmentOutput(
-            files_changed=[f"{task_id}.py"], commit_shas=[f"sha-{task_id}"], summary=task_id or ""
-        )
+        return DevelopmentOutput(files_changed=[f"{task_id}.py"], commit_shas=[f"sha-{task_id}"], summary=task_id or "")
 
 
 class AlwaysFailDispatcher:
@@ -184,9 +184,7 @@ class TestShouldFanOut:
     def test_effective_slots_sum_across_multiple_specs(self):
         """Two specs with count=1 each still sum to 2 effective slots."""
         wave = [_task_ref("TASK-1"), _task_ref("TASK-2")]
-        pool_cfg = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="claude-code"), DevAgentSpec(agent="codex")]
-        )
+        pool_cfg = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code"), DevAgentSpec(agent="codex")])
         assert should_fan_out(wave, pool_cfg) is True
 
 
@@ -365,29 +363,41 @@ class TestCascade:
         assert brief_dispatcher.calls  # brief's codex spec won
         assert not injected_dispatcher.calls
 
-    async def test_missing_index_degrades_to_single(self, tmp_path):
+    async def test_missing_index_degrades_to_single_via_declared_agent(self, tmp_path):
+        """FEAT-466 TASK-2506: a missing per-spec index (the normal case for
+        a hotfix, which reserves no ids) must still honour the operator's
+        declared dev agent via the builder — NOT silently fall back to the
+        server's env-configured dispatcher. Supersedes the pre-FEAT-466
+        version of this test, which asserted the bug this task fixes."""
         # No sdd/tasks/index/*.json written under tmp_path.
         research = _research(str(tmp_path))
-        dispatcher = MagicMock()
-        dev_out = DevelopmentOutput(files_changed=[], commit_shas=[], summary="single")
-        dispatcher.dispatch = AsyncMock(return_value=dev_out)
-        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code")])
+        env_dispatcher = MagicMock()
+        env_dispatcher.dispatch = AsyncMock()
+        pool_dispatcher = FakeDispatcher()
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex", model="gpt-5.5")])
+        builder_calls = []
+
+        def _builder(spec: DevAgentSpec):
+            builder_calls.append(spec)
+            return pool_dispatcher, object()
+
         node = DevelopmentNode(
-            dispatcher=dispatcher,
+            dispatcher=env_dispatcher,
             pool_config=pool_config,
-            dispatcher_builder=_dispatcher_builder_factory([FakeDispatcher()]),
+            dispatcher_builder=_builder,
         )
 
         ctx = {"run_id": "r1", "research_output": research}
         result = await node.execute(ctx)
 
-        assert result is dev_out
-        dispatcher.dispatch.assert_awaited_once()
+        assert builder_calls == [DevAgentSpec(agent="codex", model="gpt-5.5")]
+        assert pool_dispatcher.calls
+        env_dispatcher.dispatch.assert_not_awaited()
+        assert result.worker_summaries[-1].agent == "codex"
+        assert result.worker_summaries[-1].model == "gpt-5.5"
 
     async def test_no_dispatcher_builder_degrades_to_single(self, tmp_path):
-        _write_index(
-            tmp_path, "FEAT-323", "my-feature", [{"id": "TASK-1", "status": "pending", "depends_on": []}]
-        )
+        _write_index(tmp_path, "FEAT-323", "my-feature", [{"id": "TASK-1", "status": "pending", "depends_on": []}])
         research = _research(str(tmp_path))
         dispatcher = MagicMock()
         dev_out = DevelopmentOutput(files_changed=[], commit_shas=[], summary="single")
@@ -399,6 +409,152 @@ class TestCascade:
         result = await node.execute(ctx)
 
         assert result is dev_out
+
+
+@pytest.mark.asyncio
+class TestSingleAgentHonoursDeclaredAgent:
+    """FEAT-466 TASK-2506 — Problem B: the single-agent path must honour the
+    operator's declared dev agent instead of silently substituting the
+    server's env-configured default."""
+
+    async def test_uses_pool_spec_when_no_task_index(self, tmp_path):
+        """The core FEAT-466 Problem B case: pool declared, no per-spec index
+        (as on every hotfix run), selection must still be honoured."""
+        research = _research(str(tmp_path))
+        env_dispatcher = MagicMock()
+        env_dispatcher.dispatch = AsyncMock()
+        pool_dispatcher = FakeDispatcher()
+        builder_calls = []
+
+        def _builder(spec: DevAgentSpec):
+            builder_calls.append(spec)
+            return pool_dispatcher, object()
+
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex", model="gpt-5.5")])
+        node = DevelopmentNode(
+            dispatcher=env_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_builder,
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        await node.execute(ctx)
+
+        assert builder_calls == [DevAgentSpec(agent="codex", model="gpt-5.5")]
+        assert pool_dispatcher.calls
+        env_dispatcher.dispatch.assert_not_awaited()
+
+    async def test_no_pool_uses_env_dispatcher(self, tmp_path):
+        """Regression guard — the path every existing run takes."""
+        research = _research(str(tmp_path))
+        dispatcher = MagicMock()
+        dev_out = DevelopmentOutput(files_changed=[], commit_shas=[], summary="single")
+        dispatcher.dispatch = AsyncMock(return_value=dev_out)
+        node = DevelopmentNode(dispatcher=dispatcher)
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert result is dev_out
+        assert result.worker_summaries == []
+
+    async def test_warns_when_builder_missing(self, tmp_path, caplog):
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [{"id": "TASK-1", "status": "pending", "depends_on": []}],
+        )
+        research = _research(str(tmp_path))
+        dispatcher = MagicMock()
+        dev_out = DevelopmentOutput(files_changed=[], commit_shas=[], summary="single")
+        dispatcher.dispatch = AsyncMock(return_value=dev_out)
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex")])
+        node = DevelopmentNode(dispatcher=dispatcher, pool_config=pool_config)
+
+        ctx = {"run_id": "r1", "research_output": research}
+        with caplog.at_level("WARNING"):
+            await node.execute(ctx)
+
+        assert "NOT being honoured" in caplog.text
+
+    async def test_warns_on_multi_spec_pool(self, tmp_path, caplog):
+        research = _research(str(tmp_path))
+        env_dispatcher = MagicMock()
+        env_dispatcher.dispatch = AsyncMock()
+        pool_dispatcher = FakeDispatcher()
+
+        def _builder(spec: DevAgentSpec):
+            return pool_dispatcher, object()
+
+        pool_config = DevAgentPoolConfig(
+            agents=[
+                DevAgentSpec(agent="codex", model="gpt-5.5"),
+                DevAgentSpec(agent="claude-code"),
+            ]
+        )
+        node = DevelopmentNode(
+            dispatcher=env_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_builder,
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        with caplog.at_level("WARNING"):
+            await node.execute(ctx)
+
+        assert "single-agent; using only" in caplog.text
+
+    async def test_worker_summary_records_actual_backend(self, tmp_path):
+        research = _research(str(tmp_path))
+        env_dispatcher = MagicMock()
+        env_dispatcher.dispatch = AsyncMock()
+        pool_dispatcher = FakeDispatcher()
+
+        def _builder(spec: DevAgentSpec):
+            return pool_dispatcher, object()
+
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex", model="gpt-5.5")])
+        node = DevelopmentNode(
+            dispatcher=env_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_builder,
+        )
+
+        ctx = {"run_id": "r1", "research_output": research}
+        out = await node.execute(ctx)
+
+        assert out.worker_summaries[-1].agent == "codex"
+        assert out.worker_summaries[-1].model == "gpt-5.5"
+
+    async def test_worker_summary_failure_does_not_fail_dispatch(self, tmp_path, monkeypatch):
+        """A labelling failure while building WorkerSummary must not fail an
+        otherwise-successful dispatch."""
+        research = _research(str(tmp_path))
+        env_dispatcher = MagicMock()
+        env_dispatcher.dispatch = AsyncMock()
+        pool_dispatcher = FakeDispatcher()
+
+        def _builder(spec: DevAgentSpec):
+            return pool_dispatcher, object()
+
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="codex", model="gpt-5.5")])
+        node = DevelopmentNode(
+            dispatcher=env_dispatcher,
+            pool_config=pool_config,
+            dispatcher_builder=_builder,
+        )
+
+        def _boom(*a, **kw):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(development_module, "WorkerSummary", _boom)
+
+        ctx = {"run_id": "r1", "research_output": research}
+        result = await node.execute(ctx)
+
+        assert result is not None
+        assert pool_dispatcher.calls
 
 
 @pytest.mark.asyncio
@@ -482,9 +638,7 @@ class TestPoolPath:
         monkeypatch.setattr(development_module, "SubWorktreeManager", _manager_factory)
 
         d1, d2 = FakeDispatcher(), FakeDispatcher()
-        pool_config = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated"
-        )
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated")
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,
@@ -526,9 +680,7 @@ class TestPoolPath:
 
         monkeypatch.setattr(development_module, "SubWorktreeManager", _manager_factory)
 
-        pool_config = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated"
-        )
+        pool_config = DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)], isolation_mode="isolated")
         node = DevelopmentNode(
             dispatcher=MagicMock(),
             pool_config=pool_config,

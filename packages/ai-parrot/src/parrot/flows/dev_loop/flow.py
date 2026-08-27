@@ -194,19 +194,19 @@ class FlowEventPublisher:
             "node_id": node_id,
             "payload": {k: v for k, v in info.items() if k not in ("flow", "context")},
         }
-        try:
-            redis_client = await self._ensure_redis()
-            await redis_client.xadd(
-                f"flow:{run_id}:flow",
-                {"event": json.dumps(envelope, default=str)},
-                maxlen=10_000,
-                approximate=True,
-            )
-        except Exception:  # noqa: BLE001 - telemetry must never break the run
-            pass
 
+        # ORDER MATTERS. AgentsFlow._notify_node_event schedules this
+        # coroutine fire-and-forget, so everything after the first `await`
+        # races the rest of the run. The session-state fold is pure
+        # in-process bookkeeping and runs in this coroutine's FIRST slice;
+        # putting the Redis round-trip ahead of it meant that any event
+        # emitted near the end of a run (a node failing, then the terminal
+        # failure_handler) was still parked on the XADD when the runner
+        # snapshotted the host — which is how a failed node stayed
+        # "running" forever in the console.
+        #
         # Independent failure domain — never affects (or is affected by) the
-        # legacy XADD above.
+        # legacy XADD below.
         try:
             session_host = None
             if run_ctx is not None:
@@ -233,6 +233,17 @@ class FlowEventPublisher:
                 "dev-loop session-state fold failed for event %s (node=%s, run=%s)",
                 event, node_id, run_id, exc_info=True,
             )
+
+        try:
+            redis_client = await self._ensure_redis()
+            await redis_client.xadd(
+                f"flow:{run_id}:flow",
+                {"event": json.dumps(envelope, default=str)},
+                maxlen=10_000,
+                approximate=True,
+            )
+        except Exception:  # noqa: BLE001 - telemetry must never break the run
+            pass
 
     async def _ensure_redis(self) -> Any:
         """Return a cached async Redis client, creating it on first call."""

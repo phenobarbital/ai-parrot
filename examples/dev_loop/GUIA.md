@@ -156,6 +156,7 @@ A diferencia del demo, `server.py` (y `quickstart.py`) cablean el flujo real
 | Identidades reporter/escalación: `JIRA_REPORTER_ACCOUNT_ID`, `JIRA_ESCALATION_ACCOUNT_ID` | Aceptan email o accountId; `FLOW_BOT_JIRA_ACCOUNT_ID` es el fallback |
 | `AWS_PROFILE` (default `cloudwatch`) + `CLOUDWATCH_LOG_GROUP` (default `fluent-bit-cloudwatch`) | `ResearchNode` trae excerpts de logs |
 | `DEV_LOOP_LOG_FETCH_MODE` (default `auto`) | Cuándo `ResearchNode` consulta un backend de logs **remoto** (CloudWatch/Elasticsearch): `auto` = solo runs de bug, `always` = todos los kinds, `never` = deshabilitado. Las fuentes locales (`inline`/`attached_file`) nunca se filtran. |
+| `DEV_LOOP_CLOUDWATCH_ENABLED` (default `true`) | Interruptor global de CloudWatch. `false` evita construir el `CloudWatchToolkit` **y** que se adjunte una fuente `cloudwatch` al brief de un bug — el caso de trabajo local, donde la consulta es solo latencia y un error de credenciales asegurado. Ortogonal a `DEV_LOOP_LOG_FETCH_MODE` (qué kinds pueden consultar): este decide si CloudWatch existe. Un run concreto también puede excluirse con el toggle **Skip CloudWatch for this run** (`skip_cloudwatch` en el payload). |
 | `DEV_LOOP_SUMMARY_LLM` (default `anthropic:claude-haiku-4-5-20251001`) | Modelo para resumir logs cuando exceden el cap de 32 767 chars de Atlassian |
 | `DEV_LOOP_PLAN_LLM` (default `""` → cae a `DEV_LOOP_SUMMARY_LLM`) | Override opcional del modelo para el comentario de plan-summary (FEAT-132) |
 

@@ -416,7 +416,8 @@ const app = {
     affectedComponent: "", existingIssueKey: "", jiraIssueKey: "",
     logGroup: "", timeWindow: "60",
     devAgents: [], devIsolation: "shared",
-    judges: [], skipQa: false, skipJira: false,
+    flowType: "auto", baseBranch: "auto",
+    judges: [], skipQa: false, skipJira: false, skipCloudwatch: false,
   },
 };
 
@@ -498,7 +499,17 @@ function foldAction(a) {
   const s = app.s;
   switch (a.type) {
     case "run/created":   s.createdAt = a.ts; s.phase = "created"; break;
-    case "run/closed":    s.finishedAt = a.ts; s.phase = a.phase || "closed"; break;
+    case "run/closed":    s.finishedAt = a.ts;
+                          // `RunClosed` names the field `outcome`, not `phase`
+                          // — and it is the authoritative last word on both
+                          // terminal projections: the runner reads them off the
+                          // Handoff node's own response, so they land even when
+                          // the flow-event `run/prLinked` never fires. Mirrors
+                          // the server reducer's `action.pr_url or state.pr_url`.
+                          s.phase = a.outcome || "closed";
+                          if (a.pr_url) s.prUrl = a.pr_url;
+                          if (a.jira_issue_key) s.jiraKey = a.jira_issue_key;
+                          break;
     case "run/cancelled": s.phase = "cancelled"; break;
 
     case "node/started":   { const n = node(a.node_id); n.status = "running"; n.started_at = a.ts; break; }
@@ -705,12 +716,38 @@ function criteriaSummary() {
   return `${shell} shell · ${manual} manual`;
 }
 
+// FEAT-466 TASK-2508: mirror scripts.sdd.sdd_meta.WORK_KIND_FLOW's mapping
+// so the "ready" summary shows the RESOLVED outcome, never the literal
+// "auto" string — an operator override composes field-wise, exactly like
+// resolve_flow()'s precedence (explicit override > kind mapping > default).
+function resolvedFlow() {
+  const f = app.form;
+  const kindDerivedType = app.kind === "bug" ? "hotfix" : "feature";
+  const type = f.flowType !== "auto" ? f.flowType : kindDerivedType;
+  const base = f.baseBranch !== "auto" ? f.baseBranch : (type === "hotfix" ? "main" : "dev");
+  return { type, base };
+}
+
+// FEAT-466 TASK-2508 guard (§F): resolve_flow() raises ValueError for
+// type=hotfix + base_branch != main. The EFFECTIVE type can go hotfix
+// either by an explicit flowType="hotfix" override OR implicitly, when
+// flowType is still "auto" on a kind="bug" run — both must be guarded.
+// Call after any change that could affect app.kind or app.form.flowType.
+function sanitizeFlowOverride() {
+  const f = app.form;
+  if (resolvedFlow().type === "hotfix" && f.baseBranch !== "auto" && f.baseBranch !== "main") {
+    f.baseBranch = "auto";
+  }
+}
+
 function renderReady() {
   const f = app.form;
+  const rf = resolvedFlow();
   const rows = app.mode === "feature"
     ? [
         ["document", f.documentPath ? f.documentPath.split("/").pop() : "— required —"],
         ["doc kind", f.documentKind],
+        ["flow", `${rf.type} → ${rf.base}`],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
         ["judges", `${effectiveJudges().length} · majority`],
         ["jira", f.jiraIssueKey || "none (optional)"],
@@ -719,6 +756,7 @@ function renderReady() {
       ]
     : [
         ["kind", app.kind],
+        ["flow", `${rf.type} → ${rf.base}`],
         ["component", f.affectedComponent || "— required —"],
         ["criteria", criteriaSummary()],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "server default"],
@@ -1121,6 +1159,27 @@ function tabBodyHtml(tab) {
       ${["shared", "isolated"].map((v) =>
         `<label class="seg-opt ${f.devIsolation === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
     </div>`;
+  // FEAT-466 TASK-2508: console flow-type / base-branch override.
+  // "auto" is a UI-only sentinel — it is never sent to the server (§F,
+  // buildPayload). When flowType === "hotfix" the base-branch choices are
+  // restricted to auto/main so the invalid hotfix+non-main combination is
+  // unreachable from the UI (resolve_flow() rejects it server-side too).
+  const flowTypeSeg = `
+    <div class="seg" data-seg="flowType">
+      ${["auto", "feature", "hotfix"].map((v) =>
+        `<label class="seg-opt ${f.flowType === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
+  // Filter on the RESOLVED (effective) type, not the literal flowType field:
+  // on a kind="bug" run with flowType still "auto", the effective type is
+  // already "hotfix" (WORK_KIND_FLOW's mapping) — the guard must apply
+  // there too, not only once the operator explicitly picks "hotfix".
+  const baseBranchValues = resolvedFlow().type === "hotfix"
+    ? ["auto", "main"] : ["auto", "dev", "main", "staging"];
+  const baseBranchSeg = `
+    <div class="seg" data-seg="baseBranch">
+      ${baseBranchValues.map((v) =>
+        `<label class="seg-opt ${f.baseBranch === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
 
   if (tab === "criteria") {
     return grid(`
@@ -1153,6 +1212,15 @@ function tabBodyHtml(tab) {
         <label for="t-window">Window (minutes)</label>
         <input id="t-window" class="input mono" type="number" min="1" max="1440" data-form="timeWindow" value="${esc(f.timeWindow)}" />
         <p class="hint">1 – 1440, counted back from dispatch.</p>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="chk-skip-cloudwatch" ${f.skipCloudwatch ? "checked" : ""} style="width:16px;height:16px" ${d.cloudwatch_enabled === false ? "disabled" : ""} />
+          <span class="field-label" style="margin:0">Skip CloudWatch for this run</span>
+        </label>
+        <p class="hint">${d.cloudwatch_enabled === false
+          ? `CloudWatch is off server-wide (<span class="mono">DEV_LOOP_CLOUDWATCH_ENABLED=false</span>) — no bug run queries it.`
+          : `Bug runs attach a CloudWatch source by default. Tick this when you are reproducing locally and the AWS query is only latency — research then triages from the description and the codebase. Non-bug kinds never query CloudWatch at all.`}</p>
       </div>`);
   }
   if (tab === "jira") {
@@ -1199,6 +1267,16 @@ function tabBodyHtml(tab) {
       <div class="field" style="max-width:280px">
         <span class="field-label">Worktree isolation</span>
         ${isolationSeg}
+      </div>
+      <div class="field" style="max-width:280px">
+        <span class="field-label">Flow type (FEAT-466)</span>
+        ${flowTypeSeg}
+        <p class="hint">auto = derive from kind (bug → hotfix, else feature).</p>
+      </div>
+      <div class="field" style="max-width:360px">
+        <span class="field-label">Base branch (FEAT-466)</span>
+        ${baseBranchSeg}
+        <p class="hint">auto = derive from flow type (hotfix → main, feature → dev). Hotfix only allows main.</p>
       </div>
     </div>`;
   }
@@ -1326,6 +1404,9 @@ function buildPayload() {
     if (f.judges.length) payload.judge_panel = f.judges;
     if (f.skipQa) payload.skip_qa = true;
     if (f.skipJira) payload.skip_jira = true;
+    // FEAT-466 TASK-2508: "auto" is a UI-only sentinel — never reaches Python.
+    if (f.flowType !== "auto") payload.flow_type = f.flowType;
+    if (f.baseBranch !== "auto") payload.base_branch = f.baseBranch;
     return payload;
   }
   const payload = {
@@ -1337,11 +1418,15 @@ function buildPayload() {
     time_window_minutes: parseInt(f.timeWindow || "60", 10),
   };
   if (f.logGroup.trim()) payload.log_group = f.logGroup.trim();
+  if (f.skipCloudwatch) payload.skip_cloudwatch = true;
   if (f.existingIssueKey.trim()) payload.existing_issue_key = f.existingIssueKey.trim();
   if (f.devAgents.length) {
     payload.dev_agents = f.devAgents;
     payload.dev_isolation = f.devIsolation;
   }
+  // FEAT-466 TASK-2508: "auto" is a UI-only sentinel — never reaches Python.
+  if (f.flowType !== "auto") payload.flow_type = f.flowType;
+  if (f.baseBranch !== "auto") payload.base_branch = f.baseBranch;
   if (f.skipQa) payload.skip_qa = true;
   if (f.skipJira) payload.skip_jira = true;
   return payload;
@@ -1467,12 +1552,20 @@ document.addEventListener("click", (e) => {
   if (kind) {
     const v = kind.dataset.kind;
     if (v === "feature" && !app.config?.feature_mode?.available) return;
-    app.kind = v; applyMode(); return;
+    app.kind = v;
+    sanitizeFlowOverride(); // FEAT-466 TASK-2508: kind="bug" implies hotfix
+    applyMode(); return;
   }
   const dk = t.closest("[data-dockind]");
   if (dk) { app.form.documentKind = dk.dataset.dockind; renderKindPicker(); renderReady(); return; }
   const view = t.closest("[data-view]");
   if (view) { app.view = view.dataset.view; renderKindPicker(); renderExecution(); return; }
+  const flowSeg = t.closest('[data-seg="flowType"] [data-val]');
+  if (flowSeg) {
+    app.form.flowType = flowSeg.dataset.val;
+    sanitizeFlowOverride();
+    renderTabs(); renderReady(); return;
+  }
   const seg = t.closest("[data-seg] [data-val]");
   if (seg) {
     app.form[seg.closest("[data-seg]").dataset.seg] = seg.dataset.val;
@@ -1531,6 +1624,10 @@ document.addEventListener("click", (e) => {
       app.form.skipJira = t.checked;
       renderReady();
       break;
+    case "chk-skip-cloudwatch":
+      app.form.skipCloudwatch = t.checked;
+      renderReady();
+      break;
   }
 });
 
@@ -1583,6 +1680,8 @@ $("request-form").addEventListener("submit", submit);
   }
   app.form.timeWindow = String(app.config.defaults?.time_window_minutes ?? 60);
   app.form.skipQa = !!app.config.defaults?.skip_qa;
+  // Server-wide kill switch pre-ticks (and disables) the per-run toggle.
+  app.form.skipCloudwatch = app.config.defaults?.cloudwatch_enabled === false;
   applyMode();
   render();
 })();
