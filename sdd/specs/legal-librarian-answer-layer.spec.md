@@ -224,20 +224,54 @@ class SuppressionRecord(BaseModel):             # append-only, span_suppressions
 # parrot/knowledge/ontology/schema.py  (EXTENSION, R15)
 
 class SearchViewField(BaseModel):
-    path: str                                   # e.g. "titulo" or "versions[*].text"
-    analyzers: list[str] = ["text_es"]
+    path: str                                   # "titulo" or "versions[*].text" (one nesting level max)
+    analyzers: list[str] = Field(default_factory=lambda: ["text_es"])
 
 class SearchViewLink(BaseModel):
-    entity: str                                 # entity name, resolved to its collection
+    entity: str                                 # entity NAME (e.g. "Articulo"); merger resolves
+                                                # it to EntityDef.collection and fails if unknown
     fields: list[SearchViewField]
 
 class SearchViewDef(BaseModel):
-    name: str                                   # view name inside the tenant DB
     links: list[SearchViewLink]
+    model_config = ConfigDict(extra="forbid")
+    # The view NAME is the dict key in `search_views:` — no name field, no drift.
 
-# OntologyDefinition gains:  search_views: dict[str, SearchViewDef] = {}
-# MergedOntology gains:      search_views merged across layers (same union
-#                            semantics as traversal_patterns)
+# OntologyDefinition gains:  search_views: dict[str, SearchViewDef] = Field(default_factory=dict)
+# MergedOntology gains:      search_views: dict[str, SearchViewDef] = Field(default_factory=dict)
+#                            (union-by-name across layers, later layer wins —
+#                             same semantics as traversal_patterns in OntologyMerger)
+```
+
+```python
+# parrot_tools/legal/librarian/models.py — the LLM-facing DRAFT models.
+# THE LLM NEVER EMITS OFFSETS. It emits payload keys + literal quotes; the
+# verifier locates each quote deterministically (str.find) and derives
+# start/end. This is load-bearing: offsets from a stochastic source would
+# defeat the existence gate.
+
+class DraftSpan(BaseModel):
+    payload_key: str                            # "{id}:{version_n}" — from the enumerated dossier
+    quote: str                                  # verbatim text the librarian cites
+
+class DraftReadingNote(BaseModel):
+    text: str                                   # ONE sentence
+    spans: list[DraftSpan] = Field(min_length=1)
+    basis: Literal["deterministic", "llm"]
+
+class DraftConflictNote(BaseModel):
+    span_a: DraftSpan
+    span_b: DraftSpan
+    note: str
+
+class DraftAnswer(BaseModel):                   # ask(structured_output=DraftAnswer)
+    reading_order: list[str]                    # payload keys, librarian's suggested order
+    conflicts: list[DraftConflictNote]
+    reading_guide: list[DraftReadingNote]
+    not_found: list[str]                        # corpus-scoped absence statements
+
+# The FINAL LegalAnswer (above) is assembled by the span_verify stage:
+# quotes located → offsets derived → SpanRefs sealed → prunes applied.
 ```
 
 ### New Public Interfaces
@@ -271,44 +305,436 @@ class OntologyLegalWikiStore(BaseWikiStore): ...    # read-only; ~6 methods impl
 
 ## 3. Module Breakdown
 
+> Each module below carries an **Implementation detail** block. These are binding:
+> implementing agents follow them verbatim unless the code has drifted (verify
+> with the file:line anchors in §6 first, then adapt minimally and note the
+> deviation in the task's Completion Note).
+
 ### Module 1: Hash sealing + BOE re-ingest (Sprint 1.5)
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/boe/` (`hashing.py` NEW; `models.py`, `parser.py`/`datasource.py` modified)
-- **Responsibility**: `normalize_for_hash` (NFC + newline only, R11), `ArticleVersion` gains `content_hash: str` + `hash_norm_version: int`; sealing happens where version text is constructed so every ingested version carries it; full `sync_boe()` re-run refreshes the corpus (R7 — corpus reproducible from source).
-- **Depends on**: nothing (blocking for M4–M7).
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/boe/` (`hashing.py` NEW; `models.py`, `parser.py` modified; `datasource.py`/`sync.py` unchanged)
+- **Responsibility**: normalize-then-store-then-hash so spans slice stored text directly; full `sync_boe()` re-run (R7).
+- **Depends on**: nothing (blocking for M4–M6, M8).
+
+**Implementation detail:**
+
+```python
+# parrot_tools/legal/boe/hashing.py  (NEW — complete file body)
+"""Content-hash sealing for BOE article versions (FEAT-449 R3/R11)."""
+import hashlib
+import unicodedata
+
+HASH_NORM_VERSION = 1  # bump ONLY with a migration plan — changing this invalidates every stored span
+
+def normalize_for_hash(text: str) -> str:
+    """Unicode NFC + newline normalization (\\r\\n|\\r -> \\n). NOTHING else —
+    no whitespace collapse: offsets must index text identical to what the
+    lawyer is shown (R11)."""
+    return unicodedata.normalize("NFC", text).replace("\r\n", "\n").replace("\r", "\n")
+
+def seal_hash(normalized_text: str) -> str:
+    """sha256 hex over the ALREADY-normalized text."""
+    return hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
+```
+
+- `models.py` — `ArticleVersion` gains two fields (append after `derived`):
+  `content_hash: str | None` and `hash_norm_version: int | None`. Enforce with a
+  Pydantic `model_validator(mode="after")`: `text is None` ⇔ `content_hash is None`
+  ⇔ `hash_norm_version is None` (suprimida versions carry no hash). Update the
+  class docstring accordingly.
+- `parser.py::_parse_bloque` (line 202) — inside the version loop, replace
+  `text = None if kind == "supresion" else _extract_body_text(version_el)` with:
+
+```python
+raw = None if kind == "supresion" else _extract_body_text(version_el)
+text = normalize_for_hash(raw) if raw is not None else None   # STORE normalized text
+content_hash = seal_hash(text) if text is not None else None
+norm_version = HASH_NORM_VERSION if text is not None else None
+```
+
+  and pass `content_hash=content_hash, hash_norm_version=norm_version` into the
+  `ArticleVersion(...)` constructor. **The stored `text` IS the normalized text** —
+  hash what you store, slice what you stored. No change to the `valid_to` chaining
+  or to the returned record shape (`versions` still `model_dump(mode="json")`).
+- Re-ingest: `await sync_boe(tenant_id, since=None)` (full refresh — `since=None`,
+  `sync.py:24`). Ops note: the legal tenant lives on the dev ArangoDB (VPN
+  required); if the dev DB times out, run data scripts with `ENV=prod`.
+- Fixture updates: TASK-2376 fixtures/tests under
+  `packages/ai-parrot-tools/tests/legal/` assert version dicts — extend expected
+  records with the two new fields; do NOT loosen assertions.
 
 ### Module 2: Declarative ArangoSearch views in the ontology schema (R15)
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/ontology/` (`schema.py`, `merger.py`, `graph_store.py`)
-- **Responsibility**: `SearchViewDef`/`SearchViewLink`/`SearchViewField` models; `OntologyDefinition.search_views` + merge (union, same layering as `traversal_patterns`, validation that `entity` names resolve); `OntologyGraphStore._ensure_views` provisioning (create-if-absent, reconcile-if-drifted — copy the reconcile shape from `wiki/arango_store.py:393-400`) called from `initialize_tenant`. Framework change, domain-agnostic.
+- **Responsibility**: `search_views:` as first-class ontology YAML config, provisioned idempotently at tenant init. Framework change, domain-agnostic — no `legal` reference anywhere in this module.
 - **Depends on**: nothing (parallel to M1).
 
-### Module 3: Legal ontology v1.1 — view + search pattern
+**Implementation detail:**
+
+- `schema.py`: add `SearchViewField` / `SearchViewLink` / `SearchViewDef` exactly
+  as in §2 Data Models (all `extra="forbid"`); add
+  `search_views: dict[str, SearchViewDef] = Field(default_factory=dict)` to BOTH
+  `OntologyDefinition` (line 300) and `MergedOntology` (line 330). The dict key
+  is the view name.
+- `merger.py`: merge `search_views` with the same name-keyed union used for
+  `traversal_patterns` (later layer overrides same-named view). Add validation
+  mirroring the `vectorize` check (merger.py:427-434): every `link.entity` must
+  name a merged entity — unknown entity ⇒ merge error naming the view and layer.
+- `graph_store.py`: new private method, called as **step 6** at the end of
+  `initialize_tenant` (after named-graph creation, ~line 160):
+
+```python
+async def _ensure_views(self, db: Any, ctx: TenantContext) -> None:
+    """Provision/reconcile declared ArangoSearch views. Idempotent.
+
+    IMPORTANT: drives the underlying arangoasync Database via
+    db._connection directly. The asyncdb wrapper
+    create_arangosearch_view() calls async views()/create_view() WITHOUT
+    awaiting them and raises TypeError against a real server — known
+    vendored bug, worked around identically in
+    parrot/knowledge/wiki/arango_store.py:358-400 (READ that method
+    before writing this one).
+    """
+    for view_name, view_def in ctx.ontology.search_views.items():
+        properties: dict[str, Any] = {"links": {}}
+        for link in view_def.links:
+            entity = ctx.ontology.entities[link.entity]      # validated by merger
+            fields: dict[str, Any] = {}
+            for f in link.fields:
+                _merge_link_field(fields, f.path)             # path grammar below
+            properties["links"][entity.collection] = {
+                "analyzers": sorted({a for f in link.fields for a in f.analyzers}),
+                "fields": fields,
+            }
+        connection = db._connection
+        existing = await connection.views()
+        if not any(v.get("name") == view_name for v in existing):
+            await connection.create_view(name=view_name, view_type="arangosearch",
+                                         properties=properties)
+        elif not _view_matches(await connection.view(view_name), properties):
+            await connection.replace_view(view_name, properties)
+```
+
+- Path grammar (module-level helper `_merge_link_field(fields, path)`):
+  `"titulo"` → `fields["titulo"] = {}`; `"versions[*].text"` →
+  `fields["versions"] = {"fields": {"text": {}}}`. Exactly ONE nesting level
+  supported; any other shape ⇒ `ValueError` at merge time (checked in merger, not
+  at provisioning). ArangoSearch auto-expands array elements under a nested link —
+  no `trackListPositions` in v1 (view match positions are NEVER used for spans;
+  spans always slice the stored payload — M4).
+- Failure posture: mirror `initialize_tenant`'s collection loop — a view failure
+  logs `logger.warning` and continues (tenant init must not hard-fail on a search
+  index); unit tests still assert the create/reconcile/skip paths.
+
+### Module 3: Legal ontology v1.1 — view + search pattern + suppression collection
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/legal.ontology.yaml`
-- **Responsibility**: declare `legal_articulos_view` (links: `Articulo.versions[*].text`, `Norma.titulo`; analyzers `["text_es", "text_en"]`) and the `search_articles` traversal pattern: `SEARCH` over the view + `BM25(doc)` ranking + per-version temporal filter (`valid_from <= @as_of < valid_to|null`) so only the in-force wording for `@as_of` is returned; binds `@query`, `@as_of`, `@limit`.
+- **Responsibility**: declare the view, the `search_articles` pattern, and the `SpanSuppression` entity; bump `version: "1.1"`.
 - **Depends on**: Module 2.
 
+**Implementation detail** — add these blocks (style-matched to the existing file):
+
+```yaml
+# under entities: (alongside Norma/Articulo/Materia)
+  SpanSuppression:
+    collection: span_suppressions
+    key_field: suppression_id
+    properties:
+      - suppression_id:
+          type: string
+          required: true
+          unique: true
+      - execution_id:
+          type: string
+          required: true
+      - suppressed_text:
+          type: string
+          required: true
+      - claimed_anchors:
+          type: list
+      - reason:
+          type: string
+          required: true
+      - user_id:
+          type: string
+      - created_at:
+          type: datetime
+          required: true
+
+# NEW top-level section (schema support lands in M2):
+search_views:
+  legal_articulos_view:
+    links:
+      - entity: Articulo
+        fields:
+          - path: "versions[*].text"
+            analyzers: ["text_es", "text_en"]
+      - entity: Norma
+        fields:
+          - path: "titulo"
+            analyzers: ["text_es", "text_en"]
+
+# under traversal_patterns: (alongside article_in_force)
+  search_articles:
+    description: >
+      Lexical candidate search over article wordings, then in-force version
+      resolution for @as_of. SEARCH matches at DOCUMENT level (any version's
+      text can match) — the temporal filter selects the in-force version and
+      the Python helper applies the token-containment guard so a hit that
+      exists only in a superseded wording is dropped (see search_articles()
+      in parrot_tools/legal/boe/queries.py). Analyzer names cannot be bind
+      vars inside ANALYZER()/TOKENS() and view names cannot be bind vars at
+      all — both are literal here, matching the view declared above.
+    trigger_intents:
+      - que dice la ley sobre
+      - que articulo regula
+      - normativa aplicable
+      - which article regulates
+    query_template: >
+      FOR a IN legal_articulos_view
+        SEARCH ANALYZER(a.versions.text IN TOKENS(@query, "text_es"), "text_es")
+            OR ANALYZER(a.versions.text IN TOKENS(@query, "text_en"), "text_en")
+        LET score = BM25(a)
+        SORT score DESC
+        LIMIT @limit
+        FOR v IN a.versions
+          FILTER v.valid_from <= @as_of
+          FILTER v.valid_to == null OR v.valid_to > @as_of
+          RETURN { articulo_key: a._key, norma_ref: a.norma_ref,
+                   numero: a.numero, version: v, score: score }
+    post_action: none
+```
+
+- `Norma.titulo` participates in the view for ranking/recall, but the pattern
+  returns only `articulo` rows — norm-title hits surface through their articles.
+- `validate_aql` passes this template (only mutations/system-collections/JS are
+  rejected — `validators.py:13-33`); add a unit test asserting exactly that.
+
 ### Module 4: Librarian contracts + span verifier + suppression log
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/librarian/` (`models.py`, `verifier.py`) + `span_suppressions` collection declared in the ontology YAML (M3)
-- **Responsibility**: the §2 Pydantic contracts; `SpanVerifier` existence gate (hash equality → offset-slice equality → anchor integrity → prune + `SuppressionRecord`); suppression records land in the **append-only `span_suppressions` collection in the tenant** — NOT `AuditLedger` (see §8 note); empty-dossier rule ⇒ "no encontré" answer shape.
-- **Depends on**: Module 1 (hashes must exist).
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/librarian/` (`__init__.py`, `models.py`, `verifier.py`, `suppression.py` — all NEW)
+- **Responsibility**: §2 contracts (final + draft); the deterministic existence gate; the append-only suppression log.
+- **Depends on**: Module 1 (hashes), Module 3 (collection).
+
+**Implementation detail:**
+
+- `models.py`: the §2 Data Models blocks verbatim (`SpanRef`, `ConflictNote`,
+  `ReadingNote`, `LegalAnswer`, `SuppressionRecord`, `DraftSpan`,
+  `DraftReadingNote`, `DraftConflictNote`, `DraftAnswer`), plus:
+
+```python
+class PayloadEntry(BaseModel):
+    payload_key: str                 # "{articulo_key}:{version_n}"
+    payload: str                     # stored NORMALIZED version text
+    content_hash: str                # carried from the record (NOT recomputed here)
+    title: str                       # "{norma_ref} art. {numero}"
+    url: str                         # https://www.boe.es/buscar/act.php?id={norma_ref}
+    as_of: date
+    version_n: int
+    articulo_key: str
+    basis: Literal["retrieval", "traversal"]
+```
+
+  Key formats everywhere: `payload_key = f"{articulo_key}:{version_n}"`;
+  span key = `f"{payload_key}:{start}-{end}"`.
+- `verifier.py` — pure code, no LLM, no network, fully unit-testable:
+
+```python
+class SpanVerifier:
+    """Existence gate (skeleton §5.1/§5.3).
+
+    Verification order per DraftSpan — first failure wins, reason is exact:
+      1. payload_key not in retrieval_set          -> prune "span_not_found"
+      2. seal_hash(entry.payload) != entry.content_hash
+                                                   -> prune "hash_mismatch"
+         (defence in depth: store tampered/drifted since ingest)
+      3. idx = entry.payload.find(span.quote); idx == -1
+                                                   -> prune "quote_mismatch"
+         else start, end = idx, idx + len(span.quote)
+         (FIRST occurrence — documented, deterministic)
+    Then per DraftReadingNote: drop pruned spans from .spans; if none survive
+    -> suppress the sentence: suppressed_count += 1, SuppressionRecord(
+       reason="anchor_lost", suppressed_text=note.text,
+       claimed_anchors=[s.payload_key for s in note.spans]).
+    DraftConflictNote with either side pruned -> dropped + recorded
+    ("anchor_lost"). reading_order: filtered to surviving payload_keys
+    silently (pointers, not claims). Surviving DraftSpans -> SpanRef with
+    offsets sealed here (kind/id/version_n/url/as_of/basis from PayloadEntry).
+    dossier = deduped surviving SpanRefs, dossier_build order preserved.
+    Empty dossier -> LegalAnswer(not_found=[corpus-scoped statement built
+    from materias + as_of], reading_guide=[], conflicts=[], dossier=[]).
+    """
+
+    def verify(
+        self,
+        draft: DraftAnswer,
+        retrieval_set: dict[str, PayloadEntry],
+        *,
+        as_of: date,
+        materias: list[str],
+        execution_id: str,
+        user_id: str | None = None,
+    ) -> tuple[LegalAnswer, list[SuppressionRecord]]: ...
+```
+
+- `suppression.py` — `SuppressionLog` with exactly ONE public method
+  `async def append(self, record: SuppressionRecord) -> None`, inserting into
+  `span_suppressions` through the tenant's asyncdb connection
+  (`suppression_id = f"{execution_id}:{seq}"`). NO update/delete/list methods —
+  append-only by construction; reading it is an ops/AQL concern. Why not
+  `AuditLedger`: its `append()` requires `credential_material` and derives KMS
+  fingerprints (`audit_ledger.py:338`) — a suppression has no credential (§8).
 
 ### Module 5: `search_articles` helper + `as_of` extraction
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/boe/queries.py` (extend) + `parrot_tools/legal/librarian/as_of.py` (NEW)
-- **Responsibility**: typed `search_articles()` wrapper (mirrors `article_in_force`'s pattern-lookup style); `extract_as_of(query) -> date | None` — deterministic date regexes first, single structured LLM micro-call (`date | null`) only when regex finds nothing, default today; the used `as_of` always flows into `LegalAnswer.as_of` (R9).
+- **Path**: `parrot_tools/legal/boe/queries.py` + `boe/models.py` (extend); `parrot_tools/legal/librarian/as_of.py` (NEW)
+- **Responsibility**: typed pattern wrapper with the temporal token guard; deterministic date extraction (R9).
 - **Depends on**: Module 3.
 
+**Implementation detail:**
+
+- `boe/models.py` — add:
+
+```python
+class ArticleHit(BaseModel):
+    articulo_key: str
+    norma_ref: str
+    numero: str
+    version: ArticleVersion          # the in-force version for the queried as_of
+    score: float                     # BM25 from the view
+```
+
+- `queries.py::search_articles` — mirror `article_in_force` (lines 24-72)
+  structurally: pattern fetched from
+  `ctx.ontology.traversal_patterns["search_articles"]` (loud `KeyError` if
+  undeclared), executed via `store.execute_traversal`, binds
+  `{"query": query, "as_of": _iso(as_of), "limit": limit}`. NOTE: no `@@articulo`
+  bind — the view name is literal in the template.
+  **Token-containment guard** (the load-bearing temporal check, applied in Python
+  AFTER the AQL): fold both query and `version.text` with
+  `unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()`;
+  query tokens = regex `\w{4,}` over the folded query; keep a hit iff ≥1 token is
+  a substring of the folded in-force text. If the query yields ZERO such tokens
+  (short/stopword-only query), skip the guard. This is what drops a candidate
+  whose match lives only in a superseded wording.
+- `as_of.py::extract_as_of(query: str, llm_ask) -> date | None` — regexes tried
+  IN ORDER over the query:
+  1. ISO: `\b(\d{4})-(\d{2})-(\d{2})\b`
+  2. numeric ES (day-first): `\b(\d{1,2})/(\d{1,2})/(\d{4})\b`
+  3. long ES (case-insensitive): `\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4})\b`
+  Exactly ONE distinct date across all matches → return it, no LLM call. Zero or
+  more-than-one distinct dates → ONE structured micro-call:
+  `ask(structured_output=AsOfExtraction)` with
+  `class AsOfExtraction(BaseModel): as_of: date | None`, prompt = the user query
+  plus any regex candidates. `None` → the caller (flow M6) defaults to
+  `date.today()`. The used value ALWAYS lands in `LegalAnswer.as_of` (R9);
+  invalid calendar dates from regex (e.g. 31/02) are discarded as non-matches.
+
 ### Module 6: Retrieval DAG + `LegalLibrarianAgent`
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/librarian/` (`agent.py`, `flow.py`)
-- **Responsibility**: the §2 flow as `AgentCrew.run_flow` with `ToolNode` stages; dossier assembly (SpanRefs from `search_articles` hits + explicit-id lookups, precedence: norm text in force first); prompt enumerates dossier span keys; `ask(structured_output=LegalAnswer)`; post-LLM `span_verify` + `GroundednessScorer` atom stage wired per §5.3 of the skeleton.
+- **Path**: `parrot_tools/legal/librarian/` (`agent.py`, `flow.py`)
+- **Responsibility**: the §2 flow; dossier assembly; structured draft; post-LLM gates.
 - **Depends on**: Modules 4, 5.
 
+**Implementation detail:**
+
+- `flow.py` — `AgentCrew.run_flow` with `ToolNode` stages (deterministic callables):
+  1. `as_of_extract` → M5 `extract_as_of`; output `{query, as_of}` (default today).
+  2. `graph_retrieve` → explicit-id pass FIRST: regex `BOE-A-\d{4}-\d+` and
+     `articulo_key` shapes recognized via `parrot_tools/legal/ids.py`
+     (`is_valid_boe_id`, `article_key`); found articulo ids resolved with
+     `article_in_force(store, ctx, key, as_of)`. THEN
+     `search_articles(store, ctx, query, as_of, limit=20)`.
+  3. `dossier_build` → build `retrieval_set: dict[str, PayloadEntry]` (payload =
+     stored normalized version text; `content_hash` carried from the record — NOT
+     recomputed; recomputation is the verifier's job) and the prompt enumeration:
+     explicit-id entries first, then BM25 order, cap 20. Each prompt entry shows
+     `payload_key`, title, validity window (`valid_from`/`valid_to`), and the FULL
+     version text. If a payload exceeds 4000 chars, show head 2000 + `\n[...]\n` +
+     tail 1000 and say so — the verifier always checks against the FULL payload.
+  4. `librarian` → `LegalLibrarianAgent.ask(structured_output=DraftAnswer)`.
+     System prompt: the librarian rules from skeleton §5.2 (R1/R5 — may rank,
+     flag conflicts, state corpus-scoped absence, narrate traversal-derived
+     context; must NOT resolve conflicts or assert beyond the dossier), plus:
+     "the ONLY legal payload_key values are the ones enumerated; quotes must be
+     copied verbatim from the shown text".
+  5. `span_verify` → `SpanVerifier.verify(...)`; append every `SuppressionRecord`
+     via `SuppressionLog`; assemble the final `LegalAnswer` (fills `as_of`,
+     `materias`, `suppressed_count`, `disclaimer`).
+  6. `ground` → `GroundednessScorer.score(guide_text, evidence)` where
+     `guide_text` = surviving `ReadingNote.text` joined with newlines and
+     `evidence` = `EvidenceIndex` built from the dossier payloads; a CONTRADICTED
+     numeric/identifier atom ⇒ suppress that sentence via the same record path
+     (reason `"atom_contradicted"`).
+- `agent.py` — `class LegalLibrarianAgent(Agent)`: read-only (no write tools
+  mounted), no conversation memory, low temperature; class docstring carries the
+  one-line invariant (R2) verbatim.
+- Final `dossier` ordering: explicit-id spans first, then BM25 score desc; stable
+  tiebreak by `payload_key`. Deterministic — same inputs, same order.
+
 ### Module 7: Wiki-namespace adapter (R16)
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/legal/wiki_store.py` (NEW) + minimal seams in `parrot/knowledge/wiki/store.py` (`create_wiki_store`) and `wiki/federation.py` (`open_namespace_store`)
-- **Responsibility**: read-only `OntologyLegalWikiStore(BaseWikiStore)` — `search_fts` (AQL against `legal_articulos_view`, stub-dict shape per `wiki/store.py` contract), `get_page` (articulo → in-force text page), `list_pages`, `neighbors` (typed edges), `stats`; `search_vector` returns `[]` (R14); all write methods raise. Registration: backend value `"ontology_legal"` accepted by `create_wiki_store` kwargs path and dispatched in `open_namespace_store` for kind `database`, so `.parrotwiki`-style configs can declare `legal:` as a namespace.
+- **Path**: `parrot_tools/legal/wiki_store.py` (NEW) + `parrot/knowledge/wiki/store.py` + `parrot/knowledge/wiki/federation.py` (both minimal, additive)
+- **Responsibility**: legal corpus as a read-only FEAT-450 namespace.
 - **Depends on**: Modules 2, 3.
 
+**Implementation detail:**
+
+- `wiki/store.py` — pluggable backend registry (additive; existing backends untouched):
+
+```python
+_EXTRA_BACKENDS: dict[str, Callable[..., BaseWikiStore]] = {}
+
+def register_wiki_backend(name: str, factory: Callable[..., BaseWikiStore]) -> None:
+    """Register a satellite-provided wiki backend (FEAT-449 M7)."""
+    _EXTRA_BACKENDS[name] = factory
+
+# in create_wiki_store (line 1369), immediately BEFORE the final ValueError:
+if backend in _EXTRA_BACKENDS:
+    return _EXTRA_BACKENDS[backend](storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)
+```
+
+- `wiki/federation.py::open_namespace_store` — in the `kind == "database"` branch
+  (~line 397), BEFORE the `_open_arango` call (read the registry through the
+  module so import-time registration is seen):
+
+```python
+from parrot.knowledge.wiki import store as wiki_store  # module import, top of file
+
+if cfg.backend and cfg.backend != "arangodb" and cfg.backend in wiki_store._EXTRA_BACKENDS:
+    store = wiki_store._EXTRA_BACKENDS[cfg.backend](
+        storage_dir=None,
+        wiki_name=name,
+        database=cfg.database or "",
+        arango_params=resolve_arango_params(_arango_config_for(cfg)),
+        read_only=read_only,
+    )
+    await _assert_plane_readable(store)
+    return store, None
+```
+
+  Behavior for `backend in {"arangodb", None}` is byte-for-byte unchanged.
+- `parrot_tools/legal/__init__.py` — registration at import time:
+  `register_wiki_backend("ontology_legal", OntologyLegalWikiStore.factory)`.
+- `OntologyLegalWikiStore(BaseWikiStore)` — implement ALL 16 abstract methods
+  (`wiki/store.py:289-378`; ABC — a partial class will not instantiate). Binding
+  mapping table:
+
+| Method | Behavior |
+|---|---|
+| `upsert_pages`, `add_edges`, `replace_source_slice`, `delete_page`, `upsert_embedding` | `raise NotImplementedError("ontology_legal namespace is read-only")` |
+| `get_page(concept_id, include_body)` | `concept_id` = `articulo_key`; body = in-force text for `date.today()` (embedded-array filter, same predicate as `article_in_force`); title `"{norma_ref} art. {numero}"`; `category="articulo"`; `source_id=norma_ref` |
+| `list_pages(category, limit, origin)` | AQL over `articulo` (and `norma` when `category == "norma"`); stub dicts, no bodies |
+| `search_fts(query, category, limit)` | the `search_articles` AQL with `as_of = today` + the M5 token guard, projected to the stub shape `{concept_id, node_id, title, category, summary, source_id, token_count, score}` — summary = first 280 chars of in-force text; `node_id = articulo_key`; `token_count = len(text) // 4` |
+| `search_vector(embedding, limit)` | `return []` — R14; NEVER raise (combined search must degrade silently to lexical) |
+| `neighbors(concept_id, rel, direction)` | AQL over `modifica`/`deroga`/`pertenece_a` edge collections filtered by `_from`/`_to`, mapped to `{concept_id, rel, direction}` stubs |
+| `dump_pages`, `dump_edges` | plain AQL scans (export path); page bodies = in-force text |
+| `stats` | counts: normas, articulos, total versions, in-force versions |
+| `orphan_sources`, `broken_edges`, `missing_bodies` | `return []` (wiki lint semantics do not apply to a projected corpus) |
+
+- Constructor/factory:
+  `factory(*, storage_dir=None, wiki_name, database, arango_params, read_only=True, **_)`
+  — VERIFIES the database and the `articulo` collection exist, NEVER provisions
+  (mirror the `read_only` semantics of `arango_store.py:282-306`); raises
+  `FileNotFoundError` when absent so `_skip_for` classifies the namespace as
+  "unbuilt" (`federation.py:407-420`).
+
 ### Module 8: Integration tests — the invariant end-to-end
-- **Path**: `packages/ai-parrot-tools/tests/legal/` (extend existing fixtures from TASK-2376)
-- **Responsibility**: see §4.
+- **Path**: `packages/ai-parrot-tools/tests/legal/` (extend TASK-2376 fixtures/conftest) + core ontology tests for M2
+- **Responsibility**: §4 tables. Librarian/flow tests mock the LLM client with canned `DraftAnswer`s — including one citing a fabricated `payload_key` and one with a mangled quote (both must be pruned + recorded). Verifier/retrieval/adapter tests are fully deterministic (no LLM, no network). Arango-dependent tests reuse TASK-2376's integration markers and skip-if-no-server semantics.
 - **Depends on**: all modules.
 
 ---
@@ -512,6 +938,15 @@ class AuditLedger:                              # :296
   (`store.py:1404-1411`); M7 adds the value.
 - ~~A generic event method on `AuditLedger`~~ — `append()` is credential-specific;
   there is no fitting call for suppression events (see §8).
+- ~~`asyncdb.drivers.arangodb.create_arangosearch_view()` as a usable wrapper~~ —
+  it calls async `views()`/`create_view()` WITHOUT awaiting them and raises
+  `TypeError: 'coroutine' object is not iterable` against a real server (vendored
+  bug, documented and worked around at `wiki/arango_store.py:358-400`). M2's
+  `_ensure_views` MUST drive `db._connection` directly, same as the wiki store.
+- ~~LLM-emitted span offsets~~ — the librarian never emits `start`/`end`; it emits
+  `payload_key` + verbatim `quote` (`DraftSpan`), and the verifier derives offsets
+  via `payload.find(quote)`. Any task that has the LLM produce integers into
+  `SpanRef.start/end` is implementing the spec wrong.
 
 ---
 
@@ -554,6 +989,13 @@ class AuditLedger:                              # :296
 - **Federation seam scope-creep**: M7's `create_wiki_store`/`open_namespace_store`
   changes must stay additive (new backend value dispatch only) — no behavior change
   for `sqlite`/`memory`/`arangodb`.
+- **Quote ambiguity**: `payload.find(quote)` anchors the FIRST occurrence when a
+  quote appears more than once in a payload. Acceptable in v1 (the quote text is
+  identical either way — the citation is correct, only the offset choice is
+  arbitrary); documented in `SpanVerifier`'s docstring, not solved.
+- **asyncdb view-wrapper bug**: never call `create_arangosearch_view()` from the
+  installed asyncdb driver (unawaited coroutines — see §6); use the direct
+  `db._connection` pattern from `wiki/arango_store.py:358-400`.
 
 ### External Dependencies
 | Package | Version | Reason |
