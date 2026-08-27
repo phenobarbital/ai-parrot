@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from click.testing import CliRunner
@@ -123,18 +124,71 @@ class TestCallSiteMigration:
         assert skipped == []
         assert isinstance(handles[0].store, InMemoryWikiStore)
 
+    def test_ns_list_built_check_uses_foreign_overlay(
+        self, tmp_path: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`ns list`'s "built" check (`_namespace_built`/`_scoped_namespace`,
+        cli.py) must resolve the FOREIGN project's effective config too —
+        review finding: these two call sites were missed by TASK-2464."""
+        monkeypatch.delenv("WIKI_ENV", raising=False)
+        monkeypatch.delenv("ENV", raising=False)
+        foreign_root = tmp_path / "foreign"
+        foreign_root.mkdir()
+        (foreign_root / "pkg").mkdir()
+        (foreign_root / "pkg" / "store.py").write_text(PY_STORE, encoding="utf-8")
+        _build(runner, foreign_root)  # builds the base sqlite plane (wiki.db)
+        # Foreign's own `local` overlay switches to "memory" — no memory
+        # plane exists there, so the EFFECTIVE (not base) check must see
+        # it as unbuilt.
+        (foreign_root / ".parrot" / "wiki.local.json").write_text(
+            json.dumps({"backend": "memory"}), encoding="utf-8"
+        )
+
+        local_root = tmp_path / "local"
+        local_root.mkdir()
+        (local_root / "README.md").write_text("# demo", encoding="utf-8")
+        added = runner.invoke(
+            wiki,
+            ["ns", "add", "foreign-proj", "--project", str(foreign_root), "--path", str(local_root)],
+        )
+        assert added.exit_code == 0, added.output
+        listed = runner.invoke(wiki, ["ns", "list", "--path", str(local_root), "--json"])
+        assert listed.exit_code == 0, listed.output
+        rows = json.loads(listed.output)
+        entry = next(r for r in rows if r["name"] == "foreign-proj")
+        assert entry["built"] is False
+
 
 class TestGuard:
-    """Guards spec's top risk (§7): a missed call site silently uses base."""
+    """Guards spec's top risk (§7): a missed call site silently uses base.
 
-    # cli.py owns its own precedence surfaces (TASK-2463): `_resolve_project`
-    # (routes through `load_effective_config` itself), `build`'s explicit
-    # `load_project_config(root)` for base persistence, and `ns add`'s
-    # base-config write path. project.py is the DEFINER of both functions —
-    # `load_effective_config`'s own body legitimately loads the base via
-    # `load_project_config` as its first step; that is not a bypassing
-    # consumer call site.
-    _ALLOWED_FILES = frozenset({"cli.py", "project.py"})
+    A per-FUNCTION allowlist, not a whole-file exemption — a whole-file
+    exemption for ``cli.py`` cannot fail no matter how many un-migrated
+    consumer call sites a future edit adds anywhere else in that (large,
+    hot) file. Only the specific base-config WRITE paths named by the
+    spec's own acceptance criterion ("raw base access remains only for
+    save paths / `ns add`") are allowed:
+      - ``cli.py``'s ``build`` (persists ``--name``/``--backend`` to base)
+        and ``ns_add`` (mutates + re-persists base ``namespaces``).
+      - ``project.py``'s own ``load_effective_config`` — the DEFINER
+        loading the base as the first step of building the merged view;
+        not a bypassing consumer.
+    """
+
+    _ALLOWED_CALL_SITES: ClassVar[dict[str, frozenset[str]]] = {
+        "cli.py": frozenset({"build", "ns_add"}),
+        "project.py": frozenset({"load_effective_config"}),
+    }
+    _DEF_RE = re.compile(r"^def (\w+)\(")
+
+    @classmethod
+    def _enclosing_function(cls, lines: list[str], lineno: int) -> str | None:
+        """Name of the nearest top-level ``def`` at or above `lineno` (1-based)."""
+        for i in range(lineno - 1, -1, -1):
+            match = cls._DEF_RE.match(lines[i])
+            if match:
+                return match.group(1)
+        return None
 
     def test_no_stray_consumer_load_project_config_calls(self) -> None:
         wiki_pkg = (
@@ -144,15 +198,21 @@ class TestGuard:
         pattern = re.compile(r"\bload_project_config\(")
         offenders: list[str] = []
         for path in wiki_pkg.rglob("*.py"):
-            if path.name in self._ALLOWED_FILES:
-                continue
             text = path.read_text(encoding="utf-8")
-            for lineno, line in enumerate(text.splitlines(), start=1):
+            lines = text.splitlines()
+            allowed_functions = self._ALLOWED_CALL_SITES.get(path.name, frozenset())
+            for lineno, line in enumerate(lines, start=1):
                 stripped = line.strip()
                 if stripped.startswith("#"):
                     continue
-                if pattern.search(line) and "def load_project_config" not in line:
-                    offenders.append(f"{path.relative_to(wiki_pkg)}:{lineno}: {stripped}")
+                if not pattern.search(line) or "def load_project_config" in line:
+                    continue
+                enclosing = self._enclosing_function(lines, lineno)
+                if enclosing in allowed_functions:
+                    continue
+                offenders.append(
+                    f"{path.relative_to(wiki_pkg)}:{lineno} (in {enclosing!r}): {stripped}"
+                )
         assert offenders == [], (
             "Found consumer load_project_config(...) calls outside the " f"allowed write paths: {offenders}"
         )

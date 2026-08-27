@@ -183,7 +183,7 @@ async def _synced_memory_pages(store: BaseWikiStore) -> list[dict[str, Any]]:
 
 
 async def _sync_edges(source: BaseWikiStore, destination: BaseWikiStore, concept_ids: set[str]) -> int:
-    """Copy `asserted` edges whose src is one of `concept_ids`.
+    """Copy `asserted` edges touching one of `concept_ids` (either end).
 
     `add_edges` is an idempotent upsert on every backend (``INSERT OR
     REPLACE`` / AQL ``UPSERT``), so re-applying an edge that already
@@ -193,11 +193,20 @@ async def _sync_edges(source: BaseWikiStore, destination: BaseWikiStore, concept
     if not concept_ids:
         return 0
     all_edges = await source.dump_edges()
-    # `dump_edges()` does not carry provenance on any backend; an edge
-    # whose src is a memory page is only ever created via the `asserted`
-    # path (`remember()`'s related-page links, toolkit.py:993) — so
-    # filtering by src membership IS the provenance filter here.
-    to_write = [(edge["src"], edge["dst"], edge["rel"], "asserted") for edge in all_edges if edge["src"] in concept_ids]
+    # `dump_edges()` does not carry provenance on any backend, but every
+    # edge TOUCHING a memory page's concept_id is only ever created via
+    # the `asserted` path: `remember()`'s related-page links (src=memory,
+    # toolkit.py:993) AND `wikitoolkit link` (cli.py's `link` command
+    # always hardcodes provenance="asserted" and allows either endpoint
+    # to be the memory page). Repo-scan ingestion never references a
+    # synthetic `mem-*` id at all. So filtering by EITHER endpoint's
+    # membership IS the provenance filter here — src-only would silently
+    # drop an edge asserted via `link <other> <mem-id>`.
+    to_write = [
+        (edge["src"], edge["dst"], edge["rel"], "asserted")
+        for edge in all_edges
+        if edge["src"] in concept_ids or edge["dst"] in concept_ids
+    ]
     if not to_write:
         return 0
     return await destination.add_edges(to_write)

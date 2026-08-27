@@ -105,6 +105,22 @@ class TestPrecedence:
         # Never persisted to the base config.
         assert load_project_config(repo).backend == "sqlite"
 
+    def test_wiki_store_backend_env_honoured_on_read_path(
+        self, runner: CliRunner, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`query`'s default project-config path (no `--store`) must also
+        honour WIKI_STORE_BACKEND — not just `build` and the `--store`
+        branch (review finding: this was previously flag-only)."""
+        monkeypatch.delenv("ENV", raising=False)
+        monkeypatch.delenv("WIKI_ENV", raising=False)
+        monkeypatch.setenv("WIKI_STORE_BACKEND", "memory")
+        _build(runner, repo)  # builds the memory plane (asserted above)
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.output)
+        assert any("file:pkg/store.py" in r.get("concept_id", "") for r in rows)
+        assert load_project_config(repo).backend == "sqlite"  # never persisted
+
 
 class TestBuildGeneration:
     def test_generates_missing_overlay_for_active_env(
@@ -206,3 +222,30 @@ class TestReadPaths:
         assert result.exit_code == 0, result.output
         overlay_file = repo_with_overlays / ".parrot" / "wiki.dev.json"
         assert f"Env       : dev ({overlay_file})" in result.output
+
+
+class TestNsAddWritesBaseNotEffective:
+    def test_ns_add_never_bakes_overlay_into_base_config(
+        self, runner: CliRunner, repo_with_overlays: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Review finding: `ns_add` resolved its config via `_resolve_project`
+        (the effective/env-merged one) even though it mutates and
+        re-persists the BASE config — an active overlay's backend would
+        otherwise get baked permanently into `.parrot/wiki.json` just by
+        registering a namespace."""
+        monkeypatch.setenv("ENV", "dev")
+        monkeypatch.delenv("WIKI_ENV", raising=False)
+        # repo_with_overlays: base backend="memory", dev overlay backend="sqlite".
+        assert load_project_config(repo_with_overlays).backend == "memory"
+        added = runner.invoke(
+            wiki,
+            [
+                "ns", "add", "other",
+                "--project", str(repo_with_overlays.parent),
+                "--path", str(repo_with_overlays),
+            ],
+        )
+        assert added.exit_code == 0, added.output
+        base_after = load_project_config(repo_with_overlays)
+        assert base_after.backend == "memory"  # untouched by the dev overlay
+        assert "other" in base_after.namespaces

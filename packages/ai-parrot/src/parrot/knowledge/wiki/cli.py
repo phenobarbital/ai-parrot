@@ -291,7 +291,10 @@ def _scoped_namespace(
             target = base / target
         if cfg.kind in ("path", "vault"):
             try:
-                storage_dir = load_project_config(target).storage_path(target)
+                # The FOREIGN root's own environment/overlay applies here —
+                # federation.py's actual plane-open already routes through
+                # load_effective_config; this scoping lookup must agree.
+                storage_dir = load_effective_config(target).config.storage_path(target)
             except WikiConfigError:
                 storage_dir = None
         else:
@@ -538,6 +541,10 @@ def _resolve_read_store(
     root, config = _resolve_project(path_)
     if backend_opt:
         config.backend = backend_opt  # type: ignore[assignment]  # flag wins over environment/base
+    else:
+        env_backend = _env_setting("WIKI_STORE_BACKEND")
+        if env_backend:
+            config.backend = env_backend  # type: ignore[assignment]
     return _federate(root, config, _require_built(root, config), ns_opt)
 
 
@@ -1897,7 +1904,9 @@ def _namespace_built(cfg: WikiNamespaceConfig, base_dir: Path) -> bool | None:
         target = base_dir / target
     if cfg.kind in ("path", "vault"):
         try:
-            foreign = load_project_config(target)
+            # Same reasoning as `_scoped_namespace` above: the foreign
+            # project's own environment/overlay decides its plane.
+            foreign = load_effective_config(target).config
         except WikiConfigError:
             return False
         return foreign.is_built(target)
@@ -2029,7 +2038,14 @@ def ns_add(
         raise click.ClickException(str(exc)) from exc
     _namespace_source(src_project, src_store, src_database, src_vault)
 
-    root, config = _resolve_project(path_)
+    # `ns add` (non-global) mutates and re-persists the BASE config, so it
+    # must resolve the raw base — never the environment-merged one, or an
+    # active overlay's values would get baked permanently into wiki.json.
+    root = _find_repo_root(path_)
+    try:
+        config = load_project_config(root)
+    except WikiConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
     base_dir = parrot_home() if is_global else root
 
     # A path typed at the shell is relative to the CALLER's cwd, but a
@@ -2370,6 +2386,10 @@ def _resolve_write_store(
     root, config = _resolve_project(path_)
     if backend_opt:
         config.backend = backend_opt  # type: ignore[assignment]
+    else:
+        env_backend = _env_setting("WIKI_STORE_BACKEND")
+        if env_backend:
+            config.backend = env_backend  # type: ignore[assignment]
     return _open_store(root, config), config.storage_path(root), root, config
 
 

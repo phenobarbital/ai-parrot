@@ -82,15 +82,21 @@ class TestSelection:
         await local.add_edges(
             [
                 ("mem-1", "mem-2", "references", "asserted"),
-                ("ingest-1", "mem-2", "references", "extracted"),
+                ("mem-2", "mem-1", "referenced-by", "asserted"),
+                ("ingest-1", "ingest-1", "self", "extracted"),
             ]
         )
         await sync_push(root, target_env="dev")
-        remote_edges = await remote.dump_edges()
-        assert ("mem-1", "mem-2", "references") in {(e["src"], e["dst"], e["rel"]) for e in remote_edges}
-        # The extracted edge's src ("ingest-1") was never synced as a page,
-        # so its edge must not appear at the destination either.
-        assert not any(e["src"] == "ingest-1" for e in remote_edges)
+        remote_edges = {(e["src"], e["dst"], e["rel"]) for e in await remote.dump_edges()}
+        # Both directions of an asserted edge touching synced memory pages
+        # move — `link <other> <mem-id>` can assert an edge with either
+        # endpoint as the memory page (only `remember()`'s src=memory case
+        # was covered before this review fix).
+        assert ("mem-1", "mem-2", "references") in remote_edges
+        assert ("mem-2", "mem-1", "referenced-by") in remote_edges
+        # An edge touching only an unsynced (`ingest`) page never appears —
+        # its page was never selected for sync either.
+        assert ("ingest-1", "ingest-1", "self") not in remote_edges
 
 
 class TestLWW:
