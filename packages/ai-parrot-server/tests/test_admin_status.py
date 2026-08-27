@@ -36,9 +36,21 @@ class _FakeSession(dict):
         return self.get(f"__decoded_{key}__")
 
 
-def _stub_bot_manager(*, with_database=False, with_redis=False):
+class _FakeBot:
+    """Bot stand-in shaped like ``AbstractBot``: ``_vector_store`` is the
+    raw config dict (never a store instance — see ``bots/abstract.py:573``),
+    ``store`` is the actual configured ``AbstractStore`` (or ``None``)."""
+
+    def __init__(self, *, vector_store_config=None, store=None):
+        self._vector_store = vector_store_config
+        self.store = store
+
+
+def _stub_bot_manager(*, bots=None):
     bot_manager = MagicMock()
-    bot_manager.get_bots = MagicMock(return_value={"a": object(), "b": object()})
+    bot_manager.get_bots = MagicMock(
+        return_value=bots if bots is not None else {"a": _FakeBot(), "b": _FakeBot()}
+    )
     bot_manager.registry = MagicMock()
     bot_manager.registry.list_agents = MagicMock(return_value=[object(), object(), object()])
     bot_manager.list_crews = MagicMock(return_value={"crew-a": (object(), object())})
@@ -56,8 +68,7 @@ def anon_app():
     return app
 
 
-@pytest.fixture
-def authenticated_app(monkeypatch):
+def _build_authenticated_app(monkeypatch, bot_manager):
     """Admin status route mounted with every request treated as
     authenticated and a fully-controlled fake session."""
 
@@ -75,9 +86,14 @@ def authenticated_app(monkeypatch):
 
     app = web.Application(middlewares=[_mark_authenticated])
     app["_test_session"] = _FakeSession()
-    app["bot_manager"] = _stub_bot_manager()
+    app["bot_manager"] = bot_manager
     setup_admin_ui(app)
     return app
+
+
+@pytest.fixture
+def authenticated_app(monkeypatch):
+    return _build_authenticated_app(monkeypatch, _stub_bot_manager())
 
 
 class TestRequiresAuth:
@@ -104,7 +120,7 @@ class TestShape:
             "postgres", "redis", "vector_store",
         }
         # No app['database']/app['redis'] wired -> both unconfigured; no
-        # bot exposes a `_vector_store` -> also unconfigured.
+        # bot has a configured `.store` -> vector_store also unconfigured.
         for dep in body["dependencies"].values():
             assert dep["status"] == "unconfigured"
 
@@ -123,6 +139,57 @@ class TestDegradedDependency:
         assert resp.status == 200
         body = await resp.json()
         assert body["dependencies"]["redis"]["status"] == "unreachable"
+
+
+class TestVectorStoreProbe:
+    """Regression coverage for the code-review CRITICAL finding: the probe
+    must read ``bot.store`` (the real ``AbstractStore`` instance), never
+    ``bot._vector_store`` (the raw config dict — always truthy once set,
+    which previously made every configured-but-healthy store report
+    "unreachable", and a `{}`-default bot report "unreachable" instead of
+    "unconfigured")."""
+
+    async def test_connected_store_reports_ok(self, monkeypatch, aiohttp_client):
+        store = MagicMock()
+        store.is_connected = MagicMock(return_value=True)
+        bot_manager = _stub_bot_manager(
+            bots={"a": _FakeBot(vector_store_config={"name": "pgvector"}, store=store)}
+        )
+        app = _build_authenticated_app(monkeypatch, bot_manager)
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/api/v1/admin/status")
+        body = await resp.json()
+        assert body["dependencies"]["vector_store"]["status"] == "ok"
+
+    async def test_disconnected_store_reports_unreachable(self, monkeypatch, aiohttp_client):
+        store = MagicMock()
+        store.is_connected = MagicMock(return_value=False)
+        bot_manager = _stub_bot_manager(
+            bots={"a": _FakeBot(vector_store_config={"name": "pgvector"}, store=store)}
+        )
+        app = _build_authenticated_app(monkeypatch, bot_manager)
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/api/v1/admin/status")
+        body = await resp.json()
+        assert body["dependencies"]["vector_store"]["status"] == "unreachable"
+
+    async def test_config_dict_without_store_instance_is_unconfigured(
+        self, monkeypatch, aiohttp_client
+    ):
+        """A bot with only a raw ``vector_store_config`` dict and no
+        connected ``.store`` yet must report "unconfigured", not
+        "unreachable" (the dict itself must never be mistaken for a store)."""
+        bot_manager = _stub_bot_manager(
+            bots={"a": _FakeBot(vector_store_config={"name": "pgvector"}, store=None)}
+        )
+        app = _build_authenticated_app(monkeypatch, bot_manager)
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/api/v1/admin/status")
+        body = await resp.json()
+        assert body["dependencies"]["vector_store"]["status"] == "unconfigured"
 
 
 class TestRegisteredWithoutDist:

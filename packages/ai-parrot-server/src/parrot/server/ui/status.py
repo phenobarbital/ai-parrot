@@ -114,14 +114,17 @@ async def _probe_vector_store(app: web.Application) -> DependencyHealth:
     """Liveness check for the configured vector store, if any.
 
     This deployment has no single global vector-store handle — each bot
-    may carry its own ``vector_store_config`` / ``_vector_store`` instance
-    (see ``manager.py`` bot-cloning path, ``base_bot._vector_store``).
-    Implementation choice (spec §8 open question, resolved here): treat
-    the vector store as "configured" when at least one currently-loaded
-    bot exposes an active ``_vector_store`` (an ``AbstractStore``
-    instance), and read its own ``is_connected()`` state — the cheapest
+    may carry its own vector store. Note ``AbstractBot._vector_store``
+    (``bots/abstract.py:573``) is the raw ``vector_store_config`` dict, NOT
+    a store instance — the actual configured/connected ``AbstractStore``
+    instance lives at ``AbstractBot.store`` (``bots/abstract.py:577``,
+    populated from ``AbstractBot.stores[0]`` during
+    ``interfaces/vector.py`` store configuration). Implementation choice
+    (spec §8 open question, resolved here): treat the vector store as
+    "configured" when at least one currently-loaded bot exposes a non-None
+    ``store``, and read its own ``is_connected()`` state — the cheapest
     possible liveness check, with no new connection opened by the probe
-    itself. ``unconfigured`` when no loaded bot uses a vector store.
+    itself. ``unconfigured`` when no loaded bot has a configured store.
 
     Args:
         app: The aiohttp application.
@@ -133,7 +136,7 @@ async def _probe_vector_store(app: web.Application) -> DependencyHealth:
     store = None
     if bot_manager is not None:
         for bot in bot_manager.get_bots().values():
-            candidate = getattr(bot, "_vector_store", None)
+            candidate = getattr(bot, "store", None)
             if candidate is not None:
                 store = candidate
                 break

@@ -62,7 +62,7 @@ class TestMountedDist:
         assert resp.status == 200
         assert "admin" in (await resp.text())
 
-    async def test_assets_served(self, fake_dist, aiohttp_client):
+    async def test_assets_served_with_long_cache_headers(self, fake_dist, aiohttp_client):
         app = web.Application()
         assert setup_admin_ui(app) is True
 
@@ -70,6 +70,7 @@ class TestMountedDist:
         resp = await client.get("/admin/assets/app-abc123.js")
         assert resp.status == 200
         assert "js" in (await resp.text())
+        assert resp.headers.get("Cache-Control") == "public, max-age=31536000, immutable"
 
     async def test_api_routes_not_shadowed(self, fake_dist, aiohttp_client):
         app = web.Application()
@@ -85,13 +86,37 @@ class TestMountedDist:
         assert resp.status == 200
         assert (await resp.json()) == {"ok": True}
 
+    async def test_prefix_does_not_shadow_lookalike_route(self, fake_dist, aiohttp_client):
+        """A future route whose path merely starts with the same
+        characters as the prefix (e.g. /administer) must NOT be swallowed
+        by the SPA catch-all, which is anchored on a path-segment boundary."""
+        app = web.Application()
+
+        async def _administer_handler(request):
+            return web.json_response({"ok": True})
+
+        app.router.add_get("/administer", _administer_handler)
+        assert setup_admin_ui(app) is True
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/administer")
+        assert resp.status == 200
+        assert (await resp.json()) == {"ok": True}
+
     async def test_exclude_list_registered_when_auth_present(self, fake_dist):
         from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY
 
         app = web.Application()
         app[AUTH_EXCLUDE_LIST_KEY] = []
         assert setup_admin_ui(app) is True
-        assert "/admin*" in app[AUTH_EXCLUDE_LIST_KEY]
+        assert "/admin" in app[AUTH_EXCLUDE_LIST_KEY]
+        assert "/admin/*" in app[AUTH_EXCLUDE_LIST_KEY]
+        # Segment-boundary patterns must not accidentally match lookalikes.
+        import fnmatch
+
+        assert not any(
+            fnmatch.fnmatch("/administer", p) for p in app[AUTH_EXCLUDE_LIST_KEY]
+        )
 
     async def test_no_crash_without_auth_handler(self, fake_dist):
         app = web.Application()

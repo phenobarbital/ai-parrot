@@ -81,6 +81,11 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
         exclude_list.append(pattern)
 
 
+#: Long-cache/immutable header for hashed Vite assets — the filename hash
+#: guarantees a new build gets a new URL, so browsers can cache "forever".
+_ASSETS_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
 def _index_response(index_html: Path) -> web.FileResponse:
     """Build the SPA index response with no-cache headers.
 
@@ -97,19 +102,50 @@ def _index_response(index_html: Path) -> web.FileResponse:
     return response
 
 
+def _make_assets_cache_header(assets_prefix: str):
+    """Build an ``on_response_prepare`` hook that long-caches hashed assets.
+
+    ``router.add_static()`` (aiohttp's ``FileResponse``/``StaticResource``
+    machinery) never sets ``Cache-Control`` itself, so the header is
+    injected via the ``on_response_prepare`` signal — the standard aiohttp
+    hook for tagging responses by path without wrapping the whole app in a
+    middleware.
+
+    Args:
+        assets_prefix: Path prefix (e.g. ``/admin/assets/``) whose
+            responses should get the long-cache/immutable header.
+
+    Returns:
+        An ``async def(request, response)`` coroutine suitable for
+        ``app.on_response_prepare.append(...)``.
+    """
+
+    async def _on_prepare(request: web.Request, response: web.StreamResponse) -> None:
+        if request.path.startswith(assets_prefix):
+            response.headers["Cache-Control"] = _ASSETS_CACHE_CONTROL
+
+    return _on_prepare
+
+
 def setup_admin_ui(app: web.Application, *, prefix: str = DEFAULT_PREFIX) -> bool:
     """Mount the embedded Admin UI if the compiled ``dist/`` is present.
 
     Registers:
-      - A static mount for hashed assets at ``{prefix}/assets/`` with
-        long-cache/immutable headers (handled by the client via hashed
-        filenames; aiohttp serves them as-is).
-      - A catch-all ``GET {prefix}{{tail:.*}}`` route returning
-        ``index.html`` (SPA history-mode router fallback) so deep links
-        survive a hard refresh.
-      - ``{prefix}*`` in navigator-auth's exclude list, so the HTML shell
-        is reachable pre-login (auth enforcement lives entirely in the
-        JSON API, not in the SPA shell route).
+      - A static mount for hashed assets at ``{prefix}/assets/`` with a
+        long-cache/immutable ``Cache-Control`` header injected via
+        ``on_response_prepare``.
+      - ``GET {prefix}`` (exact) and ``GET {prefix}/{{tail:.*}}`` (path
+        children) returning ``index.html`` (SPA history-mode router
+        fallback) so deep links survive a hard refresh. Anchored on a
+        path *segment* boundary (trailing ``/``) rather than a bare
+        string prefix, so a future route like ``/administer`` is never
+        accidentally swallowed by this catch-all.
+      - ``{prefix}`` and ``{prefix}/*`` in navigator-auth's exclude list
+        (segment-boundary fnmatch patterns — ``fnmatch`` has no notion of
+        ``/`` as special, so a bare ``{prefix}*`` would also exclude an
+        unrelated ``/administer`` from auth), so the HTML shell is
+        reachable pre-login (auth enforcement lives entirely in the JSON
+        API, not in the SPA shell route).
 
     Args:
         app: The aiohttp :class:`web.Application` to mount routes on.
@@ -145,27 +181,31 @@ def setup_admin_ui(app: web.Application, *, prefix: str = DEFAULT_PREFIX) -> boo
 
     router = app.router
 
-    # Hashed static assets — long-cache/immutable is set by the browser
-    # honoring the SPA build's content hashes; aiohttp's add_static serves
-    # the files as-is (no per-request header injection needed here since
-    # asset filenames already carry content hashes).
+    # Hashed static assets. Cache-Control is injected via
+    # on_response_prepare since add_static()/FileResponse never set it.
     assets_dir = dist / "assets"
+    assets_prefix = f"{prefix}/assets/"
     if assets_dir.is_dir():
         router.add_static(
-            f"{prefix}/assets/",
+            assets_prefix,
             path=assets_dir,
             name="admin_ui_assets",
             show_index=False,
             follow_symlinks=False,
         )
+        app.on_response_prepare.append(_make_assets_cache_header(assets_prefix))
 
-    async def _spa_fallback(request: web.Request) -> web.Response:
+    async def _spa_fallback(request: web.Request) -> web.StreamResponse:
         return _index_response(index_html)
 
-    # Catch-all SPA fallback, anchored at the prefix so it never shadows
-    # /api/* routes registered elsewhere on the app.
-    router.add_get(f"{prefix}{{tail:.*}}", _spa_fallback, name="admin_ui_index")
+    # SPA fallback, segment-boundary anchored (exact prefix + "prefix/…")
+    # so it never shadows /api/* routes registered elsewhere on the app,
+    # nor any future non-SPA route whose path merely starts with the same
+    # characters (e.g. /administer).
+    router.add_get(prefix, _spa_fallback, name="admin_ui_index_root")
+    router.add_get(f"{prefix}/{{tail:.*}}", _spa_fallback, name="admin_ui_index")
 
-    _register_auth_exclusion(app, f"{prefix}*")
+    _register_auth_exclusion(app, prefix)
+    _register_auth_exclusion(app, f"{prefix}/*")
 
     return True
