@@ -10,8 +10,8 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import axios from "axios";
 
-  import apiClient from "$lib/api/http";
   import { config } from "$lib/config";
   import ProviderButtons, { type AuthMethodInfo } from "$lib/components/ProviderButtons.svelte";
   import { isInAppPath, router } from "$lib/router.svelte";
@@ -37,8 +37,23 @@
   onMount(async () => {
     // Discovery failure must never block the BasicAuth form — swallow and
     // just render the form alone.
+    //
+    // Deliberately bypasses `apiClient` (which carries the shared 401
+    // interceptor): `/api/v1/auth/methods` is NOT in navigator-auth's
+    // default exclude list (only /static/, /api/v1/login, /api/v1/logout,
+    // /api/v1/forgot-password, /api/v1/reset-password are), so an
+    // unauthenticated visitor landing on this page always gets a 401 here.
+    // Routing that through `apiClient` would trigger
+    // `AuthStore.handle401()`, which reads the CURRENT path (this login
+    // page, including its own `?next=<intended>` query) and re-wraps it
+    // into a fresh `?next=`, corrupting/losing the original redirect
+    // target before the user ever submits the form. A bare axios call has
+    // no interceptor to trip, so a 401 here just falls through to the
+    // catch below like any other discovery failure.
     try {
-      const { data } = await apiClient.get(config.authMethodsUrl);
+      const { data } = await axios.get(`${config.apiBaseUrl}${config.authMethodsUrl}`, {
+        withCredentials: config.apiWithCredentials,
+      });
       methods = data;
     } catch {
       methods = null;

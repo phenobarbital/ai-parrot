@@ -1,3 +1,4 @@
+import axios from "axios";
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +12,12 @@ describe("Login", () => {
     localStorage.clear();
     window.history.pushState({}, "", "/admin/login");
     router.path = "/admin/login";
+    // Login.svelte's onMount discovery call deliberately bypasses `apiClient`
+    // (see Login.svelte's comment: routing /api/v1/auth/methods through the
+    // shared 401 interceptor corrupts `?next=` before the form ever mounts)
+    // and calls bare `axios.get` instead — mock that directly so it never
+    // hits the network in tests. Default: no providers discovered.
+    vi.spyOn(axios, "get").mockResolvedValue({ data: {} });
   });
 
   afterEach(() => {
@@ -18,7 +25,6 @@ describe("Login", () => {
   });
 
   it("submits credentials and navigates to the ?next target on success", async () => {
-    vi.spyOn(apiClient, "get").mockResolvedValue({ data: {} });
     const postSpy = vi
       .spyOn(apiClient, "post")
       .mockResolvedValue({ data: { token: "tok-1", username: "alice" } });
@@ -36,7 +42,6 @@ describe("Login", () => {
   });
 
   it("submits credentials and navigates to Home when there is no ?next", async () => {
-    vi.spyOn(apiClient, "get").mockResolvedValue({ data: {} });
     vi.spyOn(apiClient, "post").mockResolvedValue({ data: { token: "tok-1" } });
 
     const { getByLabelText, getByRole } = render(Login);
@@ -48,7 +53,6 @@ describe("Login", () => {
   });
 
   it("renders the server's JSON error message inline on failure", async () => {
-    vi.spyOn(apiClient, "get").mockResolvedValue({ data: {} });
     vi.spyOn(apiClient, "post").mockRejectedValue({
       response: { data: { message: "Invalid credentials" } },
     });
@@ -63,7 +67,7 @@ describe("Login", () => {
   });
 
   it("renders discovered providers from GET /api/v1/auth/methods", async () => {
-    vi.spyOn(apiClient, "get").mockResolvedValue({
+    vi.spyOn(axios, "get").mockResolvedValue({
       data: {
         basic: {
           name: "BasicAuth",
@@ -92,7 +96,7 @@ describe("Login", () => {
   });
 
   it("falls back to the BasicAuth form alone when discovery fails", async () => {
-    vi.spyOn(apiClient, "get").mockRejectedValue(new Error("network down"));
+    vi.spyOn(axios, "get").mockRejectedValue(new Error("network down"));
 
     const { getByLabelText, queryByTestId } = render(Login);
 
