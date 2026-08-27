@@ -162,10 +162,78 @@ class TestStudioIntegration:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `docs/agent_studio_api.md` — full reference for every shipped
+  `/api/v1/astudio/*` endpoint (route inventory enumerated from the
+  REAL `setup_studio_routes` before documenting, per Agent
+  Instructions step 3): common `StudioError` shape, ownership/PBAC
+  semantics, agent lifecycle, draft→activate pipeline, per-agent asset
+  files, shared skills catalog (publish/import/resync + dual-write
+  staleness), BYOK (masked-only, never-silent-fallback contract),
+  testing surface, toolkit config, reference catalogs, meta-agent
+  assistant, scheduler run-now/last-result, the
+  `/api/v1/agents/factory` alias note, and the reload semantics
+  section — the "working memory not migrated" contract copied
+  verbatim in meaning from `BotManager.reload_agent`'s own docstring
+  (re-verified against source, not paraphrased from memory). Every
+  documented payload copied from the actual Pydantic models; no
+  Swagger/deprecation notes (per "Does NOT Exist").
+- `docs/API_ENDPOINTS.md` — new "Agent Studio (FEAT-467)" section
+  linking to the full reference.
+- `tests/studio/test_integration.py` — all six spec §4 e2e tests, all
+  passing. Only LLM/provider calls mocked; real tmp AGENTS_DIR, real
+  `AgentRegistry`/`BotManager`, real APScheduler (run-now test), real
+  model instances over in-memory fake stores (same discipline as every
+  prior Studio test module).
+- **Real bug found & fixed by the e2e tests** (per Scope: "fixing bugs
+  found belongs to the owning task unless trivial" — this one is a
+  two-line type-annotation fix, well under the trivial bar, documented
+  inline): `StudioDraft.base_class`/`activated_at` used native PEP 604
+  `X | None`, which the datamodel Cython validator rejects at
+  construction time (`TypeError: Expected type, got types.UnionType`)
+  — distinct from (and additional to) the already-documented
+  future-annotations issue. Undetected by TASK-2513's own tests (they
+  never constructed the real model). Fixed with `typing.Optional[X]` +
+  `# noqa: UP045` guards, because **ruff's autofix actively reverts
+  `Optional[X]` back to the broken `X | None` form** — caught that
+  regression mid-task when a directory-wide `--fix` undid the fix;
+  the noqa guards + module-docstring warning now make it sticky.
+- Exit gate: `pytest packages/ai-parrot-server/tests/studio/` — 173
+  passed (167 prior + 6 new). `ruff check handlers/studio/` residuals:
+  54× `BLE001` (the documented fail-open convention accepted in every
+  prior task) + 1× `G201`, 2× `DTZ005`, 1× `S112` — each in committed
+  prior-task code, matching that file's established convention and
+  already noted in the owning task's completion note. Fixed for real
+  as part of the gate: 3× `I001` import-sort (mechanical; the
+  package-level ruff config groups `parrot.manager`/`parrot.handlers`
+  as first-party — only visible when running ruff from inside
+  `packages/ai-parrot-server/`) and 1× `TRY401` in this feature's own
+  `testing.py`.
+- Fixture hygiene: the integration suite's `patch_agents_dir` patches
+  ALL five module-level `AGENTS_DIR` bindings (agents/files/drafts/
+  skills_catalog/registry) — one early run missed `skills_catalog`
+  and wrote a stray (untracked, gitignored) `agents/importer-agent/`
+  into the real repo; cleaned up immediately and the fixture comment
+  now warns about exactly this failure mode.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- `test_skills_catalog_share_flow` asserts the imported skill file
+  exists on disk with valid, `parse_skill_file`-parseable frontmatter
+  (the reload-time contract) rather than performing an actual reload +
+  live-trigger check — the import response's `reload_required: true`
+  IS the shipped contract (spec Module 6/7: file writes take effect
+  only via explicit reload), and skill discovery on reload is
+  TASK-2510/2514 behavior already covered by their own suites.
+- `test_studio_full_loop` verifies the written identity file loads via
+  the framework's own `load_identity()` and that `test/ask` works
+  against the reloaded agent with a mocked LLM; "test/ask reflects new
+  identity" end-to-end through a real LLM prompt is unreachable
+  without a live provider call (forbidden by this task's own "mock
+  only the LLM" constraint) and because plain `BasicBot` doesn't mix
+  in the opt-in `IdentityMixin` — noted inline in the test.
+- `test_factory_alias` asserts the route + request-shape contract
+  (missing-description 400 unchanged; a well-formed body proceeds past
+  validation) rather than a full orchestrator run, which requires a
+  live LLM.
