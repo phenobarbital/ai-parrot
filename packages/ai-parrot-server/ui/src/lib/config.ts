@@ -35,6 +35,7 @@ export const config = {
   loginPath: `${basePath}/login`,
   loginUrl: "/api/v1/login",
   logoutUrl: "/api/v1/logout",
+  authMethodsUrl: "/api/v1/auth/methods",
   /** localStorage key for the bearer token — MUST match
    * parrot_formdesigner's templates.py and parrot/autonomous/admin.py's
    * inline admin page (Codebase Contract, TASK-2527). */
