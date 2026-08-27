@@ -216,7 +216,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -226,8 +226,8 @@
       "parallelism_notes": "Read-only; only the shared route file couples it to siblings.",
       "assigned_to": null,
       "started_at": "2026-08-27T19:01:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2519-studio-catalog-endpoints.md"
+      "completed_at": "2026-08-27T19:07:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2519-studio-catalog-endpoints.md"
     },
     {
       "id": "TASK-2520",
