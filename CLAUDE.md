@@ -243,6 +243,24 @@ declaratively in this repo — set via GitHub repo settings.
 git worktree add -b <branch-name> .claude/worktrees/<worktree-name> HEAD
 ```
 
+> **Carve-out (FEAT-466): "from the current branch … `HEAD`" is shorthand,
+> not the rule.** The actual rule is **worktrees branch from `base_branch`**
+> (§ Git Configuration above). `HEAD` only works as shorthand when `HEAD`
+> already *is* the intended base — true for `/sdd-task` and `sdd-worker`,
+> which always `git checkout "$BASE_BRANCH"` immediately beforehand. It is
+> **not** true for a hotfix: `sdd-research.md` branches
+> `hotfix-<JIRA-KEY>-<slug>` explicitly from `origin/main`, regardless of
+> what branch happens to be checked out in the main repo at the time (a
+> hotfix must never inherit unreleased `dev` commits — this is the FEAT-466
+> root cause, PR #1250). When base and `HEAD` might differ, name the ref
+> explicitly:
+> ```bash
+> # Feature — from the base branch (dev, or staging during a freeze)
+> git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev
+> # Hotfix — ALWAYS from origin/main, never from HEAD/dev
+> git worktree add -b hotfix-<JIRA-KEY>-<slug> .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main
+> ```
+
 ### Quick reference
 
 ```bash
@@ -297,6 +315,14 @@ Commit message convention:
 ```
 sdd: <action> for <feature-name>
 ```
+
+**Note (FEAT-466)**: the `/sdd-spec` and `/sdd-task` reservation commits in
+the table above do **not** occur for `type: hotfix`. A bugfix is not a
+feature and reserves no `FEAT-<NNN>`/`TASK-<NNN>` id — `/sdd-spec` skips
+`reserve_ids.py --kind feature` and `/sdd-task` is normally skipped
+entirely (the single-agent dev-loop path handles a hotfix directly from the
+spec). The hotfix's identity is its Jira issue key instead; see
+`sdd/specs/dev-loop-run-fidelity.spec.md` §3 Module 2.
 
 **Note (FEAT-145)**: `/sdd-start` no longer needs to `cd` back to the main
 repo to update SDD state — per-spec indexes mean each feature owns its own
