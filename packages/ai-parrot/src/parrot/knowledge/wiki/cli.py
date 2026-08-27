@@ -61,16 +61,20 @@ from parrot.knowledge.wiki.languages import all_scanners
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
+    WikiEffectiveConfig,
     WikiNamespaceConfig,
     WikiProjectConfig,
     config_path,
+    derive_env_overlay,
     find_project_root,
     global_registry_path,
+    load_effective_config,
     load_global_registry,
     load_project_config,
     merge_namespaces,
     parrot_home,
     resolve_entry_base,
+    save_env_overlay,
     save_global_registry,
     save_project_config,
     validate_namespace_name,
@@ -318,25 +322,62 @@ def _echo_skips(store: BaseWikiStore, *, err: bool = False) -> None:
         click.echo(f"(namespace {skip.name!r} skipped: {skip.reason}{hint})", err=err)
 
 
-def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
-    """Resolve the repo root + config, aborting with guidance if absent."""
+def _find_repo_root(path: str | None) -> Path:
+    """Resolve the repo root, aborting with guidance if absent."""
     if path:
         root = Path(path).resolve()
         if not root.is_dir():
             raise click.ClickException(f"Not a directory: {root}")
-    else:
-        found = find_project_root()
-        if found is None:
-            raise click.ClickException(
-                "No wiki project found (no .parrot/wiki.json or .git "
-                "upwards from here). Run inside a repository or pass "
-                "--path."
-            )
-        root = found
+        return root
+    found = find_project_root()
+    if found is None:
+        raise click.ClickException(
+            "No wiki project found (no .parrot/wiki.json or .git "
+            "upwards from here). Run inside a repository or pass "
+            "--path."
+        )
+    return found
+
+
+def _resolve_project(path: str | None) -> tuple[Path, WikiProjectConfig]:
+    """Resolve the repo root + the *effective* (env-merged) config.
+
+    Routes through :func:`load_effective_config` (FEAT-461): the
+    committed base ``.parrot/wiki.json`` merged with the active
+    environment's overlay (``.parrot/wiki.{env}.json``), if any — so
+    every caller automatically honours ``WIKI_ENV``/``ENV`` without
+    knowing overlays exist. This is the right resolver for READ paths.
+
+    Callers that also need provenance (the active env name, which
+    overlay was used) — e.g. ``status`` — should call
+    :func:`_resolve_project_effective` instead. Callers that WRITE the
+    base config back (``build``'s ``--backend``/``--name`` persistence,
+    ``ns add``) must keep using :func:`load_project_config` directly, so
+    an environment/overlay value is never accidentally baked into the
+    committed base.
+    """
+    root = _find_repo_root(path)
     try:
-        return root, load_project_config(root)
+        effective = load_effective_config(root)
     except WikiConfigError as exc:
         raise click.ClickException(str(exc)) from exc
+    return root, effective.config
+
+
+def _resolve_project_effective(path: str | None) -> tuple[Path, WikiEffectiveConfig]:
+    """Resolve the repo root + full effective config, with provenance.
+
+    Same resolution as :func:`_resolve_project`, but returns the
+    :class:`WikiEffectiveConfig` wrapper (active env name, overlay path
+    or ``None`` for a base fallback) instead of just the merged config —
+    for callers that report on the environment itself (``status``).
+    """
+    root = _find_repo_root(path)
+    try:
+        effective = load_effective_config(root)
+    except WikiConfigError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return root, effective
 
 
 def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
@@ -349,32 +390,16 @@ def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
 def _open_store(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
     """Create the retrieval-plane store for a repo.
 
-    TODO(follow-up): let the navconfig environment pick the backend.
-
-    Today the backend is a per-repo, git-ignored fact: whatever
-    ``.parrot/wiki.json`` says, set once by ``build --backend``. That
-    makes "local sqlite while I work offline, ArangoDB when I'm on the
-    VPN" a file edit plus a rebuild, and it silently strands every
-    ``query`` the moment the server is unreachable — there is no
-    fallback.
-
-    The proposal is to drive it from the same ``env/<ENV>/`` layout
-    navconfig already uses for every other credential in this repo, so
-    ``ENV=dev`` resolves a local sqlite plane and ``ENV=prod`` (or a
-    dedicated value) resolves the shared ArangoDB one.
-
-    Most of the machinery already exists, and is inconsistent in a way
-    worth fixing in the same pass: ``WIKI_STORE_BACKEND`` IS honoured by
-    ``_resolve_read_store`` and ``_resolve_write_store`` — but only for
-    ``--store``/``WIKI_STORE`` targets, and ``build`` ignores it
-    entirely. So the work is mostly to define one precedence
-    (``--backend`` flag > environment > ``wiki.json``) and apply it here
-    and in ``build``, rather than to invent a new mechanism.
-
-    Open questions for that follow-up: whether the two planes stay in
-    sync or are simply different corpora; and whether an unreachable
-    ArangoDB should fall back to the local plane (convenient, but it
-    would answer queries from a stale corpus without saying so).
+    Trusts ``config.backend`` as already resolved (FEAT-461): every
+    caller is expected to pass a config produced by
+    :func:`_resolve_project` (or otherwise precedence-resolved —
+    ``--backend`` flag > environment (overlay / ``WIKI_STORE_BACKEND``)
+    > base ``wiki.json``), so this function itself has no precedence
+    logic of its own. This closes the single-backend limitation the
+    module previously tracked as a follow-up: an env-aware overlay
+    (``.parrot/wiki.{env}.json``) now lets the same repo resolve a local
+    sqlite plane with no ``ENV`` set and the shared ArangoDB plane under
+    ``ENV=dev``/``ENV=prod``, without editing ``wiki.json`` by hand.
     """
     storage = config.storage_path(root)
     if config.backend == "arangodb":
@@ -482,6 +507,7 @@ def _resolve_read_store(
     """
     if backend_opt == "arangodb":
         root, config = _resolve_project(path_)
+        config.backend = "arangodb"  # --backend flag wins over environment/base
         store = _open_store(root, config)
         try:
             _run(store.initialize())
@@ -510,6 +536,8 @@ def _resolve_read_store(
             )
         return create_wiki_store(storage_dir, backend=backend)
     root, config = _resolve_project(path_)
+    if backend_opt:
+        config.backend = backend_opt  # type: ignore[assignment]  # flag wins over environment/base
     return _federate(root, config, _require_built(root, config), ns_opt)
 
 
@@ -1128,7 +1156,12 @@ def build(
     per-page files), an interactive graph.html / graph.json knowledge
     map, a wiki_stats.json build report, and a README.md entry point.
     """
-    root, config = _resolve_project(path_)
+    root, effective = _resolve_project_effective(path_)
+    config = effective.config
+    # `build` persists explicit --name/--backend overrides to the BASE
+    # config (never the environment-merged one) — an environment/overlay
+    # value must never leak into the committed .parrot/wiki.json.
+    base_config = load_project_config(root)
     with wiki_write_lock(config.storage_path(root)) as _acquired:
         if not _acquired:
             click.echo(
@@ -1139,8 +1172,21 @@ def build(
             raise SystemExit(1)
         if name:
             config.wiki_name = name
+            base_config.wiki_name = name
         if backend:
             config.backend = backend  # type: ignore[assignment]
+            base_config.backend = backend  # type: ignore[assignment]
+        else:
+            # One precedence rule (closes cli.py:352's former TODO):
+            # --backend flag > environment (WIKI_STORE_BACKEND / overlay)
+            # > base wiki.json. `config.backend` already carries the
+            # overlay's value (or the base's, when no overlay applies);
+            # WIKI_STORE_BACKEND — long honoured by the read/write store
+            # resolvers but ignored here — now applies too, still below
+            # an explicit flag and never persisted to the base config.
+            env_backend = _env_setting("WIKI_STORE_BACKEND")
+            if env_backend:
+                config.backend = env_backend  # type: ignore[assignment]
 
         from parrot.knowledge.wiki.vault_scan import (
             is_obsidian_vault,
@@ -1197,6 +1243,8 @@ def build(
                     export_rel = None
                 if export_rel and export_rel not in config.exclude_dirs:
                     config.exclude_dirs.append(export_rel)
+                if export_rel and export_rel not in base_config.exclude_dirs:
+                    base_config.exclude_dirs.append(export_rel)
             counts["okf"] = okf_report
 
             graph_stats: dict[str, Any] | None = None
@@ -1220,7 +1268,24 @@ def build(
                     f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
-        save_project_config(root, config)
+        save_project_config(root, base_config)
+
+        if effective.overlay_path is None:
+            # Auto-generate the missing overlay for the active env, derived
+            # from the (persisted) BASE config — so it stays consistent
+            # with whatever `--name`/`--backend` just committed to
+            # wiki.json — but NEVER from an ephemeral, non-persisted
+            # override such as WIKI_STORE_BACKEND (spec §7 Known Risks:
+            # "avoid freezing a one-off flag into the overlay"). Never
+            # clobbers an existing overlay (this branch only runs when
+            # none exists).
+            overlay = derive_env_overlay(base_config, effective.env)
+            overlay_file = save_env_overlay(root, effective.env, overlay)
+            click.echo(
+                f"Generated wiki environment overlay for env "
+                f"{effective.env!r} at {overlay_file} "
+                f"(backend={overlay.backend!r})"
+            )
 
         stats = counts["stats"]
 
@@ -1593,13 +1658,61 @@ def related(
         click.echo(f"{arrow} [{row.get('concept_id')}] " f"({row.get('rel')}) {row.get('title', '')}")
 
 
+def _probe_backend_reachable(root: Path, config: WikiProjectConfig) -> bool | None:
+    """Bounded reachability probe for the primary plane.
+
+    Args:
+        root: Repository root.
+        config: The (already effective) config to probe.
+
+    Returns:
+        ``None`` for local backends (sqlite/memory — no network hop, so
+        reachability is not a meaningful question); ``True``/``False``
+        for ``arangodb`` after a timeout-bounded connect probe. Mirrors
+        :func:`parrot.knowledge.wiki.federation._open_arango`'s
+        probe-then-close discipline: never keep a probe connection
+        alive on this throwaway CLI event loop.
+    """
+    if config.backend != "arangodb":
+        return None
+    from parrot.knowledge.wiki.federation import DEFAULT_ARANGO_TIMEOUT
+
+    async def _probe() -> bool:
+        store = _open_store(root, config)
+        try:
+            await asyncio.wait_for(store.initialize(), timeout=DEFAULT_ARANGO_TIMEOUT)
+            return True
+        except Exception:  # noqa: BLE001 — reachability probe, not a hard failure
+            return False
+        finally:
+            close = getattr(store, "close", None)
+            if close is not None:
+                try:
+                    await close()
+                except Exception:
+                    _cli_logger.debug(
+                        "Ignoring error closing probe connection for %r",
+                        config.wiki_name,
+                        exc_info=True,
+                    )
+
+    return _run(_probe())
+
+
 @wiki.command()
 @path_option
 @ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     """Show wiki plane statistics, namespaces, and source staleness."""
-    root, config = _resolve_project(path_)
+    root, effective = _resolve_project_effective(path_)
+    config = effective.config
+    overlay_label = str(effective.overlay_path) if effective.overlay_path else "base (no overlay)"
+    reachable = _probe_backend_reachable(root, config)
+    if not as_json:
+        click.echo(f"Env       : {effective.env} ({overlay_label})")
+        if reachable is not None:
+            click.echo(f"Reachable : {'yes' if reachable else 'no'}")
     if not config.is_built(root):
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
         return
@@ -1631,6 +1744,9 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         "wiki_name": config.wiki_name,
         "backend": config.backend,
         "storage_dir": str(config.storage_path(root)),
+        "env": effective.env,
+        "overlay": overlay_label,
+        "reachable": reachable,
         "stats": stats,
         "sources": len(entries),
         "stale_sources": len(stale),
@@ -2252,6 +2368,8 @@ def _resolve_write_store(
         storage_dir.mkdir(parents=True, exist_ok=True)
         return create_wiki_store(storage_dir, backend=backend), storage_dir, None, None
     root, config = _resolve_project(path_)
+    if backend_opt:
+        config.backend = backend_opt  # type: ignore[assignment]
     return _open_store(root, config), config.storage_path(root), root, config
 
 

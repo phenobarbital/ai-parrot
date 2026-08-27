@@ -183,7 +183,16 @@ class TestQueryBackendArango:
 class TestStatusBackendArango:
     """``status`` reports ArangoDB backend + stats after an arangodb build."""
 
-    def test_status_shows_arangodb_backend(self, runner, repo, mock_arango_driver):
+    def test_status_shows_arangodb_backend(
+        self, runner, repo, mock_arango_driver, monkeypatch
+    ):
+        # FEAT-461: with no ENV/WIKI_ENV, `build` auto-generates the missing
+        # `local` overlay (`{"backend": "sqlite"}` — the no-VPN default),
+        # which `status` (no `--backend` option of its own) would then
+        # report instead of the arangodb backend just built. Set an
+        # explicit non-local env so the generated overlay mirrors the
+        # arangodb base instead.
+        monkeypatch.setenv("ENV", "dev")
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=mock_arango_driver,

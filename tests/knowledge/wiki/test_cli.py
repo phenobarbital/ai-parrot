@@ -115,7 +115,15 @@ class TestBuild:
         config = load_project_config(repo)
         assert config.wiki_name == "kb"
         assert config.backend == "memory"
-        result = runner.invoke(wiki, ["query", "store", "--path", str(repo)])
+        # FEAT-461: with no ENV/WIKI_ENV set, `build` auto-generates the
+        # missing `local` overlay (`{"backend": "sqlite"}` — the no-VPN
+        # default), which now outranks the persisted base backend for a
+        # bare `query`. An explicit --backend flag still wins over that
+        # overlay, so a follow-up read must repeat the same flag to reach
+        # the custom "memory" plane just built.
+        result = runner.invoke(
+            wiki, ["query", "store", "--path", str(repo), "--backend", "memory"]
+        )
         assert result.exit_code == 0, result.output
 
 
