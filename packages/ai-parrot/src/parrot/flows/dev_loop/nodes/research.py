@@ -501,6 +501,13 @@ class ResearchNode(DevLoopNode):
 
         Returns:
             The resolved base branch name; never ``""``.
+
+        Note (code-review follow-up, FEAT-466 TASK-2505): because this
+        always falls back to the work-kind mapping when the spec is
+        unreadable, ``ResearchOutput.base_branch`` never actually reaches
+        ``DeploymentHandoffNode`` as ``""`` in normal operation — that
+        node's "block on empty" branch is defensive-only (see its own
+        NOTE), not a path a legitimate run ever takes today.
         """
         spec_path = Path(research_out.spec_path)
         if not spec_path.is_absolute():

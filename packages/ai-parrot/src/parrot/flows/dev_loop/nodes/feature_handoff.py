@@ -205,10 +205,17 @@ class FeatureHandoffNode(DevLoopNode):
         # FEAT-466: source the base from the committed spec's frontmatter —
         # the same "resolve once, record it, read the record" principle as
         # DeploymentHandoffNode, never the hardcoded "dev" constructor
-        # default (never overridden by factories.py:244 today). "" (never
-        # actually produced by _resolve_base_branch below, which always
-        # falls back to "dev") blocks defensively for symmetry with
-        # DeploymentHandoffNode rather than silently guessing.
+        # default (never overridden by factories.py:244 today).
+        #
+        # NOTE (code-review follow-up, mirrors DeploymentHandoffNode's
+        # equivalent note): _resolve_base_branch below always falls back to
+        # "dev" when the spec is unreadable, so this never actually
+        # produces "" in normal operation today — the block below is
+        # defensive-only (exercised directly by
+        # test_base_branch_guard.py::TestFeatureHandoffWiring via a
+        # hand-constructed empty base), kept for symmetry with
+        # DeploymentHandoffNode and as the correct behavior should a future
+        # resolver genuinely leave the base unresolved.
         base = self._resolve_base_branch(planner)
         if not base:
             error = (
@@ -422,7 +429,10 @@ class FeatureHandoffNode(DevLoopNode):
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(f"gh pr create failed: {err.decode(errors='replace')}")
+            raise RuntimeError(
+                f"gh pr create failed: "
+                f"{scrub_git_output(err.decode(errors='replace'))}"
+            )
         text = out.decode().strip()
         return text.splitlines()[-1] if text else ""
 
@@ -450,7 +460,9 @@ class FeatureHandoffNode(DevLoopNode):
             async with session.post(url, json=payload, headers=headers) as resp:
                 data = await resp.json()
                 if resp.status >= 300:
-                    raise RuntimeError(f"GitHub REST {resp.status}: {data}")
+                    raise RuntimeError(
+                        f"GitHub REST {resp.status}: {scrub_git_output(str(data))}"
+                    )
                 return data.get("html_url", "")
 
     # ------------------------------------------------------------------

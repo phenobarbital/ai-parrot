@@ -134,6 +134,16 @@ class DeploymentHandoffNode(DevLoopNode):
         # that guess is what produced PR #1250 (branch cut from `dev`, PR
         # opened against `main`). "" means nothing resolved it; block
         # rather than silently default to the "dev" constructor default.
+        #
+        # NOTE (code-review follow-up): as of TASK-2504,
+        # ResearchNode._resolve_base_branch always falls back to the
+        # kind-derived mapping (with a loud WARNING) when the spec is
+        # unreadable — it never actually leaves this "". This branch is
+        # therefore defensive-only in normal operation today (exercised
+        # directly by test_base_branch_guard.py::test_blocks_on_empty_base_branch
+        # via a hand-constructed ResearchOutput), not dead code to delete —
+        # it is the correct behavior if a future caller's resolver ever
+        # does legitimately leave base_branch unresolved.
         base = (getattr(research, "base_branch", "") or "").strip()
         if not base:
             error = (
@@ -381,7 +391,10 @@ class DeploymentHandoffNode(DevLoopNode):
         )
         out, err = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(f"gh pr create failed: {err.decode(errors='replace')}")
+            raise RuntimeError(
+                f"gh pr create failed: "
+                f"{scrub_git_output(err.decode(errors='replace'))}"
+            )
         text = out.decode().strip()
         # The last line of `gh pr create` output is the PR URL.
         return text.splitlines()[-1] if text else ""
@@ -451,7 +464,9 @@ class DeploymentHandoffNode(DevLoopNode):
             async with session.post(url, json=payload, headers=headers) as resp:
                 data = await resp.json()
                 if resp.status >= 300:
-                    raise RuntimeError(f"GitHub REST {resp.status}: {data}")
+                    raise RuntimeError(
+                        f"GitHub REST {resp.status}: {scrub_git_output(str(data))}"
+                    )
                 return data.get("html_url", "")
 
     # ------------------------------------------------------------------

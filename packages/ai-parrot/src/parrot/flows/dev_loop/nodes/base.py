@@ -67,7 +67,14 @@ async def _git(cwd: str, *args: str) -> Tuple[int, str, str]:
 
     Mirrors the subprocess idiom used by ``DeploymentHandoffNode._push_branch``
     — ``asyncio.create_subprocess_exec``, never a blocking call.
+
+    Forces ``LC_ALL=C`` (and ``LANG=C``) so git's error messages are always
+    emitted in English — ``assert_base_is_clean`` pattern-matches stderr
+    (e.g. ``"couldn't find remote ref"``) to distinguish a genuinely-absent
+    ref from a real fetch failure, and that match must not depend on the
+    host's locale (FEAT-466 TASK-2505 code-review follow-up).
     """
+    env = dict(os.environ, LC_ALL="C", LANG="C")
     proc = await asyncio.create_subprocess_exec(
         "git",
         "-C",
@@ -75,6 +82,7 @@ async def _git(cwd: str, *args: str) -> Tuple[int, str, str]:
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
     out, err = await proc.communicate()
     return (
@@ -82,6 +90,24 @@ async def _git(cwd: str, *args: str) -> Tuple[int, str, str]:
         out.decode(errors="replace").strip(),
         err.decode(errors="replace").strip(),
     )
+
+
+def _cwd_is_unusable_repo(err: str) -> bool:
+    """Detect the two git error shapes meaning "cwd is not a usable repo".
+
+    Both are structural preconditions about ``cwd`` itself, not about a
+    fetch/network/ref problem:
+
+    * ``cannot change to '<path>': No such file or directory`` — ``cwd``
+      does not exist at all.
+    * ``not a git repository (or any of the parent directories): .git`` —
+      ``cwd`` exists but was never ``git init``'d.
+
+    Both messages are forced to English by ``_git``'s ``LC_ALL=C`` so this
+    match is locale-independent.
+    """
+    lowered = err.lower()
+    return "not a git repository" in lowered or "cannot change to" in lowered
 
 
 async def assert_base_is_clean(
@@ -130,19 +156,67 @@ async def assert_base_is_clean(
 
     Raises:
         BaseBranchMismatch: When the branch carries sibling commits.
-        RuntimeError: When a git command fails outright.
+        RuntimeError: When a git command fails outright for a reason other
+            than ``cwd`` not being a git repository at all (see below) —
+            including a failure to fetch ``base``, or a sibling fetch that
+            fails for a reason OTHER than the ref genuinely not existing on
+            the remote (FEAT-466 TASK-2505 code-review follow-up: a
+            transient fetch failure must never be silently treated the
+            same as "this sibling doesn't exist" — that would let exactly
+            the sibling that matters go unchecked).
+
+    Note (code-review follow-up): ``cwd`` not being a git repository at all
+    is treated as "cannot check, skip" (logged at INFO), not a hard
+    failure — deliberately, not an oversight. In production this call
+    always runs AFTER a successful push to ``cwd`` (both call sites push
+    first), so a real run never reaches this function with an invalid
+    ``cwd`` — the push itself would already have failed loudly. This shape
+    is therefore purely a test-fixture artifact (many existing tests pass
+    a throwaway ``tmp_path`` with no real git history for unrelated
+    reasons — Jira wiring, docs artifacts, etc.), not a live failure mode
+    worth hard-failing on.
     """
     candidates = [s for s in (siblings if siblings is not None else _LONG_LIVED_BRANCHES) if s != base]
 
-    # Fetch base + candidates, and keep only refs that actually exist —
-    # `staging` may not exist on the remote, and passing a missing ref as an
-    # exclusion bound fails the entire command.
-    await _git(cwd, "fetch", "origin", base)
+    # Fetch base FIRST. Two distinct failure shapes:
+    #  - `cwd` is not a usable git repository at all (missing entirely, or
+    #    present but not initialized as one) — see the Note above; skip.
+    #  - any OTHER fetch failure (network, auth, missing base ref on the
+    #    remote, ...) is a real problem the guard must not silently
+    #    swallow — raise loudly rather than fail open.
+    rc, _, err = await _git(cwd, "fetch", "origin", base)
+    if rc != 0:
+        if _cwd_is_unusable_repo(err):
+            if logger:
+                logger.info(
+                    "%r is not a usable git repository; skipping "
+                    "base-branch guard.",
+                    cwd,
+                )
+            return
+        raise RuntimeError(
+            f"assert_base_is_clean: could not fetch origin/{base} — "
+            f"refusing to guess: {scrub_git_output(err)}"
+        )
+
+    # Fetch candidates, and keep only refs that actually exist — `staging`
+    # may not exist on the remote, and passing a missing ref as an
+    # exclusion bound fails the entire command. A sibling ref that is
+    # genuinely absent fails with git's own "couldn't find remote ref"
+    # message (forced to English by `_git`'s LC_ALL=C) — ONLY that shape is
+    # treated as "not applicable, skip it". Any other fetch failure
+    # (network, auth, ...) is a real error and must not be silently
+    # downgraded to "ref absent".
     existing: List[str] = []
     for sib in sorted(candidates):
-        rc, _, _ = await _git(cwd, "fetch", "origin", sib)
+        rc, _, err = await _git(cwd, "fetch", "origin", sib)
         if rc != 0:
-            continue
+            if "couldn't find remote ref" in err.lower():
+                continue
+            raise RuntimeError(
+                f"assert_base_is_clean: could not fetch origin/{sib} — "
+                f"refusing to guess: {scrub_git_output(err)}"
+            )
         rc, _, _ = await _git(cwd, "rev-parse", "--verify", f"origin/{sib}")
         if rc == 0:
             existing.append(sib)
@@ -309,8 +383,13 @@ def run_label(output: Any, *, default: str = "run") -> str:
 
     FEAT-466: a hotfix reserves no ``FEAT-<NNN>`` (a bugfix is not a
     feature), so ``feat_id`` is legitimately ``""`` on those runs and the
-    Jira issue key carries the identity. Follows the precedence already used
-    at ``nodes/qa.py:194,342``.
+    Jira issue key carries the identity — the same underlying fallback
+    ``nodes/qa.py:194,342`` relies on (``jira_issue_key or feat_id``,
+    checked in that order there because ``jira_issue_key`` is a required,
+    always-non-empty field on ``ResearchOutput``). This helper checks
+    ``feat_id`` first instead, because it is also used for
+    ``PlannerOutput`` (feature-mode), where a `FEAT-<NNN>` id is the
+    stronger, more specific identity when both are present.
 
     Args:
         output: Any object exposing ``feat_id`` / ``jira_issue_key``

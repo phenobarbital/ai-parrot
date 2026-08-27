@@ -110,6 +110,59 @@ class TestGuard:
     async def test_missing_sibling_ref_is_skipped(self, incident_repo):
         await assert_base_is_clean("feat-465", "dev", str(incident_repo), siblings=["staging"])
 
+    async def test_base_fetch_failure_raises(self, incident_repo, monkeypatch):
+        """A real fetch failure on `base` must be loud, never silently
+        continued past — the whole comparison would be meaningless against
+        a stale/missing base ref (code-review follow-up, FEAT-466 TASK-2505)."""
+        from parrot.flows.dev_loop.nodes import base as base_module
+
+        real_git = base_module._git
+
+        async def _fail_base_fetch(cwd, *args):
+            if args == ("fetch", "origin", "dev"):
+                return (128, "", "fatal: unable to access remote")
+            return await real_git(cwd, *args)
+
+        monkeypatch.setattr(base_module, "_git", _fail_base_fetch)
+
+        with pytest.raises(RuntimeError, match="could not fetch origin/dev"):
+            await assert_base_is_clean(
+                "feat-465", "dev", str(incident_repo), siblings=["main"]
+            )
+
+    async def test_sibling_transient_fetch_failure_raises_not_skips(
+        self, incident_repo, monkeypatch
+    ):
+        """A sibling fetch failing for a reason OTHER than 'ref does not
+        exist' must raise, never be silently treated the same as a
+        genuinely-absent sibling — that would let exactly the sibling that
+        matters go unchecked (code-review follow-up, FEAT-466 TASK-2505)."""
+        from parrot.flows.dev_loop.nodes import base as base_module
+
+        real_git = base_module._git
+
+        async def _flaky_sibling_fetch(cwd, *args):
+            if args == ("fetch", "origin", "main"):
+                return (128, "", "fatal: the remote end hung up unexpectedly")
+            return await real_git(cwd, *args)
+
+        monkeypatch.setattr(base_module, "_git", _flaky_sibling_fetch)
+
+        with pytest.raises(RuntimeError, match="could not fetch origin/main"):
+            await assert_base_is_clean(
+                "feat-465", "dev", str(incident_repo), siblings=["main"]
+            )
+
+    async def test_sibling_genuinely_absent_still_skipped(
+        self, incident_repo, monkeypatch
+    ):
+        """The English 'couldn't find remote ref' shape (forced by LC_ALL=C)
+        is still correctly treated as 'not applicable' — regression guard
+        for the fetch-failure-vs-absent distinction above."""
+        await assert_base_is_clean(
+            "feat-465", "dev", str(incident_repo), siblings=["definitely-not-a-branch"]
+        )
+
     async def test_no_existing_siblings_passes(self, incident_repo, caplog):
         logger = MagicMock()
         await assert_base_is_clean(
