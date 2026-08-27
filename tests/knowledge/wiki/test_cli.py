@@ -1475,6 +1475,88 @@ class TestNamespaceRegistry:
         assert "wikitoolkit build --path" in accepted.output
         assert load_project_config(repo).namespaces["notes"].kind == "vault"
 
+    def test_add_database_defaults_to_arangodb_backend(self, runner, repo):
+        _build(runner, repo)
+        added = runner.invoke(
+            wiki,
+            ["ns", "add", "legis", "--database", "wiki_legis", "--path", str(repo)],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["legis"].backend == "arangodb"
+
+    def test_add_database_accepts_registered_extra_backend(self, runner, repo):
+        """FEAT-449 M7: --database entries may name a satellite-registered
+        backend (e.g. 'ontology_legal') instead of forcing 'arangodb'."""
+        _build(runner, repo)
+        added = runner.invoke(
+            wiki,
+            [
+                "ns",
+                "add",
+                "legal",
+                "--database",
+                "legal_db",
+                "--backend",
+                "ontology_legal",
+                "--path",
+                str(repo),
+            ],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["legal"].backend == "ontology_legal"
+
+    def test_add_database_still_accepts_explicit_arangodb(self, runner, repo):
+        _build(runner, repo)
+        added = runner.invoke(
+            wiki,
+            [
+                "ns",
+                "add",
+                "legis",
+                "--database",
+                "wiki_legis",
+                "--backend",
+                "arangodb",
+                "--path",
+                str(repo),
+            ],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["legis"].backend == "arangodb"
+
+    def test_add_store_rejects_non_local_backend(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        store_dir = tmp_path / "store"
+        store_dir.mkdir()
+        rejected = runner.invoke(
+            wiki,
+            [
+                "ns",
+                "add",
+                "legal",
+                "--store",
+                str(store_dir),
+                "--backend",
+                "ontology_legal",
+                "--path",
+                str(repo),
+            ],
+        )
+        assert rejected.exit_code != 0
+        assert "not valid for --store" in rejected.output
+        assert "legal" not in load_project_config(repo).namespaces
+
+    def test_add_store_still_accepts_sqlite_and_memory(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        store_dir = tmp_path / "store"
+        store_dir.mkdir()
+        added = runner.invoke(
+            wiki,
+            ["ns", "add", "mem", "--store", str(store_dir), "--backend", "memory", "--path", str(repo)],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["mem"].backend == "memory"
+
     def test_remove_missing_namespace_errors(self, runner, repo):
         _build(runner, repo)
         result = runner.invoke(wiki, ["ns", "remove", "ghost", "--path", str(repo)])
