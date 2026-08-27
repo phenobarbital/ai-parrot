@@ -14,7 +14,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Core registry primitive every persist path depends on; must land first (resolved decision: TASK #1).",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2509-registry-primitives-yaml-roundtrip.md"
+      "completed_at": "2026-08-27T17:07:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2509-registry-primitives-yaml-roundtrip.md"
     },
     {
       "id": "TASK-2510",
