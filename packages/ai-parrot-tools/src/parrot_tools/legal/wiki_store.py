@@ -29,11 +29,9 @@ from parrot.knowledge.wiki.store import BaseWikiStore
 
 from parrot_tools.legal.boe.queries import search_articles
 
-logger = logging.getLogger(__name__)
-
-_ARTICULO_COLLECTION = "articulo"
-_NORMA_COLLECTION = "norma"
-_EDGE_COLLECTIONS = ("modifica", "deroga", "pertenece_a")
+_ARTICULO_ENTITY = "Articulo"
+_NORMA_ENTITY = "Norma"
+_EDGE_RELATIONS = ("modifica", "deroga", "pertenece_a")
 
 _READ_ONLY_MESSAGE = "ontology_legal namespace is read-only"
 
@@ -86,6 +84,16 @@ class OntologyLegalWikiStore(BaseWikiStore):
         self._ctx: TenantContext | None = ctx
         self._initialized = store is not None and ctx is not None
         self._init_lock = asyncio.Lock()
+        self.logger = logging.getLogger(__name__)
+        # Resolved from ctx.ontology in initialize() — never hardcoded, so
+        # this adapter tracks legal.ontology.yaml if its collection/edge
+        # names ever change. When a test injects `ctx` directly, resolve
+        # eagerly here too (initialize() short-circuits in that case).
+        self._articulo_collection: str | None = None
+        self._norma_collection: str | None = None
+        self._edge_collections: dict[str, str] = {}
+        if ctx is not None:
+            self._resolve_collection_names(ctx)
 
     @classmethod
     def factory(
@@ -131,6 +139,18 @@ class OntologyLegalWikiStore(BaseWikiStore):
     # Connection lifecycle
     # ------------------------------------------------------------------
 
+    def _resolve_collection_names(self, ctx: TenantContext) -> None:
+        """Resolve collection/edge names from ``ctx.ontology`` — never hardcoded.
+
+        Args:
+            ctx: Tenant context carrying the merged legal ontology.
+        """
+        self._articulo_collection = ctx.ontology.entities[_ARTICULO_ENTITY].collection
+        self._norma_collection = ctx.ontology.entities[_NORMA_ENTITY].collection
+        self._edge_collections = {
+            name: ctx.ontology.relations[name].edge_collection for name in _EDGE_RELATIONS
+        }
+
     async def initialize(self) -> None:
         """Connect and verify the plane exists — NEVER provisions.
 
@@ -145,6 +165,19 @@ class OntologyLegalWikiStore(BaseWikiStore):
             if self._initialized:
                 return
 
+            # Resolve the ontology FIRST (pure YAML resolution, no network)
+            # so the collection-existence probe below checks the name the
+            # ontology actually declares, not a hardcoded literal.
+            manager = TenantOntologyManager(ontology_dir=OntologyParser.get_defaults_dir())
+            resolved = manager.resolve(self._wiki_name or "ontology_legal_wiki", domain="legal")
+            ctx = TenantContext(
+                tenant_id="ontology_legal",
+                arango_db=self._database,
+                pgvector_schema="ontology_legal",
+                ontology=resolved.ontology,
+            )
+            self._resolve_collection_names(ctx)
+
             from asyncdb import AsyncDB
 
             probe = AsyncDB("arangodb", params={**self._params, "database": "_system"})
@@ -152,33 +185,36 @@ class OntologyLegalWikiStore(BaseWikiStore):
             try:
                 databases = await probe.list_databases()
             except AttributeError:  # pragma: no cover - driver without the helper
+                self.logger.debug(
+                    "ArangoDB driver has no list_databases(); skipping the "
+                    "pre-connect existence probe for database %r",
+                    self._database,
+                )
                 databases = None
             finally:
                 await probe.close()
             if databases is not None and self._database not in set(databases):
                 raise FileNotFoundError(
-                    f"ArangoDB database {self._database!r} does not exist — " "the legal tenant was never built"
+                    f"ArangoDB database {self._database!r} does not exist — "
+                    "the legal tenant was never built"
                 )
 
             client = AsyncDB("arangodb", params={**self._params, "database": self._database})
             await client.connection()
-            if not await client.collection_exists(_ARTICULO_COLLECTION):
+            if not await client.collection_exists(self._articulo_collection):
                 raise FileNotFoundError(
                     f"ArangoDB database {self._database!r} has no "
-                    f"{_ARTICULO_COLLECTION!r} collection — the legal tenant "
-                    "was never built"
+                    f"{self._articulo_collection!r} collection — the legal "
+                    "tenant was never built"
                 )
 
-            manager = TenantOntologyManager(ontology_dir=OntologyParser.get_defaults_dir())
-            resolved = manager.resolve(self._wiki_name or "ontology_legal_wiki", domain="legal")
-            self._ctx = TenantContext(
-                tenant_id="ontology_legal",
-                arango_db=self._database,
-                pgvector_schema="ontology_legal",
-                ontology=resolved.ontology,
-            )
+            self._ctx = ctx
             self._store = OntologyGraphStore(arango_client=client)
             self._initialized = True
+            self.logger.info(
+                "OntologyLegalWikiStore initialized (read-only) against database %r",
+                self._database,
+            )
 
     async def _ensure_init(self) -> None:
         await self.initialize()
@@ -240,7 +276,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                 "RETURN {norma_ref: a.norma_ref, numero: a.numero, version: v}"
             ),
             bind_vars={"key": concept_id, "as_of": today.isoformat()},
-            collection_binds={"@articulo": _ARTICULO_COLLECTION},
+            collection_binds={"@articulo": self._articulo_collection},
         )
         if not rows:
             return None
@@ -298,7 +334,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                     "numero: a.numero, version: v}"
                 ),
                 bind_vars={"as_of": today, "limit": limit},
-                collection_binds={"@articulo": _ARTICULO_COLLECTION},
+                collection_binds={"@articulo": self._articulo_collection},
             )
             for row in rows:
                 version = row["version"]
@@ -322,7 +358,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                 self._ctx,
                 "FOR n IN @@norma LIMIT @limit RETURN {boe_id: n._key, titulo: n.titulo}",
                 bind_vars={"limit": limit},
-                collection_binds={"@norma": _NORMA_COLLECTION},
+                collection_binds={"@norma": self._norma_collection},
             )
             for row in rows:
                 titulo = row.get("titulo") or ""
@@ -399,9 +435,11 @@ class OntologyLegalWikiStore(BaseWikiStore):
             ``{concept_id, rel, direction}`` stubs.
         """
         await self._ensure_init()
-        collections = (rel,) if rel in _EDGE_COLLECTIONS else _EDGE_COLLECTIONS
+        relations = (
+            {rel: self._edge_collections[rel]} if rel in self._edge_collections else self._edge_collections
+        )
         results: list[dict[str, Any]] = []
-        for collection in collections:
+        for rel_name, collection in relations.items():
             if direction in ("out", "both"):
                 rows = await self._store.execute_traversal(
                     self._ctx,
@@ -410,7 +448,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                     collection_binds={"@edges": collection},
                 )
                 for row in rows:
-                    results.append({"concept_id": row["target"], "rel": collection, "direction": "out"})
+                    results.append({"concept_id": row["target"], "rel": rel_name, "direction": "out"})
             if direction in ("in", "both"):
                 rows = await self._store.execute_traversal(
                     self._ctx,
@@ -419,7 +457,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                     collection_binds={"@edges": collection},
                 )
                 for row in rows:
-                    results.append({"concept_id": row["target"], "rel": collection, "direction": "in"})
+                    results.append({"concept_id": row["target"], "rel": rel_name, "direction": "in"})
         return results
 
     async def dump_pages(self) -> list[dict[str, Any]]:
@@ -430,11 +468,11 @@ class OntologyLegalWikiStore(BaseWikiStore):
         """Every edge across all three typed edge collections (export path)."""
         await self._ensure_init()
         edges: list[dict[str, Any]] = []
-        for collection in _EDGE_COLLECTIONS:
+        for rel_name, collection in self._edge_collections.items():
             rows = await self._store.execute_traversal(
                 self._ctx,
                 "FOR e IN @@edges RETURN {src: e._from, dst: e._to, rel: @rel}",
-                bind_vars={"rel": collection},
+                bind_vars={"rel": rel_name},
                 collection_binds={"@edges": collection},
             )
             edges.extend(rows)
@@ -448,13 +486,13 @@ class OntologyLegalWikiStore(BaseWikiStore):
             self._ctx,
             "FOR a IN @@articulo RETURN a.versions",
             bind_vars={},
-            collection_binds={"@articulo": _ARTICULO_COLLECTION},
+            collection_binds={"@articulo": self._articulo_collection},
         )
         normas = await self._store.execute_traversal(
             self._ctx,
             "FOR n IN @@norma RETURN 1",
             bind_vars={},
-            collection_binds={"@norma": _NORMA_COLLECTION},
+            collection_binds={"@norma": self._norma_collection},
         )
         total_versions = 0
         in_force_versions = 0

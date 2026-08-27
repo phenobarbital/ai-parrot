@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 from parrot.knowledge.ontology.exceptions import OntologyIntegrityError
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore, _merge_link_field
+from parrot.knowledge.ontology.graph_store import OntologyGraphStore
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.schema import (
     EntityDef,
@@ -16,6 +16,7 @@ from parrot.knowledge.ontology.schema import (
     SearchViewField,
     SearchViewLink,
     TenantContext,
+    merge_link_field,
 )
 
 
@@ -107,17 +108,17 @@ class TestSearchViewDefMergeAndValidation:
 class TestLinkFieldPathGrammar:
     def test_bare_and_one_level_nesting(self):
         fields: dict = {}
-        _merge_link_field(fields, "titulo")
-        _merge_link_field(fields, "versions[*].text")
+        merge_link_field(fields, "titulo")
+        merge_link_field(fields, "versions[*].text")
         assert fields == {"titulo": {}, "versions": {"fields": {"text": {}}}}
 
     def test_two_level_nesting_raises(self):
         with pytest.raises(ValueError):
-            _merge_link_field({}, "a[*].b[*].c")
+            merge_link_field({}, "a[*].b[*].c")
 
     def test_malformed_bracket_raises(self):
         with pytest.raises(ValueError):
-            _merge_link_field({}, "a[bad]")
+            merge_link_field({}, "a[bad]")
 
 
 class FakeConnection:

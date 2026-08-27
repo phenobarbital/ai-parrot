@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .exceptions import FrameworkOverrideError, OntologyIntegrityError, OntologyMergeError
-from .graph_store import _merge_link_field
 from .parser import OntologyParser
 from .schema import (
     EntityDef,
@@ -21,6 +20,7 @@ from .schema import (
     RelationDef,
     SearchViewDef,
     TraversalPattern,
+    merge_link_field,
 )
 
 logger = logging.getLogger("Parrot.Ontology.Merger")
@@ -453,11 +453,11 @@ class OntologyMerger:
             for link in view_def.links:
                 if link.entity not in entity_names:
                     raise OntologyIntegrityError(
-                        f"search_views view '{view_name}' links unknown entity " f"'{link.entity}'"
+                        f"search_views view '{view_name}' links unknown entity '{link.entity}'"
                     )
                 for field in link.fields:
                     try:
-                        _merge_link_field({}, field.path)
+                        merge_link_field({}, field.path)
                     except ValueError as exc:
                         raise OntologyIntegrityError(
                             f"search_views view '{view_name}' link entity "

@@ -131,7 +131,11 @@ class TestAnswerFlow:
         assert ans.as_of == date(2019, 6, 1)
         assert all(r.id != "BOE-A-9999-1:art99" for r in ans.dossier)
         assert ans.suppressed_count == 1
-        assert log.records[0].reason in {"span_not_found", "anchor_lost"}
+        # Single-span note citing an unknown payload_key -> deterministically
+        # "span_not_found" per SpanVerifier's rule (single-reason notes keep
+        # their span's own reason; "anchor_lost" is only for mixed-reason
+        # multi-span notes — see verifier.py's class docstring).
+        assert log.records[0].reason == "span_not_found"
         assert all(note.spans for note in ans.reading_guide)
 
     async def test_flow_prunes_mangled_quote(self, seeded_store, legal_tenant_ctx):

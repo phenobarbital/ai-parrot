@@ -107,5 +107,9 @@ class LegalLibrarianAgent(Agent):
             prompt,
             structured_output=DraftAnswer,
             use_conversation_history=False,
+            # Graph-only retrieval (R14) is self-enforcing, not just
+            # incidental to no store being configured: explicitly refuse
+            # any vector-context injection even if a store is wired in later.
+            use_vector_context=False,
         )
         return response.structured_output

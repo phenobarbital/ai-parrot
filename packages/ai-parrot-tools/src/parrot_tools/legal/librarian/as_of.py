@@ -113,12 +113,28 @@ async def extract_as_of(
     query: str,
     llm_ask: Callable[..., Awaitable[Any]],
 ) -> date | None:
-    """Extract the ``as_of`` date a query refers to (R9).
+    """Extract the ``as_of`` date a query refers to (R9), general-purpose.
 
     Regex-first: exactly one distinct date found across all three regex
     forms is returned immediately, no LLM call. Zero or more than one
     distinct date triggers exactly ONE structured micro-call to
-    ``llm_ask``.
+    ``llm_ask`` — this is this function's OWN, general-purpose policy.
+
+    Note:
+        ``flow.as_of_extract`` (the retrieval DAG's stage 1, TASK-2497)
+        wraps this function with a STRICTER, narrower policy: it only
+        delegates here when ``regex_dates`` already found more than one
+        distinct date (genuinely ambiguous); a zero-date query resolves
+        straight to ``date.today()`` in the flow, with no LLM call at
+        all — the flow's own docstring and TASK-2497's completion note
+        explain why. Both policies run the SAME ``regex_dates`` pass
+        (once each) because they answer different questions: "what
+        should this general utility do standalone" (here) vs. "what
+        should the retrieval flow do for the overwhelmingly common
+        no-date-mentioned case" (there). This is intentional divergence,
+        not accidental duplication — this function's own zero-date
+        branch below remains load-bearing for direct/standalone callers
+        (see ``test_falls_back_to_llm_when_no_date_found``).
 
     Args:
         query: The user's query text.

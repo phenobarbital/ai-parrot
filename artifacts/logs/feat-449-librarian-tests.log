@@ -1,5 +1,5 @@
 === FEAT-449 legal-librarian-answer-layer — evidence log ===
-Generated: 2026-08-27T03:25:30Z (post code-review remediation)
+Generated: 2026-08-27T09:29:07Z (post code-review remediation round 2)
 
 ### pytest packages/ai-parrot-tools/tests/legal/ -v ###
 ============================= test session starts ==============================
@@ -658,8 +658,8 @@ packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestForeignPageWrite
 =================================== FAILURES ===================================
 _______________ TestMCPJsonInstall.test_install_creates_mcp_json _______________
 
-self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x7961ee4bef00>
-repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-17/test_install_creates_mcp_json0')
+self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x796fd56bae70>
+repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-22/test_install_creates_mcp_json0')
 
     def test_install_creates_mcp_json(self, repo_root):
         install_claude_integration(repo_root)
@@ -676,8 +676,8 @@ E         + /home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit
 /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:26: AssertionError
 _____________ TestMCPJsonInstall.test_install_updates_stale_entry ______________
 
-self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x7961ee4bec00>
-repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-17/test_install_updates_stale_ent0')
+self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x796fd56babd0>
+repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-22/test_install_updates_stale_ent0')
 
     def test_install_updates_stale_entry(self, repo_root):
         mcp_json = repo_root / ".mcp.json"
@@ -745,4 +745,4 @@ tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_co
 =========================== short test summary info ============================
 FAILED packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_creates_mcp_json
 FAILED packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_updates_stale_entry
-================= 2 failed, 223 passed, 23 warnings in 11.56s ==================
+================= 2 failed, 223 passed, 23 warnings in 11.52s ==================

@@ -204,17 +204,23 @@ class SpanVerifier:
         not_found = list(draft.not_found)
         if not dossier and not not_found:
             materias_str = ", ".join(materias) if materias else "(sin materia especificada)"
-            not_found = [
-                f"No encontré resultados en el corpus BOE para materias " f"{materias_str} a fecha {as_of.isoformat()}."
-            ]
+            not_found_message = (
+                f"No encontré resultados en el corpus BOE para materias {materias_str} "
+                f"a fecha {as_of.isoformat()}."
+            )
+            not_found = [not_found_message]
 
+        # NOTE: surviving_notes/surviving_conflicts can only be non-empty when
+        # at least one of their spans already survived and was added to
+        # dossier_by_key above, so `dossier` empty implies both are already
+        # empty — no extra `if dossier else []` guard needed here.
         answer = LegalAnswer(
             as_of=as_of,
             materias=materias,
             dossier=dossier,
-            reading_order=reading_order if dossier else [],
-            conflicts=surviving_conflicts if dossier else [],
-            reading_guide=surviving_notes if dossier else [],
+            reading_order=reading_order,
+            conflicts=surviving_conflicts,
+            reading_guide=surviving_notes,
             not_found=not_found,
             suppressed_count=suppressed_count,
         )

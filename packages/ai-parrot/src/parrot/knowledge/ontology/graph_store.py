@@ -12,75 +12,9 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from .schema import TenantContext
+from .schema import TenantContext, merge_link_field, view_properties_match
 
 logger = logging.getLogger("Parrot.Ontology.GraphStore")
-
-
-def _merge_link_field(fields: dict[str, Any], path: str) -> None:
-    """Expand one ``SearchViewField.path`` into an ArangoSearch link ``fields`` dict.
-
-    Supports exactly ONE nesting level:
-        - ``"titulo"`` -> ``fields["titulo"] = {}``
-        - ``"versions[*].text"`` -> ``fields["versions"] = {"fields": {"text": {}}}``
-
-    ArangoSearch auto-expands array elements under a nested link — no
-    ``trackListPositions`` in v1 (view match positions are never used for
-    spans; spans always slice the stored payload).
-
-    Args:
-        fields: The ``fields`` sub-dict of a view link's properties,
-            mutated in place.
-        path: The field path from ``SearchViewField.path``.
-
-    Raises:
-        ValueError: If ``path`` uses more than one nesting level (e.g.
-            ``"a[*].b[*].c"``) or is otherwise malformed.
-    """
-    if "[*]." not in path:
-        if "[" in path or "]" in path or "." in path:
-            raise ValueError(
-                f"SearchViewField path {path!r} is malformed — expected a bare "
-                "field name or exactly one 'name[*].sub' nesting level."
-            )
-        fields[path] = {}
-        return
-
-    head, _, tail = path.partition("[*].")
-    if not head or not tail or "[*]." in tail or "[" in tail or "]" in tail:
-        raise ValueError(
-            f"SearchViewField path {path!r} exceeds the supported one-level "
-            "nesting grammar ('name' or 'name[*].sub')."
-        )
-    fields[head] = {"fields": {tail: {}}}
-
-
-def _view_matches(existing: dict[str, Any], properties: dict[str, Any]) -> bool:
-    """Whether a live ArangoSearch view's declared ``links`` match ``properties``.
-
-    Compares only the ``links`` sub-dict we declare (``analyzers`` as sets,
-    ``fields`` structurally) — extra server-added keys (e.g.
-    ``includeAllFields``, ``storeValues``) are tolerated.
-
-    Args:
-        existing: The view description returned by ``connection.view(name)``.
-        properties: The properties this store would provision.
-
-    Returns:
-        ``True`` when every declared link's analyzers and fields already
-        match the live view.
-    """
-    existing_links = existing.get("links") or {}
-    wanted_links = properties.get("links") or {}
-    if set(existing_links) != set(wanted_links):
-        return False
-    for collection, wanted_link in wanted_links.items():
-        live_link = existing_links.get(collection) or {}
-        if set(live_link.get("analyzers") or []) != set(wanted_link.get("analyzers") or []):
-            return False
-        if (live_link.get("fields") or {}) != (wanted_link.get("fields") or {}):
-            return False
-    return True
 
 
 class UpsertResult(BaseModel):
@@ -263,7 +197,7 @@ class OntologyGraphStore:
                 entity = ctx.ontology.entities[link.entity]  # validated by merger
                 fields: dict[str, Any] = {}
                 for f in link.fields:
-                    _merge_link_field(fields, f.path)
+                    merge_link_field(fields, f.path)
                 properties["links"][entity.collection] = {
                     "analyzers": sorted({a for f in link.fields for a in f.analyzers}),
                     "fields": fields,
@@ -273,7 +207,7 @@ class OntologyGraphStore:
                 existing = await connection.views()
                 if not any(v.get("name") == view_name for v in existing):
                     await connection.create_view(name=view_name, view_type="arangosearch", properties=properties)
-                elif not _view_matches(await connection.view(view_name), properties):
+                elif not view_properties_match(await connection.view(view_name), properties):
                     await connection.replace_view(view_name, properties)
             except Exception as e:
                 logger.warning("Failed to provision view '%s': %s", view_name, e)
