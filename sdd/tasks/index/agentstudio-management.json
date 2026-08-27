@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-27T18:46:33+02:00",
-  "completed_at": "2026-08-27T20:21:42+00:00",
+  "completed_at": "2026-08-27T20:54:57+00:00",
   "tasks": [
     {
       "id": "TASK-2509",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T17:07:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2509-registry-primitives-yaml-roundtrip.md"
+      "file": "sdd/tasks/completed/TASK-2509-registry-primitives-yaml-roundtrip.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2510",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T17:23:38+00:00",
-      "file": "sdd/tasks/completed/TASK-2510-botmanager-reload-agent.md"
+      "file": "sdd/tasks/completed/TASK-2510-botmanager-reload-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2511",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T17:35:41+00:00",
-      "file": "sdd/tasks/completed/TASK-2511-studio-scaffold-routes-pbac.md"
+      "file": "sdd/tasks/completed/TASK-2511-studio-scaffold-routes-pbac.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2512",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T17:50:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2512-studio-agent-lifecycle.md"
+      "file": "sdd/tasks/completed/TASK-2512-studio-agent-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2513",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T18:00:05+00:00",
-      "file": "sdd/tasks/completed/TASK-2513-studio-draft-pipeline.md"
+      "file": "sdd/tasks/completed/TASK-2513-studio-draft-pipeline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2514",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T18:04:02+00:00",
-      "file": "sdd/tasks/completed/TASK-2514-studio-asset-files.md"
+      "file": "sdd/tasks/completed/TASK-2514-studio-asset-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2515",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T18:22:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2515-shared-skills-catalog.md"
+      "file": "sdd/tasks/completed/TASK-2515-shared-skills-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2516",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T18:31:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2516-byok-keys-broker.md"
+      "file": "sdd/tasks/completed/TASK-2516-byok-keys-broker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2517",
@@ -186,7 +194,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T18:50:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2517-studio-testing-surface.md"
+      "file": "sdd/tasks/completed/TASK-2517-studio-testing-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2518",
@@ -207,7 +216,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T18:50:48+00:00",
       "completed_at": "2026-08-27T19:01:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2518-toolkit-config-surfaces.md"
+      "file": "sdd/tasks/completed/TASK-2518-toolkit-config-surfaces.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2519",
@@ -227,7 +237,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T19:01:58+00:00",
       "completed_at": "2026-08-27T19:07:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2519-studio-catalog-endpoints.md"
+      "file": "sdd/tasks/completed/TASK-2519-studio-catalog-endpoints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2520",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T19:23:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2520-scheduler-run-now.md"
+      "file": "sdd/tasks/completed/TASK-2520-scheduler-run-now.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2521",
@@ -269,7 +281,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
       "completed_at": "2026-08-27T19:42:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2521-studio-meta-agent.md"
+      "file": "sdd/tasks/completed/TASK-2521-studio-meta-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2522",
@@ -298,7 +311,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T19:42:45+00:00",
       "completed_at": "2026-08-27T20:21:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2522-docs-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2522-docs-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }
