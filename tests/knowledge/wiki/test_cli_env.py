@@ -240,9 +240,13 @@ class TestNsAddWritesBaseNotEffective:
         added = runner.invoke(
             wiki,
             [
-                "ns", "add", "other",
-                "--project", str(repo_with_overlays.parent),
-                "--path", str(repo_with_overlays),
+                "ns",
+                "add",
+                "other",
+                "--project",
+                str(repo_with_overlays.parent),
+                "--path",
+                str(repo_with_overlays),
             ],
         )
         assert added.exit_code == 0, added.output

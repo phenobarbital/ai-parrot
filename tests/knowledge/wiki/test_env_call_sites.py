@@ -140,9 +140,7 @@ class TestCallSiteMigration:
         # Foreign's own `local` overlay switches to "memory" — no memory
         # plane exists there, so the EFFECTIVE (not base) check must see
         # it as unbuilt.
-        (foreign_root / ".parrot" / "wiki.local.json").write_text(
-            json.dumps({"backend": "memory"}), encoding="utf-8"
-        )
+        (foreign_root / ".parrot" / "wiki.local.json").write_text(json.dumps({"backend": "memory"}), encoding="utf-8")
 
         local_root = tmp_path / "local"
         local_root.mkdir()
@@ -210,9 +208,7 @@ class TestGuard:
                 enclosing = self._enclosing_function(lines, lineno)
                 if enclosing in allowed_functions:
                     continue
-                offenders.append(
-                    f"{path.relative_to(wiki_pkg)}:{lineno} (in {enclosing!r}): {stripped}"
-                )
+                offenders.append(f"{path.relative_to(wiki_pkg)}:{lineno} (in {enclosing!r}): {stripped}")
         assert offenders == [], (
             "Found consumer load_project_config(...) calls outside the " f"allowed write paths: {offenders}"
         )
