@@ -171,10 +171,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet)
+**Date**: 2026-08-27
+**Notes**: Implemented `DependencyHealth`/`AgentCounts`/`AdminStatus`
+Pydantic models and `AdminStatusHandler` exactly per spec §2. Uptime
+tracked via a module-level `time.monotonic()` timestamp recorded at
+import time. `setup_admin_ui` now registers
+`GET /api/v1/admin/status` unconditionally (before the dist-presence
+check), so the JSON API works even on an install-from-git with no
+compiled UI. Probes (Postgres `SELECT 1` via `app['database']`, Redis
+`PING` via `app['redis']`, vector store) run concurrently via
+`asyncio.gather`, each individually wrapped in `asyncio.wait_for`
+(1.5s) and try/excepted — never a 500.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Resolved the spec's one open implementation question (§8, vector-store
+probe mechanics): this codebase has no single global vector-store
+handle — stores are configured per-bot. Chosen mechanism: scan
+`bot_manager.get_bots()` for the first bot exposing a truthy
+`_vector_store` (an `AbstractStore` instance, precedent
+`manager.py:748-754`); if found, read its own `is_connected()` state
+(cheapest possible check, opens no new connection); `unconfigured`
+when no loaded bot uses a vector store.
 
-**Deviations from spec**: none
+Database agent count: no cheap existing count API exists on
+`BotManager` (per the task's anti-hallucination contract, did NOT
+invent `count_database_bots()`); `_count_database_bots()` mirrors the
+connection-acquisition pattern from
+`BotManager._load_database_bots()` (`manager.py:388-402`), timeboxed
+and try/excepted, local to `status.py`.
+
+8/8 unit tests pass (`test_admin_status.py` + `test_admin_ui_serving.py`);
+`ruff check` clean. The `anon_app` 401 fixture could not reuse
+`tests/integration/test_saas_auth_hardening.py`'s real
+`AuthHandler().setup(app)` pattern verbatim — this sandbox has no live
+Postgres/Redis (confirmed: that suite's own anonymous-rejection tests
+fail here too, pre-existing/unrelated to this task). Instead drives the
+identical `is_authenticated()` production code path with an
+`app["auth"]` stand-in exposing zero backends, so the real "no
+userdata -> 401" branch fires without live infra.
+
+**Deviations from spec**: none. One adjacent, unavoidable edit: updated
+TASK-2523's own `test_admin_ui_serving.py::test_absent_dist_returns_false_and_registers_nothing`
+(renamed to `..._registers_no_spa_routes`) since the spec/task text
+itself requires the status route to now register even when `dist/` is
+absent, which changes that test's route-count assertion.

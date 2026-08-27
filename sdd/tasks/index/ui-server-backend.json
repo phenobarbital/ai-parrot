@@ -32,7 +32,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies serving.py created by TASK-2523 (route registration).",
       "assigned_to": null,
       "started_at": "2026-08-27T17:00:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2524-admin-status-endpoint.md"
+      "completed_at": "2026-08-27T17:12:34+00:00",
+      "file": "sdd/tasks/completed/TASK-2524-admin-status-endpoint.md"
     },
     {
       "id": "TASK-2525",
