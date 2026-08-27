@@ -8,7 +8,21 @@
  * needs — no querysource/avatar/agent-specific fields.
  */
 
-const DEFAULT_API = "http://localhost:5000";
+// Same-origin by default (empty axios baseURL -> relative request URLs like
+// "/api/v1/login" resolve against whatever origin the SPA itself was loaded
+// from). This MUST stay relative in production: setup_admin_ui() serves the
+// SPA from the same aiohttp app that serves /api/*, at whatever host/port/
+// scheme/reverse-proxy path the deployment actually uses — a hardcoded
+// absolute default here would get baked into the production bundle at
+// `pnpm build` time (no PUBLIC_API_URL is set in Makefile's
+// build-server-ui target or .github/workflows/release.yml's build-server
+// job) and every API call, including login, would go to the wrong origin
+// on any host other than a bare "http://localhost:5000". `pnpm dev` does
+// NOT need an absolute value here either — vite.config.ts's own dev-server
+// proxy independently forwards relative `/api/*` requests to a real
+// backend (defaulting to http://localhost:5000, overridable via the same
+// PUBLIC_API_URL) regardless of what this module resolves to.
+const DEFAULT_API = "";
 
 const parseEnvBoolean = (
   value: string | boolean | undefined,

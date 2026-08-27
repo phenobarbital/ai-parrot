@@ -57,6 +57,9 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
     instead of raising, matching the precedent in
     ``parrot.handlers.web_hitl``.
 
+    Deliberately NOT called eagerly from :func:`setup_admin_ui` — see the
+    ``on_startup`` registration below for why.
+
     Args:
         app: The aiohttp application.
         pattern: fnmatch-style URL pattern to exclude from auth enforcement.
@@ -79,6 +82,29 @@ def _register_auth_exclusion(app: web.Application, pattern: str) -> None:
         return
     if pattern not in exclude_list:
         exclude_list.append(pattern)
+
+
+async def _register_auth_exclusions_on_startup(app: web.Application, prefix: str) -> None:
+    """``on_startup`` callback: register the exclude-list patterns for ``prefix``.
+
+    Both real entrypoints (``app.py``/``appauto.py``) call
+    ``BotManager.setup(app)`` — which calls :func:`setup_admin_ui` — BEFORE
+    ``AuthHandler().setup(app)`` runs. ``AuthHandler.setup()`` itself
+    unconditionally OVERWRITES ``app[AUTH_EXCLUDE_LIST_KEY]`` with a fresh
+    list (``navigator_auth/auth.py``: ``self.app[AUTH_EXCLUDE_LIST_KEY] =
+    list(exclude_list)``), so registering the pattern eagerly — at
+    ``setup_admin_ui()`` call time — is either a no-op (key not set yet) or
+    would be silently discarded by that later overwrite either way. Every
+    ``on_startup`` callback runs only once ``web.Application`` actually
+    starts serving (after ALL synchronous ``.setup()`` calls in
+    ``__init__``/``configure`` have completed), so by the time this fires
+    ``AuthHandler.setup()`` is guaranteed to have already run and
+    ``app[AUTH_EXCLUDE_LIST_KEY]`` already holds AuthHandler's real list —
+    appending to it here mutates that same list object in place, which the
+    ABAC middleware reads live on every request.
+    """
+    _register_auth_exclusion(app, prefix)
+    _register_auth_exclusion(app, f"{prefix}/*")
 
 
 #: Long-cache/immutable header for hashed Vite assets — the filename hash
@@ -145,7 +171,11 @@ def setup_admin_ui(app: web.Application, *, prefix: str = DEFAULT_PREFIX) -> boo
         ``/`` as special, so a bare ``{prefix}*`` would also exclude an
         unrelated ``/administer`` from auth), so the HTML shell is
         reachable pre-login (auth enforcement lives entirely in the JSON
-        API, not in the SPA shell route).
+        API, not in the SPA shell route). Registered via an ``on_startup``
+        callback rather than eagerly — see
+        :func:`_register_auth_exclusions_on_startup` for why (both real
+        entrypoints call this function before ``AuthHandler().setup(app)``
+        has run).
 
     Args:
         app: The aiohttp :class:`web.Application` to mount routes on.
@@ -205,7 +235,10 @@ def setup_admin_ui(app: web.Application, *, prefix: str = DEFAULT_PREFIX) -> boo
     router.add_get(prefix, _spa_fallback, name="admin_ui_index_root")
     router.add_get(f"{prefix}/{{tail:.*}}", _spa_fallback, name="admin_ui_index")
 
-    _register_auth_exclusion(app, prefix)
-    _register_auth_exclusion(app, f"{prefix}/*")
+    # Deferred to on_startup — see _register_auth_exclusions_on_startup's
+    # docstring for why eager registration here would race AuthHandler.setup().
+    app.on_startup.append(
+        lambda app: _register_auth_exclusions_on_startup(app, prefix)
+    )
 
     return True

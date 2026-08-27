@@ -69,9 +69,20 @@ class Router {
     this.path = to;
   }
 
-  /** Find the route definition matching the current `path` (exact match). */
+  /**
+   * Find the route definition matching the current `path` (exact match on
+   * the pathname — a query string, e.g. the login route's own
+   * `?next=<encoded>` produced by `guard()`/`AuthStore.handle401()`, is
+   * stripped before comparing). Without this, `router.path` values like
+   * `/admin/login?next=%2Fadmin%2Fdashboard` would never match the route
+   * table's bare `/admin/login` entry, and `App.svelte`'s `resolve()`
+   * would treat the login redirect as an unmatched route and immediately
+   * navigate away again — wiping `?next=` before `Login.svelte` ever
+   * mounts to read it.
+   */
   match(path: string = this.path): RouteDefinition | undefined {
-    return this.routes.find((r) => r.path === path);
+    const pathname = path.split("?")[0];
+    return this.routes.find((r) => r.path === pathname);
   }
 
   /**

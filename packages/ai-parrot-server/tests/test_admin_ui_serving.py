@@ -103,12 +103,31 @@ class TestMountedDist:
         assert resp.status == 200
         assert (await resp.json()) == {"ok": True}
 
-    async def test_exclude_list_registered_when_auth_present(self, fake_dist):
+    async def test_exclude_list_registered_when_auth_present(
+        self, fake_dist, aiohttp_client
+    ):
+        """Registration happens on ``on_startup``, not eagerly in
+        ``setup_admin_ui()`` — see ``_register_auth_exclusions_on_startup``'s
+        docstring. In production both real entrypoints call
+        ``BotManager.setup(app)`` (which calls ``setup_admin_ui``) BEFORE
+        ``AuthHandler().setup(app)``, and ``AuthHandler.setup()``
+        unconditionally overwrites ``app[AUTH_EXCLUDE_LIST_KEY]`` — an
+        eager registration would either be a no-op (key unset yet) or get
+        silently discarded by that overwrite. Simulate that exact ordering
+        here: pre-populate the key (mimicking AuthHandler already having
+        run its own ``setup()`` by the time ``on_startup`` fires), THEN
+        start the app (which fires ``on_startup``) before asserting.
+        """
         from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY
 
         app = web.Application()
         app[AUTH_EXCLUDE_LIST_KEY] = []
         assert setup_admin_ui(app) is True
+        # Not yet registered — deferred until on_startup fires.
+        assert app[AUTH_EXCLUDE_LIST_KEY] == []
+
+        await aiohttp_client(app)  # starts the app -> fires on_startup
+
         assert "/admin" in app[AUTH_EXCLUDE_LIST_KEY]
         assert "/admin/*" in app[AUTH_EXCLUDE_LIST_KEY]
         # Segment-boundary patterns must not accidentally match lookalikes.
@@ -118,7 +137,40 @@ class TestMountedDist:
             fnmatch.fnmatch("/administer", p) for p in app[AUTH_EXCLUDE_LIST_KEY]
         )
 
-    async def test_no_crash_without_auth_handler(self, fake_dist):
+    async def test_no_crash_without_auth_handler(self, fake_dist, aiohttp_client):
         app = web.Application()
-        # No AUTH_EXCLUDE_LIST_KEY set on the app — must not raise.
+        # No AUTH_EXCLUDE_LIST_KEY set on the app — must not raise, even
+        # once on_startup actually fires the deferred registration.
         assert setup_admin_ui(app) is True
+        await aiohttp_client(app)  # starts the app -> fires on_startup; no raise
+
+    async def test_survives_real_entrypoint_ordering(self, fake_dist, aiohttp_client):
+        """Regression test for the real ``app.py``/``appauto.py`` ordering:
+        ``BotManager.setup(app)`` (-> ``setup_admin_ui``) runs BEFORE
+        ``AuthHandler().setup(app)``. ``AuthHandler.setup()`` unconditionally
+        OVERWRITES ``app[AUTH_EXCLUDE_LIST_KEY]`` with a fresh list
+        (``navigator_auth/auth.py``), which would silently discard an eager
+        registration made before it ran. Reproduce that exact sequence:
+        ``setup_admin_ui()`` first (no key set yet, like the real
+        entrypoints), THEN simulate ``AuthHandler.setup()``'s overwrite,
+        THEN start the app (fires the deferred ``on_startup`` registration)
+        and assert the patterns still end up in the final list navigator-auth's
+        ABAC middleware actually reads at request time.
+        """
+        from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY
+
+        app = web.Application()
+        # 1. setup_admin_ui() runs first — no AUTH_EXCLUDE_LIST_KEY yet.
+        assert AUTH_EXCLUDE_LIST_KEY not in app
+        assert setup_admin_ui(app) is True
+
+        # 2. AuthHandler().setup(app) runs later, overwriting the key with
+        #    a fresh list (mirrors navigator_auth/auth.py's own behavior).
+        app[AUTH_EXCLUDE_LIST_KEY] = ["/some/other/excluded/path"]
+
+        # 3. The app actually starts serving -> on_startup fires.
+        await aiohttp_client(app)
+
+        assert "/admin" in app[AUTH_EXCLUDE_LIST_KEY]
+        assert "/admin/*" in app[AUTH_EXCLUDE_LIST_KEY]
+        assert "/some/other/excluded/path" in app[AUTH_EXCLUDE_LIST_KEY]

@@ -54,6 +54,14 @@ describe("Router", () => {
     expect(router.path).toBe(DASHBOARD);
   });
 
+  it("match() ignores a query string so the login redirect's ?next= round-trips", () => {
+    const router = new Router([{ path: LOGIN, component: async () => ({ default: null }) }]);
+
+    const matched = router.match(`${LOGIN}?next=${encodeURIComponent(DASHBOARD)}`);
+
+    expect(matched?.path).toBe(LOGIN);
+  });
+
   it("rejects external next targets, falling back to the base path", () => {
     const router = new Router([
       {
