@@ -227,6 +227,15 @@ class WikiPageRecord(BaseModel):
             ``"memory"`` (saved via the ``remember`` authoring surface).
         asserted_by: Identity of the writer for authored/memory pages,
             e.g. ``"agent:<id>"`` or ``"human:<user>"``.
+        updated_at: ISO-8601 UTC last-modified stamp (FEAT-461). On
+            write, ``None`` means "stamp now" — both backends already
+            persist this column and fill it in unconditionally when the
+            caller does not supply one. On read, it is always populated
+            from the DB. A caller-supplied value is preserved verbatim
+            on upsert (never overwritten with "now"), which is what lets
+            sync (TASK-2466) replicate a record without making it look
+            newer than its source. Legacy/defensive ``None`` sorts
+            oldest in any last-write-wins comparison.
     """
 
     concept_id: str = Field(..., min_length=1)
@@ -239,6 +248,7 @@ class WikiPageRecord(BaseModel):
     token_count: int = Field(default=0, ge=0)
     origin: str = "ingest"
     asserted_by: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 def rank_by_cosine(
@@ -838,7 +848,7 @@ class SQLiteWikiStore(BaseWikiStore):
                     p.source_id,
                     p.token_count or estimate_tokens(p.body),
                     now,
-                    now,
+                    p.updated_at or now,
                     p.origin,
                     p.asserted_by,
                 )

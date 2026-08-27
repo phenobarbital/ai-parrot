@@ -196,10 +196,57 @@ class TestReadPaths:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-27
+**Notes**: Split `_resolve_project` into a `_find_repo_root` helper plus
+`_resolve_project` (now routes through `load_effective_config`, returning
+the env-merged `WikiProjectConfig` — used by all 15 existing call sites
+unchanged) and a new `_resolve_project_effective` (returns the full
+`WikiEffectiveConfig` with provenance, used by `status`). `build` loads
+BOTH the effective config (for scanning/opening the store, so
+`WIKI_ENV`/`ENV`/overlay and `WIKI_STORE_BACKEND` all apply) and the base
+config via `load_project_config` (for `--name`/`--backend` persistence,
+matching pre-existing legacy behavior byte-for-byte) — an environment or
+`WIKI_STORE_BACKEND` value is never written back to `.parrot/wiki.json`.
+Missing-overlay auto-generation derives from the (persisted) base config
+so it stays consistent with whatever `--name`/`--backend` just committed;
+an ephemeral `WIKI_STORE_BACKEND` override never reaches it (verified by
+`test_flag_not_frozen_into_generated_overlay`). Generation never clobbers
+an existing overlay. Precedence (`--backend` flag > environment
+(`WIKI_STORE_BACKEND` / overlay) > base) is now applied uniformly in
+`build`, `_open_store` (trusts its caller's already-resolved config —
+TODO removed), `_resolve_read_store` (both the default project path and
+the forced-arangodb branch — neither previously honoured an explicit
+flag on that path), and `_resolve_write_store`'s default project path.
+`status` gained an env header (env, overlay-or-"base (no overlay)") plus
+a bounded (`DEFAULT_ARANGO_TIMEOUT`-timed) `_probe_backend_reachable`
+helper for arangodb — printed before the (still-fatal, per spec's
+explicit primary-plane non-goal) real open/initialize.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Two pre-existing tests asserted behavior this feature intentionally
+supersedes and were updated (not new regressions — verified via
+`git stash` against the pre-TASK-2462 baseline):
+- `test_cli.py::TestBuild::test_custom_name_and_backend` — a bare
+  follow-up `query` after `build --backend memory` (no `ENV` set) now
+  resolves through the freshly auto-generated `local` overlay
+  (`{"backend": "sqlite"}`); updated to pass `--backend memory` again,
+  documented inline as the new expected precedence.
+- `test_cli_arango.py::TestStatusBackendArango::test_status_shows_arangodb_backend` —
+  same root cause (`status` has no `--backend` option of its own);
+  updated to set `ENV=dev` so the generated `dev` overlay mirrors the
+  arangodb base instead of defaulting to `local`/sqlite.
 
-**Deviations from spec**: none
+18 new tests in `tests/knowledge/wiki/test_cli_env.py`, all passing.
+Full `tests/knowledge/wiki/` suite: 1090 passed, 1 pre-existing unrelated
+failure (`test_claude_code.py::TestInstaller::test_fresh_install_writes_all_artifacts`,
+confirmed via `git stash`), 7 skipped (no ArangoDB test server). `ruff
+check` on `cli.py`: only 3 pre-existing findings remain (verified via
+`git stash`), none introduced by this task.
+
+**Deviations from spec**: none. One clarification made explicit in code
+comments: the spec's "avoid freezing a one-off flag into the overlay"
+Known Risk is interpreted as protecting against *ephemeral,
+non-persisted* overrides (`WIKI_STORE_BACKEND`) — an explicit `--backend`
+flag is (as in pre-existing behavior) persisted to the base config by
+`build`, so it legitimately flows into a freshly generated overlay for
+consistency with what was just committed to `wiki.json`.

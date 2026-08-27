@@ -255,10 +255,25 @@ class TestDeriveAndSave:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-27
+**Notes**: Implemented `resolve_wiki_env`, `WikiEnvOverlay`, `WikiEffectiveConfig`,
+`overlay_path`, `load_effective_config`, `derive_env_overlay`, and
+`save_env_overlay` in `project.py`, inserted between `save_project_config`
+and `parrot_home`. `resolve_wiki_env` reuses `_NAMESPACE_NAME_RE` directly
+(not `validate_namespace_name`, since that rejects `"local"` as a reserved
+namespace name — the exact default env value) and wraps failures in
+`WikiConfigError`. `load_effective_config` merges via
+`model_copy(update=...)` excluding `namespaces`, then merges `namespaces`
+per-key from the validated `WikiEnvOverlay.namespaces` dict (already typed
+`WikiNamespaceConfig` instances, avoiding a re-serialize/re-validate
+round-trip). `save_env_overlay` copies the `save_global_registry` tmp-file +
+`os.replace` atomic-write pattern. 18 new unit tests added in
+`tests/knowledge/wiki/test_env_config.py`, all passing; `ruff check` clean;
+module-scope imports unchanged (stdlib + pydantic only, verified). Full
+`tests/knowledge/wiki/` suite run: 1080 passed, 1 pre-existing failure
+(`test_claude_code.py::TestInstaller::test_fresh_install_writes_all_artifacts`,
+confirmed unrelated via `git stash` — fails identically without this
+change), 7 skipped (ArangoDB integration, no test server configured).
 
 **Deviations from spec**: none

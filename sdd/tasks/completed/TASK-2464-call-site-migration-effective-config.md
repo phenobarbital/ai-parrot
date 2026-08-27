@@ -174,10 +174,63 @@ class TestOfflineDegradation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-27
+**Notes**: Migrated all 7 listed call sites to `load_effective_config(root).config`:
+`federation.py:228` (foreign-root resolution — the FOREIGN project's own
+environment/overlay applies, not the local project's; verified with a
+namespace pointing at a foreign repo whose `local` overlay switches its
+backend), `claude_code/cli.py:95`, `claude_code/hook.py:186`,
+`claude_code/installer.py:494` and `:670`, `mcp_server.py:108` and `:214`.
+Removed the now-unused `load_project_config` import from all 5 files
+(confirmed no other consumer references remain in any of them via grep).
+`cli.py` (main `wikitoolkit` CLI) was left untouched per scope — it owns
+its own precedence surfaces (TASK-2463).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Found and fixed a real bug in TASK-2462's `load_effective_config` while
+building the hook migration test: the merge built `updates` via
+`overlay.model_dump(exclude={"namespaces"}, exclude_none=True)`, which
+dumps nested-model overlay fields (e.g. `claude: ClaudeIntegrationConfig`)
+to plain dicts; `model_copy(update=...)` never re-validates, so a merged
+config's `.claude` attribute silently became a `dict` instead of a
+`ClaudeIntegrationConfig` instance — breaking `config.claude.nudge_tools`
+attribute access the moment an overlay touched `claude`. Fixed by building
+`updates` from the overlay's own validated attribute values directly
+(`getattr(overlay, name)`) instead of a re-dumped dict. Added a regression
+test (`test_overlay_merges_nested_model_as_validated_instance`) to
+`tests/knowledge/wiki/test_env_config.py` (TASK-2462's test file, since
+the bug is in that task's function). This IS a deviation from "files to
+create/modify" (touches `project.py` and `test_env_config.py`, neither
+listed for TASK-2464) but was necessary — without it, `test_hook_uses_effective_config`
+fails with `AttributeError: 'dict' object has no attribute 'nudge_tools'`
+on ANY overlay that sets `claude`, which is squarely inside TASK-2464's
+"hook honors WIKI_ENV/ENV" acceptance criterion.
 
-**Deviations from spec**: none
+Added the guard test (`TestGuard::test_no_stray_consumer_load_project_config_calls`)
+that greps the wiki package for consumer `load_project_config(` calls,
+excluding `cli.py` (TASK-2463's write-path surfaces) and `project.py`
+itself (the definer — `load_effective_config`'s own body legitimately
+calls `load_project_config` as its first step; not a bypassing consumer).
+Added the offline-degradation regression
+(`TestOfflineDegradation::test_unreachable_namespace_skipped_bounded`):
+local sqlite primary (default `WikiProjectConfig`, no base file) +
+unreachable ArangoDB namespace → skipped with reason "unreachable", no
+hang (existing `DEFAULT_ARANGO_TIMEOUT`-bounded probe in federation.py,
+unchanged by this task).
+
+10 new tests in `tests/knowledge/wiki/test_env_call_sites.py` (6) +
+`test_env_config.py` (1 regression), all passing. Full
+`tests/knowledge/wiki/` suite: 1097 passed, 1 pre-existing unrelated
+failure (`test_claude_code.py::TestInstaller::test_fresh_install_writes_all_artifacts`,
+confirmed via `git stash` — same assertion, same line, unaffected by this
+task's changes), 7 skipped (no ArangoDB test server). `ruff check` on all
+touched files: `federation.py`, `mcp_server.py`, `project.py` clean;
+`hook.py`/`installer.py`/`claude_code/cli.py` have pre-existing findings
+(verified identical counts via `git stash` — 7/9/5 respectively), none
+introduced by this task.
+
+**Deviations from spec**: `project.py` and `tests/knowledge/wiki/test_env_config.py`
+were touched beyond this task's listed files, to fix a genuine
+TASK-2462 merge bug (nested-model overlay fields landing as unvalidated
+dicts) discovered while testing this task's own acceptance criterion
+(hook effective-config usage). See Notes above for full justification.

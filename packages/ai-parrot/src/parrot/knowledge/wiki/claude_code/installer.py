@@ -33,7 +33,7 @@ from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiProjectConfig,
     config_path,
-    load_project_config,
+    load_effective_config,
     save_project_config,
 )
 
@@ -45,9 +45,7 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------
 
 
-def _upsert_marker_block(
-    text: str, block: str, begin: str, end: str
-) -> str:
+def _upsert_marker_block(text: str, block: str, begin: str, end: str) -> str:
     """Insert or replace a marker-delimited block inside ``text``.
 
     Keys on the BEGIN marker alone: if a previous block was left with a
@@ -151,9 +149,7 @@ def _load_settings(path: Path) -> Optional[dict[str, Any]]:
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise RuntimeError(
-            f"Cannot parse {path} — fix or remove it first: {exc}"
-        ) from exc
+        raise RuntimeError(f"Cannot parse {path} — fix or remove it first: {exc}") from exc
     if not isinstance(settings, dict):
         raise RuntimeError(f"{path} is not a JSON object")
     return settings
@@ -183,9 +179,7 @@ def _install_settings_hook(root: Path) -> str:
 
     resolved_cmd = assets.hook_command(root)
 
-    existing = next(
-        (e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None
-    )
+    existing = next((e for e in pre if isinstance(e, dict) and _is_our_hook(e)), None)
     if existing is not None:
         # Upgrade an older install in place when the matcher or command
         # changed (e.g. bare → absolute path, or Grep|Glob|Read →
@@ -196,10 +190,7 @@ def _install_settings_hook(root: Path) -> str:
             existing["matcher"] = assets.HOOK_MATCHER
             dirty = True
         for hook in existing.get("hooks", []):
-            if (
-                assets.HOOK_COMMAND in str(hook.get("command", ""))
-                and hook.get("command") != resolved_cmd
-            ):
+            if assets.HOOK_COMMAND in str(hook.get("command", "")) and hook.get("command") != resolved_cmd:
                 hook["command"] = resolved_cmd
                 dirty = True
         if dirty:
@@ -226,24 +217,17 @@ def _install_permissions(root: Path) -> list[str]:
     shared = _load_settings(shared_path)
     if isinstance(shared, dict):
         s_perms = shared.get("permissions")
-        s_allow = (
-            s_perms.get("allow", []) if isinstance(s_perms, dict) else []
-        )
+        s_allow = s_perms.get("allow", []) if isinstance(s_perms, dict) else []
         if isinstance(s_allow, list):
             legacy = [r for r in s_allow if r in assets.PERMISSION_RULES]
             if legacy:
-                shared["permissions"]["allow"] = [
-                    r for r in s_allow if r not in assets.PERMISSION_RULES
-                ]
+                shared["permissions"]["allow"] = [r for r in s_allow if r not in assets.PERMISSION_RULES]
                 if not shared["permissions"]["allow"]:
                     shared["permissions"].pop("allow")
                 if not shared.get("permissions"):
                     shared.pop("permissions", None)
                 _write_settings(shared_path, shared)
-                actions.append(
-                    ".claude/settings.json — migrated wikitoolkit "
-                    "permissions to settings.local.json"
-                )
+                actions.append(".claude/settings.json — migrated wikitoolkit " "permissions to settings.local.json")
 
     # --- write rules into settings.local.json --------------------------
     local_path = root / ".claude" / "settings.local.json"
@@ -253,31 +237,21 @@ def _install_permissions(root: Path) -> list[str]:
     if permissions is None:
         permissions = local["permissions"] = {}
     if not isinstance(permissions, dict):
-        raise RuntimeError(
-            f"{local_path}: 'permissions' is not a JSON object"
-        )
+        raise RuntimeError(f"{local_path}: 'permissions' is not a JSON object")
     allow = permissions.get("allow")
     if allow is None:
         allow = permissions["allow"] = []
     if not isinstance(allow, list):
-        raise RuntimeError(
-            f"{local_path}: 'permissions.allow' is not a list"
-        )
+        raise RuntimeError(f"{local_path}: 'permissions.allow' is not a list")
 
     all_rules = assets.permission_rules(root)
     missing = [r for r in all_rules if r not in allow]
     if not missing:
-        actions.append(
-            ".claude/settings.local.json — wikitoolkit permissions "
-            "already allowed"
-        )
+        actions.append(".claude/settings.local.json — wikitoolkit permissions " "already allowed")
     else:
         allow.extend(missing)
         _write_settings(local_path, local)
-        actions.append(
-            f".claude/settings.local.json — {len(missing)} wikitoolkit "
-            "permission rule(s) added"
-        )
+        actions.append(f".claude/settings.local.json — {len(missing)} wikitoolkit " "permission rule(s) added")
     return actions
 
 
@@ -309,9 +283,7 @@ def _install_mcp_json(root: Path) -> str:
         return ".mcp.json — wikitoolkit entry already current"
 
     action = (
-        ".mcp.json — wikitoolkit entry updated"
-        if "wikitoolkit" in servers
-        else ".mcp.json — wikitoolkit entry added"
+        ".mcp.json — wikitoolkit entry updated" if "wikitoolkit" in servers else ".mcp.json — wikitoolkit entry added"
     )
     servers["wikitoolkit"] = entry
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -359,10 +331,7 @@ def _install_slash_command(root: Path) -> str:
         return ".claude/commands/parrotwiki.md — already current"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(assets.SLASH_COMMAND_MD, encoding="utf-8")
-    return (
-        ".claude/commands/parrotwiki.md — "
-        + ("updated" if existing is not None else "created")
-    )
+    return ".claude/commands/parrotwiki.md — " + ("updated" if existing is not None else "created")
 
 
 def _git_hook_path(root: Path) -> Optional[Path]:
@@ -395,9 +364,18 @@ def _git_hook_path(root: Path) -> Optional[Path]:
 
 #: Interpreter basenames whose syntax accepts the POSIX-sh redirection
 #: (`>/dev/null 2>&1`, `|| true`) used by :data:`assets.GIT_HOOK_BLOCK`.
-_SH_FAMILY: frozenset[str] = frozenset({
-    "sh", "bash", "dash", "ash", "ksh", "ksh93", "mksh", "zsh",
-})
+_SH_FAMILY: frozenset[str] = frozenset(
+    {
+        "sh",
+        "bash",
+        "dash",
+        "ash",
+        "ksh",
+        "ksh93",
+        "mksh",
+        "zsh",
+    }
+)
 
 
 def _shebang_is_sh_compatible(first_line: str) -> bool:
@@ -491,7 +469,7 @@ def install_claude_integration(
         Human-readable list of actions performed.
     """
     root = root.resolve()
-    config = config or load_project_config(root)
+    config = config or load_effective_config(root).config
     existed = config_path(root).exists()
     # Migrate an older config's nudge tools to include ``Bash`` so shell
     # searches are nudged after an upgrade — but only from the exact old
@@ -501,10 +479,7 @@ def install_claude_integration(
         config.claude.nudge_tools = ["Grep", "Glob", "Read", "Bash"]
         migrated = True
     if not existed:
-        actions = [
-            f".parrot/wiki.json — config written "
-            f"(wiki '{config.wiki_name}', backend {config.backend})"
-        ]
+        actions = [f".parrot/wiki.json — config written " f"(wiki '{config.wiki_name}', backend {config.backend})"]
     elif migrated:
         actions = [".parrot/wiki.json — nudge tools upgraded (added Bash)"]
     else:
@@ -541,9 +516,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     claude_md = root / "CLAUDE.md"
     if claude_md.exists():
         text = claude_md.read_text(encoding="utf-8")
-        updated = _remove_marker_block(
-            text, assets.CLAUDE_MD_BEGIN, assets.CLAUDE_MD_END
-        )
+        updated = _remove_marker_block(text, assets.CLAUDE_MD_BEGIN, assets.CLAUDE_MD_END)
         if updated != text:
             claude_md.write_text(updated, encoding="utf-8")
             actions.append("CLAUDE.md — wiki section removed")
@@ -559,10 +532,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
         hooks = settings.get("hooks")
         pre = hooks.get("PreToolUse", []) if isinstance(hooks, dict) else []
         if isinstance(pre, list):
-            kept = [
-                e for e in pre
-                if not (isinstance(e, dict) and _is_our_hook(e))
-            ]
+            kept = [e for e in pre if not (isinstance(e, dict) and _is_our_hook(e))]
             if len(kept) != len(pre):
                 settings["hooks"]["PreToolUse"] = kept
                 if not kept:
@@ -570,19 +540,11 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 if not settings["hooks"]:
                     settings.pop("hooks")
                 dirty = True
-                actions.append(
-                    ".claude/settings.json — PreToolUse hook removed"
-                )
+                actions.append(".claude/settings.json — PreToolUse hook removed")
         permissions = settings.get("permissions")
-        allow = (
-            permissions.get("allow", [])
-            if isinstance(permissions, dict)
-            else []
-        )
+        allow = permissions.get("allow", []) if isinstance(permissions, dict) else []
         if isinstance(allow, list):
-            kept_allow = [
-                r for r in allow if r not in assets.PERMISSION_RULES
-            ]
+            kept_allow = [r for r in allow if r not in assets.PERMISSION_RULES]
             if len(kept_allow) != len(allow):
                 settings["permissions"]["allow"] = kept_allow
                 if not kept_allow:
@@ -590,9 +552,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 if not settings["permissions"]:
                     settings.pop("permissions")
                 dirty = True
-                actions.append(
-                    ".claude/settings.json — wikitoolkit permissions removed"
-                )
+                actions.append(".claude/settings.json — wikitoolkit permissions removed")
         if dirty:
             _write_settings(settings_path, settings)
 
@@ -604,18 +564,12 @@ def uninstall_claude_integration(root: Path) -> list[str]:
         local = None
     if isinstance(local, dict):
         l_perms = local.get("permissions")
-        l_allow = (
-            l_perms.get("allow", [])
-            if isinstance(l_perms, dict)
-            else []
-        )
+        l_allow = l_perms.get("allow", []) if isinstance(l_perms, dict) else []
         if isinstance(l_allow, list):
             # Remove both the static rules and any absolute-path variants
             # that a previous install may have written.
             all_rules = assets.permission_rules(root)
-            kept_local = [
-                r for r in l_allow if r not in all_rules
-            ]
+            kept_local = [r for r in l_allow if r not in all_rules]
             if len(kept_local) != len(l_allow):
                 local["permissions"]["allow"] = kept_local
                 if not kept_local:
@@ -623,10 +577,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
                 if not local.get("permissions"):
                     local.pop("permissions", None)
                 _write_settings(local_path, local)
-                actions.append(
-                    ".claude/settings.local.json — wikitoolkit "
-                    "permissions removed"
-                )
+                actions.append(".claude/settings.local.json — wikitoolkit " "permissions removed")
 
     mcp_json_action = _uninstall_mcp_json(root)
     if mcp_json_action:
@@ -641,9 +592,7 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     if hook_path and hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
         if assets.GIT_HOOK_BEGIN in text:
-            updated = _remove_marker_block(
-                text, assets.GIT_HOOK_BEGIN, assets.GIT_HOOK_END
-            )
+            updated = _remove_marker_block(text, assets.GIT_HOOK_BEGIN, assets.GIT_HOOK_END)
             if updated.strip() in {"", "#!/bin/sh"}:
                 hook_path.unlink()
                 actions.append("git post-commit hook — removed")
@@ -667,16 +616,13 @@ def integration_status(root: Path) -> dict[str, Any]:
     """
     root = root.resolve()
     try:
-        config = load_project_config(root)
+        config = load_effective_config(root).config
     except WikiConfigError:
         # Status is read-only — report against defaults rather than fail.
         config = WikiProjectConfig(wiki_name=root.name or "codebase")
 
     claude_md = root / "CLAUDE.md"
-    claude_md_installed = (
-        claude_md.exists()
-        and assets.CLAUDE_MD_BEGIN in claude_md.read_text(encoding="utf-8")
-    )
+    claude_md_installed = claude_md.exists() and assets.CLAUDE_MD_BEGIN in claude_md.read_text(encoding="utf-8")
 
     settings_path = root / ".claude" / "settings.json"
     hook_installed = False
@@ -688,9 +634,7 @@ def integration_status(root: Path) -> dict[str, Any]:
         hooks = settings.get("hooks")
         pre = hooks.get("PreToolUse", []) if isinstance(hooks, dict) else []
         if isinstance(pre, list):
-            hook_installed = any(
-                isinstance(e, dict) and _is_our_hook(e) for e in pre
-            )
+            hook_installed = any(isinstance(e, dict) and _is_our_hook(e) for e in pre)
 
     # Permissions live in settings.local.json (fall back to settings.json
     # for legacy installs).
@@ -702,18 +646,13 @@ def integration_status(root: Path) -> dict[str, Any]:
             sf_data = None
         if isinstance(sf_data, dict):
             p_allow = (sf_data.get("permissions") or {}).get("allow", [])
-            if isinstance(p_allow, list) and all(
-                r in p_allow for r in assets.PERMISSION_RULES
-            ):
+            if isinstance(p_allow, list) and all(r in p_allow for r in assets.PERMISSION_RULES):
                 permissions_installed = True
                 break
 
     git_hook_file = _git_hook_path(root)
     git_hook_installed = bool(
-        git_hook_file
-        and git_hook_file.exists()
-        and assets.GIT_HOOK_BEGIN
-        in git_hook_file.read_text(encoding="utf-8")
+        git_hook_file and git_hook_file.exists() and assets.GIT_HOOK_BEGIN in git_hook_file.read_text(encoding="utf-8")
     )
 
     mcp_json_path = root / ".mcp.json"
@@ -733,9 +672,7 @@ def integration_status(root: Path) -> dict[str, Any]:
         "claude_md_section": claude_md_installed,
         "pre_tool_use_hook": hook_installed,
         "permissions": permissions_installed,
-        "slash_command": (
-            root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME
-        ).exists(),
+        "slash_command": (root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME).exists(),
         "git_post_commit_hook": git_hook_installed,
         "mcp_json": mcp_json_installed,
     }

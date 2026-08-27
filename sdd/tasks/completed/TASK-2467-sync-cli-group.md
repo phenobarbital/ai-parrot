@@ -141,10 +141,46 @@ class TestSyncCli:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-27
+**Notes**: Added `@wiki.group(name="sync")` with `push`/`pull` subcommands
+(placed right after the `ground` command, before the Supervised Ingestion
+section) — matches the `ns` group's structure exactly. Both subcommands
+resolve the repo via `_resolve_project(path_)` (root only; the config
+half is unused since `sync_push`/`sync_pull` re-resolve local/remote
+configs internally) and wrap the coroutine with the existing `_run()`
+helper, matching the `note` command's convention. `local_identity` is
+always `default_local_identity()` from `wiki/sync.py` (TASK-2466's own
+`f"human:{getpass.getuser()}"` — reused rather than reimplemented or
+routed through the unrelated, more general `_authoring_identity()`
+helper, since the task explicitly specifies this exact formula and no
+override flag). `--all` on `pull` maps to `include_own=True`. Both
+`sync_push`/`sync_pull` are imported LAZILY inside each command function
+(matching this file's established convention for less-common subcommands,
+e.g. the `ground` command's graphindex imports) — also means
+`monkeypatch.setattr("parrot.knowledge.wiki.sync.sync_push", ...)` in
+tests is picked up correctly, since the `from ... import` re-resolves the
+attribute at call time. `SyncError` → `click.ClickException` (clean exit,
+no traceback) at both call sites. Summary lines match the Key Constraints
+format exactly: `pushed: created=N updated=N skipped-older=N` /
+`pulled: created=N updated=N skipped-older=N skipped-own=N`, with a
+`DRY RUN — nothing applied` line first when `report.dry_run`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+6 tests in `tests/knowledge/wiki/test_cli_sync.py`, all passing — engine
+fully mocked via `monkeypatch.setattr` on `parrot.knowledge.wiki.sync.
+sync_push`/`sync_pull` (engine's own logic already covered by
+TASK-2466's `test_sync.py`). Covers: push dispatch with `--env`/
+`--dry-run` and the identity string shape, `--all` → `include_own=True`,
+default (`--all` absent) → `include_own=False` with default `--env dev`,
+full summary-line rendering (all 4 counters), clean non-zero exit with no
+traceback on a mocked `SyncError`, and `--help` documenting both the
+`dev` env default and the `--all`/`human:` author-filter default.
 
-**Deviations from spec**: none
+Full `tests/knowledge/wiki/` suite: 1123 passed, 1 pre-existing unrelated
+failure (`test_claude_code.py`, confirmed via `git stash` baseline). No
+recurrence of the intermittent `test_sources.py` timing flake noted in
+TASK-2466's completion note. `ruff check cli.py`: same 3 pre-existing
+findings as the TASK-2463/2464/2465/2466 baseline (verified — none
+introduced by this task); `test_cli_sync.py`: clean.
+
+**Deviations from spec**: none.
