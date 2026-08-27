@@ -1,0 +1,78 @@
+.dark,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* --- Tier 1 — shadcn-aligned global tokens --- */
+  --radius: 0.625rem;
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #020617;
+  --card-foreground: #f8fafc;
+  --popover: #020617;
+  --popover-foreground: #f8fafc;
+  --primary: #60a5fa;
+  --primary-foreground: #020617;
+  --secondary: #1e293b;
+  --secondary-foreground: #f8fafc;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #1e293b;
+  --accent-foreground: #f8fafc;
+  --destructive: #7f1d1d;
+  --destructive-foreground: #f8fafc;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #3b82f6;
+  --chart-1: #60a5fa;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #818cf8;
+  --chart-5: #f472b6;
+  --sidebar: #020617;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #60a5fa;
+  --sidebar-primary-foreground: #020617;
+  --sidebar-accent: #1e293b;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: #1e293b;
+  --sidebar-ring: #3b82f6;
+
+  /* --- Tier 2 — Base color tokens --- */
+  --color-base-100: oklch(18.054% 0.04029 254.599);
+  --color-base-200: oklch(0.22 0.018 240);
+  --color-base-300: oklch(0.27 0.015 240);
+  --color-base-content: #e2e4ec;
+
+  /* --- Tier 3 — Component slots (delegate; assistant bubble darkened) --- */
+  /* AgentChat */
+  --agent-chat-header-bg: var(--card);
+  --agent-chat-header-fg: var(--card-foreground);
+  --agent-chat-input-bg: var(--background);
+  --agent-chat-input-fg: var(--foreground);
+  --agent-chat-input-border: var(--border);
+  --agent-chat-bubble-user-bg: var(--primary);
+  --agent-chat-bubble-user-fg: var(--primary-foreground);
+  --agent-chat-bubble-assistant-bg: oklch(0.2 0.01 260);
+  --agent-chat-bubble-assistant-fg: var(--foreground);
+  --agent-chat-bubble-system-bg: var(--muted);
+  --agent-chat-bubble-system-fg: var(--muted-foreground);
+  --agent-chat-sidebar-bg: var(--sidebar);
+  --agent-chat-sidebar-fg: var(--sidebar-foreground);
+  --agent-chat-sidebar-item-active-bg: var(--sidebar-accent);
+  --agent-chat-sidebar-item-active-fg: var(--sidebar-accent-foreground);
+  --agent-chat-sidebar-item-hover-bg: var(--sidebar-accent);
+  --agent-chat-code-bg: oklch(0.16 0.01 260);
+  --agent-chat-code-fg: oklch(0.92 0.005 260);
+
+  /* FormDesigner */
+  --form-canvas-bg: var(--background);
+  --form-canvas-grid: var(--border);
+  --form-palette-bg: var(--card);
+  --form-palette-fg: var(--card-foreground);
+  --form-palette-item-hover-bg: var(--accent);
+  --form-field-editor-bg: var(--card);
+  --form-field-editor-fg: var(--card-foreground);
+  --form-field-editor-border: var(--border);
+  --form-section-bg: var(--card);
+  --form-section-border: var(--border);
+}

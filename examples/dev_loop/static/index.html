@@ -416,6 +416,7 @@ const app = {
     affectedComponent: "", existingIssueKey: "", jiraIssueKey: "",
     logGroup: "", timeWindow: "60",
     devAgents: [], devIsolation: "shared",
+    flowType: "auto", baseBranch: "auto",
     judges: [], skipQa: false, skipJira: false, skipCloudwatch: false,
   },
 };
@@ -715,12 +716,38 @@ function criteriaSummary() {
   return `${shell} shell · ${manual} manual`;
 }
 
+// FEAT-466 TASK-2508: mirror scripts.sdd.sdd_meta.WORK_KIND_FLOW's mapping
+// so the "ready" summary shows the RESOLVED outcome, never the literal
+// "auto" string — an operator override composes field-wise, exactly like
+// resolve_flow()'s precedence (explicit override > kind mapping > default).
+function resolvedFlow() {
+  const f = app.form;
+  const kindDerivedType = app.kind === "bug" ? "hotfix" : "feature";
+  const type = f.flowType !== "auto" ? f.flowType : kindDerivedType;
+  const base = f.baseBranch !== "auto" ? f.baseBranch : (type === "hotfix" ? "main" : "dev");
+  return { type, base };
+}
+
+// FEAT-466 TASK-2508 guard (§F): resolve_flow() raises ValueError for
+// type=hotfix + base_branch != main. The EFFECTIVE type can go hotfix
+// either by an explicit flowType="hotfix" override OR implicitly, when
+// flowType is still "auto" on a kind="bug" run — both must be guarded.
+// Call after any change that could affect app.kind or app.form.flowType.
+function sanitizeFlowOverride() {
+  const f = app.form;
+  if (resolvedFlow().type === "hotfix" && f.baseBranch !== "auto" && f.baseBranch !== "main") {
+    f.baseBranch = "auto";
+  }
+}
+
 function renderReady() {
   const f = app.form;
+  const rf = resolvedFlow();
   const rows = app.mode === "feature"
     ? [
         ["document", f.documentPath ? f.documentPath.split("/").pop() : "— required —"],
         ["doc kind", f.documentKind],
+        ["flow", `${rf.type} → ${rf.base}`],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
         ["judges", `${effectiveJudges().length} · majority`],
         ["jira", f.jiraIssueKey || "none (optional)"],
@@ -729,6 +756,7 @@ function renderReady() {
       ]
     : [
         ["kind", app.kind],
+        ["flow", `${rf.type} → ${rf.base}`],
         ["component", f.affectedComponent || "— required —"],
         ["criteria", criteriaSummary()],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "server default"],
@@ -1131,6 +1159,27 @@ function tabBodyHtml(tab) {
       ${["shared", "isolated"].map((v) =>
         `<label class="seg-opt ${f.devIsolation === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
     </div>`;
+  // FEAT-466 TASK-2508: console flow-type / base-branch override.
+  // "auto" is a UI-only sentinel — it is never sent to the server (§F,
+  // buildPayload). When flowType === "hotfix" the base-branch choices are
+  // restricted to auto/main so the invalid hotfix+non-main combination is
+  // unreachable from the UI (resolve_flow() rejects it server-side too).
+  const flowTypeSeg = `
+    <div class="seg" data-seg="flowType">
+      ${["auto", "feature", "hotfix"].map((v) =>
+        `<label class="seg-opt ${f.flowType === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
+  // Filter on the RESOLVED (effective) type, not the literal flowType field:
+  // on a kind="bug" run with flowType still "auto", the effective type is
+  // already "hotfix" (WORK_KIND_FLOW's mapping) — the guard must apply
+  // there too, not only once the operator explicitly picks "hotfix".
+  const baseBranchValues = resolvedFlow().type === "hotfix"
+    ? ["auto", "main"] : ["auto", "dev", "main", "staging"];
+  const baseBranchSeg = `
+    <div class="seg" data-seg="baseBranch">
+      ${baseBranchValues.map((v) =>
+        `<label class="seg-opt ${f.baseBranch === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
 
   if (tab === "criteria") {
     return grid(`
@@ -1218,6 +1267,16 @@ function tabBodyHtml(tab) {
       <div class="field" style="max-width:280px">
         <span class="field-label">Worktree isolation</span>
         ${isolationSeg}
+      </div>
+      <div class="field" style="max-width:280px">
+        <span class="field-label">Flow type (FEAT-466)</span>
+        ${flowTypeSeg}
+        <p class="hint">auto = derive from kind (bug → hotfix, else feature).</p>
+      </div>
+      <div class="field" style="max-width:360px">
+        <span class="field-label">Base branch (FEAT-466)</span>
+        ${baseBranchSeg}
+        <p class="hint">auto = derive from flow type (hotfix → main, feature → dev). Hotfix only allows main.</p>
       </div>
     </div>`;
   }
@@ -1345,6 +1404,9 @@ function buildPayload() {
     if (f.judges.length) payload.judge_panel = f.judges;
     if (f.skipQa) payload.skip_qa = true;
     if (f.skipJira) payload.skip_jira = true;
+    // FEAT-466 TASK-2508: "auto" is a UI-only sentinel — never reaches Python.
+    if (f.flowType !== "auto") payload.flow_type = f.flowType;
+    if (f.baseBranch !== "auto") payload.base_branch = f.baseBranch;
     return payload;
   }
   const payload = {
@@ -1362,6 +1424,9 @@ function buildPayload() {
     payload.dev_agents = f.devAgents;
     payload.dev_isolation = f.devIsolation;
   }
+  // FEAT-466 TASK-2508: "auto" is a UI-only sentinel — never reaches Python.
+  if (f.flowType !== "auto") payload.flow_type = f.flowType;
+  if (f.baseBranch !== "auto") payload.base_branch = f.baseBranch;
   if (f.skipQa) payload.skip_qa = true;
   if (f.skipJira) payload.skip_jira = true;
   return payload;
@@ -1487,12 +1552,20 @@ document.addEventListener("click", (e) => {
   if (kind) {
     const v = kind.dataset.kind;
     if (v === "feature" && !app.config?.feature_mode?.available) return;
-    app.kind = v; applyMode(); return;
+    app.kind = v;
+    sanitizeFlowOverride(); // FEAT-466 TASK-2508: kind="bug" implies hotfix
+    applyMode(); return;
   }
   const dk = t.closest("[data-dockind]");
   if (dk) { app.form.documentKind = dk.dataset.dockind; renderKindPicker(); renderReady(); return; }
   const view = t.closest("[data-view]");
   if (view) { app.view = view.dataset.view; renderKindPicker(); renderExecution(); return; }
+  const flowSeg = t.closest('[data-seg="flowType"] [data-val]');
+  if (flowSeg) {
+    app.form.flowType = flowSeg.dataset.val;
+    sanitizeFlowOverride();
+    renderTabs(); renderReady(); return;
+  }
   const seg = t.closest("[data-seg] [data-val]");
   if (seg) {
     app.form[seg.closest("[data-seg]").dataset.seg] = seg.dataset.val;

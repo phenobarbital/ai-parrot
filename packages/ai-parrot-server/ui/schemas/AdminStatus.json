@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "AgentCounts": {
+      "description": "Agent inventory split by source.",
+      "properties": {
+        "database": {
+          "title": "Database",
+          "type": "integer"
+        },
+        "loaded": {
+          "title": "Loaded",
+          "type": "integer"
+        },
+        "registry": {
+          "title": "Registry",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "database",
+        "registry",
+        "loaded"
+      ],
+      "title": "AgentCounts",
+      "type": "object"
+    },
+    "DependencyHealth": {
+      "description": "Health of a single external dependency (Postgres, Redis, vector store).",
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "unreachable",
+            "unconfigured"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "DependencyHealth",
+      "type": "object"
+    }
+  },
+  "description": "Aggregate server status payload for the Admin UI dashboard.",
+  "properties": {
+    "agents": {
+      "$ref": "#/$defs/AgentCounts"
+    },
+    "crews": {
+      "title": "Crews",
+      "type": "integer"
+    },
+    "dependencies": {
+      "additionalProperties": {
+        "$ref": "#/$defs/DependencyHealth"
+      },
+      "title": "Dependencies",
+      "type": "object"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "uptime_seconds": {
+      "title": "Uptime Seconds",
+      "type": "number"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "uptime_seconds",
+    "agents",
+    "crews",
+    "dependencies"
+  ],
+  "title": "AdminStatus",
+  "type": "object"
+}

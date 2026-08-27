@@ -112,7 +112,8 @@ from ..handlers.mcp_helper import setup_mcp_helper_routes
 
 # Thales research flow handler (FEAT-425): POST + polling + artifact listing
 from ..handlers.thales import setup_thales_routes
-
+# Embedded Admin UI (FEAT-468): serves the compiled Svelte 5 SPA when present
+from ..server.ui import setup_admin_ui
 # FEAT-146: Web HITL response endpoint + bootstrap
 from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 
@@ -2154,6 +2155,9 @@ class BotManager:
         setup_mcp_helper_routes(self.app)
         # Thales research flow routes (FEAT-425): POST + polling + artifacts
         setup_thales_routes(self.app)
+        # Embedded Admin UI (FEAT-468): mounts the compiled SPA when present,
+        # gracefully absent otherwise (install-from-git without Node build).
+        setup_admin_ui(self.app)
         # CommCenter bulk notification sender routes (FEAT-417)
         CommCenterHandler().setup(self.app)
         if self.enable_swagger_api:

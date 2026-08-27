@@ -1,0 +1,43 @@
+{
+  "description": "Health of a single external dependency (Postgres, Redis, vector store).",
+  "properties": {
+    "detail": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Detail"
+    },
+    "latency_ms": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Latency Ms"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "unreachable",
+        "unconfigured"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "DependencyHealth",
+  "type": "object"
+}

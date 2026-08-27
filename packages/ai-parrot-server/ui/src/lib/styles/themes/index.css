@@ -1,0 +1,12 @@
+/* Theme registry entry — imported once from src/app.css.
+ *
+ * Order matters: light defines :root defaults, dark overrides per
+ * selector. Copied from navigator-frontend-next per TASK-2525; the
+ * midnight/warm theme variants are optional per the task scope and are
+ * not vendored in this initial scaffold.
+ */
+
+@import "./_schema.css";
+@import "./_tokens.css";
+@import "./light.css";
+@import "./dark.css";
