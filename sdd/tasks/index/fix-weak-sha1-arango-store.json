@@ -1,0 +1,35 @@
+{
+  "feature": "fix-weak-sha1-arango-store",
+  "feature_id": "FEAT-465",
+  "spec": "sdd/specs/fix-weak-sha1-arango-store.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-27T00:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2500",
+      "feature_id": "FEAT-465",
+      "feature": "fix-weak-sha1-arango-store",
+      "title": "Replace SHA-1 with SHA-256 in document_key()",
+      "slug": "replace-sha1-with-sha256",
+      "status": "pending",
+      "priority": "high",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-2500-replace-sha1-with-sha256.md"
+    },
+    {
+      "id": "TASK-2501",
+      "feature_id": "FEAT-465",
+      "feature": "fix-weak-sha1-arango-store",
+      "title": "Add regression test for long-key truncation branch",
+      "slug": "regression-test-long-key-sha256",
+      "status": "pending",
+      "priority": "medium",
+      "depends_on": ["TASK-2500"],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-2501-regression-test-long-key-sha256.md"
+    }
+  ]
+}
