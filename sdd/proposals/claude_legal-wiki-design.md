@@ -3,6 +3,16 @@
 > Context: one or more "brains" (LLM Wikis) for a Spanish lawyer, fed with Spanish + EU legislation and case law, stored as knowledge graphs in ArangoDB via `GraphIndex`, with CENDOJ used only as a verification/enrichment toolkit. Goal: answers that are **citable against primary sources with temporal validity**, never model memory.
 >
 > Status: skeleton. Every `⚠️ VERIFY` must be grepped against `main` before `/sdd-proposal`. Items marked `[assumed]` are design choices pending discussion, not facts about the repo.
+>
+> **Revision 2026-08-27** — revisited after an external design discussion. Sprint 1 (BOE
+> norms graph, FEAT-449) is already implemented; this revision hardens the answer layer
+> around three ideas the original skeleton under-specified: (a) the agent is a
+> **librarian, not an oracle** — the returned payload is the evidence itself, the LLM's
+> reading is a secondary, span-anchored section; (b) an **epistemic fail-closed
+> invariant** — no assertion about the corpus without a verifiable span reference, hash
+> included; (c) the **roadmap is reordered** — the librarian answer layer ships next,
+> over the norms-only corpus, before any case-law ingestion. See §1 (principles 7–8),
+> §5 (evidence model), §7 (roadmap), and the decision log at the end.
 
 ---
 
@@ -23,6 +33,32 @@
 
 Does NOT exist (to be created): any legal-domain toolkit, ECLI/BOE-id parsing utilities, temporal-validity traversal, `LegalAnswer` contract.
 
+### 0.1 Verified against the repo — 2026-08-27
+
+Sprint 1 landed (FEAT-449, `sdd/specs/legal-norms-graph-boe.spec.md`, 8/8 tasks done):
+
+| Piece | Where (verified) | Note |
+|---|---|---|
+| BOE toolkit tree | `packages/ai-parrot-tools/src/parrot_tools/legal/boe/` (`models.py`, `parser.py`, `datasource.py`, `sync.py`, `queries.py`) + `legal/ids.py` | exists |
+| `ArticleVersion` | `parrot_tools/legal/boe/models.py` | `n, text, valid_from, valid_to, modified_by, kind, source, derived` — **no `content_hash` field today** ⇒ retrofit required (§5.1) |
+| Legal ontology | `parrot/knowledge/ontology/defaults/domains/legal.ontology.yaml` | exists |
+| Audit ledger | `parrot/security/audit_ledger.py:80` `AuditLedgerEntry`, `:296` `AuditLedger`, `:338` `async append()` | target for span-suppression records |
+| Groundedness | `parrot/security/groundedness/evidence.py:31` `EvidenceIndex`, `scorer.py:74` `score()` | **atom-based** (money/percent/number/date/identifier), detection-only — it is NOT a span verifier; the quote/offset/hash verifier of §5 is new machinery, groundedness stays as a complementary numeric/identifier check |
+
+### 0.2 Persona rationale (from the external discussion)
+
+The lawyer is the **business persona**, not a demo persona: (1) the pain is acute and
+billable — associate hours spent hunting case law; (2) professional secrecy turns
+local-first from preference into obligation (client files cannot go to a RAG SaaS —
+deontology, and in many jurisdictions regulation); (3) firms already pay heavily for
+worse tools (Westlaw/vLex), so budget exists. The hardest persona's requirements —
+mandatory citation, confidentiality, typed graph — harden the product for every other
+persona: honest "no encontré" and page-level citations benefit the student and the
+clerk too. FTS (and flat vector RAG) returns a repealed precedent with the same
+confidence as a live one because they are textually equally similar to the query; only
+a typed graph (`cita`, `revoca`, `confirma`, `distingue`) with court hierarchy and
+temporal validity can answer "current precedents from higher courts on this issue".
+
 ---
 
 ## 1. Governing principles
@@ -31,8 +67,10 @@ Does NOT exist (to be created): any legal-domain toolkit, ECLI/BOE-id parsing ut
 2. **Identifiers are canonical keys, not text.** `ECLI:ES:TS:2023:1234`, `BOE-A-2015-10566`, CELEX `32016R0679`. Every node `_key` derives from one of them. No node without a stable public id.
 3. **Temporal validity is a graph property.** `modifica`/`deroga` edges carry `from_date`/`to_date`; the question "which version of art. X applied on date D" is a deterministic traversal, not an LLM guess.
 4. **Deterministic retrieval, LLM synthesis.** Router, traversal, validity filtering, source precedence: code. The LLM explains, compares and drafts over already-retrieved, already-verified material.
-5. **Every legal statement carries a citation to a retrieved node**, and every case-law citation carries `verified: bool`. Unverified ⇒ rendered as "pendiente de confirmación", never silently dropped nor silently trusted.
+5. **Every legal statement carries a citation to a retrieved node**, and every case-law citation carries `verified: bool`. Unverified ⇒ rendered as "pendiente de confirmación", never silently dropped nor silently trusted. *(Revised 2026-08-27: `verified` here is **authority** verification — CENDOJ/TC/EUR-Lex confirming the source. **Existence** verification — the quoted span exists byte-for-byte in the stored payload with that hash — is a separate, mandatory gate that applies to every citation, including "pendiente de confirmación" ones. See §5.)*
 6. **Read-only agents.** Ingestion toolkits (writers) and advisory agents (readers) are never mounted together. `cendoj_fetch` is the single sanctioned write path from an agent, and it writes through the ingestion pipeline, not raw upserts.
+7. **The agent is a librarian, not an oracle. The LLM proposes, the evidence disposes.** The primary payload of every answer is the retrieved evidence itself — "these N documents contain relevant passages; here are the exact spans; go read them". The librarian's own reading (ranking/reading order, conflict flagging, corpus-scoped absence statements, temporal/procedural context narrated from deterministic traversals) is a clearly-labelled **secondary** section in which every sentence anchors to at least one span. An opinion may be *part of* the answer; it is never *the* answer. Conflicts between sources are flagged, never resolved by the LLM — resolution belongs to the lawyer.
+8. **Epistemic fail-closed (the one-line invariant).** *The system cannot assert anything about the corpus without a verifiable span reference; without a citation, the answer is "no encontré".* Generation is stochastic; verification is deterministic: either the quoted span exists in the stored payload with that hash, or it does not. A librarian sentence that cannot be anchored is **suppressed and the suppression recorded** (count in the answer + `AuditLedger` entry) — never emitted silently, never rendered as "unverified". By construction the system can fail to find law; it cannot invent it. For a lawyer that asymmetry is everything: a false negative costs hours, a false positive costs the licence. Absence statements are always corpus-scoped ("not found in the consulted corpus for this query") — never ontological ("no case law exists on X"). This is the epistemic sibling of the fail-closed egress posture.
 
 ---
 
@@ -139,12 +177,12 @@ class CendojDocument(BaseModel):
 | Collection | `_key` | Key fields |
 |---|---|---|
 | `norma` | BOE id / CELEX | title, rank (ley orgánica/ley/RD/…), publisher, publication_date, entry_into_force, status |
-| `articulo` | `{norma}:{art}` | number, norma_ref, current_version, `versions[]` = `{n, text, valid_from, valid_to, modified_by (norma key), kind, source, derived}` — **single node with embedded version history (OQ2 decided)**; see §3.5 |
+| `articulo` | `{norma}:{art}` | number, norma_ref, current_version, `versions[]` = `{n, text, valid_from, valid_to, modified_by (norma key), kind, source, derived, content_hash}` — **single node with embedded version history (OQ2 decided)**; `content_hash` = sha256 of the normalized version text, sealed at ingest (rev. 2026-08-27; see §5.1); see §3.5 |
 | `sentencia` | ECLI (fallback ROJ) | court, chamber, date, ponente, roj, ecli, summary, verified, verified_at, source, raw_html_ref |
 | `tribunal` | slug | name, level, jurisdiction |
 | `concepto` | namespaced `concept_id` (FEAT-200 convention) | label, aliases[], materia_refs[] |
 | `materia` | slug | label, parent |
-| `chunk` | `{parent_key}:{version_n}:{n}` | text, embedding ref, parent_ref, version_n, valid_from, valid_to, offset — chunks are per article version so vector retrieval can filter by `as_of` |
+| `chunk` | `{parent_key}:{version_n}:{n}` | text, embedding ref, parent_ref, version_n, valid_from, valid_to, offset, content_hash — chunks are per article version so vector retrieval can filter by `as_of`; `offset` + parent `content_hash` make every chunk a resolvable span into its parent payload (rev. 2026-08-27) |
 
 ### 3.3 Edge collections
 | Edge | From → To | Attributes |
@@ -155,6 +193,7 @@ class CendojDocument(BaseModel):
 | `aplica_articulo` | sentencia → articulo | as_of (date of facts), version_n (resolved from as_of at ingest), extraction, confidence |
 | `interpreta` | sentencia → concepto | extraction, confidence |
 | `confirma` / `revoca` | sentencia → sentencia | instance chain |
+| `distingue` | sentencia → sentencia | the citing judgment distinguishes (limits, declines to apply) the cited precedent — added rev. 2026-08-27; extraction, confidence. Together with `revoca` this is what lets retrieval demote a textually-similar but distinguished/overruled precedent — the query FTS cannot answer |
 | `transpone` | norma → norma_UE | — |
 | `pertenece_a` | sentencia/norma → materia | weight |
 | `trata` | articulo/sentencia → concepto | weight |
@@ -218,9 +257,12 @@ query
   → ToolNode vector_retrieve  (chunks, filtered by materia + as_of)
   → ToolNode verify           (cendoj_verify on every ES sentencia lacking verified=True; budget-capped)
   → ToolNode merge            (source precedence + dedupe by id)
-  → LegalAnswerAgent          (structured_output=LegalAnswer, read-only toolkits)
-  → ToolNode ground           (GroundednessReport: every citation must map to a retrieved id)
+  → LegalLibrarianAgent       (structured_output=LegalAnswer, read-only toolkits; §5.2)
+  → ToolNode span_verify      (existence gate + anchor integrity + suppression ledger; §5.3)
+  → ToolNode ground           (GroundednessScorer atoms over the surviving guide; §5.3.3)
 ```
+*(rev. 2026-08-27: the agent formerly called `LegalAnswerAgent` is renamed
+`LegalLibrarianAgent` to match §1.7; the budget rules in §2.5.1 apply to it unchanged.)*
 
 ### 4.3 Source precedence (merge, deterministic)
 1. Norm text in force on `as_of` (BOE/EUR-Lex) — authoritative.
@@ -232,33 +274,108 @@ Conflicts between levels: higher wins and the conflict is surfaced, not resolved
 
 ---
 
-## 5. Output contract
+## 5. Evidence model and output contract (rev. 2026-08-27 — librarian)
+
+> This section supersedes the original `LegalClaim`-centric contract. The original made
+> the LLM's *statement* the vehicle and the citation its support; the librarian model
+> inverts it: **the evidence is the payload, the LLM's reading is annotation.**
+
+### 5.1 Span references — the unit of evidence
+
+Every citation is a **span reference**: a pointer into a stored, hashed payload that a
+deterministic verifier can check without any LLM.
 
 ```python
-class SourceRef(BaseModel):
+class SpanRef(BaseModel):
     kind: Literal["norma", "articulo", "sentencia"]
-    id: str                       # BOE id / CELEX / ECLI
+    id: str                        # BOE id / CELEX / ECLI — canonical key (§1.2)
+    version_n: int | None          # article version the span indexes into (None for sentencias)
+    start: int                     # half-open char offsets into the stored
+    end: int                       #   normalized payload of (id, version_n)
+    quote: str                     # exact text — must equal payload[start:end] byte-for-byte
+    content_hash: str              # sha256 of the stored normalized payload (sealed at ingest)
     title: str
     url: str
-    as_of: date | None            # version in force used
-    verified: bool                # CENDOJ/TC/EUR-Lex confirmed
-    verifier: str | None          # "cendoj" | "eurlex" | "tc" | "hudoc" | "vlex"
-    snippet: str                  # retrieved text, not paraphrase
+    as_of: date | None             # version-in-force date used to resolve version_n
+    verified: bool                 # AUTHORITY verification (CENDOJ/TC/EUR-Lex) — see §1.5
+    verifier: str | None           # "cendoj" | "eurlex" | "tc" | "hudoc" | "vlex"
+    basis: Literal["retrieval", "traversal"]   # how it entered the dossier
+```
 
-class LegalClaim(BaseModel):
-    statement: str
-    references: list[SourceRef] = Field(min_length=1)
-    confidence: Literal["verified", "pending_verification"]
+Two orthogonal verification gates:
+
+| Gate | Question | How | When it fails |
+|---|---|---|---|
+| **Existence** (mandatory, deterministic) | does the quoted span exist? | payload for `(id, version_n)` exists with `content_hash`, and `payload[start:end] == quote` | span is removed; any librarian sentence anchored only to it is suppressed and recorded |
+| **Authority** (tier, per §4.3) | is the source confirmed by its official verifier? | CENDOJ/TC/EUR-Lex verification (§2.5) | span stays, tiered as "pendiente de confirmación" |
+
+Existence verification requires `content_hash` sealed at ingest. **Retrofit decided:**
+`ArticleVersion` (Sprint 1, `parrot_tools/legal/boe/models.py`) gains a `content_hash`
+field (sha256 over the normalized version text) and the BOE corpus is **re-ingested**
+via `sync_boe()` — the corpus is fully reproducible from source, so re-ingest beats
+hash-on-read backfill (single origin of truth for hashes). Chunks carry the parent
+version's hash + their offsets (§3.2). The normalization applied before hashing must be
+frozen and versioned **before** the re-ingest (OQ7).
+
+The existing groundedness subsystem (`EvidenceIndex`/`GroundednessScorer`,
+`parrot/security/groundedness/`) is **atom-based** (money/percent/number/date/
+identifier) — it is not a span verifier. It remains as a complementary deterministic
+check over the reading guide (numbers and identifiers quoted by the librarian must
+appear in the dossier); the span verifier of this section is new machinery.
+
+### 5.2 The answer — a dossier plus a reading guide
+
+```python
+class ConflictNote(BaseModel):
+    span_a: str                    # SpanRef ids (id:version_n:start-end)
+    span_b: str
+    note: str                      # what appears to conflict — flagged, NEVER resolved
+
+class ReadingNote(BaseModel):
+    text: str                      # ONE sentence of the librarian's reading
+    spans: list[str] = Field(min_length=1)   # anchors — SpanRef ids from the dossier
+    basis: Literal["deterministic", "llm"]
+    # "deterministic": narration of a traversal result (article_in_force, case_chain)
+    # "llm": the librarian's judgement (relevance, emphasis) — still span-anchored
 
 class LegalAnswer(BaseModel):
-    as_of: date
+    as_of: date                    # stated back to the user (§4.1)
     materias: list[str]
-    claims: list[LegalClaim]
-    pending: list[SourceRef]      # unverified citations, surfaced explicitly
-    gaps: list[str]               # "no primary source retrieved for X"
-    disclaimer: str               # not legal advice; review by the lawyer
+    dossier: list[SpanRef]         # PRIMARY payload — precedence-ordered (§4.3)
+    reading_order: list[str]       # librarian's suggested order (SpanRef ids) — "start with these"
+    conflicts: list[ConflictNote]  # signalled; resolution belongs to the lawyer
+    reading_guide: list[ReadingNote]  # SECONDARY — every sentence anchored, or absent
+    not_found: list[str]           # corpus-scoped absence: "no span for X in the consulted
+                                   #   corpus (materias=…, as_of=…)" — never ontological
+    suppressed_count: int          # sentences dropped by the fail-closed gate (§1.8)
+    pending: list[str]             # SpanRef ids at authority tier "pendiente de confirmación"
+    disclaimer: str                # not legal advice; review by the lawyer
 ```
-Post-check: each `SourceRef.id` must be in the retrieval set of this execution; `confidence="verified"` requires `verified=True` on all its references. Violations ⇒ retry capped at 1, then return with the claim moved to `gaps`.
+
+What the librarian's reading MAY contain (decided 2026-08-27): reading order / ranking
+(precedence + hierarchy, deterministic base + judgement on top); conflict flagging;
+corpus-scoped absence statements; temporal/procedural context narrated from
+deterministic traversals ("this version governed at the date of the facts; amended
+by…" — `basis="deterministic"`). What it may NOT contain: any sentence without a span
+anchor; resolution of conflicts; ontological absence claims; upgraded confidence on
+`pending` sources.
+
+### 5.3 Post-check pipeline (deterministic, after the LLM)
+
+1. **Span existence** — every `SpanRef` in `dossier` and every anchor in
+   `reading_guide`/`conflicts` passes the existence gate against this execution's
+   retrieval set. Fail ⇒ span removed.
+2. **Anchor integrity** — every `ReadingNote` retains ≥1 surviving anchor. Fail ⇒ the
+   sentence is **removed from the output**, `suppressed_count += 1`, and an
+   `AuditLedger` entry (`audit_ledger.py:338 append()`) records the suppressed text,
+   its claimed anchors, and the failure reason. No retry re-emits the sentence — the
+   lawyer sees *that* pruning happened without seeing unverifiable prose.
+3. **Groundedness atoms** — `GroundednessScorer.score()` over the surviving guide with
+   the dossier as evidence; contradicted numeric/identifier atoms ⇒ same suppression
+   path.
+4. **Empty-dossier rule** — if `dossier` is empty after the gates, the answer IS "no
+   encontré": `not_found` describes what was searched (materias, concepts, `as_of`),
+   `reading_guide` is empty. A first-class, honest outcome — not an error.
 
 ---
 
@@ -269,16 +386,56 @@ Post-check: each `SourceRef.id` must be in the retrieval set of this execution; 
 - **OQ4** → **spike confirmed**, checklist in §3.5. Blocks EUR-Lex ingestion in Sprint 1; BOE is not blocked.
 - **OQ5** Where does `as_of` extraction live: router (deterministic date parsing) or a tiny structured LLM call? Proposal: regex first, LLM only if none found.
 - **OQ6** Lazy ingestion from `cendoj_fetch`: synchronous within the request, or enqueued (qworker) after answering?
+- **OQ7** (rev. 2026-08-27) Canonical normalization before hashing: exactly what transform (Unicode NFC? whitespace collapse? none?) is applied to a version/sentencia text before `sha256` and before offsets are computed. Must be frozen and versioned (`hash_norm_version` field?) before the BOE re-ingest — changing it later invalidates every stored span. Proposal: NFC + newline normalization only; no whitespace collapse (offsets must match the text shown to the lawyer).
+- **OQ8** (rev. 2026-08-27) How the librarian emits anchored sentences reliably: structured output where each `ReadingNote` carries its span ids (proposal: `ask(structured_output=LegalAnswer)` with the dossier's span ids enumerated in the prompt), vs. free text + post-hoc alignment. Post-hoc alignment reintroduces stochastic matching — prefer structured-first. Also: does a high `suppressed_count` (e.g. >50% of sentences) trigger a single regeneration of the guide, or is the pruned guide always returned as-is? Proposal: return as-is in v1; regeneration is tuning, not correctness.
 
 ---
 
-## 7. Roadmap
-1. **Spikes:** CENDOJ rate/captcha behaviour; CELLAR amends/repeals availability; GraphIndex namespace model.
-2. **Sprint 1 — Norms graph, zero LLM.** BOE + EUR-Lex ingestion, `article_in_force` traversal, tests on known amendment chains (e.g. LOPDGDD vs RGPD transposition).
-3. **Sprint 2 — Case law bulk.** TC + CJEU + HUDOC lazy; regex-only edges.
-4. **Sprint 3 — CENDOJ toolkit + verification gate.** `verify` first, `fetch` with lazy ingest, `search` last.
-5. **Sprint 4 — Router + retrieval DAG + `LegalAnswer`.** Single materia (pick the firm's main one), then multi-graph.
-6. **Sprint 5 — LLM-extracted edges + groundedness.** Only after verified citations work end-to-end.
+## 7. Roadmap (reordered 2026-08-27 — the fail-closed answer layer IS the product)
+
+Original order deferred the answer layer to Sprint 4, behind case-law ingestion. The
+external discussion inverted that: the librarian contract + evidence model is what
+converts a stochastic toy into a professional tool, so it ships next, over the
+norms-only corpus that already exists. Case law then *inherits* an already-hardened
+contract instead of retrofitting one.
+
+1. ~~**Sprint 1 — Norms graph, zero LLM.**~~ **DONE** (FEAT-449,
+   `sdd/specs/legal-norms-graph-boe.spec.md`, 8/8 tasks, 2026-08-23): BOE ingestion,
+   `versions[]`, `article_in_force`. EUR-Lex was deferred (spike OQ4 still open).
+2. **Sprint 1.5 — Evidence retrofit.** `content_hash` sealing in the BOE pipeline
+   (`ArticleVersion` + chunks), normalization frozen (OQ7), full re-run of
+   `sync_boe()`. Small, blocking for everything below.
+3. **Sprint 2 — Librarian answer layer over norms only.** `SpanRef` / `LegalAnswer` /
+   `ReadingNote` contracts, the deterministic span verifier, the fail-closed
+   suppression gate + `AuditLedger` records, minimal router (single materia), retrieval
+   DAG of §4.2 without the CENDOJ verify stage. Demonstrates the one-line invariant
+   end-to-end: ask about a norm ⇒ dossier + anchored guide; ask about case law ⇒
+   honest "no encontré en el corpus consultado".
+4. **Sprint 3 — Case law bulk.** TC + CJEU + HUDOC lazy; regex-only edges (`cita`,
+   `confirma`/`revoca`); sentencias enter the same hashed-payload evidence model.
+5. **Sprint 4 — CENDOJ toolkit + authority gate.** `verify` first, `fetch` with lazy
+   ingest, `search` last. Adds the authority tier on top of the existing existence gate.
+6. **Sprint 5 — LLM-extracted edges.** `interpreta`, `aplica_articulo`, `distingue` —
+   only after verified citations work end-to-end; LLM edges stay excluded from the
+   verified tier unless corroborated.
+
+---
+
+## 8. Decision log — revision 2026-08-27
+
+Provenance: external design discussion (colleague review of the librarian/anti-
+hallucination framing), ratified by the operator on 2026-08-27.
+
+| # | Decision |
+|---|---|
+| R1 | The agent is a **librarian**: evidence (dossier of spans) is the primary payload; the LLM's reading is a secondary, fully span-anchored section. Opinions may be part of the answer, never the answer. (§1.7, §5.2) |
+| R2 | **Epistemic fail-closed invariant** adopted verbatim: no assertion about the corpus without a verifiable span reference; without citation ⇒ "no encontré". (§1.8) |
+| R3 | Evidence model = **spans + payload hashes + ledger** (full model, not substring-only): deterministic existence gate, `AuditLedger` records for every suppression. (§5.1, §5.3) |
+| R4 | Fail-closed granularity: an unanchorable librarian sentence is **removed and the removal recorded** (`suppressed_count` + ledger) — not silently dropped, not shown as "unverified". (§5.3) |
+| R5 | Librarian reading may contain: reading order, conflict flagging (never resolution), corpus-scoped absence statements, traversal-derived temporal/procedural context. (§5.2) |
+| R6 | **Roadmap reordered**: answer layer ships next over the norms-only corpus (Sprints 1.5 + 2), before any case-law ingestion. (§7) |
+| R7 | Sprint 1 BOE corpus is **re-ingested** with sealed hashes (reproducible from source) rather than hash-on-read backfill. (§5.1) |
+| R8 | `distingue` added to the typed-edge vocabulary alongside `confirma`/`revoca`. (§3.3) |
 
 ## External sources
 - BOE datos abiertos / API: https://www.boe.es/datosabiertos/
