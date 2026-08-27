@@ -16,6 +16,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: '/admin/',
+    // Vite only exposes vars matching `envPrefix` to client code via
+    // `import.meta.env` (default: just `VITE_`). `src/lib/config.ts` reads
+    // `PUBLIC_API_URL` / `PUBLIC_API_WITH_CREDENTIALS` straight off
+    // `import.meta.env` — without this, those documented overrides
+    // (docs/admin-ui.md, config.ts's own comments) would silently resolve
+    // to `undefined` in the built production bundle even when set at
+    // `pnpm build` time, because `loadEnv()` above only feeds the dev-server
+    // proxy target, not the client bundle.
+    envPrefix: ['VITE_', 'PUBLIC_'],
     plugins: [tailwindcss(), svelte()],
     resolve: {
       alias: {
