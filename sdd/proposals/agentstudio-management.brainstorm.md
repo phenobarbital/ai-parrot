@@ -114,7 +114,9 @@ written only where nothing exists today:
    validation via `parse_skill_file`. Path-traversal rejected (same policy as
    `read_skill_asset`).
 3. **AgentStudio meta-agent** (`studio/meta_agent.py`): an `Agent` subclass
-   defaulting to `AnthropicClient` + Opus tier, loaded with authored skills
+   defaulting to `AnthropicClient` with `claude-opus-5` (config-overridable
+   via `STUDIO_AGENT_MODEL`), absorbing `AgentFactoryHandler` (its
+   `/api/v1/agents/factory` route stays as a thin alias), loaded with authored skills
    (agent-builder, skill-writer, kb-writer) that let it emit YAML agents,
    Python agents (into the draft store), skill files with frontmatter, and
    KB files on natural-language request. Follows the HITL-gated
@@ -350,7 +352,8 @@ skills. A thin REST shim can be generated later for the web UI.
   itself. Option B's clean-room lifecycle is attractive, but a second source
   of truth beside `AgentRegistry`/`BotModel` is a standing desync bug; we can
   get draft/activate semantics with a far smaller draft-store (filesystem
-  `AGENTS_DIR/_drafts/` + a small state file or table) inside Option A.
+  `AGENTS_DIR/_drafts/` + the small `navigator.studio_drafts` state table)
+  inside Option A.
 - What we trade off: facade discipline (thin handlers, logic stays in
   managers) needs review vigilance, and we accept two coexisting creation
   surfaces until a separate deprecation decision — explicitly required by
@@ -376,13 +379,16 @@ surface (final routes belong to the spec):
   `POST /astudio/agents/{name}/reload` re-reads YAML/identity/skills/kb and
   swaps the shared registered instance; `DELETE` for factory-origin agents.
 - **Drafts** — the meta-agent (or the user directly) saves generated Python
-  agent files as drafts (`AGENTS_DIR/_drafts/<name>.py`);
+  agent files as drafts (`AGENTS_DIR/_drafts/<name>.py`, lifecycle state in
+  `navigator.studio_drafts`);
   `GET /astudio/drafts`, `GET /astudio/drafts/{name}` (content + validation
   report), `POST /astudio/drafts/{name}/activate` moves the file into
   `AGENTS_DIR/` and imports+registers it; activation is the only path from
   generated code to live code.
 - **Meta-agent** — `POST /astudio/assistant` converses with the AgentStudio
-  agent (default `AnthropicClient`, Opus tier, BYOK-aware). It can scaffold
+  agent (default `AnthropicClient` + `claude-opus-5`, `STUDIO_AGENT_MODEL`
+  override, BYOK-aware; absorbs `AgentFactoryHandler`, whose
+  `/api/v1/agents/factory` route becomes a thin alias). It can scaffold
   Python agents inheriting any catalog base class (→ drafts), create
   YAML-based agents, and author skill files (frontmatter-validated) and KB
   files on natural-language request.
@@ -435,7 +441,9 @@ surface (final routes belong to the spec):
   `BotMetadata._instance`, then rebuilds from YAML/definition/DB.
 - **Draft pipeline**: save → AST parse (syntax) → import-whitelist check
   (only `parrot.*`, `parrot_tools.*`, stdlib allowlist) → detect exactly one
-  `AbstractBot` subclass → validation report persisted next to the draft.
+  `AbstractBot` subclass → validation report, owner, status, and timestamps
+  persisted as a row in the new `navigator.studio_drafts` table (draft `.py`
+  content stays on disk in `AGENTS_DIR/_drafts/`).
   Activate → move file into a registry discovery path → import via the
   existing `_import_module_from_path` machinery → decorator/explicit
   registration → owner recorded.
@@ -443,7 +451,7 @@ surface (final routes belong to the spec):
   (agent-builder, skill-writer, kb-writer) and tools that write ONLY into
   the draft store / asset directories (never directly into live code),
   mirroring the HITL gate of `finalize_agent_registration`. Default LLM
-  Anthropic Opus tier; per-user BYOK key honored.
+  `claude-opus-5` (config `STUDIO_AGENT_MODEL`); per-user BYOK key honored.
 - **BYOK resolution**: key stored AES-GCM-encrypted (vault master keys),
   hot copy in the Redis session vault; a `CredentialBroker` resolver exposes
   it; agent test-instantiation passes it as `api_key` to `LLMFactory.create`.
@@ -456,10 +464,12 @@ surface (final routes belong to the spec):
   `owner_user_id` field on `Skill`) keeps the existing embedding-search and
   git-like versioning; the new Postgres table is the durable system of
   record and the query plane for the catalog listing (ORDER BY category,
-  WHERE owner). Writes go PG-first, then registry (best-effort, repairable
-  by a re-sync); reads for listing hit PG, reads for semantic search hit the
-  registry. Category values come from the existing `SkillCategory` enum
-  (extensible).
+  WHERE owner). Writes go PG-first, then registry (best-effort); drift is
+  repaired by a startup reconciliation pass plus an on-demand admin
+  endpoint (`POST /api/v1/astudio/skills/resync`). Reads for listing hit
+  PG, reads for semantic search hit the registry. Category values are
+  constrained to the existing `SkillCategory` enum; out-of-vocabulary
+  values land in `general`.
 
 ### Edge Cases & Error Handling
 
@@ -549,7 +559,7 @@ surface (final routes belong to the spec):
 | `parrot/clients/factory.py` | depends on | LLM client catalog + BYOK `api_key` pass-through |
 | `handlers/stores/` (VectorStoreHandler) | depends on | store create/upload/test reused as-is |
 | `agents/` (AGENTS_DIR) on-disk layout | extends | adds `_drafts/`; formalizes `<agent>/{identity,kb,skills}/` |
-| DB | one new table | `navigator.ai_skills_catalog` (asyncdb `Model`, pattern of `AgentSchedule`) for the shared skills catalog; drafts stay on filesystem; keys in existing vault/DocumentDB |
+| DB | two new tables | `navigator.ai_skills_catalog` (shared skills catalog) and `navigator.studio_drafts` (draft lifecycle state/audit) — both asyncdb `Model`, pattern of `AgentSchedule`; draft `.py` content stays on filesystem; keys in existing vault/DocumentDB |
 
 No breaking changes to existing routes. Deployment: no new services; new
 routes registered inside `BotManager.setup(app)`.
@@ -1024,22 +1034,25 @@ from parrot.skills.models import Skill, SkillCategory, SkillStatus       # model
 - [x] Reload scope — *Owner: Jesus*: reload swaps the shared registered agent (all consumers get new behavior immediately).
 - [x] Scheduler depth — *Owner: Jesus*: CRUD + run-now/test with last execution result.
 - [x] Access model — *Owner: Jesus*: any authenticated user; ownership-aware (creator owns; owners/admins modify).
-- [ ] Relationship to `AgentFactoryHandler` (`/api/v1/agents/factory`): does the Studio meta-agent **replace** it (route kept as alias), or do both meta-agents coexist? Recommendation: Studio agent absorbs it, sharing `parrot/bots/factory/` builders. — *Owner: Jesus*
-- [ ] Default model id for the meta-agent: notes say "Opus-5"; `ClaudeModel` has `FABLE_5`/`OPUS_4_5`. Pin which id, and make it env-overridable (`STUDIO_AGENT_MODEL`)? — *Owner: Jesus*
-- [ ] Canonical agent-YAML schema for Studio writes: the `agent:`-keyed definition format (the one actually loaded) — confirm; and does fixing `create_agent_definition` field loss belong to this feature's first task or a separate prerequisite fix? — *Owner: Jesus*
-- [ ] `LLMWikiToolkit` server-side construction: who builds its three toolkit deps (`pageindex_toolkit`, `graphindex_toolkit`, `okf_toolkit`) when a user assigns a wiki surface — reuse the bot's `_pageindex_toolkit`/`_graphindex_toolkit` capture or construct fresh from `WikiConfig`? — *Owner: dev during spec*
-- [ ] Draft store location/state: filesystem `AGENTS_DIR/_drafts/` + JSON state file vs. a small DB table (auditability vs. zero-migration). — *Owner: Jesus*
-- [ ] PBAC policy naming for `/api/v1/astudio/*` (new resource ids for the PDP) and whether admins bypass ownership. — *Owner: Jesus*
-- [ ] Deprecation signal for the old Bot Management surface: mark `/api/v1/bot_management` responses with a `Deprecation` header once Studio ships, or leave silent? — *Owner: Jesus*
+- [x] Relationship to `AgentFactoryHandler` (`/api/v1/agents/factory`) — *Owner: Jesus*: the Studio meta-agent **absorbs** it — reuses the `parrot/bots/factory/` builders + HITL finalize machinery; `/api/v1/agents/factory` stays routable as a thin alias to the same logic (no breaking change).
+- [x] Default model id for the meta-agent — *Owner: Jesus*: `claude-opus-5`, overridable via a config setting `STUDIO_AGENT_MODEL` (in `parrot/conf.py`) so deployments can pin or downgrade.
+- [x] Canonical agent-YAML schema for Studio writes — *Owner: Jesus*: the `agent:`-keyed definition format (the one `load_agent_definitions` actually loads); the `create_agent_definition` round-trip fix is **TASK #1 of this feature** since every Studio persist path depends on it.
+- [x] `LLMWikiToolkit` server-side construction — *Owner: Jesus*: reuse the bot's captured `_pageindex_toolkit`/`_graphindex_toolkit` when present; otherwise construct fresh instances from the submitted `WikiConfig` at assignment time.
+- [x] Draft store location/state — *Owner: Jesus*: draft `.py` content stays on disk (`AGENTS_DIR/_drafts/`), lifecycle state/audit lives in a **small DB table** `navigator.studio_drafts` (validation report, owner, status, timestamps).
+- [x] PBAC policy naming — *Owner: Jesus*: new PDP resource ids namespaced `astudio:<area>` (`astudio:agents`, `astudio:skills`, `astudio:keys`, …); superuser/admin bypasses ownership checks; fail-open preserved when no PDP is configured (session-based ownership still enforced).
+- [x] Deprecation signal for the old Bot Management surface — *Owner: Jesus*: **leave silent** for now; no headers or logs — revisit deprecation in a later feature.
 - [x] Route prefix — *Owner: Jesus*: `/api/v1/astudio/` (another installed
   service already occupies "studio" routes); internal code naming stays
   `studio`/`AgentStudio`.
 - [x] Shared skills catalog storage — *Owner: Jesus*: extend `SkillRegistry`
   with an org-wide shared namespace + owner-user field AND persist entries
   in a new Postgres table for SQL ordering (category) and filtering (owner).
-- [ ] Skills catalog category vocabulary: constrain to the existing
-  `SkillCategory` enum or allow free-form categories (enum + "other")?
-  — *Owner: Jesus*
-- [ ] Skills catalog source-of-truth details: exact table name/columns for
-  `navigator.ai_skills_catalog`, and whether the Redis registry re-sync is a
-  startup job or an admin endpoint. — *Owner: dev during spec*
+- [x] Skills catalog category vocabulary — *Owner: Jesus*: constrained to
+  the existing `SkillCategory` enum (tool_usage, workflow, domain,
+  error_handling, user_preference, integration, optimization, general);
+  anything outside the enum lands in `general`/"other". Predictable
+  ordering/filtering.
+- [x] Skills catalog re-sync — *Owner: Jesus*: cheap reconciliation pass at
+  server startup (PG → registry for stale-flagged entries) **plus** an
+  on-demand admin endpoint `POST /api/v1/astudio/skills/resync`. Exact
+  column list for `navigator.ai_skills_catalog` is left to the spec.
