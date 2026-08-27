@@ -110,3 +110,10 @@ def setup_studio_routes(app: web.Application) -> None:
     app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/test", StudioTestingHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/tools/{{slug}}/execute", StudioToolExecuteHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/tools", StudioToolAssignHandler)
+
+    # Toolkit config surfaces (FEAT-467 TASK-2518): schema introspection +
+    # assignment (wiki/dataset_manager/infographic first-class + generic).
+    from .toolkits import StudioToolkitsHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/toolkits/{{slug}}/schema", StudioToolkitsHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkits", StudioToolkitsHandler)
