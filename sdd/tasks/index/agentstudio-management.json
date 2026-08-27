@@ -113,7 +113,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Independent logic but shares the studio route registration file with sibling tasks.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2514-studio-asset-files.md"
+      "completed_at": "2026-08-27T18:04:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2514-studio-asset-files.md"
     },
     {
       "id": "TASK-2515",

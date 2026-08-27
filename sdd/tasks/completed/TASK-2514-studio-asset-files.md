@@ -169,10 +169,50 @@ class TestStudioFiles:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- `StudioFilesHandler` in `files.py` registered at two paths (list vs
+  single-file) so the same class dispatches on `match_info.get
+  ("filename")`: `.../files/{kind}` (GET list) and
+  `.../files/{kind}/{filename:.*}` (GET/PUT/DELETE one file — the
+  `:.*` converter is what lets composite skill paths like
+  `<name>/SKILL.md` reach the handler as a single match_info value).
+- Per-kind rules: identity restricted to the five canonical
+  `IDENTITY_FILES` + `.md`; kb restricted to flat (no subdir) `.md`/
+  `.txt`; skills accept single-file `<name>.md` or composite
+  `<name>/SKILL.md` + `<name>/<asset>` (assets unrestricted). Skill
+  frontmatter is validated via `parse_skill_file` against a SCRATCH
+  tmp file (never the real target) for both the single-file form and
+  the composite `SKILL.md` entry point — `_is_skill_definition_file`
+  distinguishes those from plain composite assets, which are written
+  as-is.
+- Traversal safety reuses TASK-2511's `resolve_safe_path` directly
+  (no new logic) — it already accepts multi-segment relative paths, so
+  composite skill filenames pass straight through.
+- Agent existence/ownership resolves BOTH origins (registry
+  `bot_config.config['created_by']` — TASK-2512 convention — and
+  DB-origin `BotModel.created_by`), since on-disk assets live under
+  `AGENTS_DIR/<agent>/` regardless of the agent's origin. GET requires
+  no ownership (any authenticated user can read); PUT/DELETE enforce
+  `_require_owner`.
+- No "file in use" check exists anywhere — delete is unconditional once
+  ownership passes, matching the resolved decision ("never blocked").
+  Every mutation response includes `reload_required: true`; this
+  handler never calls `reload_agent` itself.
+- Tests use the same `Handler(request)` + `__wrapped__`-peeling pattern
+  as TASK-2512/2513, with a REAL `AgentRegistry` (not mocked) so
+  `load_identity()` round-trips genuinely against the written files
+  (`test_identity_write_and_load_identity_roundtrip`).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
+
+Verification: `pytest packages/ai-parrot-server/tests/studio/
+test_files.py -v` → 19/19 passed (green on first real run — no
+implementation bugs found via testing this time). `ruff check
+packages/ai-parrot-server/src/parrot/handlers/studio/` → clean except
+intentional `BLE001` best-effort/fail-open patterns matching established
+convention. Full regression sweep (`tests/studio/`, `tests/manager/`,
+ephemeral-owner, DB-bot fallback tests) → 103/103 passed. Verified the
+main repo tree stayed clean (`git status --porcelain` empty) throughout —
+no `AGENTS_DIR`-related stray-file incidents this time.
