@@ -5,11 +5,13 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
 from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 from importlib import import_module
+from pathlib import Path
 import contextlib
 import time
 import asyncio
 import copy
 from aiohttp import web
+from pydantic import BaseModel, Field
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
 from navconfig.logging import logging
@@ -19,7 +21,7 @@ from asyncdb.exceptions import NoDataFound
 # FEAT-133: reranker + parent-searcher factories
 from ..rerankers.factory import create_reranker
 from ..stores.parents.factory import create_parent_searcher
-from ..exceptions import ConfigError
+from ..exceptions import ConfigError, ParrotError
 from ..bots.abstract import AbstractBot
 from ..bots.basic import BasicBot
 from ..bots.chatbot import Chatbot
@@ -104,6 +106,44 @@ from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 # when the app starts serving traffic.
 if TYPE_CHECKING:
     from parrot.integrations import IntegrationBotManager
+
+
+class AgentNotFoundError(ParrotError):
+    """Raised by :meth:`BotManager.reload_agent` for an unknown agent name.
+
+    Neither ``self.registry`` nor ``self._bots`` know this name — callers
+    (e.g. the Studio reload endpoint, FEAT-467 TASK-2512) map this to
+    HTTP 404.
+    """
+
+
+class AgentReloadError(ParrotError):
+    """Raised by :meth:`BotManager.reload_agent` when a rebuild fails.
+
+    Raised for a corrupt YAML definition, a module re-import error, an
+    invalid database-origin bot config, or an agent whose registration has
+    no reloadable origin. The previous registration and instance are left
+    untouched — callers (e.g. FEAT-467 TASK-2512) map this to HTTP 422.
+    """
+
+
+class ReloadResult(BaseModel):
+    """Outcome of :meth:`BotManager.reload_agent`.
+
+    Attributes:
+        name: The reloaded agent's registered name.
+        reloaded: Always ``True`` on return — ``reload_agent`` raises
+            (:class:`AgentNotFoundError` / :class:`AgentReloadError`)
+            rather than returning a falsy result on failure.
+        previous_instance_closed: ``True`` when the previous instance's
+            ``cleanup()``/``close()`` was found and invoked successfully.
+        warnings: Non-fatal issues encountered during the reload (e.g. the
+            previous instance's close raised).
+    """
+    name: str
+    reloaded: bool
+    previous_instance_closed: bool
+    warnings: List[str] = Field(default_factory=list)
 
 
 class BotManager:
@@ -383,10 +423,178 @@ class BotManager:
         # Step 5: Report final state
         self._log_final_state()
 
+    async def _build_database_bot(self, bot_model: Any, app: web.Application) -> AbstractBot:
+        """Construct, configure, and finalize a single database-origin bot.
+
+        Extracted from ``_load_database_bots`` (FEAT-467 TASK-2510) so the
+        startup loader and :meth:`reload_agent` share one construction
+        path — a DB-origin agent rebuild is guaranteed byte-for-byte
+        identical to how the agent was first loaded at startup. Does NOT
+        call :meth:`add_bot` — the caller decides when (or if) to install
+        the returned instance into ``self._bots``.
+
+        Args:
+            bot_model: A loaded ``BotModel`` row (``navigator.ai_bots``).
+            app: The aiohttp Application — used for ``configure(app)`` and
+                for reranker/parent-searcher construction.
+
+        Returns:
+            A fully constructed, configured ``AbstractBot`` instance.
+
+        Raises:
+            ConfigError: Invalid ``reranker_config`` / ``parent_searcher_config``.
+            ValidationError: Bot constructor validation failure.
+            ValueError: Malformed ``permissions`` JSON (see
+                :meth:`AgentRegistry.register_db_bot_policies`).
+            Exception: Any other construction/configure failure.
+        """
+        # Use the factory function from models.py or create bot directly
+        class_name = self._resolve_database_bot_class(bot_model)
+        bot_permissions = self._normalize_database_bot_permissions(bot_model)
+
+        # FEAT-133 Step 1: Build reranker BEFORE bot construction.
+        # Reranker has no dependency on the store — can be resolved now.
+        try:
+            reranker = create_reranker(
+                bot_model.reranker_config,
+                bot_llm_client=None,  # patched post-construction if type=llm
+            )
+        except ConfigError as exc:
+            self.logger.error(
+                "Bot '%s': invalid reranker_config: %s",
+                bot_model.name,
+                exc,
+            )
+            raise
+
+        # Prompt preset: optional, declared in ai_bots.prompt_config.
+        # Mutations (remove/add/customize) are applied post-init,
+        # before configure(), to mirror the YAML registry flow.
+        prompt_config_dict = bot_model.prompt_config or {}
+        has_prompt_mutations = any(
+            prompt_config_dict.get(key)
+            for key in ("remove", "add", "customize")
+        )
+        prompt_preset_name = (
+            prompt_config_dict.get("preset")
+            or ("default" if has_prompt_mutations else None)
+        )
+
+        bot_instance = class_name(
+            chatbot_id=bot_model.chatbot_id,
+            name=bot_model.name,
+            description=bot_model.description,
+            prompt_preset=prompt_preset_name,
+            # LLM configuration: ``model_config`` (JSONB) is the
+            # canonical source for model/temperature/max_tokens/
+            # top_k/top_p. AbstractBot resolves them from there.
+            use_llm=bot_model.llm,
+            model_config=bot_model.model_config,
+            # Bot personality
+            role=bot_model.role,
+            goal=bot_model.goal,
+            backstory=bot_model.backstory,
+            rationale=bot_model.rationale,
+            capabilities=bot_model.capabilities,
+            # Prompt configuration
+            system_prompt=bot_model.system_prompt_template,
+            human_prompt=bot_model.human_prompt_template,
+            pre_instructions=bot_model.pre_instructions,
+            # Vector store configuration — embedding model is
+            # carried inside ``vector_store_config['embedding_model']``.
+            use_vectorstore=bot_model.use_vector,
+            vector_store_config=bot_model.vector_store_config,
+            context_search_limit=bot_model.context_search_limit,
+            context_score_threshold=bot_model.context_score_threshold,
+            # Tool and agent configuration
+            tools_enabled=bot_model.tools_enabled,
+            auto_tool_detection=bot_model.auto_tool_detection,
+            tool_threshold=bot_model.tool_threshold,
+            available_tools=bot_model.tools,
+            operation_mode=bot_model.operation_mode,
+            # Memory configuration
+            memory_type=bot_model.memory_type,
+            memory_config=bot_model.memory_config,
+            max_context_turns=bot_model.max_context_turns,
+            use_conversation_history=bot_model.use_conversation_history,
+            # Security and permissions
+            permissions=bot_permissions,
+            # Metadata
+            language=bot_model.language,
+            disclaimer=bot_model.disclaimer,
+            # FEAT-133: reranker + expand_to_parent injected at construction.
+            # parent_searcher injected AFTER configure() (needs bot.store).
+            reranker=reranker,
+            expand_to_parent=bool(
+                bot_model.parent_searcher_config.get("expand_to_parent", False)
+            ),
+        )
+        # Set the model ID reference
+        bot_instance.model_id = bot_model.chatbot_id
+
+        # Apply prompt-layer mutations BEFORE configure() so
+        # newly-added layers also resolve their CONFIGURE-phase
+        # variables in the same pass.
+        self._apply_prompt_config(bot_instance, prompt_config_dict)
+
+        await bot_instance.configure(app)
+
+        # FEAT-133 Step 2: Patch LLM reranker client now that
+        # bot.llm_client is available (option a from spec §3 Module 5).
+        from ..rerankers.llm import LLMReranker  # noqa: PLC0415
+        if isinstance(reranker, LLMReranker) and reranker.client is None:
+            reranker.client = getattr(bot_instance, 'llm_client', None)
+
+        # FEAT-133 Step 3: Build parent_searcher AFTER configure()
+        # because InTableParentSearcher requires bot.store.
+        try:
+            parent_searcher = create_parent_searcher(
+                bot_model.parent_searcher_config,
+                store=bot_instance.store,
+            )
+        except ConfigError as exc:
+            self.logger.error(
+                "Bot '%s': invalid parent_searcher_config: %s",
+                bot_model.name,
+                exc,
+            )
+            raise
+
+        if parent_searcher is not None:
+            bot_instance.parent_searcher = parent_searcher
+
+        # FEAT-133: Operational visibility log.
+        self.logger.info(
+            "Bot '%s': reranker=%s, parent_searcher=%s",
+            bot_model.name,
+            type(reranker).__name__ if reranker else None,
+            type(parent_searcher).__name__ if parent_searcher else None,
+        )
+
+        # FEAT-153: Register DB-declared permissions into the evaluator
+        # BEFORE the bot is added so a concurrent get_bot cannot resolve
+        # the bot before its policies are loaded. Raises ValueError on
+        # malformed permissions JSON — propagated to the caller, which
+        # decides whether to skip (startup loader) or surface as a
+        # reload error (reload_agent).
+        n_policies = self.registry.register_db_bot_policies(
+            bot_model.name,
+            bot_permissions,
+        )
+        if n_policies:
+            self.logger.info(
+                "Bot %r: registered %d DB-declared policy rule(s).",
+                bot_model.name, n_policies,
+            )
+
+        return bot_instance
+
     async def _load_database_bots(self, app: web.Application) -> None:
         """Load bots from database."""
         try:
-            # Import here to avoid circular imports
+            # Local import (not the module-level BotModel) so tests can
+            # patch `sys.modules['parrot.handlers.models']` at call time —
+            # preserved from the pre-TASK-2510 implementation.
             from ..handlers.models import BotModel  # pylint: disable=import-outside-toplevel # noqa
             db = app['database']
             async with await db.acquire() as conn:
@@ -409,150 +617,7 @@ class BotManager:
                     )
                     continue
                 try:
-                    # Use the factory function from models.py or create bot directly
-                    class_name = self._resolve_database_bot_class(bot_model)
-                    bot_permissions = self._normalize_database_bot_permissions(bot_model)
-
-                    # FEAT-133 Step 1: Build reranker BEFORE bot construction.
-                    # Reranker has no dependency on the store — can be resolved now.
-                    try:
-                        reranker = create_reranker(
-                            bot_model.reranker_config,
-                            bot_llm_client=None,  # patched post-construction if type=llm
-                        )
-                    except ConfigError as exc:
-                        self.logger.error(
-                            "Bot '%s': invalid reranker_config: %s",
-                            bot_model.name,
-                            exc,
-                        )
-                        raise
-
-                    # Prompt preset: optional, declared in ai_bots.prompt_config.
-                    # Mutations (remove/add/customize) are applied post-init,
-                    # before configure(), to mirror the YAML registry flow.
-                    prompt_config_dict = bot_model.prompt_config or {}
-                    has_prompt_mutations = any(
-                        prompt_config_dict.get(key)
-                        for key in ("remove", "add", "customize")
-                    )
-                    prompt_preset_name = (
-                        prompt_config_dict.get("preset")
-                        or ("default" if has_prompt_mutations else None)
-                    )
-
-                    bot_instance = class_name(
-                        chatbot_id=bot_model.chatbot_id,
-                        name=bot_model.name,
-                        description=bot_model.description,
-                        prompt_preset=prompt_preset_name,
-                        # LLM configuration: ``model_config`` (JSONB) is the
-                        # canonical source for model/temperature/max_tokens/
-                        # top_k/top_p. AbstractBot resolves them from there.
-                        use_llm=bot_model.llm,
-                        model_config=bot_model.model_config,
-                        # Bot personality
-                        role=bot_model.role,
-                        goal=bot_model.goal,
-                        backstory=bot_model.backstory,
-                        rationale=bot_model.rationale,
-                        capabilities=bot_model.capabilities,
-                        # Prompt configuration
-                        system_prompt=bot_model.system_prompt_template,
-                        human_prompt=bot_model.human_prompt_template,
-                        pre_instructions=bot_model.pre_instructions,
-                        # Vector store configuration — embedding model is
-                        # carried inside ``vector_store_config['embedding_model']``.
-                        use_vectorstore=bot_model.use_vector,
-                        vector_store_config=bot_model.vector_store_config,
-                        context_search_limit=bot_model.context_search_limit,
-                        context_score_threshold=bot_model.context_score_threshold,
-                        # Tool and agent configuration
-                        tools_enabled=bot_model.tools_enabled,
-                        auto_tool_detection=bot_model.auto_tool_detection,
-                        tool_threshold=bot_model.tool_threshold,
-                        available_tools=bot_model.tools,
-                        operation_mode=bot_model.operation_mode,
-                        # Memory configuration
-                        memory_type=bot_model.memory_type,
-                        memory_config=bot_model.memory_config,
-                        max_context_turns=bot_model.max_context_turns,
-                        use_conversation_history=bot_model.use_conversation_history,
-                        # Security and permissions
-                        permissions=bot_permissions,
-                        # Metadata
-                        language=bot_model.language,
-                        disclaimer=bot_model.disclaimer,
-                        # FEAT-133: reranker + expand_to_parent injected at construction.
-                        # parent_searcher injected AFTER configure() (needs bot.store).
-                        reranker=reranker,
-                        expand_to_parent=bool(
-                            bot_model.parent_searcher_config.get("expand_to_parent", False)
-                        ),
-                    )
-                    # Set the model ID reference
-                    bot_instance.model_id = bot_model.chatbot_id
-
-                    # Apply prompt-layer mutations BEFORE configure() so
-                    # newly-added layers also resolve their CONFIGURE-phase
-                    # variables in the same pass.
-                    self._apply_prompt_config(bot_instance, prompt_config_dict)
-
-                    await bot_instance.configure(app)
-
-                    # FEAT-133 Step 2: Patch LLM reranker client now that
-                    # bot.llm_client is available (option a from spec §3 Module 5).
-                    from ..rerankers.llm import LLMReranker  # noqa: PLC0415
-                    if isinstance(reranker, LLMReranker) and reranker.client is None:
-                        reranker.client = getattr(bot_instance, 'llm_client', None)
-
-                    # FEAT-133 Step 3: Build parent_searcher AFTER configure()
-                    # because InTableParentSearcher requires bot.store.
-                    try:
-                        parent_searcher = create_parent_searcher(
-                            bot_model.parent_searcher_config,
-                            store=bot_instance.store,
-                        )
-                    except ConfigError as exc:
-                        self.logger.error(
-                            "Bot '%s': invalid parent_searcher_config: %s",
-                            bot_model.name,
-                            exc,
-                        )
-                        raise
-
-                    if parent_searcher is not None:
-                        bot_instance.parent_searcher = parent_searcher
-
-                    # FEAT-133: Operational visibility log.
-                    self.logger.info(
-                        "Bot '%s': reranker=%s, parent_searcher=%s",
-                        bot_model.name,
-                        type(reranker).__name__ if reranker else None,
-                        type(parent_searcher).__name__ if parent_searcher else None,
-                    )
-
-                    # FEAT-153: Register DB-declared permissions into the evaluator
-                    # BEFORE adding the bot so a concurrent get_bot cannot resolve
-                    # the bot before its policies are loaded.
-                    try:
-                        n_policies = self.registry.register_db_bot_policies(
-                            bot_model.name,
-                            bot_permissions,
-                        )
-                        if n_policies:
-                            self.logger.info(
-                                "Bot %r: registered %d DB-declared policy rule(s).",
-                                bot_model.name, n_policies,
-                            )
-                    except ValueError as exc:
-                        self.logger.warning(
-                            "Bot %r has malformed 'permissions' JSON: %s. "
-                            "Skipping this bot.",
-                            bot_model.name, exc,
-                        )
-                        continue  # skip — do NOT add to self._bots
-
+                    bot_instance = await self._build_database_bot(bot_model, app)
                     self.add_bot(bot_instance)
                     self.logger.info(
                         f"Successfully loaded bot '{bot_model.name}' "
@@ -566,6 +631,13 @@ class BotManager:
                     self.logger.error(
                         f"Invalid configuration for bot '{bot_model.name}': {e}"
                     )
+                except ValueError as exc:
+                    self.logger.warning(
+                        "Bot %r has malformed 'permissions' JSON: %s. "
+                        "Skipping this bot.",
+                        bot_model.name, exc,
+                    )
+                    continue  # skip — do NOT add to self._bots
                 except Exception as e:
                     self.logger.error(
                         "Failed to load database bot %s: %s",
@@ -813,6 +885,206 @@ class BotManager:
         del self._bots[name]
         # Clean up expiration tracking if it exists (but keep class definition)
         self._bot_expiration.pop(name, None)
+
+    # ------------------------------------------------------------------
+    # Hot reload (FEAT-467 TASK-2510)
+    # ------------------------------------------------------------------
+
+    async def reload_agent(self, name: str) -> ReloadResult:
+        """Hot-swap a registered agent with a freshly rebuilt instance.
+
+        Rebuilds ``name`` from its origin — a YAML/definition file, a
+        decorator/module (``.py``) agent, or a database-origin bot —
+        WITHOUT touching any live state. Only after the rebuild succeeds
+        does this method evict the cached instance and swap the
+        registration, so a failed reload always leaves the previous agent
+        registered and serving (spec §7 "Reload failure must not
+        unregister").
+
+        In-flight requests against the OLD instance are unaffected — they
+        keep running against the object reference they already hold. NEW
+        calls to :meth:`get_bot` resolve the swapped-in instance
+        immediately. Working memory / conversation state is NOT migrated
+        between the old and new instance (spec §7 "Reload memory
+        contract") — this is a deliberate limitation, not a bug.
+
+        Args:
+            name: Registered agent name — known to either ``self.registry``
+                (YAML/decorator-origin) or ``self._bots`` (DB-origin).
+
+        Returns:
+            A :class:`ReloadResult` describing the outcome.
+
+        Raises:
+            AgentNotFoundError: ``name`` is not a known agent.
+            AgentReloadError: The rebuild failed — corrupt YAML, import
+                error, invalid DB config, or an agent whose registration
+                has no reloadable origin. The previous registration and
+                instance are left untouched.
+        """
+        warnings: List[str] = []
+        metadata = self.registry.get_metadata(name)
+
+        if metadata is not None:
+            new_instance = await self._rebuild_registry_agent(name, metadata)
+        elif name in self._bots:
+            new_instance = await self._rebuild_database_agent(name)
+        else:
+            raise AgentNotFoundError(f"Agent '{name}' is not registered.")
+
+        # --- Rebuild succeeded: only now do we touch live state ---
+        old_instance = self._bots.pop(name, None)
+        self._bots[name] = new_instance
+        self._botdef[name] = type(new_instance)
+
+        closed = False
+        if old_instance is not None:
+            closed = await self._safe_cleanup(name, old_instance)
+            if not closed:
+                warnings.append(
+                    f"Previous instance of '{name}' did not close cleanly "
+                    "(timed out or raised) — see logs for details."
+                )
+
+        self.logger.info(
+            "Reloaded agent '%s' (previous_instance_closed=%s, warnings=%d)",
+            name, closed, len(warnings),
+        )
+        return ReloadResult(
+            name=name,
+            reloaded=True,
+            previous_instance_closed=closed,
+            warnings=warnings,
+        )
+
+    async def _rebuild_registry_agent(self, name: str, metadata: Any) -> AbstractBot:
+        """Rebuild a registry-origin (YAML or module/decorator) agent.
+
+        Re-reads the on-disk source of truth and swaps the registry entry
+        BEFORE instantiating, so :meth:`AgentRegistry.get_instance` builds
+        the new instance from the freshly (re-)registered
+        :class:`~parrot.registry.registry.BotMetadata`. Detects rebuild
+        failure by comparing object identity of ``get_metadata(name)``
+        before/after the re-scan: on any parse/import error, ``registry``
+        internals log-and-skip that file WITHOUT touching
+        ``_registered_agents[name]``, so identity is unchanged and this
+        method raises :class:`AgentReloadError` without ever calling
+        :meth:`AgentRegistry.register` — the previous registration is
+        never disturbed.
+
+        Args:
+            name: Registered agent name.
+            metadata: The agent's current ``BotMetadata`` (already
+                resolved by the caller via ``registry.get_metadata``).
+
+        Returns:
+            The rebuilt, configured ``AbstractBot`` instance.
+
+        Raises:
+            AgentReloadError: Rebuild failed for any reason.
+        """
+        file_path = Path(metadata.file_path) if metadata.file_path else None
+        suffix = file_path.suffix.lower() if file_path else ""
+
+        if suffix in (".yaml", ".yml"):
+            before = metadata
+            try:
+                self.registry.load_agent_definitions(file_path.parent)
+            except Exception as exc:
+                raise AgentReloadError(
+                    f"Failed to reload YAML definition for agent '{name}': {exc}"
+                ) from exc
+            after = self.registry.get_metadata(name)
+            if after is None or after is before:
+                raise AgentReloadError(
+                    f"Failed to reload agent '{name}': the YAML definition at "
+                    f"{file_path} is invalid, or no longer defines '{name}'."
+                )
+        elif suffix == ".py":
+            before = metadata
+            try:
+                self.registry._import_module_from_path(
+                    file_path,
+                    base_dir=self.registry.agents_dir,
+                )
+            except Exception as exc:
+                raise AgentReloadError(
+                    f"Failed to re-import module agent '{name}' from "
+                    f"{file_path}: {exc}"
+                ) from exc
+            after = self.registry.get_metadata(name)
+            if after is None or after is before:
+                raise AgentReloadError(
+                    f"Re-importing {file_path} did not re-register agent "
+                    f"'{name}' — its decorator likely does not pass "
+                    "replace=True, so it cannot be hot-reloaded."
+                )
+        else:
+            # Programmatically-registered agent (plain register()/
+            # register_instance() call, no on-disk definition) — there is
+            # nothing to re-read from, so reload cannot rebuild it safely.
+            raise AgentReloadError(
+                f"Agent '{name}' has no reloadable origin "
+                f"(file_path={file_path!r}); only YAML-definition and "
+                "module (.py) agents can be hot-reloaded."
+            )
+
+        try:
+            new_instance = await self.registry.get_instance(name)
+        except Exception as exc:
+            raise AgentReloadError(
+                f"Rebuilt definition for agent '{name}' failed to "
+                f"instantiate: {exc}"
+            ) from exc
+        if new_instance is None:
+            raise AgentReloadError(f"Rebuilt agent '{name}' produced no instance.")
+        if not getattr(new_instance, "is_configured", False):
+            await new_instance.configure(self.app)
+        return new_instance
+
+    async def _rebuild_database_agent(self, name: str) -> AbstractBot:
+        """Rebuild a database-origin bot from a freshly-read ``BotModel`` row.
+
+        Reuses :meth:`_build_database_bot` — the exact construction path
+        the startup loader (``_load_database_bots``) uses — so a DB-origin
+        reload is byte-for-byte identical to the agent's first load.
+
+        Args:
+            name: Registered agent name (present in ``self._bots`` but not
+                in ``self.registry``).
+
+        Returns:
+            The rebuilt, configured ``AbstractBot`` instance.
+
+        Raises:
+            AgentReloadError: No database is wired on this manager, the
+                agent no longer exists in the database, or the rebuild
+                failed (invalid config, malformed permissions, etc.).
+        """
+        if self.app is None or 'database' not in self.app:
+            raise AgentReloadError(
+                f"Cannot reload database-origin agent '{name}': no database "
+                "connection is available on this BotManager."
+            )
+
+        db = self.app['database']
+        async with await db.acquire() as conn:
+            BotModel.Meta.connection = conn
+            try:
+                bot_model = await BotModel.get(name=name)
+            except NoDataFound as exc:
+                raise AgentNotFoundError(
+                    f"Agent '{name}' is not registered."
+                ) from exc
+
+        try:
+            return await self._build_database_bot(bot_model, self.app)
+        except AgentReloadError:
+            raise
+        except Exception as exc:
+            raise AgentReloadError(
+                f"Failed to rebuild database agent '{name}': {exc}"
+            ) from exc
 
     # ------------------------------------------------------------------
     # User-defined bots (per-user, session-cached)
