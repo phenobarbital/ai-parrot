@@ -147,9 +147,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
         """
         self._articulo_collection = ctx.ontology.entities[_ARTICULO_ENTITY].collection
         self._norma_collection = ctx.ontology.entities[_NORMA_ENTITY].collection
-        self._edge_collections = {
-            name: ctx.ontology.relations[name].edge_collection for name in _EDGE_RELATIONS
-        }
+        self._edge_collections = {name: ctx.ontology.relations[name].edge_collection for name in _EDGE_RELATIONS}
 
     async def initialize(self) -> None:
         """Connect and verify the plane exists — NEVER provisions.
@@ -195,8 +193,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                 await probe.close()
             if databases is not None and self._database not in set(databases):
                 raise FileNotFoundError(
-                    f"ArangoDB database {self._database!r} does not exist — "
-                    "the legal tenant was never built"
+                    f"ArangoDB database {self._database!r} does not exist — " "the legal tenant was never built"
                 )
 
             client = AsyncDB("arangodb", params={**self._params, "database": self._database})
@@ -435,9 +432,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
             ``{concept_id, rel, direction}`` stubs.
         """
         await self._ensure_init()
-        relations = (
-            {rel: self._edge_collections[rel]} if rel in self._edge_collections else self._edge_collections
-        )
+        relations = {rel: self._edge_collections[rel]} if rel in self._edge_collections else self._edge_collections
         results: list[dict[str, Any]] = []
         for rel_name, collection in relations.items():
             if direction in ("out", "both"):

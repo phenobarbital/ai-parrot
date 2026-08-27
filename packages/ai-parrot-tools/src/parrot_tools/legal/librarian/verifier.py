@@ -205,8 +205,7 @@ class SpanVerifier:
         if not dossier and not not_found:
             materias_str = ", ".join(materias) if materias else "(sin materia especificada)"
             not_found_message = (
-                f"No encontré resultados en el corpus BOE para materias {materias_str} "
-                f"a fecha {as_of.isoformat()}."
+                f"No encontré resultados en el corpus BOE para materias {materias_str} " f"a fecha {as_of.isoformat()}."
             )
             not_found = [not_found_message]
 
