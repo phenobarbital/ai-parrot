@@ -89,8 +89,9 @@ Decisions fixed during interactive discovery (Rounds 0–3):
   to get the UI; the server must degrade gracefully (log + skip mount) when
   dist is absent.
 - **Dashboard v1**: server status + inventory — version, uptime, counts of
-  registered agents/crews, dependency health (DB/Redis) — only data the
-  server already knows; no new telemetry pipeline.
+  registered agents/crews, dependency health (Postgres/Redis/configured
+  vector store) — only data the server already knows; no new telemetry
+  pipeline.
 - **TS types**: Pydantic JSON Schema → TypeScript codegen **from the start**
   (`model_json_schema()` → `json-schema-to-typescript`, the pattern already
   specified — but never implemented — in
@@ -164,9 +165,9 @@ Pydantic response models at UI build time.
 | `tailwind-variants`, `tailwind-merge`, `clsx` | class composition (`cn()`) | 3.2.2 / 3.6.0 / 2.1.1 |
 | `@lucide/svelte` | icons | ^0.561.0 in corporate |
 | `axios` | API client (copied `http.ts` uses it) | ^1.11.0; or port wrapper to `fetch` |
-| SPA router (e.g. `svelte-spa-router` or hand-rolled) | client routing | corporate has none (SvelteKit); pick lightest that supports guards |
+| (no router lib) | client routing | hand-rolled ~100-line history router as a rune-class store (svelte5-structural doctrine); zero deps, trivial auth guards |
 | `json-schema-to-typescript` | Pydantic JSON Schema → TS interfaces | pattern from dev-loop-session-state brainstorm; devDependency |
-| `pnpm` 9 | package manager | matches corporate (`pnpm@9.15.9`) |
+| `pnpm` 9 | package manager | matches corporate (`pnpm@9.15.9`); CI/dev pinned to **Node 24 LTS** |
 | `typescript` ^5.6 | type checking | 5.9.3 in corporate |
 
 🔗 **Existing Code to Reuse:**
@@ -308,8 +309,9 @@ the authenticated JSON API.
   formdesigner's expired-token script) loads the Admin UI.
 - **Login**: unauthenticated visitors see a login page (theme-aware, ShadCN
   tokens). Submitting credentials calls `POST /api/v1/login` with
-  `X-Auth-Method: BasicAuth` (methods discoverable via
-  `GET /api/v1/auth/methods`); on success the token + user payload are
+  `X-Auth-Method: BasicAuth`; additionally, SSO/provider buttons are
+  rendered dynamically from `GET /api/v1/auth/methods` (copied
+  `ProviderButtons.svelte` from navauth). On success the token + user payload are
   stored (localStorage `ai_parrot_token`, matching formdesigner) and the
   session cookie is set by the server. On failure an inline error shows.
 - **Shell**: after login, a persistent layout — sidebar navigation (Home,
@@ -319,8 +321,9 @@ the authenticated JSON API.
 - **Home**: welcome page with server identity (name, version) and
   navigation cards.
 - **Dashboard**: cards/tiles showing version, uptime, counts (registered
-  agents by source, loaded bots, crews), and dependency health (DB, Redis)
-  from `GET /api/v1/admin/status`; auto-refresh on an interval.
+  agents by source, loaded bots, crews), and dependency health (Postgres,
+  Redis, configured vector store) from `GET /api/v1/admin/status`;
+  auto-refresh on an interval.
 - **Agents (read-only module)**: table of agents from `GET /api/v1/bots` —
   name, description, role, source (database/registry), enabled — with
   client-side search/filter. Row click opens a read-only detail panel.
@@ -345,12 +348,13 @@ the authenticated JSON API.
   `handlers/admin_status.py`): `@is_authenticated() @user_session()` view
   `GET /api/v1/admin/status` assembling `{version, uptime_seconds,
   agents: {database, registry, loaded}, crews, dependencies: {postgres,
-  redis}}` from `app['bot_manager']` (`get_bots`, `registry.list_agents`,
-  `list_crews`) and cheap health pings. Pydantic response model → feeds the
-  TS codegen.
+  redis, vector_store}}` from `app['bot_manager']` (`get_bots`,
+  `registry.list_agents`, `list_crews`) and cheap, individually-timeboxed
+  health pings. Pydantic response model → feeds the TS codegen.
 - **UI architecture**: Vite project at `packages/ai-parrot-server/ui/`;
-  rune-class stores (`AuthStore`, `ThemeStore`) per the svelte5-structural
-  skill; API layer = copied `http.ts` + generated types; router with an
+  rune-class stores (`AuthStore`, `ThemeStore`, `Router`) per the
+  svelte5-structural skill; API layer = copied `http.ts` + generated types;
+  routing via a hand-rolled ~100-line history-mode router class with an
   auth guard (redirect to `/admin/login` when no token). `base: '/admin/'`
   in Vite config; dev mode proxies `/api` to a running server (same pattern
   as navigator-frontend-next's `vite.config.ts`).
@@ -428,7 +432,7 @@ the authenticated JSON API.
 | navigator-auth exclude list | depends on | `AuthHandler.add_exclude_list` / `register_exclusions` (`navigator_auth/auth.py:728,750`) for `/admin*` HTML shell |
 | `parrot-formdesigner` `/admin` redirect | fixed by | dangling target starts existing; shares `ai_parrot_token` storage key |
 | Release CI / `Makefile` | modifies | Node build stage before `uv build`; SSH push for workflow files |
-| `.gitignore` | modifies | ignore `src/parrot/server/ui/dist/`; consider cleaning stale root `agentui/`, `crew-builder/` (only `node_modules`/`.svelte-kit`, no source) and the `.gitignore:283` un-ignore of a nonexistent path |
+| `.gitignore` | modifies | ignore `src/parrot/server/ui/dist/`. (Stale-root cleanup — `agentui/`, `crew-builder/`, dead un-ignore `!/crew-builder/src/routes/agents/` — resolved as a separate commit on `dev` outside this feature; nothing there is git-tracked) |
 | Future `agentstudio-management` (astudio API) | consumed later | agents module migrates `GET /api/v1/bots` → `GET /api/v1/astudio/agents` when it lands |
 
 No breaking changes: all new routes are additive; `/api/v1/*` untouched
@@ -676,25 +680,37 @@ where = ["src"]; include = ["parrot*"]; namespaces = true
 
 ## Open Questions
 
-- [ ] Status endpoint prefix: keep `GET /api/v1/admin/status` or reserve it
+- [x] Status endpoint prefix: keep `GET /api/v1/admin/status` or reserve it
   under the future `astudio` namespace (`/api/v1/astudio/status`) to avoid
-  a later rename? — *Owner: Jesus*
-- [ ] Login methods surfaced in v1: BasicAuth only, or render whatever
+  a later rename? — *Owner: Jesus*: `/api/v1/admin/status` — namespace owned
+  by the Admin UI, decoupled from astudio (still exploration); it is server
+  health, not agent management.
+- [x] Login methods surfaced in v1: BasicAuth only, or render whatever
   `GET /api/v1/auth/methods` reports (SSO buttons via copied
-  `ProviderButtons.svelte`)? — *Owner: Jesus*
-- [ ] SPA router choice: `svelte-spa-router` (hash or history), `tinro`, or
+  `ProviderButtons.svelte`)? — *Owner: Jesus*: BasicAuth form always +
+  SSO/provider buttons rendered dynamically from `/api/v1/auth/methods`
+  discovery (copy `ProviderButtons.svelte` from navauth).
+- [x] SPA router choice: `svelte-spa-router` (hash or history), `tinro`, or
   a hand-rolled ~100-line history router per the svelte5-structural
-  doctrine? — *Owner: spec/implementation*
-- [ ] Clean up stale root `agentui/` and `crew-builder/` directories (and
-  `.gitignore:283`) as part of this feature or separately? — *Owner: Jesus*
-- [ ] Wheel-content check placement: extend
+  doctrine? — *Owner: Jesus*: hand-rolled ~100-line history-mode router as
+  a rune-class store; zero dependencies, trivial auth guards, guaranteed
+  Svelte 5 compatibility.
+- [x] Clean up stale root `agentui/` and `crew-builder/` directories (and
+  `.gitignore:283`) as part of this feature or separately? — *Owner: Jesus*:
+  separate commit on `dev` now, before the feature worktree (nothing there
+  is git-tracked; the visible change is removing the dead un-ignore line;
+  physical `node_modules`/`.svelte-kit` removal is a manual local step).
+- [x] Wheel-content check placement: extend
   `packages/ai-parrot-server/tests/test_wheel_layout.py`
-  (`@pytest.mark.wheel_build`) or a release-workflow step? — *Owner: spec*
-- [ ] Dashboard dependency health: which dependencies exactly (Postgres,
+  (`@pytest.mark.wheel_build`) or a release-workflow step? — *Owner: Jesus*:
+  both — the test documents the contract, and a release-workflow assert
+  right after the Node build blocks publishing a UI-less wheel.
+- [x] Dashboard dependency health: which dependencies exactly (Postgres,
   Redis — anything else, e.g. vector store)? Probe strategy must be cheap
-  and non-blocking. — *Owner: Jesus*
-- [ ] Node version pin for CI (corporate uses pnpm 9; Node 20 LTS vs 22)?
-  — *Owner: spec*
+  and non-blocking. — *Owner: Jesus*: Postgres + Redis + the configured
+  vector store; probes individually try/excepted with short timeouts.
+- [x] Node version pin for CI (corporate uses pnpm 9; Node 20 LTS vs 22)?
+  — *Owner: Jesus*: Node 24 LTS with pnpm 9.
 - [x] Do we reuse ui-agent-management.brainstorm.md? — *Owner: Jesus*: yes —
   its agent-list design is absorbed into `admin-ui-agents-readonly`; its
   tabbed-wizard form becomes the follow-up module spec (flowbite-svelte
