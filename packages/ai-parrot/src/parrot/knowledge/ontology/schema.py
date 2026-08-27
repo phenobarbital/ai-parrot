@@ -3,6 +3,7 @@
 These models define the complete schema for the composable ontology YAML system:
 base → domain → client layers, merged into a single MergedOntology at runtime.
 """
+
 from __future__ import annotations
 
 import re
@@ -10,7 +11,6 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 
 # ── YAML Definition Models ──
 
@@ -66,9 +66,7 @@ class EntityDef(BaseModel):
     @classmethod
     def _validate_key_field(cls, v: str | None) -> str | None:
         if v is not None and not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", v):
-            raise ValueError(
-                f"key_field must be a valid identifier (letters, digits, underscore only), got {v!r}"
-            )
+            raise ValueError(f"key_field must be a valid identifier (letters, digits, underscore only), got {v!r}")
         return v
 
     def get_property_names(self) -> set[str]:
@@ -297,6 +295,127 @@ class TraversalPattern(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SearchViewField(BaseModel):
+    """One indexed field within a ``SearchViewLink`` (FEAT-449 R15).
+
+    Args:
+        path: Field path within the linked entity's stored document.
+            Supports at most one nesting level: a bare field name
+            (``"titulo"``) or an array-expansion path
+            (``"versions[*].text"``).
+        analyzers: ArangoSearch analyzer names to apply to this field.
+    """
+
+    path: str
+    analyzers: list[str] = Field(default_factory=lambda: ["text_es"])
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchViewLink(BaseModel):
+    """One entity link within a ``SearchViewDef`` (FEAT-449 R15).
+
+    Args:
+        entity: Entity NAME (not collection) — the merger resolves this
+            to ``EntityDef.collection`` and fails the merge if the name
+            is unknown.
+        fields: Fields of the linked entity to index.
+    """
+
+    entity: str
+    fields: list[SearchViewField] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchViewDef(BaseModel):
+    """Declarative ArangoSearch view definition (FEAT-449 R15).
+
+    The view NAME is the dict key under ``search_views:`` in the ontology
+    YAML — there is no ``name`` field here, so there is no risk of the
+    key and an internal name field drifting apart.
+
+    Args:
+        links: Entity links (collections) this view indexes.
+    """
+
+    links: list[SearchViewLink] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+def merge_link_field(fields: dict[str, Any], path: str) -> None:
+    """Expand one ``SearchViewField.path`` into an ArangoSearch link ``fields`` dict.
+
+    Pure, schema-level grammar for ``SearchViewField.path`` (FEAT-449
+    R15) — lives alongside the models it operates on so both
+    ``merger.py`` (merge-time validation) and ``graph_store.py``
+    (provisioning) share one source of truth without either importing a
+    "private" helper from the other.
+
+    Supports exactly ONE nesting level:
+        - ``"titulo"`` -> ``fields["titulo"] = {}``
+        - ``"versions[*].text"`` -> ``fields["versions"] = {"fields": {"text": {}}}``
+
+    ArangoSearch auto-expands array elements under a nested link — no
+    ``trackListPositions`` in v1 (view match positions are never used for
+    spans; spans always slice the stored payload).
+
+    Args:
+        fields: The ``fields`` sub-dict of a view link's properties,
+            mutated in place.
+        path: The field path from ``SearchViewField.path``.
+
+    Raises:
+        ValueError: If ``path`` uses more than one nesting level (e.g.
+            ``"a[*].b[*].c"``) or is otherwise malformed.
+    """
+    if "[*]." not in path:
+        if "[" in path or "]" in path or "." in path:
+            raise ValueError(
+                f"SearchViewField path {path!r} is malformed — expected a bare "
+                "field name or exactly one 'name[*].sub' nesting level."
+            )
+        fields[path] = {}
+        return
+
+    head, _, tail = path.partition("[*].")
+    if not head or not tail or "[*]." in tail or "[" in tail or "]" in tail:
+        raise ValueError(
+            f"SearchViewField path {path!r} exceeds the supported one-level "
+            "nesting grammar ('name' or 'name[*].sub')."
+        )
+    fields[head] = {"fields": {tail: {}}}
+
+
+def view_properties_match(existing: dict[str, Any], properties: dict[str, Any]) -> bool:
+    """Whether a live ArangoSearch view's declared ``links`` match ``properties``.
+
+    Compares only the ``links`` sub-dict we declare (``analyzers`` as sets,
+    ``fields`` structurally) — extra server-added keys (e.g.
+    ``includeAllFields``, ``storeValues``) are tolerated.
+
+    Args:
+        existing: The view description returned by ``connection.view(name)``.
+        properties: The properties this store would provision.
+
+    Returns:
+        ``True`` when every declared link's analyzers and fields already
+        match the live view.
+    """
+    existing_links = existing.get("links") or {}
+    wanted_links = properties.get("links") or {}
+    if set(existing_links) != set(wanted_links):
+        return False
+    for collection, wanted_link in wanted_links.items():
+        live_link = existing_links.get(collection) or {}
+        if set(live_link.get("analyzers") or []) != set(wanted_link.get("analyzers") or []):
+            return False
+        if (live_link.get("fields") or {}) != (wanted_link.get("fields") or {}):
+            return False
+    return True
+
+
 class OntologyDefinition(BaseModel):
     """Root model for a single ontology YAML layer.
 
@@ -311,6 +430,8 @@ class OntologyDefinition(BaseModel):
         entities: Entity definitions keyed by name.
         relations: Relation definitions keyed by name.
         traversal_patterns: Traversal pattern definitions keyed by name.
+        search_views: Declarative ArangoSearch view definitions keyed by
+            view name (FEAT-449 R15).
     """
 
     name: str
@@ -320,6 +441,7 @@ class OntologyDefinition(BaseModel):
     entities: dict[str, EntityDef] = Field(default_factory=dict)
     relations: dict[str, RelationDef] = Field(default_factory=dict)
     traversal_patterns: dict[str, TraversalPattern] = Field(default_factory=dict)
+    search_views: dict[str, SearchViewDef] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -339,6 +461,10 @@ class MergedOntology(BaseModel):
         entities: All entity definitions.
         relations: All relation definitions.
         traversal_patterns: All traversal patterns.
+        search_views: All declarative ArangoSearch view definitions,
+            keyed by view name (FEAT-449 R15). Union-by-name across
+            layers — a later layer's same-named view replaces an
+            earlier one wholesale.
         layers: List of YAML file paths that were merged.
         merge_timestamp: When the merge was performed.
     """
@@ -348,6 +474,7 @@ class MergedOntology(BaseModel):
     entities: dict[str, EntityDef]
     relations: dict[str, RelationDef]
     traversal_patterns: dict[str, TraversalPattern]
+    search_views: dict[str, SearchViewDef] = Field(default_factory=dict)
     layers: list[str]
     merge_timestamp: datetime
 
@@ -388,17 +515,13 @@ class MergedOntology(BaseModel):
 
         lines.append("\nRelations:")
         for name, rel in self.relations.items():
-            lines.append(
-                f"  - {rel.from_entity} --[{name}]--> {rel.to_entity}"
-            )
+            lines.append(f"  - {rel.from_entity} --[{name}]--> {rel.to_entity}")
 
         lines.append("\nKnown traversal patterns:")
         for name, pattern in self.traversal_patterns.items():
             lines.append(f"  - {name}: {pattern.description}")
             if pattern.trigger_intents:
-                lines.append(
-                    f"    triggers: {', '.join(pattern.trigger_intents)}"
-                )
+                lines.append(f"    triggers: {', '.join(pattern.trigger_intents)}")
 
         return "\n".join(lines)
 

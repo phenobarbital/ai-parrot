@@ -271,11 +271,77 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
-**`text_es` spike**:
+- `schema.py`: added `SearchViewField`/`SearchViewLink`/`SearchViewDef`
+  (all `extra="forbid"`) exactly per spec §2; added
+  `search_views: dict[str, SearchViewDef] = Field(default_factory=dict)`
+  to both `OntologyDefinition` and `MergedOntology` (defaulted, but every
+  `MergedOntology(...)` call site passes it explicitly per the contract
+  note).
+- `merger.py`: added `_merge_search_views` (name-keyed whole-view
+  replacement, mirroring `_merge_patterns`' override semantics) called
+  from all three merge entry points (`merge`, `merge_definitions`,
+  `merge_with_overlay`). `_validate_integrity` now also checks every
+  `search_views` link's `entity` exists and every field `path` matches
+  the one-level grammar (reuses `graph_store._merge_link_field` as the
+  single source of truth for the grammar, catching its `ValueError` and
+  re-raising as `OntologyIntegrityError` naming the view).
+- `graph_store.py`: added module-level `_merge_link_field(fields, path)`
+  and `_view_matches(existing, properties)`, plus instance method
+  `_ensure_views(self, db, ctx)` — drives `db._connection` directly
+  (`.views()`, `.create_view()`, `.view()`, `.replace_view()`), NEVER the
+  asyncdb `create_arangosearch_view()` wrapper (read
+  `wiki/arango_store.py:343-400` first, per instructions). Wired as
+  step 6 at the end of `initialize_tenant`, after named-graph creation;
+  updated the docstring's step list. Per-view `try/except Exception` →
+  `logger.warning` + continue, mirroring the existing collection-creation
+  loops in the same method (an intentional broad catch, matching the
+  file's existing failure-posture convention — not narrowed further).
+- `__init__.py`: NOT modified — the package's existing `__all__` does not
+  re-export `OntologyDefinition`/`EntityDef`/`TraversalPattern` either, so
+  adding `SearchViewDef` alone would be inconsistent; left the minimal
+  re-export surface as-is.
+- Added `packages/ai-parrot/tests/knowledge/ontology/test_search_views.py`
+  covering: layered merge (later-layer-wins wholesale replacement),
+  unknown-entity `OntologyIntegrityError`, two-level-nesting rejection at
+  merge time, YAML-without-`search_views` still parsing, the
+  `_merge_link_field` path grammar (bare/one-level/malformed), and
+  `_ensure_views` idempotency (create path, skip-on-match path,
+  replace-on-drift path, and a raising connection that only logs a
+  warning and never raises).
+- `pytest packages/ai-parrot/tests/knowledge/ontology/ -v` → 196 passed
+  (10 new + 186 pre-existing, all green). `ruff check` on the three
+  modified source files: the only NEW lint entry versus the pre-edit
+  baseline is one `BLE001` (`except Exception` inside `_ensure_views`),
+  which is a deliberate, spec-mandated failure posture identical to the
+  method's existing collection/edge/graph-creation `try/except Exception`
+  blocks a few lines above it (same file, same convention, already
+  present before this task) — not narrowed, to match spec §3 M2's
+  explicit "mirror initialize_tenant's collection loop" instruction.
+- Confirmed via the full `pytest packages/ai-parrot/tests/knowledge/
+  ontology/` run (196 passed) that base/knowledge/field_services and
+  other bundled ontology YAMLs still load unchanged — `search_views`
+  defaults to `{}` everywhere it is not declared.
+- Environment note (not a code change): this fresh worktree was missing
+  the repo's compiled Cython extensions (`*.so` under `packages/*/src/`,
+  gitignored build artifacts) that the shared `.venv` depends on
+  transitively (`parrot.utils.types`, etc.), which blocked test
+  collection entirely. Copied the existing compiled `.so` files from the
+  main checkout into the worktree (no source changes) so `pytest` could
+  run; this is local-environment bootstrapping only, not part of the
+  feature diff.
 
-**Deviations from spec**: none | describe if any
+**`text_es` spike**: DEFERRED. This is an autonomous, non-interactive
+worker session with no VPN access to the dev ArangoDB tenant, so
+`connection.analyzers()` could not be run against a live server. Per the
+task's own instruction this does not block the task — TASK-2494 (which
+declares the actual `text_es`/`text_en` view) inherits the same
+constraint; operator follow-up: confirm analyzer availability before/at
+that task's re-ingest step, falling back to creating the analyzer or
+using `text_en` if `text_es` is absent.
+
+**Deviations from spec**: none beyond the `__init__.py` non-change noted
+above (which keeps the module consistent with its pre-existing minimal
+re-export surface rather than introducing a new asymmetry).

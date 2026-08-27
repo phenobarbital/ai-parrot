@@ -233,10 +233,48 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- Created `parrot_tools/legal/boe/hashing.py` (`HASH_NORM_VERSION`,
+  `normalize_for_hash`, `seal_hash`) exactly per spec §3 M1.
+- `ArticleVersion` gains `content_hash: str | None` and
+  `hash_norm_version: int | None` after `derived`, plus a
+  `model_validator(mode="after")` enforcing the three-way None-equivalence.
+- `parser.py::_parse_bloque` now normalizes the extracted body text before
+  storing it, seals the hash over the stored (normalized) text, and passes
+  both fields into `ArticleVersion(...)`. `supresion` versions still carry
+  `text=None`/no hash.
+- Exported `HASH_NORM_VERSION`, `normalize_for_hash`, `seal_hash` from
+  `parrot_tools/legal/boe/__init__.py`.
+- Added `test_boe_hashing.py` (normalize/seal unit tests + validator
+  rejection test + fixture-corpus hash assertion) and extended
+  `test_boe_parser.py` with hash-presence/absence assertions (no existing
+  assertions were loosened).
+- `pytest packages/ai-parrot-tools/tests/legal/ -v` → 76 passed.
+  `ruff check packages/ai-parrot-tools/src/parrot_tools/legal/` → clean
+  (2 auto-fixable nits fixed: `__all__` sort order, unnecessary forward-ref
+  quotes on the validator return type).
+- **Re-ingest**: DEFERRED. This is an autonomous, non-interactive worker
+  session with no VPN access to the dev ArangoDB tenant, so
+  `await sync_boe(tenant_id, since=None)` was NOT executed against a live
+  server. Operator follow-up: run the full refresh (`since=None`) against
+  the dev tenant once VPN access is available (or `ENV=prod` per the
+  spec's fallback note) so every stored version gets sealed hashes.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One file outside this task's declared "Files to
+Create/Modify" list was touched:
+`packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py`. Its
+`_version_row()` test helper builds raw `ArticleVersion` dicts fed straight
+into `article_in_force()`/`ArticleVersion(**rows[0])`; the new after-validator
+made every non-`supresion` row missing `content_hash`/`hash_norm_version`
+fail Pydantic validation, breaking 4 pre-existing tests
+(`test_selects_correct_version_of_three`, `test_boundary_valid_from_inclusive`,
+`test_boundary_valid_to_exclusive_selects_next`,
+`test_currently_in_force_has_null_valid_to`). Fixed by having the helper
+seal a real hash (via the new `hashing.seal_hash`) when `text` is present,
+mirroring the parser's own contract — a direct, required consequence of the
+`ArticleVersion` schema change, not a scope-creep edit.
+`test_boe_datasource.py` did NOT need changes: it never asserts individual
+version-dict fields (only projects `articulo_key`/`versions` field sets), so
+nothing there was invalidated by the new fields.

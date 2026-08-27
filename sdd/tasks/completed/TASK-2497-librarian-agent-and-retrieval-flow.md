@@ -249,10 +249,112 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+**`run_flow` vs. direct sequential invocation**: `answer()` runs the six
+stages as direct, sequential async calls — NOT via
+`AgentCrew.run_flow`. Read `crew.py:975-1040` (`add_tool_node`) and
+`tool_node.py:168-320` (template placeholder resolution) before deciding:
+flow mode passes data between `ToolNode`s via `{input}` /
+`{nodes.<id>.output}` STRING-templated placeholders resolved into a
+single tool call's args/kwargs. This pipeline's fan-in shape doesn't fit
+that: `dossier_build` needs BOTH `graph_retrieve`'s hits AND
+`as_of_extract`'s `as_of` AND the tenant `store`/`ctx` (none of which are
+plain strings — `store`/`ctx` are live objects, `hits` is a list of
+dicts containing `ArticleVersion` instances); `span_verify` needs the
+draft, the retrieval_set, `as_of`, `materias`, and `execution_id`
+together. The task's own given Test Specification also calls
+`answer(query, agent=..., store=..., ctx=..., log=...)` directly (not
+`crew.run_flow(...)`), confirming `answer()` is meant to be a plain
+orchestrating function. `build_legal_librarian_crew()` still builds a
+STRUCTURALLY faithful `AgentCrew` — all six stages registered (5
+`ToolNode`s via thin `_CallableTool` adapters + the librarian agent node,
+manually added to `workflow_graph` too, since `add_agent()` alone only
+registers into `crew.agents` — confirmed by reading `crew.py:198-292`:
+only agents passed via the `agents=[...]` constructor list get a
+`workflow_graph` entry automatically) with the linear `§2` dependency
+chain wired via `.dependencies`. Verified structurally with a smoke
+check (`crew.workflow_graph` shows all 6 nodes with the expected
+dependency sets) — not exercised by any test (no AC requires it, and
+`AgentCrew()` construction has real side effects — a live
+`GoogleGenAIClient` instantiation — that a unit test shouldn't depend on
+without mocking; confirmed via `auto_configure=False` matching the
+existing `test_crew_tool_node_regression.py` pattern that constructing
+still works without credentials).
+
+**Other implementation notes**:
+- `agent.py`: `LegalLibrarianAgent(Agent)` passes `system_prompt=` through
+  `__init__` (NOT an `system_prompt_template` class-attribute override —
+  verified `bots/chatbot.py`'s docstring: a custom `system_prompt` opts
+  out of the composable `PromptBuilder` templating and is used literally,
+  the safer path given `system_prompt_template`'s `Template($var)`
+  substitution expects specific placeholders). `agent_tools()` returns
+  `[]` (read-only). `draft()` calls `self.ask(prompt,
+  structured_output=DraftAnswer, use_conversation_history=False)` —
+  stateless per turn.
+- `flow.py` stages: `as_of_extract` (see deviation below),
+  `graph_retrieve` (explicit `articulo_key`-shaped substring regex over
+  the query, validated via `is_valid_boe_id`, resolved via
+  `article_in_force`; then `search_articles`, deduped by `articulo_key`),
+  `dossier_build` (builds `PayloadEntry`s + the prompt enumeration +
+  head/tail truncation at >4000 chars per spec §3 M6, plus a
+  `payload_key -> score` map used only for final dossier ordering),
+  `ground` (builds a synthetic `EvidenceIndex` from dossier payloads via
+  `ToolCall`s, scores the joined `reading_guide` text, maps contradicted
+  atoms back to their originating sentence via offset tracking, suppresses
+  only that sentence — the span/dossier stays valid).
+- Final dossier ordering (`_sort_dossier`): explicit-id (`basis ==
+  "traversal"`) spans first, then `basis == "retrieval"` by BM25 score
+  descending, stable tiebreak by payload key — applied as a
+  post-processing step in `answer()` after `SpanVerifier.verify()`
+  returns (the verifier itself stays score-agnostic per its TASK-2495
+  contract; `SpanRef` carries no `score` field).
+- `pytest packages/ai-parrot-tools/tests/legal/ -v` → 126 passed (18 new:
+  5 agent + 8 flow/dossier/graph_retrieve + 5 ground/atom-contradicted on
+  top of the 108 from TASK-2492/2495/2496). `ruff check
+  packages/ai-parrot-tools/src/parrot_tools/legal/librarian/` → clean.
+
+**Deviations from spec**: two, both surfaced while reconciling the
+prose module docstring against concrete, executable signals — same
+principle applied in TASK-2495/2496 (the task's own Test
+Specification/comments are authoritative since they must literally pass):
+1. **`as_of_extract`'s LLM-fallback trigger narrowed to genuinely
+   ambiguous (>1 date) queries.** Spec §3 M5/M6 text says
+   `extract_as_of` calls the LLM fallback for "zero or more-than-one
+   distinct dates." The task's OWN given `FakeAgent.ask` in the Test
+   Specification unconditionally `raise AssertionError("as_of fallback
+   must not be needed")`, and `test_flow_no_encontre_on_empty_retrieval`
+   passes a ZERO-date query through `answer()` with that exact
+   `FakeAgent` — meaning `answer()` must NOT call the LLM for a
+   zero-date query, contradicting the literal "zero dates -> LLM call"
+   reading. Resolved by keeping TASK-2496's `extract_as_of` UNCHANGED
+   (its own contract and tests remain valid — zero dates still triggers
+   its LLM fallback when called directly) and instead implementing
+   `flow.py`'s `as_of_extract` stage with its own narrower trigger:
+   `regex_dates(query)` is checked directly; 0 dates -> default straight
+   to today (no LLM call — the overwhelmingly common "no date mentioned"
+   case doesn't warrant one); 1 date -> use it; >1 dates -> delegate to
+   `extract_as_of` (the one case where its LLM fallback is actually
+   invoked). Zero risk to TASK-2496: no file it owns was touched.
+2. **`security_advisor.py` codebase-contract path was stale.** The
+   contract cited `packages/ai-parrot/src/parrot/agents/
+   security_advisor.py` — that file does not exist there; the actual
+   grounded-agent precedent lives at the repo-root `agents/
+   security_advisor.py` (a plugins-style example agent, not part of the
+   installed `parrot` package). Read it at its real location before
+   modeling `LegalLibrarianAgent`'s class layout
+   (`class X(Agent): agent_id, ...; def agent_tools(self): ...`) — no
+   functional impact, just a path correction worth flagging per this
+   task's own "verify with file:line anchors first" instruction.
+
+**Environment note** (not a code change): `LegalLibrarianAgent()`
+construction loads a real HuggingFace prompt-injection guardrail model
+(`protectai/deberta-v3-base-prompt-injection`) as part of `BasicAgent`'s
+default init path — adds a one-time ~8s cost the first time any test in
+this file instantiates the agent. Not something this task's scope covers
+fixing (it's `BasicAgent`'s existing default behavior, unrelated to the
+librarian); noted here only because it explains
+`test_librarian_agent.py`'s slower wall-clock time relative to the rest
+of the `legal/` suite.

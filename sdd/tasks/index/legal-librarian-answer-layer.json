@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-27T02:02:02Z",
-  "completed_at": null,
+  "completed_at": "2026-08-27T10:13:20+00:00",
   "tasks": [
     {
       "id": "TASK-2492",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches only parrot_tools/legal/boe/ (hashing.py, models.py, parser.py) and its tests; shares no files with TASK-2493 (core ontology). Can run in a separate worktree alongside TASK-2493.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2492-hash-sealing-boe-reingest.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:07:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2492-hash-sealing-boe-reingest.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2493",
@@ -32,16 +33,17 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Core-only change (ontology/schema.py, merger.py, graph_store.py); domain-agnostic, no legal files. Independent of TASK-2492.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2493-ontology-search-views-schema.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:13:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2493-ontology-search-views-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2494",
@@ -50,16 +52,19 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-2493"],
+      "depends_on": [
+        "TASK-2493"
+      ],
       "parallel": false,
       "parallelism_notes": "Requires SearchViewDef from TASK-2493 to parse the YAML.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2494-legal-ontology-v1-1-view-pattern-suppression.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:17:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2494-legal-ontology-v1-1-view-pattern-suppression.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2495",
@@ -68,16 +73,20 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2492", "TASK-2494"],
+      "depends_on": [
+        "TASK-2492",
+        "TASK-2494"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports seal_hash (TASK-2492) and writes to the span_suppressions collection declared by TASK-2494.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2495-librarian-contracts-span-verifier.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:23:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2495-librarian-contracts-span-verifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2496",
@@ -86,16 +95,19 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2494"],
+      "depends_on": [
+        "TASK-2494"
+      ],
       "parallel": false,
       "parallelism_notes": "Reads the search_articles pattern from TASK-2494; edits boe/models.py and boe/queries.py which TASK-2492 also touches (models.py) — sequential in the same worktree.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2496-search-articles-and-as-of-extraction.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:27:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2496-search-articles-and-as-of-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2497",
@@ -104,16 +116,20 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2495", "TASK-2496"],
+      "depends_on": [
+        "TASK-2495",
+        "TASK-2496"
+      ],
       "parallel": false,
       "parallelism_notes": "Composes the verifier, suppression log, search_articles and extract_as_of.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2497-librarian-agent-and-retrieval-flow.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:43:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2497-librarian-agent-and-retrieval-flow.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2498",
@@ -122,16 +138,21 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-2493", "TASK-2494", "TASK-2496"],
+      "depends_on": [
+        "TASK-2493",
+        "TASK-2494",
+        "TASK-2496"
+      ],
       "parallel": false,
       "parallelism_notes": "Reuses the token guard from TASK-2496 and the view/pattern from TASK-2494; independent of TASK-2495/2497 but kept sequential per the spec's per-spec worktree strategy.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2498-legal-wiki-namespace-adapter.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T02:57:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2498-legal-wiki-namespace-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2499",
@@ -140,16 +161,25 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2492", "TASK-2493", "TASK-2494", "TASK-2495", "TASK-2496", "TASK-2497", "TASK-2498"],
+      "depends_on": [
+        "TASK-2492",
+        "TASK-2493",
+        "TASK-2494",
+        "TASK-2495",
+        "TASK-2496",
+        "TASK-2497",
+        "TASK-2498"
+      ],
       "parallel": false,
       "parallelism_notes": "Final gate over every module.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2499-integration-tests-invariant-e2e.md"
+      "started_at": "2026-08-27T02:03:21+00:00",
+      "completed_at": "2026-08-27T03:06:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2499-integration-tests-invariant-e2e.md",
+      "verification": "verified"
     }
   ]
 }

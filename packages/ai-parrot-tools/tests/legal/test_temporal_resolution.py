@@ -12,6 +12,7 @@ import pytest
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.schema import TenantContext
+from parrot_tools.legal.boe.hashing import HASH_NORM_VERSION, seal_hash
 from parrot_tools.legal.boe.queries import article_in_force
 
 
@@ -54,6 +55,8 @@ def _version_row(n: int, valid_from: str, valid_to: str | None, text: str = "tex
         "kind": "redaccion",
         "source": "boe_consolidada",
         "derived": False,
+        "content_hash": seal_hash(text) if text is not None else None,
+        "hash_norm_version": HASH_NORM_VERSION if text is not None else None,
     }
 
 

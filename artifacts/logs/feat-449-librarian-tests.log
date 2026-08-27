@@ -1,0 +1,748 @@
+=== FEAT-449 legal-librarian-answer-layer — evidence log ===
+Generated: 2026-08-27T09:29:07Z (post code-review remediation round 2)
+
+### pytest packages/ai-parrot-tools/tests/legal/ -v ###
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/jesuslara/proyectos/ai-parrot/.venv/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.14.2, aiohttp-1.1.1, assume-2.4.3, asyncio-1.4.0, mock-3.15.1, xdist-3.3.1, Faker-40.36.0, hypothesis-6.165.10, benchmark-5.2.3
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 150 items
+
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_extract_as_of_regex_first[vigente a 2021-06-01-expected0] PASSED [  0%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_extract_as_of_regex_first[el 15/03/2020 qu\xe9 dec\xeda-expected1] PASSED [  1%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_extract_as_of_regex_first[a 3 de Marzo de 2019-expected2] PASSED [  2%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_extract_as_of_regex_first[\xbfqu\xe9 dec\xeda el art. 5 el 3 de marzo de 2019?-expected3] PASSED [  2%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_falls_back_to_llm_when_ambiguous PASSED [  3%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_falls_back_to_llm_when_no_date_found PASSED [  4%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_invalid_calendar_date_ignored PASSED [  4%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_regex_dates_iso PASSED [  5%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_regex_dates_numeric_es_day_first PASSED [  6%]
+packages/ai-parrot-tools/tests/legal/test_as_of.py::test_regex_dates_long_es_case_insensitive PASSED [  6%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_extract_returns_extraction_result PASSED [  7%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_field_projection PASSED [  8%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_articulo_field_projection_returns_only_articulos PASSED [  8%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_parser_errors_surface PASSED [  9%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_list_fields PASSED [ 10%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_since_filter_excludes_older_norms PASSED [ 10%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_sends_identifying_user_agent PASSED [ 11%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_caches_parsed_norm_across_calls PASSED [ 12%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_no_boe_ids_returns_empty_result PASSED [ 12%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_extract_relations_returns_modifica_and_deroga PASSED [ 13%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_extract_relations_reuses_parse_cache PASSED [ 14%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_extract_relations_no_boe_ids_returns_empty PASSED [ 14%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_extract_relations_surfaces_fetch_errors PASSED [ 15%]
+packages/ai-parrot-tools/tests/legal/test_boe_datasource.py::TestBOEDataSource::test_extract_relations_surfaces_parser_errors PASSED [ 16%]
+packages/ai-parrot-tools/tests/legal/test_boe_hashing.py::test_normalize_for_hash_nfc_newlines_only PASSED [ 16%]
+packages/ai-parrot-tools/tests/legal/test_boe_hashing.py::test_seal_hash_is_sha256_of_utf8 PASSED [ 17%]
+packages/ai-parrot-tools/tests/legal/test_boe_hashing.py::test_article_version_carries_sealed_hash PASSED [ 18%]
+packages/ai-parrot-tools/tests/legal/test_boe_hashing.py::test_article_version_validator_rejects_partial_hash PASSED [ 18%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_pipeline_ingests_without_errors PASSED [ 19%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_second_run_is_incremental PASSED [ 20%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_traversal_passes_aql_validation PASSED [ 20%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_amendment_chain_end_to_end[as_of0-Ministerio de Hacienda y Administraciones P\xfablicas] PASSED [ 21%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_amendment_chain_end_to_end[as_of1-Ministerio de Hacienda y Administraciones P\xfablicas] PASSED [ 22%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_amendment_chain_end_to_end[as_of2-que se entender\xe1 otorgada si en el plazo de siete d\xedas h\xe1biles] PASSED [ 22%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_amendment_chain_end_to_end[as_of3-Ministerio de Hacienda y Funci\xf3n P\xfablica] PASSED [ 23%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_amendment_chain_end_to_end[as_of4-Ministerio de Hacienda y Funci\xf3n P\xfablica] PASSED [ 24%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_boundaries PASSED [ 24%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_before_entry_into_force_returns_none PASSED [ 25%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_no_llm_calls_structural PASSED [ 26%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestBOEIntegration::test_no_llm_calls_during_run PASSED [ 26%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestProvenanceEdgeSync::test_creates_modifica_and_deroga_edges PASSED [ 27%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestProvenanceEdgeSync::test_no_boe_ids_creates_no_edges PASSED [ 28%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestProvenanceEdgeSync::test_fetch_failure_surfaces_as_error_not_silent_empty PASSED [ 28%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveArangoSearchViews::test_search_view_provisioned_idempotently SKIPPED [ 29%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveSearchArticlesTemporalFilter::test_search_articles_live_temporal_filter SKIPPED [ 30%]
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveNamespaceFederation::test_namespace_exposes_legal_corpus SKIPPED [ 30%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_norma_keyed_by_boe_id PASSED [ 31%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_single_version_article PASSED [ 32%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_version_chain_has_no_gaps PASSED [ 32%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_supresion_has_null_text PASSED [ 33%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_all_versions_are_boe_sourced_and_not_derived PASSED [ 34%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_non_supresion_versions_carry_sealed_hash PASSED [ 34%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_malformed_reports_error_not_silence PASSED [ 35%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_norma_key_is_normalized_boe_id PASSED [ 36%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_articulo_keyed_by_norma_and_article PASSED [ 36%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_modifica_relations_extracted PASSED [ 37%]
+packages/ai-parrot-tools/tests/legal/test_boe_parser.py::TestBOEParser::test_deroga_relations_extracted PASSED [ 38%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_import_registers_source PASSED [ 38%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_sync_boe_is_async PASSED [ 39%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_no_scheduler_dependency PASSED [ 40%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_sync_boe_signature PASSED [ 40%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_sync_boe_passes_legal_domain PASSED [ 41%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_sync_boe_never_raises_when_provenance_sync_fails PASSED [ 42%]
+packages/ai-parrot-tools/tests/legal/test_boe_registration.py::TestBOERegistration::test_sync_boe_propagates_relation_fetch_errors PASSED [ 42%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_normalize_canonical PASSED [ 43%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_normalize_whitespace_and_case PASSED [ 44%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_normalize_rejects_malformed PASSED [ 44%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_is_valid_never_raises PASSED [ 45%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_composite PASSED [ 46%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_normalizes_whitespace PASSED [ 46%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_collapses_and_trims_whitespace PASSED [ 47%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_transliterates_accented_designators PASSED [ 48%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_sanitizes_multi_word_accented_designator PASSED [ 48%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestBOEIds::test_article_key_strips_disallowed_punctuation PASSED [ 49%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_ascii_passthrough PASSED [ 50%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_transliterates_accents PASSED [ 50%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_transliterates_ordinal_indicator PASSED [ 51%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_collapses_disallowed_run_to_single_underscore PASSED [ 52%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_strips_leading_and_trailing_underscores PASSED [ 52%]
+packages/ai-parrot-tools/tests/legal/test_ids.py::TestSanitizeKeyComponent::test_empty_or_all_disallowed_falls_back_to_underscore PASSED [ 53%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_has_no_write_tools PASSED [ 54%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_r2_invariant_in_class_docstring PASSED [ 54%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_system_prompt_forbids_offsets_and_unlisted_keys PASSED [ 55%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_low_temperature PASSED [ 56%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_agent_uses_custom_system_prompt PASSED [ 56%]
+packages/ai-parrot-tools/tests/legal/test_librarian_agent.py::test_draft_is_stateless_no_conversation_history PASSED [ 57%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_reingest_seals_hashes_end_to_end PASSED [ 58%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_librarian_answers_with_anchored_guide PASSED [ 58%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_librarian_honest_not_found PASSED [ 59%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_fabricated_span_cannot_survive PASSED [ 60%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_mangled_quote_cannot_survive PASSED [ 60%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_tampered_payload_cannot_survive PASSED [ 61%]
+packages/ai-parrot-tools/tests/legal/test_librarian_e2e.py::test_no_vector_code_paths PASSED [ 62%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestGraphRetrieve::test_explicit_boe_id_resolved_first PASSED [ 62%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestDossierBuild::test_dossier_build_order_and_truncation PASSED [ 63%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_prunes_fabricated_payload_key PASSED [ 64%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_prunes_mangled_quote PASSED [ 64%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_no_encontre_on_empty_retrieval PASSED [ 65%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_flow_ground_suppresses_contradicted_atom PASSED [ 66%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestAnswerFlow::test_as_of_equals_graph_retrieve_date PASSED [ 66%]
+packages/ai-parrot-tools/tests/legal/test_librarian_flow.py::TestBuildLegalLibrarianCrew::test_registers_all_six_nodes_with_expected_dependencies PASSED [ 67%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_span_key_format PASSED [ 68%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_legal_answer_defaults PASSED [ 68%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_reading_note_requires_at_least_one_span PASSED [ 69%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_reading_note_requires_at_least_one_span PASSED [ 70%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_span_is_key_and_quote_only PASSED [ 70%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_payload_entry_shape PASSED [ 71%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_suppression_record_reason_is_closed_literal PASSED [ 72%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_draft_answer_and_conflict_note_roundtrip PASSED [ 72%]
+packages/ai-parrot-tools/tests/legal/test_librarian_models.py::test_conflict_note_final_shape PASSED [ 73%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_token_guard PASSED [ 74%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_token_guard_skipped_for_short_queries PASSED [ 74%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_search_articles_temporal_filter PASSED [ 75%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_search_articles_binds_and_pattern PASSED [ 76%]
+packages/ai-parrot-tools/tests/legal/test_search_articles.py::test_missing_pattern_raises_key_error PASSED [ 76%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_hash_mismatch_prunes PASSED [ 77%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_quote_mismatch_prunes PASSED [ 78%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_span_verifier_unknown_key_prunes PASSED [ 78%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_offsets_are_first_occurrence_and_slice_equals_quote PASSED [ 79%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_reading_note_loses_all_anchors_is_suppressed PASSED [ 80%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_conflict_with_pruned_side_dropped PASSED [ 80%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_conflict_with_both_sides_surviving_kept PASSED [ 81%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_empty_dossier_is_no_encontre PASSED [ 82%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_reading_order_filtered_silently PASSED [ 82%]
+packages/ai-parrot-tools/tests/legal/test_span_verifier.py::test_dossier_deduped_by_span_key PASSED [ 83%]
+packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_suppression_log_append_only PASSED [ 84%]
+packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_append_inserts_into_span_suppressions PASSED [ 84%]
+packages/ai-parrot-tools/tests/legal/test_suppression_log.py::test_suppression_id_increments_per_instance PASSED [ 85%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_binds_as_of_and_key PASSED [ 86%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_returns_none_when_no_version PASSED [ 86%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_uses_pattern_from_ontology_not_inline_aql PASSED [ 87%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_no_python_date_comparison PASSED [ 88%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_selects_correct_version_of_three PASSED [ 88%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_boundary_valid_from_inclusive PASSED [ 89%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_boundary_valid_to_exclusive_selects_next PASSED [ 90%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_currently_in_force_has_null_valid_to PASSED [ 90%]
+packages/ai-parrot-tools/tests/legal/test_temporal_resolution.py::TestTemporalResolution::test_missing_pattern_raises_key_error PASSED [ 91%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestReadOnly::test_write_methods_raise PASSED [ 92%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestReadOnly::test_search_vector_returns_empty_never_raises PASSED [ 92%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestSearchFts::test_search_fts_stub_shape PASSED [ 93%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestSearchFts::test_search_fts_non_articulo_category_returns_empty PASSED [ 94%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_returns_body_and_title PASSED [ 94%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_excludes_body_when_requested PASSED [ 95%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestGetPage::test_get_page_missing_returns_none PASSED [ 96%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestListPages::test_list_pages_includes_both_categories_by_default PASSED [ 96%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestListPages::test_list_pages_filters_by_category PASSED [ 97%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestNeighbors::test_neighbors_finds_incoming_edge PASSED [ 98%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestLintApi::test_lint_methods_return_empty PASSED [ 98%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestStats::test_stats_counts PASSED [ 99%]
+packages/ai-parrot-tools/tests/legal/test_wiki_store.py::TestFactory::test_factory_raises_when_database_unbuilt PASSED [100%]
+
+=============================== warnings summary ===============================
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveArangoSearchViews::test_search_view_provisioned_idempotently
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveSearchArticlesTemporalFilter::test_search_articles_live_temporal_filter
+packages/ai-parrot-tools/tests/legal/test_boe_integration.py::TestLiveNamespaceFederation::test_namespace_exposes_legal_corpus
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/_pytest/runner.py:250: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+  Plugin: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/conftest.py, Hook: pytest_runtest_setup
+  Skipped: ARANGODB_HOST/TEST_ARANGO_HOST not set — live ArangoDB tests skipped
+  For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+    lambda: runtest_hook(item=item, **kwds),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================== 147 passed, 3 skipped, 3 warnings in 9.56s ==================
+
+### pytest packages/ai-parrot/tests/knowledge/ontology/ -v ###
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/jesuslara/proyectos/ai-parrot/.venv/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot
+configfile: pyproject.toml
+plugins: anyio-4.14.2, aiohttp-1.1.1, assume-2.4.3, asyncio-1.4.0, mock-3.15.1, xdist-3.3.1, Faker-40.36.0, hypothesis-6.165.10, benchmark-5.2.3
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 206 items
+
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestListConcepts::test_returns_200_for_curator PASSED [  0%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestListConcepts::test_returns_403_for_unauthenticated PASSED [  0%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestProposeConcept::test_curator_can_propose PASSED [  1%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestProposeConcept::test_synonym_conflict_returns_409 PASSED [  1%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestProposeConcept::test_cycle_error_returns_422 PASSED [  2%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestRoleEnforcement::test_curator_cannot_approve PASSED [  2%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestRoleEnforcement::test_reviewer_can_approve PASSED [  3%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestRoleEnforcement::test_curator_cannot_deprecate PASSED [  3%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestRoleEnforcement::test_admin_can_deprecate PASSED [  4%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestRoleEnforcement::test_admin_can_restore PASSED [  4%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestInvalidTransition::test_state_machine_error_returns_422 PASSED [  5%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestIsaEdge::test_propose_isa_edge_returns_201 PASSED [  5%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_http.py::TestPagination::test_limit_and_offset_applied PASSED [  6%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestConceptRow::test_valid_construction PASSED [  6%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestConceptRow::test_rejects_invalid_state PASSED [  7%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestConceptRow::test_extra_fields_forbidden PASSED [  7%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestConceptRow::test_optional_fields_default_to_none PASSED [  8%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestConceptRow::test_all_valid_states PASSED [  8%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestConceptRow::test_synonyms_list PASSED [  9%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestIsaEdgeRow::test_valid_construction PASSED [  9%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestIsaEdgeRow::test_tenant_tier PASSED [ 10%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestIsaEdgeRow::test_rejects_invalid_parent_tier PASSED [ 10%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestIsaEdgeRow::test_rejects_invalid_state PASSED [ 11%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestIsaEdgeRow::test_extra_fields_forbidden PASSED [ 11%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestCascadeAlert::test_valid_construction PASSED [ 12%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestCascadeAlert::test_empty_affected_edge_ids PASSED [ 12%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_models.py::TestCascadeAlert::test_extra_fields_forbidden PASSED [ 13%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestReconciliationClean::test_no_discrepancies_when_in_sync PASSED [ 13%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestReconciliationClean::test_empty_both_sides_is_clean PASSED [ 14%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestForwardScan::test_detects_missing_arango_doc PASSED [ 14%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestForwardScan::test_detects_missing_isa_edge PASSED [ 15%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestReverseScan::test_detects_orphan_arango_doc PASSED [ 15%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestReverseScan::test_detects_orphan_isa_edge PASSED [ 16%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestNoAutoRepair::test_graph_store_not_written_during_reconcile PASSED [ 16%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_reconcile.py::TestInFlightFilter::test_in_flight_rows_excluded PASSED [ 16%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedConceptsBasic::test_seeds_entities_from_yaml PASSED [ 17%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedConceptsBasic::test_returns_zero_for_empty_yaml PASSED [ 17%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedConceptsBasic::test_asserted_by_includes_file_hash PASSED [ 18%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedConceptsBasic::test_raises_for_missing_file PASSED [ 18%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedConceptsBasic::test_seeds_isa_edge_when_parent_defined PASSED [ 19%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedIdempotency::test_skips_existing_concepts PASSED [ 19%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedIdempotency::test_seed_twice_same_tenant_idempotent PASSED [ 20%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_seed.py::TestSeedIdempotency::test_synonym_conflict_is_skipped_gracefully PASSED [ 20%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_propose_to_pending_review PASSED [ 21%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_propose_to_approved PASSED [ 21%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_pending_review_to_approved PASSED [ 22%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_approved_to_deprecated PASSED [ 22%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_deprecated_to_proposed_restore PASSED [ 23%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_rejected_to_proposed_restore PASSED [ 23%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_rejected_approve_fails PASSED [ 24%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_deprecated_approve_fails PASSED [ 24%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestValidateTransition::test_isa_edge_transition PASSED [ 25%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestConceptCatalogServiceInit::test_init_stores_pool_and_logger PASSED [ 25%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestProposeConcept::test_creates_row_and_returns_uuid PASSED [ 26%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestProposeConcept::test_synonym_collision_raises PASSED [ 26%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestStateMachine::test_approve_from_proposed_succeeds PASSED [ 27%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestStateMachine::test_approve_from_rejected_fails PASSED [ 27%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestStateMachine::test_reject_from_proposed PASSED [ 28%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestStateMachine::test_deprecate_from_approved_returns_cascade PASSED [ 28%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestIsaEdge::test_cross_tier_framework_allowed PASSED [ 29%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestIsaEdge::test_cycle_detection_raises PASSED [ 29%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestGetLiveConcepts::test_returns_approved_concepts PASSED [ 30%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_service.py::TestGetLiveConcepts::test_returns_empty_when_no_concepts PASSED [ 30%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestRunOnce::test_returns_zero_when_outbox_empty PASSED [ 31%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestRunOnce::test_drains_rows_and_returns_count PASSED [ 31%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestRunOnce::test_marks_processed_at_after_success PASSED [ 32%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestRunOnce::test_unknown_operation_skips_row PASSED [ 32%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestOpInvalidate::test_publishes_to_redis_channel PASSED [ 33%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestOpPublish::test_upserts_concept_node_with_pg_concept_id PASSED [ 33%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestOpPublish::test_creates_isa_edge_for_edge_payload PASSED [ 33%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestOpPublish::test_publish_also_triggers_invalidation PASSED [ 34%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestOpDeprecate::test_soft_deletes_concept_node PASSED [ 34%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestOpDeprecate::test_soft_deletes_isa_edge PASSED [ 35%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestDLQ::test_increments_attempts_on_failure PASSED [ 35%]
+packages/ai-parrot/tests/knowledge/ontology/concept_catalog/test_worker.py::TestDLQ::test_dlq_threshold_logs_error PASSED [ 36%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestListOverlays::test_returns_200_for_admin PASSED [ 36%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestListOverlays::test_returns_403_without_role PASSED [ 37%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestProposeOverlay::test_returns_201_on_propose PASSED [ 37%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestOverlayTransition::test_approve_calls_service PASSED [ 38%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestOverlayTransition::test_dry_run_failure_returns_422 PASSED [ 38%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestOverlayTransition::test_invalid_transition_returns_422 PASSED [ 39%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestOverlayTransition::test_unknown_action_returns_400 PASSED [ 39%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_http.py::TestOverlayTransition::test_reject_calls_service PASSED [ 40%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_valid_construction_entity_type PASSED [ 40%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_valid_construction_relation_type PASSED [ 41%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_valid_construction_traversal_pattern PASSED [ 41%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_rejects_invalid_overlay_kind PASSED [ 42%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_rejects_invalid_state PASSED [ 42%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_extra_fields_forbidden PASSED [ 43%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_optional_fields_default_to_none PASSED [ 43%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestSchemaOverlayRow::test_all_valid_states PASSED [ 44%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestDryRunReport::test_valid_success PASSED [ 44%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestDryRunReport::test_valid_failure PASSED [ 45%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestDryRunReport::test_checks_default_empty PASSED [ 45%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestDryRunReport::test_extra_fields_forbidden PASSED [ 46%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_models.py::TestDryRunReport::test_duration_required PASSED [ 46%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestPropose::test_creates_row_and_returns_uuid PASSED [ 47%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestPropose::test_inserts_audit_and_outbox PASSED [ 47%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestApproveWithPassingDryRun::test_approve_transitions_to_approved PASSED [ 48%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestApproveWithPassingDryRun::test_approve_from_proposed_also_allowed PASSED [ 48%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestApproveWithFailingDryRun::test_raises_dry_run_failed_error PASSED [ 49%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestApproveWithFailingDryRun::test_state_stays_at_pending_review_on_failure PASSED [ 49%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestStateMachineTransitions::test_reject_from_proposed PASSED [ 50%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestStateMachineTransitions::test_reject_from_pending_review PASSED [ 50%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestStateMachineTransitions::test_deprecate_from_approved PASSED [ 50%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestStateMachineTransitions::test_restore_from_deprecated PASSED [ 51%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestStateMachineTransitions::test_approve_from_rejected_fails PASSED [ 51%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestGetPending::test_returns_pending_rows PASSED [ 52%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestGetPending::test_returns_empty_when_none PASSED [ 52%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_service.py::TestGetHistory::test_returns_audit_records PASSED [ 53%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestValidEntityOverlay::test_new_entity_passes PASSED [ 53%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestValidEntityOverlay::test_all_checks_pass PASSED [ 54%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestFrameworkOverrideBlocked::test_employee_entity_blocked PASSED [ 54%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestFrameworkOverrideBlocked::test_framework_relation_blocked PASSED [ 55%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestFrameworkOverrideBlocked::test_framework_pattern_blocked PASSED [ 55%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestAQLValidation::test_valid_traversal_pattern_passes PASSED [ 56%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestAQLValidation::test_mutation_aql_fails PASSED [ 56%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestAQLValidation::test_empty_aql_fails PASSED [ 57%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestSandboxIsolation::test_cache_not_mutated_after_successful_dry_run PASSED [ 57%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestSandboxIsolation::test_cache_not_mutated_after_failed_dry_run PASSED [ 58%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_validator.py::TestDurationTracking::test_report_has_positive_duration PASSED [ 58%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestRunOnce::test_returns_zero_on_empty_outbox PASSED [ 59%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestRunOnce::test_returns_count_of_rows PASSED [ 59%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestRunOnce::test_marks_processed_at PASSED [ 60%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestRunOnce::test_unknown_operation_skipped PASSED [ 60%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestOpInvalidate::test_publishes_to_correct_channel_invalidate PASSED [ 61%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestOpInvalidate::test_publishes_to_correct_channel_deprecate PASSED [ 61%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestOpInvalidate::test_no_arango_calls_made PASSED [ 62%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestDLQ::test_increments_attempts_on_failure PASSED [ 62%]
+packages/ai-parrot/tests/knowledge/ontology/schema_overlay/test_worker.py::TestDLQ::test_dlq_threshold_logs_error PASSED [ 63%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_calls_invalidate PASSED [ 63%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_calls_invalidate_tenant_on_cache PASSED [ 64%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_extracts_tenant_from_channel PASSED [ 64%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_handles_string_channel PASSED [ 65%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_ignores_non_pmessage PASSED [ 65%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_processes_multiple_messages PASSED [ 66%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_subscriber_psubscribes_to_wildcard PASSED [ 66%]
+packages/ai-parrot/tests/knowledge/ontology/test_cache_pubsub.py::TestCachePubSubSubscriber::test_reconnects_on_exception PASSED [ 66%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestFrameworkOverrideError::test_inherits_ontology_error PASSED [ 67%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestFrameworkOverrideError::test_stores_entity_name PASSED [ 67%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestFrameworkOverrideError::test_entity_name_optional PASSED [ 68%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestFrameworkOverrideError::test_message_preserved PASSED [ 68%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestCycleError::test_inherits_ontology_error PASSED [ 69%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestCycleError::test_stores_cycle_path PASSED [ 69%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestCycleError::test_cycle_path_defaults_to_empty_list PASSED [ 70%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestCycleError::test_message_preserved PASSED [ 70%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestSynonymConflictError::test_inherits_ontology_error PASSED [ 71%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestSynonymConflictError::test_stores_conflict_details PASSED [ 71%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestSynonymConflictError::test_optional_fields_default_to_none PASSED [ 72%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestSynonymConflictError::test_message_preserved PASSED [ 72%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestDryRunFailedError::test_inherits_ontology_error PASSED [ 73%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestDryRunFailedError::test_stores_report PASSED [ 73%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestDryRunFailedError::test_report_optional PASSED [ 74%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestDryRunFailedError::test_message_preserved PASSED [ 74%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestInvalidTransitionError::test_inherits_ontology_error PASSED [ 75%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestInvalidTransitionError::test_stores_state_info PASSED [ 75%]
+packages/ai-parrot/tests/knowledge/ontology/test_exceptions.py::TestInvalidTransitionError::test_optional_fields_default_to_none PASSED [ 76%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_entities_present PASSED [ 76%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_relations_present PASSED [ 77%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_collections PASSED [ 77%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_versions_is_list_type PASSED [ 78%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_source_wiring PASSED [ 78%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_version_bumped PASSED [ 79%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalOntology::test_span_suppression_entity PASSED [ 79%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalArticulosView::test_search_view_declared PASSED [ 80%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalArticulosView::test_articulo_link_indexes_versions_text PASSED [ 80%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestLegalArticulosView::test_norma_link_indexes_titulo PASSED [ 81%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestSearchArticlesPattern::test_pattern_present PASSED [ 81%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestSearchArticlesPattern::test_passes_aql_validation_unchanged PASSED [ 82%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestSearchArticlesPattern::test_uses_declared_view_and_bm25 PASSED [ 82%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestSearchArticlesPattern::test_temporal_filter_present PASSED [ 83%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestSearchArticlesPattern::test_post_action_none PASSED [ 83%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestArticleInForcePattern::test_pattern_present PASSED [ 83%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestArticleInForcePattern::test_binds_declared PASSED [ 84%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestArticleInForcePattern::test_passes_aql_validation PASSED [ 84%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestArticleInForcePattern::test_is_read_only PASSED [ 85%]
+packages/ai-parrot/tests/knowledge/ontology/test_legal_ontology.py::TestArticleInForcePattern::test_post_action_none PASSED [ 85%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayEmptyOverlay::test_empty_overlay_matches_merge PASSED [ 86%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayEmptyOverlay::test_empty_overlay_same_layers PASSED [ 86%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayNewContent::test_overlay_adds_new_entity PASSED [ 87%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayNewContent::test_overlay_adds_new_traversal_pattern PASSED [ 87%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayNewContent::test_multiple_overlays_merged_in_order PASSED [ 88%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayFrameworkGuard::test_framework_entity_override_blocked PASSED [ 88%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayFrameworkGuard::test_framework_relation_override_blocked PASSED [ 89%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayFrameworkGuard::test_framework_pattern_override_blocked PASSED [ 89%]
+packages/ai-parrot/tests/knowledge/ontology/test_merger_overlay.py::TestMergeWithOverlayFrameworkGuard::test_department_entity_override_blocked PASSED [ 90%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestSearchViewDefMergeAndValidation::test_later_layer_wins_wholesale PASSED [ 90%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestSearchViewDefMergeAndValidation::test_unknown_entity_raises_integrity_error PASSED [ 91%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestSearchViewDefMergeAndValidation::test_two_level_nesting_rejected_at_merge_time PASSED [ 91%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestSearchViewDefMergeAndValidation::test_yaml_without_search_views_still_parses PASSED [ 92%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestLinkFieldPathGrammar::test_bare_and_one_level_nesting PASSED [ 92%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestLinkFieldPathGrammar::test_two_level_nesting_raises PASSED [ 93%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestLinkFieldPathGrammar::test_malformed_bracket_raises PASSED [ 93%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestEnsureViewsIdempotent::test_creates_when_absent_and_skips_when_matching PASSED [ 94%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestEnsureViewsIdempotent::test_replaces_on_drift PASSED [ 94%]
+packages/ai-parrot/tests/knowledge/ontology/test_search_views.py::TestEnsureViewsIdempotent::test_raising_connection_only_logs_warning PASSED [ 95%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestBackwardCompatibility::test_init_no_new_params PASSED [ 95%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestBackwardCompatibility::test_resolve_without_services_unchanged PASSED [ 96%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestBackwardCompatibility::test_resolve_still_caches PASSED [ 96%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestBackwardCompatibility::test_list_tenants_unchanged PASSED [ 97%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestResolveWithConceptOverlay::test_approved_concepts_appear_in_merged_ontology PASSED [ 97%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestResolveWithConceptOverlay::test_empty_concept_list_is_safe PASSED [ 98%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestResolveWithConceptOverlay::test_concept_overlay_cached_separately PASSED [ 98%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestResolveWithSchemaOverlay::test_approved_schema_overlays_appear_in_merged_ontology PASSED [ 99%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestResolveWithSchemaOverlay::test_non_approved_schema_rows_excluded PASSED [ 99%]
+packages/ai-parrot/tests/knowledge/ontology/test_tenant_overlay.py::TestFallbackWithoutServices::test_falls_back_to_yaml_only_when_no_services PASSED [100%]
+
+=============================== warnings summary ===============================
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/uvloop/__init__.py:31: DeprecationWarning: uvloop.install() is deprecated in favor of uvloop.run() starting with Python 3.12.
+    _warnings.warn(
+
+../../../.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319
+../../../.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319: PydanticDeprecatedSince20: `json_encoders` is deprecated. See https://docs.pydantic.dev/2.12/concepts/serialization/#custom-serializers for alternatives. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    warnings.warn(
+
+tests/knowledge/ontology/concept_catalog/test_http.py::TestListConcepts::test_returns_200_for_curator
+  /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/src/parrot/mcp/client.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuthCredential(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 206 passed, 8 warnings in 2.27s ========================
+
+### pytest packages/ai-parrot/tests/knowledge/wiki/ -v ###
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /home/jesuslara/proyectos/ai-parrot/.venv/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+benchmark: 5.2.3 (defaults: timer=time.perf_counter disable_gc=False min_rounds=5 min_time=0.000005 max_time=1.0 calibration_precision=10 warmup=False warmup_iterations=100000)
+rootdir: /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot
+configfile: pyproject.toml
+plugins: anyio-4.14.2, aiohttp-1.1.1, assume-2.4.3, asyncio-1.4.0, mock-3.15.1, xdist-3.3.1, Faker-40.36.0, hypothesis-6.165.10, benchmark-5.2.3
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 225 items
+
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities PASSED [  0%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_json_output_is_valid_communities_result PASSED [  0%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_not_built_is_graceful PASSED [  1%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_edgeless_selection_does_not_crash PASSED [  1%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_no_matching_graph_kinds_is_graceful PASSED [  2%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesInterFlag::test_shows_inter_community_header PASSED [  2%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesInterFlag::test_shows_relation_rows_when_cross_community_edges_exist PASSED [  3%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesInterFlag::test_json_output_is_valid_inter_community_graph PASSED [  3%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli.py::TestCommunitiesInterFlag::test_no_cross_community_edges_is_graceful PASSED [  4%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestHelpAndRegistration::test_command_is_registered PASSED [  4%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestHelpAndRegistration::test_help_lists_every_option PASSED [  4%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestHelpAndRegistration::test_help_works_without_jira_installed PASSED [  5%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestScopeResolution::test_project_shorthand PASSED [  5%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestScopeResolution::test_jql_and_project_together_is_an_error PASSED [  6%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestScopeResolution::test_env_default PASSED [  6%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestScopeResolution::test_default_project_env_fallback PASSED [  7%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestScopeResolution::test_unresolvable_scope_is_a_click_exception PASSED [  7%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBuildByDefault::test_builds_by_default PASSED [  8%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBuildByDefault::test_no_build_skips_it PASSED [  8%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBuildByDefault::test_dry_run_skips_build PASSED [  8%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestReportingAndExitCodes::test_json_output_is_valid_sweep_report PASSED [  9%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestReportingAndExitCodes::test_nonzero_exit_when_sweep_had_errors PASSED [  9%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestReportingAndExitCodes::test_unresolved_links_warning_shown PASSED [ 10%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestReportingAndExitCodes::test_quiet_prints_one_line PASSED [ 10%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestFailureModes::test_missing_jira_dependency_is_one_line PASSED [ 11%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestFailureModes::test_enrich_fails_fast PASSED [ 11%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestNoSelfRegistration::test_does_not_register_a_namespace PASSED [ 12%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestAppendOnlyEdit::test_existing_commands_untouched PASSED [ 12%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_default_run_is_a_conservative_cron PASSED [ 12%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_backfill_presets_force_progress_and_enforcement PASSED [ 13%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_explicit_concurrency_beats_the_preset PASSED [ 13%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_env_default_concurrency PASSED [ 14%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_non_integer_env_concurrency_is_a_clean_error PASSED [ 14%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_env_concurrency_is_range_checked_too PASSED [ 15%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_concurrency_is_range_checked PASSED [ 15%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_quiet_backfill_prints_no_progress PASSED [ 16%]
+packages/ai-parrot/tests/knowledge/wiki/test_cli_ingest_jira.py::TestBackfillPreset::test_shortfall_warning_is_surfaced PASSED [ 16%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestRegisterWikiBackendDispatch::test_dispatch_calls_registered_factory PASSED [ 16%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestRegisterWikiBackendDispatch::test_unknown_backend_still_raises_value_error PASSED [ 17%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestRegisterWikiBackendDispatch::test_builtin_backends_untouched PASSED [ 17%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestRegisterWikiBackendDispatch::test_register_wiki_backend_populates_registry PASSED [ 18%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestNamespaceConfigBackend::test_namespace_config_keeps_explicit_backend PASSED [ 18%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestNamespaceConfigBackend::test_namespace_config_defaults_database_to_arangodb PASSED [ 19%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestNamespaceConfigBackend::test_namespace_config_store_kind_still_forbids_arangodb_without_database PASSED [ 19%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestOpenNamespaceStoreExtraBackendDispatch::test_dispatches_extra_backend_for_database_kind PASSED [ 20%]
+packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py::TestOpenNamespaceStoreExtraBackendDispatch::test_unknown_database_backend_raises_value_error PASSED [ 20%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_creates_mcp_json FAILED [ 20%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_idempotent PASSED [ 21%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_preserves_other_servers PASSED [ 21%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_updates_stale_entry FAILED [ 22%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_recovers_from_malformed_mcp_servers PASSED [ 22%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonUninstall::test_uninstall_removes_entry PASSED [ 23%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonUninstall::test_uninstall_preserves_other_servers PASSED [ 23%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonUninstall::test_uninstall_removes_file_when_empty PASSED [ 24%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonUninstall::test_uninstall_noop_when_no_mcp_json PASSED [ 24%]
+packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestIntegrationStatus::test_status_reports_mcp_json PASSED [ 24%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestGoldenAndDeterminism::test_golden PASSED [ 25%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestGoldenAndDeterminism::test_render_twice_identical PASSED [ 25%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestGoldenAndDeterminism::test_idempotent_over_own_output PASSED [ 26%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestFrontmatterContract::test_key_order_matches_declared_tuple PASSED [ 26%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestFrontmatterContract::test_type_is_plain_string PASSED [ 27%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestFrontmatterContract::test_lists_sorted PASSED [ 27%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestFrontmatterContract::test_none_and_empty_omitted PASSED [ 28%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestFrontmatterContract::test_sync_stamp_present PASSED [ 28%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSyncMarkerPreservation::test_preserves_human_tail_verbatim PASSED [ 28%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSyncMarkerPreservation::test_trailing_whitespace_survives PASSED [ 29%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSyncMarkerPreservation::test_missing_marker_is_appended_and_nothing_lost PASSED [ 29%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSyncMarkerPreservation::test_duplicated_marker_only_first_splits PASSED [ 30%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSyncMarkerPreservation::test_marker_inside_code_fence_splits_conservatively PASSED [ 30%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSyncMarkerPreservation::test_no_marker_returns_empty_tail PASSED [ 31%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestWikilinksAndTags::test_relations_emit_wikilinks PASSED [ 31%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestWikilinksAndTags::test_tags_emitted_for_project_components_labels PASSED [ 32%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestWikilinksAndTags::test_repo_pages_are_never_wikilinks PASSED [ 32%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestWikilinksAndTags::test_jira_url_line_present_for_fts_join PASSED [ 32%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestRemoteLinks::test_no_section_when_empty PASSED [ 33%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestRemoteLinks::test_section_present_when_populated PASSED [ 33%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestHtmlConversion::test_deterministic PASSED [ 34%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestHtmlConversion::test_no_line_wrapping PASSED [ 34%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestHtmlConversion::test_empty_and_none_degrade PASSED [ 35%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestHtmlConversion::test_links_and_code_survive PASSED [ 35%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestHtmlConversion::test_email_in_free_text_is_redacted PASSED [ 36%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestHtmlConversion::test_non_email_at_signs_pass_through PASSED [ 36%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSlugsAndFilenames::test_issue_filename PASSED [ 36%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSlugsAndFilenames::test_person_slug_stable_across_rename PASSED [ 37%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSlugsAndFilenames::test_person_slug_is_filename_safe PASSED [ 37%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSlugsAndFilenames::test_group_slug_filename_safe[navigator/forms] PASSED [ 38%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSlugsAndFilenames::test_group_slug_filename_safe[multi tenant] PASSED [ 38%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSlugsAndFilenames::test_group_slug_filename_safe[caf\xe9] PASSED [ 39%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_person_note PASSED [ 39%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_person_note_keys_sorted PASSED [ 40%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_group_note[project] PASSED [ 40%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_group_note[component] PASSED [ 40%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_group_note[label] PASSED [ 41%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_satellite_notes_preserve_human_tail PASSED [ 41%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_person_note_survives_yaml_special_chars_in_display_name PASSED [ 42%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestSatelliteNotes::test_group_note_survives_yaml_special_chars_in_name PASSED [ 42%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestPurity::test_no_io_or_network_imports PASSED [ 43%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py::TestPurity::test_render_takes_no_client PASSED [ 43%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestPublicSurface::test_save_sync_state_roundtrip PASSED [ 44%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_advances_on_success PASSED [ 44%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_not_advanced_on_partial PASSED [ 44%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_partial_written_before_fetch PASSED [ 45%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_second_run_fetches_nothing PASSED [ 45%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_watermark_added_as_jql_conjunct PASSED [ 46%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_scopes_keyed_by_fingerprint PASSED [ 46%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_force_ignores_watermark PASSED [ 47%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_extractor_version_bump_forces_rerender PASSED [ 47%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestWatermark::test_watermark_comes_from_jira_not_local_clock PASSED [ 48%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestAuthProbe::test_empty_result_probes_and_does_not_advance PASSED [ 48%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestIdempotenceAndInPlaceUpdate::test_one_document_per_ticket PASSED [ 48%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestIdempotenceAndInPlaceUpdate::test_unchanged_issue_not_rewritten PASSED [ 49%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestIdempotenceAndInPlaceUpdate::test_changed_status_updates_in_place PASSED [ 49%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestIdempotenceAndInPlaceUpdate::test_human_tail_survives_resync PASSED [ 50%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestIdempotenceAndInPlaceUpdate::test_force_resync_unchanged_ticket_ignores_fetched_at_drift PASSED [ 50%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNotes::test_notes_emitted PASSED [ 51%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNotes::test_incremental_sweep_merges_keys PASSED [ 51%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNotes::test_entity_note_human_tail_survives PASSED [ 52%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNotes::test_no_email_in_any_generated_file PASSED [ 52%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNotes::test_remote_links_fetched_and_rendered PASSED [ 52%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNoteStaleMembershipPruning::test_ticket_moved_out_of_scope_is_pruned_from_person_note PASSED [ 53%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNoteStaleMembershipPruning::test_ticket_moved_out_of_scope_is_pruned_from_project_note PASSED [ 53%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNoteStaleMembershipPruning::test_incremental_sweep_never_prunes PASSED [ 54%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestEntityNoteStaleMembershipPruning::test_dry_run_reports_without_writing PASSED [ 54%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestOrphansAndUnreachable::test_orphan_reported_on_full_sweep PASSED [ 55%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestOrphansAndUnreachable::test_orphans_skipped_on_incremental_sweep PASSED [ 55%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestOrphansAndUnreachable::test_entity_dirs_not_scanned_for_orphans PASSED [ 56%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestOrphansAndUnreachable::test_unreachable_marked_not_deleted PASSED [ 56%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestOrphansAndUnreachable::test_watermark_not_advanced_when_orphan_probe_errors PASSED [ 56%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestDryRun::test_writes_nothing PASSED [ 57%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestDryRun::test_dry_run_does_not_write_state PASSED [ 57%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestStorageLocation::test_default_is_absolute_and_outside_repo PASSED [ 58%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestStorageLocation::test_env_override_wins PASSED [ 58%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestStorageLocation::test_state_file_lives_under_dot_parrot PASSED [ 59%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestNoLLM::test_sweep_accepts_no_client PASSED [ 59%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestNoLLM::test_no_llm_import_in_module PASSED [ 60%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestConcurrency::test_second_writer_refused PASSED [ 60%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrency::test_fans_out_up_to_concurrency PASSED [ 60%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrency::test_concurrency_one_is_strictly_sequential PASSED [ 61%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrency::test_parallel_and_sequential_produce_identical_corpora PASSED [ 61%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrency::test_watermark_is_the_max_regardless_of_completion_order PASSED [ 62%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrency::test_mid_sweep_failure_still_records_partial PASSED [ 62%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrencyFailureModes::test_cancellation_awaits_in_flight_work PASSED [ 63%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestSweepConcurrencyFailureModes::test_two_failures_in_one_wave_are_all_retrieved PASSED [ 63%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_shortfall_warns_by_default PASSED [ 64%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_shortfall_is_an_error_when_enforced PASSED [ 64%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_within_tolerance_is_silent PASSED [ 64%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_tiny_scope_skew_does_not_cry_wolf PASSED [ 65%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_enforcement_also_covers_a_date_bounded_scope PASSED [ 65%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_no_canary_on_an_incremental_sweep PASSED [ 66%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestScopeCompletenessCanary::test_absent_counter_degrades_quietly PASSED [ 66%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestConcurrencyPresets::test_concurrency_is_clamped_to_the_ceiling PASSED [ 67%]
+packages/ai-parrot/tests/knowledge/wiki/test_jira_sync.py::TestConcurrencyPresets::test_backfill_preset_is_higher_than_the_cron_default PASSED [ 67%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server.py::TestWikiMCPServerIntegration::test_initialize_and_list_tools PASSED [ 68%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server.py::TestWikiMCPServerIntegration::test_not_in_repo_exits_with_error PASSED [ 68%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server.py::TestCreateWikiMcpServerArangoBackend::test_arangodb_backend_passes_connection_params PASSED [ 68%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server.py::TestCreateWikiMcpServerArangoBackend::test_sqlite_backend_unaffected_by_arango_branch PASSED [ 69%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_namespaces.py::TestFederatedInjection::test_no_namespaces_keeps_a_plain_store PASSED [ 69%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_namespaces.py::TestFederatedInjection::test_namespace_is_injected PASSED [ 70%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_namespaces.py::TestFederatedInjection::test_wiki_query_returns_qualified_ids PASSED [ 70%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_namespaces.py::TestFederatedInjection::test_wiki_page_reads_a_foreign_page PASSED [ 71%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_namespaces.py::TestFederatedInjection::test_wiki_status_lists_namespaces PASSED [ 71%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_namespaces.py::TestFederatedInjection::test_unbuilt_namespace_is_skipped_not_fatal PASSED [ 72%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py::TestVaultRegistration::test_no_vault_keeps_base_tool_set PASSED [ 72%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py::TestVaultRegistration::test_vault_root_autodetected PASSED [ 72%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py::TestVaultRegistration::test_vault_dir_config_registers_sibling_vault PASSED [ 73%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py::TestVaultRegistration::test_confirming_tools_require_confirm_over_mcp PASSED [ 73%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py::TestVaultRegistration::test_end_to_end_ingest_then_query PASSED [ 74%]
+packages/ai-parrot/tests/knowledge/wiki/test_mcp_server_vault.py::TestVaultStdioIntegration::test_vault_tools_over_stdio PASSED [ 74%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestResolveVaultDir::test_override_wins PASSED [ 75%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestResolveVaultDir::test_config_relative PASSED [ 75%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestResolveVaultDir::test_config_absolute PASSED [ 76%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestResolveVaultDir::test_root_autodetect PASSED [ 76%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestResolveVaultDir::test_no_vault_returns_none PASSED [ 76%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestResolveVaultDir::test_missing_configured_dir_returns_none PASSED [ 77%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestVaultIngestTool::test_ingest_happy_path PASSED [ 77%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestVaultIngestTool::test_second_run_incremental PASSED [ 78%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestVaultIngestTool::test_force_reingests PASSED [ 78%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestVaultIngestTool::test_vault_path_override PASSED [ 79%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestVaultIngestTool::test_no_vault_errors PASSED [ 79%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_ingest_tool.py::TestVaultIngestTool::test_lock_contention_refused PASSED [ 80%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestDetection::test_detects_vault PASSED [ 80%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestDetection::test_plain_dir_not_vault PASSED [ 80%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanPages::test_note_pages PASSED [ 81%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanPages::test_summary_from_first_line PASSED [ 81%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanPages::test_vault_internals_skipped PASSED [ 82%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanPages::test_non_utf8_skipped PASSED [ 82%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanPages::test_tag_pages PASSED [ 83%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanEdges::test_wikilink_reference_edges PASSED [ 83%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanEdges::test_embed_edges PASSED [ 84%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanEdges::test_unresolved_dropped_but_counted PASSED [ 84%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanEdges::test_tagged_edges PASSED [ 84%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestScanEdges::test_directory_contains_edges PASSED [ 85%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestStorePlane::test_fts_and_backlinks_through_sqlite PASSED [ 85%]
+packages/ai-parrot/tests/knowledge/wiki/test_vault_scan.py::TestRepoScanExclusions::test_repo_scan_never_descends_into_vault_internals PASSED [ 86%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiQueryTool::test_query_returns_results PASSED [ 86%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiPageTool::test_get_page PASSED [ 87%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiPageTool::test_get_page_not_found PASSED [ 87%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiRelatedTool::test_get_related PASSED [ 88%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiRememberTool::test_remember_saves PASSED [ 88%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiRememberTool::test_remember_links PASSED [ 88%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiRememberTool::test_remember_logs_to_bookkeeper PASSED [ 89%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiRememberTool::test_remember_no_bookkeeper_when_storage_dir_none PASSED [ 89%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiRememberTool::test_remember_survives_bookkeeper_failure PASSED [ 90%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiNoteTool::test_note_appends PASSED [ 90%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiNoteTool::test_note_page_not_found PASSED [ 91%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiNoteTool::test_note_logs_to_bookkeeper PASSED [ 91%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiNoteTool::test_note_survives_bookkeeper_failure PASSED [ 92%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestWikiStatusTool::test_status_returns_stats PASSED [ 92%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestFactory::test_create_wiki_tools PASSED [ 92%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestFactory::test_create_wiki_tools_wires_storage_dir_for_bookkeeping PASSED [ 93%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_query_broadcasts_by_default PASSED [ 93%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_query_scoped_to_one_namespace PASSED [ 94%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_query_local_only PASSED [ 94%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_query_unknown_namespace PASSED [ 95%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_page_accepts_qualified_id PASSED [ 95%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_page_unknown_namespace PASSED [ 96%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_related_returns_qualified_neighbours PASSED [ 96%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_related_unknown_namespace PASSED [ 96%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_status_exposes_namespaces PASSED [ 97%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_plain_store_ignores_namespace PASSED [ 97%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestNamespaceArgument::test_input_schemas_expose_namespace PASSED [ 98%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestForeignPageWrites::test_note_on_a_foreign_page_returns_a_tool_error PASSED [ 98%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestForeignPageWrites::test_note_on_a_local_page_still_works PASSED [ 99%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestForeignPageWrites::test_remember_with_a_foreign_link_writes_nothing PASSED [ 99%]
+packages/ai-parrot/tests/knowledge/wiki/test_wiki_tools.py::TestForeignPageWrites::test_remember_with_a_local_link_still_works PASSED [100%]
+
+=================================== FAILURES ===================================
+_______________ TestMCPJsonInstall.test_install_creates_mcp_json _______________
+
+self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x796fd56bae70>
+repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-22/test_install_creates_mcp_json0')
+
+    def test_install_creates_mcp_json(self, repo_root):
+        install_claude_integration(repo_root)
+        mcp_json = repo_root / ".mcp.json"
+        assert mcp_json.exists()
+        data = json.loads(mcp_json.read_text())
+        assert "wikitoolkit" in data["mcpServers"]
+>       assert data["mcpServers"]["wikitoolkit"]["command"] == "wikitoolkit"
+E       AssertionError: assert '/home/jesusl...n/wikitoolkit' == 'wikitoolkit'
+E         
+E         - wikitoolkit
+E         + /home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit
+
+/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:26: AssertionError
+_____________ TestMCPJsonInstall.test_install_updates_stale_entry ______________
+
+self = <tests.knowledge.wiki.test_installer_mcp.TestMCPJsonInstall object at 0x796fd56babd0>
+repo_root = PosixPath('/tmp/pytest-of-jesuslara/pytest-22/test_install_updates_stale_ent0')
+
+    def test_install_updates_stale_entry(self, repo_root):
+        mcp_json = repo_root / ".mcp.json"
+        mcp_json.write_text(json.dumps({
+            "mcpServers": {"wikitoolkit": {"command": "old-stale-command"}}
+        }))
+        install_claude_integration(repo_root)
+        data = json.loads(mcp_json.read_text())
+>       assert data["mcpServers"]["wikitoolkit"]["command"] == "wikitoolkit"
+E       AssertionError: assert '/home/jesusl...n/wikitoolkit' == 'wikitoolkit'
+E         
+E         - wikitoolkit
+E         + /home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit
+
+/home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:52: AssertionError
+=============================== warnings summary ===============================
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+../../../.venv/lib/python3.12/site-packages/uvloop/__init__.py:31
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/uvloop/__init__.py:31: DeprecationWarning: uvloop.install() is deprecated in favor of uvloop.run() starting with Python 3.12.
+    _warnings.warn(
+
+../../../.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319
+../../../.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/pydantic/_internal/_generate_schema.py:319: PydanticDeprecatedSince20: `json_encoders` is deprecated. See https://docs.pydantic.dev/2.12/concepts/serialization/#custom-serializers for alternatives. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    warnings.warn(
+
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+  /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/src/parrot/mcp/client.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuthCredential(BaseModel):
+
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+  /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-449-legal-librarian-answer-layer/packages/ai-parrot/src/parrot/knowledge/wiki/languages/treesitter.py:116: DeprecationWarning: int argument support is deprecated
+    ts_language = Language(factory())
+
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+tests/knowledge/wiki/test_cli.py::TestCommunitiesCommand::test_shows_detected_communities
+  /home/jesuslara/proyectos/ai-parrot/.venv/lib/python3.12/site-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_creates_mcp_json
+FAILED packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py::TestMCPJsonInstall::test_install_updates_stale_entry
+================= 2 failed, 223 passed, 23 warnings in 11.52s ==================
