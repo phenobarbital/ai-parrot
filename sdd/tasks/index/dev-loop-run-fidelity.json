@@ -108,7 +108,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Markdown only (.claude/commands/*, .claude/agents/*, _subagent_data/*, CLAUDE.md) so it conflicts with no Python task — but it must follow 2502 because it documents calling resolve_flow(), and it should follow 2503 because it starts PRODUCING feat_id == \"\" runs that 2503 makes safe.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2507-sdd-doc-plumbing-hotfix-no-id.md"
+      "completed_at": "2026-08-27T15:53:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2507-sdd-doc-plumbing-hotfix-no-id.md"
     },
     {
       "id": "TASK-2508",
