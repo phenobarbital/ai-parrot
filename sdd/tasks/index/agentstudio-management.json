@@ -52,7 +52,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Independent of TASK-2509/2510 (different packages) but foundational for all handler tasks; kept sequential in the per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2511-studio-scaffold-routes-pbac.md"
+      "completed_at": "2026-08-27T17:35:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2511-studio-scaffold-routes-pbac.md"
     },
     {
       "id": "TASK-2512",

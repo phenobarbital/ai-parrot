@@ -188,10 +188,62 @@ class TestStudioScaffold:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- `handlers/studio/__init__.py` — `setup_studio_routes(app)` registers no
+  concrete routes yet (by design — TASK-2512 through TASK-2521 add their
+  own `add_view` calls); wired into `BotManager.setup()` right next to
+  `setup_credentials_routes(self.app)`.
+- `handlers/studio/_base.py` — `StudioBaseView(BaseView)` with
+  `_get_user()`/`StudioUser` (session → user_id/email/username/groups/
+  is_superuser, using `AUTH_SESSION_OBJECT` — mirrors
+  `handlers/agents/abstract.py:508`'s `userinfo.get('superuser', False)`
+  convention, since plain `BaseView` subclasses do NOT get
+  `self._session` auto-populated the way `AbstractModel` does — see the
+  gotcha already documented at `handlers/comm_center.py:670-676`),
+  `_require_owner()` (403 unless owner or superuser), `_pbac_allowed()`
+  (fail-open `astudio:<area>` check via `ResourceType.URI` — no
+  dedicated Studio `ResourceType` exists, and adding one is PBAC policy
+  *content*, explicitly out of this task's scope), plus the
+  `is_valid_slug()` / `resolve_safe_path()` helpers (traversal + symlink
+  escape rejection) later file/draft tasks will use.
+- `handlers/studio/models.py` — `CreateAgentRequest`,
+  `DraftValidationReport`, `SkillPublishRequest` (typed
+  `category: SkillCategory` per spec), `ByokKeyRequest` (`SecretStr`),
+  `StudioError`. `ReloadResult` is imported/re-exported from
+  `parrot.manager.manager` (FEAT-467 TASK-2510) rather than duplicated —
+  the task lists it among "shared Pydantic models" but its canonical
+  definition already exists as `BotManager.reload_agent`'s actual return
+  type; two competing definitions would drift.
+- Tests use `aiohttp.test_utils.make_mocked_request` +
+  direct-instantiation (`StudioBaseView(request)` — `aiohttp.web.View
+  .__init__` just sets `self._request`, no router required) rather than
+  a full `aiohttp_client`/live app, matching the established
+  lightweight pattern in
+  `tests/handlers/test_comm_center_handler.py::
+  TestGetBatchesAuthentication`. Caught and fixed one MagicMock
+  footgun: `make_mocked_request(...)` defaults `request.app` to a bare
+  `MagicMock()`, whose `.get('abac')` auto-mocks a truthy return instead
+  of behaving like a real dict `.get()` — fixed by passing an explicit
+  `app=web.Application()`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally. Two notes:
+1. PBAC ids use `ResourceType.URI` as the closest-fit existing
+   `navigator_auth` resource type (the enum has no generic/Studio
+   member) — documented inline; picking/adding a dedicated resource
+   type is policy *content*, out of this task's scope per its own NOT
+   IN SCOPE line.
+2. `packages/ai-parrot-server/tests/studio/__init__.py` (empty) created
+   alongside the two listed test files, matching this package's
+   sibling test-subpackage convention (same as TASK-2510's
+   `tests/manager/__init__.py`).
+
+Verification: `pytest packages/ai-parrot-server/tests/studio/ -v` →
+25/25 passed. `ruff check packages/ai-parrot-server/src/parrot/handlers/
+studio/` → clean except one intentional `BLE001` (blind
+`except Exception` in the fail-open PBAC branch, matching
+`handlers/bots.py::_PBACHandlerMixin`'s identical pattern at
+bots.py:677). Broader regression sweep (`tests/manager/`, `tests/
+studio/`, ephemeral-owner, DB-bot-fallback, comm_center auth tests) →
+87/87 passed.
