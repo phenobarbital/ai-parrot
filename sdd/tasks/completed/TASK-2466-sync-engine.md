@@ -248,10 +248,78 @@ class TestSafety:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-27
+**Notes**: Created `wiki/sync.py` with `SyncReport`, `SyncError`,
+`default_local_identity()`, `sync_push()`, `sync_pull()`, and the shared
+`_sync_records`/`_sync_edges`/note-merge helpers. LOCAL always resolves
+via `load_effective_config(root, env="local")`; REMOTE via
+`load_effective_config(root, env=target_env)` + `_open_plane` (mirrors
+`cli.py:_open_store`'s arangodb-vs-local branch exactly, per the
+contract's Pattern to Follow). LWW compares `updated_at` lexicographically
+(`source <= dest` → `skipped_older`); a strictly-newer source is written
+with its OWN `updated_at` preserved verbatim (TASK-2465). Note merge:
+`_parse_notes`/`_strip_notes`/`_render_notes` implement the exact
+append-if-absent contract (identity hash of author+date+text, union
+sorted by `(date, hash)` for determinism/idempotency) — the LWW winner's
+non-note content is combined with the UNION of both sides' notes, so a
+note is never dropped.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviation from the Files table, reconciling an internal contradiction**:
+the Codebase Contract's "Does NOT Exist" section says extending
+`dump_edges`/adding a provenance-filtered edge reader "is part of THIS
+task's scope", but the Files-to-Modify table lists ONLY `sync.py` +
+`test_sync.py` (no `store.py`/`arango_store.py`/`file_store.py`).
+Resolved in favor of the explicit Files table (the stronger, more
+specific contract, and the one that avoids touching three unrelated
+backend files for a scope this task doesn't list): `dump_edges()` returns
+`{src, dst, rel}` with no provenance on every backend (verified — none
+were touched), but an edge whose `src` is a memory page is ONLY EVER
+created via the `asserted` path (`remember()`'s related-page links,
+toolkit.py:993 — there is no other code path that sources an edge from a
+`mem-*` page). So filtering `dump_edges()` by `src ∈ selected_concept_ids`
+IS the provenance filter, functionally — no `BaseWikiStore` change
+needed. Edges are written to the destination as explicit 4-tuples
+`(src, dst, rel, "asserted")` via the existing `add_edges` (idempotent
+`INSERT OR REPLACE` / AQL `UPSERT` on every backend — safe to re-apply
+for every selected memory page each sync run, not just newly-written
+ones).
 
-**Deviations from spec**: none
+Audit logging: ONE summary `log_operation` call per sync run (not one per
+record) — `log_operation`'s signature takes a single `details: str`, and
+the report's own `details: list[str]` already carries the per-record
+lines for CLI verbose output (TASK-2467). Nothing is logged when
+`dry_run=True` or when zero records were applied.
+
+13 tests in `tests/knowledge/wiki/test_sync.py`, all passing, using a
+`two_planes` fixture that creates ONE project root with a `local` base
+config and a `dev` overlay whose `storage_dir` (a permitted
+`WikiEnvOverlay` field) points at a sibling directory — two genuinely
+independent sqlite planes with no Arango needed, exercising the full
+public `sync_push`/`sync_pull` API (not just internal helpers). Covers:
+memory-only selection, asserted-edge propagation (and exclusion of an
+`extracted` edge from an unsynced ingest page), LWW win/skip with stamp
+preservation, pull author-filter (default-skip and `include_own`), two-
+sided note union with date ordering, merge idempotency on repeat push,
+dry-run (nothing applied, nothing logged), report count accuracy,
+bookkeeper audit presence/absence, and a mocked unreachable-ArangoDB
+`SyncError`.
+
+Full `tests/knowledge/wiki/` suite: typically 1116-1117 passed, 1
+pre-existing unrelated failure (`test_claude_code.py`, confirmed via
+`git stash`), 7 skipped. Observed ONE additional intermittent failure in
+some (not all) full-suite runs — `test_sources.py::TestJsonBackend::
+test_is_stale_json_mode` — a content-hash/mtime staleness check with no
+`sync.py`/wiki-config overlap whatsoever; passes reliably in isolation
+and in combination with `test_sync.py` alone, and its failure did not
+reproduce on a repeat full-suite run. Consistent with a pre-existing,
+timing-sensitive flake in `sources.py` (unrelated module, not in this
+task's or any FEAT-461 task's file list) that this task's added test
+count occasionally perturbs into triggering — not a regression in the
+sync engine. Not fixed (out of scope; flagged for a separate ticket if
+it recurs). `ruff check packages/.../wiki/sync.py tests/.../test_sync.py`:
+clean.
+
+**Deviations from spec**: see the edge-provenance resolution above
+(functional equivalent achieved without touching `store.py`/
+`arango_store.py`/`file_store.py`, per the authoritative Files table).
