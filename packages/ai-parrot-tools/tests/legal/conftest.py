@@ -79,6 +79,7 @@ class FakeGraphStore:
         self._collections: dict[str, dict[str, dict[str, Any]]] = {}
         self.upsert_calls: list[tuple[str, int]] = []
         self.inserted_documents: list[tuple[str, dict[str, Any]]] = []
+        self.last_traversal: tuple[str, dict[str, Any], dict[str, Any] | None] | None = None
 
     async def initialize_tenant(self, ctx: TenantContext) -> None:
         return None
@@ -150,15 +151,29 @@ class FakeGraphStore:
         bind_vars: dict[str, Any] | None = None,
         collection_binds: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Simulate the article_in_force AQL's version-selection semantics.
+        """Simulate the article_in_force / search_articles AQL semantics.
 
         Mirrors, in this TEST DOUBLE only, what a real ArangoDB engine
-        would compute from the declarative query_template (embedded-list
+        would compute from the declarative query_templates (embedded-list
         selection: the FILTER clauses' inclusive lower bound / exclusive
         upper bound). Production code (``queries.py``) never performs
-        this comparison in Python — see TASK-2375.
+        this comparison in Python — see TASK-2375/TASK-2496.
+
+        Branches on ``"legal_articulos_view"`` appearing in the AQL to
+        simulate the ``search_articles`` pattern (TASK-2496) — the real
+        engine's ``SEARCH`` matches at DOCUMENT level (any version's text
+        can match); this fake reproduces that by checking the query
+        substring against ANY version's text before resolving the
+        in-force version for ``as_of`` (the token-containment guard in
+        ``queries.py`` is what then drops a document-level match that
+        landed only in a superseded wording — this fake does not
+        pre-filter for that, by design).
         """
         bind_vars = bind_vars or {}
+        self.last_traversal = (aql, bind_vars, collection_binds)
+        if "legal_articulos_view" in aql:
+            return self._search_articles_rows(bind_vars)
+
         articulo_key = bind_vars.get("articulo_key")
         as_of = bind_vars.get("as_of")
         if articulo_key is None or as_of is None:
@@ -175,6 +190,43 @@ class FakeGraphStore:
             if lower <= as_of and (upper is None or upper > as_of):
                 return [version]
         return []
+
+    def _search_articles_rows(self, bind_vars: dict[str, Any]) -> list[dict[str, Any]]:
+        """Fake ``search_articles`` row production — see execute_traversal."""
+        query = (bind_vars.get("query") or "").lower()
+        as_of = bind_vars.get("as_of")
+        limit = bind_vars.get("limit", 20)
+        rows: list[dict[str, Any]] = []
+
+        for doc in self._collections.get("articulo", {}).values():
+            if not doc.get("_active", True):
+                continue
+            versions = doc.get("versions", [])
+            if not any(query and query in (v.get("text") or "").lower() for v in versions):
+                continue
+
+            in_force = None
+            for version in versions:
+                lower = version["valid_from"]
+                upper = version["valid_to"]
+                if lower <= as_of and (upper is None or upper > as_of):
+                    in_force = version
+                    break
+            if in_force is None:
+                continue
+
+            rows.append(
+                {
+                    "articulo_key": doc.get("articulo_key"),
+                    "norma_ref": doc.get("norma_ref"),
+                    "numero": doc.get("numero"),
+                    "version": in_force,
+                    "score": 1.0,
+                }
+            )
+            if len(rows) >= limit:
+                break
+        return rows
 
 
 @pytest.fixture

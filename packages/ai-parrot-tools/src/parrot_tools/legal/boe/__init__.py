@@ -14,14 +14,18 @@ from parrot_loaders.extractors.factory import DataSourceFactory
 
 from .datasource import BOEDataSource
 from .hashing import HASH_NORM_VERSION, normalize_for_hash, seal_hash
+from .models import ArticleHit
+from .queries import search_articles
 from .sync import sync_boe
 
 DataSourceFactory.register_api_source("boe", BOEDataSource)
 
 __all__ = [
     "HASH_NORM_VERSION",
+    "ArticleHit",
     "BOEDataSource",
     "normalize_for_hash",
     "seal_hash",
+    "search_articles",
     "sync_boe",
 ]

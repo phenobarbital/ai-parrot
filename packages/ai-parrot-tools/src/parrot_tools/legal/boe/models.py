@@ -79,6 +79,24 @@ class ArticleVersion(BaseModel):
         return self
 
 
+class ArticleHit(BaseModel):
+    """One BM25 lexical-candidate hit from the ``search_articles`` pattern.
+
+    Args:
+        articulo_key: The composite articulo key (``{boe_id}:{numero}``).
+        norma_ref: BOE id of the parent norma.
+        numero: Article designator as it appears in the source.
+        version: The in-force ``ArticleVersion`` for the queried ``as_of``.
+        score: BM25 relevance score from the ArangoSearch view.
+    """
+
+    articulo_key: str
+    norma_ref: str
+    numero: str
+    version: ArticleVersion
+    score: float
+
+
 class ParsedNorm(BaseModel):
     """Result of parsing one BOE consolidated-legislation XML document.
 
