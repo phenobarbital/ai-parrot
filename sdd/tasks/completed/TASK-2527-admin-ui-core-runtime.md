@@ -251,3 +251,27 @@ When you pick up this task:
 - `ThemeStore` limited to `light`/`dark` (source supports `light`/`dark`/
   `midnight`/`warm`) — mechanical consequence of TASK-2525 only vendoring
   those two theme CSS files.
+
+**Post-hoc fixes (FEAT-468 final adversarial review, 2026-08-27)**: two
+critical bugs found in this task's files —
+1. `Router.match()` did an EXACT string match, including the query
+   string, against the route table's bare paths. `guard()`/
+   `AuthStore.handle401()` redirect to `${loginPath}?next=<encoded>`,
+   which never equalled the route table's bare `/admin/login` entry —
+   `App.svelte`'s `resolve()` (TASK-2528) treated it as an unmatched
+   route and immediately navigated away again, wiping `?next=` before
+   `Login.svelte` (TASK-2528) ever mounted to read it. Fixed by stripping
+   the query string before comparing in `match()`. Regression test added
+   in `router.test.ts`.
+2. `config.ts` defaulted `apiBaseUrl` to the ABSOLUTE
+   `"http://localhost:5000"`, baked into the production bundle at
+   `pnpm build` time (no `PUBLIC_API_URL` is set anywhere in the release
+   pipeline — TASK-2531). Since the Admin UI is served same-origin
+   (`setup_admin_ui()` mounts it on the same aiohttp app that serves
+   `/api/*`), every API call — including login — went to the wrong
+   origin on any real deployment. Fixed by defaulting to a relative/
+   same-origin base URL (`""`). Regression test added in
+   `config.test.ts`.
+
+See commit `fix(ui-server-backend): address CRITICAL code-review findings
+on FEAT-468`.

@@ -251,3 +251,19 @@ segment-boundary exclude patterns, and the actual `Cache-Control`
 header value). 14/14 unit tests pass after the fix.
 
 **Deviations from spec**: none
+
+**Post-hoc fix (FEAT-468 final adversarial review, 2026-08-27)**: the
+exclude-list registration was still wrong — `_register_auth_exclusion()`
+was called eagerly, synchronously, inside `setup_admin_ui()`. In BOTH real
+entrypoints (`app.py`, `appauto.py`), `BotManager.setup(app)` (which calls
+`setup_admin_ui()`) runs BEFORE `AuthHandler().setup(app)`, and
+`AuthHandler.setup()` unconditionally OVERWRITES
+`app[AUTH_EXCLUDE_LIST_KEY]` with a fresh list — so `/admin` was NEVER
+actually excluded from auth in production, meaning the login page itself
+could be blocked. Fixed by deferring registration to an `app.on_startup`
+callback (`_register_auth_exclusions_on_startup`), which fires only after
+all synchronous `.setup()` calls have completed. Added
+`test_survives_real_entrypoint_ordering` reproducing the exact production
+ordering as a regression test. See commit
+`fix(ui-server-backend): address CRITICAL code-review findings on
+FEAT-468`.

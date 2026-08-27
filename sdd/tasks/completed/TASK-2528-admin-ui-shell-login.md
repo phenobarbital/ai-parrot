@@ -260,3 +260,15 @@ When you pick up this task:
   internal sequencing/determinism.
 - `config.ts` (TASK-2527) gained one additive field, `authMethodsUrl`, for
   this page's discovery call — no existing field changed.
+
+**Post-hoc fix (FEAT-468 final adversarial review, 2026-08-27)**: added
+`App.test.ts::"visiting a guarded route while unauthenticated preserves
+?next= through Login and returns there after sign-in"` as a full
+end-to-end regression test for a critical bug in `router.svelte.ts`
+(TASK-2527's `Router.match()` — see that task's completion note) that
+this task's `App.svelte`/`Login.svelte` were the visible symptom of: the
+`?next=` query param was silently lost on the guarded-route → login →
+back round-trip. No changes to this task's own files were needed — the
+fix lived entirely in `router.svelte.ts`. See commit
+`fix(ui-server-backend): address CRITICAL code-review findings on
+FEAT-468`.
