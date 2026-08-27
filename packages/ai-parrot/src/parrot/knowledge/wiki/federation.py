@@ -36,12 +36,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from parrot.knowledge.wiki import store as wiki_store
 from parrot.knowledge.wiki.context import qualify_id, split_namespaced_id
 from parrot.knowledge.wiki.project import (
     WikiNamespaceConfig,
     WikiProjectConfig,
+    load_effective_config,
     load_global_registry,
-    load_project_config,
     merge_namespaces,
     resolve_arango_params,
     resolve_entry_base,
@@ -172,9 +173,7 @@ async def _assert_plane_readable(store: BaseWikiStore) -> None:
                         f"{', '.join(missing)})"
                     )
     except sqlite3.Error as exc:
-        raise StalePlaneError(
-            f"plane at {store.db_path} could not be inspected: {exc}"
-        ) from exc
+        raise StalePlaneError(f"plane at {store.db_path} could not be inspected: {exc}") from exc
 
 
 def _resolve_dir(value: str, base_dir: Path) -> Path:
@@ -225,7 +224,10 @@ async def _open_project_plane(
     """
     if not project_root.is_dir():
         raise FileNotFoundError(f"namespace {name!r} root does not exist: {project_root}")
-    foreign = load_project_config(project_root)
+    # The FOREIGN root's own environment/overlay applies here, not the
+    # local project's — env still resolves from the process environment
+    # only (FEAT-461).
+    foreign = load_effective_config(project_root).config
     if foreign.backend == "arangodb":
         store = await _open_arango(
             arango_params=resolve_arango_params(foreign),
@@ -273,13 +275,9 @@ def _open_local_plane(
         FileNotFoundError: When ``read_only`` and the plane is unbuilt.
     """
     if backend == "sqlite" and read_only:
-        return SQLiteWikiStore(
-            storage_dir / "wiki.db", wiki_name=wiki_name, read_only=True
-        )
+        return SQLiteWikiStore(storage_dir / "wiki.db", wiki_name=wiki_name, read_only=True)
     if backend == "memory" and read_only and not (storage_dir / "pages").exists():
-        raise FileNotFoundError(
-            f"read-only wiki store has no plane at {storage_dir / 'pages'}"
-        )
+        raise FileNotFoundError(f"read-only wiki store has no plane at {storage_dir / 'pages'}")
     return create_wiki_store(storage_dir, wiki_name=wiki_name, backend=backend)
 
 
@@ -380,8 +378,7 @@ async def open_namespace_store(
     if kind == "store":
         if cfg.backend == "arangodb":
             raise ValueError(
-                f"namespace {name!r}: backend 'arangodb' needs a `database` "
-                "entry, not a `store` directory"
+                f"namespace {name!r}: backend 'arangodb' needs a `database` " "entry, not a `store` directory"
             )
         storage_dir = _resolve_dir(cfg.store or "", base_dir)
         store = _open_local_plane(
@@ -393,6 +390,19 @@ async def open_namespace_store(
         await _assert_plane_readable(store)
         return store, storage_dir
     # kind == "database"
+    if cfg.backend != "arangodb":
+        factory = wiki_store._EXTRA_BACKENDS.get(cfg.backend)
+        if factory is None:
+            raise ValueError(f"namespace {name!r}: unknown database backend {cfg.backend!r}")
+        store = factory(
+            storage_dir=None,
+            wiki_name=name,
+            database=cfg.database or "",
+            arango_params=resolve_arango_params(_arango_config_for(cfg)),
+            read_only=read_only,
+        )
+        await _assert_plane_readable(store)
+        return store, None
     store = await _open_arango(
         arango_params=resolve_arango_params(_arango_config_for(cfg)),
         database=cfg.database or "",
@@ -412,9 +422,7 @@ def _skip_for(name: str, cfg: WikiNamespaceConfig, exc: BaseException) -> Namesp
             hint = f"wikitoolkit build --path {cfg.target}"
         elif cfg.kind == "store":
             hint = f"wikitoolkit build --store {cfg.target}"
-        return NamespaceSkip(
-            name=name, reason="unbuilt", detail=str(exc), hint=hint
-        )
+        return NamespaceSkip(name=name, reason="unbuilt", detail=str(exc), hint=hint)
     if isinstance(exc, (StalePlaneError, ValueError, TypeError)):
         hint = ""
         if isinstance(exc, StalePlaneError) and cfg.kind in (
@@ -424,9 +432,7 @@ def _skip_for(name: str, cfg: WikiNamespaceConfig, exc: BaseException) -> Namesp
         ):
             flag = "--store" if cfg.kind == "store" else "--path"
             hint = f"wikitoolkit build {flag} {cfg.target} --force"
-        return NamespaceSkip(
-            name=name, reason="invalid", detail=str(exc), hint=hint
-        )
+        return NamespaceSkip(name=name, reason="invalid", detail=str(exc), hint=hint)
     return NamespaceSkip(name=name, reason="unreachable", detail=str(exc))
 
 
@@ -458,9 +464,7 @@ async def resolve_namespaces(
         ``(handles, skipped)`` — the opened namespaces and the notes for
         the ones that were not.
     """
-    merged = merge_namespaces(
-        config.namespaces, load_global_registry(registry_path).namespaces
-    )
+    merged = merge_namespaces(config.namespaces, load_global_registry(registry_path).namespaces)
     if only is not None:
         merged = {name: entry for name, entry in merged.items() if name in only}
 
@@ -559,9 +563,7 @@ def _qualify_row(row: dict[str, Any], namespace: str | None) -> dict[str, Any]:
 
 def _row_id(row: dict[str, Any]) -> str:
     """Identity used to dedup merged rows."""
-    return str(
-        row.get("concept_id") or row.get("node_id") or row.get("page_id") or ""
-    )
+    return str(row.get("concept_id") or row.get("node_id") or row.get("page_id") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -615,9 +617,7 @@ class FederatedWikiStore(BaseWikiStore):
         """
         self._local = local
         self.local_name = local_name
-        self.namespaces: dict[str, NamespaceHandle] = {
-            handle.name: handle for handle in (handles or [])
-        }
+        self.namespaces: dict[str, NamespaceHandle] = {handle.name: handle for handle in (handles or [])}
         self.skipped: list[NamespaceSkip] = list(skipped or [])
         self._qualify_local = qualify_local
         self.logger = logging.getLogger(__name__)
@@ -740,9 +740,7 @@ class FederatedWikiStore(BaseWikiStore):
 
         for handle, outcome in zip(handles, outcomes[1:]):
             if isinstance(outcome, BaseException):
-                self.logger.warning(
-                    "Namespace %s failed on %s: %s", handle.name, call, outcome
-                )
+                self.logger.warning("Namespace %s failed on %s: %s", handle.name, call, outcome)
                 skips.append(
                     NamespaceSkip(
                         name=handle.name,
@@ -784,9 +782,7 @@ class FederatedWikiStore(BaseWikiStore):
                 if current is None:
                     merged[key] = row
                     kept.append(row)
-                elif rank and float(row.get("score") or 0.0) > float(
-                    current.get("score") or 0.0
-                ):
+                elif rank and float(row.get("score") or 0.0) > float(current.get("score") or 0.0):
                     merged[key] = row
             prepared_groups.append(kept)
 
@@ -844,14 +840,10 @@ class FederatedWikiStore(BaseWikiStore):
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         """Lexical search across the local plane and every namespace."""
-        groups = await self._fan_out(
-            "search_fts", query, category=category, limit=limit
-        )
+        groups = await self._fan_out("search_fts", query, category=category, limit=limit)
         return self._merge(groups, limit)
 
-    async def search_vector(
-        self, embedding: list[float], limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_vector(self, embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
         """Vector search across the local plane and every namespace."""
         groups = await self._fan_out("search_vector", embedding, limit=limit)
         return self._merge(groups, limit)
@@ -863,14 +855,10 @@ class FederatedWikiStore(BaseWikiStore):
         origin: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List page stubs across the local plane and every namespace."""
-        groups = await self._fan_out(
-            "list_pages", category=category, limit=limit, origin=origin
-        )
+        groups = await self._fan_out("list_pages", category=category, limit=limit, origin=origin)
         return self._merge(groups, limit, rank=False)
 
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> dict[str, Any] | None:
+    async def get_page(self, concept_id: str, include_body: bool = True) -> dict[str, Any] | None:
         """Fetch one page, routing a qualified id to its namespace."""
         handle, local_id, known = self._route(concept_id)
         if not known:
@@ -880,9 +868,7 @@ class FederatedWikiStore(BaseWikiStore):
         try:
             row = await store.get_page(local_id, include_body=include_body)
         except Exception as exc:  # noqa: BLE001 — a broken namespace is a note
-            self.logger.warning(
-                "Namespace %s failed on get_page: %s", namespace or "local", exc
-            )
+            self.logger.warning("Namespace %s failed on get_page: %s", namespace or "local", exc)
             return None
         if row is None:
             return None
@@ -903,9 +889,7 @@ class FederatedWikiStore(BaseWikiStore):
         try:
             rows = await store.neighbors(local_id, rel=rel, direction=direction)
         except Exception as exc:  # noqa: BLE001 — a broken namespace is a note
-            self.logger.warning(
-                "Namespace %s failed on neighbors: %s", namespace or "local", exc
-            )
+            self.logger.warning("Namespace %s failed on neighbors: %s", namespace or "local", exc)
             return []
         return [_qualify_row(row, namespace) for row in rows]
 
@@ -929,9 +913,7 @@ class FederatedWikiStore(BaseWikiStore):
         out["local"] = self.local_name
 
         handles = list(self.namespaces.values())
-        outcomes = await asyncio.gather(
-            *(handle.store.stats() for handle in handles), return_exceptions=True
-        )
+        outcomes = await asyncio.gather(*(handle.store.stats() for handle in handles), return_exceptions=True)
         blocks: dict[str, Any] = {}
         skipped = [skip.model_dump() for skip in self.skipped]
         for handle, outcome in zip(handles, outcomes):
@@ -945,9 +927,7 @@ class FederatedWikiStore(BaseWikiStore):
                 "storage_dir": str(handle.storage_dir) if handle.storage_dir else None,
             }
             if isinstance(outcome, BaseException):
-                self.logger.warning(
-                    "Namespace %s failed on stats: %s", handle.name, outcome
-                )
+                self.logger.warning("Namespace %s failed on stats: %s", handle.name, outcome)
                 blocks[handle.name] = {**common, "status": "unreachable"}
                 skipped.append(
                     NamespaceSkip(
@@ -981,9 +961,7 @@ class FederatedWikiStore(BaseWikiStore):
             return page_id
         if self._qualify_local and namespace == self.local_name:
             return local_id
-        raise ValueError(
-            f"write to namespace {namespace!r} requires --ns {namespace}"
-        )
+        raise ValueError(f"write to namespace {namespace!r} requires --ns {namespace}")
 
     def _strip_page(self, page: WikiPageRecord) -> WikiPageRecord:
         """Validate a page's ids and return it with the prefix removed.
@@ -1003,14 +981,10 @@ class FederatedWikiStore(BaseWikiStore):
             ValueError: The record names a different namespace.
         """
         concept_id = self._assert_local(page.concept_id)
-        node_id = (
-            self._assert_local(page.node_id) if page.node_id else page.node_id
-        )
+        node_id = self._assert_local(page.node_id) if page.node_id else page.node_id
         if concept_id == page.concept_id and node_id == page.node_id:
             return page
-        return page.model_copy(
-            update={"concept_id": concept_id, "node_id": node_id}
-        )
+        return page.model_copy(update={"concept_id": concept_id, "node_id": node_id})
 
     def _strip_edge(self, edge: tuple) -> tuple:
         """Validate an edge's endpoints and strip this namespace's prefix."""
@@ -1023,15 +997,11 @@ class FederatedWikiStore(BaseWikiStore):
 
     async def upsert_pages(self, pages: list[WikiPageRecord]) -> int:
         """Write pages into the local plane."""
-        return await self._local.upsert_pages(
-            [self._strip_page(page) for page in pages]
-        )
+        return await self._local.upsert_pages([self._strip_page(page) for page in pages])
 
     async def add_edges(self, edges: list[tuple]) -> int:
         """Write edges into the local plane (no cross-namespace edges)."""
-        return await self._local.add_edges(
-            [self._strip_edge(edge) for edge in edges]
-        )
+        return await self._local.add_edges([self._strip_edge(edge) for edge in edges])
 
     async def replace_source_slice(
         self,
@@ -1050,13 +1020,9 @@ class FederatedWikiStore(BaseWikiStore):
         """Delete a page from the local plane."""
         return await self._local.delete_page(self._assert_local(concept_id))
 
-    async def upsert_embedding(
-        self, concept_id: str, vector: list[float], model: str = ""
-    ) -> None:
+    async def upsert_embedding(self, concept_id: str, vector: list[float], model: str = "") -> None:
         """Store an embedding on the local plane."""
-        await self._local.upsert_embedding(
-            self._assert_local(concept_id), vector, model
-        )
+        await self._local.upsert_embedding(self._assert_local(concept_id), vector, model)
 
     async def rebuild_from_tree(
         self,
@@ -1114,14 +1080,10 @@ class _EmptyStore(BaseWikiStore):
     async def delete_page(self, concept_id: str) -> bool:
         raise PermissionError("no local plane in this scope")
 
-    async def upsert_embedding(
-        self, concept_id: str, vector: list[float], model: str = ""
-    ) -> None:
+    async def upsert_embedding(self, concept_id: str, vector: list[float], model: str = "") -> None:
         raise PermissionError("no local plane in this scope")
 
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> dict[str, Any] | None:
+    async def get_page(self, concept_id: str, include_body: bool = True) -> dict[str, Any] | None:
         return None
 
     async def list_pages(
@@ -1132,14 +1094,10 @@ class _EmptyStore(BaseWikiStore):
     ) -> list[dict[str, Any]]:
         return []
 
-    async def search_fts(
-        self, query: str, category: str | None = None, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_fts(self, query: str, category: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
         return []
 
-    async def search_vector(
-        self, embedding: list[float], limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_vector(self, embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
         return []
 
     async def neighbors(

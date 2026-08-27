@@ -13,6 +13,8 @@ No live ArangoDB and no network access anywhere in this suite:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,14 @@ from parrot.knowledge.ontology.graph_store import UpsertResult
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
+from parrot_tools.legal.boe.hashing import seal_hash
+from parrot_tools.legal.boe.parser import parse_consolidated
+from parrot_tools.legal.librarian.models import (
+    DraftAnswer,
+    DraftReadingNote,
+    DraftSpan,
+    PayloadEntry,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 BOE_FIXTURE_PATH = FIXTURE_DIR / "boe_consolidated_sample.xml"
@@ -78,9 +88,23 @@ class FakeGraphStore:
         # collection -> {key_field value -> document}
         self._collections: dict[str, dict[str, dict[str, Any]]] = {}
         self.upsert_calls: list[tuple[str, int]] = []
+        self.inserted_documents: list[tuple[str, dict[str, Any]]] = []
+        self.last_traversal: tuple[str, dict[str, Any], dict[str, Any] | None] | None = None
 
     async def initialize_tenant(self, ctx: TenantContext) -> None:
         return None
+
+    async def insert_document(self, ctx: TenantContext, collection: str, doc: dict[str, Any]) -> None:
+        """Insert one document — used by SuppressionLog.append (TASK-2495).
+
+        Mirrors ``OntologyGraphStore.insert_document``'s contract
+        (auto-key when absent) closely enough for append-only writer
+        tests: records the call and stores the doc keyed by ``_key``.
+        """
+        store = self._collections.setdefault(collection, {})
+        key = doc.get("_key") or f"auto:{len(store)}"
+        store[key] = dict(doc)
+        self.inserted_documents.append((collection, dict(doc)))
 
     async def get_all_nodes(self, ctx: TenantContext, collection: str) -> list[dict[str, Any]]:
         docs = self._collections.get(collection, {})
@@ -137,15 +161,29 @@ class FakeGraphStore:
         bind_vars: dict[str, Any] | None = None,
         collection_binds: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Simulate the article_in_force AQL's version-selection semantics.
+        """Simulate the article_in_force / search_articles AQL semantics.
 
         Mirrors, in this TEST DOUBLE only, what a real ArangoDB engine
-        would compute from the declarative query_template (embedded-list
+        would compute from the declarative query_templates (embedded-list
         selection: the FILTER clauses' inclusive lower bound / exclusive
         upper bound). Production code (``queries.py``) never performs
-        this comparison in Python — see TASK-2375.
+        this comparison in Python — see TASK-2375/TASK-2496.
+
+        Branches on ``"legal_articulos_view"`` appearing in the AQL to
+        simulate the ``search_articles`` pattern (TASK-2496) — the real
+        engine's ``SEARCH`` matches at DOCUMENT level (any version's text
+        can match); this fake reproduces that by checking the query
+        substring against ANY version's text before resolving the
+        in-force version for ``as_of`` (the token-containment guard in
+        ``queries.py`` is what then drops a document-level match that
+        landed only in a superseded wording — this fake does not
+        pre-filter for that, by design).
         """
         bind_vars = bind_vars or {}
+        self.last_traversal = (aql, bind_vars, collection_binds)
+        if "legal_articulos_view" in aql:
+            return self._search_articles_rows(bind_vars)
+
         articulo_key = bind_vars.get("articulo_key")
         as_of = bind_vars.get("as_of")
         if articulo_key is None or as_of is None:
@@ -163,7 +201,197 @@ class FakeGraphStore:
                 return [version]
         return []
 
+    def _search_articles_rows(self, bind_vars: dict[str, Any]) -> list[dict[str, Any]]:
+        """Fake ``search_articles`` row production — see execute_traversal."""
+        query = (bind_vars.get("query") or "").lower()
+        as_of = bind_vars.get("as_of")
+        limit = bind_vars.get("limit", 20)
+        rows: list[dict[str, Any]] = []
+
+        for doc in self._collections.get("articulo", {}).values():
+            if not doc.get("_active", True):
+                continue
+            versions = doc.get("versions", [])
+            if not any(query and query in (v.get("text") or "").lower() for v in versions):
+                continue
+
+            in_force = None
+            for version in versions:
+                lower = version["valid_from"]
+                upper = version["valid_to"]
+                if lower <= as_of and (upper is None or upper > as_of):
+                    in_force = version
+                    break
+            if in_force is None:
+                continue
+
+            rows.append(
+                {
+                    "articulo_key": doc.get("articulo_key"),
+                    "norma_ref": doc.get("norma_ref"),
+                    "numero": doc.get("numero"),
+                    "version": in_force,
+                    "score": 1.0,
+                }
+            )
+            if len(rows) >= limit:
+                break
+        return rows
+
 
 @pytest.fixture
 def fake_store() -> FakeGraphStore:
     return FakeGraphStore()
+
+
+# ---------------------------------------------------------------------------
+# TASK-2499: end-to-end librarian fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def seeded_store(boe_corpus: str, legal_tenant_ctx: TenantContext) -> FakeGraphStore:
+    """A ``FakeGraphStore`` seeded by parsing the TASK-2372 fixture.
+
+    Runs ``parse_consolidated`` (TASK-2492 sealed-hash path) over the
+    checked-in BOE fixture and upserts the resulting norma/articulo
+    records — every non-``supresion`` version carries a verifiable
+    ``content_hash``, exactly like a real re-ingest.
+    """
+    parsed = parse_consolidated(boe_corpus)
+    store = FakeGraphStore()
+    if parsed.norma:
+        await store.upsert_nodes(legal_tenant_ctx, "norma", [parsed.norma], key_field="boe_id")
+    if parsed.articulos:
+        await store.upsert_nodes(legal_tenant_ctx, "articulo", parsed.articulos, key_field="articulo_key")
+    return store
+
+
+@pytest.fixture
+def tampered_payload_entry() -> PayloadEntry:
+    """A ``PayloadEntry`` whose text was mutated AFTER its hash was sealed.
+
+    Simulates store tampering/drift since ingest — ``content_hash`` still
+    carries the ORIGINAL text's sealed hash, but ``payload`` holds
+    different text, so ``seal_hash(payload) != content_hash``
+    (``SpanVerifier``'s defence-in-depth check, TASK-2495).
+    """
+    original_text = "El plazo sera de tres meses."
+    sealed_hash = seal_hash(original_text)
+    tampered_text = "El plazo sera de VEINTE meses."
+    return PayloadEntry(
+        payload_key="BOE-A-2015-10566:50:0",
+        payload=tampered_text,
+        content_hash=sealed_hash,
+        title="Ley 40/2015 art. 50",
+        url="https://www.boe.es/buscar/act.php?id=BOE-A-2015-10566",
+        as_of=date(2019, 6, 1),
+        version_n=0,
+        articulo_key="BOE-A-2015-10566:50",
+        basis="retrieval",
+    )
+
+
+class _CannedAgent:
+    """Stands in for ``LegalLibrarianAgent`` — returns a fixed ``DraftAnswer``.
+
+    ``ask`` raises if called: every e2e test query states its ``as_of``
+    explicitly (e.g. "... a 2019-06-01") so ``extract_as_of`` never needs
+    the LLM fallback — a call here would mean a test query regressed.
+    """
+
+    def __init__(self, draft: DraftAnswer) -> None:
+        self._draft = draft
+
+    async def draft(self, enumerated_dossier: str, query: str, as_of: date) -> DraftAnswer:
+        return self._draft
+
+    async def ask(self, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("as_of fallback must not be needed in deterministic e2e tests")
+
+
+@dataclass
+class CannedDrafts:
+    """Four canned librarian agents for the fail-closed invariant e2e tests."""
+
+    anchored: _CannedAgent
+    fabricated: _CannedAgent
+    mangled: _CannedAgent
+    empty: _CannedAgent
+
+
+# The real, in-force (as of 2019-06-01) wording of BOE-A-2015-10566:50
+# version 0 (see boe_consolidated_sample.xml) — quoted VERBATIM so the
+# "anchored" canned draft cites a real fixture substring.
+ANCHORED_QUOTE = (
+    "será necesario que el convenio se acompañe de una memoria "
+    "justificativa donde se analice su necesidad y oportunidad"
+)
+
+
+@pytest.fixture
+def canned_drafts() -> CannedDrafts:
+    """Canned ``DraftAnswer``s exercising the fail-closed invariant end-to-end."""
+    anchored = DraftAnswer(
+        reading_order=["BOE-A-2015-10566:50:0"],
+        conflicts=[],
+        not_found=[],
+        reading_guide=[
+            DraftReadingNote(
+                text="El convenio debe acompañarse de una memoria justificativa.",
+                basis="llm",
+                spans=[DraftSpan(payload_key="BOE-A-2015-10566:50:0", quote=ANCHORED_QUOTE)],
+            )
+        ],
+    )
+    fabricated = DraftAnswer(
+        reading_order=["BOE-A-9999-1:art99:0"],
+        conflicts=[],
+        not_found=[],
+        reading_guide=[
+            DraftReadingNote(
+                text="Dice algo inventado.",
+                basis="llm",
+                spans=[DraftSpan(payload_key="BOE-A-9999-1:art99:0", quote="inventado")],
+            )
+        ],
+    )
+    mangled = DraftAnswer(
+        reading_order=["BOE-A-2015-10566:50:0"],
+        conflicts=[],
+        not_found=[],
+        reading_guide=[
+            DraftReadingNote(
+                text="Texto distinto al original.",
+                basis="llm",
+                spans=[
+                    DraftSpan(
+                        payload_key="BOE-A-2015-10566:50:0",
+                        quote="texto que no existe en absoluto en el payload",
+                    )
+                ],
+            )
+        ],
+    )
+    empty = DraftAnswer(reading_order=[], conflicts=[], reading_guide=[], not_found=[])
+    return CannedDrafts(
+        anchored=_CannedAgent(anchored),
+        fabricated=_CannedAgent(fabricated),
+        mangled=_CannedAgent(mangled),
+        empty=_CannedAgent(empty),
+    )
+
+
+class FakeLog:
+    """Records every appended ``SuppressionRecord`` — stands in for ``SuppressionLog``."""
+
+    def __init__(self) -> None:
+        self.records: list[Any] = []
+
+    async def append(self, record: Any) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture
+def fake_log() -> FakeLog:
+    return FakeLog()

@@ -58,6 +58,7 @@ def _db_row(
     root_submission_id: str | None = None,
     revision: int | None = None,
     context: str | None = None,
+    extra_data: str | None = None,
     data: str = '{"q1": "yes"}',
     form_uid: str | None = _TEST_FORM_UID,
 ) -> dict:
@@ -88,6 +89,7 @@ def _db_row(
         "root_submission_id": root_submission_id,
         "revision": revision,
         "context": context,
+        "extra_data": extra_data,
     }
 
 
@@ -98,9 +100,7 @@ def _db_row(
 
 class TestFormSubmissionRevisionFields:
     def test_defaults_none(self) -> None:
-        sub = FormSubmission(
-            form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
-        )
+        sub = FormSubmission(form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True)
         assert sub.root_submission_id is None
         assert sub.revision is None
         assert sub.context is None
@@ -186,9 +186,7 @@ class TestStoreRevisionColumns:
     async def test_store_nulls_context_when_unset(self) -> None:
         pool = _RecordingPool()
         await FormSubmissionStorage(pool=pool).store(
-            FormSubmission(
-                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True
-            )
+            FormSubmission(form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True)
         )
         _, args = pool.conn.executed[0]
         assert args[18] is None  # root_submission_id
@@ -201,14 +199,26 @@ class TestStoreRevisionColumns:
         storage = FormSubmissionStorage(pool=pool)
         await storage.store(
             FormSubmission(
-                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True,
-                submission_id="sub-1", root_submission_id="sub-1", revision=1,
+                form_uid=_TEST_FORM_UID,
+                form_id="f",
+                form_version="1.0",
+                data={},
+                is_valid=True,
+                submission_id="sub-1",
+                root_submission_id="sub-1",
+                revision=1,
             )
         )
         await storage.store(
             FormSubmission(
-                form_uid=_TEST_FORM_UID, form_id="f", form_version="1.0", data={}, is_valid=True,
-                submission_id="sub-2", root_submission_id="sub-1", revision=2,
+                form_uid=_TEST_FORM_UID,
+                form_id="f",
+                form_version="1.0",
+                data={},
+                is_valid=True,
+                submission_id="sub-2",
+                root_submission_id="sub-1",
+                revision=2,
             )
         )
         for sql, _ in pool.conn.executed:
@@ -284,8 +294,6 @@ class TestReadAPI:
     @pytest.mark.asyncio
     async def test_read_uses_tenant_override(self) -> None:
         pool = _RowsPool(row=None)
-        await FormSubmissionStorage(pool=pool).get_submission(
-            "x", tenant="epson"
-        )
+        await FormSubmissionStorage(pool=pool).get_submission("x", tenant="epson")
         sql, _ = pool.conn.fetched[0]
         assert '"epson"."form_data"' in sql

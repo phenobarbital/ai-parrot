@@ -343,8 +343,11 @@ construction):
 ```text
 submission_id, form_uid, form_id, form_version, created_at, tenant,
 user_id, username, org_id, submitted_at, ip, user_agent, locale,
-root_submission_id, revision, context
+root_submission_id, revision, context, extra_data
 ```
+
+`extra_data` was added by FEAT-458 (Unknown-Field Capture) — see
+[`formdesigner-unknown-fields-capture.md`](formdesigner-unknown-fields-capture.md).
 
 Document targets (`asyncdb` with `driver: mongo` or `driver: arango`)
 skip this check entirely — nesting has no column namespace to collide

@@ -32,7 +32,7 @@
       "feature_id": "FEAT-445",
       "feature": "commcenter-post-launch-fixes",
       "spec": "sdd/specs/commcenter-notify.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],

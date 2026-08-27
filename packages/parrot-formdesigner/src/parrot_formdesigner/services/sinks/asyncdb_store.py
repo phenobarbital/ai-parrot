@@ -44,6 +44,7 @@ table id.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -276,6 +277,13 @@ class AsyncDBSink(AbstractSubmissionSink):
 
     def _doc_to_submission(self, doc: dict[str, Any]) -> FormSubmission:
         """Reconstruct a `FormSubmission` from a stored document/row."""
+        # FEAT-458 code-review fix: extra_data is a reserved column, like
+        # context — nest_submission (mongo/arango) keeps it a native
+        # dict/None, but flatten_submission (bigquery) JSON-serializes it,
+        # so guard both shapes the same way.
+        extra_data = doc.get("extra_data")
+        if isinstance(extra_data, str):
+            extra_data = json.loads(extra_data)
         return FormSubmission(
             submission_id=doc["submission_id"],
             form_uid=doc["form_uid"],
@@ -295,6 +303,7 @@ class AsyncDBSink(AbstractSubmissionSink):
             root_submission_id=doc.get("root_submission_id"),
             revision=doc.get("revision"),
             context=doc.get("context"),
+            extra_data=extra_data,
         )
 
     async def read(self, submission_id: str) -> FormSubmission | None:

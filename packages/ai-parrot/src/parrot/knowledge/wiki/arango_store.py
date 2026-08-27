@@ -200,9 +200,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             PermissionError: When the store is read-only.
         """
         if self._read_only:
-            raise PermissionError(
-                f"read-only wiki store: arangodb database {self._database!r}"
-            )
+            raise PermissionError(f"read-only wiki store: arangodb database {self._database!r}")
 
     @property
     def _view_name(self) -> str:
@@ -284,9 +282,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 self._loop = asyncio.get_running_loop()
                 self._initialized = True
                 return
-            self._db = AsyncDB(
-                "arangodb", params={**self._params, "database": self._database}
-            )
+            self._db = AsyncDB("arangodb", params={**self._params, "database": self._database})
             await self._db.connection()
 
             for name, is_edge in (
@@ -314,9 +310,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             FileNotFoundError: The database or its pages collection is
                 absent — the plane was never built.
         """
-        probe = AsyncDB(
-            "arangodb", params={**self._params, "database": "_system"}
-        )
+        probe = AsyncDB("arangodb", params={**self._params, "database": "_system"})
         await probe.connection()
         try:
             databases = await probe.list_databases()
@@ -325,13 +319,9 @@ class ArangoDBWikiStore(BaseWikiStore):
         finally:
             await probe.close()
         if databases is not None and self._database not in set(databases):
-            raise FileNotFoundError(
-                f"ArangoDB database {self._database!r} does not exist"
-            )
+            raise FileNotFoundError(f"ArangoDB database {self._database!r} does not exist")
 
-        self._db = AsyncDB(
-            "arangodb", params={**self._params, "database": self._database}
-        )
+        self._db = AsyncDB("arangodb", params={**self._params, "database": self._database})
         await self._db.connection()
         if not await self._db.collection_exists(PAGES_COLLECTION):
             raise FileNotFoundError(
@@ -545,7 +535,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 "origin": p.origin,
                 "asserted_by": p.asserted_by,
                 "created_at": now,
-                "updated_at": now,
+                "updated_at": p.updated_at or now,
             }
             for p in pages
         ]
@@ -593,13 +583,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                     "provenance": provenance,
                 }
             )
-        aql = (
-            "FOR doc IN @docs "
-            "UPSERT {_key: doc._key} "
-            "INSERT doc "
-            "UPDATE doc "
-            "IN @@collection"
-        )
+        aql = "FOR doc IN @docs " "UPSERT {_key: doc._key} " "INSERT doc " "UPDATE doc " "IN @@collection"
         await self._execute(aql, {"docs": docs, "@collection": EDGES_COLLECTION})
         return len(edges)
 
@@ -634,8 +618,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         # address documents in REMOVE (which resolves a bare string as a
         # key, and keys are encoded — see document_key()).
         old_rows = await self._query(
-            "FOR doc IN @@collection FILTER doc.source_id == @source_id"
-            " RETURN {cid: doc.concept_id, key: doc._key}",
+            "FOR doc IN @@collection FILTER doc.source_id == @source_id" " RETURN {cid: doc.concept_id, key: doc._key}",
             {"@collection": PAGES_COLLECTION, "source_id": source_id},
         )
         old_ids = [row["cid"] for row in old_rows]
@@ -645,23 +628,18 @@ class ArangoDBWikiStore(BaseWikiStore):
         if old_ids:
             old_set = set(old_ids)
             rows = await self._query(
-                "FOR e IN @@collection FILTER e.dst IN @old_ids"
-                " RETURN {src: e.src, dst: e.dst, rel: e.rel}",
+                "FOR e IN @@collection FILTER e.dst IN @old_ids" " RETURN {src: e.src, dst: e.dst, rel: e.rel}",
                 {"@collection": EDGES_COLLECTION, "old_ids": old_ids},
             )
             preserved = [
-                (r["src"], r["dst"], r["rel"])
-                for r in rows
-                if r["src"] not in old_set and r["dst"] in new_ids
+                (r["src"], r["dst"], r["rel"]) for r in rows if r["src"] not in old_set and r["dst"] in new_ids
             ]
             await self._execute(
-                "FOR key IN @old_keys REMOVE key IN @@collection"
-                " OPTIONS {ignoreErrors: true}",
+                "FOR key IN @old_keys REMOVE key IN @@collection" " OPTIONS {ignoreErrors: true}",
                 {"old_keys": old_keys, "@collection": EMBEDDINGS_COLLECTION},
             )
             await self._execute(
-                "FOR e IN @@collection FILTER e.src IN @old_ids OR e.dst IN @old_ids"
-                " REMOVE e IN @@collection",
+                "FOR e IN @@collection FILTER e.src IN @old_ids OR e.dst IN @old_ids" " REMOVE e IN @@collection",
                 {"old_ids": old_ids, "@collection": EDGES_COLLECTION},
             )
             await self._execute(
@@ -700,8 +678,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         await self._ensure_init()
         key = document_key(concept_id)
         deleted_rows = await self._query(
-            "FOR doc IN @@collection FILTER doc._key == @key"
-            " REMOVE doc IN @@collection RETURN OLD",
+            "FOR doc IN @@collection FILTER doc._key == @key" " REMOVE doc IN @@collection RETURN OLD",
             {"@collection": PAGES_COLLECTION, "key": key},
         )
         if not deleted_rows:
@@ -712,15 +689,12 @@ class ArangoDBWikiStore(BaseWikiStore):
         )
         # ``src``/``dst`` hold raw concept ids, not keys.
         await self._execute(
-            "FOR e IN @@collection FILTER e.src == @cid OR e.dst == @cid"
-            " REMOVE e IN @@collection",
+            "FOR e IN @@collection FILTER e.src == @cid OR e.dst == @cid" " REMOVE e IN @@collection",
             {"cid": concept_id, "@collection": EDGES_COLLECTION},
         )
         return True
 
-    async def upsert_embedding(
-        self, concept_id: str, vector: list[float], model: str = ""
-    ) -> None:
+    async def upsert_embedding(self, concept_id: str, vector: list[float], model: str = "") -> None:
         """Store (or replace) the embedding vector for a page.
 
         Args:
@@ -746,9 +720,7 @@ class ArangoDBWikiStore(BaseWikiStore):
     # Read API
     # ------------------------------------------------------------------
 
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> Optional[dict[str, Any]]:
+    async def get_page(self, concept_id: str, include_body: bool = True) -> Optional[dict[str, Any]]:
         """Fetch a single page by ``concept_id`` (falls back to ``node_id``).
 
         Args:
@@ -831,9 +803,7 @@ class ArangoDBWikiStore(BaseWikiStore):
         )
         return await self._query(aql, bind_vars)
 
-    async def search_fts(
-        self, query: str, category: Optional[str] = None, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_fts(self, query: str, category: Optional[str] = None, limit: int = 10) -> list[dict[str, Any]]:
         """BM25 lexical search over title/summary/body via ArangoSearch.
 
         Matches the query under every analyzer in :attr:`analyzers`, so a
@@ -880,9 +850,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             bind_vars["category"] = category
         return await self._query(aql, bind_vars)
 
-    async def search_vector(
-        self, embedding: list[float], limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_vector(self, embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
         """Cosine-similarity search over stored page embeddings.
 
         Fetches every embedding + its page stub via AQL, then delegates
@@ -908,12 +876,8 @@ class ArangoDBWikiStore(BaseWikiStore):
             " source_id: p.source_id, token_count: p.token_count},"
             " vector: e.vector}"
         )
-        rows = await self._query(
-            aql, {"@embeddings": EMBEDDINGS_COLLECTION, "@pages": PAGES_COLLECTION}
-        )
-        candidates: list[tuple[dict[str, Any], list[float]]] = [
-            (row["stub"], row["vector"]) for row in rows
-        ]
+        rows = await self._query(aql, {"@embeddings": EMBEDDINGS_COLLECTION, "@pages": PAGES_COLLECTION})
+        candidates: list[tuple[dict[str, Any], list[float]]] = [(row["stub"], row["vector"]) for row in rows]
         return rank_by_cosine(embedding, candidates, limit=limit)
 
     async def neighbors(
@@ -982,10 +946,7 @@ class ArangoDBWikiStore(BaseWikiStore):
     async def dump_edges(self) -> list[dict[str, Any]]:
         """Return every edge row (bulk export path)."""
         await self._ensure_init()
-        aql = (
-            "FOR e IN @@collection SORT e.src, e.dst, e.rel"
-            " RETURN {src: e.src, dst: e.dst, rel: e.rel}"
-        )
+        aql = "FOR e IN @@collection SORT e.src, e.dst, e.rel" " RETURN {src: e.src, dst: e.dst, rel: e.rel}"
         return await self._query(aql, {"@collection": EDGES_COLLECTION})
 
     async def stats(self) -> dict[str, Any]:
@@ -1004,8 +965,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             ("embeddings", EMBEDDINGS_COLLECTION),
         ):
             rows = await self._query(
-                "FOR doc IN @@collection COLLECT WITH COUNT INTO length"
-                " RETURN length",
+                "FOR doc IN @@collection COLLECT WITH COUNT INTO length" " RETURN length",
                 {"@collection": collection},
             )
             out[key] = rows[0] if rows else 0
@@ -1038,9 +998,7 @@ class ArangoDBWikiStore(BaseWikiStore):
             "FILTER NOT has_pages "
             "RETURN s.source_id"
         )
-        return await self._query(
-            aql, {"@sources": SOURCES_COLLECTION, "@pages": PAGES_COLLECTION}
-        )
+        return await self._query(aql, {"@sources": SOURCES_COLLECTION, "@pages": PAGES_COLLECTION})
 
     async def broken_edges(self) -> list[dict[str, Any]]:
         """Edges whose destination is neither a page nor a source."""

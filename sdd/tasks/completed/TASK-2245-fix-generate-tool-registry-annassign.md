@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-427 — Fix `generate_tool_registry.py` AnnAssign Blindspot
 **Spec**: `sdd/specs/fix-generate-tool-registry-annassign.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none

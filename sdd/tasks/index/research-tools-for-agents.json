@@ -202,7 +202,7 @@
       "feature_id": "FEAT-426",
       "feature": "research-tools-for-agents",
       "spec": "sdd/specs/research-tools-for-agents.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [

@@ -1,0 +1,68 @@
+{
+  "mode": "enrichment",
+  "mode_rationale": "Extensive existing codebase: FEAT-463 spec/tasks/brainstorm, docker-compose, example files, bootstrap script all exist. This proposal enriches and assembles a runnable sample from existing pieces.",
+  "wiki_available": true,
+  "queries": [
+    {
+      "id": "Q001", "type": "wiki_query", "intent": "Locate matrix swarm modules and task decomposition",
+      "parameters": {"question": "matrix swarm agent integration"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q002", "type": "wiki_query", "intent": "Find docker-compose and homeserver setup",
+      "parameters": {"question": "matrix homeserver docker compose sample"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q003", "type": "wiki_query", "intent": "Find existing examples and samples",
+      "parameters": {"question": "examples samples agent crew swarm"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q004", "type": "wiki_query", "intent": "Understand AgentCrew orchestration patterns",
+      "parameters": {"question": "AgentCrew orchestration flow"}, "priority": 2, "status": "complete"
+    },
+    {
+      "id": "Q005", "type": "wiki_page", "intent": "Read task index for FEAT-463",
+      "parameters": {"id": "file:sdd/tasks/index/matrix-agents-swarm.json"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q006", "type": "wiki_page", "intent": "Read docker-compose details",
+      "parameters": {"id": "file:docker-compose.matrix.yml"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q007", "type": "wiki_page", "intent": "Read existing crew guide",
+      "parameters": {"id": "file:examples/matrix_crew/MATRIX_CREW_GUIDE.md"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q008", "type": "wiki_page", "intent": "Read TASK-2486 docker-compose task details",
+      "parameters": {"id": "file:sdd/tasks/active/TASK-2486-matrix-dev-stack-compose.md"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q009", "type": "wiki_page", "intent": "Read TASK-2487 docs and examples task",
+      "parameters": {"id": "file:sdd/tasks/active/TASK-2487-docs-clients-bridges-examples.md"}, "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q010", "type": "wiki_page", "intent": "Read TASK-2483 AgentSwarmToolkit",
+      "parameters": {"id": "file:sdd/tasks/active/TASK-2483-agent-swarm-toolkit.md"}, "priority": 2, "status": "complete"
+    },
+    {
+      "id": "Q011", "type": "wiki_page", "intent": "Read TASK-2478 swarm config models",
+      "parameters": {"id": "file:sdd/tasks/active/TASK-2478-swarm-config-and-event-models.md"}, "priority": 2, "status": "complete"
+    },
+    {
+      "id": "Q012", "type": "read", "intent": "Read existing swarm example files",
+      "parameters": {"paths": ["examples/matrix_crew/swarm_crew.yaml", "examples/matrix_crew/swarm_example.py", "examples/matrix_crew/collaborative_crew.yaml"]},
+      "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q013", "type": "read", "intent": "Read docker-compose and bootstrap",
+      "parameters": {"paths": ["docker-compose.matrix.yml", "scripts/matrix/bootstrap.sh", "docker/matrix/.env.example"]},
+      "priority": 1, "status": "complete"
+    },
+    {
+      "id": "Q014", "type": "read", "intent": "Read spec frontmatter",
+      "parameters": {"paths": ["sdd/specs/matrix-agents-swarm.spec.md"]},
+      "priority": 1, "status": "complete"
+    }
+  ],
+  "queries_executed": 14,
+  "queries_skipped": 0
+}
