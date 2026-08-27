@@ -620,6 +620,28 @@ class DevLoopRunner:
                 run_id, exc_info=True,
             )
 
+    def _retire_actions_writer(self, run_id: str) -> None:
+        """Drop ``run_id``'s actions-stream writer without waiting for it.
+
+        For an ABANDONED run only. ``_close_host`` — and the awaited flush
+        inside it — never runs when ``run_flow`` raises or is cancelled, so
+        the writer would otherwise stay parked on ``queue.get()`` for the
+        life of the process. Synchronous and non-awaiting on purpose: it is
+        called from an ``except BaseException`` branch, where awaiting during
+        cancellation could re-raise before the caller re-raises ``exc``.
+
+        Anything still queued is discarded. Such a run never produced a
+        ``run/closed``, so its stream is incomplete regardless and consoles
+        fall back to their socket-close handling.
+
+        Args:
+            run_id: The abandoned run whose writer should be retired.
+        """
+        self._actions_queues.pop(run_id, None)
+        writer = self._actions_writers.pop(run_id, None)
+        if writer is not None and not writer.done():
+            writer.cancel()
+
     async def _ensure_actions_redis(self) -> Any:
         """Return a cached async Redis client for the actions stream."""
         if self._actions_redis is None:
@@ -1099,6 +1121,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             # Exactly-once release: only if this run is STILL holding its
@@ -1118,7 +1141,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
@@ -1263,6 +1286,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             if rid in self._active:
@@ -1275,7 +1299,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop feature run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
@@ -1412,6 +1436,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             if rid in self._active:
@@ -1424,7 +1449,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop revision run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
@@ -1432,7 +1457,7 @@ class DevLoopRunner:
 
     # ── Host terminal handling (FEAT-322) ───────────────────────────────────
 
-    def _close_host(
+    async def _close_host(
         self, host: SessionHost, result: FlowResult, ctx: FlowContext,
     ) -> None:
         """Fold ``run/closed``, persist the terminal snapshot + run bundle,
@@ -1501,6 +1526,10 @@ class DevLoopRunner:
         self._apply_root_action(
             RunSummaryChanged(summary=self._run_summary_from_host(host))
         )
+        # Every `host.apply` for this run has happened, so `run/closed` is the
+        # last thing in the queue. Draining here is what lets a console stop
+        # tailing on it without truncating a still-in-flight node event.
+        await self._flush_actions_queue(run_id)
         self._discard_host(run_id)
 
 

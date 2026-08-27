@@ -159,6 +159,7 @@ class DevFlowRunner(DevLoopRunner):
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             # Exactly-once release: only if this run is STILL holding its slot
@@ -175,7 +176,7 @@ class DevFlowRunner(DevLoopRunner):
         self.logger.info(
             "Dev-flow run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
