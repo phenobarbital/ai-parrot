@@ -4,6 +4,7 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from parrot_tools.legal.boe.hashing import HASH_NORM_VERSION, seal_hash
 from parrot_tools.legal.boe.parser import parse_consolidated
 
 FIXTURE = Path(__file__).parent / "fixtures" / "boe_consolidated_sample.xml"
@@ -35,12 +36,21 @@ class TestBOEParser:
             for v in a["versions"]:
                 if v["kind"] == "supresion":
                     assert v["text"] is None
+                    assert v["content_hash"] is None
+                    assert v["hash_norm_version"] is None
 
     def test_all_versions_are_boe_sourced_and_not_derived(self, parsed):
         for a in parsed.articulos:
             for v in a["versions"]:
                 assert v["source"] == "boe_consolidada"
                 assert v["derived"] is False
+
+    def test_non_supresion_versions_carry_sealed_hash(self, parsed):
+        for a in parsed.articulos:
+            for v in a["versions"]:
+                if v["text"] is not None:
+                    assert v["content_hash"] == seal_hash(v["text"])
+                    assert v["hash_norm_version"] == HASH_NORM_VERSION
 
     def test_malformed_reports_error_not_silence(self):
         result = parse_consolidated("<not-valid-boe/>")

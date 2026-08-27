@@ -13,8 +13,15 @@ factory modification.
 from parrot_loaders.extractors.factory import DataSourceFactory
 
 from .datasource import BOEDataSource
+from .hashing import HASH_NORM_VERSION, normalize_for_hash, seal_hash
 from .sync import sync_boe
 
 DataSourceFactory.register_api_source("boe", BOEDataSource)
 
-__all__ = ["BOEDataSource", "sync_boe"]
+__all__ = [
+    "HASH_NORM_VERSION",
+    "BOEDataSource",
+    "normalize_for_hash",
+    "seal_hash",
+    "sync_boe",
+]
