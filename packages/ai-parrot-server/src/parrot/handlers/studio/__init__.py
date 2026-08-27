@@ -123,3 +123,8 @@ def setup_studio_routes(app: web.Application) -> None:
     from .catalog import StudioCatalogHandler
 
     app.router.add_view(f"{STUDIO_PREFIX}/catalog/{{kind}}", StudioCatalogHandler)
+
+    # AgentStudio meta-agent (FEAT-467 TASK-2521): conversational assistant.
+    from .meta_agent import StudioAssistantHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/assistant", StudioAssistantHandler)

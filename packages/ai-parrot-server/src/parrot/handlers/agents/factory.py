@@ -15,6 +15,16 @@ beforehand (typically wiring a ``WebHumanChannel`` or telegram channel).
 
 IMPORTANT: auto_approve=true is restricted to authenticated users with
 factory:admin role to prevent registry tampering via unvalidated API calls.
+
+THIN ALIAS (FEAT-467 TASK-2521): this endpoint's request/response
+contract is preserved byte-for-byte — it remains the code-generation
+entry point via ``AgentFactoryOrchestrator``. The AgentStudio meta-agent
+(``parrot.bots.studio.AgentStudioAgent``) absorbs the SAME underlying
+YAML-agent flow for its own ``create_yaml_agent`` tool by calling
+``parrot.bots.factory.tools.finalize.finalize_agent_registration``
+directly — the identical function this orchestrator's finalize step
+calls — so both surfaces write agents through one code path. This
+handler is untouched beyond this note; no behavior changed.
 """
 from __future__ import annotations
 
