@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-468 — UI Server Backend — Embedded Admin UI Foundation
 **Spec**: `sdd/specs/ui-server-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2526, TASK-2528
@@ -152,10 +152,69 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed)
+**Date**: 2026-08-27
 **Notes**:
+- `pages/Home.svelte` — one-shot `GET /api/v1/admin/status` fetch (via
+  `apiClient`, not polled — Dashboard owns the auto-refreshing view) for
+  `name`/`version`, welcome `Card`, and a nav-card grid driven by
+  `navEntries` from `lib/nav.ts` (filters out the Home entry itself so the
+  cards list is future-proof against new nav entries).
+- `pages/Dashboard.svelte` — `<script module>`-exported pure
+  `formatUptime(seconds)` helper (`Xd Yh Zm` / `Xh Ym` / `Xm Ys` / `Xs`,
+  clamped to `"0s"` for negative/NaN input), imported directly by
+  `Dashboard.test.ts` for a dedicated unit test (mirrors the
+  `badgeVariants` export pattern in `badge.svelte`). `fetchStatus()`
+  fetches the GENERATED `AdminStatus` type from `GET
+  /api/v1/admin/status`; 6-tile grid (version, uptime, crews, agents ×
+  database/registry/loaded) via the new `StatusTile`, dependency list via
+  the new `HealthBadge`, manual refresh button, last-updated timestamp,
+  retry card on a first-load failure (`error && status === null`).
+  Auto-refresh: a single `$effect` calls `fetchStatus()` and sets a 15s
+  `setInterval`, returning `clearInterval` as its teardown — verified with
+  `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync()` in
+  `Dashboard.test.ts`.
+- **Reactive-loop guard (important, not obvious from the diff alone)**:
+  `fetchStatus()` deliberately performs no `$state` READS before its first
+  `await` — only writes (`loading = true` unconditionally, no `status ===
+  null` branch at entry). `$effect` in Svelte 5 captures state reads that
+  happen synchronously during its call stack, including reads inside
+  functions it calls directly (like `fetchStatus()`, invoked synchronously
+  from the effect body up to its first `await`). Had `fetchStatus` read
+  `status`/`loading`/`error` synchronously at entry, the effect would have
+  taken a dependency on that state; since `fetchStatus` later WRITES that
+  same state (after the awaited `apiClient.get()` resolves), the effect
+  would re-run on every fetch completion — tearing down and rebuilding the
+  `setInterval` and firing an immediate extra `fetchStatus()` each time,
+  turning the 15s poll into a request-storm. This was caught during
+  implementation, not by a failing test (the interval test as written
+  wouldn't have distinguished "polls every 15s" from "polls every
+  network-round-trip"); documenting it here since it's a Svelte 5
+  `$effect`-inside-async-function gotcha worth being aware of in any
+  future component with a similar polling `$effect`.
+- New components: `lib/components/StatusTile.svelte` (label/value/loading
+  tile, `data-testid="status-tile-<slug>"`) and
+  `lib/components/HealthBadge.svelte` (status pill using the vendored
+  `Badge` primitive — `ok` → `outline` variant + `text-success` class
+  (global `--color-success` token from `_tokens.css`, not theme-scoped),
+  `unreachable` → the primitive's own `destructive` variant, `unconfigured`
+  → `outline` + `text-muted-foreground`/`bg-muted`; `title` attribute
+  combines `detail`/`latency_ms` when present).
+- Test files: `Dashboard.test.ts` (`formatUptime` unit tests + 4 component
+  tests: renders tiles from a mocked `AdminStatus`, renders a mixed
+  ok/unreachable/unconfigured dependency list, auto-refresh + unmount
+  cleanup under fake timers, retry-card-then-recovers on fetch error),
+  `Home.test.ts` (identity banner from a mocked status response, nav
+  cards render for every non-Home `navEntries` entry, generic fallback
+  copy when the status fetch fails), `HealthBadge.test.ts`,
+  `StatusTile.test.ts` (loading-skeleton vs. value rendering).
+- `pnpm test` — 44/44 passed (10 files, up from 26/6 after TASK-2528).
+  `pnpm build` green (`pnpm generate && vite build`, 757 modules,
+  `Dashboard`/`Home` chunks still code-split per-route).
 
-**Deviations from spec**: none
+**Deviations from spec**: none — `config.ts` was intentionally left
+untouched (not in this task's Files table); the status endpoint path
+`/api/v1/admin/status` is inlined as a local constant in `Dashboard.svelte`
+and `Home.svelte` instead, verified directly against
+`packages/ai-parrot-server/src/parrot/server/ui/serving.py`'s
+`add_view("/api/v1/admin/status", AdminStatusHandler)` registration.
