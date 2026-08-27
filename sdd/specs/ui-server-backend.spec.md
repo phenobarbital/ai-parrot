@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-468
 **Date**: 2026-08-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 0.28.0
 
 > Source brainstorm: `sdd/proposals/ui-server-backend.brainstorm.md`
