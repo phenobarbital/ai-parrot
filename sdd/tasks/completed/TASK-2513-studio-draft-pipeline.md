@@ -199,10 +199,80 @@ class TestDraftLifecycle:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- `StudioDraft` asyncdb model (`navigator.studio_drafts`) in
+  `handlers/models/studio_drafts.py`, pattern `AgentSchedule`.
+- `validation.py::validate_draft(source) -> DraftValidationReport` —
+  pure AST analysis (never imports/executes): syntax errors, import
+  allowlist (`parrot`/`parrot_tools`/stdlib root only, no relative
+  imports), forbidden dynamic-exec calls (`exec`/`eval`/`__import__`/
+  `compile`), and a base-NAME heuristic requiring exactly one
+  AbstractBot-family subclass. `detect_base_class(source)` extracts the
+  matched base name for the `StudioDraft.base_class` column.
+- `StudioDraftsHandler` (GET list/single incl. source + report, POST
+  save+validate, DELETE owner-enforced) and
+  `StudioDraftActivateHandler` (POST activate) in `drafts.py`, routed in
+  `setup_studio_routes`.
+- Activate gate: refuses (409) unless a FRESH re-validation of the
+  CURRENT on-disk content passes (source may have been hand-edited since
+  save — spec §7 "only after a fresh re-validation"); refuses (409) on
+  an unconsented/unowned name collision; on success moves the file
+  `AGENTS_DIR/_drafts/<name>.py` → `AGENTS_DIR/<name>.py` via
+  `Path.replace`, imports via
+  `AgentRegistry._import_module_from_path`, confirms `registry.has()`,
+  stamps `bot_config.config['created_by']` + `status='activated'` +
+  `activated_at`. Best-effort rollback (`target_path.replace(draft_path)`)
+  on import failure or a no-op import — a failed activate never silently
+  vanishes the draft.
+- `_drafts/` is a plain subdirectory of `AGENTS_DIR` — `AgentRegistry
+  ._load_modules_from_directory`'s non-recursive `glob("*.py")` on
+  `AGENTS_DIR` itself never descends into it, so drafts stay invisible
+  to `load_modules()`/startup discovery with zero extra exclusion logic;
+  verified directly (`test_drafts_dir_invisible_to_startup_loader`).
+- Local `SaveDraftRequest`/`ActivateDraftRequest` Pydantic models defined
+  in `drafts.py` itself (not `handlers/studio/models.py`, not listed in
+  this task's Files table) — same file-scope discipline as TASK-2512's
+  local `_error()` helper.
+- Tests: `TestDraftValidation` exercises the validator as pure functions
+  (no handler/DB). `TestDraftLifecycle` uses an in-memory fake
+  draft-row store (`_FakeDraftStore`, monkeypatched onto
+  `_get_draft_row`/`_get_all_draft_rows`/`_upsert_draft_row`/
+  `_delete_draft_row` — refactored `delete()` to route through the new
+  `_delete_draft_row` helper specifically so it's independently
+  mockable, mirroring the other three) rather than simulating asyncdb's
+  Model/SQL layer, plus a REAL isolated `AgentRegistry` for the
+  activate-imports-and-registers path. That path's draft source uses
+  `from parrot.registry import agent_registry;
+  @agent_registry.register_bot_decorator(...)` (fresh module-level
+  lookup at draft-exec time, NOT the `register_agent` alias — which is
+  pre-bound to the ORIGINAL global singleton at `parrot.registry`
+  import time and immune to monkeypatching) so that
+  `monkeypatch.setattr(registry_pkg, "agent_registry", <test registry>)`
+  correctly redirects the draft's self-registration into the test's
+  isolated instance instead of the real global singleton.
+- **Process note**: same `AGENTS_DIR` dual-binding footgun as TASK-2512
+  (patched here too, `drafts_module.AGENTS_DIR`) — no stray files
+  landed outside tmp_path this time; verified via `git status` on the
+  main repo before and after the full run.
+- Ran `ruff check --fix` scoped to the whole `handlers/studio/`
+  directory (this task's own acceptance criterion is directory-wide,
+  not file-scoped) — it also mechanically modernized TASK-2512's already
+  -committed `agents.py` (`Optional[X]`→`X | None`, `List[X]`→`list[X]`,
+  import sort; zero behavior change, confirmed by re-running the full
+  84-test regression sweep before committing). Included in this
+  commit rather than reverted, since keeping the directory lint-clean
+  is explicitly this task's (and TASK-2512's) own acceptance bar.
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally. The two file-scope notes
+above (local request models in `drafts.py`; the `agents.py` lint
+touch-up) are the only departures from a literal reading of the task's
+Files table.
+
+Verification: `pytest packages/ai-parrot-server/tests/studio/
+test_drafts.py -v` → 20/20 passed. `ruff check
+packages/ai-parrot-server/src/parrot/handlers/studio/` → clean except
+intentional `BLE001`/`G201`/`DTZ005` best-effort/fail-open patterns
+matching established convention. Full regression sweep (`tests/studio/`,
+`tests/manager/`, ephemeral-owner, DB-bot fallback tests) → 84/84 passed.
