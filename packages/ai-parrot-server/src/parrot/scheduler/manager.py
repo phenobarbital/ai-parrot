@@ -70,6 +70,21 @@ class ScheduleType(Enum):
     CRONTAB = "crontab"  # using crontab-syntax (supported by APScheduler)
 
 
+class SchedulerRunNowConflictError(Exception):
+    """Raised by :meth:`AgentSchedulerManager.run_schedule_now` when a
+    run-now execution is already active for the target schedule
+    (FEAT-467 TASK-2520) — the handler maps this to HTTP 409."""
+
+
+#: Deterministic APScheduler job-id prefix for run-now one-shot jobs
+#: (FEAT-467 TASK-2520). Shared between :meth:`AgentSchedulerManager.
+#: run_schedule_now` (job-id construction) and
+#: :meth:`AgentSchedulerManager.job_success` (schedule_id recovery when
+#: the one-shot job has already self-removed from the jobstore by the
+#: time the listener runs — see that method's docstring).
+_RUN_NOW_JOB_PREFIX = "run_now:"
+
+
 # Decorator for scheduling agent methods
 def schedule(
     schedule_type: ScheduleType = ScheduleType.DAILY,
@@ -325,6 +340,11 @@ class AgentSchedulerManager:
         self._owns_pool: bool = False
         self._job_context: Dict[str, Dict[str, Any]] = {}
         self._pending_success_tasks: Set[asyncio.Task] = set()
+        # In-memory concurrency guard for run-now (FEAT-467 TASK-2520):
+        # schedule_ids with an active run-now execution in flight. A
+        # second run-now for the same schedule_id while present here is
+        # refused (409) rather than queued/stacked.
+        self._run_now_active: Set[str] = set()
         self.registered_name = kwargs.get(
             "registered_name", self.registered_name
         )
@@ -540,14 +560,45 @@ class AgentSchedulerManager:
         except JobLookupError as err:
             self.logger.warning("Error found a Job with ID: %s", err)
             return False
-        job_name = job.name
+
+        job_kwargs: Dict[str, Any] = {}
+        if job is not None:
+            job_name = job.name
+            job_kwargs = getattr(job, "kwargs", {}) or {}
+        elif job_id.startswith(_RUN_NOW_JOB_PREFIX):
+            # BUGFIX (FEAT-467 TASK-2520): one-shot jobs (DateTrigger,
+            # non-recurring) self-remove from the jobstore as part of
+            # firing — get_job(job_id) already returns None by the time
+            # this listener runs, so `job.name` below used to raise
+            # AttributeError, which APScheduler swallows as "Error
+            # notifying listener" and silently drops the entire success
+            # path (no last_run/run_count/last_result stamping, no
+            # callbacks, no send_result email). Not specific to run-now
+            # in principle — any one-shot job hits this window — but
+            # run-now is the first caller that combines a one-shot
+            # trigger with listeners actually registered (see
+            # start_headless()'s register_listeners docstring: the
+            # default aiohttp on_startup() path still passes
+            # register_listeners=False). Recover schedule_id from the
+            # deterministic job-id prefix run_schedule_now() uses,
+            # since the vanished Job object can't supply job.kwargs.
+            job_name = job_id
+        else:
+            self.logger.warning(
+                "job_success: job %s not found in scheduler and is not a "
+                "recognized one-shot job id — cannot process.", job_id,
+            )
+            return False
+
         self.logger.info(
             f"[Scheduler - {ENVIRONMENT}]: {job_name} with id {event.job_id!s} \
             was queued/executed successfully @ {event.scheduled_run_time!s}"
         )
 
-        job_kwargs = getattr(job, "kwargs", {}) or {}
-        schedule_id = str(job_kwargs.get('schedule_id', event.job_id))
+        if job is None and job_id.startswith(_RUN_NOW_JOB_PREFIX):
+            schedule_id = job_id[len(_RUN_NOW_JOB_PREFIX):]
+        else:
+            schedule_id = str(job_kwargs.get('schedule_id', event.job_id))
         context = self._job_context.pop(schedule_id, {})
 
         if 'agent_name' in context:
@@ -820,7 +871,7 @@ class AgentSchedulerManager:
         """
         if persist:
             try:
-                await self._update_schedule_run(schedule_id, success=True)
+                await self._update_schedule_run(schedule_id, success=True, result=result)
             except Exception as update_error:  # pragma: no cover - safety net
                 self.logger.error(
                     "Failed to update schedule run for job %s: %s",
@@ -867,26 +918,62 @@ class AgentSchedulerManager:
         except TypeError:
             return str(result)
 
+    #: Cap on the serialized ``last_result`` stamped into ``metadata``
+    #: (FEAT-467 TASK-2520) — the JSONB column should never grow
+    #: unbounded from a single verbose agent response.
+    _LAST_RESULT_MAX_CHARS: int = 10_000
+
     async def _update_schedule_run(
         self,
         schedule_id: str,
         success: bool = True,
-        error: Optional[str] = None
+        error: Optional[str] = None,
+        result: Any = None,
     ):
-        """Update schedule record after execution."""
+        """Update schedule record after execution.
+
+        Args:
+            schedule_id: The schedule row to update.
+            success: Whether the run succeeded.
+            error: Error message when ``success`` is ``False``.
+            result: The job's return value on success — stamped into
+                ``metadata['last_result']`` (FEAT-467 TASK-2520), same
+                formatting :meth:`_format_result` uses for notification
+                emails, truncated to :attr:`_LAST_RESULT_MAX_CHARS`. This
+                runs for EVERY successful execution (scheduled or
+                run-now) since both paths call ``_execute_agent_job`` /
+                ``_process_job_success`` identically — there is no
+                separate "run-now only" code path to hook.
+        """
         try:
             async with await self._pool.acquire() as conn:  # pylint: disable=no-member # noqa
                 AgentSchedule.Meta.connection = conn
-                schedule = AgentSchedule.get(schedule_id=schedule_id)
+                # BUGFIX (FEAT-467 TASK-2520): this was missing ``await`` —
+                # ``schedule`` was a bare coroutine object, so every
+                # attribute assignment below (and the ``.update()`` call)
+                # silently no-oped inside the surrounding ``except
+                # Exception`` — last_run/run_count/metadata were NEVER
+                # actually persisted in production. Discovered while
+                # extending this method for last_result stamping.
+                schedule = await AgentSchedule.get(schedule_id=schedule_id)
 
                 schedule.last_run = datetime.now()
                 schedule.run_count += 1
 
+                if not schedule.metadata:
+                    schedule.metadata = {}
+
                 if error:
-                    if not schedule.metadata:
-                        schedule.metadata = {}
                     schedule.metadata['last_error'] = error
                     schedule.metadata['last_error_time'] = datetime.now().isoformat()
+                    schedule.metadata['last_status'] = 'error'
+                else:
+                    formatted = self._format_result(result)
+                    if len(formatted) > self._LAST_RESULT_MAX_CHARS:
+                        formatted = formatted[: self._LAST_RESULT_MAX_CHARS] + '…(truncated)'
+                    schedule.metadata['last_result'] = formatted
+                    schedule.metadata['last_result_time'] = datetime.now().isoformat()
+                    schedule.metadata['last_status'] = 'success'
 
                 await schedule.update()
 
@@ -1524,6 +1611,128 @@ class AgentSchedulerManager:
             AgentSchedule.Meta.connection = conn
             await schedule.delete()
 
+    async def run_schedule_now(self, schedule_id: str) -> AgentSchedule:
+        """Trigger ``schedule_id`` for one immediate, out-of-band execution.
+
+        Schedules a one-shot APScheduler job (a ``DateTrigger`` firing
+        "now", the same trigger type the ``"once"`` schedule_type already
+        uses) that calls :meth:`_run_now_wrapper`, which in turn calls
+        the exact same :meth:`_execute_agent_job` coroutine — and
+        therefore the exact same ``job_success``/``job_status`` event
+        handling, callbacks, ``send_result`` emails, and
+        ``last_run``/``run_count``/``last_result`` stamping — as a
+        normally scheduled run. Does NOT touch the schedule's
+        ``enabled`` flag, trigger, or ``schedule_config`` (FEAT-467
+        TASK-2520 Key Constraints); a paused/disabled job still runs
+        once and stays paused.
+
+        Args:
+            schedule_id: The schedule to run immediately.
+
+        Returns:
+            The (unmodified) :class:`AgentSchedule` row, for the caller
+            to serialize.
+
+        Raises:
+            SchedulerRunNowConflictError: A run-now execution is already
+                active for this ``schedule_id`` — the handler maps this
+                to HTTP 409.
+            Exception: Whatever :meth:`get_schedule` raises for an
+                unknown ``schedule_id`` — not special-cased here, same
+                behaviour as ``pause_schedule``/``update_schedule``/
+                ``delete_schedule``.
+        """
+        schedule_id = str(schedule_id)
+        if schedule_id in self._run_now_active:
+            raise SchedulerRunNowConflictError(
+                f"A run-now execution is already active for schedule {schedule_id}."
+            )
+
+        schedule = await self.get_schedule(schedule_id)
+        self._run_now_active.add(schedule_id)
+
+        job_kwargs = self._job_kwargs_from_schedule(schedule)
+        # Deterministic (not uuid-suffixed): the concurrency guard above
+        # already rules out two simultaneous run-nows for the same
+        # schedule_id, and job_success() needs to derive schedule_id
+        # back out of this id when the one-shot job has already
+        # self-removed by the time the listener runs (see that method).
+        job_id = f"{_RUN_NOW_JOB_PREFIX}{schedule_id}"
+        try:
+            self.scheduler.add_job(
+                self._run_now_wrapper,
+                trigger=DateTrigger(run_date=datetime.now()),
+                id=job_id,
+                name=f"{schedule.agent_name}_run_now",
+                kwargs=job_kwargs,
+                jobstore=self._safe_jobstore(schedule.scheduler_type),
+                replace_existing=False,
+            )
+        except Exception:
+            self._run_now_active.discard(schedule_id)
+            raise
+
+        return schedule
+
+    async def _run_now_wrapper(self, schedule_id: str, **kwargs) -> Any:
+        """Release the run-now concurrency guard once execution finishes.
+
+        A thin pass-through around :meth:`_execute_agent_job` — returns
+        the same value / propagates the same exception, so
+        ``job_success``/``job_status`` (which key off the job's return
+        value / raised exception, not which coroutine APScheduler called)
+        behave identically to a normal scheduled run. The ``finally``
+        releases :attr:`_run_now_active` on BOTH success and failure.
+
+        Args:
+            schedule_id: The schedule this run-now execution belongs to.
+            **kwargs: Forwarded verbatim to :meth:`_execute_agent_job`
+                (``agent_name``, ``prompt``, ``method_name``,
+                ``metadata``, ``is_crew``, ``send_result``, ``callbacks``).
+        """
+        try:
+            return await self._execute_agent_job(schedule_id, **kwargs)
+        finally:
+            self._run_now_active.discard(str(schedule_id))
+
+    async def get_last_result(self, schedule_id: str) -> Dict[str, Any]:
+        """Return last-execution metadata for ``schedule_id`` (FEAT-467 TASK-2520).
+
+        Args:
+            schedule_id: The schedule to inspect.
+
+        Returns:
+            A dict with ``schedule_id``, ``last_run``, ``next_run``,
+            ``run_count``, ``last_status`` (``"success"``/``"error"``/
+            ``None``), ``last_result``, ``last_result_time``,
+            ``last_error``, ``last_error_time`` — the last two populated
+            only from a failed run, the two before them only from a
+            successful one.
+
+        Raises:
+            Exception: Whatever :meth:`get_schedule` raises for an
+                unknown ``schedule_id``.
+        """
+        schedule = await self.get_schedule(schedule_id)
+        metadata = schedule.metadata or {}
+        job = self.scheduler.get_job(str(schedule.schedule_id))
+        next_run = None
+        if job is not None and job.next_run_time:
+            next_run = job.next_run_time.isoformat()
+        elif schedule.next_run:
+            next_run = schedule.next_run.isoformat()
+        return {
+            'schedule_id': str(schedule.schedule_id),
+            'last_run': schedule.last_run.isoformat() if schedule.last_run else None,
+            'next_run': next_run,
+            'run_count': schedule.run_count,
+            'last_status': metadata.get('last_status'),
+            'last_result': metadata.get('last_result'),
+            'last_result_time': metadata.get('last_result_time'),
+            'last_error': metadata.get('last_error'),
+            'last_error_time': metadata.get('last_error_time'),
+        }
+
     def _registered_jobstores(self) -> Set[str]:
         """Return the jobstore aliases currently registered on the scheduler.
 
@@ -1700,7 +1909,11 @@ class AgentSchedulerManager:
 
         # Configure routes
         router = self.app.router
-        from ..handlers.scheduler import SchedulerCallbacksHandler, SchedulerJobsHandler  # pylint: disable=import-outside-toplevel
+        from ..handlers.scheduler import (  # pylint: disable=import-outside-toplevel
+            SchedulerCallbacksHandler,
+            SchedulerJobsHandler,
+            SchedulerLastResultHandler,
+        )
         router.add_view(
             '/api/v1/parrot/scheduler/schedules',
             SchedulerJobsHandler
@@ -1708,6 +1921,15 @@ class AgentSchedulerManager:
         router.add_view(
             '/api/v1/parrot/scheduler/schedules/{schedule_id}',
             SchedulerJobsHandler
+        )
+        # FEAT-467 TASK-2520 — last-execution-result read. Registered
+        # alongside (not instead of) the {schedule_id} route above; the
+        # extra `/last-result` path segment keeps this unambiguous for
+        # aiohttp's UrlDispatcher (different segment count, no ordering
+        # trap like the Studio `/skills/resync` vs `/skills/{id}` case).
+        router.add_view(
+            '/api/v1/parrot/scheduler/schedules/{schedule_id}/last-result',
+            SchedulerLastResultHandler
         )
         router.add_view(
             '/api/v1/parrot/scheduler/callbacks',
