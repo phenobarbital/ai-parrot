@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-468 — UI Server Backend — Embedded Admin UI Foundation
 **Spec**: `sdd/specs/ui-server-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2525
@@ -175,10 +175,79 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed)
+**Date**: 2026-08-27
 **Notes**:
+- `router.svelte.ts` — `Router` rune class (~95 lines): `path = $state(...)`,
+  `navigate(to, {replace})`, popstate listener, `match()`, `guard()`.
+  `guard()` reads the token directly from `localStorage` (not from
+  `AuthStore`) so `router.svelte.ts` has zero dependency on
+  `stores/auth.svelte.ts` — this breaks what would otherwise be a 3-way
+  `router -> auth -> http -> router` import cycle down to the one
+  intentional 2-way `auth <-> http` cycle described below. `isInAppPath()`
+  exported for reuse by `AuthStore.handle401()` and tests; an untrusted/
+  external `path` passed to `guard()` falls back to `config.basePath`
+  instead of being embedded in `?next=`.
+- `stores/auth.svelte.ts` — `AuthStore` rune class: `token`/`user` seeded
+  from `localStorage` (`ai_parrot_token`/`ai_parrot_session`) at
+  construction; `login()` → `POST /api/v1/login` with header
+  `X-Auth-Method: BasicAuth` (verified against
+  `navigator_auth.auth.AuthHandler.api_login`/`get_auth_backend` and the
+  `parrot/autonomous/admin.py` inline admin page), stores `data.token` +
+  the full `data` payload; `logout()` → `GET /api/v1/logout` (best-effort;
+  storage cleared unconditionally in `finally`); `handle401()` clears
+  storage and calls `router.navigate()` preserving `?next=`.
+- `stores/theme.svelte.ts` — `ThemeStore` adapted from the source: cookie/
+  SSR sync stripped (client-only SPA, per contract), theme set trimmed to
+  `["light", "dark"]` (only those two theme CSS files were vendored by
+  TASK-2525 — midnight/warm are explicitly optional and absent).
+- `api/http.ts` — `ApiError`, `safeRaw`, `extractServerMessage`,
+  `registerInterceptors`, `createApiClient` copied from the source with
+  the SvelteKit `browser`/`$env` couplings removed (SPA has no SSR) and
+  the 401 branch calling `authStore.handle401()` instead of a raw
+  `localStorage`/`window.location` redirect, per this task's own Scope.
+  `createApiClientWithToken` (embed/iframe token-only client) was
+  intentionally NOT copied — no embed/iframe use case exists in the Admin
+  UI scope.
+- `api/auth-headers.ts` — `getAuthHeaders()` copied with the same
+  SvelteKit-coupling removal; simplified to read the token as a raw
+  string (matches `admin.py`'s `localStorage.setItem('ai_parrot_token',
+  data.token)`) rather than the source's JSON-blob-with-fallback parsing,
+  since `http.ts`/`auth.svelte.ts` never store a JSON blob under that key.
+- **Circular import, by design**: `http.ts` imports `authStore` from
+  `stores/auth.svelte.ts` (used only inside the 401 interceptor
+  callback), and `auth.svelte.ts` imports `apiClient` from `http.ts`
+  (used only inside `login()`/`logout()` method bodies) — neither module
+  touches the other's export at module-evaluation time, so the cycle
+  resolves safely under both Vite (`pnpm build`) and Vitest (`pnpm test`,
+  including a dedicated `handle401()` test asserting the full
+  clear-storage-then-navigate flow through the live circular binding).
+- Vitest suites: `router.test.ts` (5 tests — navigate/popstate/guard-
+  redirects-with-next/guard-allows-with-token/rejects-external-next),
+  `stores/auth.test.ts` (5 tests — login stores token+session, login
+  surfaces server error, logout clears storage + calls the endpoint,
+  logout clears storage even when the network call fails, handle401
+  clears+redirects), `api/http.test.ts` (8 tests — `extractServerMessage`
+  adapted verbatim from the source's own `http.test.ts`, logic unchanged).
+- `pnpm test` — 19/19 passed (4 files, including the pre-existing
+  `App.test.ts`). `pnpm build` (now `pnpm generate && vite build`) green.
+  `grep -rn '\$app/\|\$env/' src/` clean (verified twice — once after
+  writing the code, once more after rewording explanatory docstring
+  comments that had contained the literal strings `$app/environment` /
+  `$env/dynamic/public` in prose, which would have false-positived a
+  literal grep despite not being real imports).
+- Added `axios` (`^1.16.1`, matching the resolved version installed in
+  the source repo) as a new `dependencies` entry in `ui/package.json`.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- `createApiClientWithToken` from the source `http.ts` was not copied —
+  no embed/iframe token-only client use case in the Admin UI's scope; the
+  task's Scope only lists `ApiError`, `registerInterceptors`,
+  `createApiClient` explicitly.
+- `getAuthHeaders()`/token storage simplified to a raw string rather than
+  the source's JSON-blob-with-fallback parsing, since this repo's
+  `ai_parrot_token` key (per the verified localStorage contract) always
+  holds the raw token, never a JSON blob.
+- `ThemeStore` limited to `light`/`dark` (source supports `light`/`dark`/
+  `midnight`/`warm`) — mechanical consequence of TASK-2525 only vendoring
+  those two theme CSS files.
