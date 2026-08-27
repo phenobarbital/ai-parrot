@@ -214,10 +214,102 @@ class TestMetaAgent:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `STUDIO_AGENT_MODEL` added to `conf.py` (fallback `'claude-opus-5'`).
+- `AgentStudioAgent(SkillRegistryMixin, Agent)` in `parrot/bots/studio/`:
+  builds an `AnthropicClient(api_key=.., model=..)` when no explicit
+  `llm=` kwarg is given (BYOK `api_key` resolved by the CALLER —
+  `StudioAssistantHandler` — before construction, since `__init__` is
+  sync); `skill_paths` points at the package's bundled `skills/` dir
+  (three composite skills: `agent-builder`, `skill-writer`,
+  `kb-writer`, each a real `SKILL.md` with valid frontmatter per
+  `parrot.skills.parsers.parse_skill_file`'s contract); `agent_tools()`
+  returns the 9 tools from `bots/studio/tools.py`.
+- **Package-layering discovery**: `parrot/bots/studio/` is CORE
+  (`ai-parrot`), but the validation/persistence helpers it must reuse
+  (`validate_draft`, `resolve_safe_path`, `is_valid_slug`, the
+  per-kind file validators, `SkillCatalogEntry`/`StudioDraft` models,
+  `StudioSkillsCatalogHandler`'s DB glue) live in `ai-parrot-server`
+  (`parrot.handlers.studio.*`) — core cannot depend on a satellite that
+  itself depends on core. Resolved by importing them LAZILY,
+  function-body-local inside each tool — the same pattern
+  `parrot.knowledge.graphindex.factory` already uses to reach into
+  `parrot_tools` (a satellite) only when the specific feature runs.
+  Documented at the top of `tools.py`.
+- `create_yaml_agent` resolves `bot_class` (a string) through the live
+  `BotManager.get_bot_class()` and builds a `BotConfig` exactly as
+  TASK-2512's `POST /astudio/agents` create flow does — `AgentDefinition`
+  turned out to be a plain alias for `BotConfig`
+  (`bots/factory/contracts.py:22`), not a distinct class as the task's
+  Codebase Contract example implied; verified before using it.
+- `_write_asset_file` (shared by `write_identity_file`/`write_kb_file`/
+  `write_skill_file`) reuses `_StudioFilesMixin._validate_kind_filename`
+  / `_validate_skill_content` as unbound `@staticmethod` calls (they
+  don't need a handler instance) plus the module-level
+  `_is_skill_definition_file`/`VALID_KINDS` — genuinely the SAME
+  validation the `PUT .../files/{kind}/{filename}` endpoint runs, no
+  duplicated rules. Every write target is built internally from
+  `agent_name`/`filename` (never a raw path parameter) and passed
+  through `resolve_safe_path` — structurally impossible to target
+  `AGENTS_DIR/x.py` directly (verified by an explicit test asserting
+  each write tool's signature is exactly
+  `(agent_name, filename, content)`).
+- `publish_skill_to_catalog` constructs a bare
+  `object.__new__(StudioSkillsCatalogHandler)` with just `.request.app`
+  and `.logger` set, then calls its real `_get_entry_by_name`/
+  `_insert_entry`/`_dual_write_to_registry`/`_flag_stale`/
+  `_entry_to_dict` methods directly — these only ever touch
+  `self.request.app`/`self.logger`, never the full aiohttp
+  request/response cycle, so this reuses the real persistence logic
+  without a duplicate implementation (a deliberate, documented
+  trade-off — noted as fragile-but-safe, since `_get_org_id()`'s own
+  `try/except Exception: return DEFAULT_ORG_ID` already tolerates a
+  `self.session` that was never wired by `@user_session()`).
+- `StudioAssistantHandler` (`meta_agent.py`) mirrors TASK-2517's
+  session-scoped instance discipline exactly, but keys its own small
+  per-app instance cache (`app['_studio_assistant_instances']`) instead
+  of `BotManager._bots` — `AgentStudioAgent` is never registered into
+  the `AgentRegistry` (it's a standalone meta-agent, not a manageable
+  bot). BYOK: `resolve_user_api_key(app, user.user_id, "anthropic")`
+  (TASK-2516) resolved once at instance-creation time, passed as
+  `api_key=`.
+- `/api/v1/agents/factory` (`handlers/agents/factory.py`) is untouched
+  behaviorally — only a docstring addition explaining the shared
+  `finalize_agent_registration` code path with the meta-agent's
+  `create_yaml_agent` tool. Verified via `inspect.getsource()` that
+  both `AgentFactoryOrchestrator.run()` and `create_yaml_agent` call
+  the literal same function object (test:
+  `test_finalize_agent_registration_shared_by_both_paths`), and that
+  the endpoint's `description`-required 400 response is unchanged.
+- Tests (24, all passing): model resolution (default/env-override/BYOK
+  — via a `MagicMock(spec=AnthropicClient)` fake constructor, since the
+  framework's `configure_llm`/`_create_llm_client` requires
+  `isinstance(llm, AbstractClient)` to treat a passed instance as a
+  real client rather than falling through to a failing provider-string
+  lookup) + `skill_paths` points at real, existing `SKILL.md` files;
+  all 6 mutating tools assert `requires_confirmation=True`, all 3
+  read-only tools assert `False`; write-boundary enforcement (draft
+  stays under `_drafts/`, traversal/invalid-slug/invalid-identity-name
+  all raise `ValueError`, no tool signature accepts a raw path);
+  assistant session reuse + BYOK-key-used + DELETE; factory alias
+  contract (400 on missing description + shared-function proof). Full
+  `packages/ai-parrot-server/tests/studio/` suite (167 tests) and
+  `packages/ai-parrot/tests/skills/` (8 tests, `SkillRegistryMixin`
+  regression) both pass; confirmed the pre-existing 26 unrelated
+  `ai-parrot/tests/` collection errors predate this task via
+  `git stash` (identical count before/after).
+- `ruff check` clean on all touched paths except: the pervasive
+  pre-existing `BLE001`/`DTZ005` conventions already used throughout
+  every Studio/scheduler file touched this session (kept for
+  consistency, not introduced fresh), and `conf.py`'s pre-existing
+  whole-file import-sort debt (my one 5-line addition doesn't touch
+  those lines). Fixed for real: `RUF012` (added `ClassVar` to
+  `skill_paths`), the `S110`/`BLE001` silent-pass in the draft-row
+  best-effort persist (now logs a warning), and two `TRY401` findings
+  in `meta_agent.py`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the package-layering resolution
+(lazy imports) and the `AgentDefinition`/`BotConfig` alias correction,
+both documented above and inline at their respective sites.
