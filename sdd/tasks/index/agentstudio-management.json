@@ -70,7 +70,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Needs registry primitives, reload_agent, and the studio scaffold.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2512-studio-agent-lifecycle.md"
+      "completed_at": "2026-08-27T17:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2512-studio-agent-lifecycle.md"
     },
     {
       "id": "TASK-2513",

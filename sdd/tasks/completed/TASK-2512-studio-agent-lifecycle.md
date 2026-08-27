@@ -169,10 +169,99 @@ class TestStudioAgents:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- `StudioAgentsHandler` (GET list/single, POST create, DELETE) +
+  `StudioAgentReloadHandler` (POST reload) in `handlers/studio/agents.py`,
+  registered in `setup_studio_routes`.
+- Create resolves `bot_class` via `BotManager.get_bot_class()` (the
+  SAME resolver DB-origin bots use) into an actual `Type[AbstractBot]`,
+  then calls `AgentRegistry.register(slug, bot_class, bot_config=...)`
+  — NOT `create_agent_factory()` + `register()`, since `register()`
+  requires `issubclass(factory, AbstractBot)` and would `TypeError` on
+  the async factory FUNCTION `create_agent_factory` returns (confirmed
+  by reading `_put_registry`'s own `# TODO: replace with register() once
+  signature confirmed` comment in `bots.py` — it bypasses `register()`
+  for exactly this reason, reaching into `_registered_agents` directly;
+  Studio's `bot_class`-driven design sidesteps the mismatch entirely by
+  registering the resolved CLASS).
+- `persist: true` writes the lossless YAML (TASK-2509) then re-registers
+  FROM that YAML via `load_agent_definitions(file_path.parent)` — not
+  just `create_agent_definition()` alone — so `BotMetadata.file_path`
+  reflects the on-disk definition of record, not the class-based
+  registration's `inspect.getmodule()` fallback. This was REQUIRED, not
+  cosmetic: see the safety-guard note below.
+- **Safety fix (caught during test-writing, not in the task's explicit
+  scope but required for correctness)**: `AgentRegistry.
+  delete_factory_agent()` unconditionally unlinks `metadata.file_path`
+  once `bot_config.origin == "factory"`. For an agent created WITHOUT
+  `persist=true`, `AgentRegistry.register()` still resolves `file_path`
+  via `inspect.getmodule(bot_class)` — i.e. the bot_class's own
+  FRAMEWORK SOURCE FILE (e.g. `parrot/bots/basic.py`), never a
+  throwaway YAML. Without a guard, `DELETE
+  /astudio/agents/{non_persisted_name}` would attempt to unlink real
+  framework source code. Added a check in `delete()`: refuse (409
+  `no_definition`) unless `metadata.file_path` resolves under
+  `AGENTS_DIR`. Regression test
+  `test_delete_non_persisted_agent_refuses_without_touching_source`
+  asserts the source file survives. This is exactly why the
+  re-registration in the previous bullet was necessary — a persisted
+  agent that DIDN'T re-register from its YAML would ALSO fail this same
+  safety check (verified: it did, before the fix).
+- **`_base.py` fix (small, necessary correction to TASK-2511's own
+  helper — not in this task's Files table, but blocking)**: discovered
+  that `navigator_auth.decorators.user_session()`'s class-method wrapper
+  OVERWRITES `self.session` with the already-resolved session VALUE
+  before the handler body runs (confirmed empirically) — it does not
+  leave `BaseView.session()` in place as a callable. TASK-2511's
+  `_get_user()` called `await self.session()` unconditionally, which
+  would `TypeError` on any REAL (decorated) Studio handler — TASK-2512
+  is the first task to actually build one. Added `_resolve_session()`
+  (calls `self.session` if callable, else uses it directly) and
+  switched `_get_user()` to use it. Verified against both decorated and
+  undecorated call sites; TASK-2511's own scaffold tests (which use
+  undecorated `StudioBaseView(request)`) still pass unchanged.
+- `BaseHandler.error()` only maps a fixed status whitelist (400/401/403/
+  404/406/412/428) and silently falls back to 400 for anything outside
+  it — this task needs 409/422/503, so handlers return a local `_error()`
+  → plain `json_response(StudioError(...), status=...)` instead.
+- Tests bypass `@is_authenticated()`/`@user_session()` via
+  `__wrapped__` peeling (pattern: `test_comm_center_handler.py::
+  _call_get_batches`), constructing handlers via the real `Handler
+  (request)` constructor (not `__new__`) since `aiohttp.web.View
+  .__init__` just sets `self._request` — no router/middleware needed.
+  Auth enforcement itself stays covered by TASK-2511's
+  `test_scaffold.py`.
+- **Process note**: caught mid-run that `AGENTS_DIR` is imported (bound
+  as a separate local name) in BOTH `parrot.registry.registry` AND
+  `parrot.handlers.studio.agents` — patching only one in tests left
+  `create_agent_definition` writing into the REAL machine's
+  `agents/agents/{general,test}/` directories (verified: 3 stray YAML
+  files landed in the actual `~/proyectos/ai-parrot/agents/` tree, NOT
+  the worktree). Removed them immediately (confirmed via `git status`
+  that directory is untracked/gitignored — no repo history impact) and
+  fixed the fixture to patch both bindings. No lasting effect; noting
+  here so the same footgun isn't repeated in TASK-2513+ tests that also
+  call `create_agent_definition`/`load_agent_definitions`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally.
+1. `_base.py` was modified (see note above) even though not listed in
+   this task's Files table — a minimal, necessary bugfix to a helper
+   TASK-2511 shipped but never exercised through a real decorated
+   handler. No other unrelated changes were made to that file.
+2. PBAC checks (`_pbac_allowed`) are NOT invoked by these endpoints —
+   the task's scope explicitly separates PBAC *content* from this
+   task ("NOT in scope" only lists drafts/files/vector-store
+   provisioning, but the broader spec/TASK-2511 note PBAC policy
+   *content* is out of scope everywhere in FEAT-467); ownership
+   enforcement via `_require_owner` is the access-control mechanism
+   this task actually implements, matching its own acceptance criteria.
+
+Verification: `pytest packages/ai-parrot-server/tests/studio/
+test_agents_lifecycle.py -v` → 17/17 passed. `ruff check
+packages/ai-parrot-server/src/parrot/handlers/studio/` → clean except 3
+intentional `BLE001`/`G201` best-effort/fail-open patterns matching
+`handlers/bots.py::_put_registry`'s identical style. Full regression
+sweep (`tests/studio/`, `tests/manager/`, ephemeral-owner, DB-bot
+fallback tests) → 64/64 passed.
