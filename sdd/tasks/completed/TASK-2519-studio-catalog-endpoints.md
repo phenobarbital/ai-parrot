@@ -167,10 +167,49 @@ class TestStudioCatalogs:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `StudioCatalogHandler` (single view, dynamic `{kind}` path segment)
+  implemented in `handlers/studio/catalog.py`; one route
+  (`/catalog/{kind}`) covers all four sub-catalogs
+  (`base-classes`/`llm-clients`/`tools`/`vector-stores`).
+- Resolved both `(unverified)` Codebase Contract items before writing
+  code: `_build_catalog`/`_CATALOG_CACHE` confirmed at
+  `handlers/tools_catalog.py:41,44`; the vector-store dispatch symbol
+  confirmed as `parrot.stores.supported_stores` (a plain `{slug:
+  class_name}` dict — `handlers/stores/helpers.py`'s
+  `VectorStoreHelper.supported_stores()` is the existing precedent this
+  task mirrors: no import-availability probing attempted there either,
+  so the vector-stores catalog doesn't either).
+- Base classes: introspects `parrot.bots.__all__` via plain `getattr()`
+  (triggers the module's own lazy `__getattr__`/`_LAZY_ATTRS` resolution
+  for `VoiceBot`/`InfoAgent`); a failing lazy import is caught and
+  degrades to `{"available": false, "lazy": true, "error": ...}` instead
+  of raising. Configurable params kept only when they carry a default OR
+  a type annotation (per spec wording), dropping `self`/`*args`/
+  `**kwargs`/underscore-prefixed.
+- LLM clients: `SUPPORTED_CLIENTS` values that are `callable` and not
+  themselves a `type` are treated as lazy loaders (same detection the
+  factory itself uses) and called to resolve the real class; a raising
+  loader (missing optional extra) degrades the same way. `_default_model`
+  read via `getattr(cls, "_default_model", None)` per the contract's
+  explicit correction (no `DEFAULT_MODEL` attr exists).
+- Tools catalog deliberately reuses `tools_catalog_module._CATALOG_CACHE`
+  itself (reading/writing the imported module's own global) rather than
+  a Studio-local cache, so it never diverges from — and never rebuilds
+  independently of — the existing `GET /api/v1/tools/catalog` endpoint.
+- Tests (7, all passing): base-classes listing + lazy-import-failure
+  degradation (via a fake `parrot.bots`-shaped module exercising the
+  real `__getattr__` mechanism); LLM clients listing + lazy-loader
+  failure degradation; tools catalog shape + shared-cache population
+  (content-equality check, since JSON round-tripping the response body
+  necessarily produces a fresh list — `is` was the wrong check and was
+  corrected during iteration); vector-stores listing; unknown-kind 404.
+  Full `packages/ai-parrot-server/tests/studio/` suite (143 tests)
+  passes. `ruff check handlers/studio/` clean except the same pervasive
+  pre-existing `BLE001` fail-open pattern used throughout every other
+  file in this directory (two instances in this task's own lazy-import
+  guards, which is the literal purpose of those `try/except`).
 
 **Deviations from spec**: none

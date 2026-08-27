@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-27T18:46:33+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-27T20:54:57+00:00",
   "tasks": [
     {
       "id": "TASK-2509",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Core registry primitive every persist path depends on; must land first (resolved decision: TASK #1).",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2509-registry-primitives-yaml-roundtrip.md"
+      "completed_at": "2026-08-27T17:07:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2509-registry-primitives-yaml-roundtrip.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2510",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Builds on TASK-2509 registry primitives (unregister/replace-safe register).",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2510-botmanager-reload-agent.md"
+      "completed_at": "2026-08-27T17:23:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2510-botmanager-reload-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2511",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "Independent of TASK-2509/2510 (different packages) but foundational for all handler tasks; kept sequential in the per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2511-studio-scaffold-routes-pbac.md"
+      "completed_at": "2026-08-27T17:35:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2511-studio-scaffold-routes-pbac.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2512",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Needs registry primitives, reload_agent, and the studio scaffold.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2512-studio-agent-lifecycle.md"
+      "completed_at": "2026-08-27T17:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2512-studio-agent-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2513",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "Shares handlers/studio/__init__.py route block with sibling handler tasks — sequential in one worktree avoids repeated conflicts.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2513-studio-draft-pipeline.md"
+      "completed_at": "2026-08-27T18:00:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2513-studio-draft-pipeline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2514",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "Independent logic but shares the studio route registration file with sibling tasks.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2514-studio-asset-files.md"
+      "completed_at": "2026-08-27T18:04:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2514-studio-asset-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2515",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Import flow reuses TASK-2514 file helpers; touches core skills package + server handler.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2515-shared-skills-catalog.md"
+      "completed_at": "2026-08-27T18:22:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2515-shared-skills-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2516",
@@ -154,7 +161,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,8 +171,9 @@
       "parallelism_notes": "Independent of other handler tasks except the shared route file.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2516-byok-keys-broker.md"
+      "completed_at": "2026-08-27T18:31:29+00:00",
+      "file": "sdd/tasks/completed/TASK-2516-byok-keys-broker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2517",
@@ -174,7 +182,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -185,8 +193,9 @@
       "parallelism_notes": "Consumes the BYOK resolve helper for test/ask.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2517-studio-testing-surface.md"
+      "completed_at": "2026-08-27T18:50:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2517-studio-testing-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2518",
@@ -195,7 +204,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -205,9 +214,10 @@
       "parallel": false,
       "parallelism_notes": "Assignment path may trigger reload; shares the studio route file.",
       "assigned_to": null,
-      "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2518-toolkit-config-surfaces.md"
+      "started_at": "2026-08-27T18:50:48+00:00",
+      "completed_at": "2026-08-27T19:01:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2518-toolkit-config-surfaces.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2519",
@@ -216,7 +226,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -225,9 +235,10 @@
       "parallel": false,
       "parallelism_notes": "Read-only; only the shared route file couples it to siblings.",
       "assigned_to": null,
-      "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2519-studio-catalog-endpoints.md"
+      "started_at": "2026-08-27T19:01:58+00:00",
+      "completed_at": "2026-08-27T19:07:20+00:00",
+      "file": "sdd/tasks/completed/TASK-2519-studio-catalog-endpoints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2520",
@@ -236,7 +247,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -244,8 +255,9 @@
       "parallelism_notes": "Touches only handlers/scheduler.py + scheduler/manager.py — zero file overlap with the studio package; safe in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2520-scheduler-run-now.md"
+      "completed_at": "2026-08-27T19:23:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2520-scheduler-run-now.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2521",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -268,8 +280,9 @@
       "parallelism_notes": "Integrates the draft, files, catalog, and BYOK surfaces; last functional task.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2521-studio-meta-agent.md"
+      "completed_at": "2026-08-27T19:42:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2521-studio-meta-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2522",
@@ -278,7 +291,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -296,9 +309,10 @@
       "parallel": false,
       "parallelism_notes": "Feature exit gate — depends on everything.",
       "assigned_to": null,
-      "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2522-docs-integration-tests.md"
+      "started_at": "2026-08-27T19:42:45+00:00",
+      "completed_at": "2026-08-27T20:21:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2522-docs-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }

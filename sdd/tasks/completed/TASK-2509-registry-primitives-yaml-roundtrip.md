@@ -190,10 +190,44 @@ def test_register_replace_drops_stale_instance(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- `create_agent_definition` now serializes the FULL `BotConfig` (toolkits,
+  prompt, vector_store, tags, policies, mcp_servers, priority, at_startup,
+  config, plus singleton/startup_config for full fidelity) into the
+  `agent:`-keyed YAML block; `load_agent_definitions` required NO changes
+  since it already passes the whole `agent:` block into `BotConfig(**...)`.
+- `vector_store` (a stdlib `@dataclass StoreConfig`, not a Pydantic model)
+  is serialized via `dataclasses.asdict()`; `policies` via
+  `PolicyRuleConfig.model_dump(exclude_none=True)` per item; `tags` (a
+  `Set[str]`) written as a sorted list for YAML/JSON safety.
+- Added `AgentRegistry.unregister(name) -> bool` — pops metadata, clears
+  `_instance`, returns `False` for unknown names, never raises.
+- `register(..., replace=True)` now clears `_instance` on the entry being
+  replaced before installing the new `BotMetadata`, so a caller still
+  holding the OLD metadata object cannot serve a zombie instance
+  (contract TASK-2510's `reload_agent` will rely on).
+- Round-trip + unregister/replace tests added under
+  `packages/ai-parrot/tests/registry/`; existing
+  `tests/test_agent_definitions.py` (old-format load) still green,
+  confirming backward compatibility.
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally. Two environment notes (not
+spec deviations):
+1. `ruff check packages/ai-parrot/src/parrot/registry/` has 115
+   pre-existing style violations (legacy `Dict`/`List`/`Optional[X]`
+   typing style, a pre-existing duplicate `get_metadata` definition, a
+   blind `except Exception`, etc.) that predate this task. No NEW
+   violations were introduced by this change (verified by diffing ruff
+   output against the exact edited line ranges) — full-file lint cleanup
+   is out of this task's scope (no scope creep).
+2. This git worktree ships without the compiled Cython `.so` extensions
+   (`parrot.utils.types`, `parrot.utils.parsers.toml`) since they are
+   untracked build artifacts; they were copied in locally from the main
+   checkout for `pytest` to run. `pytest packages/ai-parrot/tests/registry/
+   -v` → 71 passed, 3 pre-existing failures unrelated to this task
+   (`test_get_instance_pbac.py::...not_swallowed` and two
+   `test_vector_store_propagation.py` tests — all fail on
+   `asyncio.get_event_loop()` under uvloop/Python 3.12, in test files
+   this task did not touch).

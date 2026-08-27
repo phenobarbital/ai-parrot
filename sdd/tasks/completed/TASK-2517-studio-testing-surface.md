@@ -183,10 +183,64 @@ class TestTestingSurface:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `StudioTestingHandler` (`test/ask` + `test` DELETE), `StudioToolExecuteHandler`
+  (`tools/{slug}/execute`), and `StudioToolAssignHandler`
+  (`agents/{name}/tools`) implemented in `handlers/studio/testing.py`,
+  routes appended to `setup_studio_routes` in `handlers/studio/__init__.py`.
+- Session-scoped test instance reuse mirrors `BotConfigTestHandler`
+  (`manager.get_bot(name, new=True, session_id=...)`, session key
+  `_studio_test:{agent_name}`, `manager._bots` lookup on reuse).
+- BYOK: provider derived from `bot._llm_raw` (only when it's a plain
+  `"provider:model"` string); `resolve_user_api_key` (TASK-2516) consulted
+  per-call; a stored key rebuilds `bot.llm` via
+  `LLMFactory.create(..., api_key=...)`. No stored key → no-op (keeps
+  whatever client is already configured); an auth failure on a genuinely
+  swapped-in BYOK client is never caught-and-retried against the server
+  default — it surfaces as a 502 `query_failed` error (spec §7).
+- Deterministic execute: `discover_all()` + `resolve_class()` (never the
+  deprecated `ToolkitRegistry` string path — see Codebase Contract "Does
+  NOT Exist"); zero-arg or app-context-wired instantiation via
+  `inspect.signature()` against a small `_KNOWN_APP_DEPS` map
+  (`artifact_store` today); missing deps → 422 `server_managed` with the
+  list of missing param names. Args are validated explicitly via the
+  tool's own `validate_args()` BEFORE calling `execute()` so a bad-args
+  call surfaces as `422 invalid_args` (not swallowed into a 200
+  `ToolResult(status="error")`, which is what `execute()` alone would do).
+- Toolkit assignment resolves each slug the same discovery-based way (not
+  `register_toolkit(str)`'s deprecated `ToolkitRegistry` lookup) before
+  calling `bot.tool_manager.register_toolkit(cls, **params)`; plain tool
+  slugs go straight through `bot.tool_manager.register_tools([...])`,
+  whose internal `load_tool()` already resolves via the modern
+  `discover_from_registry` path. Response always reports
+  `"persisted": false` (YAML persistence is TASK-2518's scope).
+- Ownership on assignment reuses `_StudioAgentsMixin`'s DB/registry owner
+  resolution (imported from `.agents`) — same dual-source lookup as
+  agent create/delete, then `StudioBaseView._require_owner`.
+- Tests (14, all passing, LLM calls mocked — no network):
+  session-instance-reuse unit test of the mixin helper; `test/ask` happy
+  path + BYOK-key-applied + BYOK-no-stored-key-is-noop + query-failure
+  502 + unknown-agent 404 + DELETE (active/no-op); tool execute
+  zero-arg-success / unknown-slug-404 / server-managed-422; toolkit
+  assignment success / ownership-403 / unknown-toolkit-reported-as-error.
+  Full `packages/ai-parrot-server/tests/studio/` suite (122 tests) and
+  the broader server regression sweep both pass (pre-existing, unrelated
+  failures in `test_saas_auth_hardening.py`/`test_namespace_imports.py`/
+  `test_a2a_*_vertical.py` confirmed via `git stash` to predate this task).
+- `ruff check handlers/studio/` reports only the pervasive pre-existing
+  `BLE001` blind-except pattern already used throughout every other file
+  in this directory (54 total occurrences repo-wide, none introduced by
+  this task beyond following the same established fail-open convention);
+  the one fixable `G201` finding in this task's new code was fixed.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- `TestAskRequest.use_byok` defaults to `True` (the task's example body
+  `{query, use_byok: true}` reads as the field's default, not merely an
+  example value) — a caller can still opt out with `use_byok: false`.
+- Request/response Pydantic models (`TestAskRequest`, `ToolExecuteRequest`,
+  `ToolAssignRequest`/`ToolkitAssignEntry`) are defined locally in
+  `testing.py` rather than added to `handlers/studio/models.py`, since
+  the task's Files to Create/Modify list does not include `models.py`
+  (Cardinal Rule: file fidelity) and `testing.py` is their only consumer.

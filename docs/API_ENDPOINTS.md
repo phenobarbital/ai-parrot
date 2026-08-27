@@ -159,6 +159,45 @@ Notes:
 - Job tracking uses `BackgroundService` with `tracker_type='redis'`. Ensure Redis is configured via `CACHE_URL`.
 
 ---
+## Agent Studio (FEAT-467)
+
+Base: `/api/v1/astudio` (registered by `setup_studio_routes`, called
+from `BotManager.setup()`). Unified surface for building, configuring,
+testing, and scheduling agents. Full reference:
+[`docs/agent_studio_api.md`](agent_studio_api.md).
+
+- GET/POST `/api/v1/astudio/agents[/{name}]`, POST `.../reload`, DELETE
+  `/{name}` — agent lifecycle (registry + DB merged listing, hot reload,
+  factory-origin delete).
+- GET/POST `/api/v1/astudio/drafts[/{name}]`, POST `.../activate`,
+  DELETE `/{name}` — the code-generation draft → activate pipeline
+  (AST-validated, never imported until explicitly activated).
+- GET/PUT/DELETE `/api/v1/astudio/agents/{name}/files/{kind}[/{filename}]`
+  — sandboxed per-agent identity/kb/skills asset files.
+- GET/POST `/api/v1/astudio/skills[/{id}]`, PUT/DELETE `/{id}`, POST
+  `/agents/{name}/skills/import/{id}`, POST `/skills/resync` — shared,
+  org-wide skills catalog (Postgres-first, best-effort registry dual-write).
+- GET/POST `/api/v1/astudio/keys`, DELETE `/{provider}` — BYOK per-user
+  LLM API keys (AES-GCM encrypted; plaintext never returned).
+- POST `/api/v1/astudio/agents/{name}/test/ask`, DELETE `.../test`, POST
+  `/tools/{slug}/execute`, POST `/agents/{name}/tools` — deterministic +
+  conversational testing surface, tool/toolkit assignment.
+- GET `/api/v1/astudio/toolkits/{slug}/schema`, POST
+  `/agents/{name}/toolkits` — toolkit configuration schemas + assignment
+  (wiki/dataset_manager/infographic first-class, generic otherwise).
+- GET `/api/v1/astudio/catalog/{kind}` (`base-classes`\|`llm-clients`\|
+  `tools`\|`vector-stores`) — reference catalogs, all reusing existing
+  sources of truth.
+- POST/DELETE `/api/v1/astudio/assistant` — the AgentStudio meta-agent, a
+  conversational assistant that builds agents/skills/KB files (absorbs
+  the `/api/v1/agents/factory` YAML-write path internally; that endpoint's
+  contract is unchanged).
+- PATCH `/api/v1/parrot/scheduler/schedules/{schedule_id}`
+  (`action="run_now"`) and GET `.../last-result` — related scheduler
+  additions (not under `/astudio`): trigger one immediate execution and
+  read its last result, without disturbing the schedule's own state.
+
+---
 ## Tools Catalog
 - GET `/api/v1/agent_tools` — Returns the list of available tool definitions registered in the app.
 

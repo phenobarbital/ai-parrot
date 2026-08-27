@@ -186,10 +186,68 @@ class TestUserLLMKeyResolver:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- `_UserLLMKeyResolver(CredentialResolver)` added to `broker.py`,
+  implementing `resolve(channel=provider, user_id)` by reading the
+  DocumentDB collection `"user_llm_keys"` and decrypting with the SAME
+  AES-GCM helpers (`encrypt_credential`/`decrypt_credential`) the Studio
+  handler writes with. Fails CLOSED (`None`) on any missing dependency,
+  vault-key, or decrypt error.
+- **Design decision on "registered with `CredentialResolverFactory`"**:
+  the factory's existing `build()` dispatch is keyed on
+  `ProviderCredentialConfig.auth`, a CLOSED `Literal["obo", "oauth2",
+  "static_key", "mcp", "device_code"]` in `auth/credentials.py` (a file
+  NOT in this task's scope). BYOK has no `ProviderCredentialConfig`
+  declaration at all — it's session-user-driven, not agent-declared —
+  so I did not add a 6th literal value there. Instead added a dedicated
+  `CredentialResolverFactory.build_user_llm_key_resolver()` method,
+  documented inline explaining why it sits outside the `cfg.auth`
+  dispatch. This satisfies "registered with the factory" (obtainable
+  uniformly through the SAME class) without touching an out-of-scope
+  file or overloading a Literal designed for a different (agent-to-
+  external-service OAuth) use case.
+- `StudioKeysHandler` copies `CredentialsHandler`'s STORAGE discipline
+  wholesale (session-vault hot copy + DocumentDB fire-and-forget durable
+  copy, `_load_vault_keys()` soft-import guard → 503) but resolves the
+  session user via `StudioBaseView._get_user()`/`_resolve_session()`
+  (TASK-2511/2512's already-fixed helpers) rather than
+  `CredentialsHandler`'s own `getattr(self, '_session', None)` pattern —
+  which, on inspection, appears to rely on `self._session` being
+  populated by `AbstractModel` (`navigator/views/abstract.py:395-397`),
+  a base class `CredentialsHandler` does NOT use (it extends plain
+  `BaseView`, same as every Studio handler). Whether that's a pre-
+  existing latent gap in `credentials.py` was NOT investigated further —
+  out of scope for this task; Studio's OWN handlers already have a
+  verified-working session-resolution path, so I used that instead of
+  propagating an unverified pattern.
+- `resolve_user_api_key(app, user_id, provider)` — the TASK-2517
+  integration hook — takes only `app` (no request/session), so it can
+  only reach the DocumentDB durable copy (via `_UserLLMKeyResolver`),
+  not the per-request session-vault hot copy; documented inline as a
+  deliberate, signature-driven limitation (the "fast path" is only
+  reachable from inside a live Studio request, e.g. `GET /keys`).
+- Masking: `first_3…last_4` chars (`"sk-…1234"`), matching the spec's
+  example exactly; `SecretStr.get_secret_value()` called ONLY at
+  encryption time, never logged/returned; verified via
+  `test_plaintext_never_in_response_or_logs` (asserts across every
+  `caplog` record, not just the response body).
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally — see the
+`build_user_llm_key_resolver()` design note above for the one
+interpretive decision.
+
+Verification: `pytest packages/ai-parrot-server/tests/studio/
+test_byok.py packages/ai-parrot/tests/unit/
+test_user_llm_key_resolver.py -v` → 9 + 7 = 16/16 passed (run as two
+separate pytest invocations — the two packages' `tests/conftest.py`
+modules collide under one session, a pre-existing repo-wide test-infra
+limitation unrelated to this task). `ruff check` on every touched path
+→ clean except intentional `BLE001` fail-open patterns matching
+established convention. Full regression sweep: ai-parrot-server
+(`tests/studio/`, `tests/manager/`, ephemeral-owner, DB-bot fallback) →
+130/130 passed; ai-parrot core (`tests/skills/`, BYOK resolver,
+existing `test_credential_broker.py`) → 35/35 passed — confirms the
+`CredentialResolverFactory` addition doesn't disturb any existing
+resolver-kind behavior.

@@ -175,10 +175,72 @@ class TestReloadAgent:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- Extracted the DB-origin construction logic that lived inline inside
+  `_load_database_bots` into a new `_build_database_bot(bot_model, app)`
+  helper (byte-for-byte identical construction path), so both the
+  startup loader and `reload_agent`'s DB-origin path share one
+  implementation. `_load_database_bots`'s per-bot exception handling
+  (ConfigError re-raise, ValidationError log, ValueError-on-malformed-
+  permissions skip, generic Exception log) is preserved unchanged.
+- Added `reload_agent(name) -> ReloadResult`, `_rebuild_registry_agent`
+  (YAML/module origin — detects success/failure by comparing
+  `registry.get_metadata(name)` object identity before/after the
+  re-scan/re-import, since `load_agent_definitions`/`_import_module_
+  from_path` never disturb `_registered_agents[name]` on failure — this
+  gives atomicity "for free" without touching live state until rebuild
+  is proven to have succeeded), and `_rebuild_database_agent` (re-reads
+  the `BotModel` row, reuses `_build_database_bot`).
+- Old-instance cleanup reuses the existing `_safe_cleanup(name, bot)`
+  (timeout + exception isolation, already used by
+  `_cleanup_all_bots`/on_shutdown) rather than reinventing best-effort
+  close — its bool return feeds `ReloadResult.previous_instance_closed`
+  / `.warnings`.
+- Added `AgentNotFoundError` / `AgentReloadError` (subclass `ParrotError`)
+  and the `ReloadResult` Pydantic model, defined module-level in
+  `manager.py` (task's Files table only lists this one file).
+- **Regression caught and fixed during implementation**: the original
+  `_load_database_bots` did a local
+  `from ..handlers.models import BotModel` INSIDE the method (not just
+  the module-level import at the top of the file) specifically so
+  `tests/test_database_bot_permissions_fallback.py` could patch
+  `sys.modules['parrot.handlers.models']` at call time. My first pass
+  dropped this as "apparently redundant" during the extraction, which
+  broke that test (3 failures) since the module-level `BotModel`
+  reference was already bound at import time and unaffected by the
+  `sys.modules` patch. Restored the local import verbatim inside
+  `_load_database_bots` (not needed in the new `reload_agent` DB path,
+  which has no such test dependency) — full regression sweep is green.
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally. Two environment/process
+notes:
+1. `ruff check packages/ai-parrot-server/src/parrot/manager/` reports
+   130 pre-existing style violations across this large (~2900-line)
+   file (legacy `Dict`/`List`/`Optional[X]` typing, blind
+   `except Exception`, `.error(exc_info=True)` vs `.exception()`, etc.)
+   that predate this task. New code in this task uses the SAME
+   `List[str]` style as the rest of the file for consistency rather
+   than introducing a `list[str]` stylistic outlier; no new violation
+   categories were introduced (verified by diffing ruff output against
+   the exact added/edited line ranges). Full-file lint cleanup is out
+   of scope.
+2. Created `packages/ai-parrot-server/tests/manager/__init__.py`
+   (empty) alongside the listed test file — required for the new
+   `tests/manager/` directory to follow this package's existing
+   test-subpackage convention (every sibling test dir — `handlers/`,
+   `integration/`, `mcp/`, `scheduler/` — has one); not itself listed
+   in the task's Files table but necessary infrastructure for the
+   listed file to be collectible.
+3. Folded in a leftover housekeeping fix from TASK-2509: that task's
+   `mv` of `sdd/tasks/active/TASK-2509-...md` to `completed/` was never
+   `git add`ed for the deletion side (only the `completed/` destination
+   was staged), leaving the source path tracked-but-missing. Staged and
+   committed alongside this task's SDD-state commit.
+
+Verification: `pytest packages/ai-parrot-server/tests/manager/
+test_reload_agent.py -v` → 6/6 passed. Full regression sweep
+(`tests/manager/`, `test_botmanager_ephemeral_owner.py`,
+`test_database_bot_class_fallback.py`,
+`test_database_bot_permissions_fallback.py`) → 22/22 passed.
