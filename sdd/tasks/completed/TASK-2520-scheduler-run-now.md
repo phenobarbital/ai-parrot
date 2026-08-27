@@ -172,10 +172,108 @@ class TestRunNow:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `SchedulerJobsHandler.patch()` gained `action="run_now"` (409 on
+  conflict via the new `SchedulerRunNowConflictError`); new
+  `SchedulerLastResultHandler` (`GET .../schedules/{schedule_id}/
+  last-result`) registered alongside the existing `{schedule_id}` route
+  (different path-segment count — no aiohttp ordering trap).
+- `AgentSchedulerManager.run_schedule_now()` schedules a one-shot
+  APScheduler `DateTrigger("now")` job (deterministic id
+  `"run_now:{schedule_id}"`) whose target is `_run_now_wrapper()` — a
+  thin pass-through that calls the SAME `_execute_agent_job()` coroutine
+  scheduled runs use (transparent return/exception propagation) and
+  releases the new in-memory `_run_now_active: set[str]` concurrency
+  guard in a `finally`. Never touches `enabled`/`schedule_config`/the
+  stored trigger — a paused job stays paused after running once.
+- **Two pre-existing bugs fixed, both directly blocking this feature's
+  acceptance criteria** (grepped `AgentSchedulerManager` per the task's
+  own instruction before writing code, per Codebase Contract step 3):
+  1. `_update_schedule_run()`'s `schedule = AgentSchedule.get(...)` was
+     missing `await` — `schedule` was a bare coroutine object, so every
+     attribute write below it (and `.update()`) was silently a no-op
+     (swallowed by the surrounding `except Exception`). This means
+     `last_run`/`run_count` have **never** actually persisted in
+     production for ANY schedule, scheduled or run-now. Fixed by adding
+     the missing `await`.
+  2. `job_success()` (the `EVENT_JOB_EXECUTED` listener) crashed with
+     `AttributeError: 'NoneType' object has no attribute 'name'` for
+     ANY one-shot (`DateTrigger`) job — APScheduler removes a one-shot
+     job from the jobstore as part of firing it, so `scheduler.get_job
+     (job_id)` already returns `None` by the time the listener runs.
+     APScheduler swallows this as "Error notifying listener" and drops
+     the entire success path silently (no DB update, no callbacks, no
+     `send_result` email) — discovered because `on_startup()`'s
+     `register_listeners=False` (a deliberate FEAT-422 decision, see
+     `start_headless()`'s docstring) meant this code path had never
+     actually run with listeners wired before. Fixed by having
+     `job_success()` fall back to recovering `schedule_id` from the
+     deterministic `"run_now:"` job-id prefix when the `Job` object is
+     gone, instead of crashing.
+- Extended `_update_schedule_run(..., result=...)` to stamp
+  `metadata['last_result']` (formatted via the existing
+  `_format_result()`, capped at `_LAST_RESULT_MAX_CHARS=10_000`) and
+  `metadata['last_status']` on EVERY successful run (scheduled or
+  run-now — there is no separate "run-now only" completion path to
+  hook, by design); the failure branch got the matching
+  `metadata['last_status'] = 'error'` for symmetry.
+  `_process_job_success()` now passes `result=result` through.
+- Tests (15, all passing): `TestManagerRunNow` — a REAL
+  `AgentSchedulerManager` + real in-memory APScheduler
+  (`start_headless(register_listeners=True)`, the same path the
+  standalone daemon uses) + a fake agent/bot_manager + a mocked DB layer
+  (`get_schedule`/`AgentSchedule.get` patched, no real Postgres) —
+  proves run-now genuinely executes once, preserves schedule state,
+  runs on a paused job, rejects a concurrent run-now with 409, and
+  populates `last_result`/`last_status` on both success and failure.
+  `TestHandlerDispatch` — mocked-manager unit tests proving the PATCH
+  action dispatch (including the pre-existing pause/resume/update
+  actions are unchanged — explicit regression coverage) and the
+  last-result handler's GET. Full `packages/ai-parrot-server/tests/
+  scheduler/` suite (167 tests) passes.
+- `ruff check handlers/scheduler.py scheduler/` — `manager.py` is a
+  74KB pre-existing file with ~150 pre-existing findings (legacy
+  `Dict`/`Optional` typing style, tz-naive `datetime.now()` throughout,
+  blind `except Exception`, unused `# noqa` comments) entirely unrelated
+  to this change; ran `ruff --fix` once, found it had mechanically
+  "modernized" ~370 lines of PRE-EXISTING code across the whole file,
+  reverted that (`git checkout --`), and reapplied only the intended
+  edits by hand instead — new code deliberately matches the file's
+  existing conventions (`Dict[str, Any]`, tz-naive `datetime.now()`) for
+  local consistency rather than introducing a mixed style. `handlers/
+  scheduler.py`'s new `SchedulerLastResultHandler.get()` also matches
+  its siblings' established `self.logger.error(..., exc_info=True)`
+  pattern (flagged G201 by ruff, same as every other method in that
+  file) rather than diverging to `.exception()`. No NEW category of
+  ruff finding was introduced by this task's code.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- The two bugfixes above (`_update_schedule_run`'s missing `await`,
+  `job_success`'s one-shot-job crash) were not explicitly listed in the
+  task's Scope, but were direct, unavoidable blockers for its own
+  acceptance criteria ("last_run/run_count update as a normal run
+  does", "Last-result endpoint returns last_run/run_count + stamped
+  result metadata") — without them, run-now would execute the agent but
+  the last-result endpoint would never reflect it. Both are documented
+  inline at the fix site.
+- **Known limitation, explicitly NOT fixed** (out of scope — high
+  blast radius, a prior task's deliberate decision): the default
+  aiohttp `on_startup()` path still calls
+  `start_headless(use_redis=True, register_listeners=False)`, per an
+  explicit FEAT-422 decision (`define_listeners()`/`job_success`/
+  `job_status` were "never called anywhere on this path before... out
+  of scope for this feature"). This means in a live aiohttp-served
+  deployment using the DEFAULT startup path, `run_schedule_now()` will
+  correctly trigger the agent execution (verified: the failure-path
+  `_update_schedule_run` call inside `_execute_agent_job` itself is
+  NOT listener-dependent and works regardless), but the SUCCESS path's
+  `last_result`/`run_count` stamping (which runs via `job_success` ->
+  `_process_job_success`) will only fire once an operator also flips
+  `register_listeners=True` for the aiohttp path — a separate,
+  cross-cutting decision (it also turns on notification emails/
+  callbacks for every existing scheduled job) that belongs to a
+  follow-up task, not this one. Tests prove correctness via
+  `start_headless(register_listeners=True)` (the standalone daemon's
+  own path) rather than silently reversing that FEAT-422 decision.

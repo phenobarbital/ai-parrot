@@ -236,7 +236,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -244,8 +244,8 @@
       "parallelism_notes": "Touches only handlers/scheduler.py + scheduler/manager.py — zero file overlap with the studio package; safe in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2520-scheduler-run-now.md"
+      "completed_at": "2026-08-27T19:23:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2520-scheduler-run-now.md"
     },
     {
       "id": "TASK-2521",
