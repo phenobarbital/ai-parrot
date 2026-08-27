@@ -52,14 +52,14 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates the new ui/ tree only; independent of the Python serving lane (TASK-2523/2524).",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2525-admin-ui-scaffold.md"
     },
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,7 +80,7 @@
       "parallel": false,
       "parallelism_notes": "Bridges both lanes: imports TASK-2524 models, wires pnpm scripts from TASK-2525.",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2526-pydantic-ts-codegen.md"
     },
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,7 +100,7 @@
       "parallel": false,
       "parallelism_notes": "Builds inside the ui/ tree from TASK-2525.",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2527-admin-ui-core-runtime.md"
     },
@@ -111,7 +111,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -120,7 +120,7 @@
       "parallel": false,
       "parallelism_notes": "Consumes Router/AuthStore/API client singletons from TASK-2527.",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2528-admin-ui-shell-login.md"
     },
@@ -131,7 +131,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -141,7 +141,7 @@
       "parallel": false,
       "parallelism_notes": "Needs generated types (2526) and the shell (2528); page files disjoint from TASK-2530 but same worktree.",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2529-admin-ui-dashboard-home.md"
     },
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,7 +162,7 @@
       "parallel": false,
       "parallelism_notes": "Needs generated types (2526) and the shell (2528); page files disjoint from TASK-2529 but same worktree.",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2530-admin-ui-agents-readonly.md"
     },
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "in-progress",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": false,
       "parallelism_notes": "Final integration gate; touches Makefile/workflows and test_wheel_layout.py after both lanes exist. Workflow-file pushes need the SSH remote.",
       "assigned_to": null,
-      "started_at": "2026-08-27T17:00:54+00:00",
+      "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2531-admin-ui-release-pipeline.md"
     }

@@ -175,9 +175,50 @@ When you pick up this task:
 
 ---
 
+## Blocker (STOP condition triggered by sdd-worker, 2026-08-27)
+
+Per this task's own Agent Instructions step 3: "Verify the Codebase
+Contract — confirm the navigator-frontend-next paths exist before
+copying; if the repo moved, STOP and report."
+
+Verified: `/home/jesuslara/proyectos/navigator-frontend-next` **does
+not exist** on this machine (`ls` -> "No existe el archivo o el
+directorio"). Checked `~/proyectos/` in full — it is not present under
+any name. Searched the filesystem (`find / -maxdepth 4 -iname
+"*navigator-frontend*"`) and this repo (`.gitmodules`, vendored
+`shadcn`/`svelte5-structural` copies) for any local mirror — none
+found. None of the copy-in sources this task requires are reachable:
+
+- `package.json` (pinned dependency versions to match)
+- `src/app.css` (Tailwind v4 `@theme inline` token map, lines 21-62)
+- `src/lib/styles/themes/{_schema,_tokens,light,dark}.css`
+- `src/lib/ui/internal/shadcn/ui/<21 families>/` + `utils.ts` (`cn()`)
+- `src/lib/ui/README.md`
+- `.agent/skills/svelte5-structural/SKILL.md` + `references/`
+
+Fabricating this content from memory/imagination instead of copying
+the verified source would violate the anti-hallucination contract and
+Cardinal Rule 1 (builder, not architect) — a hand-invented token chain
+and component set is not "the copy-in reuse base from
+navigator-frontend-next" the spec and task both mandate, and would
+silently diverge from a design decision (maximal copy-in reuse,
+byte-faithful initial vendoring) that a human made deliberately.
+
+**Downstream impact**: TASK-2526, 2527, 2528, 2529, 2530, and 2531 all
+transitively depend on this task's `packages/ai-parrot-server/ui/`
+scaffold and cannot proceed either.
+
+**Action needed from a human/orchestrator**: make
+`navigator-frontend-next` available in this environment (clone it
+alongside `ai-parrot` at `~/proyectos/navigator-frontend-next`, as the
+spec's Codebase Contract assumes), or provide an alternate copy-in
+source, before this task (and its dependents) can be implemented.
+
+---
+
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(Agent fills this in when done — NOT done; see Blocker above)*
 
 **Completed by**:
 **Date**:
