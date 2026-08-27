@@ -11,12 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .exceptions import FrameworkOverrideError, OntologyIntegrityError, OntologyMergeError
+from .graph_store import _merge_link_field
 from .parser import OntologyParser
 from .schema import (
     EntityDef,
     MergedOntology,
     OntologyDefinition,
     RelationDef,
+    SearchViewDef,
     TraversalPattern,
 )
 
@@ -64,6 +66,7 @@ class OntologyMerger:
         result_entities: dict[str, EntityDef] = {}
         result_relations: dict[str, RelationDef] = {}
         result_patterns: dict[str, TraversalPattern] = {}
+        result_search_views: dict[str, SearchViewDef] = {}
         layers: list[str] = []
         last_name = "unnamed"
 
@@ -77,6 +80,7 @@ class OntologyMerger:
                 result_relations, layer.relations, result_entities, path
             )
             self._merge_patterns(result_patterns, layer.traversal_patterns)
+            self._merge_search_views(result_search_views, layer.search_views)
 
         merged = MergedOntology(
             name=last_name,
@@ -84,6 +88,7 @@ class OntologyMerger:
             entities=result_entities,
             relations=result_relations,
             traversal_patterns=result_patterns,
+            search_views=result_search_views,
             layers=layers,
             merge_timestamp=datetime.now(timezone.utc),
         )
@@ -110,6 +115,7 @@ class OntologyMerger:
         result_entities: dict[str, EntityDef] = {}
         result_relations: dict[str, RelationDef] = {}
         result_patterns: dict[str, TraversalPattern] = {}
+        result_search_views: dict[str, SearchViewDef] = {}
         layers: list[str] = []
         last_name = "unnamed"
 
@@ -125,6 +131,7 @@ class OntologyMerger:
                 Path(layer.name),
             )
             self._merge_patterns(result_patterns, layer.traversal_patterns)
+            self._merge_search_views(result_search_views, layer.search_views)
 
         merged = MergedOntology(
             name=last_name,
@@ -132,6 +139,7 @@ class OntologyMerger:
             entities=result_entities,
             relations=result_relations,
             traversal_patterns=result_patterns,
+            search_views=result_search_views,
             layers=layers,
             merge_timestamp=datetime.now(timezone.utc),
         )
@@ -193,6 +201,7 @@ class OntologyMerger:
         result_entities: dict[str, EntityDef] = {}
         result_relations: dict[str, RelationDef] = {}
         result_patterns: dict[str, TraversalPattern] = {}
+        result_search_views: dict[str, SearchViewDef] = {}
         layers: list[str] = []
         last_name = "unnamed"
 
@@ -203,6 +212,7 @@ class OntologyMerger:
             self._merge_entities(result_entities, layer.entities, path)
             self._merge_relations(result_relations, layer.relations, result_entities, path)
             self._merge_patterns(result_patterns, layer.traversal_patterns)
+            self._merge_search_views(result_search_views, layer.search_views)
 
         # Step 3: Apply each overlay definition on top.
         for overlay in overlay_defs:
@@ -237,6 +247,7 @@ class OntologyMerger:
                 result_relations, overlay.relations, result_entities, overlay_path
             )
             self._merge_patterns(result_patterns, overlay.traversal_patterns)
+            self._merge_search_views(result_search_views, overlay.search_views)
             layers.append(overlay.name)
             last_name = overlay.name or last_name
 
@@ -246,6 +257,7 @@ class OntologyMerger:
             entities=result_entities,
             relations=result_relations,
             traversal_patterns=result_patterns,
+            search_views=result_search_views,
             layers=layers,
             merge_timestamp=datetime.now(timezone.utc),
         )
@@ -397,6 +409,22 @@ class OntologyMerger:
             else:
                 target[name] = pattern.model_copy(deep=True)
 
+    # ── Search view merging (FEAT-449 R15) ──
+
+    def _merge_search_views(
+        self,
+        target: dict[str, SearchViewDef],
+        source: dict[str, SearchViewDef],
+    ) -> None:
+        """Merge declarative search views from a layer into the target dict.
+
+        Name-keyed union: a later layer's same-named view REPLACES the
+        earlier one wholesale (whole-view replacement, not link-level
+        merge) — mirroring ``_merge_patterns``' override semantics.
+        """
+        for name, view_def in source.items():
+            target[name] = view_def.model_copy(deep=True)
+
     # ── Integrity validation ──
 
     def _validate_integrity(self, merged: MergedOntology) -> None:
@@ -405,6 +433,8 @@ class OntologyMerger:
         Checks:
             1. All relation endpoints reference existing entities.
             2. All vectorize fields reference existing entity properties.
+            3. All search_views link entities exist and every field path
+               matches the supported one-level grammar (FEAT-449 R15).
 
         Raises:
             OntologyIntegrityError: If any check fails.
@@ -433,3 +463,22 @@ class OntologyMerger:
                         f"Entity '{name}' vectorize field '{vec_field}' "
                         f"not found in properties: {sorted(prop_names)}"
                     )
+
+        # Check search_views: every link entity exists and every field path
+        # matches the supported one-level grammar (FEAT-449 R15).
+        for view_name, view_def in merged.search_views.items():
+            for link in view_def.links:
+                if link.entity not in entity_names:
+                    raise OntologyIntegrityError(
+                        f"search_views view '{view_name}' links unknown entity "
+                        f"'{link.entity}'"
+                    )
+                for field in link.fields:
+                    try:
+                        _merge_link_field({}, field.path)
+                    except ValueError as exc:
+                        raise OntologyIntegrityError(
+                            f"search_views view '{view_name}' link entity "
+                            f"'{link.entity}' has an invalid field path "
+                            f"{field.path!r}: {exc}"
+                        ) from exc

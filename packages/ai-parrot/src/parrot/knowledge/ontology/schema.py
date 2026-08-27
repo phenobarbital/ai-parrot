@@ -297,6 +297,55 @@ class TraversalPattern(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SearchViewField(BaseModel):
+    """One indexed field within a ``SearchViewLink`` (FEAT-449 R15).
+
+    Args:
+        path: Field path within the linked entity's stored document.
+            Supports at most one nesting level: a bare field name
+            (``"titulo"``) or an array-expansion path
+            (``"versions[*].text"``).
+        analyzers: ArangoSearch analyzer names to apply to this field.
+    """
+
+    path: str
+    analyzers: list[str] = Field(default_factory=lambda: ["text_es"])
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchViewLink(BaseModel):
+    """One entity link within a ``SearchViewDef`` (FEAT-449 R15).
+
+    Args:
+        entity: Entity NAME (not collection) — the merger resolves this
+            to ``EntityDef.collection`` and fails the merge if the name
+            is unknown.
+        fields: Fields of the linked entity to index.
+    """
+
+    entity: str
+    fields: list[SearchViewField] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchViewDef(BaseModel):
+    """Declarative ArangoSearch view definition (FEAT-449 R15).
+
+    The view NAME is the dict key under ``search_views:`` in the ontology
+    YAML — there is no ``name`` field here, so there is no risk of the
+    key and an internal name field drifting apart.
+
+    Args:
+        links: Entity links (collections) this view indexes.
+    """
+
+    links: list[SearchViewLink] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OntologyDefinition(BaseModel):
     """Root model for a single ontology YAML layer.
 
@@ -311,6 +360,8 @@ class OntologyDefinition(BaseModel):
         entities: Entity definitions keyed by name.
         relations: Relation definitions keyed by name.
         traversal_patterns: Traversal pattern definitions keyed by name.
+        search_views: Declarative ArangoSearch view definitions keyed by
+            view name (FEAT-449 R15).
     """
 
     name: str
@@ -320,6 +371,7 @@ class OntologyDefinition(BaseModel):
     entities: dict[str, EntityDef] = Field(default_factory=dict)
     relations: dict[str, RelationDef] = Field(default_factory=dict)
     traversal_patterns: dict[str, TraversalPattern] = Field(default_factory=dict)
+    search_views: dict[str, SearchViewDef] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -339,6 +391,10 @@ class MergedOntology(BaseModel):
         entities: All entity definitions.
         relations: All relation definitions.
         traversal_patterns: All traversal patterns.
+        search_views: All declarative ArangoSearch view definitions,
+            keyed by view name (FEAT-449 R15). Union-by-name across
+            layers — a later layer's same-named view replaces an
+            earlier one wholesale.
         layers: List of YAML file paths that were merged.
         merge_timestamp: When the merge was performed.
     """
@@ -348,6 +404,7 @@ class MergedOntology(BaseModel):
     entities: dict[str, EntityDef]
     relations: dict[str, RelationDef]
     traversal_patterns: dict[str, TraversalPattern]
+    search_views: dict[str, SearchViewDef] = Field(default_factory=dict)
     layers: list[str]
     merge_timestamp: datetime
 
