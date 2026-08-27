@@ -14,7 +14,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only parrot_tools/legal/boe/ (hashing.py, models.py, parser.py) and its tests; shares no files with TASK-2493 (core ontology). Can run in a separate worktree alongside TASK-2493.",
       "assigned_to": null,
       "started_at": "2026-08-27T02:03:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2492-hash-sealing-boe-reingest.md"
+      "completed_at": "2026-08-27T02:07:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2492-hash-sealing-boe-reingest.md"
     },
     {
       "id": "TASK-2493",
