@@ -133,7 +133,7 @@
       "feature_id": "FEAT-467",
       "feature": "agentstudio-management",
       "spec": "sdd/specs/agentstudio-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Import flow reuses TASK-2514 file helpers; touches core skills package + server handler.",
       "assigned_to": null,
       "started_at": "2026-08-27T16:59:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2515-shared-skills-catalog.md"
+      "completed_at": "2026-08-27T18:22:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2515-shared-skills-catalog.md"
     },
     {
       "id": "TASK-2516",

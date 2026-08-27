@@ -206,10 +206,90 @@ class TestSkillsCatalog:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-27
 **Notes**:
+- Core: `Skill.owner_user_id: str = ""` added (distinct from the existing
+  AGENT-identity `owner_agent_id`); `to_dict()` includes it, `from_dict()`
+  needed NO change (generic `cls(**data)` passthrough already round-trips
+  any field present, and defaults `""` when absent — verified backward
+  compatible with pre-existing persisted records missing the key).
+  `upload_skill()`/`_create_new_skill()` gained `owner_user_id=` and a
+  `skill_id=` passthrough for NEW skills (previously `skill_id` was only
+  ever used to look up an EXISTING skill; a not-yet-existing id was
+  silently discarded and a fresh uuid4 generated instead) — required so
+  the Postgres catalog row and the registry `Skill` can share one id
+  (spec §2: "skill_id ... mirrors SkillRegistry skill_id"). `_create_new
+  _version` (the update path) intentionally does NOT touch ownership —
+  verified via `test_upload_skill_update_preserves_owner_user_id`.
+  Shared-namespace convention (`"<org_id>/_shared"`) documented on the
+  class docstring; genuinely needed zero behavioral special-casing (`/`
+  in a namespace string works fine as both a Redis-key and filesystem-
+  path segment).
+- Server: `SkillCatalogEntry` model (`navigator.ai_skills_catalog`),
+  `StudioSkillsCatalogHandler` (list/publish/read+versions/update/
+  delete), `StudioSkillsImportHandler` (materialize into an agent's
+  `skills/` dir), `StudioSkillsResyncHandler` (admin-only), plus the
+  standalone `reconcile_skills_catalog(app)` function wired via
+  `app.on_startup.append(...)`.
+- Dual-write: PG insert/update ALWAYS happens first (source of truth);
+  the registry write is wrapped in `_dual_write_to_registry()`, which
+  NEVER raises — on failure it returns `True` and the caller flags
+  `search_index_stale`. `POST /skills/resync` and the startup hook share
+  the identical "select stale → re-upload → clear flag" routine.
+  Route-order note: `/skills/resync` is registered BEFORE the dynamic
+  `/skills/{id}` (aiohttp matches in registration order — `{id}` would
+  otherwise swallow "resync" as an id).
+- **Two real bugs found and fixed while implementing (not the task's own
+  code, but blocking it):**
+  1. **`from __future__ import annotations` breaks asyncdb Model
+     construction.** Empirically confirmed: `SkillCatalogEntry(...)` (and
+     TASK-2513's `StudioDraft(...)`, which had the SAME latent bug,
+     undetected because that task's tests only ever used a hand-rolled
+     fake row, never the real model class) raised `TypeError: Expected
+     type, got str` from `datamodel.validation` — the Cython field
+     processor reads `__annotations__` directly without
+     `typing.get_type_hints()` resolution, so postponed-evaluation string
+     annotations break it. Fixed by removing the future-import from BOTH
+     `handlers/models/skills_catalog.py` and `handlers/models/
+     studio_drafts.py` (the latter is a TASK-2513 file, out of THIS
+     task's Files table, but the bug directly blocks constructing a real
+     `SkillCatalogEntry`/any future asyncdb Model built the same way, so
+     it had to be fixed now). Matches the working, future-import-free
+     `scheduler/models.py::AgentSchedule` pattern. Python 3.12 natively
+     supports the `X | None` syntax already in use, so no future import
+     is needed for that either.
+  2. `parse_skill_file`'s frontmatter `source` field only accepts
+     `SkillSource.AUTHORED`/`LEARNED` — my first draft of
+     `_compose_skill_markdown` wrote `source: shared_catalog`, an
+     invalid value that made EVERY import fail validation. Fixed to
+     `"authored"` (a catalog import is developer-authored content).
+- Tests: catalog handler tests fake DB persistence via monkeypatched
+  `_get_entry_by_id`/`_get_entry_by_name`/`_list_entries`/
+  `_insert_entry`/`_update_entry`/`_delete_entry` mixin methods (added
+  during implementation specifically for this testability, mirroring
+  TASK-2513's `_FakeDraftStore` pattern) holding REAL `SkillCatalogEntry`
+  instances — exercises the real model end to end (which is exactly how
+  the `from __future__ import annotations` bug above was caught). The
+  shared `SkillRegistry` is faked via the module-level, monkeypatchable
+  `_get_shared_skill_registry(app, org_id)` function so tests never load
+  a real embedding model; `packages/ai-parrot/tests/skills/
+  test_skill_owner_field.py` instead uses a REAL `SkillRegistry`
+  configured with `configure(embedding_model=<8-dim fake async fn>)` —
+  a genuine seam `configure()` already exposed, no test-only code path
+  needed in `store.py`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none functionally. One necessary out-of-table
+fix: `handlers/models/studio_drafts.py` (TASK-2513) — see bug #1 above.
+
+Verification: `pytest packages/ai-parrot-server/tests/studio/
+test_skills_catalog.py packages/ai-parrot/tests/skills/
+test_skill_owner_field.py -v` → 18 + 8 = 26/26 passed. Full regression
+sweep: ai-parrot-server (`tests/studio/`, `tests/manager/`,
+ephemeral-owner, DB-bot fallback) → 121/121 passed; ai-parrot skills
+(`tests/skills/` + integration/unit skill suites) → 46/46 passed.
+`ruff check` on every touched path → clean except intentional
+`BLE001`/`S112` best-effort/fail-open patterns matching established
+convention (verified no NEW violation categories were introduced).
+`git status --porcelain` on the main repo checked clean before and
+after the full run.
