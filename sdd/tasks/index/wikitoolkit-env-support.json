@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-25T00:00:00Z",
-  "completed_at": "2026-08-27T01:28:12+00:00",
+  "completed_at": "2026-08-27T02:01:15+00:00",
   "tasks": [
     {
       "id": "TASK-2462",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T00:07:14+00:00",
-      "file": "sdd/tasks/completed/TASK-2462-env-resolution-and-effective-config.md"
+      "file": "sdd/tasks/completed/TASK-2462-env-resolution-and-effective-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2463",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T00:30:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2463-cli-precedence-build-generation-status.md"
+      "file": "sdd/tasks/completed/TASK-2463-cli-precedence-build-generation-status.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2464",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T00:43:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2464-call-site-migration-effective-config.md"
+      "file": "sdd/tasks/completed/TASK-2464-call-site-migration-effective-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2465",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T00:50:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2465-updated-at-surfacing.md"
+      "file": "sdd/tasks/completed/TASK-2465-updated-at-surfacing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2466",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T01:09:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2466-sync-engine.md"
+      "file": "sdd/tasks/completed/TASK-2466-sync-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2467",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T01:16:19+00:00",
-      "file": "sdd/tasks/completed/TASK-2467-sync-cli-group.md"
+      "file": "sdd/tasks/completed/TASK-2467-sync-cli-group.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2468",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
       "completed_at": "2026-08-27T01:28:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2468-repo-config-docs-e2e.md"
+      "file": "sdd/tasks/completed/TASK-2468-repo-config-docs-e2e.md",
+      "verification": "verified"
     }
   ]
 }
