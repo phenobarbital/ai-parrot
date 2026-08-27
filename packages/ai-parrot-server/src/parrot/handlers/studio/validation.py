@@ -32,15 +32,53 @@ _ALLOWED_TOP_LEVEL_PACKAGES = {"parrot", "parrot_tools"}
 # agent code) despite enabling file I/O. The actual trust boundary
 # remains the explicit, owner-gated `POST .../activate` step — a draft
 # NEVER executes without a human deliberately activating it.
-_SAFE_STDLIB_MODULES = frozenset({
-    "abc", "array", "asyncio", "base64", "binascii", "bisect", "calendar",
-    "collections", "contextlib", "copy", "dataclasses", "datetime",
-    "decimal", "difflib", "enum", "fractions", "functools", "hashlib",
-    "heapq", "hmac", "html", "itertools", "json", "logging", "math",
-    "numbers", "operator", "pathlib", "pprint", "random", "re", "secrets",
-    "statistics", "string", "struct", "textwrap", "time", "types",
-    "typing", "unicodedata", "uuid", "warnings", "zoneinfo",
-})
+_SAFE_STDLIB_MODULES = frozenset(
+    {
+        "abc",
+        "array",
+        "asyncio",
+        "base64",
+        "binascii",
+        "bisect",
+        "calendar",
+        "collections",
+        "contextlib",
+        "copy",
+        "dataclasses",
+        "datetime",
+        "decimal",
+        "difflib",
+        "enum",
+        "fractions",
+        "functools",
+        "hashlib",
+        "heapq",
+        "hmac",
+        "html",
+        "itertools",
+        "json",
+        "logging",
+        "math",
+        "numbers",
+        "operator",
+        "pathlib",
+        "pprint",
+        "random",
+        "re",
+        "secrets",
+        "statistics",
+        "string",
+        "struct",
+        "textwrap",
+        "time",
+        "types",
+        "typing",
+        "unicodedata",
+        "uuid",
+        "warnings",
+        "zoneinfo",
+    }
+)
 
 # Dynamic-execution escape hatches — never allowed in a draft, regardless
 # of the import allowlist (spec §7: "no dynamic __import__/exec/eval
@@ -54,12 +92,30 @@ _FORBIDDEN_CALLS = {"exec", "eval", "__import__", "compile", "breakpoint"}
 # benign top-level use in an agent draft (``run`` is deliberately absent:
 # ``asyncio.run`` is legitimate; ``subprocess.run`` is unreachable anyway
 # because ``subprocess`` itself can no longer be imported).
-_FORBIDDEN_ATTR_CALLS = frozenset({
-    "exec", "eval", "compile", "__import__", "system", "popen",
-    "exec_module", "import_module", "run_module", "run_path",
-    "fork", "execl", "execle", "execlp", "execv", "execve", "execvp",
-    "spawnl", "spawnv", "spawnve",
-})
+_FORBIDDEN_ATTR_CALLS = frozenset(
+    {
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "system",
+        "popen",
+        "exec_module",
+        "import_module",
+        "run_module",
+        "run_path",
+        "fork",
+        "execl",
+        "execle",
+        "execlp",
+        "execv",
+        "execve",
+        "execvp",
+        "spawnl",
+        "spawnv",
+        "spawnve",
+    }
+)
 
 # Base-name heuristic (spec §3 Module 5) — matched against the AST
 # ClassDef's base NAMES only; the draft is never imported to resolve a

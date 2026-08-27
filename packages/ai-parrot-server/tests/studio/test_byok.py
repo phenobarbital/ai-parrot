@@ -288,10 +288,7 @@ class TestByok:
             response = await _unwrap(StudioKeysHandler.post)(handler)
             assert response.status == 201
 
-        matching = [
-            d for d in fake_db.docs
-            if d.get("user_id") == "1" and d.get("provider") == "anthropic"
-        ]
+        matching = [d for d in fake_db.docs if d.get("user_id") == "1" and d.get("provider") == "anthropic"]
         assert len(matching) == 1
 
         resolved = await resolve_user_api_key(app, "1", "anthropic")

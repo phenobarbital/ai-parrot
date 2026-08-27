@@ -422,8 +422,7 @@ class TestSkillsUpdateDelete:
 # ---------------------------------------------------------------------------
 
 
-def _make_import_handler(app, store, *, skill_id, agent="my-agent",
-                          agent_owner="1", agent_exists=True, **kwargs):
+def _make_import_handler(app, store, *, skill_id, agent="my-agent", agent_owner="1", agent_exists=True, **kwargs):
     """Import-handler factory with the ownership seam wired (the
     adversarial-review fix made the import handler resolve the target
     agent's owner via `_StudioFilesMixin._resolve_agent` and call
@@ -465,7 +464,10 @@ class TestSkillsImport:
 
         # With overwrite=true -> succeeds.
         handler3 = _make_import_handler(
-            app, store, skill_id=skill_id, json_body={"overwrite": True},
+            app,
+            store,
+            skill_id=skill_id,
+            json_body={"overwrite": True},
         )
         response3 = await _unwrap(StudioSkillsImportHandler.post)(handler3)
         assert response3.status == 201
@@ -500,7 +502,11 @@ class TestSkillsImport:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_import_handler(
-            app, store, skill_id=skill_id, agent_owner="someone-else", superuser=True,
+            app,
+            store,
+            skill_id=skill_id,
+            agent_owner="someone-else",
+            superuser=True,
         )
         response = await _unwrap(StudioSkillsImportHandler.post)(handler)
         assert response.status == 201

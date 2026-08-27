@@ -188,7 +188,10 @@ class TestStudioAgentsCreate:
         bot_config.model, which the non-persisted instantiation path never
         consults — the live instance silently used the class default."""
         await _create_agent(
-            app, name="llm-agent", persist=False, llm="anthropic:claude-sonnet-4-5",
+            app,
+            name="llm-agent",
+            persist=False,
+            llm="anthropic:claude-sonnet-4-5",
         )
         meta = registry.get_metadata("llm-agent")
         assert meta.startup_config.get("llm") == "anthropic:claude-sonnet-4-5"

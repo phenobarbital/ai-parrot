@@ -109,15 +109,13 @@ class TestDraftValidation:
 
     # --- adversarial-review hardening (stdlib allowlist + attr calls) ---
 
-    @pytest.mark.parametrize("module", ["os", "subprocess", "shutil", "socket", "sys", "importlib", "ctypes", "pickle", "builtins"])
+    @pytest.mark.parametrize(
+        "module", ["os", "subprocess", "shutil", "socket", "sys", "importlib", "ctypes", "pickle", "builtins"]
+    )
     def test_dangerous_stdlib_import_flagged(self, module):
         """`import os; os.system(...)` previously PASSED validation — the
         stdlib was blanket-allowed. Now only the safe allowlist passes."""
-        source = (
-            f"import {module}\n\n"
-            "from parrot.bots.basic import BasicBot\n\n\n"
-            "class X(BasicBot):\n    pass\n"
-        )
+        source = f"import {module}\n\n" "from parrot.bots.basic import BasicBot\n\n\n" "class X(BasicBot):\n    pass\n"
         report = validate_draft(source)
         assert report.passed is False
         assert any(e["code"] == "forbidden-import" for e in report.errors)
@@ -151,11 +149,7 @@ class TestDraftValidation:
 
     @pytest.mark.parametrize("module", ["typing", "json", "datetime", "pathlib", "asyncio", "logging", "re"])
     def test_safe_stdlib_import_allowed(self, module):
-        source = (
-            f"import {module}\n\n"
-            "from parrot.bots.basic import BasicBot\n\n\n"
-            "class X(BasicBot):\n    pass\n"
-        )
+        source = f"import {module}\n\n" "from parrot.bots.basic import BasicBot\n\n\n" "class X(BasicBot):\n    pass\n"
         report = validate_draft(source)
         assert report.passed is True
 
