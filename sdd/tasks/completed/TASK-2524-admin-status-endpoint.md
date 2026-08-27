@@ -187,11 +187,24 @@ compiled UI. Probes (Postgres `SELECT 1` via `app['database']`, Redis
 Resolved the spec's one open implementation question (§8, vector-store
 probe mechanics): this codebase has no single global vector-store
 handle — stores are configured per-bot. Chosen mechanism: scan
-`bot_manager.get_bots()` for the first bot exposing a truthy
-`_vector_store` (an `AbstractStore` instance, precedent
-`manager.py:748-754`); if found, read its own `is_connected()` state
-(cheapest possible check, opens no new connection); `unconfigured`
-when no loaded bot uses a vector store.
+`bot_manager.get_bots()` for the first bot exposing a non-None `.store`
+(the actual `AbstractStore` instance, `bots/abstract.py:577`); if
+found, read its own `is_connected()` state (cheapest possible check,
+opens no new connection); `unconfigured` when no loaded bot has a
+configured store.
+
+**Post-review fix**: the adversarial code-reviewer caught a CRITICAL
+bug in the first cut — the probe read `bot._vector_store` instead of
+`bot.store`. `_vector_store` (`bots/abstract.py:573`) is the raw
+`vector_store_config` **dict**, not a store instance, so every
+configured-and-healthy vector store was misreported as "unreachable"
+(`AttributeError: 'dict' object has no attribute 'is_connected'`), and
+a bot with only the `{}` config default was also misreported
+"unreachable" instead of "unconfigured". Fixed to read `.store`;
+added three regression tests (connected/disconnected/config-dict-
+without-instance) exercising the previously-untested path. See the
+"Post-review fixes" commit on this branch for the full diff and
+rationale.
 
 Database agent count: no cheap existing count API exists on
 `BotManager` (per the task's anti-hallucination contract, did NOT

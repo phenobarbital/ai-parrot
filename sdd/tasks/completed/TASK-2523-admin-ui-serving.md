@@ -230,4 +230,24 @@ gitignored the dist output. 6/6 unit tests pass
 `ruff check` clean on all new/modified files (pre-existing lint debt in
 `manager.py` untouched by this diff).
 
+**Post-review fixes**: the adversarial code-reviewer caught two
+CRITICAL bugs in the first cut:
+1. The SPA fallback route (`"/admin{tail:.*}"`) and the auth exclude
+   pattern (`"/admin*"`) were bare string-prefix matches, not
+   path-segment-anchored — a future route like `/administer` would be
+   silently swallowed by the SPA catch-all, and `fnmatch` has no
+   notion of `/` as special, so the same lookalike would also bypass
+   auth via the exclude list. Fixed to register an exact-prefix route
+   (`GET /admin`) plus a children route (`GET /admin/{tail:.*}`), and
+   two segment-boundary exclude patterns (`/admin`, `/admin/*`).
+2. (IMPORTANT, also fixed) static assets never actually got
+   long-cache/immutable `Cache-Control` headers — `add_static()`/
+   `FileResponse` don't set it, despite the docstring and acceptance
+   criteria claiming otherwise. Fixed via an `on_response_prepare`
+   hook scoped to the assets prefix.
+
+Added regression tests for both (lookalike-route non-shadowing,
+segment-boundary exclude patterns, and the actual `Cache-Control`
+header value). 14/14 unit tests pass after the fix.
+
 **Deviations from spec**: none
