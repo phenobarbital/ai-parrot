@@ -90,7 +90,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -98,8 +98,8 @@
       "parallelism_notes": "Problem B — fully independent of the base-branch chain. Only shares development.py with 2503's one-line _find_feature_slug guard. Safe to run first or concurrently.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2506-single-agent-honours-dev-agent.md"
+      "completed_at": "2026-08-27T15:39:52+00:00",
+      "file": "sdd/tasks/completed/TASK-2506-single-agent-honours-dev-agent.md"
     },
     {
       "id": "TASK-2507",

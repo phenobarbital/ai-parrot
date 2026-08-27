@@ -459,10 +459,54 @@ class TestSingleAgentHonoursDeclaredAgent:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: Implemented `_execute_single(shared, research, pool_cfg=None)` per
+the task's pattern, with one deliberate, documented deviation (below).
+Updated all three `execute()` call sites to pass `pool_cfg` at lines 197/207
+(197: builder-missing degradation; 207: no-readable-index degradation) while
+leaving the `pool_cfg is None` call site (line 191) passing nothing, exactly
+as instructed. Verified the builder is called synchronously per
+`agent_pool.py:150` (`dispatcher, profile = dispatcher_builder(spec)`, not
+awaited). Extended `test_development_node.py`: added the
+`TestSingleAgentHonoursDeclaredAgent` class (6 new tests) and made
+`FakeDispatcher.dispatch` tolerate `**_kwargs` so it accepts the
+single-agent path's `session_host=` kwarg (the pool path never passes it).
+Baseline was 39 passing tests in `test_development_node.py` +
+`test_agent_builder.py`; now 45 (39 + 6 new), all passing. Full
+`pytest packages/ai-parrot/tests/flows/dev_loop/` run: 1097 passed (up from
+1091 pre-task), same 3 pre-existing unrelated failures as TASK-2503
+(confirmed via baseline diff, not touched by this task). `ruff check` on
+`development.py`: 32 findings vs 31 baseline — the +1 is two new
+`Optional[...]`-style UP045 findings (consistent with the file's existing
+10 UP045 instances and its established `Optional[X]` convention throughout,
+not `X | None`) minus one `RUF100 unused noqa` I removed after ruff flagged
+it as superfluous on my own new `except Exception:` block. `ruff check` on
+the test file: byte-identical finding count/content to baseline (2
+pre-existing, untouched). `mypy` times out project-wide (60s, same as
+TASK-2503) — environment limitation, not confirmed clean, not specific to
+these files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The task's own "Pattern to Follow" snippet
+unconditionally appends a `WorkerSummary` via `dev_out.model_copy(...)`
+regardless of whether a pool spec was actually used. Applied literally,
+this breaks object identity (`result is dev_out`) on BOTH the `pool_cfg is
+None` path AND the "pool declared but no `dispatcher_builder`" path — which
+directly contradicts (a) the task's own Key Constraint "The `pool_cfg is
+None` path must not change at all... Diff it carefully", and (b) two
+pre-existing regression tests (`test_no_pool_exact_current_behavior`,
+`test_no_dispatcher_builder_degrades_to_single`) that assert exactly that
+identity, protected by the acceptance criterion "All 39 pre-existing tests
+... still pass". Resolved by only appending the `WorkerSummary` when a pool
+`spec` was actually materialized via the builder (i.e. the one case where
+behaviour is intentionally changing) — this satisfies every literal
+acceptance criterion (all of which describe pool-declared scenarios) while
+keeping both explicitly-protected byte-identical paths untouched. Also
+rewrote the third existing test, `test_missing_index_degrades_to_single`
+(renamed `..._via_declared_agent`), because its assertions encoded the
+exact Problem-B bug this task exists to fix (pool declared + builder
+present + missing index → old code asserted the ENV dispatcher was used;
+new code correctly uses the builder) — this is the intended, in-scope
+behavior change per acceptance criterion "Pool config resolved + no
+readable task index → the dispatch runs on `pool_cfg.agents[0]`'s
+backend/model ... `self._dispatcher` was **not** used".
