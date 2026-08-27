@@ -15,7 +15,7 @@ reuse_feature_id: FEAT-449
 **Feature ID**: FEAT-449
 **Date**: 2026-08-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 > **Parent initiative**: [Legal LLM Wiki](../proposals/claude_legal-wiki-design.md)
