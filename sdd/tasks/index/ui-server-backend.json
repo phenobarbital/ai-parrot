@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-27T18:58:05+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-27T19:54:46+00:00",
   "tasks": [
     {
       "id": "TASK-2523",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T17:00:54+00:00",
       "completed_at": "2026-08-27T17:04:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2523-admin-ui-serving.md"
+      "file": "sdd/tasks/completed/TASK-2523-admin-ui-serving.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2524",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T17:00:54+00:00",
       "completed_at": "2026-08-27T17:12:34+00:00",
-      "file": "sdd/tasks/completed/TASK-2524-admin-status-endpoint.md"
+      "file": "sdd/tasks/completed/TASK-2524-admin-status-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2525",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T17:35:17+00:00",
       "completed_at": "2026-08-27T17:38:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2525-admin-ui-scaffold.md"
+      "file": "sdd/tasks/completed/TASK-2525-admin-ui-scaffold.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2526",
@@ -82,7 +85,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T17:45:30+00:00",
       "completed_at": "2026-08-27T17:46:31+00:00",
-      "file": "sdd/tasks/completed/TASK-2526-pydantic-ts-codegen.md"
+      "file": "sdd/tasks/completed/TASK-2526-pydantic-ts-codegen.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2527",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T17:51:59+00:00",
       "completed_at": "2026-08-27T17:52:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2527-admin-ui-core-runtime.md"
+      "file": "sdd/tasks/completed/TASK-2527-admin-ui-core-runtime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2528",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-08-27T18:00:39+00:00",
       "completed_at": "2026-08-27T18:02:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2528-admin-ui-shell-login.md"
+      "file": "sdd/tasks/completed/TASK-2528-admin-ui-shell-login.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2529",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-08-27T18:09:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2529-admin-ui-dashboard-home.md"
+      "file": "sdd/tasks/completed/TASK-2529-admin-ui-dashboard-home.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2530",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-08-27T18:14:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2530-admin-ui-agents-readonly.md"
+      "file": "sdd/tasks/completed/TASK-2530-admin-ui-agents-readonly.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2531",
@@ -185,7 +193,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-08-27T18:22:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2531-admin-ui-release-pipeline.md"
+      "file": "sdd/tasks/completed/TASK-2531-admin-ui-release-pipeline.md",
+      "verification": "verified"
     }
   ]
 }
