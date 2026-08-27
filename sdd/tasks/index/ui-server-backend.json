@@ -52,16 +52,16 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates the new ui/ tree only; independent of the Python serving lane (TASK-2523/2524).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2525-admin-ui-scaffold.md"
+      "started_at": "2026-08-27T17:35:17+00:00",
+      "completed_at": "2026-08-27T17:38:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2525-admin-ui-scaffold.md"
     },
     {
       "id": "TASK-2526",
