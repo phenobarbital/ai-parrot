@@ -152,7 +152,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Needs generated types (2526) and the shell (2528); page files disjoint from TASK-2529 but same worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2530-admin-ui-agents-readonly.md"
+      "completed_at": "2026-08-27T18:14:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2530-admin-ui-agents-readonly.md"
     },
     {
       "id": "TASK-2531",

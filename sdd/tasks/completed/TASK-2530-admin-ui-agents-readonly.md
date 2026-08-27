@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-468 — UI Server Backend — Embedded Admin UI Foundation
 **Spec**: `sdd/specs/ui-server-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2526, TASK-2528
@@ -155,10 +155,78 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed)
+**Date**: 2026-08-27
 **Notes**:
+- `pages/agents/AgentsList.svelte` — fetches `GET /api/v1/bots` (generated
+  `BotsListResponse`/`BotAgentItem` types, both permissive per contract:
+  only `name`/`source` pinned). Plain `<table>` with token classes (no
+  SimpleTable wrapper exists in this scaffold — explicitly implementer's
+  choice per the Codebase Contract). Client-side `$derived.by` filter over
+  `search` (name/description substring, case-insensitive) and
+  `sourceFilter` (all/database/registry). `fieldOf()` reads arbitrary keys
+  off the permissive `BotAgentItem` via a `Record<string, unknown>` cast
+  and falls back to `"—"` for `undefined`/`null`/`""`, covering the
+  registry-minimal shape (`{name, module_path, file_path, singleton,
+  at_startup, priority, tags}` — no `description`/`role`/`enabled`).
+  Loading skeleton, empty state (`agents-empty-state`), fetch-error retry
+  card (`agents-retry-card`, same `error && agents === null` pattern as
+  Dashboard's `fetchStatus`) — `fetchAgents()` likewise performs no
+  `$state` reads before its first `await`, for the same reactive-loop
+  reason documented in `Dashboard.svelte` (this page doesn't poll, but the
+  one-shot `$effect` calling an async function synchronously is the same
+  shape, so the same hygiene applies).
+- `pages/agents/AgentDetail.svelte` — read-only panel on the vendored
+  bits-ui-backed Dialog primitive (`Dialog`/`DialogContent`/
+  `DialogHeader`/`DialogTitle`/`DialogDescription` from
+  `lib/ui/internal/shadcn/ui/dialog`), controlled via `bind:open` from the
+  list page rather than `DialogTrigger` (list rows aren't dialog
+  triggers). Renders every field except `name`/`source` as a labeled
+  row (`Object.entries` over the agent, since the type is permissive) plus
+  a `<pre data-testid="agent-detail-raw-json">` raw JSON view. Handles the
+  minimal registry shape without crashing (`entries.length === 0` renders
+  "No additional fields." instead of an empty list) and a `null` agent
+  (renders nothing inside `DialogContent`, guarded by `{#if agent}`).
+- `pages/Agents.svelte` — MODIFY (not DELETE): kept as a one-line wrapper
+  re-exporting `AgentsList`, so `App.svelte`'s route table (which still
+  points at `./pages/Agents.svelte`) needs no change — `App.svelte` is not
+  in this task's Files table, so this was the narrower option vs.
+  repointing the route to `pages/agents/AgentsList.svelte` directly.
+- Source filter is a 3-way `Button` toggle group (All/Database/Registry),
+  not the vendored bits-ui `Select` — see Deviations. Verified the Dialog
+  primitive itself (used for the detail panel) DOES work under
+  `jsdom`/`@testing-library/svelte` with no additional polyfills needed in
+  `vitest-setup.ts` (untouched) — `bind:open` + `{#if agent}`-guarded
+  content was sufficient for all 3 `AgentDetail.test.ts` cases and the
+  `AgentsList.test.ts` "opens read-only detail on row click" case.
+- Zero mutating affordances: no create/edit/delete buttons/routes anywhere
+  in either file; `AgentsList.test.ts`'s "has no mutating controls" test
+  asserts their absence by role/name.
+- Test files: `AgentsList.test.ts` (8 tests — mixed database/registry
+  rows, `—` fallbacks on the minimal shape, search filter, source filter,
+  detail-open-on-row-click, no mutating controls, retry-then-recovers,
+  empty state) and `AgentDetail.test.ts` (3 tests — full-agent fields +
+  raw JSON, minimal-registry-shape no-crash, `agent === null` renders
+  nothing).
+- `pnpm test` — 55/55 passed (12 files, up from 44/10 after TASK-2529).
+  `pnpm build` green (`pnpm generate && vite build`, 772 modules; `Agents`
+  chunk — now pulling in the Dialog/bits-ui machinery — grew to ~55KB but
+  remains its own code-split chunk, not inlined into the shared bundle).
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- Source filter uses a 3-way `Button` toggle group instead of the
+  vendored `Select` primitive. The Codebase Contract lists `select` among
+  available vendored primitives but does not mandate it for this specific
+  filter, and the acceptance criterion only requires that "search and
+  source filter narrow the list client-side" — functionally satisfied
+  either way. Chosen to avoid `Select`'s floating-ui popover-positioning
+  machinery being exercised for the first time in this repo's test suite
+  for only 3 fixed, always-visible options; a `Button` group is
+  functionally equivalent here and trivially testable. Recorded per the
+  Implementation Notes' explicit invitation to record implementer choices
+  like this (mirroring the SimpleTable-vs-plain-`<table>` choice already
+  called out there).
+- `pages/Agents.svelte` was kept (MODIFY) rather than deleted, as a thin
+  wrapper around `AgentsList`, specifically to avoid touching
+  `App.svelte`'s route table (not listed in this task's Files to
+  Create/Modify).
