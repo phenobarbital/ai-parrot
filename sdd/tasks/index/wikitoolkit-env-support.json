@@ -111,7 +111,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Edits cli.py after TASK-2463; thin wrapper over TASK-2466 engine.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2467-sync-cli-group.md"
+      "completed_at": "2026-08-27T01:16:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2467-sync-cli-group.md"
     },
     {
       "id": "TASK-2468",
