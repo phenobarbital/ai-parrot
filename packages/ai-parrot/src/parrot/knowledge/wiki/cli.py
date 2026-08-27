@@ -2961,6 +2961,107 @@ def ground(
 
 
 # --------------------------------------------------------------------------
+# Sync (FEAT-461) — push/pull authored knowledge with a shared plane.
+# --------------------------------------------------------------------------
+
+
+@wiki.group(name="sync")
+def sync() -> None:
+    """Push/pull authored knowledge (memories, notes) with a shared plane.
+
+    The local identity used to attribute writes and filter `pull` is
+    always ``human:<local-user>`` in v1 — there is no override flag yet.
+    """
+
+
+@sync.command("push")
+@path_option
+@click.option(
+    "--env",
+    "target_env",
+    default="dev",
+    show_default=True,
+    help="Target environment whose effective config names the shared plane.",
+)
+@click.option("--dry-run", is_flag=True, help="Compute and print the report; apply nothing.")
+def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
+    """Push local memories/notes/asserted edges to the ENV plane.
+
+    Every local memory page moves — push never filters by authorship.
+    """
+    from parrot.knowledge.wiki.sync import SyncError, default_local_identity, sync_push
+
+    root, _config = _resolve_project(path_)
+    try:
+        report = _run(
+            sync_push(
+                root,
+                target_env=target_env,
+                dry_run=dry_run,
+                local_identity=default_local_identity(),
+            )
+        )
+    except SyncError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if report.dry_run:
+        click.echo("DRY RUN — nothing applied")
+    click.echo(
+        f"pushed: created={report.created} updated={report.updated} "
+        f"skipped-older={report.skipped_older}"
+    )
+
+
+@sync.command("pull")
+@path_option
+@click.option(
+    "--env",
+    "target_env",
+    default="dev",
+    show_default=True,
+    help="Target environment whose effective config names the shared plane.",
+)
+@click.option("--dry-run", is_flag=True, help="Compute and print the report; apply nothing.")
+@click.option(
+    "--all",
+    "include_own",
+    is_flag=True,
+    help=(
+        "Include records authored by the local identity (human:<user>) too "
+        "— default excludes them so your own memories stay authoritative."
+    ),
+)
+def sync_pull_cmd(
+    path_: str | None, target_env: str, dry_run: bool, include_own: bool
+) -> None:
+    """Pull memories/notes/asserted edges from the ENV plane.
+
+    By default, records authored by the local identity (``human:<user>``)
+    are excluded (``--all`` switches to pure last-write-wins).
+    """
+    from parrot.knowledge.wiki.sync import SyncError, default_local_identity, sync_pull
+
+    root, _config = _resolve_project(path_)
+    try:
+        report = _run(
+            sync_pull(
+                root,
+                target_env=target_env,
+                include_own=include_own,
+                dry_run=dry_run,
+                local_identity=default_local_identity(),
+            )
+        )
+    except SyncError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if report.dry_run:
+        click.echo("DRY RUN — nothing applied")
+    click.echo(
+        f"pulled: created={report.created} updated={report.updated} "
+        f"skipped-older={report.skipped_older} skipped-own={report.skipped_own}"
+    )
+
+
+# --------------------------------------------------------------------------
 # Supervised ingestion (FEAT-402) — charter-driven triage + HITL manifest
 # review. Alongside (not inside) `build`: the deterministic, offline,
 # no-LLM `build`/`_ingest_files` path above is untouched (spec §1
