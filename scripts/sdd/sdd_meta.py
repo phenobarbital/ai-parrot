@@ -47,10 +47,7 @@ class FlowMeta(BaseModel):
     @model_validator(mode="after")
     def _hotfix_implies_main(self) -> "FlowMeta":
         if self.type == "hotfix" and self.base_branch != "main":
-            raise ValueError(
-                "type='hotfix' requires base_branch='main' "
-                f"(got base_branch={self.base_branch!r})"
-            )
+            raise ValueError("type='hotfix' requires base_branch='main' " f"(got base_branch={self.base_branch!r})")
         return self
 
 
@@ -155,8 +152,8 @@ def resolve_flow(
 
     if final_base not in KNOWN_BRANCHES:
         logger.warning(
-            "base_branch %r is not one of the canonical branches %s; "
-            "assuming a sub-feature branch.",
-            final_base, sorted(KNOWN_BRANCHES),
+            "base_branch %r is not one of the canonical branches %s; " "assuming a sub-feature branch.",
+            final_base,
+            sorted(KNOWN_BRANCHES),
         )
     return FlowMeta(type=final_type, base_branch=final_base)

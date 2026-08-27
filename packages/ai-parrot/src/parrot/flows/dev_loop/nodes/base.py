@@ -31,7 +31,6 @@ from parrot.bots.flows.core.node import Node
 from parrot.bots.flows.flow.flow import NODE_REGISTRY, register_node
 from parrot.flows.dev_loop.models import QAReport
 
-
 # Matches the userinfo (``user:secret@``) of an https remote URL, e.g. the
 # ``x-access-token:<token>@github.com`` form GitToolkit injects for private
 # clones — so a token can never surface in git CLI error output (R2).
@@ -70,7 +69,10 @@ async def _git(cwd: str, *args: str) -> Tuple[int, str, str]:
     — ``asyncio.create_subprocess_exec``, never a blocking call.
     """
     proc = await asyncio.create_subprocess_exec(
-        "git", "-C", cwd, *args,
+        "git",
+        "-C",
+        cwd,
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -130,10 +132,7 @@ async def assert_base_is_clean(
         BaseBranchMismatch: When the branch carries sibling commits.
         RuntimeError: When a git command fails outright.
     """
-    candidates = [
-        s for s in (siblings if siblings is not None else _LONG_LIVED_BRANCHES)
-        if s != base
-    ]
+    candidates = [s for s in (siblings if siblings is not None else _LONG_LIVED_BRANCHES) if s != base]
 
     # Fetch base + candidates, and keep only refs that actually exist —
     # `staging` may not exist on the remote, and passing a missing ref as an
@@ -173,7 +172,11 @@ async def assert_base_is_clean(
     if logger:
         logger.info(
             "Base check for %s onto %s: adds=%d own=%d siblings=%s",
-            branch, base, adds, own, existing,
+            branch,
+            base,
+            adds,
+            own,
+            existing,
         )
     if adds != own:
         raise BaseBranchMismatch(
@@ -233,13 +236,9 @@ async def transition_issue_with_candidates(
         try:
             transition_to = getattr(jira, "jira_transition_to", None)
             if transition_to is not None:
-                result = await transition_to(
-                    issue=issue, target_status=label, **kwargs
-                )
+                result = await transition_to(issue=issue, target_status=label, **kwargs)
             else:  # pragma: no cover - older toolkit without the walker
-                result = await jira.jira_transition_issue(
-                    issue=issue, transition=label, **kwargs
-                )
+                result = await jira.jira_transition_issue(issue=issue, transition=label, **kwargs)
             if label != preferred:
                 logger.info(
                     "Applied fallback transition %r for %s (preferred %r unavailable).",
@@ -371,9 +370,7 @@ class DevLoopNode(Node):
         """Auto-create the FSM; initialise the base logger."""
         super().model_post_init(__context)
         if self.fsm is None:
-            object.__setattr__(
-                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
-            )
+            object.__setattr__(self, "fsm", AgentTaskMachine(agent_name=self.node_id))
 
     @property
     def name(self) -> str:
@@ -401,9 +398,7 @@ class DevLoopNode(Node):
             return ctx.shared_data
         if isinstance(ctx, dict):
             return ctx
-        raise TypeError(
-            f"dev-loop nodes expect FlowContext or dict, got {type(ctx)!r}"
-        )
+        raise TypeError(f"dev-loop nodes expect FlowContext or dict, got {type(ctx)!r}")
 
     @staticmethod
     def initial_prompt(ctx: Union[FlowContext, Dict[str, Any]]) -> str:

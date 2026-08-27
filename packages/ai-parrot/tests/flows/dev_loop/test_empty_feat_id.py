@@ -51,19 +51,13 @@ class TestFindFeatureSlug:
         a hotfix run's empty feat_id."""
         idx = tmp_path / "sdd" / "tasks" / "index"
         idx.mkdir(parents=True)
-        (idx / "unrelated.json").write_text(
-            json.dumps({"feature_id": "", "feature": "unrelated"})
-        )
+        (idx / "unrelated.json").write_text(json.dumps({"feature_id": "", "feature": "unrelated"}))
         assert DevelopmentNode._find_feature_slug(str(tmp_path), "") is None
 
     def test_matching_feat_id_still_resolves(self, tmp_path):
         idx = tmp_path / "sdd" / "tasks" / "index"
         idx.mkdir(parents=True)
-        (idx / "x.json").write_text(
-            json.dumps(
-                {"feature_id": "FEAT-466", "feature": "dev-loop-run-fidelity"}
-            )
-        )
+        (idx / "x.json").write_text(json.dumps({"feature_id": "FEAT-466", "feature": "dev-loop-run-fidelity"}))
         got = DevelopmentNode._find_feature_slug(str(tmp_path), "FEAT-466")
         assert got == "dev-loop-run-fidelity"
 
@@ -88,17 +82,13 @@ def _bug_brief() -> BugBrief:
 class TestPrTitle:
     def test_title_uses_jira_key_when_no_feat_id(self):
         node = _build_node(MagicMock())
-        title = node._build_title(
-            _bug_brief(), _research(feat_id="", jira_issue_key="OPS-1")
-        )
+        title = node._build_title(_bug_brief(), _research(feat_id="", jira_issue_key="OPS-1"))
         assert title.startswith("OPS-1:")
         assert "sha-256" in title.lower()
 
     def test_title_has_no_dangling_colon_when_both_empty(self):
         node = _build_node(MagicMock())
-        title = node._build_title(
-            _bug_brief(), _research(feat_id="", jira_issue_key="")
-        )
+        title = node._build_title(_bug_brief(), _research(feat_id="", jira_issue_key=""))
         assert not title.startswith(":")
         assert "sha-256" in title.lower()
 

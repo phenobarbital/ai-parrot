@@ -51,9 +51,7 @@ class TestBriefFields:
 
     def test_fields_survive_json_round_trip(self):
         """The dispatcher sends brief.model_dump_json() to the subagent."""
-        data = json.loads(
-            _brief(flow_type="feature", base_branch="dev").model_dump_json()
-        )
+        data = json.loads(_brief(flow_type="feature", base_branch="dev").model_dump_json())
         assert data["flow_type"] == "feature"
         assert data["base_branch"] == "dev"
 
@@ -111,9 +109,7 @@ class TestOverrideReachesResolution:
         dispatcher.dispatch = AsyncMock(return_value=dispatch_out)
         node = _build_node(dispatcher)
 
-        result = await node.execute(
-            {"bug_brief": _brief(base_branch="dev"), "run_id": "r1"}
-        )
+        result = await node.execute({"bug_brief": _brief(base_branch="dev"), "run_id": "r1"})
 
         assert result.base_branch == "dev"
 
@@ -139,9 +135,7 @@ class TestOverrideReachesResolution:
 
         assert result.base_branch == "main"
 
-    async def test_hotfix_off_main_override_reaches_output_verbatim(
-        self, tmp_path, monkeypatch
-    ):
+    async def test_hotfix_off_main_override_reaches_output_verbatim(self, tmp_path, monkeypatch):
         """_resolve_base_branch itself does not validate hotfix/main — it
         just records the requested base branch; the FlowMeta-style
         validation lives at the SDD-command layer (TASK-2507) and the
@@ -162,9 +156,7 @@ class TestOverrideReachesResolution:
         dispatcher.dispatch = AsyncMock(return_value=dispatch_out)
         node = _build_node(dispatcher)
 
-        result = await node.execute(
-            {"bug_brief": _brief(base_branch="dev"), "run_id": "r1"}
-        )
+        result = await node.execute({"bug_brief": _brief(base_branch="dev"), "run_id": "r1"})
 
         assert result.base_branch == "dev"
 
@@ -185,15 +177,8 @@ class TestServerPayloadParsing:
         import importlib.util
         from pathlib import Path as _Path
 
-        server_path = (
-            _Path(__file__).resolve().parents[5]
-            / "examples"
-            / "dev_loop"
-            / "server.py"
-        )
-        spec = importlib.util.spec_from_file_location(
-            "dev_loop_example_server", server_path
-        )
+        server_path = _Path(__file__).resolve().parents[5] / "examples" / "dev_loop" / "server.py"
+        spec = importlib.util.spec_from_file_location("dev_loop_example_server", server_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -201,9 +186,7 @@ class TestServerPayloadParsing:
     def test_invalid_flow_type_is_omitted(self):
         server = self._load_server_module()
         payload: dict = {}
-        server._apply_flow_override(
-            payload, {"flow_type": "hotfixx", "base_branch": ""}
-        )
+        server._apply_flow_override(payload, {"flow_type": "hotfixx", "base_branch": ""})
         assert "flow_type" not in payload
 
     def test_auto_never_reaches_the_payload(self):
@@ -216,8 +199,6 @@ class TestServerPayloadParsing:
     def test_valid_values_are_applied(self):
         server = self._load_server_module()
         payload: dict = {}
-        server._apply_flow_override(
-            payload, {"flow_type": "hotfix", "base_branch": "main"}
-        )
+        server._apply_flow_override(payload, {"flow_type": "hotfix", "base_branch": "main"})
         assert payload["flow_type"] == "hotfix"
         assert payload["base_branch"] == "main"

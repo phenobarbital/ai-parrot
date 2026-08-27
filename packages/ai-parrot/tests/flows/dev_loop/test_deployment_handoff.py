@@ -50,9 +50,7 @@ def ctx() -> dict:
             commit_shas=["abc"],
             summary="done",
         ),
-        "qa_report": QAReport(
-            passed=True, criterion_results=[], lint_passed=True
-        ),
+        "qa_report": QAReport(passed=True, criterion_results=[], lint_passed=True),
     }
 
 
@@ -90,9 +88,7 @@ async def _failing_push(self, branch, cwd):
 class TestRetriesPrOnce:
     @pytest.mark.asyncio
     async def test_first_pr_502_then_succeeds(self, ctx, jira, monkeypatch):
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_push_branch", _success_push
-        )
+        monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _success_push)
         # Force HTTP fallback (no gh).
         monkeypatch.setattr(
             "parrot.flows.dev_loop.nodes.deployment_handoff.shutil.which",
@@ -107,9 +103,8 @@ class TestRetriesPrOnce:
                 raise RuntimeError("502 bad gateway")
             return "https://github.com/x/y/pull/1"
 
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_create_pr_via_rest", _fake_pr
-        )
+        monkeypatch.setattr(DeploymentHandoffNode, "_create_pr_via_rest", _fake_pr)
+
         # Speed up the retry sleep.
         async def _instant_sleep(delay):
             return None
@@ -135,12 +130,8 @@ class TestRetriesPrOnce:
 
 class TestFinalPrFailure:
     @pytest.mark.asyncio
-    async def test_pr_fails_twice_marks_blocked(
-        self, ctx, jira, monkeypatch
-    ):
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_push_branch", _success_push
-        )
+    async def test_pr_fails_twice_marks_blocked(self, ctx, jira, monkeypatch):
+        monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _success_push)
         monkeypatch.setattr(
             "parrot.flows.dev_loop.nodes.deployment_handoff.shutil.which",
             lambda *a, **kw: None,
@@ -149,9 +140,7 @@ class TestFinalPrFailure:
         async def _always_fail(self, branch, title, body):
             raise RuntimeError("API unavailable")
 
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_create_pr_via_rest", _always_fail
-        )
+        monkeypatch.setattr(DeploymentHandoffNode, "_create_pr_via_rest", _always_fail)
 
         async def _instant_sleep(delay):
             return None
@@ -177,12 +166,8 @@ class TestFinalPrFailure:
 
 class TestPushFailureBlocks:
     @pytest.mark.asyncio
-    async def test_push_failure_marks_blocked_without_pr(
-        self, ctx, jira, monkeypatch
-    ):
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_push_branch", _failing_push
-        )
+    async def test_push_failure_marks_blocked_without_pr(self, ctx, jira, monkeypatch):
+        monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _failing_push)
 
         async def _should_not_be_called(self, branch, title, body):
             raise AssertionError("should not be called")
@@ -206,9 +191,7 @@ class TestPushFailureBlocks:
 class TestPRBody:
     def test_title_includes_feat_id_and_summary(self, ctx):
         node = _build_node(MagicMock())
-        title = node._build_title(
-            ctx["bug_brief"], ctx["research_output"]
-        )
+        title = node._build_title(ctx["bug_brief"], ctx["research_output"])
         assert title.startswith("FEAT-130:")
         assert "customer sync" in title.lower()
 

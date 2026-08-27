@@ -200,8 +200,7 @@ class DevelopmentNode(DevLoopNode):
         scheduler = await self._build_scheduler(research)
         if scheduler is None:
             self.logger.warning(
-                "No readable per-spec task index found for %s under %s; "
-                "degrading to single-agent.",
+                "No readable per-spec task index found for %s under %s; " "degrading to single-agent.",
                 research.feat_id,
                 research.worktree_path,
             )
@@ -224,9 +223,7 @@ class DevelopmentNode(DevLoopNode):
     # plan_approval HITL gate (FEAT-377 TASK-1916 — G5)
     # ------------------------------------------------------------------
 
-    async def _check_plan_approval(
-        self, shared: Dict[str, Any], research: ResearchOutput
-    ) -> None:
+    async def _check_plan_approval(self, shared: Dict[str, Any], research: ResearchOutput) -> None:
         """Open and await the ``plan_approval`` gate on this run's FIRST
         entry into this node (opt-in via ``require_plan_approval``).
 
@@ -263,9 +260,7 @@ class DevelopmentNode(DevLoopNode):
         # suppress a gate the constructor flag would have opened, while an
         # absent key (or an explicit None) must fall back to that flag.
         override = shared.get("require_plan_approval")
-        required = (
-            self._require_plan_approval if override is None else bool(override)
-        )
+        required = self._require_plan_approval if override is None else bool(override)
         if not required or shared.get("_plan_gate_checked"):
             return
         shared["_plan_gate_checked"] = True
@@ -301,9 +296,7 @@ class DevelopmentNode(DevLoopNode):
         )
         gate = await host.wait_gate(gate_id)
         if gate.status != "approved":
-            raise RuntimeError(
-                f"plan_approval {gate.status} by {gate.resolved_by or 'ttl'}"
-            )
+            raise RuntimeError(f"plan_approval {gate.status} by {gate.resolved_by or 'ttl'}")
 
     async def _count_tasks(self, research: ResearchOutput) -> Optional[int]:
         """Best-effort total task count from the per-spec index, for the
@@ -319,9 +312,7 @@ class DevelopmentNode(DevLoopNode):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _with_prior_work_context(
-        shared: Dict[str, Any], research: ResearchOutput
-    ) -> ResearchOutput:
+    def _with_prior_work_context(shared: Dict[str, Any], research: ResearchOutput) -> ResearchOutput:
         """Inject prior-work context when reusing a worktree.
 
         When ``ResearchNode`` detects an existing worktree with prior
@@ -363,17 +354,13 @@ class DevelopmentNode(DevLoopNode):
         )
 
         note = "\n".join(lines)
-        return research.model_copy(
-            update={"log_excerpts": [note, *research.log_excerpts]}
-        )
+        return research.model_copy(update={"log_excerpts": [note, *research.log_excerpts]})
 
     # ------------------------------------------------------------------
     # QA repair-loop re-entry (FEAT-377 TASK-1911)
     # ------------------------------------------------------------------
 
-    def _with_repair_feedback(
-        self, shared: Dict[str, Any], research: ResearchOutput
-    ) -> ResearchOutput:
+    def _with_repair_feedback(self, shared: Dict[str, Any], research: ResearchOutput) -> ResearchOutput:
         """Bump the attempt counter and carry prior-QA feedback on re-entry.
 
         Re-entry is detected via a failing ``QAReport`` already in shared
@@ -403,12 +390,8 @@ class DevelopmentNode(DevLoopNode):
             return research
         shared["qa_attempt"] = shared.get("qa_attempt", 1) + 1
         feedback = condense_qa_failure(prior_report)
-        note = (
-            f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"
-        )
-        return research.model_copy(
-            update={"log_excerpts": [*research.log_excerpts, note]}
-        )
+        note = f"[QA repair-loop feedback — attempt {shared['qa_attempt']}]\n{feedback}"
+        return research.model_copy(update={"log_excerpts": [*research.log_excerpts, note]})
 
     # ------------------------------------------------------------------
     # Config cascade
@@ -469,8 +452,7 @@ class DevelopmentNode(DevLoopNode):
             spec = pool_cfg.agents[0]  # min_length=1 -> always safe
             if len(pool_cfg.agents) > 1 or spec.count > 1:
                 self.logger.warning(
-                    "Pool declared %d spec(s)/%d replica(s) but this run is "
-                    "single-agent; using only %s/%s.",
+                    "Pool declared %d spec(s)/%d replica(s) but this run is " "single-agent; using only %s/%s.",
                     len(pool_cfg.agents),
                     spec.count,
                     spec.agent,
@@ -487,9 +469,7 @@ class DevelopmentNode(DevLoopNode):
                 "Pool declared (%s) but no dispatcher_builder is configured; "
                 "falling back to the env-configured dispatcher. The operator's "
                 "selection is NOT being honoured.",
-                ", ".join(
-                    f"{s.agent}/{s.model or 'default'}" for s in pool_cfg.agents
-                ),
+                ", ".join(f"{s.agent}/{s.model or 'default'}" for s in pool_cfg.agents),
             )
 
         profile = profile or ClaudeCodeDispatchProfile(
@@ -538,8 +518,7 @@ class DevelopmentNode(DevLoopNode):
                             WorkerSummary(
                                 worker_id=f"{self.name}.single",
                                 agent=spec.agent,
-                                model=spec.model
-                                or self._env_model_name(profile),
+                                model=spec.model or self._env_model_name(profile),
                                 summary="single-agent dispatch",
                             ),
                         ]
@@ -547,8 +526,7 @@ class DevelopmentNode(DevLoopNode):
                 )
             except Exception:
                 self.logger.warning(
-                    "Could not record WorkerSummary for the single-agent "
-                    "dispatch.",
+                    "Could not record WorkerSummary for the single-agent " "dispatch.",
                     exc_info=True,
                 )
 
@@ -622,14 +600,10 @@ class DevelopmentNode(DevLoopNode):
         """
         # Index discovery + parsing are small local filesystem reads; keep
         # them off the event loop to honour the async-first rule.
-        feature_slug = await asyncio.to_thread(
-            self._find_feature_slug, research.worktree_path, research.feat_id
-        )
+        feature_slug = await asyncio.to_thread(self._find_feature_slug, research.worktree_path, research.feat_id)
         if feature_slug is None:
             return None
-        return await asyncio.to_thread(
-            TaskScheduler.from_worktree, research.worktree_path, feature_slug
-        )
+        return await asyncio.to_thread(TaskScheduler.from_worktree, research.worktree_path, feature_slug)
 
     async def _execute_pool(
         self,
@@ -676,9 +650,7 @@ class DevelopmentNode(DevLoopNode):
             return research.worktree_path
 
         async def _resolver(path: str, description: str) -> bool:
-            return await self._resolve_conflict(
-                path, description, pool=pool, research=research, run_id=run_id
-            )
+            return await self._resolve_conflict(path, description, pool=pool, research=research, run_id=run_id)
 
         # FEAT-377 TASK-1912 (G3): on a QA repair-loop redispatch
         # (attempt >= 2 — stamped by `_with_repair_feedback` above), every
@@ -694,7 +666,10 @@ class DevelopmentNode(DevLoopNode):
                     break
 
                 result = await pool.run_wave(
-                    wave, research=research, run_id=run_id, cwd_for=_cwd_for,
+                    wave,
+                    research=research,
+                    run_id=run_id,
+                    cwd_for=_cwd_for,
                     escalate=escalate,
                 )
                 wave_results.append(result)
@@ -779,17 +754,13 @@ class DevelopmentNode(DevLoopNode):
             )
             return True
         except Exception as exc:  # noqa: BLE001 - any dispatch failure triggers fallback/failure
-            self.logger.warning(
-                "Conflict resolver (%s) failed on %s: %s", first_worker.spec.agent, path, exc
-            )
+            self.logger.warning("Conflict resolver (%s) failed on %s: %s", first_worker.spec.agent, path, exc)
 
         if first_worker.spec.agent == "claude-code" or self._dispatcher_builder is None:
             return False
 
         try:
-            fallback_dispatcher, fallback_profile = self._dispatcher_builder(
-                DevAgentSpec(agent="claude-code")
-            )
+            fallback_dispatcher, fallback_profile = self._dispatcher_builder(DevAgentSpec(agent="claude-code"))
             await fallback_dispatcher.dispatch(
                 brief=brief,
                 profile=fallback_profile,

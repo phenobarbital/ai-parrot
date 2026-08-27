@@ -30,9 +30,7 @@ from parrot.flows.dev_loop.nodes.feature_handoff import FeatureHandoffNode
 
 
 def _run(cwd, *args):
-    subprocess.run(
-        ["git", "-C", str(cwd), *args], check=True, capture_output=True
-    )
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
 
 
 @pytest.fixture
@@ -56,9 +54,7 @@ def incident_repo(tmp_path):
     _run(work, "remote", "add", "origin", str(origin))
     (work / "a.txt").write_text("A")
     _run(work, "add", "-A")
-    _run(
-        work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "A"
-    )
+    _run(work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "A")
     _run(work, "push", "origin", "main")
 
     _run(work, "checkout", "-b", "dev")
@@ -66,17 +62,21 @@ def incident_repo(tmp_path):
         (work / f"{name}.txt").write_text(name)
         _run(work, "add", "-A")
         _run(
-            work, "-c", "user.email=t@t", "-c", "user.name=t",
-            "commit", "-m", name,
+            work,
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-m",
+            name,
         )
     _run(work, "push", "origin", "dev")
 
     _run(work, "checkout", "-b", "feat-465")
     (work / "D.txt").write_text("D")
     _run(work, "add", "-A")
-    _run(
-        work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "D"
-    )
+    _run(work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "D")
     _run(work, "push", "origin", "feat-465")
     _run(work, "fetch", "origin")
     return work
@@ -88,33 +88,35 @@ class TestGuard:
         """Documents WHY the guard is not an ancestry check."""
         rc = subprocess.run(
             [
-                "git", "-C", str(incident_repo), "merge-base",
-                "--is-ancestor", "origin/main", "feat-465",
+                "git",
+                "-C",
+                str(incident_repo),
+                "merge-base",
+                "--is-ancestor",
+                "origin/main",
+                "feat-465",
             ]
         ).returncode
         assert rc == 0, "ancestry passes — hence the sibling-overlap guard"
 
     async def test_blocks_the_incident_topology(self, incident_repo):
         with pytest.raises(BaseBranchMismatch, match="own work"):
-            await assert_base_is_clean(
-                "feat-465", "main", str(incident_repo), siblings=["dev"]
-            )
+            await assert_base_is_clean("feat-465", "main", str(incident_repo), siblings=["dev"])
 
     async def test_passes_for_correctly_cut_branch(self, incident_repo):
         """feat-465 vs its real base (dev) is clean: adds == own."""
-        await assert_base_is_clean(
-            "feat-465", "dev", str(incident_repo), siblings=["main"]
-        )
+        await assert_base_is_clean("feat-465", "dev", str(incident_repo), siblings=["main"])
 
     async def test_missing_sibling_ref_is_skipped(self, incident_repo):
-        await assert_base_is_clean(
-            "feat-465", "dev", str(incident_repo), siblings=["staging"]
-        )
+        await assert_base_is_clean("feat-465", "dev", str(incident_repo), siblings=["staging"])
 
     async def test_no_existing_siblings_passes(self, incident_repo, caplog):
         logger = MagicMock()
         await assert_base_is_clean(
-            "feat-465", "dev", str(incident_repo), siblings=["staging"],
+            "feat-465",
+            "dev",
+            str(incident_repo),
+            siblings=["staging"],
             logger=logger,
         )
         logger.info.assert_called_once()
@@ -133,18 +135,14 @@ class TestGuard:
         # backport vs main, checking against dev/feat-465 as siblings: the
         # cherry-picked commit has a NEW sha, so it does not appear in
         # dev's or feat-465's history by identity -> adds == own.
-        await assert_base_is_clean(
-            "backport", "main", str(work), siblings=["dev", "feat-465"]
-        )
+        await assert_base_is_clean("backport", "main", str(work), siblings=["dev", "feat-465"])
 
     async def test_default_siblings_used_when_none_passed(self, incident_repo):
         """No explicit siblings -> defaults to _LONG_LIVED_BRANCHES - base,
         filtered to existing refs. 'staging' does not exist here, so only
         'dev'/'main' are candidates depending on base."""
         with pytest.raises(BaseBranchMismatch):
-            await assert_base_is_clean(
-                "feat-465", "main", str(incident_repo)
-            )
+            await assert_base_is_clean("feat-465", "main", str(incident_repo))
 
 
 def _research(**over) -> ResearchOutput:
@@ -189,9 +187,7 @@ async def _success_push(self, branch, cwd):
 @pytest.mark.asyncio
 class TestDeploymentHandoffWiring:
     async def test_blocks_on_empty_base_branch(self, monkeypatch):
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_push_branch", _success_push
-        )
+        monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _success_push)
         create_pr = AsyncMock(return_value="https://github.com/x/y/pull/1")
         monkeypatch.setattr(DeploymentHandoffNode, "_create_pr", create_pr)
 
@@ -207,14 +203,10 @@ class TestDeploymentHandoffWiring:
         assert "base_branch" in result["error"]
         create_pr.assert_not_awaited()
 
-    async def test_bug_kind_with_recorded_dev_base_targets_dev(
-        self, monkeypatch
-    ):
+    async def test_bug_kind_with_recorded_dev_base_targets_dev(self, monkeypatch):
         """Proves the kind override is gone: kind='bug' + recorded
         base_branch='dev' opens the PR against dev, not main."""
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_push_branch", _success_push
-        )
+        monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _success_push)
         monkeypatch.setattr(
             "parrot.flows.dev_loop.nodes.deployment_handoff.assert_base_is_clean",
             AsyncMock(return_value=None),
@@ -234,12 +226,8 @@ class TestDeploymentHandoffWiring:
         assert node._base_branch == "dev"
 
     async def test_guard_failure_blocks_and_skips_pr(self, monkeypatch):
-        monkeypatch.setattr(
-            DeploymentHandoffNode, "_push_branch", _success_push
-        )
-        guard = AsyncMock(
-            side_effect=BaseBranchMismatch("branch carries sibling commits")
-        )
+        monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _success_push)
+        guard = AsyncMock(side_effect=BaseBranchMismatch("branch carries sibling commits"))
         monkeypatch.setattr(
             "parrot.flows.dev_loop.nodes.deployment_handoff.assert_base_is_clean",
             guard,
@@ -264,10 +252,7 @@ class TestDeploymentHandoffWiring:
         # Blocked" transition happens (same shape as the existing
         # push/PR-failure blocked paths in test_deployment_handoff.py).
         jira.jira_transition_to.assert_awaited_once()
-        assert (
-            jira.jira_transition_to.await_args.kwargs["target_status"]
-            == "Deployment Blocked"
-        )
+        assert jira.jira_transition_to.await_args.kwargs["target_status"] == "Deployment Blocked"
 
 
 def _planner(**over):
@@ -292,22 +277,15 @@ class TestFeatureHandoffWiring:
             "parrot.flows.dev_loop.nodes.feature_handoff.assert_base_is_clean",
             guard,
         )
+        monkeypatch.setattr(FeatureHandoffNode, "_run_git", AsyncMock(return_value=""))
         monkeypatch.setattr(
-            FeatureHandoffNode, "_run_git", AsyncMock(return_value="")
-        )
-        monkeypatch.setattr(
-            FeatureHandoffNode, "_create_pr",
+            FeatureHandoffNode,
+            "_create_pr",
             AsyncMock(return_value="https://github.com/x/y/pull/2"),
         )
-        monkeypatch.setattr(
-            FeatureHandoffNode, "_docs_rel_path", lambda self, planner: "docs/x.md"
-        )
-        monkeypatch.setattr(
-            FeatureHandoffNode, "_write_and_push_docs", AsyncMock(return_value=None)
-        )
-        monkeypatch.setattr(
-            FeatureHandoffNode, "_ingest_wiki_page", AsyncMock(return_value=None)
-        )
+        monkeypatch.setattr(FeatureHandoffNode, "_docs_rel_path", lambda self, planner: "docs/x.md")
+        monkeypatch.setattr(FeatureHandoffNode, "_write_and_push_docs", AsyncMock(return_value=None))
+        monkeypatch.setattr(FeatureHandoffNode, "_ingest_wiki_page", AsyncMock(return_value=None))
 
         node = FeatureHandoffNode()
         planner = _planner(worktree_path=str(tmp_path))
@@ -320,16 +298,12 @@ class TestFeatureHandoffWiring:
         assert result["status"] == "ready_to_deploy"
 
     async def test_blocks_when_guard_fails(self, monkeypatch, tmp_path):
-        guard = AsyncMock(
-            side_effect=BaseBranchMismatch("branch carries sibling commits")
-        )
+        guard = AsyncMock(side_effect=BaseBranchMismatch("branch carries sibling commits"))
         monkeypatch.setattr(
             "parrot.flows.dev_loop.nodes.feature_handoff.assert_base_is_clean",
             guard,
         )
-        monkeypatch.setattr(
-            FeatureHandoffNode, "_run_git", AsyncMock(return_value="")
-        )
+        monkeypatch.setattr(FeatureHandoffNode, "_run_git", AsyncMock(return_value=""))
         create_pr = AsyncMock(return_value="https://github.com/x/y/pull/2")
         monkeypatch.setattr(FeatureHandoffNode, "_create_pr", create_pr)
 

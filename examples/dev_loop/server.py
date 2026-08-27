@@ -207,8 +207,7 @@ def _log_development_agent_selection(backend: str, profile: Any) -> None:
         )
     elif backend == "moonshot":
         logger.info(
-            "Development node using Moonshot code dispatcher (model=%s, "
-            "reasoning_effort=%s)",
+            "Development node using Moonshot code dispatcher (model=%s, " "reasoning_effort=%s)",
             profile.model,
             profile.reasoning_effort,
         )
@@ -373,9 +372,7 @@ def _ensure_adversarial_judge(judges: list[JudgeSpec]) -> list[JudgeSpec]:
     ]
 
 
-def _codex_dispatcher_for(
-    development_dispatcher: object, redis_url: str
-) -> CodexCodeDispatcher:
+def _codex_dispatcher_for(development_dispatcher: object, redis_url: str) -> CodexCodeDispatcher:
     """Reuse the development Codex dispatcher, or build a dedicated one.
 
     Avoids a second CLI-spawning dispatcher instance when the Development
@@ -495,13 +492,9 @@ def _resolve_codereview_dispatcher(
             adversarial scope is misconfigured (see
             :func:`_build_adversarial_reviewer`).
     """
-    configured = conf.config.get(
-        "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
-    ).strip().lower()
+    configured = conf.config.get("DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel").strip().lower()
 
-    adversary, adversary_key = _build_adversarial_reviewer(
-        _codex_dispatcher_for(development_dispatcher, redis_url)
-    )
+    adversary, adversary_key = _build_adversarial_reviewer(_codex_dispatcher_for(development_dispatcher, redis_url))
 
     if configured == "codex-adversarial":
         # Advisory-only review: already adversarial, nothing to upgrade.
@@ -535,9 +528,7 @@ def _resolve_codereview_dispatcher(
     )
 
 
-def _build_judge_panel_dispatcher(
-    *, redis_url: str, judges: Optional[list[JudgeSpec]] = None
-) -> object:
+def _build_judge_panel_dispatcher(*, redis_url: str, judges: Optional[list[JudgeSpec]] = None) -> object:
     """Build the feature-mode ``judge-panel`` reviewer (FEAT-378 Module 4).
 
     Args:
@@ -551,12 +542,7 @@ def _build_judge_panel_dispatcher(
         mandatory Codex adversarial judge.
     """
     resolved = _ensure_adversarial_judge(
-        judges
-        if judges is not None
-        else [
-            JudgeSpec(**spec)
-            for spec in llm_catalog.default_judge_panel_payload()
-        ]
+        judges if judges is not None else [JudgeSpec(**spec) for spec in llm_catalog.default_judge_panel_payload()]
     )
     logger.info(
         "Feature-mode QA judge panel: %s",
@@ -676,13 +662,14 @@ def _build_pageindex_toolkit(wiki_dir: Path) -> object | None:
         toolkit = PageIndexToolkit(adapter, storage_dir=pageindex_dir)
         logger.info(
             "PageIndexToolkit ready (model=%s, storage=%s)",
-            model_spec, pageindex_dir,
+            model_spec,
+            pageindex_dir,
         )
         return toolkit
     except Exception as exc:  # noqa: BLE001 - authoring plane is best-effort
         logger.warning(
-            "PageIndexToolkit unavailable (%s); feature-handoff pages will "
-            "skip the authoring plane.", exc,
+            "PageIndexToolkit unavailable (%s); feature-handoff pages will " "skip the authoring plane.",
+            exc,
         )
         return None
 
@@ -702,10 +689,7 @@ def _build_wiki_toolkit() -> object | None:
         disabled or the toolkit cannot be constructed.
     """
     if not conf.DEV_LOOP_WIKI_PAGE_INGEST:
-        logger.info(
-            "DEV_LOOP_WIKI_PAGE_INGEST is off — feature handoff will skip "
-            "the wiki page ingest."
-        )
+        logger.info("DEV_LOOP_WIKI_PAGE_INGEST is off — feature handoff will skip " "the wiki page ingest.")
         return None
     try:
         from pathlib import Path
@@ -718,7 +702,7 @@ def _build_wiki_toolkit() -> object | None:
         from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
         root = find_project_root(Path.cwd())
-        project = load_project_config(root)          # reads .parrot/wiki.json
+        project = load_project_config(root)  # reads .parrot/wiki.json
         wiki_config = WikiConfig(
             wiki_name=project.wiki_name,
             storage_dir=project.storage_path(root),
@@ -728,20 +712,18 @@ def _build_wiki_toolkit() -> object | None:
             sync_graph=False,
         )
         pageindex_toolkit = _build_pageindex_toolkit(project.storage_path(root))
-        toolkit = LLMWikiToolkit(
-            pageindex_toolkit, None, None, wiki_config, agent_id="dev-loop"
-        )
+        toolkit = LLMWikiToolkit(pageindex_toolkit, None, None, wiki_config, agent_id="dev-loop")
         logger.info(
-            "LLMWikiToolkit ready for feature-mode docs ingest "
-            "(wiki=%s, store=%s, pageindex=%s)",
-            project.wiki_name, project.storage_path(root),
+            "LLMWikiToolkit ready for feature-mode docs ingest " "(wiki=%s, store=%s, pageindex=%s)",
+            project.wiki_name,
+            project.storage_path(root),
             "on" if pageindex_toolkit is not None else "off",
         )
         return toolkit
     except Exception as exc:  # noqa: BLE001 - wiki ingest is best-effort
         logger.warning(
-            "LLMWikiToolkit unavailable (%s); feature handoff will skip the "
-            "wiki page ingest.", exc,
+            "LLMWikiToolkit unavailable (%s); feature handoff will skip the " "wiki page ingest.",
+            exc,
         )
         return None
 
@@ -916,7 +898,8 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
             "Bug run without a CloudWatch source (skip_cloudwatch=%s, "
             "DEV_LOOP_CLOUDWATCH_ENABLED=%s) — research triages from the "
             "description and the codebase only.",
-            skip_cloudwatch, cloudwatch_available,
+            skip_cloudwatch,
+            cloudwatch_available,
         )
 
     payload: dict[str, Any] = {
@@ -1067,8 +1050,7 @@ def _parse_dev_agents(raw: Any) -> Optional[list[DevAgentSpec]]:
             continue
         if llm_catalog.get_backend(agent) is None:
             raise ValueError(
-                f"unknown dev agent backend {agent!r} — supported: "
-                f"{', '.join(b.id for b in llm_catalog.BACKENDS)}"
+                f"unknown dev agent backend {agent!r} — supported: " f"{', '.join(b.id for b in llm_catalog.BACKENDS)}"
             )
         specs.append(
             DevAgentSpec(
@@ -1106,8 +1088,7 @@ def _parse_judge_panel(raw: Any) -> Optional[list[JudgeSpec]]:
             continue
         if agent not in llm_catalog.JUDGE_BACKENDS:
             raise ValueError(
-                f"backend {agent!r} cannot serve as a QA judge — supported: "
-                f"{', '.join(llm_catalog.JUDGE_BACKENDS)}"
+                f"backend {agent!r} cannot serve as a QA judge — supported: " f"{', '.join(llm_catalog.JUDGE_BACKENDS)}"
             )
         judges.append(JudgeSpec(agent=agent, model=str(row.get("model") or "").strip()))
     return judges or None
@@ -1157,10 +1138,7 @@ def _build_feature_brief_from_form(form: dict[str, Any]) -> FeatureBrief:
         )
     document_kind = (form.get("document_kind") or "").strip().lower()
     if document_kind not in {"brainstorm", "proposal", "spec"}:
-        raise ValueError(
-            "document_kind must be 'brainstorm', 'proposal' or 'spec', got "
-            f"{document_kind!r}"
-        )
+        raise ValueError("document_kind must be 'brainstorm', 'proposal' or 'spec', got " f"{document_kind!r}")
 
     payload: dict[str, Any] = {
         "kind": "feature",
@@ -1217,16 +1195,10 @@ async def handle_config(request: web.Request) -> web.Response:
             "shell_criteria_heads": sorted(_ALLOWED_SHELL_HEADS),
             "document_kinds": ["brainstorm", "proposal", "spec"],
             "defaults": {
-                "development_agent": conf.config.get(
-                    "DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"
-                ),
+                "development_agent": conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"),
                 "codereview_agent": app.get("codereview_agent_key", "parallel"),
-                "codereview_agent_configured": conf.config.get(
-                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
-                ),
-                "log_group": conf.config.get(
-                    "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
-                ),
+                "codereview_agent_configured": conf.config.get("DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"),
+                "log_group": conf.config.get("CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"),
                 "time_window_minutes": 60,
                 "cloudwatch_enabled": bool(conf.DEV_LOOP_CLOUDWATCH_ENABLED),
                 "jira_project": conf.config.get("JIRA_PROJECT") or "NAV",
@@ -1236,9 +1208,7 @@ async def handle_config(request: web.Request) -> web.Response:
                 "wiki_search": app.get("wiki_search") is not None,
                 "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "development_pool_max": app.get("development_pool_max", 4),
-                "max_concurrent_runs": getattr(
-                    app.get("runner"), "max_concurrent_runs", None
-                ),
+                "max_concurrent_runs": getattr(app.get("runner"), "max_concurrent_runs", None),
             },
             "adversarial_review": {
                 "mandatory": True,
@@ -1320,7 +1290,11 @@ async def handle_run(request: web.Request) -> web.Response:
         try:
             logger.info(
                 "Starting %s flow run_id=%s (%s) skip_qa=%s skip_jira=%s",
-                "FEATURE" if is_feature else "bug", run_id, label, skip_qa, skip_jira,
+                "FEATURE" if is_feature else "bug",
+                run_id,
+                label,
+                skip_qa,
+                skip_jira,
             )
             result = await runner.run(
                 brief,
@@ -1406,9 +1380,7 @@ async def handle_bundle(request: web.Request) -> web.Response:
 
     fmt = (request.query.get("format") or "md").strip().lower()
     if fmt not in {"md", "json"}:
-        return web.json_response(
-            {"error": "format must be 'md' or 'json'"}, status=400
-        )
+        return web.json_response({"error": "format must be 'md' or 'json'"}, status=400)
 
     suffix = "report.md" if fmt == "md" else "bundle.json"
     path = (RUN_ARTIFACT_DIR / f"{run_id}.{suffix}").resolve()
@@ -1419,10 +1391,7 @@ async def handle_bundle(request: web.Request) -> web.Response:
     if not path.is_file():
         return web.json_response(
             {
-                "error": (
-                    f"no run bundle for {run_id} yet — the export is written "
-                    "when the run terminates."
-                ),
+                "error": (f"no run bundle for {run_id} yet — the export is written " "when the run terminates."),
                 "expected_path": str(path),
             },
             status=404,
@@ -1542,9 +1511,7 @@ async def _on_startup(app: web.Application) -> None:
         stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
     if development_pool_config is not None:
-        backends_summary = ", ".join(
-            f"{spec.agent}x{spec.count}" for spec in development_pool_config.agents
-        )
+        backends_summary = ", ".join(f"{spec.agent}x{spec.count}" for spec in development_pool_config.agents)
         logger.info(
             "Dev-agent pool configured: %s (isolation=%s, pool_max=%d)",
             backends_summary,
@@ -1584,9 +1551,7 @@ async def _on_startup(app: web.Application) -> None:
 
     # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
     # preserves current behavior exactly.
-    require_plan_approval = bool(
-        getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
-    )
+    require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
     skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
     jira_toolkit = _build_jira_toolkit()
@@ -1669,8 +1634,8 @@ async def _on_startup(app: web.Application) -> None:
     except Exception as exc:  # noqa: BLE001 - feature mode is additive
         app["feature_mode_reason"] = str(exc)
         logger.warning(
-            "Feature-mode topology unavailable (%s); the console will only "
-            "offer bug/enhancement/new_feature runs.", exc,
+            "Feature-mode topology unavailable (%s); the console will only " "offer bug/enhancement/new_feature runs.",
+            exc,
         )
 
     app["runner"] = runner

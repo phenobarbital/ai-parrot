@@ -51,9 +51,7 @@ class TestResolveFlowPrecedence:
     def test_overrides_beat_document(self, tmp_path):
         doc = tmp_path / "x.brainstorm.md"
         doc.write_text("---\ntype: feature\nbase_branch: dev\n---\n")
-        meta = resolve_flow(
-            doc_path=doc, type_override="hotfix", base_branch_override="main"
-        )
+        meta = resolve_flow(doc_path=doc, type_override="hotfix", base_branch_override="main")
         assert (meta.type, meta.base_branch) == ("hotfix", "main")
 
     def test_overrides_compose_field_wise(self):

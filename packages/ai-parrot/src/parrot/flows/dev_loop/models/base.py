@@ -417,15 +417,9 @@ class DevAgentSpec(BaseModel):
     backend/model share the same dispatcher (and its semaphore).
     """
 
-    agent: DevAgentBackend = Field(
-        ..., description="Backend → existing dispatcher (claude-code, codex, ...)."
-    )
-    model: str = Field(
-        default="", description="'' ⇒ use the backend's default model."
-    )
-    count: int = Field(
-        default=1, ge=1, description="Number of replicas of this spec in the pool."
-    )
+    agent: DevAgentBackend = Field(..., description="Backend → existing dispatcher (claude-code, codex, ...).")
+    model: str = Field(default="", description="'' ⇒ use the backend's default model.")
+    count: int = Field(default=1, ge=1, description="Number of replicas of this spec in the pool.")
     escalation_model: str = Field(
         default="",
         description=(
@@ -450,9 +444,7 @@ class DevAgentPoolConfig(BaseModel):
     path unchanged.
     """
 
-    agents: List[DevAgentSpec] = Field(
-        ..., min_length=1, description="Dev-agent specs that make up the pool."
-    )
+    agents: List[DevAgentSpec] = Field(..., min_length=1, description="Dev-agent specs that make up the pool.")
     isolation_mode: Literal["shared", "isolated"] = Field(
         default="shared",
         description=(
@@ -483,17 +475,11 @@ class WorkerSummary(BaseModel):
     runs in pool mode.
     """
 
-    worker_id: str = Field(
-        ..., description="Synthetic node id, e.g. 'development.w1'."
-    )
+    worker_id: str = Field(..., description="Synthetic node id, e.g. 'development.w1'.")
     agent: str = Field(..., description="Backend used for this worker, e.g. 'codex'.")
     model: str = Field(..., description="Model name/id used by this worker.")
-    tasks_completed: List[str] = Field(
-        default_factory=list, description="TASK-NNN ids completed by this worker."
-    )
-    tasks_failed: List[str] = Field(
-        default_factory=list, description="TASK-NNN ids that failed on this worker."
-    )
+    tasks_completed: List[str] = Field(default_factory=list, description="TASK-NNN ids completed by this worker.")
+    tasks_failed: List[str] = Field(default_factory=list, description="TASK-NNN ids that failed on this worker.")
     summary: str = Field(default="", description="Free-text summary from the worker.")
 
 
@@ -567,12 +553,7 @@ class QAReport(BaseModel):
         CodeReviewFinding-shaped dicts instead of strings.
         """
         if isinstance(v, list):
-            return [
-                item.get("message", "") or str(item)
-                if isinstance(item, dict)
-                else item
-                for item in v
-            ]
+            return [item.get("message", "") or str(item) if isinstance(item, dict) else item for item in v]
         return v
 
     attempt: int = Field(
@@ -842,8 +823,7 @@ class FeatureBrief(BaseModel):
         for suffix, expected_kind in suffix_map.items():
             if name.endswith(suffix) and expected_kind != self.document_kind:
                 logging.getLogger(__name__).warning(
-                    "FeatureBrief.document_kind=%r does not match the "
-                    "filename convention for %r (expected %r)",
+                    "FeatureBrief.document_kind=%r does not match the " "filename convention for %r (expected %r)",
                     self.document_kind,
                     name,
                     expected_kind,
@@ -868,12 +848,8 @@ class JudgeSpec(BaseModel):
     finding).
     """
 
-    agent: DevAgentBackend = Field(
-        ..., description="Backend → existing dispatcher (claude-code, codex, ...)."
-    )
-    model: str = Field(
-        default="", description="'' ⇒ use the backend's default model."
-    )
+    agent: DevAgentBackend = Field(..., description="Backend → existing dispatcher (claude-code, codex, ...).")
+    model: str = Field(default="", description="'' ⇒ use the backend's default model.")
 
     @field_validator("agent")
     @classmethod
@@ -926,9 +902,7 @@ class PlannerOutput(BaseModel):
     """
 
     spec_path: str = Field(..., description="Path to the spec, inside the worktree.")
-    task_index_path: str = Field(
-        ..., description="Path to the per-spec task index JSON."
-    )
+    task_index_path: str = Field(..., description="Path to the per-spec task index JSON.")
     feat_id: str = Field(..., description="e.g. 'FEAT-378'")
     branch_name: str = Field(..., description="e.g. 'feat-378-devloop-enhancement'")
     worktree_path: str = Field(..., description="Absolute on-disk worktree path.")

@@ -51,7 +51,6 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, condense_qa_failure, register_dev_loop_node
 from parrot.flows.dev_loop.session_state import QaAttemptRecorded
 
-
 _DEFAULT_LINT_COMMAND = "ruff check . && mypy --no-incremental"
 
 # Prefix of the synthetic finding emitted when the code-review gate could not
@@ -61,10 +60,7 @@ _CODE_REVIEW_SKIP_PREFIX = "code-review could not run:"
 
 # Matches a positional ``.`` target in lint commands (e.g. ``ruff check .``).
 # Preceded by whitespace, followed by whitespace, chain operator, or EOL.
-_LINT_TARGET_RE = re.compile(
-    r"(?<=\s)\."
-    r"(?=\s|&&|;|$)"
-)
+_LINT_TARGET_RE = re.compile(r"(?<=\s)\." r"(?=\s|&&|;|$)")
 
 
 class _NoBugBrief(BaseModel):
@@ -191,7 +187,8 @@ class QANode(DevLoopNode):
         if self._skip_qa or runtime_skip:
             self.logger.info(
                 "QA bypass enabled (skip_qa=True, runtime=%s) for %s — returning synthetic pass.",
-                runtime_skip, research.jira_issue_key or research.feat_id,
+                runtime_skip,
+                research.jira_issue_key or research.feat_id,
             )
             report = QAReport(
                 passed=True,
@@ -206,21 +203,15 @@ class QANode(DevLoopNode):
             shared["qa_report"] = report
             return report
 
-        manual: List[ManualCriterion] = [
-            c for c in brief.acceptance_criteria
-            if isinstance(c, ManualCriterion)
-        ]
+        manual: List[ManualCriterion] = [c for c in brief.acceptance_criteria if isinstance(c, ManualCriterion)]
         # FEAT-322: per-criterion opt-in HITL gating. Default ``blocking=False``
         # preserves today's behavior byte-identically via
         # ``_merge_manual_results`` below; only ``blocking=True`` criteria open
         # a gate and await resolution before this method returns.
         blocking_manual: List[ManualCriterion] = [c for c in manual if c.blocking]
-        non_blocking_manual: List[ManualCriterion] = [
-            c for c in manual if not c.blocking
-        ]
+        non_blocking_manual: List[ManualCriterion] = [c for c in manual if not c.blocking]
         executable: List[AcceptanceCriterion] = [
-            c for c in brief.acceptance_criteria
-            if not isinstance(c, ManualCriterion)
+            c for c in brief.acceptance_criteria if not isinstance(c, ManualCriterion)
         ]
 
         is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
@@ -236,25 +227,15 @@ class QANode(DevLoopNode):
         #   replaces the old QA → review → re-run-QA three-step with a
         #   two-step (review → QA), eliminating the redundant re-run.
         if is_advisory:
-            self.logger.info(
-                "Advisory reviewer — running deterministic QA and code review concurrently"
-            )
-            qa_coro = self._run_deterministic_qa(
-                shared, research, brief, executable
-            )
+            self.logger.info("Advisory reviewer — running deterministic QA and code review concurrently")
+            qa_coro = self._run_deterministic_qa(shared, research, brief, executable)
             cr_coro = self._run_code_review(shared, research, brief)
-            report, (cr_passed, cr_findings, files_modified) = (
-                await asyncio.gather(qa_coro, cr_coro)
-            )
+            report, (cr_passed, cr_findings, files_modified) = await asyncio.gather(qa_coro, cr_coro)
             deterministic_passed = report.passed
         else:
-            cr_passed, cr_findings, files_modified = await self._run_code_review(
-                shared, research, brief
-            )
+            cr_passed, cr_findings, files_modified = await self._run_code_review(shared, research, brief)
 
-        cr_skipped = any(
-            f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings
-        )
+        cr_skipped = any(f.startswith(_CODE_REVIEW_SKIP_PREFIX) for f in cr_findings)
 
         # FEAT-377 TASK-1915 (G2 seam 4): ground code-review findings — an
         # infra-degrade skip marker is never a real finding, so it is never
@@ -280,8 +261,8 @@ class QANode(DevLoopNode):
         if not cr_skipped and is_advisory:
             triage_findings = self._collect_triage_findings(shared)
             if triage_findings:
-                triage_notes, triage_files_modified, escalation_passed = (
-                    await self._run_finding_triage(shared, research, brief, triage_findings)
+                triage_notes, triage_files_modified, escalation_passed = await self._run_finding_triage(
+                    shared, research, brief, triage_findings
                 )
                 for path in triage_files_modified:
                     if path not in files_modified:
@@ -300,7 +281,10 @@ class QANode(DevLoopNode):
                     files_modified,
                 )
             report = await self._run_deterministic_qa(
-                shared, research, brief, executable,
+                shared,
+                research,
+                brief,
+                executable,
                 cwd_override=research.worktree_path,
             )
             deterministic_passed = report.passed
@@ -310,7 +294,10 @@ class QANode(DevLoopNode):
                 files_modified,
             )
             report = await self._run_deterministic_qa(
-                shared, research, brief, executable,
+                shared,
+                research,
+                brief,
+                executable,
                 cwd_override=research.worktree_path,
             )
             deterministic_passed = report.passed
@@ -320,9 +307,7 @@ class QANode(DevLoopNode):
 
         blocking_passed = True
         if blocking_manual:
-            report, blocking_passed = await self._resolve_blocking_manual_criteria(
-                shared, blocking_manual, report
-            )
+            report, blocking_passed = await self._resolve_blocking_manual_criteria(shared, blocking_manual, report)
 
         update: Dict[str, Any] = {
             "passed": deterministic_passed and cr_passed and blocking_passed,
@@ -396,9 +381,7 @@ class QANode(DevLoopNode):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _briefless_summary(
-        shared: Dict[str, Any], research: ResearchOutput
-    ) -> str:
+    def _briefless_summary(shared: Dict[str, Any], research: ResearchOutput) -> str:
         """Best-effort run label when there is no intake brief (FEAT-412).
 
         Used only to populate ``_NoBugBrief.summary``, which the downstream
@@ -414,13 +397,7 @@ class QANode(DevLoopNode):
         """
         feature_brief = shared.get("feature_brief")
         document = getattr(feature_brief, "document_path", "") or ""
-        return (
-            document
-            or research.spec_path
-            or research.feat_id
-            or research.jira_issue_key
-            or ""
-        )
+        return document or research.spec_path or research.feat_id or research.jira_issue_key or ""
 
     async def _run_deterministic_qa(
         self,
@@ -495,19 +472,20 @@ class QANode(DevLoopNode):
         for upstream in ("origin/dev", "origin/main"):
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "git", "diff", "--name-only", "--diff-filter=d",
-                    f"{upstream}...HEAD", "--", "*.py",
+                    "git",
+                    "diff",
+                    "--name-only",
+                    "--diff-filter=d",
+                    f"{upstream}...HEAD",
+                    "--",
+                    "*.py",
                     cwd=worktree_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, _ = await proc.communicate()
                 if proc.returncode == 0 and stdout:
-                    return [
-                        f.strip()
-                        for f in stdout.decode().strip().splitlines()
-                        if f.strip()
-                    ]
+                    return [f.strip() for f in stdout.decode().strip().splitlines() if f.strip()]
             except Exception:
                 continue
         return []
@@ -532,10 +510,7 @@ class QANode(DevLoopNode):
             return scoped
 
         parts = re.split(r"(&&|;)", command)
-        return "".join(
-            _scope_part(p) if i % 2 == 0 else p
-            for i, p in enumerate(parts)
-        )
+        return "".join(_scope_part(p) if i % 2 == 0 else p for i, p in enumerate(parts))
 
     @classmethod
     def _scope_criteria(
@@ -553,15 +528,7 @@ class QANode(DevLoopNode):
                 and _LINT_TARGET_RE.search(c.command)
                 and re.search(r"\b(ruff|mypy|flake8|pylint)\b", c.command)
             ):
-                scoped.append(
-                    c.model_copy(
-                        update={
-                            "command": cls._scope_lint_to_files(
-                                c.command, files
-                            )
-                        }
-                    )
-                )
+                scoped.append(c.model_copy(update={"command": cls._scope_lint_to_files(c.command, files)}))
             else:
                 scoped.append(c)
         return scoped
@@ -739,9 +706,7 @@ class QANode(DevLoopNode):
 
         def _missing(indexed: Dict[str, AdversarialFinding]) -> List[AdversarialFinding]:
             return [
-                f for f in findings
-                if indexed.get(f.finding_id) is None
-                or indexed[f.finding_id].disposition is None
+                f for f in findings if indexed.get(f.finding_id) is None or indexed[f.finding_id].disposition is None
             ]
 
         report = await _dispatch_once()
@@ -764,29 +729,29 @@ class QANode(DevLoopNode):
             resolved = indexed.get(finding.finding_id)
             if resolved is None or resolved.disposition is None:
                 # Fail-closed: still undispositioned after the retry.
-                resolved = finding.model_copy(update={
-                    "disposition": "escalate",
-                    "triage_reason": (
-                        "no disposition returned by the triage worker after one retry"
-                    ),
-                })
-            elif resolved.disposition == "confirm" and not self._confirm_has_evidence(
-                resolved, files_modified_set
-            ):
+                resolved = finding.model_copy(
+                    update={
+                        "disposition": "escalate",
+                        "triage_reason": ("no disposition returned by the triage worker after one retry"),
+                    }
+                )
+            elif resolved.disposition == "confirm" and not self._confirm_has_evidence(resolved, files_modified_set):
                 # FEAT-375 code-review fix: a CONFIRM MUST be backed by an
                 # actual file change — otherwise "confirmed" is
                 # indistinguishable from "silently dropped" (nothing else
                 # would have surfaced this in QAReport.notes, and the
                 # deterministic rerun never triggers). Fail closed to
                 # ESCALATE rather than let an agreed-upon defect disappear.
-                resolved = resolved.model_copy(update={
-                    "disposition": "escalate",
-                    "triage_reason": (
-                        f"disposed as 'confirm' but no corresponding fix was found "
-                        f"in files_modified (worker's stated reason: "
-                        f"{resolved.triage_reason or '(none)'}) — escalating fail-closed"
-                    ),
-                })
+                resolved = resolved.model_copy(
+                    update={
+                        "disposition": "escalate",
+                        "triage_reason": (
+                            f"disposed as 'confirm' but no corresponding fix was found "
+                            f"in files_modified (worker's stated reason: "
+                            f"{resolved.triage_reason or '(none)'}) — escalating fail-closed"
+                        ),
+                    }
+                )
 
             if resolved.disposition == "reject":
                 notes.append(f"rejected: {resolved.message} — {resolved.triage_reason}")
@@ -808,9 +773,7 @@ class QANode(DevLoopNode):
 
         escalation_passed = True
         if escalated_gate_ids and session_host is not None:
-            resolved_gates = await asyncio.gather(
-                *(session_host.wait_gate(gate_id) for gate_id in escalated_gate_ids)
-            )
+            resolved_gates = await asyncio.gather(*(session_host.wait_gate(gate_id) for gate_id in escalated_gate_ids))
             escalation_passed = all(gate.status == "approved" for gate in resolved_gates)
 
         return notes, list(report.files_modified), escalation_passed
@@ -830,9 +793,7 @@ class QANode(DevLoopNode):
         return bool(files_modified)
 
     @staticmethod
-    def _merge_manual_results(
-        report: QAReport, manual: List[ManualCriterion]
-    ) -> QAReport:
+    def _merge_manual_results(report: QAReport, manual: List[ManualCriterion]) -> QAReport:
         """Append synthesized ``passed=True`` results for each manual criterion.
 
         Manual criteria don't gate the flow; they surface in the Jira
@@ -856,9 +817,7 @@ class QANode(DevLoopNode):
         manual_block = "\n".join(f"- {m.name}: {m.text}" for m in manual)
         existing_notes = report.notes or ""
         sep = "\n\n" if existing_notes else ""
-        new_notes = (
-            f"{existing_notes}{sep}Manual verification required:\n{manual_block}"
-        )
+        new_notes = f"{existing_notes}{sep}Manual verification required:\n{manual_block}"
         return report.model_copy(
             update={
                 "criterion_results": merged_results,
@@ -922,9 +881,7 @@ class QANode(DevLoopNode):
             )
             opened.append((criterion, gate_id))
 
-        resolved_gates = await asyncio.gather(
-            *[host.wait_gate(gate_id) for _, gate_id in opened]
-        )
+        resolved_gates = await asyncio.gather(*[host.wait_gate(gate_id) for _, gate_id in opened])
 
         synthesized: List[CriterionResult] = []
         audit_lines: List[str] = []
@@ -932,31 +889,32 @@ class QANode(DevLoopNode):
         for (criterion, _gate_id), gate in zip(opened, resolved_gates):
             passed = gate.status == "approved"
             all_passed = all_passed and passed
-            synthesized.append(CriterionResult(
-                name=criterion.name,
-                kind="manual",
-                exit_code=0 if passed else 1,
-                duration_seconds=0.0,
-                stdout_tail="",
-                stderr_tail="",
-                passed=passed,
-            ))
+            synthesized.append(
+                CriterionResult(
+                    name=criterion.name,
+                    kind="manual",
+                    exit_code=0 if passed else 1,
+                    duration_seconds=0.0,
+                    stdout_tail="",
+                    stderr_tail="",
+                    passed=passed,
+                )
+            )
             audit_lines.append(
-                f"{criterion.name}: {gate.status} by "
-                f"{gate.resolved_by or 'system'} — {gate.comment}"
+                f"{criterion.name}: {gate.status} by " f"{gate.resolved_by or 'system'} — {gate.comment}"
             )
 
         merged_results = list(report.criterion_results) + synthesized
         existing_notes = report.notes or ""
         sep = "\n\n" if existing_notes else ""
         audit_block = "\n".join(audit_lines)
-        new_notes = (
-            f"{existing_notes}{sep}Blocking manual criteria (HITL):\n{audit_block}"
+        new_notes = f"{existing_notes}{sep}Blocking manual criteria (HITL):\n{audit_block}"
+        report = report.model_copy(
+            update={
+                "criterion_results": merged_results,
+                "notes": new_notes,
+            }
         )
-        report = report.model_copy(update={
-            "criterion_results": merged_results,
-            "notes": new_notes,
-        })
         return report, all_passed
 
 

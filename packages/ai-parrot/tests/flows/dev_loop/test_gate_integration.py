@@ -43,9 +43,7 @@ def test_manual_blocking_default_false_unchanged():
 
 
 def test_manual_blocking_explicit_true():
-    criterion = ManualCriterion(
-        name="ux-check", text="dashboard renders cleanly", blocking=True
-    )
+    criterion = ManualCriterion(name="ux-check", text="dashboard renders cleanly", blocking=True)
     assert criterion.blocking is True
 
 
@@ -77,9 +75,7 @@ async def test_qa_blocking_gate_approved_folds_passed(qa_node):
         host.resolve_gate(gate_id, "approved", resolved_by="alice", comment="lgtm")
 
     resolver = asyncio.ensure_future(_approve_soon())
-    report, all_passed = await qa_node._resolve_blocking_manual_criteria(
-        shared, [criterion], _base_report()
-    )
+    report, all_passed = await qa_node._resolve_blocking_manual_criteria(shared, [criterion], _base_report())
     await resolver
 
     assert all_passed is True
@@ -103,9 +99,7 @@ async def test_qa_blocking_gate_rejected_fails_report(qa_node):
         host.resolve_gate(gate_id, "rejected", resolved_by="bob", comment="nope")
 
     resolver = asyncio.ensure_future(_reject_soon())
-    report, all_passed = await qa_node._resolve_blocking_manual_criteria(
-        shared, [criterion], _base_report()
-    )
+    report, all_passed = await qa_node._resolve_blocking_manual_criteria(shared, [criterion], _base_report())
     await resolver
 
     assert all_passed is False
@@ -131,9 +125,7 @@ async def test_qa_multiple_blocking_criteria_awaited_concurrently(qa_node):
             host.resolve_gate(gate_id, "approved", resolved_by="alice")
 
     resolver = asyncio.ensure_future(_resolve_all_soon())
-    report, all_passed = await qa_node._resolve_blocking_manual_criteria(
-        shared, criteria, _base_report()
-    )
+    report, all_passed = await qa_node._resolve_blocking_manual_criteria(shared, criteria, _base_report())
     await resolver
 
     assert all_passed is True
@@ -146,9 +138,7 @@ async def test_qa_no_host_falls_back_with_warning(qa_node, caplog):
     criterion = ManualCriterion(name="ux-check", text="looks right", blocking=True)
 
     with caplog.at_level(logging.WARNING):
-        report, all_passed = await qa_node._resolve_blocking_manual_criteria(
-            shared, [criterion], _base_report()
-        )
+        report, all_passed = await qa_node._resolve_blocking_manual_criteria(shared, [criterion], _base_report())
 
     assert all_passed is True  # legacy synthesis: never blocks
     manual_results = [r for r in report.criterion_results if r.kind == "manual"]
@@ -184,7 +174,9 @@ def handoff_ctx() -> dict:
             reporter="b",
         ),
         "development_output": DevelopmentOutput(
-            files_changed=["a.py"], commit_shas=["abc"], summary="done",
+            files_changed=["a.py"],
+            commit_shas=["abc"],
+            summary="done",
         ),
         "qa_report": QAReport(passed=True, criterion_results=[], lint_passed=True),
     }
@@ -207,7 +199,8 @@ async def _success_push(self, branch, cwd):
 def _patch_push(monkeypatch):
     monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", _success_push)
     monkeypatch.setattr(
-        DeploymentHandoffNode, "_create_pr",
+        DeploymentHandoffNode,
+        "_create_pr",
         AsyncMock(return_value="https://github.com/x/y/pull/42"),
     )
     # FEAT-466 TASK-2505: these are gate-mechanism tests, not base-branch
@@ -282,15 +275,13 @@ async def test_handoff_rejected_marks_blocked_no_transition(handoff_ctx, jira):
     # The READY-to-deploy transition must NEVER be attempted — only the
     # BLOCKED transition (via _mark_blocked) fires.
     ready_calls = [
-        c for c in jira.jira_transition_to.await_args_list
+        c
+        for c in jira.jira_transition_to.await_args_list
         if c.kwargs.get("target_status") in conf.DEV_LOOP_JIRA_TRANSITIONS_READY
     ]
     assert ready_calls == []
     jira.jira_transition_to.assert_awaited_once()
-    assert (
-        jira.jira_transition_to.await_args.kwargs["target_status"]
-        in conf.DEV_LOOP_JIRA_TRANSITIONS_BLOCKED
-    )
+    assert jira.jira_transition_to.await_args.kwargs["target_status"] in conf.DEV_LOOP_JIRA_TRANSITIONS_BLOCKED
     jira.jira_add_comment.assert_awaited()
 
 
@@ -331,16 +322,12 @@ def dev_ctx() -> dict:
 @pytest.fixture
 def dev_dispatcher() -> MagicMock:
     d = MagicMock()
-    d.dispatch = AsyncMock(
-        return_value=DevelopmentOutput(files_changed=["a.py"], commit_shas=["s1"], summary="ok")
-    )
+    d.dispatch = AsyncMock(return_value=DevelopmentOutput(files_changed=["a.py"], commit_shas=["s1"], summary="ok"))
     return d
 
 
 @pytest.mark.asyncio
-async def test_development_default_skips_plan_gate_even_with_host_present(
-    dev_ctx, dev_dispatcher
-):
+async def test_development_default_skips_plan_gate_even_with_host_present(dev_ctx, dev_dispatcher):
     """Regression guard (mirrors the deployment_approval one above):
     DevLoopRunner.run() always seeds a live SessionHost — the gate MUST
     stay off by default or every existing/legacy run would block forever."""
@@ -425,9 +412,7 @@ async def test_development_plan_gate_expiry_approves(dev_ctx, dev_dispatcher):
 
 
 @pytest.mark.asyncio
-async def test_development_plan_gate_no_host_falls_back_with_warning(
-    dev_ctx, dev_dispatcher, caplog
-):
+async def test_development_plan_gate_no_host_falls_back_with_warning(dev_ctx, dev_dispatcher, caplog):
     node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)
 
     with caplog.at_level(logging.WARNING):
@@ -439,9 +424,7 @@ async def test_development_plan_gate_no_host_falls_back_with_warning(
 
 
 @pytest.mark.asyncio
-async def test_development_plan_gate_checked_only_once_across_retries(
-    dev_ctx, dev_dispatcher
-):
+async def test_development_plan_gate_checked_only_once_across_retries(dev_ctx, dev_dispatcher):
     """A QA-repair-loop re-entry (attempt >= 2) must NOT re-open the gate
     — the plan was already approved on the first entry."""
     node = DevelopmentNode(dispatcher=dev_dispatcher, require_plan_approval=True)

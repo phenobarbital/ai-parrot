@@ -133,9 +133,7 @@ class TestResolveBaseBranch:
 
         assert "reported base_branch" in caplog.text
 
-    async def test_relative_spec_path_resolved_against_worktree(
-        self, tmp_path, monkeypatch
-    ):
+    async def test_relative_spec_path_resolved_against_worktree(self, tmp_path, monkeypatch):
         _pin_worktree_base(monkeypatch, tmp_path)
         worktree = tmp_path / "actual" / "feat-466-x"
         worktree.mkdir(parents=True)
@@ -156,9 +154,7 @@ class TestResolveBaseBranch:
 
         assert result.base_branch == "dev"
 
-    async def test_missing_spec_falls_back_to_kind_mapping(
-        self, tmp_path, monkeypatch, caplog
-    ):
+    async def test_missing_spec_falls_back_to_kind_mapping(self, tmp_path, monkeypatch, caplog):
         """No spec file at all -> kind='bug' -> 'main', with a WARNING."""
         _pin_worktree_base(monkeypatch, tmp_path)
         worktree = tmp_path / "actual" / "hotfix-ops-1-x"

@@ -106,9 +106,7 @@ def _normalise_kind(raw: Any) -> str:
     return (str(raw or "")).strip().lower().replace(" ", "_").replace("-", "_")
 
 
-def _build_dev_brief_from_form(
-    form: dict[str, Any]
-) -> DevRequestBrief | Any:
+def _build_dev_brief_from_form(form: dict[str, Any]) -> DevRequestBrief | Any:
     """Translate the dev console's form into a dev-flow brief.
 
     Two shapes, selected by ``kind``:
@@ -143,16 +141,12 @@ def _build_dev_brief_from_form(
     if kind == "feature":
         return ops_server._build_feature_brief_from_form(form)
     if kind not in ("enhancement", "new_feature"):
-        raise ValueError(
-            "kind must be 'enhancement', 'new_feature' or 'feature', got "
-            f"{kind!r}"
-        )
+        raise ValueError("kind must be 'enhancement', 'new_feature' or 'feature', got " f"{kind!r}")
 
     title = (form.get("title") or "").strip()
     if not title:
         raise ValueError(
-            "title is required — it names the request and is the slug source "
-            "for sdd/proposals/<slug>.*.md"
+            "title is required — it names the request and is the slug source " "for sdd/proposals/<slug>.*.md"
         )
     description = (form.get("description") or "").strip()
     if not description:
@@ -220,31 +214,17 @@ async def handle_config(request: web.Request) -> web.Response:
             # The intents whose runs go through ideation (the UI shows the
             # natural-language intake for these, a document picker otherwise).
             "nl_kinds": ["enhancement", "new_feature"],
-            "gate_resolve_url_template": (
-                "/api/flow/{run_id}/gates/{gate_id}/resolve"
-            ),
+            "gate_resolve_url_template": ("/api/flow/{run_id}/gates/{gate_id}/resolve"),
             "defaults": {
-                "development_agent": conf.config.get(
-                    "DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"
-                ),
+                "development_agent": conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code"),
                 "codereview_agent": app.get("codereview_agent_key", "parallel"),
-                "codereview_agent_configured": conf.config.get(
-                    "DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"
-                ),
+                "codereview_agent_configured": conf.config.get("DEV_LOOP_CODEREVIEW_AGENT", fallback="parallel"),
                 "qa_max_retries": conf.DEV_LOOP_QA_MAX_RETRIES,
                 "development_pool_max": app.get("development_pool_max", 4),
-                "max_concurrent_runs": getattr(
-                    runner, "max_concurrent_runs", None
-                ),
-                "ideation_max_rounds": getattr(
-                    conf, "DEV_FLOW_IDEATION_MAX_ROUNDS", 2
-                ),
-                "gate_ttl_questions": getattr(
-                    conf, "DEV_FLOW_GATE_TTL_QUESTIONS", 86400
-                ),
-                "require_plan_approval": bool(
-                    app.get("require_plan_approval", False)
-                ),
+                "max_concurrent_runs": getattr(runner, "max_concurrent_runs", None),
+                "ideation_max_rounds": getattr(conf, "DEV_FLOW_IDEATION_MAX_ROUNDS", 2),
+                "gate_ttl_questions": getattr(conf, "DEV_FLOW_GATE_TTL_QUESTIONS", 86400),
+                "require_plan_approval": bool(app.get("require_plan_approval", False)),
                 "skip_qa": bool(getattr(conf, "DEV_LOOP_SKIP_QA", False)),
                 "docs_artifact_dir": conf.DEV_LOOP_DOCS_ARTIFACT_DIR,
                 "wiki_page_ingest": conf.DEV_LOOP_WIKI_PAGE_INGEST,
@@ -310,15 +290,16 @@ async def handle_run(request: web.Request) -> web.Response:
     # the form actually carries the field, so an absent toggle falls back to
     # the flow's build-time default instead of silently overriding it.
     if "require_plan_approval" in form:
-        extra_shared["require_plan_approval"] = bool(
-            form.get("require_plan_approval")
-        )
+        extra_shared["require_plan_approval"] = bool(form.get("require_plan_approval"))
 
     async def _run() -> None:
         try:
             logger.info(
                 "Starting dev-flow run_id=%s kind=%s (%s) extra_shared=%s",
-                run_id, kind, label, sorted(extra_shared),
+                run_id,
+                kind,
+                label,
+                sorted(extra_shared),
             )
             result = await runner.run(
                 brief,
@@ -328,7 +309,9 @@ async def handle_run(request: web.Request) -> web.Response:
             )
             logger.info(
                 "dev-flow run_id=%s finished status=%s in %.1fs",
-                run_id, result.status, time.time() - started_at,
+                run_id,
+                result.status,
+                time.time() - started_at,
             )
         except Exception:
             logger.exception("dev-flow run_id=%s failed", run_id)
@@ -389,16 +372,13 @@ def _build_optional_jira_toolkit() -> Any | None:
     """
     if not (conf.config.get("JIRA_INSTANCE") and conf.config.get("JIRA_USERNAME")):
         logger.info(
-            "JIRA_* not configured — dev-flow runs with jira_toolkit=None "
-            "(Jira is link-only and optional here)."
+            "JIRA_* not configured — dev-flow runs with jira_toolkit=None " "(Jira is link-only and optional here)."
         )
         return None
     try:
         return ops_server._build_jira_toolkit()
     except Exception as exc:  # noqa: BLE001 - Jira is optional in dev-flow
-        logger.warning(
-            "JiraToolkit unavailable (%s) — continuing without Jira.", exc
-        )
+        logger.warning("JiraToolkit unavailable (%s) — continuing without Jira.", exc)
         return None
 
 
@@ -419,11 +399,7 @@ async def _on_startup(app: web.Application) -> None:
 
     # -- development backend selection (same cascade as the ops console) --
     development_dispatcher: object = dispatcher
-    development_agent = (
-        conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code")
-        .strip()
-        .lower()
-    )
+    development_agent = conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code").strip().lower()
     env_map = ops_server._DEVELOPMENT_AGENT_MAX_CONCURRENT_ENV
     if development_agent in {"claude", "claude-code"}:
         pass
@@ -438,9 +414,7 @@ async def _on_startup(app: web.Application) -> None:
             ),
             stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
         )
-        ops_server._log_development_agent_selection(
-            backend, development_profile
-        )
+        ops_server._log_development_agent_selection(backend, development_profile)
         # NOTE: like feature-mode (`build_dev_loop_feature_flow`), the dev-flow
         # builder takes no `development_dispatcher`/`development_profile`, so
         # this selection currently applies to the code-review reviewer
@@ -449,7 +423,8 @@ async def _on_startup(app: web.Application) -> None:
         logger.info(
             "DEV_LOOP_DEVELOPMENT_AGENT=%r selected; dev-flow dispatches "
             "development through the shared claude-code dispatcher unless a "
-            "pool is declared per run.", development_agent,
+            "pool is declared per run.",
+            development_agent,
         )
     else:
         raise RuntimeError(
@@ -464,15 +439,14 @@ async def _on_startup(app: web.Application) -> None:
         development_dispatcher=development_dispatcher,
         redis_url=redis_url,
     )
-    judge_panel_dispatcher = ops_server._build_judge_panel_dispatcher(
-        redis_url=redis_url
-    )
+    judge_panel_dispatcher = ops_server._build_judge_panel_dispatcher(redis_url=redis_url)
 
     repos = parse_repo_specs(conf.DEV_LOOP_REPOS)
     if repos:
         logger.info(
             "DEV_LOOP_REPOS configured: %d repo(s) — primary alias=%r",
-            len(repos), repos[0].alias,
+            len(repos),
+            repos[0].alias,
         )
 
     # -- dev-agent pool (FEAT-323) ---------------------------------------
@@ -496,10 +470,7 @@ async def _on_startup(app: web.Application) -> None:
             "NOT inject it: the pool is planner-sized (cap pool_max=%d) or set "
             "per run via the brief's dev_agents. Use the console's "
             "'Agents & models' tab to pin a pool for a run.",
-            ", ".join(
-                f"{spec.agent}x{spec.count}"
-                for spec in development_pool_config.agents
-            ),
+            ", ".join(f"{spec.agent}x{spec.count}" for spec in development_pool_config.agents),
             development_pool_config.isolation_mode,
             development_pool_max,
         )
@@ -513,9 +484,7 @@ async def _on_startup(app: web.Application) -> None:
     git_toolkit = ops_server._build_git_toolkit()
     wiki_toolkit = ops_server._build_wiki_toolkit()
 
-    require_plan_approval = bool(
-        getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
-    )
+    require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
     skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
     app["flow"] = build_dev_flow(
@@ -580,9 +549,7 @@ def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:
     app.router.add_post("/api/flow/{run_id}/cancel", ops_server.handle_cancel)
     # THE HITL write path server.py never mounts — under /api/flow to match
     # the console's other routes.
-    app.router.add_post(
-        "/api/flow/{run_id}/gates/{gate_id}/resolve", handle_resolve_gate
-    )
+    app.router.add_post("/api/flow/{run_id}/gates/{gate_id}/resolve", handle_resolve_gate)
     return app
 
 
@@ -596,9 +563,7 @@ def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8081"))
     app = build_app(redis_url=redis_url)
-    logger.info(
-        "dev-flow console on http://%s:%s (Redis=%s)", host, port, redis_url
-    )
+    logger.info("dev-flow console on http://%s:%s (Redis=%s)", host, port, redis_url)
     web.run_app(app, host=host, port=port, print=None)
 
 
