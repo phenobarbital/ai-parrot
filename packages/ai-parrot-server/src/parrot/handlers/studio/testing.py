@@ -255,9 +255,7 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
             async with bot.session(request=self.request, app=self.request.app) as live_bot:
                 response = await live_bot.ask(question=ask_request.query)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.exception(
-                "Studio test/ask failed for '%s': %s", agent_name, exc
-            )
+            self.logger.exception("Studio test/ask failed for '%s'", agent_name)
             return self._error(f"Agent query failed: {exc}", status=502, code="query_failed")
 
         content = str(response.content) if hasattr(response, "content") else str(response)

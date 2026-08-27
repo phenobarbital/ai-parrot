@@ -20,11 +20,12 @@ import inspect
 from typing import Any
 
 import parrot.bots as bots_module
-import parrot.handlers.tools_catalog as tools_catalog_module
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.clients.factory import SUPPORTED_CLIENTS
-from parrot.handlers.tools_catalog import _build_catalog
 from parrot.stores import supported_stores
+
+import parrot.handlers.tools_catalog as tools_catalog_module
+from parrot.handlers.tools_catalog import _build_catalog
 
 from ._base import StudioBaseView
 from .models import StudioError

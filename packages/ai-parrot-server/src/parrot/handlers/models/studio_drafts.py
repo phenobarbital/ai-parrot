@@ -15,11 +15,24 @@ evaluation string literals the future import would produce; with it,
 constructing ``StudioDraft(...)`` raises ``TypeError: Expected type,
 got str`` inside ``datamodel.validation`` (confirmed empirically —
 matches the working, future-import-free ``scheduler/models.py::
-AgentSchedule`` pattern). Python 3.12's native ``X | None`` syntax
-(PEP 604) is used below instead, which needs no future import.
+AgentSchedule`` pattern).
+
+BUGFIX (FEAT-467 TASK-2522): native PEP 604 ``X | None`` syntax is
+``types.UnionType`` at class-definition time — NOT the same as
+``typing.Optional[X]`` — and the same Cython field processor rejects it
+too (``TypeError: Expected type, got types.UnionType``), independently
+of the future-annotations issue above. This went undetected by
+TASK-2513's own tests, which never constructed a real ``StudioDraft``
+with ``base_class``/``activated_at`` set (hand-rolled fake only) — first
+caught by TASK-2522's end-to-end integration test, the first caller to
+construct this model for real. Use ``typing.Optional[X]`` for every
+optional field on an asyncdb ``Model``, never ``X | None`` — and keep
+the ``noqa: UP045`` guards below: ruff's autofix otherwise "modernizes"
+``Optional[X]`` straight back into the broken ``X | None`` form.
 """
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from asyncdb.models import Field, Model
 
@@ -52,11 +65,11 @@ class StudioDraft(Model):
     file_path: str = Field(required=True)
     status: str = Field(required=False, default="draft")
     validation_report: dict = Field(required=False, default_factory=dict)
-    base_class: str | None = Field(required=False)
+    base_class: Optional[str] = Field(required=False)  # noqa: UP045 — datamodel rejects `X | None` (see module docstring)
     owner_user_id: str = Field(required=True)
     created_at: datetime = Field(required=False, default_factory=datetime.now)
     updated_at: datetime = Field(required=False, default_factory=datetime.now)
-    activated_at: datetime | None = Field(required=False)
+    activated_at: Optional[datetime] = Field(required=False)  # noqa: UP045 — datamodel rejects `X | None` (see module docstring)
 
     class Meta:
         driver = 'pg'

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from parrot.skills.models import SkillCategory
+from pydantic import BaseModel, Field, SecretStr
+
 # BotManager.reload_agent's return type IS the Studio reload response
 # shape (name / reloaded / previous_instance_closed / warnings) — defined
 # once in FEAT-467 TASK-2510 and re-exported here rather than duplicated,
 # so there is exactly one "ReloadResult" definition to keep in sync.
 from parrot.manager.manager import ReloadResult  # noqa: F401
-from parrot.skills.models import SkillCategory
-from pydantic import BaseModel, Field, SecretStr
 
 
 class StudioError(BaseModel):

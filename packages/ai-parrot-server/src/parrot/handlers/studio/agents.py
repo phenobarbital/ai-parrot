@@ -23,11 +23,12 @@ from asyncdb.exceptions import NoDataFound
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.clients.factory import LLMFactory
 from parrot.conf import AGENTS_DIR
-from parrot.manager.manager import AgentNotFoundError, AgentReloadError
 from parrot.models.basic import ModelConfig
 from parrot.registry.registry import BotConfig
 from parrot.utils.naming import slugify_name
 from pydantic import ValidationError
+
+from parrot.manager.manager import AgentNotFoundError, AgentReloadError
 
 from ..models import BotModel
 from ._base import StudioBaseView
