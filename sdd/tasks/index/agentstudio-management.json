@@ -225,7 +225,7 @@
       "parallel": false,
       "parallelism_notes": "Read-only; only the shared route file couples it to siblings.",
       "assigned_to": null,
-      "started_at": "2026-08-27T16:59:43+00:00",
+      "started_at": "2026-08-27T19:01:58+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2519-studio-catalog-endpoints.md"
     },
