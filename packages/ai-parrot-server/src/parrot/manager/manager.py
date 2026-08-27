@@ -91,6 +91,8 @@ from ..conf import (
 )
 # Credentials handler
 from ..handlers.credentials import setup_credentials_routes
+# Agent Studio — /api/v1/astudio/* route registration (FEAT-467)
+from ..handlers.studio import setup_studio_routes
 # CommCenter bulk notification sender (FEAT-417) — method-based handler,
 # mirrors ScrapingInfoHandler's instantiate-then-.setup(app) convention.
 from ..handlers.comm_center import CommCenterHandler
@@ -2309,6 +2311,8 @@ class BotManager:
             )
         # User credential management routes
         setup_credentials_routes(self.app)
+        # Agent Studio — /api/v1/astudio/* management API (FEAT-467)
+        setup_studio_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
         # Thales research flow routes (FEAT-425): POST + polling + artifacts
