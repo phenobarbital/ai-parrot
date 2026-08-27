@@ -209,7 +209,11 @@ class _StudioTestingMixin:
             # Session referenced a bot that expired/was cleaned up — recreate.
 
         session_id = uuid.uuid4().hex[:12]
-        bot = await manager.get_bot(agent_name, new=True, session_id=session_id)
+        # request= is REQUIRED for PBAC (adversarial-review fix): per
+        # BotManager.get_bot's contract, request=None means "programmatic
+        # invocation — no PBAC check", which let any authenticated Studio
+        # user spin up a test instance of a PBAC-denied agent.
+        bot = await manager.get_bot(agent_name, new=True, session_id=session_id, request=self.request)
         if not bot:
             raise LookupError(f"Agent '{agent_name}' not found in registry.")
         if session is not None:
@@ -229,6 +233,10 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
     # -- POST: query the test agent (test/ask) --------------------------
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("testing", "astudio:testing:ask")) is not None:
+            return denied
+
         agent_name = self.request.match_info.get("name")
         if not agent_name:
             return self._error("Agent name is required.", status=400, code="missing_name")
@@ -248,6 +256,9 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
             bot = await self._get_or_create_test_bot(agent_name, session)
         except LookupError as exc:
             return self._error(str(exc), status=404, code="not_found")
+        except PermissionError as exc:
+            # AgentAccessDenied (PBAC deny from get_bot's enforce_agent_access).
+            return self._error(str(exc), status=403, code="access_denied")
         except RuntimeError as exc:
             return self._error(str(exc), status=503, code="unavailable")
 
@@ -331,6 +342,10 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
     """``POST /api/v1/astudio/tools/{slug}/execute`` — deterministic tool call."""
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("testing", "astudio:testing:execute")) is not None:
+            return denied
+
         slug = self.request.match_info.get("slug")
         if not slug:
             return self._error("Tool slug is required.", status=400, code="missing_slug")
@@ -391,6 +406,10 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
     """
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("agents", "astudio:agents:assign_tools")) is not None:
+            return denied
+
         name = self.request.match_info.get("name")
         if not name:
             return self._error("Agent name is required.", status=400, code="missing_name")

@@ -284,6 +284,10 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
     # -- POST: assignment ----------------------------------------------
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("toolkits", "astudio:toolkits:assign")) is not None:
+            return denied
+
         name = self.request.match_info.get("name")
         if not name:
             return self._error("Agent name is required.", status=400, code="missing_name")

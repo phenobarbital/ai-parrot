@@ -58,6 +58,89 @@ def _require_app() -> Any:
     return ctx.app
 
 
+def _require_user_id() -> str:
+    """Return the session user's id bound to the current tool call.
+
+    ``StudioAssistantHandler`` passes ``user_id=`` into
+    ``agent.session(...)`` (adversarial-review fix) so mutating tools can
+    stamp real ownership and enforce it. Fail-closed: a mutating tool
+    with no caller identity must refuse rather than write unowned (or
+    worse, mis-owned) state.
+
+    Raises:
+        RuntimeError: No ``RequestContext`` is bound, or it carries no
+            ``user_id``.
+    """
+    ctx = current_context()
+    if ctx is None or not getattr(ctx, "user_id", None):
+        raise RuntimeError(
+            "AgentStudio mutating tools require the caller's user identity "
+            "(agent.session(..., user_id=...)); none is bound — refusing "
+            "to write."
+        )
+    return str(ctx.user_id)
+
+
+async def _require_agent_owner(app: Any, agent_name: str, user_id: str) -> None:
+    """Refuse unless ``user_id`` owns ``agent_name`` (adversarial-review fix).
+
+    Mirrors the SAME dual-source owner lookup the Studio file-CRUD
+    endpoints use (``_StudioFilesMixin._resolve_agent``): registry
+    metadata's ``bot_config.config['created_by']`` first, then a
+    DB-origin agent's ``created_by`` column. The HTTP path enforces this
+    via ``StudioBaseView._require_owner``; this is the equivalent gate
+    for the meta-agent tool path, which previously had none.
+
+    Args:
+        app: The aiohttp Application (source of ``bot_manager``/``database``).
+        agent_name: Target agent.
+        user_id: The calling session user's id.
+
+    Raises:
+        ValueError: The agent does not exist.
+        PermissionError: The agent exists but is not owned by ``user_id``
+            (including unowned agents — fail closed, same posture as
+            ``_require_owner``).
+    """
+    owner = None
+    exists = False
+
+    manager = app.get("bot_manager")
+    registry = getattr(manager, "registry", None) if manager is not None else None
+    if registry is not None:
+        meta = registry.get_metadata(agent_name)
+        if meta is not None:
+            exists = True
+            bot_config = getattr(meta, "bot_config", None)
+            if bot_config is not None:
+                owner = (getattr(bot_config, "config", None) or {}).get("created_by")
+
+    if not exists:
+        db = app.get("database")
+        if db is not None:
+            from asyncdb.exceptions import NoDataFound
+
+            from parrot.handlers.models import BotModel
+
+            try:
+                async with await db.acquire() as conn:
+                    BotModel.Meta.connection = conn
+                    try:
+                        db_agent = await BotModel.get(name=agent_name)
+                    except NoDataFound:
+                        db_agent = None
+            except Exception:  # pylint: disable=broad-except
+                db_agent = None
+            if db_agent is not None:
+                exists = True
+                owner = db_agent.created_by
+
+    if not exists:
+        raise ValueError(f"Agent '{agent_name}' not found.")
+    if owner is None or str(owner) != str(user_id):
+        raise PermissionError(f"Agent '{agent_name}' is not owned by the calling user; refusing to write.")
+
+
 # ---------------------------------------------------------------------------
 # Draft pipeline (TASK-2513)
 # ---------------------------------------------------------------------------
@@ -92,21 +175,17 @@ async def save_agent_draft(name: str, source: str) -> dict:
     if not is_valid_slug(name):
         raise ValueError(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$.")
 
-    drafts_dir = Path(AGENTS_DIR) / "_drafts"
-    drafts_dir.mkdir(parents=True, exist_ok=True)
-    file_path = resolve_safe_path(drafts_dir, f"{name}.py")
-    file_path.write_text(source)
-
-    report = validate_draft(source)
-    base_class = detect_base_class(source) if report.passed else None
-    status = "validated" if report.passed else "failed"
-
     app = _require_app()
-    db = app.get("database")
-    if db is not None:
-        import logging as _logging
-        from datetime import datetime
+    # Adversarial-review fix: stamp the REAL session user as the draft's
+    # owner. The previous hardcoded "agent_studio" owner meant the
+    # activation endpoint's own `_require_owner` check (403 on mismatch)
+    # locked every non-superuser out of activating a draft the assistant
+    # had just built for them — the feature's headline flow.
+    user_id = _require_user_id()
 
+    db = app.get("database")
+    existing = None
+    if db is not None:
         from asyncdb.exceptions import NoDataFound
 
         from parrot.handlers.models.studio_drafts import StudioDraft
@@ -118,6 +197,31 @@ async def save_agent_draft(name: str, source: str) -> dict:
                     existing = await StudioDraft.get(name=name)
                 except NoDataFound:
                     existing = None
+        except Exception:  # pylint: disable=broad-except
+            existing = None
+        # Ownership on overwrite, checked BEFORE the file write: an
+        # existing draft owned by someone else must not be clobbered.
+        if existing is not None and str(existing.owner_user_id) != user_id:
+            raise PermissionError(f"Draft '{name}' is owned by another user; refusing to overwrite.")
+
+    drafts_dir = Path(AGENTS_DIR) / "_drafts"
+    drafts_dir.mkdir(parents=True, exist_ok=True)
+    file_path = resolve_safe_path(drafts_dir, f"{name}.py")
+    file_path.write_text(source)
+
+    report = validate_draft(source)
+    base_class = detect_base_class(source) if report.passed else None
+    status = "validated" if report.passed else "failed"
+
+    if db is not None:
+        import logging as _logging
+        from datetime import datetime
+
+        from parrot.handlers.models.studio_drafts import StudioDraft
+
+        try:
+            async with await db.acquire() as conn:
+                StudioDraft.Meta.connection = conn
                 fields = {
                     "name": name,
                     "file_path": str(file_path),
@@ -131,7 +235,7 @@ async def save_agent_draft(name: str, source: str) -> dict:
                     existing.set("updated_at", datetime.now())
                     await existing.update()
                 else:
-                    row = StudioDraft(**fields, owner_user_id="agent_studio")
+                    row = StudioDraft(**fields, owner_user_id=user_id)
                     await row.insert()
         except Exception as exc:  # pylint: disable=broad-except
             # Best-effort — the draft FILE (already written above) is the
@@ -200,6 +304,11 @@ async def create_yaml_agent(
     from parrot.registry.registry import BotConfig
 
     app = _require_app()
+    # Adversarial-review fix: stamp the real session user as owner (the
+    # HTTP create path does the same server-side `created_by` stamping) —
+    # without it, agents built via the assistant were unowned, which
+    # fail-closed ownership checks then treat as "nobody may modify".
+    user_id = _require_user_id()
     manager = app.get("bot_manager")
     if manager is None:
         raise RuntimeError("BotManager unavailable — cannot resolve bot_class.")
@@ -208,6 +317,7 @@ async def create_yaml_agent(
         raise ValueError(f"Unknown bot_class '{bot_class}'.")
 
     config_dict = {"description": description} if description else {}
+    config_dict["created_by"] = user_id
     model_config = None
     if llm:
         provider, model = LLMFactory.parse_llm_string(llm)
@@ -248,6 +358,14 @@ async def _write_asset_file(agent_name: str, kind: str, filename: str, content: 
         raise ValueError(f"Invalid agent name '{agent_name}'.")
     if kind not in VALID_KINDS:
         raise ValueError(f"Unknown kind '{kind}'; must be one of {VALID_KINDS}.")
+
+    # Adversarial-review fix: the HTTP file-CRUD endpoints call
+    # `_require_owner` before every write; this tool path previously had
+    # NO ownership check at all — any user driving the assistant could
+    # write into any other user's agent directories.
+    app = _require_app()
+    user_id = _require_user_id()
+    await _require_agent_owner(app, agent_name, user_id)
 
     base_dir = Path(AGENTS_DIR) / agent_name / kind
     target = resolve_safe_path(base_dir, filename)

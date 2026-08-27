@@ -35,6 +35,7 @@ from parrot.skills.store import create_skill_registry
 
 from ..models.skills_catalog import SkillCatalogEntry
 from ._base import StudioBaseView, resolve_safe_path
+from .files import _StudioFilesMixin
 from .models import SkillPublishRequest, StudioError
 
 DEFAULT_ORG_ID = "default"
@@ -332,6 +333,10 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
     async def post(self):
         """Publish a new shared skill — PG insert first, registry
         best-effort (spec §7: "Never fail a publish because Redis is down")."""
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("skills", "astudio:skills:publish")) is not None:
+            return denied
+
         if self.request.match_info.get("id"):
             return self._error(
                 "Use POST /astudio/skills (no id in the URL) to publish.",
@@ -390,6 +395,10 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         return self.json_response(self._entry_to_dict(entry), status=201)
 
     async def put(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("skills", "astudio:skills:update")) is not None:
+            return denied
+
         skill_id = self.request.match_info.get("id")
         if not skill_id:
             return self._error("Skill id is required.", status=400, code="missing_id")
@@ -431,6 +440,10 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         return self.json_response(self._entry_to_dict(entry))
 
     async def delete(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("skills", "astudio:skills:delete")) is not None:
+            return denied
+
         skill_id = self.request.match_info.get("id")
         if not skill_id:
             return self._error("Skill id is required.", status=400, code="missing_id")
@@ -499,15 +512,23 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
 
 @is_authenticated()
 @user_session()
-class StudioSkillsImportHandler(_StudioSkillsMixin, StudioBaseView):
+class StudioSkillsImportHandler(_StudioSkillsMixin, _StudioFilesMixin, StudioBaseView):
     """``POST /api/v1/astudio/agents/{name}/skills/import/{id}``.
 
     Materializes a catalog entry as
     ``AGENTS_DIR/<agent>/skills/<name>.md`` — collision refused (409)
-    unless ``overwrite=true``.
+    unless ``overwrite=true``. Owner-enforced: only the target agent's
+    owner (or a superuser) may import onto it — reuses
+    ``_StudioFilesMixin._resolve_agent``, the same lookup the file-CRUD
+    endpoints use (adversarial-review fix: this handler previously wrote
+    into ANY agent's skills directory with no ownership check at all).
     """
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("skills", "astudio:skills:import")) is not None:
+            return denied
+
         agent_name = self.request.match_info.get("name")
         skill_id = self.request.match_info.get("id")
         if not agent_name or not skill_id:
@@ -516,6 +537,13 @@ class StudioSkillsImportHandler(_StudioSkillsMixin, StudioBaseView):
                 status=400,
                 code="missing_params",
             )
+
+        exists, owner = await self._resolve_agent(agent_name)
+        if not exists:
+            return self._error(f"Agent '{agent_name}' not found.", status=404, code="not_found")
+
+        user = await self._get_user()
+        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
 
         entry = await self._get_entry_by_id(skill_id)
         if entry is None:
@@ -572,6 +600,10 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):
     """
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("skills", "astudio:skills:resync")) is not None:
+            return denied
+
         user = await self._get_user()
         if not user.is_superuser:
             return self._error("Admin privileges required.", status=403, code="admin_required")

@@ -214,6 +214,10 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         return self.json_response({"kind": kind, "files": files})
 
     async def put(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("files", "astudio:files:write")) is not None:
+            return denied
+
         agent_name = self.request.match_info.get("name")
         kind = self.request.match_info.get("kind")
         filename = self.request.match_info.get("filename")
@@ -274,6 +278,10 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         )
 
     async def delete(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("files", "astudio:files:delete")) is not None:
+            return denied
+
         agent_name = self.request.match_info.get("name")
         kind = self.request.match_info.get("kind")
         filename = self.request.match_info.get("filename")

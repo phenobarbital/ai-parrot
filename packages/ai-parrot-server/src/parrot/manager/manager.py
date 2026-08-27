@@ -949,7 +949,10 @@ class BotManager:
         if suffix in (".yaml", ".yml"):
             before = metadata
             try:
-                self.registry.load_agent_definitions(file_path.parent)
+                # Per-file (adversarial-review fix): reloading via the
+                # directory scanner re-registered fresh BotMetadata for
+                # EVERY sibling YAML in the category, not just this agent.
+                self.registry.load_agent_definition_file(file_path)
             except Exception as exc:
                 raise AgentReloadError(f"Failed to reload YAML definition for agent '{name}': {exc}") from exc
             after = self.registry.get_metadata(name)

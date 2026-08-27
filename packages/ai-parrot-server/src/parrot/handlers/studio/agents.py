@@ -32,7 +32,7 @@ from pydantic import ValidationError
 from parrot.manager.manager import AgentNotFoundError, AgentReloadError
 
 from ..models import BotModel
-from ._base import StudioBaseView
+from ._base import StudioBaseView, is_valid_slug
 from .models import CreateAgentRequest, StudioError
 
 
@@ -213,6 +213,10 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         YAML definition (``AgentRegistry.create_agent_definition``,
         FEAT-467 TASK-2509) under ``AGENTS_DIR/agents/<category>/``.
         """
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("agents", "astudio:agents:create")) is not None:
+            return denied
+
         if self.request.match_info.get("name"):
             return self._error(
                 "Use POST /astudio/agents (no name in the URL) to create, "
@@ -235,6 +239,18 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
             slug = slugify_name(create_request.name)
         except ValueError as exc:
             return self._error(str(exc), status=400, code="invalid_name")
+
+        # SECURITY (adversarial-review fix): `category` becomes a path
+        # segment in AGENTS_DIR/agents/<category>/ inside
+        # create_agent_definition — an unvalidated "../../.." wrote the
+        # YAML outside AGENTS_DIR entirely. Same slug rule as every other
+        # Studio path segment.
+        if not is_valid_slug(create_request.category):
+            return self._error(
+                f"Invalid category '{create_request.category}'; must match ^[a-z0-9_-]+$.",
+                status=400,
+                code="invalid_category",
+            )
 
         existing = await self._check_duplicate(slug)
         if existing:
@@ -278,13 +294,26 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
             model=model_config,
         )
 
+        # Adversarial-review fix: the requested `llm` was packed only into
+        # bot_config.model, but a NON-persisted instance is built from
+        # startup_config alone (BotMetadata.get_instance merges
+        # startup_config into the constructor kwargs; bot_config.model is
+        # never consulted on that path) — so the live instance silently
+        # used the class default model. Thread the original
+        # "provider:model" string as the `llm` constructor kwarg,
+        # startup-side only (kept OUT of bot_config.config so the
+        # persisted YAML stays lossless/unchanged).
+        startup_kwargs = dict(config_dict)
+        if create_request.llm:
+            startup_kwargs["llm"] = create_request.llm
+
         registry = self._registry()
         try:
             registry.register(
                 slug,
                 bot_class,
                 bot_config=bot_config,
-                startup_config=config_dict,
+                startup_config=startup_kwargs,
             )
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: failed to register agent '%s': %s", slug, exc)
@@ -306,8 +335,10 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
                 # registration above. Required for DELETE's file-safety
                 # check (delete_factory_agent only ever unlinks
                 # metadata.file_path; without this it would still point
-                # at bot_class's own framework source file).
-                registry.load_agent_definitions(file_path.parent)
+                # at bot_class's own framework source file). Per-file
+                # (adversarial-review fix): the directory scanner would
+                # re-register fresh BotMetadata for every sibling YAML.
+                registry.load_agent_definition_file(file_path)
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.error("Studio: failed to persist YAML for '%s': %s", slug, exc)
 
@@ -341,6 +372,10 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
 
     async def delete(self):
         """Delete a factory-origin YAML agent; DB agents are delegated."""
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("agents", "astudio:agents:delete")) is not None:
+            return denied
+
         name = self.request.match_info.get("name")
         if not name:
             return self._error("Agent name is required.", status=400, code="missing_name")
@@ -413,6 +448,10 @@ class StudioAgentReloadHandler(_StudioAgentsMixin, StudioBaseView):
     """
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("agents", "astudio:agents:reload")) is not None:
+            return denied
+
         name = self.request.match_info.get("name")
         if not name:
             return self._error("Agent name is required.", status=400, code="missing_name")

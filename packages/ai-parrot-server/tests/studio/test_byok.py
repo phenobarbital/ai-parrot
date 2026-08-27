@@ -81,6 +81,22 @@ class _FakeDocumentDb:
         ]
         return {"deleted": before - len(self.docs)}
 
+    async def update(self, collection_name, query, update_data, upsert=False, **kwargs):
+        """Upsert semantics for the handler's `$set`-style update (the
+        adversarial-review fix replaced insert-only save_background)."""
+        payload = dict(update_data.get("$set", update_data))
+        for doc in self.docs:
+            if doc.get("_collection") != collection_name:
+                continue
+            if all(doc.get(k) == v for k, v in query.items()):
+                doc.update(payload)
+                return {"matched": 1, "upserted": False}
+        if upsert:
+            record = {**payload, "_collection": collection_name}
+            self.docs.append(record)
+            return {"matched": 0, "upserted": True}
+        return {"matched": 0, "upserted": False}
+
     def save_background(self, collection_name, data, on_success=None, on_error=None):
         record = dict(data)
         record["_collection"] = collection_name
@@ -257,6 +273,29 @@ class TestByok:
         response = await _unwrap(StudioKeysHandler.post)(handler)
         assert response.status == 201
         assert (await _decode(response))["provider"] == "anthropic"
+
+    async def test_key_rotation_upserts_single_document(self, app, fake_db):
+        """Adversarial-review fix: storing a second key for the same
+        provider must REPLACE the durable copy (upsert), never insert a
+        duplicate — and resolution must serve the NEW key."""
+        for key in ("sk-ant-old-key-0001", "sk-ant-new-key-0002"):
+            handler = _make_handler(
+                app,
+                method="POST",
+                path="/keys",
+                json_body={"provider": "anthropic", "api_key": key},
+            )
+            response = await _unwrap(StudioKeysHandler.post)(handler)
+            assert response.status == 201
+
+        matching = [
+            d for d in fake_db.docs
+            if d.get("user_id") == "1" and d.get("provider") == "anthropic"
+        ]
+        assert len(matching) == 1
+
+        resolved = await resolve_user_api_key(app, "1", "anthropic")
+        assert resolved == "sk-ant-new-key-0002"
 
 
 class TestResolveUserApiKey:

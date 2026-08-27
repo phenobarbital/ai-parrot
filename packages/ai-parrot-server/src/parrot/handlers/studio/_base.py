@@ -304,3 +304,36 @@ class StudioBaseView(BaseView):
                 exc,
             )
             return True
+
+    async def _pbac_gate(self, resource: str, action: str):
+        """Enforce a PBAC check; return a 403 response on deny, else ``None``.
+
+        Adversarial-review fix: ``_pbac_allowed`` was implemented (and
+        unit-tested) but never CALLED by any concrete handler — a
+        configured PDP denying ``astudio:*`` had zero effect. Every
+        mutating Studio verb now opens with::
+
+            if (denied := await self._pbac_gate("agents", "astudio:agents:create")) is not None:
+                return denied
+
+        Still fail-open by design: with no PDP configured (or on
+        evaluator errors) ``_pbac_allowed`` returns ``True`` and this
+        returns ``None``.
+
+        Args:
+            resource: Studio area (``"agents"``, ``"skills"``, ...) —
+                namespaced to ``astudio:<resource>`` downstream.
+            action: The action string, e.g. ``"astudio:agents:create"``.
+
+        Returns:
+            An aiohttp 403 JSON response on an explicit deny; ``None``
+            when access is allowed.
+        """
+        if await self._pbac_allowed(resource, action):
+            return None
+        from .models import StudioError  # local import — keeps _base dependency-light
+
+        return self.json_response(
+            StudioError(message=f"Access denied by policy for '{action}'.", code="pbac_denied").model_dump(),
+            status=403,
+        )

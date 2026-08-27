@@ -84,7 +84,7 @@ class _FakeTestBot:
         self._ask_result = SimpleNamespace(content="hello there", metadata={"tokens": 5})
         self._ask_error: Exception | None = None
 
-    def session(self, request=None, app=None):
+    def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
     async def ask(self, question: str):

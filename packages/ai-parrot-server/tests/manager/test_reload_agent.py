@@ -200,6 +200,34 @@ class TestReloadAgent:
             await manager.reload_agent("does-not-exist")
 
     @pytest.mark.asyncio
+    async def test_reload_does_not_touch_sibling_registrations(self, manager, tmp_agents_dir):
+        """Adversarial-review fix: the YAML reload previously rescanned the
+        WHOLE category directory, re-registering fresh BotMetadata for
+        every sibling agent. It must now be scoped to the single target
+        file, leaving sibling metadata objects identity-unchanged."""
+        sibling_path = tmp_agents_dir / "agents" / "general" / "sibling-fixture.yaml"
+        sibling_path.write_text(
+            "agent:\n"
+            "  name: sibling-fixture\n"
+            "  class_name: ReloadFixtureAgent\n"
+            "  module: reload_fixture_module\n"
+            "  enabled: true\n"
+            "  origin: repo\n"
+            "  config:\n"
+            "    label: sibling-v1\n"
+        )
+        assert manager.registry.load_agent_definition_file(sibling_path) is True
+        sibling_meta_before = manager.registry.get_metadata("sibling-fixture")
+
+        manager._bots[AGENT_NAME] = await manager.registry.get_instance(AGENT_NAME)
+        _write_yaml(tmp_agents_dir, label="v2")
+        result = await manager.reload_agent(AGENT_NAME)
+
+        assert result.reloaded is True
+        # The sibling's registration was NOT rebuilt by the reload.
+        assert manager.registry.get_metadata("sibling-fixture") is sibling_meta_before
+
+    @pytest.mark.asyncio
     async def test_reload_agent_without_reloadable_origin(self, manager):
         """An agent whose BotMetadata carries no on-disk source (file_path
         with neither a .yaml nor a .py suffix) can't be hot-reloaded —

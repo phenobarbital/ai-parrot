@@ -147,6 +147,10 @@ class StudioKeysHandler(StudioBaseView):
         return self.json_response({"keys": keys, "count": len(keys)})
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("keys", "astudio:keys:store")) is not None:
+            return denied
+
         if self.request.match_info.get("provider"):
             return self._error(
                 "Use POST /astudio/keys (no provider in the URL) to store a key.",
@@ -208,14 +212,17 @@ class StudioKeysHandler(StudioBaseView):
                 existing = await db.read_one(COLLECTION, {"user_id": user.user_id, "provider": provider})
                 if existing is not None:
                     doc["created_at"] = existing.get("created_at", doc["created_at"])
-                db.save_background(
+                # Adversarial-review fix: save_background() is an INSERT —
+                # re-storing a key for a provider the user already has
+                # created a duplicate document, so rotation could silently
+                # keep serving the stale key (read_one on duplicates is
+                # order-dependent). update(..., upsert=True) replaces the
+                # single (user_id, provider) document atomically.
+                await db.update(
                     COLLECTION,
-                    doc,
-                    on_error=lambda e: self.logger.warning(
-                        "BYOK: background save failed (provider=%s): %s",
-                        provider,
-                        e,
-                    ),
+                    {"user_id": user.user_id, "provider": provider},
+                    {"$set": doc},
+                    upsert=True,
                 )
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, exc)
@@ -225,6 +232,10 @@ class StudioKeysHandler(StudioBaseView):
         return self.json_response({"provider": provider, "masked": _mask(plaintext)}, status=201)
 
     async def delete(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("keys", "astudio:keys:delete")) is not None:
+            return denied
+
         provider = self.request.match_info.get("provider")
         if not provider:
             return self._error("Provider is required.", status=400, code="missing_provider")

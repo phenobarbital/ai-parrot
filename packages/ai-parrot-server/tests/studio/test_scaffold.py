@@ -176,5 +176,90 @@ class TestStudioPathResolver:
             resolve_safe_path(sandbox, "escape/secret.txt")
 
 
+class TestPbacGateWiring:
+    """Adversarial-review fix: `_pbac_allowed` existed but no concrete
+    handler ever called it — a configured PDP denying `astudio:*` had
+    zero effect. Every mutating verb now opens with `_pbac_gate(...)`;
+    these tests prove an explicit deny genuinely blocks a request."""
+
+    @pytest.mark.asyncio
+    async def test_gate_returns_none_when_allowed(self):
+        from unittest.mock import AsyncMock
+
+        from parrot.handlers.studio.agents import StudioAgentsHandler
+
+        request = make_mocked_request("POST", "/agents", app=web.Application())
+        handler = StudioAgentsHandler(request)
+        handler._pbac_allowed = AsyncMock(return_value=True)
+
+        assert await handler._pbac_gate("agents", "astudio:agents:create") is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_deny_blocks_mutating_verb_with_403(self):
+        import json
+        from unittest.mock import AsyncMock
+
+        from parrot.handlers.studio.agents import StudioAgentsHandler
+
+        request = make_mocked_request("POST", "/agents", app=web.Application())
+        request.json = AsyncMock(return_value={"name": "x", "bot_class": "BasicBot"})
+        handler = StudioAgentsHandler(request)
+        handler._pbac_allowed = AsyncMock(return_value=False)
+
+        post = StudioAgentsHandler.post
+        while hasattr(post, "__wrapped__"):
+            post = post.__wrapped__
+        response = await post(handler)
+
+        assert response.status == 403
+        body = json.loads(response.body)
+        assert body["code"] == "pbac_denied"
+        handler._pbac_allowed.assert_awaited_once_with("agents", "astudio:agents:create")
+
+    def test_every_mutating_verb_is_gated(self):
+        """Static check: each mutating handler verb's source contains a
+        `_pbac_gate(` call — regression guard so a future endpoint can't
+        silently ship ungated."""
+        import inspect
+
+        from parrot.handlers.studio.agents import StudioAgentReloadHandler, StudioAgentsHandler
+        from parrot.handlers.studio.byok import StudioKeysHandler
+        from parrot.handlers.studio.drafts import StudioDraftActivateHandler, StudioDraftsHandler
+        from parrot.handlers.studio.files import StudioFilesHandler
+        from parrot.handlers.studio.meta_agent import StudioAssistantHandler
+        from parrot.handlers.studio.skills_catalog import (
+            StudioSkillsCatalogHandler,
+            StudioSkillsImportHandler,
+            StudioSkillsResyncHandler,
+        )
+        from parrot.handlers.studio.testing import (
+            StudioTestingHandler,
+            StudioToolAssignHandler,
+            StudioToolExecuteHandler,
+        )
+        from parrot.handlers.studio.toolkits import StudioToolkitsHandler
+
+        gated_verbs = [
+            (StudioAgentsHandler, "post"), (StudioAgentsHandler, "delete"),
+            (StudioAgentReloadHandler, "post"),
+            (StudioDraftsHandler, "post"), (StudioDraftsHandler, "delete"),
+            (StudioDraftActivateHandler, "post"),
+            (StudioFilesHandler, "put"), (StudioFilesHandler, "delete"),
+            (StudioSkillsCatalogHandler, "post"), (StudioSkillsCatalogHandler, "put"),
+            (StudioSkillsCatalogHandler, "delete"),
+            (StudioSkillsImportHandler, "post"), (StudioSkillsResyncHandler, "post"),
+            (StudioKeysHandler, "post"), (StudioKeysHandler, "delete"),
+            (StudioTestingHandler, "post"), (StudioToolExecuteHandler, "post"),
+            (StudioToolAssignHandler, "post"),
+            (StudioToolkitsHandler, "post"),
+            (StudioAssistantHandler, "post"),
+        ]
+        for cls, verb in gated_verbs:
+            method = getattr(cls, verb)
+            while hasattr(method, "__wrapped__"):
+                method = method.__wrapped__
+            assert "_pbac_gate(" in inspect.getsource(method), f"{cls.__name__}.{verb} is not PBAC-gated"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

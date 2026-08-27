@@ -180,6 +180,10 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
 
     async def post(self):
         """Save a draft — validation runs, but the draft is saved either way."""
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("drafts", "astudio:drafts:create")) is not None:
+            return denied
+
         if self.request.match_info.get("name"):
             return self._error(
                 "Use POST /astudio/drafts (no name in the URL) to save.",
@@ -237,6 +241,10 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         )
 
     async def delete(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("drafts", "astudio:drafts:delete")) is not None:
+            return denied
+
         name = self.request.match_info.get("name")
         if not name:
             return self._error("Draft name is required.", status=400, code="missing_name")
@@ -269,6 +277,10 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
     """
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("drafts", "astudio:drafts:activate")) is not None:
+            return denied
+
         name = self.request.match_info.get("name")
         if not name:
             return self._error("Draft name is required.", status=400, code="missing_name")

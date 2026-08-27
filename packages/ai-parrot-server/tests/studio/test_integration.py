@@ -198,28 +198,21 @@ class _FakeDocumentDb:
             if not (doc.get("_collection") == collection_name and all(doc.get(k) == v for k, v in query.items()))
         ]
 
-    def save_background(self, collection_name, data, on_success=None, on_error=None):
-        record = dict(data)
-        record["_collection"] = collection_name
-        self.docs[:] = [
-            d
-            for d in self.docs
-            if not (
-                d.get("_collection") == collection_name
-                and d.get("user_id") == record.get("user_id")
-                and d.get("provider") == record.get("provider")
-            )
-        ]
-        self.docs.append(record)
-
-        class _FakeTask:
-            def __await__(self_inner):
-                async def _noop():
-                    return None
-
-                return _noop().__await__()
-
-        return _FakeTask()
+    async def update(self, collection_name, query, update_data, upsert=False, **kwargs):
+        """Upsert semantics for the handler's `$set`-style update (the
+        adversarial-review fix replaced insert-only save_background)."""
+        payload = dict(update_data.get("$set", update_data))
+        for doc in self.docs:
+            if doc.get("_collection") != collection_name:
+                continue
+            if all(doc.get(k) == v for k, v in query.items()):
+                doc.update(payload)
+                return {"matched": 1, "upserted": False}
+        if upsert:
+            record = {**payload, "_collection": collection_name}
+            self.docs.append(record)
+            return {"matched": 0, "upserted": True}
+        return {"matched": 0, "upserted": False}
 
 
 MASTER_KEY_ID = 1
@@ -443,7 +436,7 @@ class _FakeAskBot:
     def __init__(self):
         self.ask_calls: list[str] = []
 
-    def session(self, request=None, app=None):
+    def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
     async def ask(self, question: str):

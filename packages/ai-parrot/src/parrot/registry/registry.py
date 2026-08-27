@@ -969,77 +969,102 @@ class AgentRegistry:
         for yaml_file in definitions_dir.rglob("*.yaml"):
             self.logger.debug("Found YAML file: %s", yaml_file)
             try:
-                # Load YAML
-                content = yaml.safe_load(yaml_file.read_text())
-                if not content:
-                    continue
-
-                # Check if it has 'agent' Section
-                agent_def = content.get("agent")
-                if not agent_def:
-                    continue
-
-                self.logger.debug(f"Loading agent definition from {yaml_file}: {agent_def}")
-
-                # Construct BotConfig
-                # We need to map YAML structure to BotConfig fields
-                # YAML:
-                # agent: {name, class_name, ...}
-                # model: {provider, model, ...}
-                # tools: { ... }
-
-                bot_config_data = agent_def.copy()
-
-                # Map 'model' section
-                if "model" in content:
-                    bot_config_data["model"] = ModelConfig(**content["model"])
-
-                # Map 'tools' section to ToolConfig
-                if "tools" in content:
-                    bot_config_data["tools"] = ToolConfig(**content["tools"])
-
-                # Map 'system_prompt'
-                if "system_prompt" in content:
-                    bot_config_data["system_prompt"] = content["system_prompt"]
-
-                # Map 'prompt' section (composable prompt layers)
-                if "prompt" in content:
-                    bot_config_data["prompt"] = PromptConfig(**content["prompt"])
-
-                # Create BotConfig
-                config = BotConfig(**bot_config_data)
-
-                if not config.enabled:
-                    continue
-
-                # FEAT-176: parse optional top-level 'events:' block
-                events_block = content.get("events") or None
-
-                # Create Factory
-                factory = self.create_agent_factory(config)
-
-                # Register
-                self._registered_agents[config.name] = BotMetadata(
-                    name=config.name,
-                    factory=factory,
-                    module_path=config.module,
-                    file_path=yaml_file,
-                    singleton=config.singleton,
-                    at_startup=config.at_startup,
-                    startup_config=config.config,
-                    tags=config.tags,
-                    priority=config.priority,
-                    bot_config=config,
-                    events_block=events_block,
-                )
-
-                count += 1
-                self.logger.info(f"Loaded agent definition from {yaml_file}: {config.name}")
-
+                if self.load_agent_definition_file(yaml_file):
+                    count += 1
             except Exception as e:
                 self.logger.error(f"Failed to load agent definition from {yaml_file}: {e}")
 
         return count
+
+    def load_agent_definition_file(self, yaml_file: Path) -> bool:
+        """Load and register ONE YAML agent definition file.
+
+        Extracted from :meth:`load_agent_definitions`'s per-file body
+        (adversarial-review fix) so single-agent callers — the Studio
+        persist-then-re-register flow and ``BotManager.reload_agent`` —
+        can refresh exactly ONE definition without rescanning (and
+        re-registering fresh ``BotMetadata`` for) every sibling YAML in
+        the same category directory.
+
+        Args:
+            yaml_file: Path to a single ``agent:``-keyed YAML file.
+
+        Returns:
+            ``True`` when an enabled agent was registered from the file;
+            ``False`` when the file is empty, has no ``agent:`` section,
+            or the agent is ``enabled: false``.
+
+        Raises:
+            Exception: Any parse/validation/factory error — the directory
+                scanner catches-and-logs these per file; direct callers
+                (reload) want the error so they can surface it.
+        """
+        # Load YAML
+        content = yaml.safe_load(yaml_file.read_text())
+        if not content:
+            return False
+
+        # Check if it has 'agent' Section
+        agent_def = content.get("agent")
+        if not agent_def:
+            return False
+
+        self.logger.debug(f"Loading agent definition from {yaml_file}: {agent_def}")
+
+        # Construct BotConfig
+        # We need to map YAML structure to BotConfig fields
+        # YAML:
+        # agent: {name, class_name, ...}
+        # model: {provider, model, ...}
+        # tools: { ... }
+
+        bot_config_data = agent_def.copy()
+
+        # Map 'model' section
+        if "model" in content:
+            bot_config_data["model"] = ModelConfig(**content["model"])
+
+        # Map 'tools' section to ToolConfig
+        if "tools" in content:
+            bot_config_data["tools"] = ToolConfig(**content["tools"])
+
+        # Map 'system_prompt'
+        if "system_prompt" in content:
+            bot_config_data["system_prompt"] = content["system_prompt"]
+
+        # Map 'prompt' section (composable prompt layers)
+        if "prompt" in content:
+            bot_config_data["prompt"] = PromptConfig(**content["prompt"])
+
+        # Create BotConfig
+        config = BotConfig(**bot_config_data)
+
+        if not config.enabled:
+            return False
+
+        # FEAT-176: parse optional top-level 'events:' block
+        events_block = content.get("events") or None
+
+        # Create Factory
+        factory = self.create_agent_factory(config)
+
+        # Register
+        self._registered_agents[config.name] = BotMetadata(
+            name=config.name,
+            factory=factory,
+            module_path=config.module,
+            file_path=yaml_file,
+            singleton=config.singleton,
+            at_startup=config.at_startup,
+            startup_config=config.config,
+            tags=config.tags,
+            priority=config.priority,
+            bot_config=config,
+            events_block=events_block,
+        )
+
+        self.logger.info(f"Loaded agent definition from {yaml_file}: {config.name}")
+        return True
 
     def create_agent_definition(self, config: BotConfig, category: str = "general") -> Path:
         """
@@ -1063,12 +1088,26 @@ class AgentRegistry:
 
         Returns:
             Path to the written YAML file.
+
+        Raises:
+            ValueError: ``category`` (or the config's name) would resolve
+                the write target outside ``AGENTS_DIR/agents/`` — path
+                traversal guard (defense in depth; HTTP callers validate
+                the slug shape upstream too).
         """
-        base_dir = AGENTS_DIR.joinpath("agents", category)
+        # SECURITY (adversarial-review fix): `category` is a caller-supplied
+        # path segment — resolve and containment-check it so "../../.."
+        # can never write the YAML outside AGENTS_DIR/agents/.
+        definitions_root = AGENTS_DIR.joinpath("agents").resolve()
+        base_dir = definitions_root.joinpath(category).resolve()
+        if base_dir != definitions_root and definitions_root not in base_dir.parents:
+            raise ValueError(f"Invalid category {category!r}: resolves outside the agents definitions directory.")
         base_dir.mkdir(parents=True, exist_ok=True)
 
         filename = f"{config.name.lower()}.yaml"
-        file_path = base_dir / filename
+        file_path = (base_dir / filename).resolve()
+        if file_path.parent != base_dir:
+            raise ValueError(f"Invalid agent name {config.name!r}: resolves outside its category directory.")
 
         # Core `agent:` block — every plain BotConfig field not already
         # broken out into its own top-level YAML section (model / tools /

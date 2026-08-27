@@ -152,12 +152,29 @@ class TestToolsConfirmationGated:
 # ---------------------------------------------------------------------------
 
 
+def _bind_ctx(monkeypatch, *, user_id="1", app=None):
+    """Bind a fake RequestContext (app + user_id — the adversarial-review
+    fix made mutating tools REQUIRE the caller's identity)."""
+    ctx = SimpleNamespace(app=app if app is not None else web.Application(), user_id=user_id)
+    monkeypatch.setattr(tools_module, "current_context", lambda: ctx)
+    return ctx
+
+
+def _fake_owned_registry_app(agent_name="myagent", owner="1"):
+    """An app whose bot_manager registry reports ``agent_name`` owned by
+    ``owner`` — feeds the real `_require_agent_owner` lookup."""
+    meta = SimpleNamespace(bot_config=SimpleNamespace(config={"created_by": owner}))
+    registry = SimpleNamespace(get_metadata=lambda name: meta if name == agent_name else None)
+    app = web.Application()
+    app["bot_manager"] = SimpleNamespace(registry=registry)
+    return app
+
+
 class TestWriteBoundaryEnforced:
     @pytest.mark.asyncio
     async def test_save_agent_draft_stays_under_drafts_dir(self, tmp_path, monkeypatch):
         monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
-        ctx = SimpleNamespace(app=web.Application())  # no "database" key -> DB persist skipped
-        monkeypatch.setattr(tools_module, "current_context", lambda: ctx)
+        _bind_ctx(monkeypatch)  # no "database" key -> DB persist/ownership-row skipped
 
         result = await _call_tool_fn(
             tools_module.save_agent_draft, name="my_agent", source="class MyAgent:\n    pass\n"
@@ -181,10 +198,22 @@ class TestWriteBoundaryEnforced:
             )
 
     @pytest.mark.asyncio
+    async def test_save_agent_draft_requires_user_identity(self, monkeypatch, tmp_path):
+        """Adversarial-review fix: no bound user_id -> fail closed (the
+        old code silently stamped a hardcoded 'agent_studio' owner that
+        locked real users out of activating their own drafts)."""
+        monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
+        ctx = SimpleNamespace(app=web.Application(), user_id=None)
+        monkeypatch.setattr(tools_module, "current_context", lambda: ctx)
+
+        with pytest.raises(RuntimeError):
+            await _call_tool_fn(tools_module.save_agent_draft, name="my_agent", source="x = 1")
+        assert not (tmp_path / "_drafts" / "my_agent.py").exists()
+
+    @pytest.mark.asyncio
     async def test_write_identity_file_rejects_traversal(self, monkeypatch, tmp_path):
         monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
-        ctx = SimpleNamespace(app=web.Application())
-        monkeypatch.setattr(tools_module, "current_context", lambda: ctx)
+        _bind_ctx(monkeypatch, app=_fake_owned_registry_app())
 
         with pytest.raises(ValueError):
             await _call_tool_fn(
@@ -197,14 +226,56 @@ class TestWriteBoundaryEnforced:
     @pytest.mark.asyncio
     async def test_write_identity_file_rejects_non_canonical_name(self, monkeypatch, tmp_path):
         monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
-        ctx = SimpleNamespace(app=web.Application())
-        monkeypatch.setattr(tools_module, "current_context", lambda: ctx)
+        _bind_ctx(monkeypatch, app=_fake_owned_registry_app())
 
         with pytest.raises(ValueError):
             await _call_tool_fn(
                 tools_module.write_identity_file,
                 agent_name="myagent",
                 filename="not_a_real_identity_file.md",
+                content="x",
+            )
+
+    @pytest.mark.asyncio
+    async def test_write_asset_file_refuses_non_owner(self, monkeypatch, tmp_path):
+        """Adversarial-review fix: the tool path previously wrote into ANY
+        agent's directories with no ownership check at all."""
+        monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
+        _bind_ctx(monkeypatch, user_id="intruder", app=_fake_owned_registry_app(owner="1"))
+
+        with pytest.raises(PermissionError):
+            await _call_tool_fn(
+                tools_module.write_identity_file,
+                agent_name="myagent",
+                filename="role.md",
+                content="hijacked",
+            )
+        assert not (tmp_path / "myagent" / "identity" / "role.md").exists()
+
+    @pytest.mark.asyncio
+    async def test_write_asset_file_owner_allowed(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
+        _bind_ctx(monkeypatch, user_id="1", app=_fake_owned_registry_app(owner="1"))
+
+        result = await _call_tool_fn(
+            tools_module.write_identity_file,
+            agent_name="myagent",
+            filename="role.md",
+            content="You are helpful.",
+        )
+        assert result["reload_required"] is True
+        assert (tmp_path / "myagent" / "identity" / "role.md").read_text() == "You are helpful."
+
+    @pytest.mark.asyncio
+    async def test_write_asset_file_unknown_agent_refused(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path)
+        _bind_ctx(monkeypatch, app=_fake_owned_registry_app(agent_name="someone-else"))
+
+        with pytest.raises(ValueError):
+            await _call_tool_fn(
+                tools_module.write_identity_file,
+                agent_name="myagent",
+                filename="role.md",
                 content="x",
             )
 
@@ -254,7 +325,7 @@ class _FakeAssistantAgent:
     async def configure(self, app):
         self.configure_calls += 1
 
-    def session(self, request=None, app=None):
+    def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
     async def ask(self, question: str):

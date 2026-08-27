@@ -422,19 +422,31 @@ class TestSkillsUpdateDelete:
 # ---------------------------------------------------------------------------
 
 
+def _make_import_handler(app, store, *, skill_id, agent="my-agent",
+                          agent_owner="1", agent_exists=True, **kwargs):
+    """Import-handler factory with the ownership seam wired (the
+    adversarial-review fix made the import handler resolve the target
+    agent's owner via `_StudioFilesMixin._resolve_agent` and call
+    `_require_owner` before any write)."""
+    handler = _make_handler(
+        StudioSkillsImportHandler,
+        app,
+        store,
+        method="POST",
+        path="/x",
+        match_info={"name": agent, "id": skill_id},
+        **kwargs,
+    )
+    handler._resolve_agent = AsyncMock(return_value=(agent_exists, agent_owner if agent_exists else None))
+    return handler
+
+
 class TestSkillsImport:
     async def test_import_into_agent_and_collision(self, app, store, tmp_path):
         publish_response = await _publish(app, store, name="importable-skill")
         skill_id = (await _decode(publish_response))["skill_id"]
 
-        handler = _make_handler(
-            StudioSkillsImportHandler,
-            app,
-            store,
-            method="POST",
-            path="/x",
-            match_info={"name": "my-agent", "id": skill_id},
-        )
+        handler = _make_import_handler(app, store, skill_id=skill_id)
         response = await _unwrap(StudioSkillsImportHandler.post)(handler)
         assert response.status == 201, await _decode(response)
         body = await _decode(response)
@@ -446,42 +458,52 @@ class TestSkillsImport:
         assert "name: importable-skill" in target.read_text()
 
         # Second import without overwrite -> 409 collision.
-        handler2 = _make_handler(
-            StudioSkillsImportHandler,
-            app,
-            store,
-            method="POST",
-            path="/x",
-            match_info={"name": "my-agent", "id": skill_id},
-        )
+        handler2 = _make_import_handler(app, store, skill_id=skill_id)
         response2 = await _unwrap(StudioSkillsImportHandler.post)(handler2)
         assert response2.status == 409
         assert (await _decode(response2))["code"] == "collision"
 
         # With overwrite=true -> succeeds.
-        handler3 = _make_handler(
-            StudioSkillsImportHandler,
-            app,
-            store,
-            method="POST",
-            path="/x",
-            match_info={"name": "my-agent", "id": skill_id},
-            json_body={"overwrite": True},
+        handler3 = _make_import_handler(
+            app, store, skill_id=skill_id, json_body={"overwrite": True},
         )
         response3 = await _unwrap(StudioSkillsImportHandler.post)(handler3)
         assert response3.status == 201
 
     async def test_import_unknown_skill_404(self, app, store):
-        handler = _make_handler(
-            StudioSkillsImportHandler,
-            app,
-            store,
-            method="POST",
-            path="/x",
-            match_info={"name": "my-agent", "id": "no-such-id"},
-        )
+        handler = _make_import_handler(app, store, skill_id="no-such-id")
         response = await _unwrap(StudioSkillsImportHandler.post)(handler)
         assert response.status == 404
+
+    async def test_import_unknown_agent_404(self, app, store):
+        """Adversarial-review fix: the target agent must exist."""
+        publish_response = await _publish(app, store, name="orphan-import-skill")
+        skill_id = (await _decode(publish_response))["skill_id"]
+
+        handler = _make_import_handler(app, store, skill_id=skill_id, agent_exists=False)
+        response = await _unwrap(StudioSkillsImportHandler.post)(handler)
+        assert response.status == 404
+
+    async def test_import_non_owner_403(self, app, store, tmp_path):
+        """Adversarial-review fix: any authenticated user could previously
+        import (or overwrite) skill files on ANY other user's agent."""
+        publish_response = await _publish(app, store, name="protected-import-skill")
+        skill_id = (await _decode(publish_response))["skill_id"]
+
+        handler = _make_import_handler(app, store, skill_id=skill_id, agent_owner="someone-else")
+        with pytest.raises(web.HTTPForbidden):
+            await _unwrap(StudioSkillsImportHandler.post)(handler)
+        assert not (tmp_path / "my-agent" / "skills" / "protected-import-skill.md").exists()
+
+    async def test_import_superuser_bypasses_ownership(self, app, store):
+        publish_response = await _publish(app, store, name="admin-import-skill")
+        skill_id = (await _decode(publish_response))["skill_id"]
+
+        handler = _make_import_handler(
+            app, store, skill_id=skill_id, agent_owner="someone-else", superuser=True,
+        )
+        response = await _unwrap(StudioSkillsImportHandler.post)(handler)
+        assert response.status == 201
 
 
 # ---------------------------------------------------------------------------

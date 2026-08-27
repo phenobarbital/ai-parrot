@@ -154,6 +154,47 @@ class TestStudioAgentsCreate:
         assert response.status == 409
         assert (await _decode(response))["code"] == "duplicate"
 
+    async def test_create_rejects_traversal_category(self, app, tmp_path):
+        """Adversarial-review fix: `category` becomes a path segment under
+        AGENTS_DIR/agents/ — traversal must be a 400, never a write."""
+        handler = _make_handler(
+            StudioAgentsHandler,
+            app,
+            method="POST",
+            path="/agents",
+            json_body={
+                "name": "traversal-agent",
+                "bot_class": "BasicBot",
+                "persist": True,
+                "category": "../../outside",
+            },
+        )
+        response = await _unwrap(StudioAgentsHandler.post)(handler)
+        assert response.status == 400
+        assert (await _decode(response))["code"] == "invalid_category"
+        assert not (tmp_path.parent / "outside").exists()
+
+    async def test_create_agent_definition_traversal_defense_in_depth(self, registry):
+        """Registry-level backstop for non-HTTP callers (meta-agent tool,
+        factory orchestrator): a traversal category raises ValueError."""
+        from parrot.registry.registry import BotConfig
+
+        config = BotConfig(name="depth-agent", class_name="BasicBot", module="parrot.bots.basic")
+        with pytest.raises(ValueError):
+            registry.create_agent_definition(config, category="../../outside")
+
+    async def test_create_llm_reaches_live_instance_config(self, app, registry):
+        """Adversarial-review fix: the requested llm was packed only into
+        bot_config.model, which the non-persisted instantiation path never
+        consults — the live instance silently used the class default."""
+        await _create_agent(
+            app, name="llm-agent", persist=False, llm="anthropic:claude-sonnet-4-5",
+        )
+        meta = registry.get_metadata("llm-agent")
+        assert meta.startup_config.get("llm") == "anthropic:claude-sonnet-4-5"
+        # And NOT leaked into the persisted-YAML config block.
+        assert "llm" not in (meta.bot_config.config or {})
+
     async def test_create_invalid_name_400(self, app):
         handler = _make_handler(
             StudioAgentsHandler,

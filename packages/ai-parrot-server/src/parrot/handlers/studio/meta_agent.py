@@ -75,6 +75,10 @@ class StudioAssistantHandler(StudioBaseView):
     # -- POST: converse -------------------------------------------------
 
     async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("assistant", "astudio:assistant:ask")) is not None:
+            return denied
+
         try:
             payload = await self.request.json()
         except Exception:  # pylint: disable=broad-except
@@ -100,7 +104,10 @@ class StudioAssistantHandler(StudioBaseView):
 
         try:
             self.request.session = session
-            async with agent.session(request=self.request, app=self.request.app) as bot:
+            # user_id is REQUIRED by the meta-agent's mutating tools
+            # (adversarial-review fix): they stamp/enforce ownership from
+            # the RequestContext's user_id — without it they fail closed.
+            async with agent.session(request=self.request, app=self.request.app, user_id=user.user_id) as bot:
                 response = await bot.ask(question=ask_request.query)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio assistant query failed")

@@ -107,6 +107,58 @@ class TestDraftValidation:
         assert report.passed is True
         assert report.errors == []
 
+    # --- adversarial-review hardening (stdlib allowlist + attr calls) ---
+
+    @pytest.mark.parametrize("module", ["os", "subprocess", "shutil", "socket", "sys", "importlib", "ctypes", "pickle", "builtins"])
+    def test_dangerous_stdlib_import_flagged(self, module):
+        """`import os; os.system(...)` previously PASSED validation — the
+        stdlib was blanket-allowed. Now only the safe allowlist passes."""
+        source = (
+            f"import {module}\n\n"
+            "from parrot.bots.basic import BasicBot\n\n\n"
+            "class X(BasicBot):\n    pass\n"
+        )
+        report = validate_draft(source)
+        assert report.passed is False
+        assert any(e["code"] == "forbidden-import" for e in report.errors)
+
+    def test_os_system_draft_fully_rejected(self):
+        """The exact exploit shape from the adversarial review."""
+        source = (
+            "import os\n"
+            "os.system('touch /tmp/pwned')\n\n"
+            "from parrot.bots.basic import BasicBot\n\n\n"
+            "class X(BasicBot):\n    pass\n"
+        )
+        report = validate_draft(source)
+        assert report.passed is False
+        codes = {e["code"] for e in report.errors}
+        assert "forbidden-import" in codes
+        assert "forbidden-call" in codes  # .system() attribute call
+
+    def test_attribute_exec_flagged(self):
+        """`builtins.exec(...)`-style attribute calls were invisible to the
+        old bare-Name-only check."""
+        source = (
+            "from parrot.bots.basic import BasicBot\n\n\n"
+            "class X(BasicBot):\n"
+            "    def boom(self, mod):\n"
+            "        mod.exec('print(1)')\n"
+        )
+        report = validate_draft(source)
+        assert report.passed is False
+        assert any(e["code"] == "forbidden-call" for e in report.errors)
+
+    @pytest.mark.parametrize("module", ["typing", "json", "datetime", "pathlib", "asyncio", "logging", "re"])
+    def test_safe_stdlib_import_allowed(self, module):
+        source = (
+            f"import {module}\n\n"
+            "from parrot.bots.basic import BasicBot\n\n\n"
+            "class X(BasicBot):\n    pass\n"
+        )
+        report = validate_draft(source)
+        assert report.passed is True
+
     def test_detect_base_class(self):
         assert detect_base_class(VALID_DRAFT_SOURCE) == "BasicBot"
 
