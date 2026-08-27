@@ -380,10 +380,45 @@ class TestResolveBaseBranch:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
+**Notes**: **`scripts.sdd` import decision (needed by TASK-2505/TASK-2507):
+NOT importable from this package's context.** Verified: `python -c "from
+scripts.sdd.sdd_meta import parse"` succeeds only when cwd is the repo
+root; running the actual test suite from `packages/ai-parrot` (its real
+pytest rootdir, confirmed via `configfile: pyproject.toml` in pytest's own
+output) raises `ModuleNotFoundError: No module named 'scripts.sdd'`. Per
+the task's Import-caution guidance, did NOT add a `sys.path` hack — instead
+added a small private module-level `_parse_flow_frontmatter()` in
+`research.py` that mirrors `sdd_meta.parse()`'s 6-line frontmatter-reading
+body locally, plus a local `_WORK_KIND_BASE_BRANCH` dict mirroring the
+base-branch half of TASK-2502's `WORK_KIND_FLOW` (only `base_branch` is
+needed here per the Codebase Contract's "Does NOT Exist" note — `type` is
+deliberately not threaded through). Added `ResearchOutput.base_branch`
+exactly per the field pattern given, and `ResearchNode._resolve_base_branch`
++ its `model_copy` stamp immediately after the existing `repo_path` stamp.
+Test file created as `test_research_base_branch.py` per the task; note the
+task's "reuse test_research_node.py fixtures" instruction referenced a
+stale filename — the actual sibling file is `test_research.py` (confirmed
+via `ls`), whose `node`/`good_brief` fixture shapes I followed. Had to
+route each new test's `worktree_path` to a directory OTHER than
+`WORKTREE_BASE_PATH/branch_name` — writing the spec at exactly that path
+tripped `_ensure_worktree_safe`'s "exists but not a registered git
+worktree" guard (unrelated pre-existing safety check, not a target of this
+task); added a `_pin_worktree_base` helper to keep worktree-safety
+untouched. 7/7 new tests pass. Full `pytest packages/ai-parrot/tests/flows/
+dev_loop/` run: 1104 passed (up from 1097 pre-task, same 3 pre-existing
+unrelated failures as TASK-2503/2506, confirmed not touched). `ruff check`:
+`models/base.py` unchanged finding count (49); `research.py` +2 (one
+`UP006 Dict`, one `UP045 Optional`), both consistent with the file's
+existing heavy use of `Dict`/`Optional` throughout (not `dict`/`X | None`)
+— left as-is per file convention, same reasoning as TASK-2506. New test
+file's 2 findings (import order, `dict()` literal) match the identical
+pattern already present in every other `_brief`-style test helper in this
+suite. `mypy` times out project-wide (60s) — same environment limitation
+noted in TASK-2503/2506, not confirmed clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `scripts.sdd.sdd_meta.resolve_flow()` was NOT
+imported (see decision above) — used a local, behaviorally-equivalent
+reimplementation instead, exactly as the task's own Import-caution section
+pre-authorized as the fallback path.

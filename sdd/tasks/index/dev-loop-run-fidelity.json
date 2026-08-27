@@ -50,7 +50,7 @@
       "feature_id": "FEAT-466",
       "feature": "dev-loop-run-fidelity",
       "spec": "sdd/specs/dev-loop-run-fidelity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Needs resolve_flow() from 2502. Its Completion Note records the scripts.sdd import decision that 2505 and 2508 both depend on, so it must finish before either starts.",
       "assigned_to": null,
       "started_at": "2026-08-27T15:22:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2504-research-output-base-branch.md"
+      "completed_at": "2026-08-27T15:47:05+00:00",
+      "file": "sdd/tasks/completed/TASK-2504-research-output-base-branch.md"
     },
     {
       "id": "TASK-2505",
