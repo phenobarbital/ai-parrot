@@ -97,3 +97,16 @@ def setup_studio_routes(app: web.Application) -> None:
 
     app.router.add_view(f"{STUDIO_PREFIX}/keys", StudioKeysHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/keys/{{provider}}", StudioKeysHandler)
+
+    # Testing surface (FEAT-467 TASK-2517): session-scoped test/ask,
+    # deterministic tool execute, tool/toolkit assignment.
+    from .testing import (
+        StudioTestingHandler,
+        StudioToolAssignHandler,
+        StudioToolExecuteHandler,
+    )
+
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/test/ask", StudioTestingHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/test", StudioTestingHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/tools/{{slug}}/execute", StudioToolExecuteHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/tools", StudioToolAssignHandler)
