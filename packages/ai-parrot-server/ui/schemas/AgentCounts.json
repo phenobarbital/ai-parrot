@@ -1,0 +1,24 @@
+{
+  "description": "Agent inventory split by source.",
+  "properties": {
+    "database": {
+      "title": "Database",
+      "type": "integer"
+    },
+    "loaded": {
+      "title": "Loaded",
+      "type": "integer"
+    },
+    "registry": {
+      "title": "Registry",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "database",
+    "registry",
+    "loaded"
+  ],
+  "title": "AgentCounts",
+  "type": "object"
+}
