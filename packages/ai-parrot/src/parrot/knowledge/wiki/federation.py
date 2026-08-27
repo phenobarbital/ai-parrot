@@ -36,6 +36,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from parrot.knowledge.wiki import store as wiki_store
 from parrot.knowledge.wiki.context import qualify_id, split_namespaced_id
 from parrot.knowledge.wiki.project import (
     WikiNamespaceConfig,
@@ -393,6 +394,19 @@ async def open_namespace_store(
         await _assert_plane_readable(store)
         return store, storage_dir
     # kind == "database"
+    if cfg.backend != "arangodb":
+        factory = wiki_store._EXTRA_BACKENDS.get(cfg.backend)
+        if factory is None:
+            raise ValueError(f"namespace {name!r}: unknown database backend {cfg.backend!r}")
+        store = factory(
+            storage_dir=None,
+            wiki_name=name,
+            database=cfg.database or "",
+            arango_params=resolve_arango_params(_arango_config_for(cfg)),
+            read_only=read_only,
+        )
+        await _assert_plane_readable(store)
+        return store, None
     store = await _open_arango(
         arango_params=resolve_arango_params(_arango_config_for(cfg)),
         database=cfg.database or "",
