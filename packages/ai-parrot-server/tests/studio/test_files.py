@@ -5,6 +5,7 @@ validation (422), KB extension rules, traversal rejection, the
 ``reload_required`` flag on every mutation, and that deleting a file the
 live agent uses is never blocked.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,14 +75,16 @@ def _register_agent(registry, name="my-agent", owner="1"):
         name,
         BasicBot,
         bot_config=BotConfig(
-            name=name, class_name="BasicBot", module="parrot.bots.basic",
-            origin="factory", config={"created_by": owner},
+            name=name,
+            class_name="BasicBot",
+            module="parrot.bots.basic",
+            origin="factory",
+            config={"created_by": owner},
         ),
     )
 
 
-def _make_handler(app, *, method="GET", path="/x", match_info=None,
-                   json_body=None, owner="1"):
+def _make_handler(app, *, method="GET", path="/x", match_info=None, json_body=None, owner="1"):
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
     if json_body is not None:
         request.json = AsyncMock(return_value=json_body)
@@ -114,7 +117,10 @@ class TestStudioFiles:
     async def test_identity_canonical_names_only(self, app, registry):
         _register_agent(registry)
         handler = _make_handler(
-            app, method="PUT", path="/x", match_info=_mi(filename="identity.md"),
+            app,
+            method="PUT",
+            path="/x",
+            match_info=_mi(filename="identity.md"),
             json_body={"content": "not a canonical name"},
         )
         response = await _unwrap(StudioFilesHandler.put)(handler)
@@ -124,7 +130,10 @@ class TestStudioFiles:
     async def test_identity_write_and_load_identity_roundtrip(self, app, registry, tmp_path):
         _register_agent(registry)
         handler = _make_handler(
-            app, method="PUT", path="/x", match_info=_mi(filename="role.md"),
+            app,
+            method="PUT",
+            path="/x",
+            match_info=_mi(filename="role.md"),
             json_body={"content": "You are a helpful assistant."},
         )
         response = await _unwrap(StudioFilesHandler.put)(handler)
@@ -143,7 +152,9 @@ class TestStudioFiles:
         _register_agent(registry)
         for name in IDENTITY_FILES:
             handler = _make_handler(
-                app, method="PUT", path="/x",
+                app,
+                method="PUT",
+                path="/x",
                 match_info=_mi(filename=f"{name}.md"),
                 json_body={"content": f"{name} content"},
             )
@@ -155,11 +166,15 @@ class TestStudioFiles:
     async def test_kb_extension_rules(self, app, registry):
         _register_agent(registry)
         for filename, expect_ok in [
-            ("notes.md", True), ("notes.txt", True),
-            ("notes.pdf", False), ("subdir/notes.md", False),
+            ("notes.md", True),
+            ("notes.txt", True),
+            ("notes.pdf", False),
+            ("subdir/notes.md", False),
         ]:
             handler = _make_handler(
-                app, method="PUT", path="/x",
+                app,
+                method="PUT",
+                path="/x",
                 match_info=_mi(kind="kb", filename=filename),
                 json_body={"content": "kb content"},
             )
@@ -174,7 +189,9 @@ class TestStudioFiles:
     async def test_skill_frontmatter_validation_422(self, app, registry):
         _register_agent(registry)
         handler = _make_handler(
-            app, method="PUT", path="/x",
+            app,
+            method="PUT",
+            path="/x",
             match_info=_mi(kind="skills", filename="bad-skill.md"),
             json_body={"content": "no frontmatter here\n"},
         )
@@ -185,7 +202,9 @@ class TestStudioFiles:
     async def test_skill_valid_frontmatter_accepted(self, app, registry, tmp_path):
         _register_agent(registry)
         handler = _make_handler(
-            app, method="PUT", path="/x",
+            app,
+            method="PUT",
+            path="/x",
             match_info=_mi(kind="skills", filename="my-skill.md"),
             json_body={"content": VALID_SKILL_CONTENT},
         )
@@ -197,7 +216,9 @@ class TestStudioFiles:
         _register_agent(registry)
         # SKILL.md entry point — validated.
         handler = _make_handler(
-            app, method="PUT", path="/x",
+            app,
+            method="PUT",
+            path="/x",
             match_info=_mi(kind="skills", filename="composite-skill/SKILL.md"),
             json_body={"content": VALID_SKILL_CONTENT},
         )
@@ -206,7 +227,9 @@ class TestStudioFiles:
 
         # Adjacent asset file — NOT validated (arbitrary content OK).
         handler = _make_handler(
-            app, method="PUT", path="/x",
+            app,
+            method="PUT",
+            path="/x",
             match_info=_mi(kind="skills", filename="composite-skill/template.txt"),
             json_body={"content": "not frontmatter at all"},
         )
@@ -217,14 +240,14 @@ class TestStudioFiles:
         assert (skill_dir / "SKILL.md").exists()
         assert (skill_dir / "template.txt").read_text() == "not frontmatter at all"
 
-    async def test_skill_bad_composite_asset_bad_frontmatter_but_not_validated(
-        self, app, registry
-    ):
+    async def test_skill_bad_composite_asset_bad_frontmatter_but_not_validated(self, app, registry):
         """A composite SKILL.md with bad frontmatter IS validated (422);
         confirms the composite entry-point path is not silently skipped."""
         _register_agent(registry)
         handler = _make_handler(
-            app, method="PUT", path="/x",
+            app,
+            method="PUT",
+            path="/x",
             match_info=_mi(kind="skills", filename="broken-skill/SKILL.md"),
             json_body={"content": "no frontmatter\n"},
         )
@@ -233,13 +256,14 @@ class TestStudioFiles:
 
     # -- traversal / kind / agent validation --------------------------------
 
-    @pytest.mark.parametrize(
-        "filename", ["../escape.md", "/etc/passwd", "../../etc/passwd"]
-    )
+    @pytest.mark.parametrize("filename", ["../escape.md", "/etc/passwd", "../../etc/passwd"])
     async def test_traversal_rejected(self, app, registry, filename):
         _register_agent(registry)
         handler = _make_handler(
-            app, method="GET", path="/x", match_info=_mi(filename=filename),
+            app,
+            method="GET",
+            path="/x",
+            match_info=_mi(filename=filename),
         )
         response = await _unwrap(StudioFilesHandler.get)(handler)
         assert response.status == 400
@@ -247,7 +271,9 @@ class TestStudioFiles:
 
     async def test_unknown_agent_404(self, app, registry):
         handler = _make_handler(
-            app, method="GET", path="/x",
+            app,
+            method="GET",
+            path="/x",
             match_info=_mi(name="no-such-agent", filename="role.md"),
         )
         response = await _unwrap(StudioFilesHandler.get)(handler)
@@ -256,7 +282,10 @@ class TestStudioFiles:
     async def test_unknown_kind_400(self, app, registry):
         _register_agent(registry)
         handler = _make_handler(
-            app, method="GET", path="/x", match_info=_mi(kind="bogus"),
+            app,
+            method="GET",
+            path="/x",
+            match_info=_mi(kind="bogus"),
         )
         response = await _unwrap(StudioFilesHandler.get)(handler)
         assert response.status == 400
@@ -267,14 +296,20 @@ class TestStudioFiles:
     async def test_reload_required_flag_on_mutations(self, app, registry):
         _register_agent(registry)
         put_handler = _make_handler(
-            app, method="PUT", path="/x", match_info=_mi(filename="goal.md"),
+            app,
+            method="PUT",
+            path="/x",
+            match_info=_mi(filename="goal.md"),
             json_body={"content": "Help the user."},
         )
         put_response = await _unwrap(StudioFilesHandler.put)(put_handler)
         assert (await _decode(put_response))["reload_required"] is True
 
         delete_handler = _make_handler(
-            app, method="DELETE", path="/x", match_info=_mi(filename="goal.md"),
+            app,
+            method="DELETE",
+            path="/x",
+            match_info=_mi(filename="goal.md"),
         )
         delete_response = await _unwrap(StudioFilesHandler.delete)(delete_handler)
         assert (await _decode(delete_response))["reload_required"] is True
@@ -288,7 +323,10 @@ class TestStudioFiles:
         (identity_dir / "role.md").write_text("Currently live.")
 
         handler = _make_handler(
-            app, method="DELETE", path="/x", match_info=_mi(filename="role.md"),
+            app,
+            method="DELETE",
+            path="/x",
+            match_info=_mi(filename="role.md"),
         )
         response = await _unwrap(StudioFilesHandler.delete)(handler)
         assert response.status == 200
@@ -299,8 +337,12 @@ class TestStudioFiles:
     async def test_put_non_owner_403(self, app, registry):
         _register_agent(registry, owner="1")
         handler = _make_handler(
-            app, method="PUT", path="/x", match_info=_mi(filename="role.md"),
-            json_body={"content": "hijacked"}, owner="99",
+            app,
+            method="PUT",
+            path="/x",
+            match_info=_mi(filename="role.md"),
+            json_body={"content": "hijacked"},
+            owner="99",
         )
         with pytest.raises(web.HTTPForbidden):
             await _unwrap(StudioFilesHandler.put)(handler)
@@ -312,7 +354,10 @@ class TestStudioFiles:
         (identity_dir / "role.md").write_text("Readable by anyone authenticated.")
 
         handler = _make_handler(
-            app, method="GET", path="/x", match_info=_mi(filename="role.md"),
+            app,
+            method="GET",
+            path="/x",
+            match_info=_mi(filename="role.md"),
             owner="99",
         )
         response = await _unwrap(StudioFilesHandler.get)(handler)
@@ -331,7 +376,10 @@ class TestStudioFiles:
         _register_agent(registry)
         for name in ("role", "goal"):
             handler = _make_handler(
-                app, method="PUT", path="/x", match_info=_mi(filename=f"{name}.md"),
+                app,
+                method="PUT",
+                path="/x",
+                match_info=_mi(filename=f"{name}.md"),
                 json_body={"content": f"{name}"},
             )
             await _unwrap(StudioFilesHandler.put)(handler)

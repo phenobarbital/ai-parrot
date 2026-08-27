@@ -13,6 +13,7 @@ directly (same process-wide cache as ``GET /api/v1/tools/catalog``, not
 a Studio-local duplicate) so the two endpoints return identical shapes
 and never build the registry twice.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -109,19 +110,26 @@ def _build_base_classes_catalog() -> list[dict]:
         try:
             cls = getattr(bots_module, name)
         except Exception as exc:  # pylint: disable=broad-except
-            rows.append({
-                "name": name, "lazy": is_lazy, "available": False, "error": str(exc),
-            })
+            rows.append(
+                {
+                    "name": name,
+                    "lazy": is_lazy,
+                    "available": False,
+                    "error": str(exc),
+                }
+            )
             continue
         doc = (cls.__doc__ or "").strip()
-        rows.append({
-            "name": name,
-            "module": cls.__module__,
-            "docstring": doc.split("\n")[0].strip() if doc else None,
-            "params": _introspect_configurable_params(cls),
-            "lazy": is_lazy,
-            "available": True,
-        })
+        rows.append(
+            {
+                "name": name,
+                "module": cls.__module__,
+                "docstring": doc.split("\n")[0].strip() if doc else None,
+                "params": _introspect_configurable_params(cls),
+                "lazy": is_lazy,
+                "available": True,
+            }
+        )
     return rows
 
 
@@ -142,17 +150,24 @@ def _build_llm_clients_catalog() -> list[dict]:
         try:
             cls = value() if is_lazy else value
         except Exception as exc:  # pylint: disable=broad-except
-            rows.append({
-                "provider": provider, "lazy": True, "available": False, "error": str(exc),
-            })
+            rows.append(
+                {
+                    "provider": provider,
+                    "lazy": True,
+                    "available": False,
+                    "error": str(exc),
+                }
+            )
             continue
-        rows.append({
-            "provider": provider,
-            "class_name": cls.__name__,
-            "lazy": is_lazy,
-            "available": True,
-            "default_model": getattr(cls, "_default_model", None),
-        })
+        rows.append(
+            {
+                "provider": provider,
+                "class_name": cls.__name__,
+                "lazy": is_lazy,
+                "available": True,
+                "default_model": getattr(cls, "_default_model", None),
+            }
+        )
     return rows
 
 
@@ -167,10 +182,7 @@ def _build_vector_stores_catalog() -> list[dict]:
     Returns:
         Sorted (by slug) list of ``{slug, class_name}`` dicts.
     """
-    return [
-        {"slug": slug, "class_name": class_name}
-        for slug, class_name in sorted(supported_stores.items())
-    ]
+    return [{"slug": slug, "class_name": class_name} for slug, class_name in sorted(supported_stores.items())]
 
 
 @is_authenticated()
@@ -180,7 +192,8 @@ class StudioCatalogHandler(StudioBaseView):
 
     def _error(self, message: str, *, status: int, code: str | None = None):
         return self.json_response(
-            StudioError(message=message, code=code).model_dump(), status=status,
+            StudioError(message=message, code=code).model_dump(),
+            status=status,
         )
 
     async def get(self):

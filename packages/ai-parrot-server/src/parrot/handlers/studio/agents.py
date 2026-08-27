@@ -13,6 +13,7 @@ slugify/duplicate-check discipline, server-set ``created_by``, merged
 registry+DB listing — WITHOUT touching ``bots.py`` itself (spec §7 "bots.py
 untouched" regression-isolation constraint).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -228,9 +229,7 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         try:
             create_request = CreateAgentRequest(**(payload or {}))
         except ValidationError as exc:
-            return self._error(
-                f"Invalid request: {exc}", status=400, code="invalid_request"
-            )
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         try:
             slug = slugify_name(create_request.name)
@@ -247,9 +246,7 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
 
         manager = self._manager()
         if manager is None:
-            return self._error(
-                "BotManager unavailable.", status=503, code="unavailable"
-            )
+            return self._error("BotManager unavailable.", status=503, code="unavailable")
 
         bot_class = manager.get_bot_class(create_request.bot_class)
         if bot_class is None:
@@ -301,9 +298,7 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         file_path = None
         if create_request.persist:
             try:
-                file_path = registry.create_agent_definition(
-                    bot_config, category=create_request.category
-                )
+                file_path = registry.create_agent_definition(bot_config, category=create_request.category)
                 persisted = True
                 # Re-register FROM the freshly-written YAML so the live
                 # BotMetadata.file_path/bot_config reflect the on-disk
@@ -314,9 +309,7 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
                 # at bot_class's own framework source file).
                 registry.load_agent_definitions(file_path.parent)
             except Exception as exc:  # pylint: disable=broad-except
-                self.logger.error(
-                    "Studio: failed to persist YAML for '%s': %s", slug, exc
-                )
+                self.logger.error("Studio: failed to persist YAML for '%s': %s", slug, exc)
 
         # Best-effort live instantiation (non-fatal — mirrors
         # handlers/bots.py `_put_registry`'s identical "best-effort
@@ -330,7 +323,8 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
                 "Studio: agent '%s' registered but instantiation failed: %s",
-                slug, exc,
+                slug,
+                exc,
             )
 
         return self.json_response(
@@ -349,30 +343,23 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         """Delete a factory-origin YAML agent; DB agents are delegated."""
         name = self.request.match_info.get("name")
         if not name:
-            return self._error(
-                "Agent name is required.", status=400, code="missing_name"
-            )
+            return self._error("Agent name is required.", status=400, code="missing_name")
 
         db_agent = await self._get_db_agent(name)
         if db_agent is not None:
             return self._error(
-                f"Agent '{name}' is a database-origin agent; delete it via "
-                "/api/v1/bots instead.",
+                f"Agent '{name}' is a database-origin agent; delete it via " "/api/v1/bots instead.",
                 status=409,
                 code="delegated",
             )
 
         registry = self._registry()
         if registry is None:
-            return self._error(
-                "AgentRegistry unavailable.", status=503, code="unavailable"
-            )
+            return self._error("AgentRegistry unavailable.", status=503, code="unavailable")
 
         metadata = registry.get_metadata(name)
         if metadata is None:
-            return self._error(
-                f"Agent '{name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
 
         user = await self._get_user()
         owner = self._registry_agent_owner(metadata)
@@ -392,9 +379,7 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         is_safe_to_delete = False
         if file_path:
             try:
-                is_safe_to_delete = Path(file_path).resolve().is_relative_to(
-                    AGENTS_DIR.resolve()
-                )
+                is_safe_to_delete = Path(file_path).resolve().is_relative_to(AGENTS_DIR.resolve())
             except (OSError, ValueError):
                 is_safe_to_delete = False
         if not is_safe_to_delete:
@@ -430,15 +415,11 @@ class StudioAgentReloadHandler(_StudioAgentsMixin, StudioBaseView):
     async def post(self):
         name = self.request.match_info.get("name")
         if not name:
-            return self._error(
-                "Agent name is required.", status=400, code="missing_name"
-            )
+            return self._error("Agent name is required.", status=400, code="missing_name")
 
         manager = self._manager()
         if manager is None:
-            return self._error(
-                "BotManager unavailable.", status=503, code="unavailable"
-            )
+            return self._error("BotManager unavailable.", status=503, code="unavailable")
 
         try:
             result = await manager.reload_agent(name)
@@ -449,10 +430,10 @@ class StudioAgentReloadHandler(_StudioAgentsMixin, StudioBaseView):
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error(
                 "Studio: reload of agent '%s' failed unexpectedly: %s",
-                name, exc, exc_info=True,
+                name,
+                exc,
+                exc_info=True,
             )
-            return self._error(
-                "Internal server error.", status=500, code="internal_error"
-            )
+            return self._error("Internal server error.", status=500, code="internal_error")
 
         return self.json_response(result.model_dump(), status=200)

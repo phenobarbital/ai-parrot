@@ -8,6 +8,7 @@ resolution, and fail-open PBAC checks under the ``astudio:<area>``
 resource namespace (spec §2 — PBAC ids namespaced ``astudio:<area>``,
 superuser/admin bypasses ownership, fail-open when no PDP is configured).
 """
+
 from __future__ import annotations
 
 import re
@@ -27,6 +28,7 @@ except ImportError:  # pragma: no cover — navigator-auth always installed in p
 # Mirrors handlers/bots.py `_PBACHandlerMixin` exactly.
 try:
     from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
+
     _PBAC_AVAILABLE = True
 except ImportError:
     _ResourceType = None
@@ -92,9 +94,7 @@ def resolve_safe_path(base_dir: Path, relative: str) -> Path:
     try:
         candidate.relative_to(base_resolved)
     except ValueError:
-        raise ValueError(
-            f"Resolved path escapes the sandboxed directory: {relative!r}"
-        ) from None
+        raise ValueError(f"Resolved path escapes the sandboxed directory: {relative!r}") from None
     return candidate
 
 
@@ -110,6 +110,7 @@ class StudioUser:
         is_superuser: Derived admin/superuser flag — bypasses ownership
             checks in :meth:`StudioBaseView._require_owner`.
     """
+
     user_id: str
     email: str | None = None
     username: str | None = None
@@ -241,9 +242,7 @@ class StudioBaseView(BaseView):
         if user.is_superuser:
             return
         if resource_owner is None or str(resource_owner) != str(user.user_id):
-            raise web.HTTPForbidden(
-                reason="You do not have permission to modify this resource."
-            )
+            raise web.HTTPForbidden(reason="You do not have permission to modify this resource.")
 
     # ------------------------------------------------------------------
     # PBAC (fail-open; pattern: handlers/bots.py `_PBACHandlerMixin`)
@@ -258,8 +257,8 @@ class StudioBaseView(BaseView):
         """
         if not _PBAC_AVAILABLE:
             return None
-        pdp = self.request.app.get('abac')
-        return getattr(pdp, '_evaluator', None) if pdp is not None else None
+        pdp = self.request.app.get("abac")
+        return getattr(pdp, "_evaluator", None) if pdp is not None else None
 
     async def _build_eval_context(self):
         """Build the navigator-auth ``EvalContext`` for the current request.
@@ -295,14 +294,13 @@ class StudioBaseView(BaseView):
             return True
         resource_name = f"astudio:{resource}"
         try:
-            result = evaluator.check_access(
-                ctx, _ResourceType.URI, resource_name, action
-            )
+            result = evaluator.check_access(ctx, _ResourceType.URI, resource_name, action)
             return bool(getattr(result, "allowed", True))
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
-                "Studio PBAC: evaluator error for resource=%s action=%s, "
-                "failing open: %s",
-                resource_name, action, exc,
+                "Studio PBAC: evaluator error for resource=%s action=%s, " "failing open: %s",
+                resource_name,
+                action,
+                exc,
             )
             return True

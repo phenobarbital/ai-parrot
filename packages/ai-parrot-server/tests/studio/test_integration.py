@@ -18,6 +18,7 @@ AGENTS_DIR), the real ``AgentRegistry``/``BotManager``, and DB access
 (faked in-memory, holding REAL model instances — same discipline as
 every other Studio test module) all run for real.
 """
+
 from __future__ import annotations
 
 import json
@@ -67,15 +68,23 @@ async def _decode(response: web.Response) -> dict:
     return json.loads(response.body)
 
 
-def _make_handler(handler_cls, app, *, method="GET", path="/x", match_info=None,
-                   json_body=None, owner="1", superuser=False, session=None):
+def _make_handler(
+    handler_cls,
+    app,
+    *,
+    method="GET",
+    path="/x",
+    match_info=None,
+    json_body=None,
+    owner="1",
+    superuser=False,
+    session=None,
+):
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
     if json_body is not None:
         request.json = AsyncMock(return_value=json_body)
     handler = handler_cls(request)
-    handler._get_user = AsyncMock(
-        return_value=StudioUser(user_id=owner, is_superuser=superuser)
-    )
+    handler._get_user = AsyncMock(return_value=StudioUser(user_id=owner, is_superuser=superuser))
     handler._resolve_session = AsyncMock(return_value=session if session is not None else {})
     return handler
 
@@ -177,25 +186,24 @@ class _FakeDocumentDb:
 
     async def read(self, collection_name, query):
         return [
-            doc for doc in self.docs
-            if doc.get("_collection") == collection_name
-            and all(doc.get(k) == v for k, v in query.items())
+            doc
+            for doc in self.docs
+            if doc.get("_collection") == collection_name and all(doc.get(k) == v for k, v in query.items())
         ]
 
     async def delete(self, collection_name, query):
         self.docs[:] = [
-            doc for doc in self.docs
-            if not (
-                doc.get("_collection") == collection_name
-                and all(doc.get(k) == v for k, v in query.items())
-            )
+            doc
+            for doc in self.docs
+            if not (doc.get("_collection") == collection_name and all(doc.get(k) == v for k, v in query.items()))
         ]
 
     def save_background(self, collection_name, data, on_success=None, on_error=None):
         record = dict(data)
         record["_collection"] = collection_name
         self.docs[:] = [
-            d for d in self.docs
+            d
+            for d in self.docs
             if not (
                 d.get("_collection") == collection_name
                 and d.get("user_id") == record.get("user_id")
@@ -208,6 +216,7 @@ class _FakeDocumentDb:
             def __await__(self_inner):
                 async def _noop():
                     return None
+
                 return _noop().__await__()
 
         return _FakeTask()
@@ -237,6 +246,7 @@ def patch_agents_dir(monkeypatch, tmp_path):
     for module in (agents_module, files_module, drafts_module, skills_catalog_module):
         monkeypatch.setattr(module, "AGENTS_DIR", tmp_path)
     import parrot.registry.registry as registry_module
+
     monkeypatch.setattr(registry_module, "AGENTS_DIR", tmp_path)
     return tmp_path
 
@@ -272,7 +282,8 @@ def fake_skill_registry() -> _FakeSkillRegistry:
 @pytest.fixture(autouse=True)
 def patch_shared_skill_registry(monkeypatch, fake_skill_registry):
     monkeypatch.setattr(
-        skills_catalog_module, "_get_shared_skill_registry",
+        skills_catalog_module,
+        "_get_shared_skill_registry",
         lambda _app, _org: fake_skill_registry,
     )
 
@@ -317,9 +328,11 @@ def app(manager) -> web.Application:
 
 async def _create_agent(app, *, name, owner="1", persist=True, category="general", **extra):
     handler = _make_handler(
-        StudioAgentsHandler, app, method="POST", path="/agents",
-        json_body={"name": name, "bot_class": "BasicBot", "persist": persist,
-                   "category": category, **extra},
+        StudioAgentsHandler,
+        app,
+        method="POST",
+        path="/agents",
+        json_body={"name": name, "bot_class": "BasicBot", "persist": persist, "category": category, **extra},
         owner=owner,
     )
     response = await _unwrap(StudioAgentsHandler.post)(handler)
@@ -340,7 +353,9 @@ class TestStudioFullLoop:
 
         # Write identity/kb/skill files.
         put_identity = _make_handler(
-            StudioFilesHandler, app, method="PUT",
+            StudioFilesHandler,
+            app,
+            method="PUT",
             match_info={"name": "loop-agent", "kind": "identity", "filename": "role.md"},
             json_body={"content": "You are a helpful weather-reporting assistant."},
         )
@@ -349,7 +364,9 @@ class TestStudioFullLoop:
         assert (await _decode(response))["reload_required"] is True
 
         put_kb = _make_handler(
-            StudioFilesHandler, app, method="PUT",
+            StudioFilesHandler,
+            app,
+            method="PUT",
             match_info={"name": "loop-agent", "kind": "kb", "filename": "facts.md"},
             json_body={"content": "The weather API base URL is https://example.test/weather."},
         )
@@ -361,7 +378,9 @@ class TestStudioFullLoop:
             "triggers:\n  - weather\n---\n\nAlways cite the source.\n"
         )
         put_skill = _make_handler(
-            StudioFilesHandler, app, method="PUT",
+            StudioFilesHandler,
+            app,
+            method="PUT",
             match_info={"name": "loop-agent", "kind": "skills", "filename": "weather-lookup.md"},
             json_body={"content": skill_content},
         )
@@ -382,7 +401,9 @@ class TestStudioFullLoop:
 
         # Reload picks up the (unchanged, still YAML-origin) definition.
         reload_handler = _make_handler(
-            StudioAgentReloadHandler, app, method="POST",
+            StudioAgentReloadHandler,
+            app,
+            method="POST",
             match_info={"name": "loop-agent"},
         )
         response = await _unwrap(StudioAgentReloadHandler.post)(reload_handler)
@@ -392,7 +413,10 @@ class TestStudioFullLoop:
         # test/ask against the (reloaded) live instance — LLM mocked.
         fake_bot = _FakeAskBot()
         test_handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
             match_info={"name": "loop-agent"},
             json_body={"query": "What's the weather?", "use_byok": False},
         )
@@ -451,11 +475,14 @@ class TestDraftToLive:
             "from parrot.bots.basic import BasicBot\n\n\n"
             "@agent_registry.register_bot_decorator(name='weather-draft', replace=True)\n"
             "class WeatherDraftAgent(BasicBot):\n"
-            "    \"\"\"Draft-activated weather-reporting agent.\"\"\"\n"
+            '    """Draft-activated weather-reporting agent."""\n'
             "    pass\n"
         )
         save_handler = _make_handler(
-            StudioDraftsHandler, app, method="POST", path="/drafts",
+            StudioDraftsHandler,
+            app,
+            method="POST",
+            path="/drafts",
             json_body={"name": "weather-draft", "source": source},
         )
         response = await _unwrap(StudioDraftsHandler.post)(save_handler)
@@ -464,8 +491,11 @@ class TestDraftToLive:
         assert body["status"] == "validated", body["validation_report"]
 
         activate_handler = _make_handler(
-            StudioDraftActivateHandler, app, method="POST",
-            match_info={"name": "weather-draft"}, json_body={"replace": False},
+            StudioDraftActivateHandler,
+            app,
+            method="POST",
+            match_info={"name": "weather-draft"},
+            json_body={"replace": False},
         )
         response = await _unwrap(StudioDraftActivateHandler.post)(activate_handler)
         assert response.status == 200, await _decode(response)
@@ -474,7 +504,10 @@ class TestDraftToLive:
         assert registry.has("weather-draft")
 
         get_handler = _make_handler(
-            StudioAgentsHandler, app, method="GET", match_info={"name": "weather-draft"},
+            StudioAgentsHandler,
+            app,
+            method="GET",
+            match_info={"name": "weather-draft"},
         )
         response = await _unwrap(StudioAgentsHandler.get)(get_handler)
         assert response.status == 200
@@ -484,7 +517,10 @@ class TestDraftToLive:
         # as the full-loop test.
         fake_bot = _FakeAskBot()
         test_handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
             match_info={"name": "weather-draft"},
             json_body={"query": "hello", "use_byok": False},
         )
@@ -512,24 +548,37 @@ class TestSkillsCatalogShareFlow:
             return handler
 
         # User A publishes.
-        publish_handler = _wire(_make_handler(
-            StudioSkillsCatalogHandler, app, method="POST", path="/skills",
-            json_body={
-                "name": "onboarding-faq", "description": "Answer onboarding FAQs.",
-                "category": "general", "triggers": ["onboarding"],
-                "body": "---\nname: onboarding-faq\ndescription: Answer onboarding FAQs.\ntriggers:\n  - onboarding\n---\n\nBe concise.\n",
-            },
-            owner="user-a",
-        ))
+        publish_handler = _wire(
+            _make_handler(
+                StudioSkillsCatalogHandler,
+                app,
+                method="POST",
+                path="/skills",
+                json_body={
+                    "name": "onboarding-faq",
+                    "description": "Answer onboarding FAQs.",
+                    "category": "general",
+                    "triggers": ["onboarding"],
+                    "body": "---\nname: onboarding-faq\ndescription: Answer onboarding FAQs.\ntriggers:\n  - onboarding\n---\n\nBe concise.\n",
+                },
+                owner="user-a",
+            )
+        )
         response = await _unwrap(StudioSkillsCatalogHandler.post)(publish_handler)
         assert response.status == 201
         published = await _decode(response)
         assert len(fake_skill_registry.uploads) == 1
 
         # User B lists by category and by owner.
-        list_handler = _wire(_make_handler(
-            StudioSkillsCatalogHandler, app, method="GET", path="/skills", owner="user-b",
-        ))
+        list_handler = _wire(
+            _make_handler(
+                StudioSkillsCatalogHandler,
+                app,
+                method="GET",
+                path="/skills",
+                owner="user-b",
+            )
+        )
         response = await _unwrap(StudioSkillsCatalogHandler.get)(list_handler)
         assert response.status == 200
         listed = await _decode(response)
@@ -537,11 +586,15 @@ class TestSkillsCatalogShareFlow:
 
         # User B imports it onto their own agent.
         await _create_agent(app, name="importer-agent", owner="user-b")
-        import_handler = _wire(_make_handler(
-            StudioSkillsImportHandler, app, method="POST",
-            match_info={"name": "importer-agent", "id": published["skill_id"]},
-            owner="user-b",
-        ))
+        import_handler = _wire(
+            _make_handler(
+                StudioSkillsImportHandler,
+                app,
+                method="POST",
+                match_info={"name": "importer-agent", "id": published["skill_id"]},
+                owner="user-b",
+            )
+        )
         response = await _unwrap(StudioSkillsImportHandler.post)(import_handler)
         assert response.status == 201, await _decode(response)
         import_body = await _decode(response)
@@ -575,7 +628,10 @@ class TestByokTestRun:
     @pytest.mark.asyncio
     async def test_byok_test_run(self, app, registry, fake_documentdb, monkeypatch):
         store_handler = _make_handler(
-            StudioKeysHandler, app, method="POST", path="/keys",
+            StudioKeysHandler,
+            app,
+            method="POST",
+            path="/keys",
             json_body={"provider": "anthropic", "api_key": "sk-ant-user-stored-key"},
             owner="1",
         )
@@ -589,8 +645,10 @@ class TestByokTestRun:
         # test/ask: the resolved key is passed as api_key= to LLMFactory.create
         # — never a server-default fallback.
         fake_bot = SimpleNamespace(
-            name="test-bot", _llm_raw="anthropic:claude-3-haiku",
-            llm=MagicMock(name="original_llm"), tool_manager=MagicMock(),
+            name="test-bot",
+            _llm_raw="anthropic:claude-3-haiku",
+            llm=MagicMock(name="original_llm"),
+            tool_manager=MagicMock(),
         )
         fake_bot.session = lambda request=None, app=None: _FakeSessionCtx(fake_bot)
         fake_bot.ask = AsyncMock(return_value=SimpleNamespace(content="ok", metadata={}))
@@ -598,7 +656,10 @@ class TestByokTestRun:
         monkeypatch.setattr(testing_module.LLMFactory, "create", create_mock)
 
         test_handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
             match_info={"name": "any-agent"},
             json_body={"query": "hi", "use_byok": True},
             owner="1",
@@ -657,11 +718,19 @@ class _FakeSchedulerPool:
 
 def _make_fake_schedule(**overrides):
     base = {
-        "schedule_id": "int-sched-1", "agent_name": "sched-agent",
-        "prompt": "run the report", "method_name": None, "metadata": {},
-        "is_crew": False, "send_result": {}, "callbacks": [],
-        "scheduler_type": "default", "last_run": None, "run_count": 0,
-        "next_run": None, "enabled": True,
+        "schedule_id": "int-sched-1",
+        "agent_name": "sched-agent",
+        "prompt": "run the report",
+        "method_name": None,
+        "metadata": {},
+        "is_crew": False,
+        "send_result": {},
+        "callbacks": [],
+        "scheduler_type": "default",
+        "last_run": None,
+        "run_count": 0,
+        "next_run": None,
+        "enabled": True,
     }
     base.update(overrides)
     ns = SimpleNamespace(**base)
@@ -680,9 +749,7 @@ class TestSchedulerRunNowE2E:
 
             schedule = _make_fake_schedule()
             monkeypatch.setattr(scheduler, "get_schedule", AsyncMock(return_value=schedule))
-            monkeypatch.setattr(
-                scheduler_manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-            )
+            monkeypatch.setattr(scheduler_manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
             await scheduler.run_schedule_now(str(schedule.schedule_id))
 
@@ -713,9 +780,7 @@ class TestFactoryAlias:
     async def test_factory_alias(self):
         from parrot.handlers.agents.factory import AgentFactoryHandler
 
-        request = make_mocked_request(
-            "POST", "/api/v1/agents/factory", app=web.Application()
-        )
+        request = make_mocked_request("POST", "/api/v1/agents/factory", app=web.Application())
         request.json = AsyncMock(return_value={"description": "A tiny test agent"})
         handler = AgentFactoryHandler(request)
 

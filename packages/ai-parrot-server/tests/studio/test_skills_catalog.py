@@ -16,6 +16,7 @@ faked via `_get_shared_skill_registry` (a module-level function,
 designed to be monkeypatchable) so tests never load a real embedding
 model.
 """
+
 from __future__ import annotations
 
 import json
@@ -122,12 +123,11 @@ def fake_registry() -> _FakeSkillRegistry:
 def patch_registry_lookup(monkeypatch, fake_registry):
     """Route every `_get_shared_skill_registry(app, org_id)` call to the
     per-test fake — avoids loading a real embedding model."""
+
     def _fake_get_registry(_app, _org_id):
         return fake_registry
 
-    monkeypatch.setattr(
-        skills_catalog_module, "_get_shared_skill_registry", _fake_get_registry
-    )
+    monkeypatch.setattr(skills_catalog_module, "_get_shared_skill_registry", _fake_get_registry)
     return fake_registry
 
 
@@ -166,15 +166,14 @@ def app() -> web.Application:
     return application
 
 
-def _make_handler(handler_cls, app, store, *, method="GET", path="/x",
-                   match_info=None, json_body=None, owner="1", superuser=False):
+def _make_handler(
+    handler_cls, app, store, *, method="GET", path="/x", match_info=None, json_body=None, owner="1", superuser=False
+):
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
     if json_body is not None:
         request.json = AsyncMock(return_value=json_body)
     handler = handler_cls(request)
-    handler._get_user = AsyncMock(
-        return_value=StudioUser(user_id=owner, is_superuser=superuser)
-    )
+    handler._get_user = AsyncMock(return_value=StudioUser(user_id=owner, is_superuser=superuser))
     handler._get_entry_by_id = store.get_by_id
     handler._get_entry_by_name = store.get_by_name
     handler._list_entries = store.list_entries
@@ -186,10 +185,16 @@ def _make_handler(handler_cls, app, store, *, method="GET", path="/x",
 
 async def _publish(app, store, *, name, category="general", owner="1", triggers=None):
     handler = _make_handler(
-        StudioSkillsCatalogHandler, app, store, method="POST", path="/skills",
+        StudioSkillsCatalogHandler,
+        app,
+        store,
+        method="POST",
+        path="/skills",
         json_body={
-            "name": name, "description": f"{name} description",
-            "category": category, "triggers": triggers or [f"/{name}"],
+            "name": name,
+            "description": f"{name} description",
+            "category": category,
+            "triggers": triggers or [f"/{name}"],
             "body": f"# {name}\n\nSkill body.",
         },
         owner=owner,
@@ -236,10 +241,16 @@ class TestSkillsPublish:
 
     async def test_publish_invalid_category_rejected_by_model(self, app, store):
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="POST", path="/skills",
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="POST",
+            path="/skills",
             json_body={
-                "name": "bad-cat-skill", "description": "desc",
-                "category": "not-a-real-category", "triggers": [],
+                "name": "bad-cat-skill",
+                "description": "desc",
+                "category": "not-a-real-category",
+                "triggers": [],
                 "body": "content",
             },
         )
@@ -273,7 +284,10 @@ class TestSkillsListing:
         await _publish(app, store, name="theirs", owner="2", category="workflow")
 
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="GET",
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="GET",
             path="/skills?owner=1",
         )
         response = await _unwrap(StudioSkillsCatalogHandler.get)(handler)
@@ -283,7 +297,10 @@ class TestSkillsListing:
 
     async def test_invalid_category_400(self, app, store):
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="GET",
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="GET",
             path="/skills?category=not-real",
         )
         response = await _unwrap(StudioSkillsCatalogHandler.get)(handler)
@@ -297,8 +314,12 @@ class TestSkillsListing:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="GET",
-            path="/skills/x", match_info={"id": skill_id},
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="GET",
+            path="/skills/x",
+            match_info={"id": skill_id},
         )
         response = await _unwrap(StudioSkillsCatalogHandler.get)(handler)
         body = await _decode(response)
@@ -316,9 +337,19 @@ class TestSkillsUpdateDelete:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="PUT",
-            path="/skills/x", match_info={"id": skill_id},
-            json_body={"name": "owned-skill", "description": "hijack", "category": "general", "triggers": [], "body": "x"},
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="PUT",
+            path="/skills/x",
+            match_info={"id": skill_id},
+            json_body={
+                "name": "owned-skill",
+                "description": "hijack",
+                "category": "general",
+                "triggers": [],
+                "body": "x",
+            },
             owner="99",
         )
         with pytest.raises(web.HTTPForbidden):
@@ -329,11 +360,18 @@ class TestSkillsUpdateDelete:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="PUT",
-            path="/skills/x", match_info={"id": skill_id},
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="PUT",
+            path="/skills/x",
+            match_info={"id": skill_id},
             json_body={
-                "name": "editable-skill", "description": "updated desc",
-                "category": "workflow", "triggers": ["/new"], "body": "new body",
+                "name": "editable-skill",
+                "description": "updated desc",
+                "category": "workflow",
+                "triggers": ["/new"],
+                "body": "new body",
             },
             owner="1",
         )
@@ -348,8 +386,13 @@ class TestSkillsUpdateDelete:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="DELETE",
-            path="/skills/x", match_info={"id": skill_id}, owner="1",
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="DELETE",
+            path="/skills/x",
+            match_info={"id": skill_id},
+            owner="1",
         )
         response = await _unwrap(StudioSkillsCatalogHandler.delete)(handler)
         assert response.status == 200
@@ -361,8 +404,14 @@ class TestSkillsUpdateDelete:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_handler(
-            StudioSkillsCatalogHandler, app, store, method="DELETE",
-            path="/skills/x", match_info={"id": skill_id}, owner="99", superuser=True,
+            StudioSkillsCatalogHandler,
+            app,
+            store,
+            method="DELETE",
+            path="/skills/x",
+            match_info={"id": skill_id},
+            owner="99",
+            superuser=True,
         )
         response = await _unwrap(StudioSkillsCatalogHandler.delete)(handler)
         assert response.status == 200
@@ -379,8 +428,12 @@ class TestSkillsImport:
         skill_id = (await _decode(publish_response))["skill_id"]
 
         handler = _make_handler(
-            StudioSkillsImportHandler, app, store, method="POST",
-            path="/x", match_info={"name": "my-agent", "id": skill_id},
+            StudioSkillsImportHandler,
+            app,
+            store,
+            method="POST",
+            path="/x",
+            match_info={"name": "my-agent", "id": skill_id},
         )
         response = await _unwrap(StudioSkillsImportHandler.post)(handler)
         assert response.status == 201, await _decode(response)
@@ -394,8 +447,12 @@ class TestSkillsImport:
 
         # Second import without overwrite -> 409 collision.
         handler2 = _make_handler(
-            StudioSkillsImportHandler, app, store, method="POST",
-            path="/x", match_info={"name": "my-agent", "id": skill_id},
+            StudioSkillsImportHandler,
+            app,
+            store,
+            method="POST",
+            path="/x",
+            match_info={"name": "my-agent", "id": skill_id},
         )
         response2 = await _unwrap(StudioSkillsImportHandler.post)(handler2)
         assert response2.status == 409
@@ -403,8 +460,12 @@ class TestSkillsImport:
 
         # With overwrite=true -> succeeds.
         handler3 = _make_handler(
-            StudioSkillsImportHandler, app, store, method="POST",
-            path="/x", match_info={"name": "my-agent", "id": skill_id},
+            StudioSkillsImportHandler,
+            app,
+            store,
+            method="POST",
+            path="/x",
+            match_info={"name": "my-agent", "id": skill_id},
             json_body={"overwrite": True},
         )
         response3 = await _unwrap(StudioSkillsImportHandler.post)(handler3)
@@ -412,8 +473,12 @@ class TestSkillsImport:
 
     async def test_import_unknown_skill_404(self, app, store):
         handler = _make_handler(
-            StudioSkillsImportHandler, app, store, method="POST",
-            path="/x", match_info={"name": "my-agent", "id": "no-such-id"},
+            StudioSkillsImportHandler,
+            app,
+            store,
+            method="POST",
+            path="/x",
+            match_info={"name": "my-agent", "id": "no-such-id"},
         )
         response = await _unwrap(StudioSkillsImportHandler.post)(handler)
         assert response.status == 404
@@ -427,15 +492,17 @@ class TestSkillsImport:
 class TestSkillsResync:
     async def test_resync_non_admin_403(self, app, store):
         handler = _make_handler(
-            StudioSkillsResyncHandler, app, store, method="POST", path="/x",
+            StudioSkillsResyncHandler,
+            app,
+            store,
+            method="POST",
+            path="/x",
             superuser=False,
         )
         response = await _unwrap(StudioSkillsResyncHandler.post)(handler)
         assert response.status == 403
 
-    async def test_resync_admin_only_and_clears_stale(
-        self, app, store, fake_registry, monkeypatch
-    ):
+    async def test_resync_admin_only_and_clears_stale(self, app, store, fake_registry, monkeypatch):
         # Publish while the registry is failing to produce a stale entry.
         broken_registry = _FakeSkillRegistry(fail_upload=True)
         monkeypatch.setattr(
@@ -457,7 +524,11 @@ class TestSkillsResync:
 
         # Resync as admin, with a HEALTHY registry this time.
         handler = _make_handler(
-            StudioSkillsResyncHandler, app, store, method="POST", path="/x",
+            StudioSkillsResyncHandler,
+            app,
+            store,
+            method="POST",
+            path="/x",
             superuser=True,
         )
         response = await _unwrap(StudioSkillsResyncHandler.post)(handler)
@@ -472,8 +543,13 @@ class TestSkillsResync:
 class TestReconcileSkillsCatalogStartupHook:
     async def test_reconcile_repairs_stale_entries(self, app, store, fake_registry, monkeypatch):
         entry = SkillCatalogEntry(
-            name="startup-stale-skill", description="desc", category="general",
-            owner="1", triggers=[], body="content", version=1,
+            name="startup-stale-skill",
+            description="desc",
+            category="general",
+            owner="1",
+            triggers=[],
+            body="content",
+            version=1,
             search_index_stale=True,
         )
         store.entries[str(entry.skill_id)] = entry

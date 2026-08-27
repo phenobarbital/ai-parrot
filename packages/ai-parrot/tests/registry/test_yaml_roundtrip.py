@@ -7,6 +7,7 @@ mcp_servers, priority, at_startup, config — plus singleton/startup_config
 for full BotConfig fidelity), and that YAML written by the OLD (lossy)
 writer format is still readable.
 """
+
 import pytest
 
 from parrot.registry import registry as registry_module

@@ -19,6 +19,7 @@ type, got str`` inside ``datamodel.validation`` (confirmed empirically
 AgentSchedule`` pattern; see ``handlers/models/studio_drafts.py`` for
 the same fix applied to TASK-2513's model).
 """
+
 import uuid
 from datetime import datetime
 
@@ -55,6 +56,7 @@ class SkillCatalogEntry(Model):
     vocabulary values are never persisted (handler-side validation, not
     a DB constraint).
     """
+
     skill_id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4)
     name: str = Field(required=True)
     description: str = Field(required=True)
@@ -69,7 +71,7 @@ class SkillCatalogEntry(Model):
     updated_at: datetime = Field(required=False, default_factory=datetime.now)
 
     class Meta:
-        driver = 'pg'
+        driver = "pg"
         name = "ai_skills_catalog"
         schema = "navigator"
         strict = True

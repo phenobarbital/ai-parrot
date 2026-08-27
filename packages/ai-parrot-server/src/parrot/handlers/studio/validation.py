@@ -6,6 +6,7 @@ here. That only happens on explicit activation (``POST
 ``passed=True`` (spec §7 "Draft import side effects": the AST allowlist
 must run BEFORE any import — the gate IS the security boundary).
 """
+
 from __future__ import annotations
 
 import ast
@@ -27,9 +28,20 @@ _FORBIDDEN_CALLS = {"exec", "eval", "__import__", "compile"}
 # real MRO. Mirrors `parrot.bots.__all__` plus the wider base-class
 # family documented in the Codebase Contract.
 KNOWN_BOT_BASE_NAMES = {
-    "AbstractBot", "BaseBot", "BasicBot", "Chatbot", "BasicAgent", "Agent",
-    "PandasAgent", "DocumentAgent", "WebSearchAgent", "WebAgent",
-    "MCPAgent", "A2AAgent", "InfoAgent", "VoiceBot",
+    "AbstractBot",
+    "BaseBot",
+    "BasicBot",
+    "Chatbot",
+    "BasicAgent",
+    "Agent",
+    "PandasAgent",
+    "DocumentAgent",
+    "WebSearchAgent",
+    "WebAgent",
+    "MCPAgent",
+    "A2AAgent",
+    "InfoAgent",
+    "VoiceBot",
 }
 
 
@@ -101,11 +113,13 @@ def validate_draft(source: str) -> DraftValidationReport:
     except SyntaxError as exc:
         return DraftValidationReport(
             passed=False,
-            errors=[{
-                "line": exc.lineno or 0,
-                "code": "syntax-error",
-                "message": exc.msg or "Invalid Python syntax.",
-            }],
+            errors=[
+                {
+                    "line": exc.lineno or 0,
+                    "code": "syntax-error",
+                    "message": exc.msg or "Invalid Python syntax.",
+                }
+            ],
         )
 
     errors: list[dict] = []
@@ -115,55 +129,59 @@ def validate_draft(source: str) -> DraftValidationReport:
             for alias in node.names:
                 root = alias.name.split(".")[0]
                 if not _is_allowed_module(root):
-                    errors.append({
-                        "line": node.lineno,
-                        "code": "forbidden-import",
-                        "message": f"Import of '{alias.name}' is not allowed.",
-                    })
+                    errors.append(
+                        {
+                            "line": node.lineno,
+                            "code": "forbidden-import",
+                            "message": f"Import of '{alias.name}' is not allowed.",
+                        }
+                    )
         elif isinstance(node, ast.ImportFrom):
             if node.level and node.level > 0:
-                errors.append({
-                    "line": node.lineno,
-                    "code": "forbidden-import",
-                    "message": "Relative imports are not allowed in drafts.",
-                })
+                errors.append(
+                    {
+                        "line": node.lineno,
+                        "code": "forbidden-import",
+                        "message": "Relative imports are not allowed in drafts.",
+                    }
+                )
             elif node.module:
                 root = node.module.split(".")[0]
                 if not _is_allowed_module(root):
-                    errors.append({
-                        "line": node.lineno,
-                        "code": "forbidden-import",
-                        "message": f"Import from '{node.module}' is not allowed.",
-                    })
-        elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id in _FORBIDDEN_CALLS
-        ):
-            errors.append({
-                "line": node.lineno,
-                "code": "forbidden-call",
-                "message": f"Call to '{node.func.id}()' is not allowed in drafts.",
-            })
+                    errors.append(
+                        {
+                            "line": node.lineno,
+                            "code": "forbidden-import",
+                            "message": f"Import from '{node.module}' is not allowed.",
+                        }
+                    )
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FORBIDDEN_CALLS:
+            errors.append(
+                {
+                    "line": node.lineno,
+                    "code": "forbidden-call",
+                    "message": f"Call to '{node.func.id}()' is not allowed in drafts.",
+                }
+            )
 
     bot_defs = _bot_class_defs(tree)
     if not bot_defs:
-        errors.append({
-            "line": 1,
-            "code": "no-bot-subclass",
-            "message": (
-                "Draft must define exactly one class deriving from a "
-                "known AbstractBot-family base; found none."
-            ),
-        })
+        errors.append(
+            {
+                "line": 1,
+                "code": "no-bot-subclass",
+                "message": (
+                    "Draft must define exactly one class deriving from a " "known AbstractBot-family base; found none."
+                ),
+            }
+        )
     elif len(bot_defs) > 1:
-        errors.append({
-            "line": bot_defs[1].lineno,
-            "code": "multiple-bot-subclasses",
-            "message": (
-                "Draft must define exactly one AbstractBot-family "
-                f"subclass; found {len(bot_defs)}."
-            ),
-        })
+        errors.append(
+            {
+                "line": bot_defs[1].lineno,
+                "code": "multiple-bot-subclasses",
+                "message": ("Draft must define exactly one AbstractBot-family " f"subclass; found {len(bot_defs)}."),
+            }
+        )
 
     return DraftValidationReport(passed=not errors, errors=errors)

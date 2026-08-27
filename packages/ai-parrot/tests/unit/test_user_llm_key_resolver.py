@@ -7,6 +7,7 @@ inside the method body, which re-resolve ``X.Y`` fresh on every call, so
 patching the source module's attribute (not a re-exported name) is both
 necessary and sufficient.
 """
+
 from __future__ import annotations
 
 from typing import ClassVar
@@ -60,12 +61,14 @@ def fake_db(monkeypatch):
 
 def _seed_stored_key(user_id: str, provider: str, api_key: str) -> None:
     encrypted = encrypt_credential({"api_key": api_key}, MASTER_KEY_ID, MASTER_KEY)
-    _FakeDocumentDb.docs.append({
-        "_collection": "user_llm_keys",
-        "user_id": user_id,
-        "provider": provider,
-        "api_key": encrypted,
-    })
+    _FakeDocumentDb.docs.append(
+        {
+            "_collection": "user_llm_keys",
+            "user_id": user_id,
+            "provider": provider,
+            "api_key": encrypted,
+        }
+    )
 
 
 class TestUserLLMKeyResolver:

@@ -7,6 +7,7 @@ credentials.py``): a session-vault hot copy plus a fire-and-forget
 DocumentDB durable copy (collection ``"user_llm_keys"``). Keys are NEVER
 returned in plaintext — GET only ever returns a masked preview.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ try:
     from navigator_session.vault.config import get_active_key_id, load_master_keys
 except ImportError:  # pragma: no cover — navigator-session always installed in prod
     get_active_key_id = None  # type: ignore[assignment]
-    load_master_keys = None   # type: ignore[assignment]
+    load_master_keys = None  # type: ignore[assignment]
 
 from ._base import StudioBaseView
 from .models import ByokKeyRequest, StudioError
@@ -43,10 +44,7 @@ def _load_vault_keys() -> tuple[int, bytes, dict]:
         RuntimeError: If vault keys are not configured/available.
     """
     if load_master_keys is None or get_active_key_id is None:
-        raise RuntimeError(
-            "navigator_session.vault.config is not available. "
-            "Ensure navigator-session is installed."
-        )
+        raise RuntimeError("navigator_session.vault.config is not available. " "Ensure navigator-session is installed.")
     master_keys = load_master_keys()
     active_key_id = get_active_key_id()
     active_key = master_keys[active_key_id]
@@ -61,9 +59,7 @@ def _mask(api_key: str) -> str:
     return f"{api_key[:3]}…{api_key[-4:]}"
 
 
-async def resolve_user_api_key(
-    app: Any, user_id: str, provider: str
-) -> str | None:
+async def resolve_user_api_key(app: Any, user_id: str, provider: str) -> str | None:
     """Resolve a user's stored BYOK API key for ``provider``.
 
     Used by the Studio testing surface (FEAT-467 TASK-2517) to pass
@@ -125,9 +121,7 @@ class StudioKeysHandler(StudioBaseView):
                 docs = await db.read(COLLECTION, {"user_id": user.user_id})
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("BYOK: failed to list keys for user %s: %s", user.user_id, exc)
-            return self._error(
-                "Failed to list keys.", status=500, code="list_failed"
-            )
+            return self._error("Failed to list keys.", status=500, code="list_failed")
 
         keys = []
         for doc in docs or []:
@@ -138,14 +132,17 @@ class StudioKeysHandler(StudioBaseView):
                 # NEVER log the raw doc/ciphertext.
                 self.logger.warning(
                     "BYOK: failed to decrypt key for masking (provider=%s): %s",
-                    doc.get("provider"), exc,
+                    doc.get("provider"),
+                    exc,
                 )
                 masked = "****"
-            keys.append({
-                "provider": doc.get("provider"),
-                "masked": masked,
-                "created_at": doc.get("created_at"),
-            })
+            keys.append(
+                {
+                    "provider": doc.get("provider"),
+                    "masked": masked,
+                    "created_at": doc.get("created_at"),
+                }
+            )
 
         return self.json_response({"keys": keys, "count": len(keys)})
 
@@ -165,15 +162,12 @@ class StudioKeysHandler(StudioBaseView):
         try:
             key_request = ByokKeyRequest(**(payload or {}))
         except ValidationError as exc:
-            return self._error(
-                f"Invalid request: {exc}", status=400, code="invalid_request"
-            )
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         provider = key_request.provider.lower()
         if provider not in SUPPORTED_CLIENTS:
             return self._error(
-                f"Unsupported provider '{provider}'. Supported: "
-                f"{sorted(SUPPORTED_CLIENTS)}.",
+                f"Unsupported provider '{provider}'. Supported: " f"{sorted(SUPPORTED_CLIENTS)}.",
                 status=400,
                 code="invalid_provider",
             )
@@ -211,9 +205,7 @@ class StudioKeysHandler(StudioBaseView):
         try:
             async with DocumentDb() as db:
                 await db.documentdb_connect()
-                existing = await db.read_one(
-                    COLLECTION, {"user_id": user.user_id, "provider": provider}
-                )
+                existing = await db.read_one(COLLECTION, {"user_id": user.user_id, "provider": provider})
                 if existing is not None:
                     doc["created_at"] = existing.get("created_at", doc["created_at"])
                 db.save_background(
@@ -221,7 +213,8 @@ class StudioKeysHandler(StudioBaseView):
                     doc,
                     on_error=lambda e: self.logger.warning(
                         "BYOK: background save failed (provider=%s): %s",
-                        provider, e,
+                        provider,
+                        e,
                     ),
                 )
         except Exception as exc:  # pylint: disable=broad-except
@@ -229,16 +222,12 @@ class StudioKeysHandler(StudioBaseView):
             return self._error("Failed to store key.", status=500, code="store_failed")
 
         # NEVER echo the plaintext back — masked preview only.
-        return self.json_response(
-            {"provider": provider, "masked": _mask(plaintext)}, status=201
-        )
+        return self.json_response({"provider": provider, "masked": _mask(plaintext)}, status=201)
 
     async def delete(self):
         provider = self.request.match_info.get("provider")
         if not provider:
-            return self._error(
-                "Provider is required.", status=400, code="missing_provider"
-            )
+            return self._error("Provider is required.", status=400, code="missing_provider")
         provider = provider.lower()
 
         user = await self._get_user()

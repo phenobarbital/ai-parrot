@@ -1,4 +1,5 @@
 """Shared fixtures for ``handlers/studio/*`` tests (FEAT-467 TASK-2511)."""
+
 from __future__ import annotations
 
 import pytest

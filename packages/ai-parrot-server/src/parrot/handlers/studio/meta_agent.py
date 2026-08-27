@@ -10,6 +10,7 @@ created once per caller session and reused across calls, keyed via the
 session (not the ``BotManager`` — this agent is never registered into the
 ``AgentRegistry``, so instances live in a small per-app cache instead).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -34,6 +35,7 @@ _ASSISTANTS_APP_KEY = "_studio_assistant_instances"
 
 class AssistantAskRequest(BaseModel):
     """``POST /astudio/assistant`` payload."""
+
     query: str
     use_byok: bool = True
 
@@ -45,15 +47,14 @@ class StudioAssistantHandler(StudioBaseView):
 
     def _error(self, message: str, *, status: int, code: str | None = None):
         return self.json_response(
-            StudioError(message=message, code=code).model_dump(), status=status,
+            StudioError(message=message, code=code).model_dump(),
+            status=status,
         )
 
     def _instances(self) -> dict[str, AgentStudioAgent]:
         return self.request.app.setdefault(_ASSISTANTS_APP_KEY, {})
 
-    async def _get_or_create_assistant(
-        self, session: Any, *, api_key: str | None
-    ) -> AgentStudioAgent:
+    async def _get_or_create_assistant(self, session: Any, *, api_key: str | None) -> AgentStudioAgent:
         """Return the reused assistant instance for this session, creating
         it once. Mirrors TASK-2517's ``_get_or_create_test_bot``."""
         instances = self._instances()
@@ -95,9 +96,7 @@ class StudioAssistantHandler(StudioBaseView):
             agent = await self._get_or_create_assistant(session, api_key=api_key)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio assistant: failed to build instance")
-            return self._error(
-                f"Failed to start the assistant: {exc}", status=500, code="build_failed"
-            )
+            return self._error(f"Failed to start the assistant: {exc}", status=500, code="build_failed")
 
         try:
             self.request.session = session

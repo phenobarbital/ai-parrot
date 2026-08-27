@@ -23,6 +23,7 @@ Design principles
 * **Pure construction** — :meth:`CredentialBroker.from_config` is synchronous
   and performs no I/O so it is safe to call from ``AbstractBot.configure()``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,7 +56,6 @@ class CredentialBrokerConfigError(Exception):
     Inherits from ``Exception`` directly so callers can catch it without
     depending on any domain-specific base class.
     """
-
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +134,7 @@ class CredentialResolverFactory:
     # Strategy builders
     # ------------------------------------------------------------------
 
-    def _build_obo(
-        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
-    ) -> CredentialResolver:
+    def _build_obo(self, cfg: ProviderCredentialConfig, opts: dict[str, Any]) -> CredentialResolver:
         """Build a WorkIQOBOCredentialResolver (or compatible OBO resolver).
 
         Expected deps: ``o365_interface``, ``o365_oauth_manager``, ``vault``.
@@ -148,9 +146,7 @@ class CredentialResolverFactory:
                 WorkIQOBOCredentialResolver,
             )
         except ImportError as exc:
-            raise ImportError(
-                "parrot.auth.oauth2.workiq_provider is required for auth='obo'."
-            ) from exc
+            raise ImportError("parrot.auth.oauth2.workiq_provider is required for auth='obo'.") from exc
 
         o365 = self._deps.get("o365_interface")
         o365_manager = self._deps.get("o365_oauth_manager")
@@ -170,18 +166,14 @@ class CredentialResolverFactory:
             workiq_scope=scope,
         )
 
-    def _build_oauth2(
-        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
-    ) -> CredentialResolver:
+    def _build_oauth2(self, cfg: ProviderCredentialConfig, opts: dict[str, Any]) -> CredentialResolver:
         """Build an OAuthCredentialResolver.
 
         Expected deps: ``oauth_manager`` (or ``oauth_managers`` dict keyed by provider).
         """
         from .credentials import OAuthCredentialResolver
 
-        manager = self._deps.get("oauth_manager") or self._deps.get(
-            "oauth_managers", {}
-        ).get(cfg.provider)
+        manager = self._deps.get("oauth_manager") or self._deps.get("oauth_managers", {}).get(cfg.provider)
         if manager is None:
             raise KeyError(
                 f"CredentialResolverFactory: 'oauth_manager' dep required for "
@@ -189,9 +181,7 @@ class CredentialResolverFactory:
             )
         return OAuthCredentialResolver(manager)
 
-    def _build_static_key(
-        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
-    ) -> CredentialResolver:
+    def _build_static_key(self, cfg: ProviderCredentialConfig, opts: dict[str, Any]) -> CredentialResolver:
         """Build a FirefliesCredentialResolver (or generic vault static-key resolver).
 
         Expected deps: ``vault``.
@@ -217,9 +207,7 @@ class CredentialResolverFactory:
             oob_capture_url=capture_url,
         )
 
-    def _build_mcp(
-        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
-    ) -> CredentialResolver:
+    def _build_mcp(self, cfg: ProviderCredentialConfig, opts: dict[str, Any]) -> CredentialResolver:
         """Build a thin MCP-backed vault resolver.
 
         Reads a bearer token from vault keyed by ``vault_key`` option.
@@ -231,9 +219,7 @@ class CredentialResolverFactory:
         auth_url = opts.get("auth_url", "")
         return _MCPVaultResolver(vault=vault, vault_key=vault_key, auth_url=auth_url)
 
-    def _build_device_code(
-        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
-    ) -> CredentialResolver:
+    def _build_device_code(self, cfg: ProviderCredentialConfig, opts: dict[str, Any]) -> CredentialResolver:
         """Build an O365DeviceCodeCredentialResolver (FEAT-266).
 
         Expected deps: ``o365_client`` (or ``o365_interface``),
@@ -247,8 +233,7 @@ class CredentialResolverFactory:
             )
         except ImportError as exc:
             raise ImportError(
-                "parrot.auth.oauth2.o365_devicecode_provider is required for "
-                "auth='device_code'."
+                "parrot.auth.oauth2.o365_devicecode_provider is required for " "auth='device_code'."
             ) from exc
 
         o365 = self._deps.get("o365_client") or self._deps.get("o365_interface")
@@ -377,9 +362,7 @@ class _UserLLMKeyResolver(CredentialResolver):
         try:
             from navigator_session.vault.config import load_master_keys
         except ImportError:
-            logger.debug(
-                "_UserLLMKeyResolver: navigator_session.vault not available."
-            )
+            logger.debug("_UserLLMKeyResolver: navigator_session.vault not available.")
             return None
 
         from parrot.interfaces.documentdb import DocumentDb
@@ -388,22 +371,19 @@ class _UserLLMKeyResolver(CredentialResolver):
         try:
             master_keys = load_master_keys()
         except Exception as exc:  # pylint: disable=broad-except
-            logger.warning(
-                "_UserLLMKeyResolver: failed to load vault master keys: %s", exc
-            )
+            logger.warning("_UserLLMKeyResolver: failed to load vault master keys: %s", exc)
             return None
 
         provider = channel.lower()
         try:
             async with DocumentDb() as db:
-                doc = await db.read_one(
-                    self.COLLECTION, {"user_id": user_id, "provider": provider}
-                )
+                doc = await db.read_one(self.COLLECTION, {"user_id": user_id, "provider": provider})
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "_UserLLMKeyResolver: DocumentDB read failed for user=%s "
-                "provider=%s: %s",
-                user_id, provider, exc,
+                "_UserLLMKeyResolver: DocumentDB read failed for user=%s " "provider=%s: %s",
+                user_id,
+                provider,
+                exc,
             )
             return None
 
@@ -416,9 +396,10 @@ class _UserLLMKeyResolver(CredentialResolver):
         except Exception as exc:  # pylint: disable=broad-except
             # NEVER log the raw doc/ciphertext — only the failure.
             logger.warning(
-                "_UserLLMKeyResolver: failed to decrypt key for user=%s "
-                "provider=%s: %s",
-                user_id, provider, exc,
+                "_UserLLMKeyResolver: failed to decrypt key for user=%s " "provider=%s: %s",
+                user_id,
+                provider,
+                exc,
             )
             return None
 
@@ -550,8 +531,7 @@ class CredentialBroker:
                         f"Failed to build resolver for provider {cfg.provider!r}: {exc}"
                     ) from exc
                 logger.warning(
-                    "CredentialBroker.from_config: could not build resolver for "
-                    "provider=%s auth=%s: %s",
+                    "CredentialBroker.from_config: could not build resolver for " "provider=%s auth=%s: %s",
                     cfg.provider,
                     cfg.auth,
                     exc,
@@ -600,10 +580,7 @@ class CredentialBroker:
 
         entry = self._resolvers.get(provider)
         if entry is None:
-            raise KeyError(
-                f"CredentialBroker: no resolver registered for provider={provider!r}. "
-                "Failing closed."
-            )
+            raise KeyError(f"CredentialBroker: no resolver registered for provider={provider!r}. " "Failing closed.")
 
         resolver, auth_kind = entry
         secret = await resolver.resolve(channel, canonical_id)
@@ -658,4 +635,3 @@ class CredentialBroker:
             fingerprint[:8],
         )
         return credential
-

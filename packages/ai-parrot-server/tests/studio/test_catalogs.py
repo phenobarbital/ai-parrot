@@ -6,6 +6,7 @@ failure), the tools catalog delegating to ``tools_catalog._build_catalog``
 (same process-wide cache, identical shape to ``/api/v1/tools/catalog``),
 and the vector-stores catalog.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,9 +31,7 @@ async def _decode(response: web.Response):
 
 
 def _make_handler(app, *, kind: str):
-    request = make_mocked_request(
-        "GET", f"/catalog/{kind}", match_info={"kind": kind}, app=app
-    )
+    request = make_mocked_request("GET", f"/catalog/{kind}", match_info={"kind": kind}, app=app)
     return StudioCatalogHandler(request)
 
 
@@ -129,7 +128,9 @@ class TestStudioCatalogs:
             raise ImportError("boto3 extra not installed")
 
         monkeypatch.setattr(
-            catalog_module, "SUPPORTED_CLIENTS", {"broken": _boom, "openai": _real_openai()},
+            catalog_module,
+            "SUPPORTED_CLIENTS",
+            {"broken": _boom, "openai": _real_openai()},
         )
         handler = _make_handler(app, kind="llm-clients")
 
@@ -189,6 +190,7 @@ class TestStudioCatalogs:
 
 def _real_openai():
     from parrot.clients.gpt import OpenAIClient
+
     return OpenAIClient
 
 

@@ -15,6 +15,7 @@ Two layers:
   proving the HTTP-level action dispatch and exception-to-status mapping
   (including the existing pause/resume/update actions are untouched).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -136,9 +137,7 @@ class TestManagerRunNow:
     async def test_run_now_executes_once(self, manager, fake_bot, monkeypatch):
         schedule = _make_fake_schedule()
         monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=schedule))
-        monkeypatch.setattr(
-            manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-        )
+        monkeypatch.setattr(manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
         result_schedule = await manager.run_schedule_now(str(schedule.schedule_id))
         assert result_schedule is schedule
@@ -154,9 +153,7 @@ class TestManagerRunNow:
     async def test_run_now_preserves_schedule_state(self, manager, fake_bot, monkeypatch):
         schedule = _make_fake_schedule(enabled=True, schedule_config_marker="untouched")
         monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=schedule))
-        monkeypatch.setattr(
-            manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-        )
+        monkeypatch.setattr(manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
         await manager.run_schedule_now(str(schedule.schedule_id))
         await self._wait_until(lambda: schedule.run_count >= 1)
@@ -171,9 +168,7 @@ class TestManagerRunNow:
         """A disabled/paused schedule still runs once via run-now."""
         schedule = _make_fake_schedule(enabled=False)
         monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=schedule))
-        monkeypatch.setattr(
-            manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-        )
+        monkeypatch.setattr(manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
         await manager.run_schedule_now(str(schedule.schedule_id))
         await self._wait_until(lambda: len(fake_bot.chat_calls) >= 1)
@@ -184,9 +179,7 @@ class TestManagerRunNow:
     async def test_concurrent_run_now_409(self, manager, monkeypatch):
         schedule = _make_fake_schedule()
         monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=schedule))
-        monkeypatch.setattr(
-            manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-        )
+        monkeypatch.setattr(manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
         await manager.run_schedule_now(str(schedule.schedule_id))
         with pytest.raises(SchedulerRunNowConflictError):
@@ -196,9 +189,7 @@ class TestManagerRunNow:
     async def test_last_result_populated(self, manager, fake_bot, monkeypatch):
         schedule = _make_fake_schedule()
         monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=schedule))
-        monkeypatch.setattr(
-            manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-        )
+        monkeypatch.setattr(manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
         await manager.run_schedule_now(str(schedule.schedule_id))
         await self._wait_until(lambda: schedule.run_count >= 1)
@@ -214,9 +205,7 @@ class TestManagerRunNow:
         fake_bot.should_fail = True
         schedule = _make_fake_schedule()
         monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=schedule))
-        monkeypatch.setattr(
-            manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule)
-        )
+        monkeypatch.setattr(manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
 
         await manager.run_schedule_now(str(schedule.schedule_id))
         await self._wait_until(lambda: schedule.run_count >= 1)
@@ -227,9 +216,7 @@ class TestManagerRunNow:
 
     @pytest.mark.asyncio
     async def test_run_now_unknown_schedule_bubbles(self, manager, monkeypatch):
-        monkeypatch.setattr(
-            manager, "get_schedule", AsyncMock(side_effect=LookupError("no such schedule"))
-        )
+        monkeypatch.setattr(manager, "get_schedule", AsyncMock(side_effect=LookupError("no such schedule")))
         with pytest.raises(LookupError):
             await manager.run_schedule_now("does-not-exist")
 
@@ -254,11 +241,19 @@ class TestHandlerDispatch:
         manager.pause_schedule = AsyncMock(return_value=SimpleNamespace())
         manager.update_schedule = AsyncMock(return_value=SimpleNamespace())
         manager.run_schedule_now = AsyncMock(return_value=SimpleNamespace())
-        manager.get_last_result = AsyncMock(return_value={
-            "schedule_id": "sched-1", "last_run": None, "next_run": None,
-            "run_count": 0, "last_status": None, "last_result": None,
-            "last_result_time": None, "last_error": None, "last_error_time": None,
-        })
+        manager.get_last_result = AsyncMock(
+            return_value={
+                "schedule_id": "sched-1",
+                "last_run": None,
+                "next_run": None,
+                "run_count": 0,
+                "last_status": None,
+                "last_result": None,
+                "last_result_time": None,
+                "last_error": None,
+                "last_error_time": None,
+            }
+        )
         return manager
 
     @pytest.fixture
@@ -270,8 +265,12 @@ class TestHandlerDispatch:
     @pytest.mark.asyncio
     async def test_patch_run_now_dispatches_to_manager(self, app, fake_manager):
         handler = _make_handler(
-            SchedulerJobsHandler, app, method="PATCH", path="/schedules/sched-1",
-            match_info={"schedule_id": "sched-1"}, json_body={"action": "run_now"},
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            path="/schedules/sched-1",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "run_now"},
         )
         response = await handler.patch()
         assert response.status == 200
@@ -279,12 +278,14 @@ class TestHandlerDispatch:
 
     @pytest.mark.asyncio
     async def test_patch_run_now_conflict_maps_to_409(self, app, fake_manager):
-        fake_manager.run_schedule_now = AsyncMock(
-            side_effect=SchedulerRunNowConflictError("already active")
-        )
+        fake_manager.run_schedule_now = AsyncMock(side_effect=SchedulerRunNowConflictError("already active"))
         handler = _make_handler(
-            SchedulerJobsHandler, app, method="PATCH", path="/schedules/sched-1",
-            match_info={"schedule_id": "sched-1"}, json_body={"action": "run_now"},
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            path="/schedules/sched-1",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "run_now"},
         )
         response = await handler.patch()
         assert response.status == 409
@@ -292,8 +293,12 @@ class TestHandlerDispatch:
     @pytest.mark.asyncio
     async def test_patch_pause_unchanged(self, app, fake_manager):
         handler = _make_handler(
-            SchedulerJobsHandler, app, method="PATCH", path="/schedules/sched-1",
-            match_info={"schedule_id": "sched-1"}, json_body={"action": "pause"},
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            path="/schedules/sched-1",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "pause"},
         )
         response = await handler.patch()
         assert response.status == 200
@@ -303,8 +308,12 @@ class TestHandlerDispatch:
     @pytest.mark.asyncio
     async def test_patch_resume_unchanged(self, app, fake_manager):
         handler = _make_handler(
-            SchedulerJobsHandler, app, method="PATCH", path="/schedules/sched-1",
-            match_info={"schedule_id": "sched-1"}, json_body={"action": "resume"},
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            path="/schedules/sched-1",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "resume"},
         )
         response = await handler.patch()
         assert response.status == 200
@@ -314,8 +323,12 @@ class TestHandlerDispatch:
     async def test_patch_update_default_action_unchanged(self, app, fake_manager):
         payload = {"prompt": "new prompt"}
         handler = _make_handler(
-            SchedulerJobsHandler, app, method="PATCH", path="/schedules/sched-1",
-            match_info={"schedule_id": "sched-1"}, json_body=payload,
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            path="/schedules/sched-1",
+            match_info={"schedule_id": "sched-1"},
+            json_body=payload,
         )
         response = await handler.patch()
         assert response.status == 200
@@ -325,8 +338,12 @@ class TestHandlerDispatch:
     async def test_patch_config_error_maps_to_400(self, app, fake_manager):
         fake_manager.update_schedule = AsyncMock(side_effect=SchedulerConfigError("bad config"))
         handler = _make_handler(
-            SchedulerJobsHandler, app, method="PATCH", path="/schedules/sched-1",
-            match_info={"schedule_id": "sched-1"}, json_body={"foo": "bar"},
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            path="/schedules/sched-1",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"foo": "bar"},
         )
         response = await handler.patch()
         assert response.status == 400
@@ -334,8 +351,11 @@ class TestHandlerDispatch:
     @pytest.mark.asyncio
     async def test_last_result_handler_get(self, app, fake_manager):
         handler = _make_handler(
-            SchedulerLastResultHandler, app, method="GET",
-            path="/schedules/sched-1/last-result", match_info={"schedule_id": "sched-1"},
+            SchedulerLastResultHandler,
+            app,
+            method="GET",
+            path="/schedules/sched-1/last-result",
+            match_info={"schedule_id": "sched-1"},
         )
         response = await handler.get()
         assert response.status == 200
@@ -347,7 +367,10 @@ class TestHandlerDispatch:
     @pytest.mark.asyncio
     async def test_last_result_handler_missing_schedule_id(self, app):
         handler = _make_handler(
-            SchedulerLastResultHandler, app, method="GET", path="/schedules//last-result",
+            SchedulerLastResultHandler,
+            app,
+            method="GET",
+            path="/schedules//last-result",
             match_info={},
         )
         response = await handler.get()

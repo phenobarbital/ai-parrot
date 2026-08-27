@@ -7,6 +7,7 @@ TASK-2512) — every mutating response flags ``reload_required: true``;
 this handler never triggers a reload itself (resolved decision, spec §3
 Module 6).
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -135,9 +136,7 @@ class _StudioFilesMixin:
         validate with parse_skill_file (tmp-file parse) -> 422 ... only
         then move into place" — TASK-2514 Implementation Notes).
         """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
             tmp.write(content)
             tmp_path = Path(tmp.name)
         try:
@@ -174,9 +173,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         filename = self.request.match_info.get("filename")
 
         if not agent_name or not is_valid_slug(agent_name):
-            return self._error(
-                "Invalid agent name.", status=400, code="invalid_agent"
-            )
+            return self._error("Invalid agent name.", status=400, code="invalid_agent")
         if kind not in VALID_KINDS:
             return self._error(
                 f"Unknown kind '{kind}'; must be one of {VALID_KINDS}.",
@@ -186,9 +183,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
 
         exists, _owner = await self._resolve_agent(agent_name)
         if not exists:
-            return self._error(
-                f"Agent '{agent_name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Agent '{agent_name}' not found.", status=404, code="not_found")
 
         base_dir = Path(AGENTS_DIR) / agent_name / kind
 
@@ -201,23 +196,21 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
             return self._error(str(exc), status=400, code="invalid_path")
 
         if not target.exists() or not target.is_file():
-            return self._error(
-                f"File '{filename}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"File '{filename}' not found.", status=404, code="not_found")
 
-        return self.json_response({
-            "path": filename,
-            "kind": kind,
-            "size": target.stat().st_size,
-            "content": target.read_text(),
-        })
+        return self.json_response(
+            {
+                "path": filename,
+                "kind": kind,
+                "size": target.stat().st_size,
+                "content": target.read_text(),
+            }
+        )
 
     def _list_files(self, base_dir: Path, kind: str):
         if not base_dir.exists():
             return self.json_response({"kind": kind, "files": []})
-        files = sorted(
-            str(p.relative_to(base_dir)) for p in base_dir.rglob("*") if p.is_file()
-        )
+        files = sorted(str(p.relative_to(base_dir)) for p in base_dir.rglob("*") if p.is_file())
         return self.json_response({"kind": kind, "files": files})
 
     async def put(self):
@@ -226,9 +219,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         filename = self.request.match_info.get("filename")
 
         if not agent_name or not is_valid_slug(agent_name):
-            return self._error(
-                "Invalid agent name.", status=400, code="invalid_agent"
-            )
+            return self._error("Invalid agent name.", status=400, code="invalid_agent")
         if kind not in VALID_KINDS:
             return self._error(
                 f"Unknown kind '{kind}'; must be one of {VALID_KINDS}.",
@@ -236,15 +227,11 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
                 code="invalid_kind",
             )
         if not filename:
-            return self._error(
-                "Filename is required.", status=400, code="missing_filename"
-            )
+            return self._error("Filename is required.", status=400, code="missing_filename")
 
         exists, owner = await self._resolve_agent(agent_name)
         if not exists:
-            return self._error(
-                f"Agent '{agent_name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Agent '{agent_name}' not found.", status=404, code="not_found")
 
         user = await self._get_user()
         self._require_owner(owner, user)  # raises 403 on denial
@@ -266,9 +253,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
 
         content = (payload or {}).get("content")
         if content is None:
-            return self._error(
-                "'content' is required.", status=400, code="missing_content"
-            )
+            return self._error("'content' is required.", status=400, code="missing_content")
 
         if kind == "skills" and _is_skill_definition_file(filename):
             error = self._validate_skill_content(content)
@@ -294,9 +279,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         filename = self.request.match_info.get("filename")
 
         if not agent_name or not is_valid_slug(agent_name):
-            return self._error(
-                "Invalid agent name.", status=400, code="invalid_agent"
-            )
+            return self._error("Invalid agent name.", status=400, code="invalid_agent")
         if kind not in VALID_KINDS:
             return self._error(
                 f"Unknown kind '{kind}'; must be one of {VALID_KINDS}.",
@@ -304,15 +287,11 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
                 code="invalid_kind",
             )
         if not filename:
-            return self._error(
-                "Filename is required.", status=400, code="missing_filename"
-            )
+            return self._error("Filename is required.", status=400, code="missing_filename")
 
         exists, owner = await self._resolve_agent(agent_name)
         if not exists:
-            return self._error(
-                f"Agent '{agent_name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Agent '{agent_name}' not found.", status=404, code="not_found")
 
         user = await self._get_user()
         self._require_owner(owner, user)  # raises 403 on denial
@@ -324,14 +303,10 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
             return self._error(str(exc), status=400, code="invalid_path")
 
         if not target.exists():
-            return self._error(
-                f"File '{filename}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"File '{filename}' not found.", status=404, code="not_found")
 
         # Deleting a file the live agent uses is allowed — never blocked
         # (resolved decision, spec §3 Module 6).
         target.unlink()
 
-        return self.json_response(
-            {"path": filename, "kind": kind, "deleted": True, "reload_required": True}
-        )
+        return self.json_response({"path": filename, "kind": kind, "deleted": True, "reload_required": True})

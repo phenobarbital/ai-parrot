@@ -5,6 +5,7 @@ rather than declaring per-endpoint duplicates, so the request/response
 contract for the Studio API stays in one place across the
 ``handlers/studio/`` package.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -28,6 +29,7 @@ class StudioError(BaseModel):
         details: Optional structured detail payload (validation errors,
             offending fields, etc.).
     """
+
     message: str
     code: str | None = None
     details: dict[str, Any] | None = None
@@ -49,6 +51,7 @@ class CreateAgentRequest(BaseModel):
             ``persist=True``).
         config: Free-form startup config merged into the agent's kwargs.
     """
+
     name: str
     bot_class: str = "BasicBot"
     llm: str | None = None
@@ -67,6 +70,7 @@ class DraftValidationReport(BaseModel):
         errors: Validation findings — each a dict with ``line``, ``code``,
             and ``message`` keys.
     """
+
     passed: bool
     errors: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -82,6 +86,7 @@ class SkillPublishRequest(BaseModel):
         triggers: Trigger phrases/commands for the skill.
         body: Skill markdown body (including frontmatter).
     """
+
     name: str
     description: str
     category: SkillCategory
@@ -99,5 +104,6 @@ class ByokKeyRequest(BaseModel):
             in logs/reprs; never returned in plaintext (spec §7 BYOK
             security).
     """
+
     provider: str
     api_key: SecretStr

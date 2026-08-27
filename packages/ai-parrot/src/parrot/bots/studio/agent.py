@@ -7,6 +7,7 @@ finalize_agent_registration`` directly) and ships three authored composite
 skills (``agent-builder``, ``skill-writer``, ``kb-writer``) alongside its
 HITL-gated tools.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

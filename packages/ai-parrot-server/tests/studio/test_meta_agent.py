@@ -9,6 +9,7 @@ All LLM calls are mocked — no network (``AnthropicClient`` is monkeypatched
 out of ``AgentStudioAgent.__init__`` for every test that doesn't
 specifically exercise LLM-client construction).
 """
+
 from __future__ import annotations
 
 import json
@@ -104,21 +105,29 @@ class TestModelResolution:
 
 
 class TestToolsConfirmationGated:
-    @pytest.mark.parametrize("tool_fn_name", [
-        "save_agent_draft",
-        "create_yaml_agent",
-        "write_identity_file",
-        "write_kb_file",
-        "write_skill_file",
-        "publish_skill_to_catalog",
-    ])
+    @pytest.mark.parametrize(
+        "tool_fn_name",
+        [
+            "save_agent_draft",
+            "create_yaml_agent",
+            "write_identity_file",
+            "write_kb_file",
+            "write_skill_file",
+            "publish_skill_to_catalog",
+        ],
+    )
     def test_mutating_tools_require_confirmation(self, tool_fn_name):
         tool_fn = getattr(tools_module, tool_fn_name)
         assert tool_fn._tool_metadata["routing_meta"]["requires_confirmation"] is True
 
-    @pytest.mark.parametrize("tool_fn_name", [
-        "list_agent_base_classes", "list_available_tools", "list_existing_agents",
-    ])
+    @pytest.mark.parametrize(
+        "tool_fn_name",
+        [
+            "list_agent_base_classes",
+            "list_available_tools",
+            "list_existing_agents",
+        ],
+    )
     def test_readonly_tools_not_gated(self, tool_fn_name):
         tool_fn = getattr(tools_module, tool_fn_name)
         assert tool_fn._tool_metadata["routing_meta"]["requires_confirmation"] is False
@@ -126,9 +135,15 @@ class TestToolsConfirmationGated:
     def test_build_studio_tools_returns_all_nine(self):
         names = {t._tool_metadata["name"] for t in tools_module.build_studio_tools()}
         assert names == {
-            "save_agent_draft", "create_yaml_agent", "write_identity_file",
-            "write_kb_file", "write_skill_file", "publish_skill_to_catalog",
-            "list_agent_base_classes", "list_available_tools", "list_existing_agents",
+            "save_agent_draft",
+            "create_yaml_agent",
+            "write_identity_file",
+            "write_kb_file",
+            "write_skill_file",
+            "publish_skill_to_catalog",
+            "list_agent_base_classes",
+            "list_available_tools",
+            "list_existing_agents",
         }
 
 
@@ -161,7 +176,8 @@ class TestWriteBoundaryEnforced:
         with pytest.raises(ValueError):
             await _call_tool_fn(
                 tools_module.save_agent_draft,
-                name="../../etc/passwd", source="x = 1",
+                name="../../etc/passwd",
+                source="x = 1",
             )
 
     @pytest.mark.asyncio
@@ -173,7 +189,9 @@ class TestWriteBoundaryEnforced:
         with pytest.raises(ValueError):
             await _call_tool_fn(
                 tools_module.write_identity_file,
-                agent_name="myagent", filename="../../../etc/passwd", content="x",
+                agent_name="myagent",
+                filename="../../../etc/passwd",
+                content="x",
             )
 
     @pytest.mark.asyncio
@@ -185,7 +203,9 @@ class TestWriteBoundaryEnforced:
         with pytest.raises(ValueError):
             await _call_tool_fn(
                 tools_module.write_identity_file,
-                agent_name="myagent", filename="not_a_real_identity_file.md", content="x",
+                agent_name="myagent",
+                filename="not_a_real_identity_file.md",
+                content="x",
             )
 
     def test_no_tool_accepts_a_raw_agents_dir_path(self):
@@ -257,12 +277,8 @@ class TestAssistantSessionInstance:
     async def test_session_instance_reused(self, monkeypatch):
         app = web.Application()
         fake_agent = _FakeAssistantAgent()
-        monkeypatch.setattr(
-            meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent
-        )
-        monkeypatch.setattr(
-            meta_agent_module, "resolve_user_api_key", AsyncMock(return_value=None)
-        )
+        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent)
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", AsyncMock(return_value=None))
 
         session = {}
         handler1 = _make_handler(app, json_body={"query": "hi", "use_byok": False}, session=session)
@@ -287,7 +303,8 @@ class TestAssistantSessionInstance:
 
         monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", _factory)
         monkeypatch.setattr(
-            meta_agent_module, "resolve_user_api_key",
+            meta_agent_module,
+            "resolve_user_api_key",
             AsyncMock(return_value="sk-ant-stored-key"),
         )
 
@@ -302,9 +319,7 @@ class TestAssistantSessionInstance:
         app = web.Application()
         fake_agent = _FakeAssistantAgent()
         monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent)
-        monkeypatch.setattr(
-            meta_agent_module, "resolve_user_api_key", AsyncMock(return_value=None)
-        )
+        monkeypatch.setattr(meta_agent_module, "resolve_user_api_key", AsyncMock(return_value=None))
 
         session = {}
         post_handler = _make_handler(app, json_body={"query": "hi", "use_byok": False}, session=session)

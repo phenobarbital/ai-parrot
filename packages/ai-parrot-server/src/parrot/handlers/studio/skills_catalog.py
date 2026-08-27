@@ -11,6 +11,7 @@ is wrapped so a Redis/embedding outage never fails a publish — it only
 flags ``search_index_stale=True`` for later repair (startup
 reconciliation pass, or the admin ``/skills/resync`` endpoint).
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -202,9 +203,7 @@ class _StudioSkillsMixin:
                 except NoDataFound:
                     return None
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error(
-                "Studio: failed to query skill by name '%s': %s", name, exc
-            )
+            self.logger.error("Studio: failed to query skill by name '%s': %s", name, exc)
             return None
 
     async def _list_entries(self, **filters: Any) -> list[SkillCatalogEntry]:
@@ -288,8 +287,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
             valid_values = [c.value for c in SkillCategory]
             if category_param not in valid_values:
                 return self._error(
-                    f"Invalid category '{category_param}'; must be one of "
-                    f"{valid_values}.",
+                    f"Invalid category '{category_param}'; must be one of " f"{valid_values}.",
                     status=400,
                     code="invalid_category",
                 )
@@ -304,9 +302,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
             entries = await self._list_entries(**filters)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: failed to list skills: %s", exc)
-            return self._error(
-                "Failed to list skills.", status=500, code="list_failed"
-            )
+            return self._error("Failed to list skills.", status=500, code="list_failed")
 
         entries = sorted(entries or [], key=lambda e: (e.category, e.name))
 
@@ -319,19 +315,16 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
     async def _get_one(self, skill_id: str):
         entry = await self._get_entry_by_id(skill_id)
         if entry is None:
-            return self._error(
-                f"Skill '{skill_id}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Skill '{skill_id}' not found.", status=404, code="not_found")
         data = self._entry_to_dict(entry)
         try:
-            registry = _get_shared_skill_registry(
-                self.request.app, await self._get_org_id()
-            )
+            registry = _get_shared_skill_registry(self.request.app, await self._get_org_id())
             data["versions"] = await registry.get_skill_versions(str(entry.skill_id))
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
                 "Studio: failed to fetch registry versions for '%s': %s",
-                skill_id, exc,
+                skill_id,
+                exc,
             )
             data["versions"] = []
         return self.json_response(data)
@@ -354,9 +347,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         try:
             publish_request = SkillPublishRequest(**(payload or {}))
         except ValidationError as exc:
-            return self._error(
-                f"Invalid request: {exc}", status=400, code="invalid_request"
-            )
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         existing = await self._get_entry_by_name(publish_request.name)
         if existing is not None:
@@ -367,9 +358,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
             )
 
         if self.request.app.get("database") is None:
-            return self._error(
-                "Database unavailable.", status=503, code="unavailable"
-            )
+            return self._error("Database unavailable.", status=503, code="unavailable")
 
         user = await self._get_user()
 
@@ -389,11 +378,10 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error(
                 "Studio: failed to insert skill catalog entry '%s': %s",
-                publish_request.name, exc,
+                publish_request.name,
+                exc,
             )
-            return self._error(
-                f"Failed to publish skill: {exc}", status=500, code="publish_failed"
-            )
+            return self._error(f"Failed to publish skill: {exc}", status=500, code="publish_failed")
 
         stale = await self._dual_write_to_registry(entry, user.user_id)
         if stale:
@@ -404,15 +392,11 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
     async def put(self):
         skill_id = self.request.match_info.get("id")
         if not skill_id:
-            return self._error(
-                "Skill id is required.", status=400, code="missing_id"
-            )
+            return self._error("Skill id is required.", status=400, code="missing_id")
 
         entry = await self._get_entry_by_id(skill_id)
         if entry is None:
-            return self._error(
-                f"Skill '{skill_id}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Skill '{skill_id}' not found.", status=404, code="not_found")
 
         user = await self._get_user()
         self._require_owner(entry.owner, user)  # raises 403 on denial
@@ -424,14 +408,10 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         try:
             publish_request = SkillPublishRequest(**(payload or {}))
         except ValidationError as exc:
-            return self._error(
-                f"Invalid request: {exc}", status=400, code="invalid_request"
-            )
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         if self.request.app.get("database") is None:
-            return self._error(
-                "Database unavailable.", status=503, code="unavailable"
-            )
+            return self._error("Database unavailable.", status=503, code="unavailable")
 
         entry.set("description", publish_request.description)
         entry.set("category", publish_request.category.value)
@@ -442,9 +422,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
             await self._update_entry(entry)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: failed to update skill '%s': %s", skill_id, exc)
-            return self._error(
-                "Failed to update skill.", status=500, code="update_failed"
-            )
+            return self._error("Failed to update skill.", status=500, code="update_failed")
 
         stale = await self._dual_write_to_registry(entry, entry.owner)
         if stale and not entry.search_index_stale:
@@ -455,57 +433,39 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
     async def delete(self):
         skill_id = self.request.match_info.get("id")
         if not skill_id:
-            return self._error(
-                "Skill id is required.", status=400, code="missing_id"
-            )
+            return self._error("Skill id is required.", status=400, code="missing_id")
 
         entry = await self._get_entry_by_id(skill_id)
         if entry is None:
-            return self._error(
-                f"Skill '{skill_id}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Skill '{skill_id}' not found.", status=404, code="not_found")
 
         user = await self._get_user()
         self._require_owner(entry.owner, user)  # raises 403 on denial
 
         if self.request.app.get("database") is None:
-            return self._error(
-                "Database unavailable.", status=503, code="unavailable"
-            )
+            return self._error("Database unavailable.", status=503, code="unavailable")
 
         try:
             await self._delete_entry(entry)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: failed to delete skill '%s': %s", skill_id, exc)
-            return self._error(
-                "Failed to delete skill.", status=500, code="delete_failed"
-            )
+            return self._error("Failed to delete skill.", status=500, code="delete_failed")
 
         try:
-            registry = _get_shared_skill_registry(
-                self.request.app, await self._get_org_id()
-            )
-            await registry.revoke_skill(
-                str(entry.skill_id), reason="deleted via Studio catalog"
-            )
+            registry = _get_shared_skill_registry(self.request.app, await self._get_org_id())
+            await registry.revoke_skill(str(entry.skill_id), reason="deleted via Studio catalog")
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.warning(
-                "Studio: registry revoke failed for '%s': %s", skill_id, exc
-            )
+            self.logger.warning("Studio: registry revoke failed for '%s': %s", skill_id, exc)
 
         return self.json_response({"skill_id": str(entry.skill_id), "deleted": True})
 
     # -- shared dual-write helpers ---------------------------------------
 
-    async def _dual_write_to_registry(
-        self, entry: SkillCatalogEntry, owner_user_id: str
-    ) -> bool:
+    async def _dual_write_to_registry(self, entry: SkillCatalogEntry, owner_user_id: str) -> bool:
         """Best-effort registry upload. Returns True on failure (caller
         flags ``search_index_stale``) — NEVER raises."""
         try:
-            registry = _get_shared_skill_registry(
-                self.request.app, await self._get_org_id()
-            )
+            registry = _get_shared_skill_registry(self.request.app, await self._get_org_id())
             await registry.upload_skill(
                 name=entry.name,
                 content=entry.body,
@@ -520,7 +480,8 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
                 "Studio: registry dual-write failed for skill '%s': %s",
-                entry.name, exc,
+                entry.name,
+                exc,
             )
             return True
 
@@ -531,7 +492,8 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error(
                 "Studio: failed to flag search_index_stale for '%s': %s",
-                entry.name, exc,
+                entry.name,
+                exc,
             )
 
 
@@ -557,9 +519,7 @@ class StudioSkillsImportHandler(_StudioSkillsMixin, StudioBaseView):
 
         entry = await self._get_entry_by_id(skill_id)
         if entry is None:
-            return self._error(
-                f"Skill '{skill_id}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Skill '{skill_id}' not found.", status=404, code="not_found")
 
         try:
             payload = await self.request.json()
@@ -614,22 +574,16 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):
     async def post(self):
         user = await self._get_user()
         if not user.is_superuser:
-            return self._error(
-                "Admin privileges required.", status=403, code="admin_required"
-            )
+            return self._error("Admin privileges required.", status=403, code="admin_required")
 
         if self.request.app.get("database") is None:
-            return self._error(
-                "Database unavailable.", status=503, code="unavailable"
-            )
+            return self._error("Database unavailable.", status=503, code="unavailable")
 
         try:
             stale_entries = await self._list_entries(search_index_stale=True)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: resync failed to query stale entries: %s", exc)
-            return self._error(
-                "Failed to query stale entries.", status=500, code="resync_failed"
-            )
+            return self._error("Failed to query stale entries.", status=500, code="resync_failed")
 
         resynced = 0
         failed = 0
@@ -651,11 +605,7 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):
                 await self._update_entry(entry)
                 resynced += 1
             except Exception as exc:  # pylint: disable=broad-except
-                self.logger.warning(
-                    "Studio: resync failed for skill '%s': %s", entry.name, exc
-                )
+                self.logger.warning("Studio: resync failed for skill '%s': %s", entry.name, exc)
                 failed += 1
 
-        return self.json_response(
-            {"resynced": resynced, "failed": failed, "total": len(stale_entries)}
-        )
+        return self.json_response({"resynced": resynced, "failed": failed, "total": len(stale_entries)})

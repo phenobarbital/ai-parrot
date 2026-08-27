@@ -6,6 +6,7 @@ Covers:
   - register(..., replace=True) drops the stale BotMetadata._instance of
     the entry it replaces, so a reload can never serve a zombie instance.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

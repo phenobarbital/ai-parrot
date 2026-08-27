@@ -10,6 +10,7 @@ Wiki/graphindex assignment tests use real ``LLMWikiToolkit`` /
 ``build_graph_memory_toolkit`` machinery against ``tmp_path`` (no
 network — SQLite/local-file backends only).
 """
+
 from __future__ import annotations
 
 import json
@@ -36,8 +37,7 @@ async def _decode(response: web.Response) -> dict:
     return json.loads(response.body)
 
 
-def _make_handler(app, *, method="GET", path="/x", match_info=None,
-                   json_body=None, owner="1"):
+def _make_handler(app, *, method="GET", path="/x", match_info=None, json_body=None, owner="1"):
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
     if json_body is not None:
         request.json = AsyncMock(return_value=json_body)
@@ -51,9 +51,7 @@ def _owned_ownership_fixtures(handler, *, owner="1"):
     """Wire the ownership-check seams so assignment POSTs pass the owner gate."""
     handler._get_db_agent = AsyncMock(return_value=None)
     fake_meta = SimpleNamespace(bot_config=SimpleNamespace(config={"created_by": owner}))
-    handler._registry = MagicMock(
-        return_value=SimpleNamespace(get_metadata=lambda name: fake_meta)
-    )
+    handler._registry = MagicMock(return_value=SimpleNamespace(get_metadata=lambda name: fake_meta))
 
 
 class _FakeToolkit(AbstractToolkit):
@@ -115,11 +113,14 @@ class TestToolkitSchema:
     async def test_generic_schema_introspects_class(self, monkeypatch):
         app = web.Application()
         monkeypatch.setattr(
-            toolkits_module, "_resolve_toolkit_class",
+            toolkits_module,
+            "_resolve_toolkit_class",
             lambda slug: _NeedsArgToolkit if slug == "needs_arg" else None,
         )
         handler = _make_handler(
-            app, method="GET", path="/toolkits/needs_arg/schema",
+            app,
+            method="GET",
+            path="/toolkits/needs_arg/schema",
             match_info={"slug": "needs_arg"},
         )
 
@@ -135,7 +136,10 @@ class TestToolkitSchema:
         app = web.Application()
         monkeypatch.setattr(toolkits_module, "_resolve_toolkit_class", lambda slug: None)
         handler = _make_handler(
-            app, method="GET", path="/toolkits/nope/schema", match_info={"slug": "nope"},
+            app,
+            method="GET",
+            path="/toolkits/nope/schema",
+            match_info={"slug": "nope"},
         )
 
         response = await _unwrap(StudioToolkitsHandler.get)(handler)
@@ -163,7 +167,9 @@ class TestWikiAssignment:
         app["bot_manager"] = manager
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={
                 "slug": "wiki",
@@ -195,7 +201,9 @@ class TestWikiAssignment:
         app["bot_manager"] = manager
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={
                 "slug": "wiki",
@@ -221,7 +229,9 @@ class TestWikiAssignment:
         app["bot_manager"] = manager
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={"slug": "wiki", "params": {}},  # missing required wiki_name/storage_dir
         )
@@ -250,7 +260,9 @@ class TestInfographicAssignment:
         app["bot_manager"] = manager
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={"slug": "infographic", "params": {}},
         )
@@ -271,7 +283,9 @@ class TestInfographicAssignment:
         app["bot_manager"] = manager
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={"slug": "infographic", "params": {}},
         )
@@ -299,12 +313,15 @@ class TestGenericAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
         monkeypatch.setattr(
-            toolkits_module, "_resolve_toolkit_class",
+            toolkits_module,
+            "_resolve_toolkit_class",
             lambda slug: _FakeToolkit if slug == "fake_toolkit" else None,
         )
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={"slug": "fake_toolkit", "params": {}},
         )
@@ -324,12 +341,15 @@ class TestGenericAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
         monkeypatch.setattr(
-            toolkits_module, "_resolve_toolkit_class",
+            toolkits_module,
+            "_resolve_toolkit_class",
             lambda slug: _NeedsArgToolkit if slug == "needs_arg" else None,
         )
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={"slug": "needs_arg", "params": {}},
         )
@@ -352,7 +372,9 @@ class TestGenericAssignment:
         monkeypatch.setattr(toolkits_module, "_resolve_toolkit_class", lambda slug: None)
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
             match_info={"name": "myagent"},
             json_body={"slug": "nope", "params": {}},
         )
@@ -370,13 +392,17 @@ class TestGenericAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
         monkeypatch.setattr(
-            toolkits_module, "_resolve_toolkit_class",
+            toolkits_module,
+            "_resolve_toolkit_class",
             lambda slug: _FakeToolkit if slug == "fake_toolkit" else None,
         )
 
         handler = _make_handler(
-            app, method="POST", path="/agents/myagent/toolkits",
-            match_info={"name": "myagent"}, owner="not-the-owner",
+            app,
+            method="POST",
+            path="/agents/myagent/toolkits",
+            match_info={"name": "myagent"},
+            owner="not-the-owner",
             json_body={"slug": "fake_toolkit", "params": {}},
         )
         _owned_ownership_fixtures(handler, owner="1")

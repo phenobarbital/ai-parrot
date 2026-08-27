@@ -8,6 +8,7 @@ explicit ``POST .../activate`` call — the ONLY path from generated code
 to live code (spec §7 "Draft import side effects": the AST allowlist
 must run BEFORE any import).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -30,12 +31,14 @@ DRAFTS_SUBDIR = "_drafts"
 
 class SaveDraftRequest(BaseModel):
     """``POST /astudio/drafts`` payload."""
+
     name: str
     source: str
 
 
 class ActivateDraftRequest(BaseModel):
     """``POST /astudio/drafts/{name}/activate`` payload."""
+
     replace: bool = False
 
 
@@ -91,9 +94,7 @@ class _StudioDraftsMixin:
         """Insert a new draft row, or update the existing one by name."""
         db = self.request.app.get("database")
         if db is None:
-            self.logger.warning(
-                "Studio: no database configured; draft state not persisted."
-            )
+            self.logger.warning("Studio: no database configured; draft state not persisted.")
             return None
         try:
             async with await db.acquire() as conn:
@@ -125,9 +126,7 @@ class _StudioDraftsMixin:
                 StudioDraft.Meta.connection = conn
                 await row.delete()
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error(
-                "Studio: failed to delete draft row '%s': %s", row.name, exc
-            )
+            self.logger.error("Studio: failed to delete draft row '%s': %s", row.name, exc)
 
     @staticmethod
     def _draft_to_dict(row: StudioDraft) -> dict:
@@ -169,9 +168,7 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
     async def _get_one(self, name: str):
         row = await self._get_draft_row(name)
         if row is None:
-            return self._error(
-                f"Draft '{name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Draft '{name}' not found.", status=404, code="not_found")
         data = self._draft_to_dict(row)
         draft_path = Path(row.file_path)
         data["source"] = draft_path.read_text() if draft_path.exists() else None
@@ -179,9 +176,7 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
 
     async def _get_all(self):
         rows = await self._get_all_draft_rows()
-        return self.json_response(
-            {"drafts": [self._draft_to_dict(r) for r in rows], "count": len(rows)}
-        )
+        return self.json_response({"drafts": [self._draft_to_dict(r) for r in rows], "count": len(rows)})
 
     async def post(self):
         """Save a draft — validation runs, but the draft is saved either way."""
@@ -200,22 +195,17 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         try:
             save_request = SaveDraftRequest(**(payload or {}))
         except ValidationError as exc:
-            return self._error(
-                f"Invalid request: {exc}", status=400, code="invalid_request"
-            )
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         if not is_valid_slug(save_request.name):
             return self._error(
-                f"Invalid draft name '{save_request.name}'; must match "
-                "^[a-z0-9_-]+$.",
+                f"Invalid draft name '{save_request.name}'; must match " "^[a-z0-9_-]+$.",
                 status=400,
                 code="invalid_name",
             )
 
         try:
-            file_path = resolve_safe_path(
-                self._drafts_dir(), f"{save_request.name}.py"
-            )
+            file_path = resolve_safe_path(self._drafts_dir(), f"{save_request.name}.py")
         except ValueError as exc:
             return self._error(str(exc), status=400, code="invalid_path")
 
@@ -249,15 +239,11 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
     async def delete(self):
         name = self.request.match_info.get("name")
         if not name:
-            return self._error(
-                "Draft name is required.", status=400, code="missing_name"
-            )
+            return self._error("Draft name is required.", status=400, code="missing_name")
 
         row = await self._get_draft_row(name)
         if row is None:
-            return self._error(
-                f"Draft '{name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Draft '{name}' not found.", status=404, code="not_found")
 
         user = await self._get_user()
         self._require_owner(row.owner_user_id, user)  # raises 403 on denial
@@ -285,15 +271,11 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
     async def post(self):
         name = self.request.match_info.get("name")
         if not name:
-            return self._error(
-                "Draft name is required.", status=400, code="missing_name"
-            )
+            return self._error("Draft name is required.", status=400, code="missing_name")
 
         row = await self._get_draft_row(name)
         if row is None:
-            return self._error(
-                f"Draft '{name}' not found.", status=404, code="not_found"
-            )
+            return self._error(f"Draft '{name}' not found.", status=404, code="not_found")
 
         try:
             payload = await self.request.json()
@@ -302,9 +284,7 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
         try:
             activate_request = ActivateDraftRequest(**(payload or {}))
         except ValidationError as exc:
-            return self._error(
-                f"Invalid request: {exc}", status=400, code="invalid_request"
-            )
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         user = await self._get_user()
         self._require_owner(row.owner_user_id, user)  # raises 403 on denial
@@ -339,29 +319,20 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
 
         registry = self._registry()
         if registry is None:
-            return self._error(
-                "AgentRegistry unavailable.", status=503, code="unavailable"
-            )
+            return self._error("AgentRegistry unavailable.", status=503, code="unavailable")
 
         if registry.has(name):
             existing_meta = registry.get_metadata(name)
             existing_owner = None
             if existing_meta is not None and existing_meta.bot_config is not None:
-                existing_owner = (existing_meta.bot_config.config or {}).get(
-                    "created_by"
-                )
+                existing_owner = (existing_meta.bot_config.config or {}).get("created_by")
             if not activate_request.replace:
                 return self._error(
-                    f"Agent '{name}' is already registered; pass "
-                    "replace=true to overwrite.",
+                    f"Agent '{name}' is already registered; pass " "replace=true to overwrite.",
                     status=409,
                     code="name_collision",
                 )
-            if (
-                existing_owner is not None
-                and str(existing_owner) != str(user.user_id)
-                and not user.is_superuser
-            ):
+            if existing_owner is not None and str(existing_owner) != str(user.user_id) and not user.is_superuser:
                 return self._error(
                     f"Agent '{name}' is owned by another user; cannot replace.",
                     status=409,
@@ -375,9 +346,7 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
         try:
             draft_path.replace(target_path)
         except OSError as exc:
-            return self._error(
-                f"Failed to move draft file: {exc}", status=500, code="move_failed"
-            )
+            return self._error(f"Failed to move draft file: {exc}", status=500, code="move_failed")
 
         try:
             registry._import_module_from_path(target_path, base_dir=AGENTS_DIR)
@@ -420,7 +389,8 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.warning(
                     "Studio: draft '%s' activated but instantiation failed: %s",
-                    name, exc,
+                    name,
+                    exc,
                 )
 
         await self._upsert_draft_row(
@@ -433,7 +403,4 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
             activated_at=datetime.now(),
         )
 
-        return self.json_response(
-            {"name": name, "activated": True, "file_path": str(target_path)}
-        )
-
+        return self.json_response({"name": name, "activated": True, "file_path": str(target_path)})

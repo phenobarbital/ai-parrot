@@ -1,4 +1,5 @@
 """REST handlers for Parrot scheduler management."""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
@@ -111,7 +112,9 @@ class SchedulerJobsHandler(BaseView):
                 scheduler_type=data.get("scheduler_type", "default"),
                 callbacks=data.get("callbacks", []),
             )
-            return self.json_response({"status": "success", "schedule": self.manager._serialize_job(schedule)}, status=201)  # pylint: disable=protected-access
+            return self.json_response(
+                {"status": "success", "schedule": self.manager._serialize_job(schedule)}, status=201
+            )  # pylint: disable=protected-access
         except KeyError as exc:
             return self._error_response(f"Missing required field: {exc.args[0]}", status=400)
         except SchedulerConfigError as exc:
@@ -142,7 +145,9 @@ class SchedulerJobsHandler(BaseView):
                 schedule = await self.manager.run_schedule_now(schedule_id)
             else:
                 schedule = await self.manager.update_schedule(schedule_id, payload)
-            return self.json_response({"status": "success", "schedule": self.manager._serialize_job(schedule)})  # pylint: disable=protected-access
+            return self.json_response(
+                {"status": "success", "schedule": self.manager._serialize_job(schedule)}
+            )  # pylint: disable=protected-access
         except SchedulerRunNowConflictError as exc:
             return self._error_response(str(exc), status=409)
         except SchedulerConfigError as exc:

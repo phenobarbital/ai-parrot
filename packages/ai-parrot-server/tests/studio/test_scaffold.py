@@ -5,6 +5,7 @@ the plain ``/api/v1/studio`` prefix another installed service occupies),
 unauthenticated 401, PBAC fail-open without a PDP, ownership 403/admin
 bypass, slug validation, and traversal-safe path resolution.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -83,9 +84,7 @@ class TestStudioPBAC:
 
     @pytest.mark.asyncio
     async def test_pbac_fail_open_without_pdp(self):
-        request = make_mocked_request(
-            "GET", "/api/v1/astudio/agents", app=web.Application()
-        )
+        request = make_mocked_request("GET", "/api/v1/astudio/agents", app=web.Application())
         view = StudioBaseView(request)
         allowed = await view._pbac_allowed("agents", "astudio:agents:list")
         assert allowed is True
@@ -95,9 +94,7 @@ class TestStudioPBAC:
         also fail-open. Uses a real ``web.Application`` (not the default
         ``make_mocked_request`` MagicMock app) so ``.get('abac')`` behaves
         like a real mapping instead of auto-mocking a truthy return."""
-        request = make_mocked_request(
-            "GET", "/api/v1/astudio/agents", app=web.Application()
-        )
+        request = make_mocked_request("GET", "/api/v1/astudio/agents", app=web.Application())
         assert "abac" not in request.app
         view = StudioBaseView(request)
         assert view._get_pbac_evaluator() is None
@@ -141,9 +138,7 @@ class TestStudioSlugValidation:
     def test_slug_validation_accepts_valid(self, slug):
         assert is_valid_slug(slug) is True
 
-    @pytest.mark.parametrize(
-        "slug", ["My-Agent", "agent name", "../etc", "", "a/b"]
-    )
+    @pytest.mark.parametrize("slug", ["My-Agent", "agent name", "../etc", "", "a/b"])
     def test_slug_validation_rejects_invalid(self, slug):
         assert is_valid_slug(slug) is False
 

@@ -12,6 +12,7 @@ Three toolkits get first-class handling (``wiki``, ``dataset_manager``,
 ``infographic``); any other slug resolves generically via
 ``TOOL_REGISTRY`` + constructor-signature introspection.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -47,13 +48,21 @@ _WIKI_STORAGE_ROOT = AGENTS_DIR / "wiki_storage"
 # ancestor, so treating it as a forbidden *parent* would reject every
 # absolute path; only an EXACT match on "/" is checked separately below.
 _FORBIDDEN_ABSOLUTE_ROOTS = (
-    Path("/etc"), Path("/root"), Path("/bin"), Path("/sbin"),
-    Path("/usr"), Path("/sys"), Path("/proc"), Path("/boot"), Path("/dev"),
+    Path("/etc"),
+    Path("/root"),
+    Path("/bin"),
+    Path("/sbin"),
+    Path("/usr"),
+    Path("/sys"),
+    Path("/proc"),
+    Path("/boot"),
+    Path("/dev"),
 )
 
 
 class ToolkitAssignRequest(BaseModel):
     """``POST /agents/{name}/toolkits`` payload."""
+
     slug: str
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -62,8 +71,7 @@ class _ToolkitAssignError(Exception):
     """Raised by the per-toolkit assignment helpers; mapped to a response
     by the handler."""
 
-    def __init__(self, status: int, code: str, message: str,
-                 details: dict | None = None) -> None:
+    def __init__(self, status: int, code: str, message: str, details: dict | None = None) -> None:
         self.status = status
         self.code = code
         self.message = message
@@ -96,9 +104,7 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _introspect_params(
-    cls: type, *, server_managed: frozenset[str] = frozenset()
-) -> dict[str, dict[str, Any]]:
+def _introspect_params(cls: type, *, server_managed: frozenset[str] = frozenset()) -> dict[str, dict[str, Any]]:
     """Build a param-name -> {required, server_managed, type, default} map.
 
     Args:
@@ -198,9 +204,7 @@ def _validate_wiki_storage_dir(raw: Path) -> Path:
             raise ValueError("storage_dir must not be the filesystem root.")
         for forbidden in _FORBIDDEN_ABSOLUTE_ROOTS:
             if resolved == forbidden or forbidden in resolved.parents:
-                raise ValueError(
-                    f"storage_dir must not resolve under a system path: {raw!r}"
-                )
+                raise ValueError(f"storage_dir must not resolve under a system path: {raw!r}")
         return resolved
     return resolve_safe_path(_WIKI_STORAGE_ROOT, str(raw))
 
@@ -220,8 +224,7 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
     configured toolkit instance onto a live agent's ``tool_manager``.
     """
 
-    def _error(self, message: str, *, status: int, code: str | None = None,
-               details: dict | None = None):
+    def _error(self, message: str, *, status: int, code: str | None = None, details: dict | None = None):
         return self.json_response(
             StudioError(message=message, code=code, details=details).model_dump(),
             status=status,
@@ -275,9 +278,7 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         return {
             "slug": "infographic",
             "class_name": "InfographicToolkit",
-            "params": _introspect_params(
-                InfographicToolkit, server_managed=frozenset({"artifact_store"})
-            ),
+            "params": _introspect_params(InfographicToolkit, server_managed=frozenset({"artifact_store"})),
         }
 
     # -- POST: assignment ----------------------------------------------
@@ -373,25 +374,30 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         if pageindex_toolkit is None:
             pageindex_source = "built"
             adapter = PageIndexLLMAdapter(client=bot.get_client())
-            pageindex_toolkit = PageIndexToolkit(
-                adapter=adapter, storage_dir=storage_dir / "pageindex"
-            )
+            pageindex_toolkit = PageIndexToolkit(adapter=adapter, storage_dir=storage_dir / "pageindex")
 
         graphindex_toolkit = getattr(bot, "_graphindex_toolkit", None)
         graphindex_source = "reused"
         if graphindex_toolkit is None:
             graphindex_source = "built"
             graphindex_toolkit = await build_graph_memory_toolkit(
-                db_dir=storage_dir / "graphindex", agent_id=bot.name,
+                db_dir=storage_dir / "graphindex",
+                agent_id=bot.name,
             )
 
         self.logger.info(
             "Studio wiki assignment for '%s': pageindex=%s graphindex=%s",
-            bot.name, pageindex_source, graphindex_source,
+            bot.name,
+            pageindex_source,
+            graphindex_source,
         )
 
         toolkit = LLMWikiToolkit(
-            pageindex_toolkit, graphindex_toolkit, None, config, agent_id=bot.name,
+            pageindex_toolkit,
+            graphindex_toolkit,
+            None,
+            config,
+            agent_id=bot.name,
         )
         registered = bot.tool_manager.register_toolkit(toolkit)
         return (
@@ -405,7 +411,9 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         except TypeError as exc:
             missing = _missing_required_params(DatasetManager, params)
             raise _ToolkitAssignError(
-                422, "invalid_params", str(exc),
+                422,
+                "invalid_params",
+                str(exc),
                 details={"missing": missing} if missing else None,
             ) from exc
         registered = bot.tool_manager.register_toolkit(toolkit)
@@ -415,7 +423,8 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         artifact_store = self.request.app.get("artifact_store")
         if artifact_store is None:
             raise _ToolkitAssignError(
-                422, "server_managed",
+                422,
+                "server_managed",
                 "InfographicToolkit requires app['artifact_store'], which is not configured.",
                 details={"missing": ["artifact_store"]},
             )
@@ -424,7 +433,9 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         except TypeError as exc:
             missing = _missing_required_params(InfographicToolkit, {**params, "artifact_store": artifact_store})
             raise _ToolkitAssignError(
-                422, "invalid_params", str(exc),
+                422,
+                "invalid_params",
+                str(exc),
                 details={"missing": missing} if missing else None,
             ) from exc
         registered = bot.tool_manager.register_toolkit(toolkit)
@@ -437,7 +448,8 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         missing = _missing_required_params(cls, params)
         if missing:
             raise _ToolkitAssignError(
-                422, "server_managed",
+                422,
+                "server_managed",
                 f"Toolkit '{slug}' requires params this endpoint can't supply.",
                 details={"missing": missing},
             )

@@ -6,6 +6,7 @@ FEAT-467 TASK-2510. Covers:
   - Old instance's cleanup() is invoked best-effort; failures become warnings.
   - Unknown agent name -> AgentNotFoundError (handler maps to 404).
 """
+
 from __future__ import annotations
 
 import textwrap
@@ -28,8 +29,7 @@ from parrot.registry.registry import AgentRegistry
 # `config.label` kwarg does, exercising a real config-driven reload.
 # ---------------------------------------------------------------------------
 
-_FIXTURE_MODULE_SOURCE = textwrap.dedent(
-    '''
+_FIXTURE_MODULE_SOURCE = textwrap.dedent('''
     """Reload-agent test fixture bot (written per-test via tmp_path)."""
     from parrot.bots.abstract import AbstractBot
 
@@ -67,8 +67,7 @@ _FIXTURE_MODULE_SOURCE = textwrap.dedent(
 
         async def cleanup(self):
             self.cleanup_calls += 1
-    '''
-)
+    ''')
 
 AGENT_NAME = "reload-fixture"
 
@@ -177,9 +176,7 @@ class TestReloadAgent:
         assert result.warnings == []
 
     @pytest.mark.asyncio
-    async def test_old_instance_close_failure_collects_warning(
-        self, manager, tmp_agents_dir
-    ):
+    async def test_old_instance_close_failure_collects_warning(self, manager, tmp_agents_dir):
         """A raising cleanup() is swallowed (best-effort) and warned about."""
         old_instance = await manager.registry.get_instance(AGENT_NAME)
         manager._bots[AGENT_NAME] = old_instance

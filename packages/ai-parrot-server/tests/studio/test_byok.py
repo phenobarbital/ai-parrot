@@ -8,6 +8,7 @@ DocumentDB is faked in-memory; the navigator-session vault master keys
 are a deterministic fixture (pattern hinted at by the spec's ``vault_keys``
 fixture) so encryption/decryption round-trips genuinely.
 """
+
 from __future__ import annotations
 
 import json
@@ -66,19 +67,17 @@ class _FakeDocumentDb:
 
     async def read(self, collection_name, query):
         return [
-            doc for doc in self.docs
-            if doc.get("_collection") == collection_name
-            and all(doc.get(k) == v for k, v in query.items())
+            doc
+            for doc in self.docs
+            if doc.get("_collection") == collection_name and all(doc.get(k) == v for k, v in query.items())
         ]
 
     async def delete(self, collection_name, query):
         before = len(self.docs)
         self.docs[:] = [
-            doc for doc in self.docs
-            if not (
-                doc.get("_collection") == collection_name
-                and all(doc.get(k) == v for k, v in query.items())
-            )
+            doc
+            for doc in self.docs
+            if not (doc.get("_collection") == collection_name and all(doc.get(k) == v for k, v in query.items()))
         ]
         return {"deleted": before - len(self.docs)}
 
@@ -87,7 +86,8 @@ class _FakeDocumentDb:
         record["_collection"] = collection_name
         # Upsert semantics matching the handler's own duplicate check.
         self.docs[:] = [
-            d for d in self.docs
+            d
+            for d in self.docs
             if not (
                 d.get("_collection") == collection_name
                 and d.get("user_id") == record.get("user_id")
@@ -100,6 +100,7 @@ class _FakeDocumentDb:
             def __await__(self_inner):
                 async def _noop():
                     return None
+
                 return _noop().__await__()
 
         return _FakeTask()
@@ -130,8 +131,7 @@ def app() -> web.Application:
     return web.Application()
 
 
-def _make_handler(app, *, method="GET", path="/x", match_info=None,
-                   json_body=None, owner="1", session=None):
+def _make_handler(app, *, method="GET", path="/x", match_info=None, json_body=None, owner="1", session=None):
     from unittest.mock import AsyncMock
 
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
@@ -146,7 +146,9 @@ def _make_handler(app, *, method="GET", path="/x", match_info=None,
 class TestByok:
     async def test_store_and_masked_list(self, app, fake_db):
         handler = _make_handler(
-            app, method="POST", path="/keys",
+            app,
+            method="POST",
+            path="/keys",
             json_body={"provider": "anthropic", "api_key": "sk-ant-abcdef1234"},
         )
         response = await _unwrap(StudioKeysHandler.post)(handler)
@@ -169,7 +171,9 @@ class TestByok:
         secret = "sk-ant-super-secret-value-xyz"
         with caplog.at_level(logging.DEBUG):
             handler = _make_handler(
-                app, method="POST", path="/keys",
+                app,
+                method="POST",
+                path="/keys",
                 json_body={"provider": "anthropic", "api_key": secret},
             )
             response = await _unwrap(StudioKeysHandler.post)(handler)
@@ -182,7 +186,10 @@ class TestByok:
     async def test_session_vault_hot_copy_written(self, app, fake_db):
         session = {}
         handler = _make_handler(
-            app, method="POST", path="/keys", session=session,
+            app,
+            method="POST",
+            path="/keys",
+            session=session,
             json_body={"provider": "openai", "api_key": "sk-openai-secret-9999"},
         )
         response = await _unwrap(StudioKeysHandler.post)(handler)
@@ -192,7 +199,9 @@ class TestByok:
 
     async def test_unsupported_provider_400(self, app, fake_db):
         handler = _make_handler(
-            app, method="POST", path="/keys",
+            app,
+            method="POST",
+            path="/keys",
             json_body={"provider": "not-a-real-provider", "api_key": "sk-whatever"},
         )
         response = await _unwrap(StudioKeysHandler.post)(handler)
@@ -204,7 +213,9 @@ class TestByok:
         monkeypatch.setattr(byok_module, "get_active_key_id", None)
 
         handler = _make_handler(
-            app, method="POST", path="/keys",
+            app,
+            method="POST",
+            path="/keys",
             json_body={"provider": "anthropic", "api_key": "sk-ant-whatever"},
         )
         response = await _unwrap(StudioKeysHandler.post)(handler)
@@ -214,7 +225,10 @@ class TestByok:
     async def test_delete_removes_both_copies(self, app, fake_db):
         session = {}
         store_handler = _make_handler(
-            app, method="POST", path="/keys", session=session,
+            app,
+            method="POST",
+            path="/keys",
+            session=session,
             json_body={"provider": "google", "api_key": "sk-google-secret-0001"},
         )
         await _unwrap(StudioKeysHandler.post)(store_handler)
@@ -222,8 +236,11 @@ class TestByok:
         assert len(fake_db.docs) == 1
 
         delete_handler = _make_handler(
-            app, method="DELETE", path="/keys/google",
-            match_info={"provider": "google"}, session=session,
+            app,
+            method="DELETE",
+            path="/keys/google",
+            match_info={"provider": "google"},
+            session=session,
         )
         response = await _unwrap(StudioKeysHandler.delete)(delete_handler)
         assert response.status == 200
@@ -232,7 +249,9 @@ class TestByok:
 
     async def test_provider_normalized_lowercase_on_store(self, app, fake_db):
         handler = _make_handler(
-            app, method="POST", path="/keys",
+            app,
+            method="POST",
+            path="/keys",
             json_body={"provider": "ANTHROPIC", "api_key": "sk-ant-mixedcase123"},
         )
         response = await _unwrap(StudioKeysHandler.post)(handler)
@@ -243,7 +262,10 @@ class TestByok:
 class TestResolveUserApiKey:
     async def test_resolve_user_api_key_after_store(self, app, fake_db):
         store_handler = _make_handler(
-            app, method="POST", path="/keys", owner="42",
+            app,
+            method="POST",
+            path="/keys",
+            owner="42",
             json_body={"provider": "anthropic", "api_key": "sk-ant-resolvable-key"},
         )
         await _unwrap(StudioKeysHandler.post)(store_handler)

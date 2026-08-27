@@ -15,6 +15,7 @@ task (TASK-2512 through TASK-2521). TASK-2511 scaffolded the package and
 this registration function; TASK-2512 is the first to add concrete
 routes (agent lifecycle).
 """
+
 from __future__ import annotations
 
 from aiohttp import web
@@ -44,25 +45,19 @@ def setup_studio_routes(app: web.Application) -> None:
 
     app.router.add_view(f"{STUDIO_PREFIX}/agents", StudioAgentsHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}", StudioAgentsHandler)
-    app.router.add_view(
-        f"{STUDIO_PREFIX}/agents/{{name}}/reload", StudioAgentReloadHandler
-    )
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/reload", StudioAgentReloadHandler)
 
     # Draft pipeline (FEAT-467 TASK-2513): save/list/read/activate/delete.
     from .drafts import StudioDraftActivateHandler, StudioDraftsHandler
 
     app.router.add_view(f"{STUDIO_PREFIX}/drafts", StudioDraftsHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/drafts/{{name}}", StudioDraftsHandler)
-    app.router.add_view(
-        f"{STUDIO_PREFIX}/drafts/{{name}}/activate", StudioDraftActivateHandler
-    )
+    app.router.add_view(f"{STUDIO_PREFIX}/drafts/{{name}}/activate", StudioDraftActivateHandler)
 
     # Per-agent asset files (FEAT-467 TASK-2514): identity/kb/skills CRUD.
     from .files import StudioFilesHandler
 
-    app.router.add_view(
-        f"{STUDIO_PREFIX}/agents/{{name}}/files/{{kind}}", StudioFilesHandler
-    )
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/files/{{kind}}", StudioFilesHandler)
     app.router.add_view(
         f"{STUDIO_PREFIX}/agents/{{name}}/files/{{kind}}/{{filename:.*}}",
         StudioFilesHandler,

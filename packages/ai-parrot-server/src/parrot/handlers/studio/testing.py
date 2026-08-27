@@ -15,6 +15,7 @@ pattern (``handlers/testing_handler.py``): ``manager.get_bot(name, new=True,
 session_id=...)`` creates an isolated, expiring bot instance whose name is
 stashed in the caller's session and reused across calls.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -63,23 +64,27 @@ class TestAskRequest(BaseModel):
             used. An auth failure from a genuinely stored key is NEVER
             retried against the server's default key (spec §7).
     """
+
     query: str
     use_byok: bool = True
 
 
 class ToolExecuteRequest(BaseModel):
     """``POST /tools/{slug}/execute`` payload."""
+
     args: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolkitAssignEntry(BaseModel):
     """One toolkit assignment entry."""
+
     slug: str
     params: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolAssignRequest(BaseModel):
     """``POST /agents/{name}/tools`` payload."""
+
     tools: list[str] = Field(default_factory=list)
     toolkits: list[ToolkitAssignEntry] = Field(default_factory=list)
 
@@ -163,8 +168,7 @@ class _StudioTestingMixin:
         """Return the ``BotManager`` instance, or ``None`` if unavailable."""
         return self.request.app.get("bot_manager")
 
-    def _error(self, message: str, *, status: int, code: str | None = None,
-               details: dict | None = None):
+    def _error(self, message: str, *, status: int, code: str | None = None, details: dict | None = None):
         """Return a JSON error response shaped like :class:`StudioError`."""
         return self.json_response(
             StudioError(message=message, code=code, details=details).model_dump(),
@@ -261,12 +265,14 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
         content = str(response.content) if hasattr(response, "content") else str(response)
         metadata = getattr(response, "metadata", None) or {}
 
-        return self.json_response({
-            "agent_name": agent_name,
-            "query": ask_request.query,
-            "response": content,
-            "metadata": metadata,
-        })
+        return self.json_response(
+            {
+                "agent_name": agent_name,
+                "query": ask_request.query,
+                "response": content,
+                "metadata": metadata,
+            }
+        )
 
     async def _maybe_apply_byok(self, bot) -> None:
         """Swap ``bot.llm`` for a BYOK-keyed client, when a key is stored.
@@ -288,9 +294,7 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
         api_key = await resolve_user_api_key(self.request.app, user.user_id, provider)
         if not api_key:
             return
-        bot.llm = LLMFactory.create(
-            llm_raw, tool_manager=bot.tool_manager, api_key=api_key
-        )
+        bot.llm = LLMFactory.create(llm_raw, tool_manager=bot.tool_manager, api_key=api_key)
 
     # -- DELETE: stop the test session -----------------------------------
 
@@ -304,9 +308,7 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
         bot_name = session.pop(key, None) if session is not None else None
 
         if not bot_name:
-            return self.json_response(
-                {"message": f"No active test session for '{agent_name}'"}, status=200
-            )
+            return self.json_response({"message": f"No active test session for '{agent_name}'"}, status=200)
 
         manager = self._manager()
         if manager is not None:
@@ -315,10 +317,12 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
             except KeyError:
                 self.logger.warning("Studio: test bot '%s' already removed", bot_name)
 
-        return self.json_response({
-            "message": f"Test session for '{agent_name}' stopped",
-            "agent_name": agent_name,
-        })
+        return self.json_response(
+            {
+                "message": f"Test session for '{agent_name}' stopped",
+                "agent_name": agent_name,
+            }
+        )
 
 
 @is_authenticated()
@@ -342,9 +346,11 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         cls = _resolve_registry_class(slug)
-        if cls is None or not (
-            isinstance(cls, type) and issubclass(cls, AbstractTool)
-        ) or (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
+        if (
+            cls is None
+            or not (isinstance(cls, type) and issubclass(cls, AbstractTool))
+            or (isinstance(cls, type) and issubclass(cls, AbstractToolkit))
+        ):
             return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
 
         try:
@@ -367,9 +373,7 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         try:
             instance.validate_args(**execute_request.args)
         except ValueError as exc:
-            return self._error(
-                f"Invalid arguments for '{slug}': {exc}", status=422, code="invalid_args"
-            )
+            return self._error(f"Invalid arguments for '{slug}': {exc}", status=422, code="invalid_args")
 
         result = await instance.execute(**execute_request.args)
         return self.json_response(result.model_dump(), status=200)
@@ -429,13 +433,11 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
             before = set(bot.tool_manager.list_tools())
             bot.tool_manager.register_tools(assign_request.tools)
             after = set(bot.tool_manager.list_tools())
-            registered_names |= (after - before)
+            registered_names |= after - before
 
         for entry in assign_request.toolkits:
             cls = _resolve_registry_class(entry.slug)
-            if cls is None or not (
-                isinstance(cls, type) and issubclass(cls, AbstractToolkit)
-            ):
+            if cls is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
                 errors.append({"slug": entry.slug, "error": "Unknown toolkit."})
                 continue
             try:
@@ -443,7 +445,9 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.error(
                     "Studio: failed to register toolkit '%s' on '%s': %s",
-                    entry.slug, name, exc,
+                    entry.slug,
+                    name,
+                    exc,
                 )
                 errors.append({"slug": entry.slug, "error": str(exc)})
                 continue

@@ -11,6 +11,7 @@ Covers:
     one id — spec §2 Data Models: "skill_id ... mirrors SkillRegistry
     skill_id").
 """
+
 from __future__ import annotations
 
 import pytest

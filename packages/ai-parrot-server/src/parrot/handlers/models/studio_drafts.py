@@ -30,6 +30,7 @@ optional field on an asyncdb ``Model``, never ``X | None`` — and keep
 the ``noqa: UP045`` guards below: ruff's autofix otherwise "modernizes"
 ``Optional[X]`` straight back into the broken ``X | None`` form.
 """
+
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -60,19 +61,24 @@ class StudioDraft(Model):
     ``status`` values: ``draft`` | ``validated`` | ``failed`` | ``activated``
     (spec §3 Module 5 — assigned by the drafts handler, never client-supplied).
     """
+
     draft_id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4)
     name: str = Field(required=True)
     file_path: str = Field(required=True)
     status: str = Field(required=False, default="draft")
     validation_report: dict = Field(required=False, default_factory=dict)
-    base_class: Optional[str] = Field(required=False)  # noqa: UP045 — datamodel rejects `X | None` (see module docstring)
+    base_class: Optional[str] = Field(
+        required=False
+    )  # noqa: UP045 — datamodel rejects `X | None` (see module docstring)
     owner_user_id: str = Field(required=True)
     created_at: datetime = Field(required=False, default_factory=datetime.now)
     updated_at: datetime = Field(required=False, default_factory=datetime.now)
-    activated_at: Optional[datetime] = Field(required=False)  # noqa: UP045 — datamodel rejects `X | None` (see module docstring)
+    activated_at: Optional[datetime] = Field(
+        required=False
+    )  # noqa: UP045 — datamodel rejects `X | None` (see module docstring)
 
     class Meta:
-        driver = 'pg'
+        driver = "pg"
         name = "studio_drafts"
         schema = "navigator"
         strict = True

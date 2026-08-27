@@ -30,6 +30,7 @@ lazily importing from a satellite distribution only when the specific
 feature is actually invoked (AgentStudio is a server-side-only surface;
 core never imports ``ai-parrot-server`` at module-import time).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -66,7 +67,7 @@ def _require_app() -> Any:
     name="save_agent_draft",
     requires_confirmation=True,
     confirm_template="Save agent draft {name}.py under AGENTS_DIR/_drafts/? "
-                      "It will NOT be live until explicitly activated.",
+    "It will NOT be live until explicitly activated.",
     description=(
         "Save generated Python agent source as a draft under "
         "AGENTS_DIR/_drafts/<name>.py and statically validate it (AST "
@@ -136,7 +137,9 @@ async def save_agent_draft(name: str, source: str) -> dict:
             # Best-effort — the draft FILE (already written above) is the
             # source of truth; a DB row failure never blocks the save.
             _logging.getLogger("Parrot.AgentStudio.Tools").warning(
-                "save_agent_draft: failed to persist draft row for '%s': %s", name, exc,
+                "save_agent_draft: failed to persist draft row for '%s': %s",
+                name,
+                exc,
             )
 
     return {
@@ -155,8 +158,7 @@ async def save_agent_draft(name: str, source: str) -> dict:
 @tool(
     name="create_yaml_agent",
     requires_confirmation=True,
-    confirm_template="Register agent {name!s} (class {bot_class!s}) via a "
-                      "persisted YAML definition?",
+    confirm_template="Register agent {name!s} (class {bot_class!s}) via a " "persisted YAML definition?",
     description=(
         "Create a simple (non-code-generated) agent by writing a lossless "
         "YAML definition under AGENTS_DIR/agents/<category>/ and "
@@ -413,8 +415,7 @@ async def publish_skill_to_catalog(
 
 @tool(
     name="list_agent_base_classes",
-    description="List available agent base classes (name, module, "
-                "docstring, configurable constructor params).",
+    description="List available agent base classes (name, module, " "docstring, configurable constructor params).",
 )
 async def list_agent_base_classes() -> list:
     """List agent base classes via the Studio catalog (TASK-2519)."""

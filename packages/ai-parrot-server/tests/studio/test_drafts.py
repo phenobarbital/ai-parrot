@@ -7,6 +7,7 @@ simulating asyncdb's Model/SQL layer — pattern:
 ``tests/studio/test_agents_lifecycle.py``) plus a REAL, isolated
 ``AgentRegistry`` for the activate-imports-and-registers path.
 """
+
 from __future__ import annotations
 
 import json
@@ -45,16 +46,14 @@ async def _decode(response: web.Response) -> dict:
 # ---------------------------------------------------------------------------
 
 
-VALID_DRAFT_SOURCE = textwrap.dedent(
-    """
+VALID_DRAFT_SOURCE = textwrap.dedent("""
     from parrot.bots.basic import BasicBot
 
 
     class MyDraftAgent(BasicBot):
         \"\"\"A generated draft agent.\"\"\"
         pass
-    """
-)
+    """)
 
 
 class TestDraftValidation:
@@ -203,8 +202,7 @@ def app(manager) -> web.Application:
     return application
 
 
-def _make_handler(handler_cls, app, store, *, method="GET", path="/x",
-                   match_info=None, json_body=None, owner="1"):
+def _make_handler(handler_cls, app, store, *, method="GET", path="/x", match_info=None, json_body=None, owner="1"):
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
     if json_body is not None:
         request.json = AsyncMock(return_value=json_body)
@@ -219,8 +217,13 @@ def _make_handler(handler_cls, app, store, *, method="GET", path="/x",
 
 async def _save_draft(app, store, *, name, source, owner="1"):
     handler = _make_handler(
-        StudioDraftsHandler, app, store, method="POST", path="/drafts",
-        json_body={"name": name, "source": source}, owner=owner,
+        StudioDraftsHandler,
+        app,
+        store,
+        method="POST",
+        path="/drafts",
+        json_body={"name": name, "source": source},
+        owner=owner,
     )
     response = await _unwrap(StudioDraftsHandler.post)(handler)
     assert response.status == 201, await _decode(response)
@@ -257,7 +260,11 @@ class TestDraftLifecycle:
     async def test_get_one_includes_source(self, app, store):
         await _save_draft(app, store, name="readable-draft", source=VALID_DRAFT_SOURCE)
         handler = _make_handler(
-            StudioDraftsHandler, app, store, method="GET", path="/drafts/readable-draft",
+            StudioDraftsHandler,
+            app,
+            store,
+            method="GET",
+            path="/drafts/readable-draft",
             match_info={"name": "readable-draft"},
         )
         response = await _unwrap(StudioDraftsHandler.get)(handler)
@@ -267,7 +274,11 @@ class TestDraftLifecycle:
 
     async def test_get_one_not_found_404(self, app, store):
         handler = _make_handler(
-            StudioDraftsHandler, app, store, method="GET", path="/drafts/nope",
+            StudioDraftsHandler,
+            app,
+            store,
+            method="GET",
+            path="/drafts/nope",
             match_info={"name": "nope"},
         )
         response = await _unwrap(StudioDraftsHandler.get)(handler)
@@ -276,8 +287,12 @@ class TestDraftLifecycle:
     async def test_activate_gate_blocks_failed(self, app, store):
         await _save_draft(app, store, name="bad-activate", source="x = 1\n")
         handler = _make_handler(
-            StudioDraftActivateHandler, app, store, method="POST",
-            path="/drafts/bad-activate/activate", match_info={"name": "bad-activate"},
+            StudioDraftActivateHandler,
+            app,
+            store,
+            method="POST",
+            path="/drafts/bad-activate/activate",
+            match_info={"name": "bad-activate"},
         )
         response = await _unwrap(StudioDraftActivateHandler.post)(handler)
         assert response.status == 409
@@ -292,8 +307,7 @@ class TestDraftLifecycle:
         # the activation so it lands there, not the real global registry.
         monkeypatch.setattr(registry_pkg, "agent_registry", registry)
 
-        draft_source = textwrap.dedent(
-            """
+        draft_source = textwrap.dedent("""
             from parrot.registry import agent_registry
             from parrot.bots.basic import BasicBot
 
@@ -302,14 +316,17 @@ class TestDraftLifecycle:
             class LiveDraftAgent(BasicBot):
                 \"\"\"Activated draft agent.\"\"\"
                 pass
-            """
-        )
+            """)
         await _save_draft(app, store, name="live-draft-agent", source=draft_source, owner="7")
 
         handler = _make_handler(
-            StudioDraftActivateHandler, app, store, method="POST",
+            StudioDraftActivateHandler,
+            app,
+            store,
+            method="POST",
             path="/drafts/live-draft-agent/activate",
-            match_info={"name": "live-draft-agent"}, owner="7",
+            match_info={"name": "live-draft-agent"},
+            owner="7",
         )
         response = await _unwrap(StudioDraftActivateHandler.post)(handler)
         assert response.status == 200, await _decode(response)
@@ -330,8 +347,12 @@ class TestDraftLifecycle:
 
     async def test_activate_not_found_404(self, app, store):
         handler = _make_handler(
-            StudioDraftActivateHandler, app, store, method="POST",
-            path="/drafts/nope/activate", match_info={"name": "nope"},
+            StudioDraftActivateHandler,
+            app,
+            store,
+            method="POST",
+            path="/drafts/nope/activate",
+            match_info={"name": "nope"},
         )
         response = await _unwrap(StudioDraftActivateHandler.post)(handler)
         assert response.status == 404
@@ -339,8 +360,12 @@ class TestDraftLifecycle:
     async def test_activate_non_owner_403(self, app, store):
         await _save_draft(app, store, name="owned-draft", source=VALID_DRAFT_SOURCE, owner="1")
         handler = _make_handler(
-            StudioDraftActivateHandler, app, store, method="POST",
-            path="/drafts/owned-draft/activate", match_info={"name": "owned-draft"},
+            StudioDraftActivateHandler,
+            app,
+            store,
+            method="POST",
+            path="/drafts/owned-draft/activate",
+            match_info={"name": "owned-draft"},
             owner="99",
         )
         with pytest.raises(web.HTTPForbidden):
@@ -361,8 +386,12 @@ class TestDraftLifecycle:
         assert file_path.exists()
 
         handler = _make_handler(
-            StudioDraftsHandler, app, store, method="DELETE",
-            path="/drafts/deletable-draft", match_info={"name": "deletable-draft"},
+            StudioDraftsHandler,
+            app,
+            store,
+            method="DELETE",
+            path="/drafts/deletable-draft",
+            match_info={"name": "deletable-draft"},
         )
         response = await _unwrap(StudioDraftsHandler.delete)(handler)
         assert response.status == 200
@@ -372,8 +401,12 @@ class TestDraftLifecycle:
     async def test_delete_non_owner_403(self, app, store):
         await _save_draft(app, store, name="protected-draft", source=VALID_DRAFT_SOURCE, owner="1")
         handler = _make_handler(
-            StudioDraftsHandler, app, store, method="DELETE",
-            path="/drafts/protected-draft", match_info={"name": "protected-draft"},
+            StudioDraftsHandler,
+            app,
+            store,
+            method="DELETE",
+            path="/drafts/protected-draft",
+            match_info={"name": "protected-draft"},
             owner="99",
         )
         with pytest.raises(web.HTTPForbidden):

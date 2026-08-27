@@ -9,6 +9,7 @@ All LLM calls are mocked — no network. Handlers are called directly via
 their undecorated method bodies (pattern: ``test_agents_lifecycle.py``),
 peeling ``@is_authenticated()``/``@user_session()`` via ``__wrapped__``.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,8 +42,9 @@ async def _decode(response: web.Response) -> dict:
     return json.loads(response.body)
 
 
-def _make_handler(handler_cls, app, *, method="GET", path="/x", match_info=None,
-                   json_body=None, owner="1", session=None):
+def _make_handler(
+    handler_cls, app, *, method="GET", path="/x", match_info=None, json_body=None, owner="1", session=None
+):
     request = make_mocked_request(method, path, match_info=match_info or {}, app=app)
     if json_body is not None:
         request.json = AsyncMock(return_value=json_body)
@@ -180,8 +182,12 @@ class TestTestAsk:
     async def test_ask_session_instance_reused(self):
         app = web.Application()
         handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
-            match_info={"name": "myagent"}, json_body={"query": "hi", "use_byok": False},
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
+            match_info={"name": "myagent"},
+            json_body={"query": "hi", "use_byok": False},
         )
         bot = _FakeTestBot()
         handler._get_or_create_test_bot = AsyncMock(return_value=bot)
@@ -198,8 +204,12 @@ class TestTestAsk:
     async def test_ask_uses_byok_key(self, monkeypatch):
         app = web.Application()
         handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
-            match_info={"name": "myagent"}, json_body={"query": "hi", "use_byok": True},
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
+            match_info={"name": "myagent"},
+            json_body={"query": "hi", "use_byok": True},
         )
         bot = _FakeTestBot(llm_raw="anthropic:claude-3-haiku")
         handler._get_or_create_test_bot = AsyncMock(return_value=bot)
@@ -224,15 +234,17 @@ class TestTestAsk:
     async def test_ask_byok_no_stored_key_is_noop(self, monkeypatch):
         app = web.Application()
         handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
-            match_info={"name": "myagent"}, json_body={"query": "hi", "use_byok": True},
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
+            match_info={"name": "myagent"},
+            json_body={"query": "hi", "use_byok": True},
         )
         bot = _FakeTestBot()
         original_llm = bot.llm
         handler._get_or_create_test_bot = AsyncMock(return_value=bot)
-        monkeypatch.setattr(
-            testing_module, "resolve_user_api_key", AsyncMock(return_value=None)
-        )
+        monkeypatch.setattr(testing_module, "resolve_user_api_key", AsyncMock(return_value=None))
         create_mock = MagicMock()
         monkeypatch.setattr(testing_module.LLMFactory, "create", create_mock)
 
@@ -246,8 +258,12 @@ class TestTestAsk:
     async def test_ask_query_failure_surfaces_as_error(self):
         app = web.Application()
         handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
-            match_info={"name": "myagent"}, json_body={"query": "hi", "use_byok": False},
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
+            match_info={"name": "myagent"},
+            json_body={"query": "hi", "use_byok": False},
         )
         bot = _FakeTestBot()
         bot._ask_error = RuntimeError("provider auth failed")
@@ -263,12 +279,14 @@ class TestTestAsk:
     async def test_ask_unknown_agent_404(self):
         app = web.Application()
         handler = _make_handler(
-            StudioTestingHandler, app, method="POST", path="/test/ask",
-            match_info={"name": "nope"}, json_body={"query": "hi"},
+            StudioTestingHandler,
+            app,
+            method="POST",
+            path="/test/ask",
+            match_info={"name": "nope"},
+            json_body={"query": "hi"},
         )
-        handler._get_or_create_test_bot = AsyncMock(
-            side_effect=LookupError("Agent 'nope' not found in registry.")
-        )
+        handler._get_or_create_test_bot = AsyncMock(side_effect=LookupError("Agent 'nope' not found in registry."))
 
         response = await _unwrap(StudioTestingHandler.post)(handler)
 
@@ -281,8 +299,12 @@ class TestTestAsk:
         app["bot_manager"] = manager
         session = {"_studio_test:myagent": "myagent_abc123"}
         handler = _make_handler(
-            StudioTestingHandler, app, method="DELETE", path="/test",
-            match_info={"name": "myagent"}, session=session,
+            StudioTestingHandler,
+            app,
+            method="DELETE",
+            path="/test",
+            match_info={"name": "myagent"},
+            session=session,
         )
 
         response = await _unwrap(StudioTestingHandler.delete)(handler)
@@ -297,8 +319,12 @@ class TestTestAsk:
         manager = MagicMock()
         app["bot_manager"] = manager
         handler = _make_handler(
-            StudioTestingHandler, app, method="DELETE", path="/test",
-            match_info={"name": "myagent"}, session={},
+            StudioTestingHandler,
+            app,
+            method="DELETE",
+            path="/test",
+            match_info={"name": "myagent"},
+            session={},
         )
 
         response = await _unwrap(StudioTestingHandler.delete)(handler)
@@ -317,12 +343,17 @@ class TestToolExecute:
     async def test_execute_zero_arg_tool(self, monkeypatch):
         app = web.Application()
         monkeypatch.setattr(
-            testing_module, "discover_all",
+            testing_module,
+            "discover_all",
             lambda: {"fake_zero_arg_tool": _ZeroArgTool},
         )
         handler = _make_handler(
-            StudioToolExecuteHandler, app, method="POST", path="/tools/x/execute",
-            match_info={"slug": "fake_zero_arg_tool"}, json_body={"args": {}},
+            StudioToolExecuteHandler,
+            app,
+            method="POST",
+            path="/tools/x/execute",
+            match_info={"slug": "fake_zero_arg_tool"},
+            json_body={"args": {}},
         )
 
         response = await _unwrap(StudioToolExecuteHandler.post)(handler)
@@ -337,8 +368,12 @@ class TestToolExecute:
         app = web.Application()
         monkeypatch.setattr(testing_module, "discover_all", dict)
         handler = _make_handler(
-            StudioToolExecuteHandler, app, method="POST", path="/tools/x/execute",
-            match_info={"slug": "does-not-exist"}, json_body={"args": {}},
+            StudioToolExecuteHandler,
+            app,
+            method="POST",
+            path="/tools/x/execute",
+            match_info={"slug": "does-not-exist"},
+            json_body={"args": {}},
         )
 
         response = await _unwrap(StudioToolExecuteHandler.post)(handler)
@@ -349,12 +384,17 @@ class TestToolExecute:
     async def test_execute_server_managed_422(self, monkeypatch):
         app = web.Application()
         monkeypatch.setattr(
-            testing_module, "discover_all",
+            testing_module,
+            "discover_all",
             lambda: {"fake_needs_dep_tool": _NeedsDepTool},
         )
         handler = _make_handler(
-            StudioToolExecuteHandler, app, method="POST", path="/tools/x/execute",
-            match_info={"slug": "fake_needs_dep_tool"}, json_body={"args": {}},
+            StudioToolExecuteHandler,
+            app,
+            method="POST",
+            path="/tools/x/execute",
+            match_info={"slug": "fake_needs_dep_tool"},
+            json_body={"args": {}},
         )
 
         response = await _unwrap(StudioToolExecuteHandler.post)(handler)
@@ -384,20 +424,23 @@ class TestToolAssignment:
         app["bot_manager"] = manager
 
         monkeypatch.setattr(
-            testing_module, "discover_all",
+            testing_module,
+            "discover_all",
             lambda: {"fake_toolkit": _FakeToolkit},
         )
 
         handler = _make_handler(
-            StudioToolAssignHandler, app, method="POST", path="/agents/myagent/tools",
-            match_info={"name": "myagent"}, owner="1",
+            StudioToolAssignHandler,
+            app,
+            method="POST",
+            path="/agents/myagent/tools",
+            match_info={"name": "myagent"},
+            owner="1",
             json_body={"tools": [], "toolkits": [{"slug": "fake_toolkit", "params": {}}]},
         )
         handler._get_db_agent = AsyncMock(return_value=None)
         fake_meta = SimpleNamespace(bot_config=SimpleNamespace(config={"created_by": "1"}))
-        handler._registry = MagicMock(
-            return_value=SimpleNamespace(get_metadata=lambda name: fake_meta)
-        )
+        handler._registry = MagicMock(return_value=SimpleNamespace(get_metadata=lambda name: fake_meta))
 
         response = await _unwrap(StudioToolAssignHandler.post)(handler)
 
@@ -416,15 +459,17 @@ class TestToolAssignment:
         app["bot_manager"] = manager
 
         handler = _make_handler(
-            StudioToolAssignHandler, app, method="POST", path="/agents/myagent/tools",
-            match_info={"name": "myagent"}, owner="not-the-owner",
+            StudioToolAssignHandler,
+            app,
+            method="POST",
+            path="/agents/myagent/tools",
+            match_info={"name": "myagent"},
+            owner="not-the-owner",
             json_body={"tools": [], "toolkits": []},
         )
         handler._get_db_agent = AsyncMock(return_value=None)
         fake_meta = SimpleNamespace(bot_config=SimpleNamespace(config={"created_by": "1"}))
-        handler._registry = MagicMock(
-            return_value=SimpleNamespace(get_metadata=lambda name: fake_meta)
-        )
+        handler._registry = MagicMock(return_value=SimpleNamespace(get_metadata=lambda name: fake_meta))
 
         with pytest.raises(web.HTTPForbidden):
             await _unwrap(StudioToolAssignHandler.post)(handler)
@@ -440,15 +485,17 @@ class TestToolAssignment:
         monkeypatch.setattr(testing_module, "discover_all", dict)
 
         handler = _make_handler(
-            StudioToolAssignHandler, app, method="POST", path="/agents/myagent/tools",
-            match_info={"name": "myagent"}, owner="1",
+            StudioToolAssignHandler,
+            app,
+            method="POST",
+            path="/agents/myagent/tools",
+            match_info={"name": "myagent"},
+            owner="1",
             json_body={"tools": [], "toolkits": [{"slug": "nope", "params": {}}]},
         )
         handler._get_db_agent = AsyncMock(return_value=None)
         fake_meta = SimpleNamespace(bot_config=SimpleNamespace(config={"created_by": "1"}))
-        handler._registry = MagicMock(
-            return_value=SimpleNamespace(get_metadata=lambda name: fake_meta)
-        )
+        handler._registry = MagicMock(return_value=SimpleNamespace(get_metadata=lambda name: fake_meta))
 
         response = await _unwrap(StudioToolAssignHandler.post)(handler)
 

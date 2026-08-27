@@ -11,6 +11,7 @@ pattern: ``tests/handlers/test_comm_center_handler.py::_call_get_batches``)
 so no real auth backend/session middleware is needed — auth enforcement
 itself is already covered by ``tests/studio/test_scaffold.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -104,9 +105,11 @@ def _make_handler(handler_cls, app, *, method="GET", path="/x", match_info=None,
 
 async def _create_agent(app, *, name, owner="1", persist=True, category="general", **extra):
     handler = _make_handler(
-        StudioAgentsHandler, app, method="POST", path="/agents",
-        json_body={"name": name, "bot_class": "BasicBot", "persist": persist,
-                   "category": category, **extra},
+        StudioAgentsHandler,
+        app,
+        method="POST",
+        path="/agents",
+        json_body={"name": name, "bot_class": "BasicBot", "persist": persist, "category": category, **extra},
     )
     handler._get_user = AsyncMock(return_value=StudioUser(user_id=owner))
     response = await _unwrap(StudioAgentsHandler.post)(handler)
@@ -141,7 +144,10 @@ class TestStudioAgentsCreate:
     async def test_create_duplicate_409(self, app):
         await _create_agent(app, name="dup-agent", persist=False)
         handler = _make_handler(
-            StudioAgentsHandler, app, method="POST", path="/agents",
+            StudioAgentsHandler,
+            app,
+            method="POST",
+            path="/agents",
             json_body={"name": "dup-agent", "bot_class": "BasicBot"},
         )
         response = await _unwrap(StudioAgentsHandler.post)(handler)
@@ -150,7 +156,10 @@ class TestStudioAgentsCreate:
 
     async def test_create_invalid_name_400(self, app):
         handler = _make_handler(
-            StudioAgentsHandler, app, method="POST", path="/agents",
+            StudioAgentsHandler,
+            app,
+            method="POST",
+            path="/agents",
             json_body={"name": "!!!", "bot_class": "BasicBot"},
         )
         response = await _unwrap(StudioAgentsHandler.post)(handler)
@@ -158,7 +167,10 @@ class TestStudioAgentsCreate:
 
     async def test_create_unknown_bot_class_400(self, app):
         handler = _make_handler(
-            StudioAgentsHandler, app, method="POST", path="/agents",
+            StudioAgentsHandler,
+            app,
+            method="POST",
+            path="/agents",
             json_body={"name": "bad-class-agent", "bot_class": "NoSuchBotClass"},
         )
         response = await _unwrap(StudioAgentsHandler.post)(handler)
@@ -167,7 +179,10 @@ class TestStudioAgentsCreate:
 
     async def test_created_by_server_set(self, app, registry):
         await _create_agent(
-            app, name="owned-agent", owner="real-owner", persist=False,
+            app,
+            name="owned-agent",
+            owner="real-owner",
+            persist=False,
             config={"created_by": "hacker"},
         )
         meta = registry.get_metadata("owned-agent")
@@ -176,7 +191,10 @@ class TestStudioAgentsCreate:
     async def test_create_using_name_in_url_400(self, app):
         """POST /agents/{name} is not a create route (only POST /agents is)."""
         handler = _make_handler(
-            StudioAgentsHandler, app, method="POST", path="/agents/foo",
+            StudioAgentsHandler,
+            app,
+            method="POST",
+            path="/agents/foo",
             match_info={"name": "foo"},
             json_body={"name": "foo", "bot_class": "BasicBot"},
         )
@@ -193,7 +211,10 @@ class TestStudioAgentsCreate:
 class TestStudioAgentsList:
     async def test_get_one_not_found_404(self, app):
         handler = _make_handler(
-            StudioAgentsHandler, app, method="GET", path="/agents/nope",
+            StudioAgentsHandler,
+            app,
+            method="GET",
+            path="/agents/nope",
             match_info={"name": "nope"},
         )
         response = await _unwrap(StudioAgentsHandler.get)(handler)
@@ -202,7 +223,10 @@ class TestStudioAgentsList:
     async def test_get_one_found(self, app):
         await _create_agent(app, name="listed-agent", owner="5", persist=False)
         handler = _make_handler(
-            StudioAgentsHandler, app, method="GET", path="/agents/listed-agent",
+            StudioAgentsHandler,
+            app,
+            method="GET",
+            path="/agents/listed-agent",
             match_info={"name": "listed-agent"},
         )
         response = await _unwrap(StudioAgentsHandler.get)(handler)
@@ -239,13 +263,14 @@ class TestStudioAgentsList:
 class TestStudioAgentReload:
     async def test_reload_success(self, app, manager):
         handler = _make_handler(
-            StudioAgentReloadHandler, app, method="POST", path="/agents/foo/reload",
+            StudioAgentReloadHandler,
+            app,
+            method="POST",
+            path="/agents/foo/reload",
             match_info={"name": "foo"},
         )
         manager.reload_agent = AsyncMock(
-            return_value=ReloadResult(
-                name="foo", reloaded=True, previous_instance_closed=True, warnings=[]
-            )
+            return_value=ReloadResult(name="foo", reloaded=True, previous_instance_closed=True, warnings=[])
         )
         response = await _unwrap(StudioAgentReloadHandler.post)(handler)
         assert response.status == 200
@@ -255,7 +280,10 @@ class TestStudioAgentReload:
 
     async def test_reload_not_found_404(self, app, manager):
         handler = _make_handler(
-            StudioAgentReloadHandler, app, method="POST", path="/agents/nope/reload",
+            StudioAgentReloadHandler,
+            app,
+            method="POST",
+            path="/agents/nope/reload",
             match_info={"name": "nope"},
         )
         manager.reload_agent = AsyncMock(side_effect=AgentNotFoundError("nope"))
@@ -264,7 +292,10 @@ class TestStudioAgentReload:
 
     async def test_reload_failure_keeps_old_422(self, app, manager):
         handler = _make_handler(
-            StudioAgentReloadHandler, app, method="POST", path="/agents/broken/reload",
+            StudioAgentReloadHandler,
+            app,
+            method="POST",
+            path="/agents/broken/reload",
             match_info={"name": "broken"},
         )
         manager.reload_agent = AsyncMock(side_effect=AgentReloadError("bad yaml"))
@@ -281,7 +312,10 @@ class TestStudioAgentsDelete:
     async def test_delete_ownership_matrix(self, app, registry):
         # Not found.
         handler = _make_handler(
-            StudioAgentsHandler, app, method="DELETE", path="/agents/nope",
+            StudioAgentsHandler,
+            app,
+            method="DELETE",
+            path="/agents/nope",
             match_info={"name": "nope"},
         )
         response = await _unwrap(StudioAgentsHandler.delete)(handler)
@@ -290,7 +324,10 @@ class TestStudioAgentsDelete:
         # Non-owner -> 403.
         await _create_agent(app, name="matrix-agent", owner="1", persist=True)
         handler = _make_handler(
-            StudioAgentsHandler, app, method="DELETE", path="/agents/matrix-agent",
+            StudioAgentsHandler,
+            app,
+            method="DELETE",
+            path="/agents/matrix-agent",
             match_info={"name": "matrix-agent"},
         )
         handler._get_user = AsyncMock(return_value=StudioUser(user_id="99"))
@@ -300,7 +337,10 @@ class TestStudioAgentsDelete:
 
         # Owner -> succeeds.
         handler = _make_handler(
-            StudioAgentsHandler, app, method="DELETE", path="/agents/matrix-agent",
+            StudioAgentsHandler,
+            app,
+            method="DELETE",
+            path="/agents/matrix-agent",
             match_info={"name": "matrix-agent"},
         )
         handler._get_user = AsyncMock(return_value=StudioUser(user_id="1"))
@@ -311,12 +351,13 @@ class TestStudioAgentsDelete:
     async def test_delete_admin_bypass(self, app, registry):
         await _create_agent(app, name="admin-bypass-agent", owner="1", persist=True)
         handler = _make_handler(
-            StudioAgentsHandler, app, method="DELETE", path="/agents/admin-bypass-agent",
+            StudioAgentsHandler,
+            app,
+            method="DELETE",
+            path="/agents/admin-bypass-agent",
             match_info={"name": "admin-bypass-agent"},
         )
-        handler._get_user = AsyncMock(
-            return_value=StudioUser(user_id="99", is_superuser=True)
-        )
+        handler._get_user = AsyncMock(return_value=StudioUser(user_id="99", is_superuser=True))
         response = await _unwrap(StudioAgentsHandler.delete)(handler)
         assert response.status == 200
         assert not registry.has("admin-bypass-agent")
@@ -338,7 +379,10 @@ class TestStudioAgentsDelete:
         assert count == 1
 
         handler = _make_handler(
-            StudioAgentsHandler, app, method="DELETE", path="/agents/repo-agent",
+            StudioAgentsHandler,
+            app,
+            method="DELETE",
+            path="/agents/repo-agent",
             match_info={"name": "repo-agent"},
         )
         handler._get_user = AsyncMock(return_value=StudioUser(user_id="1"))
@@ -346,9 +390,7 @@ class TestStudioAgentsDelete:
         assert response.status == 409
         assert registry.has("repo-agent")
 
-    async def test_delete_non_persisted_agent_refuses_without_touching_source(
-        self, app, registry
-    ):
+    async def test_delete_non_persisted_agent_refuses_without_touching_source(self, app, registry):
         """Regression guard: an agent created WITHOUT persist=true has
         file_path pointing at its bot_class's own FRAMEWORK SOURCE FILE
         (AgentRegistry.register()'s inspect.getmodule() fallback) — DELETE
@@ -359,7 +401,10 @@ class TestStudioAgentsDelete:
         assert source_file.exists()  # it's parrot/bots/basic.py — real file
 
         handler = _make_handler(
-            StudioAgentsHandler, app, method="DELETE", path="/agents/non-persisted-agent",
+            StudioAgentsHandler,
+            app,
+            method="DELETE",
+            path="/agents/non-persisted-agent",
             match_info={"name": "non-persisted-agent"},
         )
         response = await _unwrap(StudioAgentsHandler.delete)(handler)
