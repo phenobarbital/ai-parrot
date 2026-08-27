@@ -173,7 +173,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Final integration gate; touches Makefile/workflows and test_wheel_layout.py after both lanes exist. Workflow-file pushes need the SSH remote.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2531-admin-ui-release-pipeline.md"
+      "completed_at": "2026-08-27T18:22:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2531-admin-ui-release-pipeline.md"
     }
   ]
 }
