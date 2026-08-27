@@ -91,3 +91,9 @@ def setup_studio_routes(app: web.Application) -> None:
     # Startup reconciliation pass: repair any search_index_stale rows
     # left over from a prior registry outage (spec §7 "Dual-write drift").
     app.on_startup.append(reconcile_skills_catalog)
+
+    # BYOK — per-user LLM API keys (FEAT-467 TASK-2516).
+    from .byok import StudioKeysHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/keys", StudioKeysHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/keys/{{provider}}", StudioKeysHandler)

@@ -26,7 +26,7 @@ Design principles
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .credentials import (
     CredentialResolver,
@@ -36,8 +36,8 @@ from .credentials import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from parrot.security.audit_ledger import AuditLedger
     from parrot.auth.identity import CanonicalIdentityMapper
+    from parrot.security.audit_ledger import AuditLedger
 
 __all__ = [
     "CredentialBroker",
@@ -95,8 +95,8 @@ class CredentialResolverFactory:
               (e.g. ``{"vault": vault_token_sync, "o365": o365_interface}``).
     """
 
-    def __init__(self, deps: Optional[Dict[str, Any]] = None) -> None:
-        self._deps: Dict[str, Any] = deps or {}
+    def __init__(self, deps: dict[str, Any] | None = None) -> None:
+        self._deps: dict[str, Any] = deps or {}
 
     def build(self, cfg: ProviderCredentialConfig) -> CredentialResolver:
         """Build a :class:`CredentialResolver` for *cfg*.
@@ -135,7 +135,7 @@ class CredentialResolverFactory:
     # ------------------------------------------------------------------
 
     def _build_obo(
-        self, cfg: ProviderCredentialConfig, opts: Dict[str, Any]
+        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
     ) -> CredentialResolver:
         """Build a WorkIQOBOCredentialResolver (or compatible OBO resolver).
 
@@ -144,8 +144,8 @@ class CredentialResolverFactory:
         """
         try:
             from parrot.auth.oauth2.workiq_provider import (
-                WorkIQOBOCredentialResolver,
                 WORKIQ_SCOPE,
+                WorkIQOBOCredentialResolver,
             )
         except ImportError as exc:
             raise ImportError(
@@ -171,7 +171,7 @@ class CredentialResolverFactory:
         )
 
     def _build_oauth2(
-        self, cfg: ProviderCredentialConfig, opts: Dict[str, Any]
+        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
     ) -> CredentialResolver:
         """Build an OAuthCredentialResolver.
 
@@ -190,7 +190,7 @@ class CredentialResolverFactory:
         return OAuthCredentialResolver(manager)
 
     def _build_static_key(
-        self, cfg: ProviderCredentialConfig, opts: Dict[str, Any]
+        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
     ) -> CredentialResolver:
         """Build a FirefliesCredentialResolver (or generic vault static-key resolver).
 
@@ -198,7 +198,9 @@ class CredentialResolverFactory:
         Expected opts: ``capture_url``.
         """
         try:
-            from parrot.integrations.mcp.fireflies_a2a import FirefliesCredentialResolver
+            from parrot.integrations.mcp.fireflies_a2a import (
+                FirefliesCredentialResolver,
+            )
         except ImportError:
             # Fallback: build a minimal vault-backed static-key resolver inline.
             # This avoids a hard dependency on ai-parrot-integrations in the core.
@@ -216,7 +218,7 @@ class CredentialResolverFactory:
         )
 
     def _build_mcp(
-        self, cfg: ProviderCredentialConfig, opts: Dict[str, Any]
+        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
     ) -> CredentialResolver:
         """Build a thin MCP-backed vault resolver.
 
@@ -230,7 +232,7 @@ class CredentialResolverFactory:
         return _MCPVaultResolver(vault=vault, vault_key=vault_key, auth_url=auth_url)
 
     def _build_device_code(
-        self, cfg: ProviderCredentialConfig, opts: Dict[str, Any]
+        self, cfg: ProviderCredentialConfig, opts: dict[str, Any]
     ) -> CredentialResolver:
         """Build an O365DeviceCodeCredentialResolver (FEAT-266).
 
@@ -267,6 +269,25 @@ class CredentialResolverFactory:
             scopes=scopes,
         )
 
+    def build_user_llm_key_resolver(self) -> CredentialResolver:
+        """Build a :class:`_UserLLMKeyResolver` (FEAT-467 TASK-2516 — BYOK).
+
+        NOT wired into the ``cfg.auth``-driven :meth:`build` dispatch above:
+        every other strategy resolves an AGENT's credential for an
+        externally-declared provider (:class:`ProviderCredentialConfig`,
+        whose ``auth`` field is a closed ``Literal`` — ``obo``/``oauth2``/
+        ``static_key``/``mcp``/``device_code``). BYOK resolves a SESSION
+        USER's own bring-your-own LLM key and has no such declarative
+        config; it is session-user-driven, not agent-declared. Exposed as
+        its own factory method so callers still obtain a resolver
+        uniformly through :class:`CredentialResolverFactory` (spec §3
+        Module 8: "registered with CredentialResolverFactory").
+
+        Returns:
+            A stateless :class:`_UserLLMKeyResolver` instance.
+        """
+        return _UserLLMKeyResolver()
+
 
 # ---------------------------------------------------------------------------
 # Fallback / MCP strategy implementations
@@ -285,7 +306,7 @@ class _VaultStaticKeyResolver(CredentialResolver):
         self._vault_key = vault_key
         self._capture_url = capture_url
 
-    async def resolve(self, channel: str, user_id: str) -> Optional[Any]:
+    async def resolve(self, channel: str, user_id: str) -> Any | None:
         if self._vault is None:
             return None
         tokens = await self._vault.read_tokens(user_id)
@@ -308,7 +329,7 @@ class _MCPVaultResolver(CredentialResolver):
         self._vault_key = vault_key
         self._auth_url = auth_url
 
-    async def resolve(self, channel: str, user_id: str) -> Optional[Any]:
+    async def resolve(self, channel: str, user_id: str) -> Any | None:
         if self._vault is None:
             return None
         tokens = await self._vault.read_tokens(user_id)
@@ -316,6 +337,95 @@ class _MCPVaultResolver(CredentialResolver):
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
         return self._auth_url
+
+
+class _UserLLMKeyResolver(CredentialResolver):
+    """Resolves a per-user "bring your own key" LLM provider API key
+    (FEAT-467 TASK-2516).
+
+    Distinct from every other resolver in this module (all of which
+    resolve an AGENT's credential for an OAuth/static-key EXTERNAL
+    service, declared via :class:`ProviderCredentialConfig`): this one
+    resolves a SESSION USER's own LLM API key for Studio test/ask runs.
+    ``channel`` here IS the LLM provider id (e.g. ``"anthropic"``,
+    matching ``parrot.clients.factory.SUPPORTED_CLIENTS`` keys), not an
+    OAuth "channel" concept.
+
+    Reads the SAME durable store ``handlers/studio/byok.py``'s
+    ``StudioKeysHandler`` writes to — the DocumentDB collection
+    ``"user_llm_keys"`` — decrypting with the navigator-session AES-GCM
+    vault helpers (:mod:`parrot.security.credentials_utils`). Fails
+    CLOSED (returns ``None``) on any missing dependency, vault-key, or
+    decrypt error — a BYOK lookup failure must never break agent
+    creation/testing; callers fall back to the server's own configured
+    LLM credentials.
+    """
+
+    COLLECTION: str = "user_llm_keys"
+
+    async def resolve(self, channel: str, user_id: str) -> str | None:
+        """Return the decrypted API key for ``(provider=channel, user_id)``.
+
+        Args:
+            channel: LLM provider id (normalized lowercase before lookup).
+            user_id: Session user id, as stored by ``StudioKeysHandler``.
+
+        Returns:
+            The plaintext API key, or ``None`` if none is stored, the
+            vault is unavailable, or decryption fails.
+        """
+        try:
+            from navigator_session.vault.config import load_master_keys
+        except ImportError:
+            logger.debug(
+                "_UserLLMKeyResolver: navigator_session.vault not available."
+            )
+            return None
+
+        from parrot.interfaces.documentdb import DocumentDb
+        from parrot.security.credentials_utils import decrypt_credential
+
+        try:
+            master_keys = load_master_keys()
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "_UserLLMKeyResolver: failed to load vault master keys: %s", exc
+            )
+            return None
+
+        provider = channel.lower()
+        try:
+            async with DocumentDb() as db:
+                doc = await db.read_one(
+                    self.COLLECTION, {"user_id": user_id, "provider": provider}
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "_UserLLMKeyResolver: DocumentDB read failed for user=%s "
+                "provider=%s: %s",
+                user_id, provider, exc,
+            )
+            return None
+
+        if doc is None:
+            return None
+
+        try:
+            credential = decrypt_credential(doc["api_key"], master_keys)
+            return credential.get("api_key")
+        except Exception as exc:  # pylint: disable=broad-except
+            # NEVER log the raw doc/ciphertext — only the failure.
+            logger.warning(
+                "_UserLLMKeyResolver: failed to decrypt key for user=%s "
+                "provider=%s: %s",
+                user_id, provider, exc,
+            )
+            return None
+
+    async def get_auth_url(self, channel: str, user_id: str) -> str:
+        """No OOB auth flow for BYOK — users submit their key directly via
+        ``POST /api/v1/astudio/keys``."""
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -362,12 +472,12 @@ class CredentialBroker:
     def __init__(
         self,
         *,
-        audit_ledger: Optional["AuditLedger"] = None,
-        identity_mapper: Optional["CanonicalIdentityMapper"] = None,
+        audit_ledger: AuditLedger | None = None,
+        identity_mapper: CanonicalIdentityMapper | None = None,
     ) -> None:
         # Stores (resolver, auth_kind) tuples so NeedsAuth.auth_kind is read
         # from the registry rather than sniffed from the class name.
-        self._resolvers: Dict[str, Tuple[CredentialResolver, str]] = {}
+        self._resolvers: dict[str, tuple[CredentialResolver, str]] = {}
         self._audit_ledger = audit_ledger
         self._identity_mapper = identity_mapper
         self.logger = logging.getLogger(__name__)
@@ -400,10 +510,10 @@ class CredentialBroker:
     @classmethod
     def from_config(
         cls,
-        configs: List[ProviderCredentialConfig],
+        configs: list[ProviderCredentialConfig],
         strict: bool = True,
         **deps: Any,
-    ) -> "CredentialBroker":
+    ) -> CredentialBroker:
         """Build a broker from a list of declarative provider configs.
 
         This is a **pure construction** call — no I/O, safe to call from
@@ -454,7 +564,7 @@ class CredentialBroker:
         channel: str,
         user_id: str,
         **ctx: Any,
-    ) -> "ResolvedCredential | NeedsAuth":
+    ) -> ResolvedCredential | NeedsAuth:
         """Resolve the per-user credential for *provider*.
 
         Args:
