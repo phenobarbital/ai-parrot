@@ -26,9 +26,11 @@ def fake_dist(tmp_path, monkeypatch):
 
 
 class TestAbsentDist:
-    async def test_absent_dist_returns_false_and_registers_nothing(
+    async def test_absent_dist_returns_false_and_registers_no_spa_routes(
         self, tmp_path, monkeypatch, caplog
     ):
+        """No dist -> no SPA mount, but the status JSON endpoint is
+        UI-agnostic and still registers (TASK-2524)."""
         missing = tmp_path / "no-dist-here"
         monkeypatch.setattr(serving, "_dist_dir", lambda: missing)
         monkeypatch.setattr(serving, "_warned_missing_dist", False)
@@ -38,7 +40,8 @@ class TestAbsentDist:
             result = setup_admin_ui(app)
 
         assert result is False
-        assert len(list(app.router.routes())) == 0
+        paths = {r.resource.canonical for r in app.router.routes()}
+        assert paths == {"/api/v1/admin/status"}
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) == 1
 

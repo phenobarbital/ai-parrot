@@ -18,6 +18,8 @@ from pathlib import Path
 from aiohttp import web
 from navconfig.logging import logging
 
+from .status import AdminStatusHandler
+
 try:
     from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY
 except ImportError:  # pragma: no cover - navigator_auth is a core dependency
@@ -114,11 +116,18 @@ def setup_admin_ui(app: web.Application, *, prefix: str = DEFAULT_PREFIX) -> boo
         prefix: URL prefix the UI is served under. Defaults to ``/admin``.
 
     Returns:
-        ``True`` when routes were registered, ``False`` when ``dist/`` is
-        absent (a single WARNING is logged and the app is otherwise
-        untouched).
+        ``True`` when the SPA routes were registered, ``False`` when
+        ``dist/`` is absent (a single WARNING is logged; the SPA mount is
+        skipped but the JSON API below is registered either way — it is
+        UI-agnostic).
     """
     global _warned_missing_dist
+
+    # JSON API: registers unconditionally, independent of dist/ — the
+    # status endpoint is UI-agnostic and useful even on an install-from-git
+    # that never ran the Node build.
+    app.router.add_view("/api/v1/admin/status", AdminStatusHandler)
+
     dist = _dist_dir()
     index_html = dist / "index.html"
     if not index_html.exists():
