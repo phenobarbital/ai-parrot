@@ -178,6 +178,13 @@ def _build_dev_brief_from_form(
     judges = ops_server._parse_judge_panel(form.get("judge_panel"))
     if judges:
         payload["judge_panel"] = JudgePanelConfig(judges=judges)
+
+    # FEAT-466 TASK-2508: reuse the ops-server override parser. Note:
+    # DevRequestBrief (like FeatureBrief) declares no flow_type/base_branch
+    # fields — this flow never handles kind="bug", so the override is
+    # currently inert here (Pydantic's default extra="ignore" drops the
+    # keys); parsed only to keep every payload builder symmetric.
+    ops_server._apply_flow_override(payload, form)
     return DevRequestBrief.model_validate(payload)
 
 

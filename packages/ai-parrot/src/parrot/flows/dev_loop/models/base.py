@@ -216,6 +216,20 @@ class WorkBrief(BaseModel):
             "'shared'), when unset."
         ),
     )
+    flow_type: Optional[Literal["feature", "hotfix"]] = Field(
+        default=None,
+        description=(
+            "FEAT-466 per-run override of the SDD flow type. None ⇒ derive "
+            "from `kind` (bug ⇒ hotfix, otherwise feature)."
+        ),
+    )
+    base_branch: Optional[str] = Field(
+        default=None,
+        description=(
+            "FEAT-466 per-run override of the base branch. None ⇒ derive from "
+            "`flow_type`/`kind` (hotfix ⇒ main, feature ⇒ dev)."
+        ),
+    )
 
 
 # Back-compat alias: existing `from parrot.flows.dev_loop import BugBrief`

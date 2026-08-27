@@ -482,18 +482,31 @@ class ResearchNode(DevLoopNode):
     def _resolve_base_branch(
         self, research_out: ResearchOutput, brief: WorkBrief
     ) -> str:
-        """Resolve the run's base branch from the committed spec.
+        """Resolve the run's base branch.
 
-        The spec file on disk is authoritative: it was written and committed
-        by ``/sdd-spec``, whereas anything on ``research_out`` was produced by
-        an LLM and may have drifted. When the spec cannot be read we fall
-        back to the work-kind mapping and say so loudly, because a wrong base
-        branch is what FEAT-466 exists to prevent.
+        Precedence, highest first (mirrors ``scripts.sdd.sdd_meta.
+        resolve_flow``'s documented precedence, FEAT-466 TASK-2508 — kept as
+        a local reimplementation here rather than an import; see TASK-2504's
+        Completion Note for why ``scripts.sdd`` is not importable from this
+        package's context):
+
+        1. ``brief.base_branch`` — an explicit operator override from the
+           console (FEAT-466 TASK-2508). This is genuine human intent
+           supplied *before* the run started, not an LLM self-report, so it
+           is trusted directly.
+        2. The committed spec's frontmatter — authoritative for everything
+           else: it was written and committed by ``/sdd-spec``, whereas
+           anything on ``research_out`` was produced by an LLM and may have
+           drifted.
+        3. The work-kind mapping, when the spec cannot be read — logged
+           loudly, because a wrong base branch is what FEAT-466 exists to
+           prevent.
 
         Args:
             research_out: The validated dispatch output (for ``spec_path``
                 and ``worktree_path``).
-            brief: This run's brief, for the ``kind`` fallback.
+            brief: This run's brief, for the ``base_branch`` override and the
+                ``kind`` fallback.
 
         Returns:
             The resolved base branch name; never ``""``.
@@ -502,17 +515,21 @@ class ResearchNode(DevLoopNode):
         if not spec_path.is_absolute():
             spec_path = Path(research_out.worktree_path) / spec_path
 
-        resolved = _parse_flow_frontmatter(spec_path)
-        if resolved is None:
-            kind = getattr(brief, "kind", None)
-            resolved = _WORK_KIND_BASE_BRANCH.get(kind, "dev")
-            self.logger.warning(
-                "Could not resolve base_branch from spec %s; falling back "
-                "to the kind mapping for kind=%r -> %r.",
-                spec_path,
-                kind,
-                resolved,
-            )
+        override = (getattr(brief, "base_branch", None) or "").strip()
+        if override:
+            resolved = override
+        else:
+            resolved = _parse_flow_frontmatter(spec_path)
+            if resolved is None:
+                kind = getattr(brief, "kind", None)
+                resolved = _WORK_KIND_BASE_BRANCH.get(kind, "dev")
+                self.logger.warning(
+                    "Could not resolve base_branch from spec %s; falling back "
+                    "to the kind mapping for kind=%r -> %r.",
+                    spec_path,
+                    kind,
+                    resolved,
+                )
 
         reported = (research_out.base_branch or "").strip()
         if reported and reported != resolved:

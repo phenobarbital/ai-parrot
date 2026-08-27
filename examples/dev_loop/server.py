@@ -941,6 +941,9 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
         isolation = (form.get("dev_isolation") or "").strip().lower()
         if isolation in {"shared", "isolated"}:
             payload["dev_isolation"] = isolation
+
+    # FEAT-466 TASK-2508: per-run flow-type/base-branch override.
+    _apply_flow_override(payload, form)
     return payload
 
 
@@ -1007,6 +1010,34 @@ def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
                 }
             )
     return out
+
+
+_FLOW_TYPES = {"feature", "hotfix"}
+
+
+def _apply_flow_override(payload: dict[str, Any], form: dict[str, Any]) -> None:
+    """Parse the console's flow-type/base-branch override into ``payload``.
+
+    FEAT-466 TASK-2508: mirrors the ``dev_isolation`` validation idiom
+    verbatim — read, normalise, validate against a literal set, add only on
+    success. ``flow_type`` is a closed set and is rejected (omitted) when
+    invalid rather than passed to pydantic; ``base_branch`` is deliberately
+    open (CLAUDE.md allows sub-feature branches as a base), so any non-empty
+    string is accepted and left to ``resolve_flow``/``FlowMeta`` to reject an
+    invalid *combination*. The console's ``"auto"`` sentinel must never reach
+    here — both consoles omit the key entirely instead of sending ``"auto"``.
+
+    Args:
+        payload: The brief payload dict being built; mutated in place.
+        form: The raw decoded form/JSON body.
+    """
+    flow_type = (form.get("flow_type") or "").strip().lower()
+    if flow_type in _FLOW_TYPES:
+        payload["flow_type"] = flow_type
+
+    base_branch = (form.get("base_branch") or "").strip()
+    if base_branch:
+        payload["base_branch"] = base_branch
 
 
 def _parse_dev_agents(raw: Any) -> Optional[list[DevAgentSpec]]:
@@ -1145,6 +1176,14 @@ def _build_feature_brief_from_form(form: dict[str, Any]) -> FeatureBrief:
     judges = _parse_judge_panel(form.get("judge_panel"))
     if judges:
         payload["judge_panel"] = JudgePanelConfig(judges=judges)
+
+    # FEAT-466 TASK-2508: same override parsing as the bug/work-brief path,
+    # for consistency. NOTE: FeatureBrief.kind is a fixed Literal["feature"]
+    # and the model does not declare `flow_type`/`base_branch` fields (out
+    # of scope for this task — see FeatureBrief in models/base.py), so
+    # Pydantic's default `extra="ignore"` silently drops these keys today;
+    # they are parsed here only to keep both payload builders symmetric.
+    _apply_flow_override(payload, form)
     return FeatureBrief.model_validate(payload)
 
 
