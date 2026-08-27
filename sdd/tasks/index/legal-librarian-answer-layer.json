@@ -70,7 +70,7 @@
       "feature_id": "FEAT-449",
       "feature": "legal-librarian-answer-layer",
       "spec": "sdd/specs/legal-librarian-answer-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Imports seal_hash (TASK-2492) and writes to the span_suppressions collection declared by TASK-2494.",
       "assigned_to": null,
       "started_at": "2026-08-27T02:03:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2495-librarian-contracts-span-verifier.md"
+      "completed_at": "2026-08-27T02:23:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2495-librarian-contracts-span-verifier.md"
     },
     {
       "id": "TASK-2496",
