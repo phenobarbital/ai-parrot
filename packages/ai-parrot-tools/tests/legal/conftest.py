@@ -78,9 +78,22 @@ class FakeGraphStore:
         # collection -> {key_field value -> document}
         self._collections: dict[str, dict[str, dict[str, Any]]] = {}
         self.upsert_calls: list[tuple[str, int]] = []
+        self.inserted_documents: list[tuple[str, dict[str, Any]]] = []
 
     async def initialize_tenant(self, ctx: TenantContext) -> None:
         return None
+
+    async def insert_document(self, ctx: TenantContext, collection: str, doc: dict[str, Any]) -> None:
+        """Insert one document — used by SuppressionLog.append (TASK-2495).
+
+        Mirrors ``OntologyGraphStore.insert_document``'s contract
+        (auto-key when absent) closely enough for append-only writer
+        tests: records the call and stores the doc keyed by ``_key``.
+        """
+        store = self._collections.setdefault(collection, {})
+        key = doc.get("_key") or f"auto:{len(store)}"
+        store[key] = dict(doc)
+        self.inserted_documents.append((collection, dict(doc)))
 
     async def get_all_nodes(self, ctx: TenantContext, collection: str) -> list[dict[str, Any]]:
         docs = self._collections.get(collection, {})
