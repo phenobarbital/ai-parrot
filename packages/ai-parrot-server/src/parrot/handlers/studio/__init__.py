@@ -117,3 +117,9 @@ def setup_studio_routes(app: web.Application) -> None:
 
     app.router.add_view(f"{STUDIO_PREFIX}/toolkits/{{slug}}/schema", StudioToolkitsHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkits", StudioToolkitsHandler)
+
+    # Reference catalogs (FEAT-467 TASK-2519): base classes, LLM clients,
+    # tools, vector stores — all reuse existing sources of truth.
+    from .catalog import StudioCatalogHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/catalog/{{kind}}", StudioCatalogHandler)
