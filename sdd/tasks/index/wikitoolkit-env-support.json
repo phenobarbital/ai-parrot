@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-25T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-08-27T02:01:15+00:00",
   "tasks": [
     {
       "id": "TASK-2462",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation module in project.py; every other task consumes it.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2462-env-resolution-and-effective-config.md"
+      "completed_at": "2026-08-27T00:07:14+00:00",
+      "file": "sdd/tasks/completed/TASK-2462-env-resolution-and-effective-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2463",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Edits cli.py (hottest shared file) and imports TASK-2462 symbols.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2463-cli-precedence-build-generation-status.md"
+      "completed_at": "2026-08-27T00:30:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2463-cli-precedence-build-generation-status.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2464",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Shares no files with TASK-2463 (could parallelize in principle) but per-spec sequential isolation was chosen for this feature.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2464-call-site-migration-effective-config.md"
+      "completed_at": "2026-08-27T00:43:11+00:00",
+      "file": "sdd/tasks/completed/TASK-2464-call-site-migration-effective-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2465",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +83,9 @@
       "parallelism_notes": "Touches only store.py/arango_store.py/tests — no file overlap with TASK-2462/2463/2464; safe to run in a separate worktree if ever needed, though per-spec sequential is the plan.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2465-updated-at-surfacing.md"
+      "completed_at": "2026-08-27T00:50:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2465-updated-at-surfacing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2466",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +105,9 @@
       "parallelism_notes": "New module but imports TASK-2462 config loaders and TASK-2465 updated_at semantics.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2466-sync-engine.md"
+      "completed_at": "2026-08-27T01:09:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2466-sync-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2467",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Edits cli.py after TASK-2463; thin wrapper over TASK-2466 engine.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2467-sync-cli-group.md"
+      "completed_at": "2026-08-27T01:16:19+00:00",
+      "file": "sdd/tasks/completed/TASK-2467-sync-cli-group.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2468",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-461",
       "feature": "wikitoolkit-env-support",
       "spec": "sdd/specs/wikitoolkit-env-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Closing task: commits the repo overlay, docs, and cross-cutting e2e tests over everything prior.",
       "assigned_to": null,
       "started_at": "2026-08-27T00:01:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2468-repo-config-docs-e2e.md"
+      "completed_at": "2026-08-27T01:28:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2468-repo-config-docs-e2e.md",
+      "verification": "verified"
     }
   ]
 }

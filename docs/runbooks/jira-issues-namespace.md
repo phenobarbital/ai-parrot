@@ -21,6 +21,16 @@ Zero-LLM by default (G2): every frontmatter field is a Jira field or a
 pure function of one, so an unchanged ticket produces byte-identical
 output and a daily cron writes nothing when nothing changed.
 
+**Independent of this repo's own env/plane choice (FEAT-461).** The
+`issues` namespace is registered `--global` (`PARROT_HOME/wikis.json`),
+not in this repo's `.parrot/wiki.json` — it is unaffected by `WIKI_ENV`/
+`ENV` or which per-env overlay this repo's own primary plane resolves to.
+Whether your local checkout runs the repo's wiki against `local` (sqlite,
+no VPN) or `dev` (shared ArangoDB), `wikitoolkit query --ns issues "..."`
+reaches the same corpus the same way. See the "Environments" section of
+`docs/guides/llm-wiki-guide.md` for the repo's own env model — it does
+not change anything documented in this runbook.
+
 ## Install
 
 ```bash

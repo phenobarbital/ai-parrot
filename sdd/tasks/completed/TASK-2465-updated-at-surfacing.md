@@ -191,10 +191,40 @@ used by the suite; the sqlite tests are the required gate.)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-27
+**Notes**: Added `WikiPageRecord.updated_at: Optional[str] = None` (matching
+the file's existing `Optional[...]` style, e.g. `asserted_by` right above
+it). Confirmed the correction in this task's Context: sqlite's `pages`
+DDL and the Arango doc schema already persisted `created_at`/`updated_at`
+— no `ALTER TABLE`/migration entry needed, and both `get_page`/`list_pages`
+in both backends already projected `updated_at` into their returned
+dicts (verified by reading store.py:1088-1157 and
+arango_store.py:749-832 — zero changes needed there). The only real gap
+was upsert semantics: changed the sqlite upsert tuple's `updated_at`
+value from unconditional `now` to `p.updated_at or now` (store.py, one
+line), and the Arango doc's `"updated_at"` field the same way
+(arango_store.py, one line) — `created_at` untouched in both (backend-
+stamped only, never caller-overridable, per scope). Verified `toolkit.py`
+authoring surfaces (`remember()`, `update_page`, `WikiNoteTool`) already
+pass no `updated_at` on `WikiPageRecord(...)` construction — no changes
+needed there, per the file list (toolkit.py not listed).
 
-**Completed by**:
-**Date**:
-**Notes**:
+9 new tests in `tests/knowledge/wiki/test_updated_at.py`: sqlite round-trip
+(stamp-when-none, preserve-explicit, get/list surfacing, created_at
+survives conflict-update), a `remember()`-via-`LLMWikiToolkit` fresh-stamp
+regression, and 2 Arango-backend equivalents using the suite's existing
+mocked-`AsyncDB` pattern (`test_arango_store.py`'s fixtures) rather than
+the `TEST_ARANGODB_HOST`-gated integration style, so they run
+unconditionally in CI. Full `tests/knowledge/wiki/` suite: 1104 passed, 1
+pre-existing unrelated failure (`test_claude_code.py::TestInstaller::test_fresh_install_writes_all_artifacts`,
+confirmed via `git stash`), 7 skipped (no ArangoDB test server). `ruff
+check`: `arango_store.py` unchanged error count (9, pre-existing,
+verified via `git stash`); `store.py` gained exactly one new UP045
+finding (`Optional[str]` on the new field) — the file's own pervasive,
+pre-existing style choice (31 other `Optional[...]` instances already
+flagged the same way), not a new class of issue; left as-is for
+consistency with the adjacent `asserted_by` field rather than converting
+one line out of 32 to `str | None`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
