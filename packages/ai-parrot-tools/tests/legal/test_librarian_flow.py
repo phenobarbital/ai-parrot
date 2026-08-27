@@ -234,9 +234,7 @@ class TestBuildLegalLibrarianCrew:
     template wiring on the ToolNodes); answer() is the tested/executed path.
     """
 
-    def test_registers_all_six_nodes_with_expected_dependencies(
-        self, fake_store, legal_tenant_ctx
-    ):
+    def test_registers_all_six_nodes_with_expected_dependencies(self, fake_store, legal_tenant_ctx):
         from parrot_tools.legal.librarian.agent import LegalLibrarianAgent
 
         agent = LegalLibrarianAgent()
