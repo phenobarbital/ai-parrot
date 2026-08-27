@@ -97,7 +97,7 @@ def document_key(identity: str) -> str:
     safe = quote(identity, safe=_KEY_SAFE)
     if len(safe.encode("utf-8")) <= _KEY_MAX_BYTES:
         return safe
-    digest = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
     # Trim on a byte budget that leaves room for the "$<digest>" suffix.
     # A cut may land inside a percent escape ("...%2"); every character of
     # an escape is individually legal in a key, and the digest is what
