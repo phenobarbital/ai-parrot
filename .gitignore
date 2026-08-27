@@ -280,7 +280,6 @@ examples/knowledge_wiki/store/
 
 # Custom Agents:
 plugins/agents/
-!/crew-builder/src/routes/agents/
 # restored 2026-06-18 after FEAT-240 (odoo-pageindex-documentation-agent) landed.
 # Odoo agent files committed during the feature stay tracked (gitignore does not
 # untrack); only NEW agent files are ignored again.
