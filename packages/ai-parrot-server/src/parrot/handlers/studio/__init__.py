@@ -56,3 +56,14 @@ def setup_studio_routes(app: web.Application) -> None:
     app.router.add_view(
         f"{STUDIO_PREFIX}/drafts/{{name}}/activate", StudioDraftActivateHandler
     )
+
+    # Per-agent asset files (FEAT-467 TASK-2514): identity/kb/skills CRUD.
+    from .files import StudioFilesHandler
+
+    app.router.add_view(
+        f"{STUDIO_PREFIX}/agents/{{name}}/files/{{kind}}", StudioFilesHandler
+    )
+    app.router.add_view(
+        f"{STUDIO_PREFIX}/agents/{{name}}/files/{{kind}}/{{filename:.*}}",
+        StudioFilesHandler,
+    )
