@@ -3,6 +3,7 @@
 These models define the complete schema for the composable ontology YAML system:
 base → domain → client layers, merged into a single MergedOntology at runtime.
 """
+
 from __future__ import annotations
 
 import re
@@ -10,7 +11,6 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 
 # ── YAML Definition Models ──
 
@@ -66,9 +66,7 @@ class EntityDef(BaseModel):
     @classmethod
     def _validate_key_field(cls, v: str | None) -> str | None:
         if v is not None and not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", v):
-            raise ValueError(
-                f"key_field must be a valid identifier (letters, digits, underscore only), got {v!r}"
-            )
+            raise ValueError(f"key_field must be a valid identifier (letters, digits, underscore only), got {v!r}")
         return v
 
     def get_property_names(self) -> set[str]:
@@ -445,17 +443,13 @@ class MergedOntology(BaseModel):
 
         lines.append("\nRelations:")
         for name, rel in self.relations.items():
-            lines.append(
-                f"  - {rel.from_entity} --[{name}]--> {rel.to_entity}"
-            )
+            lines.append(f"  - {rel.from_entity} --[{name}]--> {rel.to_entity}")
 
         lines.append("\nKnown traversal patterns:")
         for name, pattern in self.traversal_patterns.items():
             lines.append(f"  - {name}: {pattern.description}")
             if pattern.trigger_intents:
-                lines.append(
-                    f"    triggers: {', '.join(pattern.trigger_intents)}"
-                )
+                lines.append(f"    triggers: {', '.join(pattern.trigger_intents)}")
 
         return "\n".join(lines)
 

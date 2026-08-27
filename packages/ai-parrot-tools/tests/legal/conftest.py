@@ -263,9 +263,7 @@ async def seeded_store(boe_corpus: str, legal_tenant_ctx: TenantContext) -> Fake
     if parsed.norma:
         await store.upsert_nodes(legal_tenant_ctx, "norma", [parsed.norma], key_field="boe_id")
     if parsed.articulos:
-        await store.upsert_nodes(
-            legal_tenant_ctx, "articulo", parsed.articulos, key_field="articulo_key"
-        )
+        await store.upsert_nodes(legal_tenant_ctx, "articulo", parsed.articulos, key_field="articulo_key")
     return store
 
 
@@ -342,9 +340,7 @@ def canned_drafts() -> CannedDrafts:
             DraftReadingNote(
                 text="El convenio debe acompañarse de una memoria justificativa.",
                 basis="llm",
-                spans=[
-                    DraftSpan(payload_key="BOE-A-2015-10566:50:0", quote=ANCHORED_QUOTE)
-                ],
+                spans=[DraftSpan(payload_key="BOE-A-2015-10566:50:0", quote=ANCHORED_QUOTE)],
             )
         ],
     )

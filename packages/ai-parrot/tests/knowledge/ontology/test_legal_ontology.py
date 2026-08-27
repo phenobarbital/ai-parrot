@@ -27,9 +27,7 @@ class TestLegalOntology:
             assert name in merged.relations
 
     def test_collections(self, merged):
-        assert {"norma", "articulo", "materia", "span_suppressions"} <= set(
-            merged.get_entity_collections()
-        )
+        assert {"norma", "articulo", "materia", "span_suppressions"} <= set(merged.get_entity_collections())
         assert {"modifica", "deroga", "pertenece_a"} <= set(merged.get_edge_collections())
 
     def test_versions_is_list_type(self, merged):

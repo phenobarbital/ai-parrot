@@ -46,9 +46,7 @@ def test_reingest_seals_hashes_end_to_end(boe_corpus):
 # ---------------------------------------------------------------------------
 
 
-async def test_librarian_answers_with_anchored_guide(
-    seeded_store, legal_tenant_ctx, canned_drafts, fake_log
-):
+async def test_librarian_answers_with_anchored_guide(seeded_store, legal_tenant_ctx, canned_drafts, fake_log):
     ans = await answer(
         "BOE-A-2015-10566:50 que dice el articulo a 2019-06-01",
         agent=canned_drafts.anchored,
@@ -86,9 +84,7 @@ async def test_librarian_honest_not_found(fake_store, legal_tenant_ctx, canned_d
 # ---------------------------------------------------------------------------
 
 
-async def test_fabricated_span_cannot_survive(
-    seeded_store, legal_tenant_ctx, canned_drafts, fake_log
-):
+async def test_fabricated_span_cannot_survive(seeded_store, legal_tenant_ctx, canned_drafts, fake_log):
     ans = await answer(
         "plazo a 2019-06-01",
         agent=canned_drafts.fabricated,
@@ -106,9 +102,7 @@ async def test_fabricated_span_cannot_survive(
 # ---------------------------------------------------------------------------
 
 
-async def test_mangled_quote_cannot_survive(
-    seeded_store, legal_tenant_ctx, canned_drafts, fake_log
-):
+async def test_mangled_quote_cannot_survive(seeded_store, legal_tenant_ctx, canned_drafts, fake_log):
     ans = await answer(
         "BOE-A-2015-10566:50 texto a 2019-06-01",
         agent=canned_drafts.mangled,

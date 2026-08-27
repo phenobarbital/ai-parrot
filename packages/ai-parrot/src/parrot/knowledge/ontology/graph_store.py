@@ -272,9 +272,7 @@ class OntologyGraphStore:
                 connection = db._connection
                 existing = await connection.views()
                 if not any(v.get("name") == view_name for v in existing):
-                    await connection.create_view(
-                        name=view_name, view_type="arangosearch", properties=properties
-                    )
+                    await connection.create_view(name=view_name, view_type="arangosearch", properties=properties)
                 elif not _view_matches(await connection.view(view_name), properties):
                     await connection.replace_view(view_name, properties)
             except Exception as e:

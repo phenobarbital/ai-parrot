@@ -157,8 +157,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                 await probe.close()
             if databases is not None and self._database not in set(databases):
                 raise FileNotFoundError(
-                    f"ArangoDB database {self._database!r} does not exist — "
-                    "the legal tenant was never built"
+                    f"ArangoDB database {self._database!r} does not exist — " "the legal tenant was never built"
                 )
 
             client = AsyncDB("arangodb", params={**self._params, "database": self._database})
@@ -217,9 +216,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
     # Read API
     # ------------------------------------------------------------------
 
-    async def get_page(
-        self, concept_id: str, include_body: bool = True
-    ) -> dict[str, Any] | None:
+    async def get_page(self, concept_id: str, include_body: bool = True) -> dict[str, Any] | None:
         """Fetch one article's in-force wording as of today.
 
         Args:
@@ -343,9 +340,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
 
         return stubs
 
-    async def search_fts(
-        self, query: str, category: str | None = None, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def search_fts(self, query: str, category: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
         """Lexical search — delegates to the ``search_articles`` pattern.
 
         Args:
@@ -415,9 +410,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                     collection_binds={"@edges": collection},
                 )
                 for row in rows:
-                    results.append(
-                        {"concept_id": row["target"], "rel": collection, "direction": "out"}
-                    )
+                    results.append({"concept_id": row["target"], "rel": collection, "direction": "out"})
             if direction in ("in", "both"):
                 rows = await self._store.execute_traversal(
                     self._ctx,
@@ -426,9 +419,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                     collection_binds={"@edges": collection},
                 )
                 for row in rows:
-                    results.append(
-                        {"concept_id": row["target"], "rel": collection, "direction": "in"}
-                    )
+                    results.append({"concept_id": row["target"], "rel": collection, "direction": "in"})
         return results
 
     async def dump_pages(self) -> list[dict[str, Any]]:

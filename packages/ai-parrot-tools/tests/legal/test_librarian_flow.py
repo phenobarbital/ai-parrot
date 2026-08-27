@@ -66,9 +66,7 @@ async def seeded_store(fake_store, legal_tenant_ctx):
 
 class TestGraphRetrieve:
     async def test_explicit_boe_id_resolved_first(self, seeded_store, legal_tenant_ctx):
-        hits = await graph_retrieve(
-            seeded_store, legal_tenant_ctx, "BOE-A-2015-10566:50 que dice", date(2020, 1, 1)
-        )
+        hits = await graph_retrieve(seeded_store, legal_tenant_ctx, "BOE-A-2015-10566:50 que dice", date(2020, 1, 1))
         assert hits[0]["articulo_key"] == "BOE-A-2015-10566:50"
         assert hits[0]["basis"] == "traversal"
 

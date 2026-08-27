@@ -165,9 +165,7 @@ class SuppressionRecord(BaseModel):
     execution_id: str
     suppressed_text: str
     claimed_anchors: list[str] = Field(default_factory=list)
-    reason: Literal[
-        "span_not_found", "hash_mismatch", "quote_mismatch", "anchor_lost", "atom_contradicted"
-    ]
+    reason: Literal["span_not_found", "hash_mismatch", "quote_mismatch", "anchor_lost", "atom_contradicted"]
     user_id: str | None = None
     created_at: datetime
 

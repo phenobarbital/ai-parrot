@@ -33,9 +33,7 @@ _MONTHS_ES = {
     "diciembre": 12,
 }
 _LONG_ES_RE = re.compile(
-    r"\b(\d{1,2})\s+de\s+("
-    + "|".join(_MONTHS_ES)
-    + r")\s+de\s+(\d{4})\b",
+    r"\b(\d{1,2})\s+de\s+(" + "|".join(_MONTHS_ES) + r")\s+de\s+(\d{4})\b",
     re.IGNORECASE,
 )
 
@@ -137,9 +135,6 @@ async def extract_as_of(
     if len(distinct_dates) == 1:
         return next(iter(distinct_dates))
 
-    prompt = (
-        "Extract the single date (as_of) that the following legal query "
-        f"refers to, if any. Query: {query!r}"
-    )
+    prompt = "Extract the single date (as_of) that the following legal query " f"refers to, if any. Query: {query!r}"
     result = await llm_ask(prompt, structured_output=AsOfExtraction)
     return _unwrap_as_of(result)

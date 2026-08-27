@@ -1,6 +1,5 @@
 """Unit tests for OntologyLegalWikiStore (FEAT-449 TASK-2498)."""
 
-
 import pytest
 from parrot_tools.legal.wiki_store import OntologyLegalWikiStore
 
@@ -115,9 +114,7 @@ class FakeLegalStore:
             v = self._in_force(doc["versions"], as_of)
             if v is None:
                 continue
-            rows.append(
-                {"articulo_key": key, "norma_ref": doc["norma_ref"], "numero": doc["numero"], "version": v}
-            )
+            rows.append({"articulo_key": key, "norma_ref": doc["norma_ref"], "numero": doc["numero"], "version": v})
             if len(rows) >= limit:
                 break
         return rows
@@ -153,9 +150,7 @@ def fake_legal_store():
         [_version(0, "El plazo sera de tres meses.", "2010-01-01", None)],
     )
     fake.normas["BOE-A-2015-10566"] = {"titulo": "Ley de Ejemplo"}
-    fake.edges["modifica"].append(
-        {"_from": "norma/BOE-A-2020-1", "_to": "articulo/BOE-A-2015-10566:50"}
-    )
+    fake.edges["modifica"].append({"_from": "norma/BOE-A-2020-1", "_to": "articulo/BOE-A-2015-10566:50"})
     return fake
 
 
@@ -226,9 +221,7 @@ class TestListPages:
 
 class TestNeighbors:
     async def test_neighbors_finds_incoming_edge(self, fake_legal_wiki_store):
-        rows = await fake_legal_wiki_store.neighbors(
-            "articulo/BOE-A-2015-10566:50", rel="modifica", direction="in"
-        )
+        rows = await fake_legal_wiki_store.neighbors("articulo/BOE-A-2015-10566:50", rel="modifica", direction="in")
         assert rows == [{"concept_id": "norma/BOE-A-2020-1", "rel": "modifica", "direction": "in"}]
 
 

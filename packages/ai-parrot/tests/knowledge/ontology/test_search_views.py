@@ -75,9 +75,7 @@ class TestSearchViewDefMergeAndValidation:
             name="bad",
             entities={"Widget": _entity("widgets")},
             search_views={
-                "v": SearchViewDef(
-                    links=[SearchViewLink(entity="Ghost", fields=[SearchViewField(path="x")])]
-                )
+                "v": SearchViewDef(links=[SearchViewLink(entity="Ghost", fields=[SearchViewField(path="x")])])
             },
         )
         with pytest.raises(OntologyIntegrityError, match="v"):
@@ -167,9 +165,7 @@ def ctx_with_view() -> TenantContext:
         layers=["test"],
         merge_timestamp=datetime.now(UTC),
     )
-    return TenantContext(
-        tenant_id="test", arango_db="test_db", pgvector_schema="test", ontology=merged
-    )
+    return TenantContext(tenant_id="test", arango_db="test_db", pgvector_schema="test", ontology=merged)
 
 
 class TestEnsureViewsIdempotent:

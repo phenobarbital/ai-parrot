@@ -155,11 +155,7 @@ class SpanVerifier:
                     failure_reasons.append(reason or "span_not_found")
 
             if not survivors:
-                reason = (
-                    failure_reasons[0]
-                    if failure_reasons and len(set(failure_reasons)) == 1
-                    else "anchor_lost"
-                )
+                reason = failure_reasons[0] if failure_reasons and len(set(failure_reasons)) == 1 else "anchor_lost"
                 _record(
                     reason,
                     note.text,
@@ -209,10 +205,7 @@ class SpanVerifier:
         if not dossier and not not_found:
             materias_str = ", ".join(materias) if materias else "(sin materia especificada)"
             not_found = [
-                (
-                    f"No encontré resultados en el corpus BOE para materias "
-                    f"{materias_str} a fecha {as_of.isoformat()}."
-                )
+                f"No encontré resultados en el corpus BOE para materias " f"{materias_str} a fecha {as_of.isoformat()}."
             ]
 
         answer = LegalAnswer(

@@ -4,6 +4,7 @@ Merges base → domain → client ontology layers into a single MergedOntology
 with deterministic rules for entity extension, relation concatenation, and
 traversal pattern overrides.
 """
+
 from __future__ import annotations
 
 import logging
@@ -76,9 +77,7 @@ class OntologyMerger:
             last_name = layer.name
 
             self._merge_entities(result_entities, layer.entities, path)
-            self._merge_relations(
-                result_relations, layer.relations, result_entities, path
-            )
+            self._merge_relations(result_relations, layer.relations, result_entities, path)
             self._merge_patterns(result_patterns, layer.traversal_patterns)
             self._merge_search_views(result_search_views, layer.search_views)
 
@@ -96,14 +95,15 @@ class OntologyMerger:
         self._validate_integrity(merged)
         logger.info(
             "Merged %d layers into ontology '%s': %d entities, %d relations, %d patterns",
-            len(layers), last_name,
-            len(result_entities), len(result_relations), len(result_patterns),
+            len(layers),
+            last_name,
+            len(result_entities),
+            len(result_relations),
+            len(result_patterns),
         )
         return merged
 
-    def merge_definitions(
-        self, definitions: list[OntologyDefinition]
-    ) -> MergedOntology:
+    def merge_definitions(self, definitions: list[OntologyDefinition]) -> MergedOntology:
         """Merge pre-loaded OntologyDefinition objects (no file I/O).
 
         Args:
@@ -123,11 +123,11 @@ class OntologyMerger:
             layers.append(layer.name)
             last_name = layer.name
 
-            self._merge_entities(
-                result_entities, layer.entities, Path(layer.name)
-            )
+            self._merge_entities(result_entities, layer.entities, Path(layer.name))
             self._merge_relations(
-                result_relations, layer.relations, result_entities,
+                result_relations,
+                layer.relations,
+                result_entities,
                 Path(layer.name),
             )
             self._merge_patterns(result_patterns, layer.traversal_patterns)
@@ -243,9 +243,7 @@ class OntologyMerger:
 
             # Merge overlay content using the standard helpers.
             self._merge_entities(result_entities, overlay.entities, overlay_path)
-            self._merge_relations(
-                result_relations, overlay.relations, result_entities, overlay_path
-            )
+            self._merge_relations(result_relations, overlay.relations, result_entities, overlay_path)
             self._merge_patterns(result_patterns, overlay.traversal_patterns)
             self._merge_search_views(result_search_views, overlay.search_views)
             layers.append(overlay.name)
@@ -288,16 +286,13 @@ class OntologyMerger:
             if name in target:
                 if not entity.extend:
                     raise OntologyMergeError(
-                        f"Entity '{name}' exists in parent layer. "
-                        f"Set 'extend: true' in {source_path} to modify it."
+                        f"Entity '{name}' exists in parent layer. " f"Set 'extend: true' in {source_path} to modify it."
                     )
                 self._extend_entity(target[name], entity, name)
             else:
                 target[name] = entity.model_copy(deep=True)
 
-    def _extend_entity(
-        self, existing: EntityDef, extension: EntityDef, name: str
-    ) -> None:
+    def _extend_entity(self, existing: EntityDef, extension: EntityDef, name: str) -> None:
         """Apply entity extension merge rules.
 
         - properties: concatenated (no name collisions)
@@ -308,8 +303,7 @@ class OntologyMerger:
         # Immutability checks
         if extension.key_field and extension.key_field != existing.key_field:
             raise OntologyMergeError(
-                f"Cannot change key_field of entity '{name}': "
-                f"'{existing.key_field}' → '{extension.key_field}'"
+                f"Cannot change key_field of entity '{name}': " f"'{existing.key_field}' → '{extension.key_field}'"
             )
         if extension.collection and extension.collection != existing.collection:
             raise OntologyMergeError(
@@ -349,10 +343,7 @@ class OntologyMerger:
             if name in target:
                 existing = target[name]
                 # Validate endpoints haven't changed
-                if (
-                    relation.from_entity != existing.from_entity
-                    or relation.to_entity != existing.to_entity
-                ):
+                if relation.from_entity != existing.from_entity or relation.to_entity != existing.to_entity:
                     raise OntologyMergeError(
                         f"Relation '{name}' endpoints cannot change. "
                         f"Expected {existing.from_entity} → {existing.to_entity}, "
@@ -396,9 +387,7 @@ class OntologyMerger:
             if name in target:
                 existing = target[name]
                 # Concatenate trigger intents (dedup)
-                existing.trigger_intents = list(
-                    set(existing.trigger_intents + pattern.trigger_intents)
-                )
+                existing.trigger_intents = list(set(existing.trigger_intents + pattern.trigger_intents))
                 # Override template and post-action
                 if pattern.query_template:
                     existing.query_template = pattern.query_template
@@ -444,15 +433,9 @@ class OntologyMerger:
         # Check relation endpoints
         for name, rel in merged.relations.items():
             if rel.from_entity not in entity_names:
-                raise OntologyIntegrityError(
-                    f"Relation '{name}' references unknown entity "
-                    f"'{rel.from_entity}'"
-                )
+                raise OntologyIntegrityError(f"Relation '{name}' references unknown entity " f"'{rel.from_entity}'")
             if rel.to_entity not in entity_names:
-                raise OntologyIntegrityError(
-                    f"Relation '{name}' references unknown entity "
-                    f"'{rel.to_entity}'"
-                )
+                raise OntologyIntegrityError(f"Relation '{name}' references unknown entity " f"'{rel.to_entity}'")
 
         # Check vectorize fields
         for name, entity in merged.entities.items():
@@ -470,8 +453,7 @@ class OntologyMerger:
             for link in view_def.links:
                 if link.entity not in entity_names:
                     raise OntologyIntegrityError(
-                        f"search_views view '{view_name}' links unknown entity "
-                        f"'{link.entity}'"
+                        f"search_views view '{view_name}' links unknown entity " f"'{link.entity}'"
                     )
                 for field in link.fields:
                     try:

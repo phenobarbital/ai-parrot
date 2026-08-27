@@ -246,10 +246,11 @@ def dossier_build(
         retrieval_set[payload_key] = entry
         scores[payload_key] = hit["score"]
 
-        window = f"{version.valid_from.isoformat()} -> {version.valid_to.isoformat() if version.valid_to else 'actualidad'}"
+        window = (
+            f"{version.valid_from.isoformat()} -> {version.valid_to.isoformat() if version.valid_to else 'actualidad'}"
+        )
         lines.append(
-            f"### payload_key: {payload_key}\n{title} — vigente {window}\n"
-            f"{_format_payload_text(version.text)}"
+            f"### payload_key: {payload_key}\n{title} — vigente {window}\n" f"{_format_payload_text(version.text)}"
         )
 
     return retrieval_set, "\n\n".join(lines), scores
@@ -405,9 +406,7 @@ async def ground(
             )
         )
 
-    return answer.model_copy(
-        update={"reading_guide": surviving_notes, "suppressed_count": suppressed_count}
-    )
+    return answer.model_copy(update={"reading_guide": surviving_notes, "suppressed_count": suppressed_count})
 
 
 # ---------------------------------------------------------------------------
@@ -492,9 +491,7 @@ class _CallableTool(AbstractTool):
         return await self._fn(**kwargs)
 
 
-def build_legal_librarian_crew(
-    agent: LibrarianLike, store: Any, ctx: Any, log: SuppressionLog
-) -> AgentCrew:
+def build_legal_librarian_crew(agent: LibrarianLike, store: Any, ctx: Any, log: SuppressionLog) -> AgentCrew:
     """Build a structurally faithful ``AgentCrew`` for the retrieval DAG.
 
     Registers all six stages as crew members (five deterministic

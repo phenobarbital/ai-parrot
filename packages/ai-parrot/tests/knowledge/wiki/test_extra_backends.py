@@ -11,9 +11,7 @@ from parrot.knowledge.wiki.project import WikiNamespaceConfig
 class TestRegisterWikiBackendDispatch:
     def test_dispatch_calls_registered_factory(self, monkeypatch, tmp_path):
         calls = []
-        monkeypatch.setitem(
-            wiki_store._EXTRA_BACKENDS, "fake", lambda **kw: calls.append(kw) or object()
-        )
+        monkeypatch.setitem(wiki_store._EXTRA_BACKENDS, "fake", lambda **kw: calls.append(kw) or object())
         wiki_store.create_wiki_store(tmp_path, wiki_name="w", backend="fake", database="d")
         assert calls[0]["wiki_name"] == "w"
         assert calls[0]["database"] == "d"
@@ -36,10 +34,7 @@ class TestRegisterWikiBackendDispatch:
 
 class TestNamespaceConfigBackend:
     def test_namespace_config_keeps_explicit_backend(self):
-        assert (
-            WikiNamespaceConfig(database="legal_x", backend="ontology_legal").backend
-            == "ontology_legal"
-        )
+        assert WikiNamespaceConfig(database="legal_x", backend="ontology_legal").backend == "ontology_legal"
 
     def test_namespace_config_defaults_database_to_arangodb(self):
         assert WikiNamespaceConfig(database="legal_x").backend == "arangodb"
@@ -67,9 +62,7 @@ class TestOpenNamespaceStoreExtraBackendDispatch:
         monkeypatch.setitem(wiki_store._EXTRA_BACKENDS, "fake_db_backend", fake_factory)
         cfg = WikiNamespaceConfig(database="legal_x", backend="fake_db_backend")
 
-        store, storage_dir = await federation.open_namespace_store(
-            "legal", cfg, base_dir=tmp_path
-        )
+        store, storage_dir = await federation.open_namespace_store("legal", cfg, base_dir=tmp_path)
 
         assert isinstance(store, FakeStore)
         assert storage_dir is None
