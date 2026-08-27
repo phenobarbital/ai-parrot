@@ -241,10 +241,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `boe/models.py`: added `ArticleHit` exactly per spec.
+- `boe/queries.py`: added `search_articles` (mirrors `article_in_force`
+  structurally — pattern fetched from `ctx.ontology.traversal_patterns`,
+  `KeyError` on missing pattern, no `collection_binds` since the view
+  name is literal in the template) plus module-level `_fold`,
+  `_query_tokens`, `passes_token_guard` (the token-containment guard,
+  exposed for TASK-2498 reuse), applied in Python AFTER the AQL result.
+  Module docstring updated to describe both patterns.
+- `boe/__init__.py`: exported `ArticleHit`, `search_articles`.
+- Created `librarian/as_of.py`: `AsOfExtraction`, `regex_dates` (all
+  three regex forms tried, invalid calendar dates discarded), and
+  `extract_as_of` (exactly one `llm_ask` call when regex matches are
+  zero or ambiguous; normalises either a bare `AsOfExtraction`-shaped
+  result or an `AIMessage`-like `.structured_output` wrapper via
+  `_unwrap_as_of`, per the contract note that TASK-2497 will bind the
+  real `ask()`).
+- Extended `tests/legal/conftest.py`'s `FakeGraphStore.execute_traversal`
+  to branch on `"legal_articulos_view"` in the AQL and added
+  `_search_articles_rows` (document-level SEARCH match simulated as ANY
+  version's text containing the query substring, then the SAME in-force
+  version selection logic as the `article_in_force` branch — the token
+  guard's temporal correctness is exercised by `queries.py`, not
+  pre-filtered here, matching the real engine's division of labor) plus
+  a `last_traversal` spy attribute (mirrors `test_temporal_resolution.py`
+  test style) for the binds/pattern-identity test.
+- New tests: `test_as_of.py` (regex-first for all 3 forms + a
+  spec-literal query, LLM fallback on 2-date ambiguity AND on 0-date
+  ambiguity, invalid-calendar-date rejection, per-form `regex_dates`
+  checks) and `test_search_articles.py` (token guard incl. short-query
+  skip, temporal filter drop/keep, binds+pattern-identity assertion,
+  missing-pattern `KeyError`).
+- `pytest packages/ai-parrot-tools/tests/legal/ -v` → 113 passed (15 new:
+  9 as_of + 5 search_articles + 1 conftest spy wiring, on top of the 98
+  from TASK-2492/2495). `ruff check packages/ai-parrot-tools/src/
+  parrot_tools/legal/` → clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one, discovered while writing the temporal-
+filter test — not a code deviation, a TEST DATA correction. My first
+draft of `test_search_articles_temporal_filter` used the query `"tres
+meses"` against seed text `"...de tres meses."` (v0, superseded) vs
+`"...de seis meses."` (v1, in-force at the later `as_of`). Both versions
+share the token `"meses"` (>= 4 chars), so `passes_token_guard`'s "ANY
+token matches" rule correctly kept the hit even for the later `as_of` —
+working exactly as specified, but not what the test intended to exercise.
+Fixed by querying just `"tres"` (a token unique to the superseded
+wording), which is what actually demonstrates the guard dropping a
+document-level match that lives only in a repealed version. No production
+code changed for this — `passes_token_guard`'s "any token" semantics are
+implemented exactly as spec §3 M5 describes.

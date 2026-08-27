@@ -248,10 +248,64 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- Created `parrot_tools/legal/librarian/` with `models.py` (all §2 final +
+  draft contracts + `PayloadEntry` + a `span_key(ref) -> str` helper +
+  `DEFAULT_DISCLAIMER`), `verifier.py` (`SpanVerifier`, pure code, no
+  LLM/network), `suppression.py` (`SuppressionLog`, exactly one public
+  method `append`), and `__init__.py` re-exporting all of the above.
+- `SpanVerifier.verify()` implements the ordered existence checks
+  (`span_not_found` → `hash_mismatch` → `quote_mismatch`, first-occurrence
+  offsets via `str.find`), drops pruned spans from reading notes, drops
+  conflict notes with either side pruned, filters `reading_order` silently
+  to surviving payload keys, dedupes the dossier by span key in
+  first-seen order, and returns a first-class "no encontré" `LegalAnswer`
+  for an empty dossier (never raises).
+- `SuppressionLog.append()` writes into `span_suppressions` via
+  `OntologyGraphStore.insert_document(ctx, "span_suppressions", doc)`
+  with `suppression_id = f"{execution_id}:{seq}"` (per-instance sequence
+  counter); verified `dir(log)` exposes only `append` as a public
+  callable.
+- Extended `tests/legal/conftest.py`'s `FakeGraphStore` with
+  `insert_document` (not in the task's Files-to-Modify table, but
+  explicitly called out in the task's own Implementation Notes/References
+  section as needed — "extend with insert_document if absent" — so
+  `test_suppression_log.py` has something to assert against without a
+  live ArangoDB).
+- `pytest packages/ai-parrot-tools/tests/legal/ -v` → 98 passed (22 new:
+  9 model tests, 10 verifier tests, 3 suppression-log tests + 76
+  pre-existing). `ruff check` on `legal/librarian/` and the three new test
+  files + `conftest.py` → clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: two, both discovered while implementing the
+verifier's exact suppression-record semantics — reconciling the module's
+prose docstring (spec §3 M4) against the task's OWN executable Test
+Specification, which is authoritative since it must literally pass:
+1. **Reading-note suppression reason.** Spec §3 M4's docstring literally
+   says a `DraftReadingNote` that loses all its spans is recorded with
+   `reason="anchor_lost"`. But the task's given executable test
+   (`test_span_verifier_hash_mismatch_prunes`) asserts
+   `recs[0].reason == "hash_mismatch"` with `suppressed_count == 1` for a
+   single-span note whose one span failed the hash check — NOT
+   `"anchor_lost"`, and only ONE record (not one per span-level failure
+   plus one for the note). Implemented as: exactly one
+   `SuppressionRecord` per fully-lost note; its `reason` is the specific
+   span-level failure reason when every failing span in that note shares
+   the same reason (trivially true for single-span notes, which is what
+   every given test exercises), and falls back to `"anchor_lost"` only
+   when a multi-span note's failing spans have genuinely mixed reasons —
+   preserving the spec's literal `"anchor_lost"` semantics for the
+   ambiguous case while satisfying the concrete, executable tests.
+   Individual span-level failures that do NOT take down their whole note
+   (i.e. the note still has ≥1 surviving span) are silently dropped, with
+   no separate record — only total anchor loss is recorded, mirroring how
+   `reading_order` is filtered "silently."
+2. **Conflict-note suppression reason.** Kept literally as `"anchor_lost"`
+   per spec §3 M4's unambiguous text for `DraftConflictNote` ("either
+   side pruned -> dropped + recorded ('anchor_lost')") — no test forced a
+   deviation here, so no reconciliation was needed; documented for
+   symmetry with point 1 above.
+Both are implementation-detail resolutions of the SAME underlying tension
+(prose spec vs. executable spec) — no interface, file, or scope change.

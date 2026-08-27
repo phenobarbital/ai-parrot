@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from .schema import TenantContext
+from .schema import TenantContext, merge_link_field, view_properties_match
 
 logger = logging.getLogger("Parrot.Ontology.GraphStore")
 
@@ -78,6 +78,8 @@ class OntologyGraphStore:
             3. Edge collections for each relation
             4. Named graph linking vertex/edge collections
             5. Indexes for key_field on each vertex collection
+            6. Declared ArangoSearch views (``ctx.ontology.search_views``,
+               FEAT-449 R15)
 
         Args:
             ctx: Tenant context with ontology and database name.
@@ -170,6 +172,45 @@ class OntologyGraphStore:
                 logger.info("Created named graph '%s'", graph_name)
         except Exception as e:
             logger.warning("Failed to create graph '%s': %s", graph_name, e)
+
+        # Step 6: provision declared ArangoSearch views (FEAT-449 R15).
+        await self._ensure_views(db, ctx)
+
+    async def _ensure_views(self, db: Any, ctx: TenantContext) -> None:
+        """Provision/reconcile declared ArangoSearch views. Idempotent.
+
+        IMPORTANT: drives the underlying ``arangoasync`` ``Database`` via
+        ``db._connection`` directly. The asyncdb wrapper
+        ``create_arangosearch_view()`` calls async ``views()``/
+        ``create_view()`` WITHOUT awaiting them and raises ``TypeError``
+        against a real server — a known vendored bug, worked around
+        identically in ``parrot/knowledge/wiki/arango_store.py:358-400``.
+
+        Args:
+            db: Database connection (tenant-scoped).
+            ctx: Tenant context carrying the merged ontology's declared
+                ``search_views``.
+        """
+        for view_name, view_def in ctx.ontology.search_views.items():
+            properties: dict[str, Any] = {"links": {}}
+            for link in view_def.links:
+                entity = ctx.ontology.entities[link.entity]  # validated by merger
+                fields: dict[str, Any] = {}
+                for f in link.fields:
+                    merge_link_field(fields, f.path)
+                properties["links"][entity.collection] = {
+                    "analyzers": sorted({a for f in link.fields for a in f.analyzers}),
+                    "fields": fields,
+                }
+            try:
+                connection = db._connection
+                existing = await connection.views()
+                if not any(v.get("name") == view_name for v in existing):
+                    await connection.create_view(name=view_name, view_type="arangosearch", properties=properties)
+                elif not view_properties_match(await connection.view(view_name), properties):
+                    await connection.replace_view(view_name, properties)
+            except Exception as e:
+                logger.warning("Failed to provision view '%s': %s", view_name, e)
 
     async def _ensure_index(self, db: Any, collection: str, field: str) -> None:
         """Create a persistent index on a field if not already present.

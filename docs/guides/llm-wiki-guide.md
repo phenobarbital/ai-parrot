@@ -618,7 +618,7 @@ documentation can all be searched together.
 |------|----------|-------------------|----------|
 | `path` | `--project <dir>` | Root of another wiki project (loads its `.parrot/wiki.json`) | Another repo's codebase wiki |
 | `store` | `--store <dir>` | Pre-built store directory (`wiki.db` inside) | Off-repo corpus (Jira issues, generated docs) |
-| `database` | `--database <name>` | ArangoDB database holding the plane | Server-hosted shared wiki |
+| `database` | `--database <name>` | ArangoDB (default) or a satellite-registered backend's database holding the plane | Server-hosted shared wiki |
 | `vault` | `--vault <dir>` | Obsidian vault root (requires `.obsidian/`) | Personal/team notes |
 
 ### Registering a Namespace
@@ -641,6 +641,11 @@ wikitoolkit ns add legislation --database wiki_legislation \
   --credentials-env LEGAL_ARANGO \
   --description "Legislation corpus" --weight 0.8
 
+# Register a --database entry on a satellite-registered backend instead of
+# arangodb (FEAT-449 M7 — e.g. parrot_tools.legal's "ontology_legal")
+wikitoolkit ns add legal --database legal_db --backend ontology_legal \
+  --description "Legal ontology tenant, read-only"
+
 # List registered namespaces
 wikitoolkit ns list
 
@@ -655,8 +660,14 @@ wikitoolkit ns add NAME [OPTIONS]
 
   --project DIR         Another wiki project root (kind: path)
   --store DIR           Pre-built store directory (kind: store)
-  --backend TEXT        Backend for --store (sqlite | memory; not arangodb)
-  --database TEXT       ArangoDB database name (kind: database, forces arangodb)
+  --backend TEXT        For --store: sqlite | memory (default: sqlite).
+                        For --database: arangodb (default) or a
+                        satellite-registered backend name (e.g.
+                        ontology_legal, FEAT-449 M7); not validated
+                        against the registry here — an unknown name
+                        surfaces as a ValueError when the namespace is
+                        actually opened.
+  --database TEXT       ArangoDB (or registered extra backend) database name (kind: database)
   --credentials-env TEXT  Env var prefix for ArangoDB credentials (default: ARANGODB)
   --vault DIR           Obsidian vault root (kind: vault; requires .obsidian/)
   --description TEXT    What this namespace holds

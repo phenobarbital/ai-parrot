@@ -265,10 +265,103 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-27
 **Notes**:
+- `wiki/store.py`: added `_EXTRA_BACKENDS` registry + `register_wiki_backend()`,
+  and dispatch in `create_wiki_store` immediately before the final
+  `ValueError` (whose message now lists registered extras too).
+- `wiki/project.py`: widened `WikiNamespaceConfig.backend` from
+  `Literal["sqlite","memory","arangodb"]` to `str` (per the task's
+  "verified gap"), and changed `_check_exactly_one_source`'s validator
+  to `if self.database and self.backend in ("sqlite","memory"):` before
+  forcing `"arangodb"` — an explicit non-built-in backend on a `database`
+  entry now survives. Existing `database`-only configs (no explicit
+  `backend`) are unaffected: default `backend="sqlite"` still gets forced
+  to `"arangodb"`.
+- `wiki/federation.py`: `open_namespace_store`'s `kind == "database"`
+  branch now checks `cfg.backend != "arangodb"` first and dispatches to
+  `wiki_store._EXTRA_BACKENDS[cfg.backend]` (raising `ValueError` naming
+  the namespace + unknown backend), calling `_assert_plane_readable`
+  (a no-op for non-`SQLiteWikiStore` instances) before returning
+  `(store, None)`; the `arangodb` path is byte-for-byte unchanged
+  (falls through to the pre-existing `_open_arango` call).
+- `parrot_tools/legal/wiki_store.py` (NEW): `OntologyLegalWikiStore(BaseWikiStore)`
+  implements all 16 abstract methods. Write methods raise
+  `NotImplementedError("ontology_legal namespace is read-only")`;
+  `search_vector` always returns `[]` (never raises, R14). `get_page`/
+  `list_pages` embed the in-force temporal filter directly in AQL
+  (`valid_from <= @as_of`, `valid_to == null OR valid_to > @as_of` —
+  same predicate as `article_in_force`), never in Python. `search_fts`
+  REUSES `search_articles()` (TASK-2496) rather than duplicating its AQL
+  — one source of truth for the BM25 + token-guard pattern. `neighbors`/
+  `dump_edges` walk the three typed edge collections
+  (`modifica`/`deroga`/`pertenece_a`). `stats` counts normas/articulos/
+  versions/in-force-versions. Lint methods (`orphan_sources`/
+  `broken_edges`/`missing_bodies`) return `[]` per spec ("wiki lint
+  semantics do not apply to a projected corpus").
+- `factory()`/`initialize()` mirror `arango_store.py:282-330`'s
+  no-provision connect: probe `_system` for database existence, then
+  connect to the target db and check the `articulo` collection exists —
+  `FileNotFoundError` on either miss. Internally, once connected, the
+  store constructs an `OntologyGraphStore` + a `TenantContext` (merged
+  legal ontology resolved via `TenantOntologyManager`, same as
+  `conftest.py`'s `legal_tenant_ctx` fixture) and reuses `article_in_force`
+  semantics / `execute_traversal` for all reads — NEVER calls
+  `initialize_tenant` (which would provision).
+- `parrot_tools/legal/__init__.py`: registers `"ontology_legal"` at
+  import time, guarded with `try/except ImportError` so the package still
+  imports if the core wiki plane is unavailable.
+- Core seam tests (`packages/ai-parrot/tests/knowledge/wiki/test_extra_backends.py`,
+  9 tests): registry dispatch, unknown-backend `ValueError`, built-ins
+  untouched, `WikiNamespaceConfig` explicit-backend survival vs.
+  database-only-forces-arangodb, `open_namespace_store` dispatch + unknown
+  backend error.
+- Adapter tests (`packages/ai-parrot-tools/tests/legal/test_wiki_store.py`,
+  13 tests): read-only refusals, `search_vector` empty, `search_fts` stub
+  shape (exactly the 8 spec'd keys), `get_page` (with/without body,
+  missing), `list_pages` (both categories, category filter), `neighbors`,
+  lint no-ops, `stats`, and factory `FileNotFoundError` when the target
+  database doesn't exist (monkeypatches `sys.modules["asyncdb"]` so
+  `initialize()`'s local `from asyncdb import AsyncDB` resolves to a fake
+  probe reporting the database absent — no real network dependency).
+  Uses a purpose-built `FakeLegalStore` double (not the shared
+  `FakeGraphStore` in `conftest.py` — kept local to this test file since
+  it needed several NEW AQL shapes specific to this adapter, and
+  extending the shared fake a third time risked growing it into an
+  unmaintainable AQL-sniffing pile).
+- `pytest packages/ai-parrot/tests/knowledge/wiki/ -v` → 223 passed (9
+  new + 214 pre-existing; 2 pre-existing failures in
+  `test_installer_mcp.py` confirmed unrelated via `git stash` baseline
+  comparison). `pytest packages/ai-parrot-tools/tests/legal/ -v` → 139
+  passed (13 new + 126 from prior tasks). `ruff check` on every touched/
+  created file: zero NEW issues versus the pre-edit baseline (verified
+  via before/after diff on `store.py`, which carries pre-existing SIM117/
+  UP045 noise unrelated to this task).
 
-**Deviations from spec**: `WikiNamespaceConfig.backend` widening + validator change (required — see top of task) | others if any
+**Deviations from spec**: two, both discovered while resolving genuine
+implementation-detail ambiguities the task itself flagged or left open:
+1. **`WikiNamespaceConfig.backend` widening + validator change** —
+   REQUIRED per the task's own "Verified gap (not in the spec)" note at
+   the top; implemented exactly as instructed
+   (`if self.database and self.backend in ("sqlite","memory"):`).
+2. **`factory()` synchronicity vs. "raises FileNotFoundError when absent."**
+   The task's Codebase Contract instructs mirroring
+   `arango_store.py:282-330`'s `_connect_existing` (an ASYNC, no-provision
+   connect) inside a factory the task also describes as raising
+   `FileNotFoundError` directly. But BOTH call sites that invoke the
+   registered factory — `create_wiki_store`'s dispatch (`store.py`) and
+   `open_namespace_store`'s new dispatch (`federation.py`) — call it
+   WITHOUT `await` (confirmed by the task's own given core test:
+   `wiki_store.create_wiki_store(tmp_path, wiki_name="w", backend="fake",
+   database="d")`, no `await`, with a plain synchronous `lambda` as the
+   registered factory). A synchronous factory cannot itself run an async
+   network probe (worse, `open_namespace_store` is itself a coroutine, so
+   `asyncio.run()` inside a sync factory it calls would raise
+   "cannot be called from a running event loop"). Resolved by keeping
+   `factory()` synchronous and non-connecting — EXACTLY like
+   `ArangoDBWikiStore.__init__` — and moving verification into
+   `initialize()` (async, lazy, called by every read method via
+   `_ensure_init()`), which is where `FileNotFoundError` actually raises.
+   This is the same deferred-connection contract every other backend in
+   this file already follows; no interface change, no test contradicted.

@@ -191,7 +191,11 @@ class WikiNamespaceConfig(BaseModel):
             loaded to find the plane).
         store: Pre-built store directory (holds ``wiki.db`` for sqlite).
         backend: Backend used for a ``store`` entry; forced to
-            ``arangodb`` when :attr:`database` is set.
+            ``arangodb`` when :attr:`database` is set and ``backend`` was
+            left at its ``sqlite``/``memory`` default. An explicit
+            non-built-in value (a satellite-registered backend, FEAT-449
+            M7 — see ``wiki/store.py``'s ``register_wiki_backend``)
+            survives unchanged on a ``database`` entry.
         database: ArangoDB database name holding the plane.
         credentials_env: Env var prefix for ArangoDB credentials.
         vault: Obsidian vault root; resolved exactly like :attr:`path`.
@@ -205,8 +209,17 @@ class WikiNamespaceConfig(BaseModel):
 
     path: str | None = Field(default=None, description="Another wiki project root")
     store: str | None = Field(default=None, description="Pre-built store directory")
-    backend: Literal["sqlite", "memory", "arangodb"] = Field(
-        default="sqlite", description="Backend for a `store` entry"
+    backend: str = Field(
+        default="sqlite",
+        description=(
+            "Backend for a `store`/`database` entry. Built-in values: "
+            "'sqlite', 'memory', 'arangodb'. Also accepts a name "
+            "registered via wiki/store.py's register_wiki_backend "
+            "(FEAT-449 M7) — not validated against the registry here "
+            "(core must not import a satellite package at validation "
+            "time); an unknown name surfaces as a ValueError when the "
+            "namespace is actually opened."
+        ),
     )
     database: str | None = Field(default=None, description="ArangoDB database name")
     credentials_env: str = Field(
@@ -228,8 +241,10 @@ class WikiNamespaceConfig(BaseModel):
             raise ValueError(
                 "Exactly one of path / store / database / vault must be set " f"(got: {', '.join(present) or 'none'})"
             )
-        if self.database:
-            # A `database` entry is ArangoDB by construction.
+        if self.database and self.backend in ("sqlite", "memory"):
+            # A `database` entry is ArangoDB by construction — UNLESS the
+            # caller explicitly named a non-built-in (satellite-registered,
+            # FEAT-449 M7) backend, which survives untouched.
             object.__setattr__(self, "backend", "arangodb")
         return self
 

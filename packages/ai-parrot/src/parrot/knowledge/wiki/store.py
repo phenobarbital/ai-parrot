@@ -294,6 +294,30 @@ def rank_by_cosine(
     return scored[:limit]
 
 
+_EXTRA_BACKENDS: dict[str, Callable[..., BaseWikiStore]] = {}
+"""Satellite-provided wiki backends, registered at import time (FEAT-449 M7).
+
+Additive-only seam: core never imports a satellite package (e.g.
+``parrot_tools``) — the satellite registers itself here when it is
+imported. See :func:`register_wiki_backend` and the dispatch in
+:func:`create_wiki_store` / ``federation.open_namespace_store``.
+"""
+
+
+def register_wiki_backend(name: str, factory: Callable[..., BaseWikiStore]) -> None:
+    """Register a satellite-provided wiki backend (FEAT-449 M7).
+
+    Args:
+        name: Backend name (matches ``WikiNamespaceConfig.backend`` /
+            ``create_wiki_store(backend=...)``). Must not collide with a
+            built-in name (``"sqlite"``, ``"memory"``, ``"arangodb"``).
+        factory: Callable constructing the store,
+            ``factory(*, storage_dir=None, wiki_name="", **kwargs) ->
+            BaseWikiStore``.
+    """
+    _EXTRA_BACKENDS[name] = factory
+
+
 class BaseWikiStore(ABC):
     """Contract for wiki retrieval-plane backends.
 
@@ -1375,4 +1399,7 @@ def create_wiki_store(
             wiki_name=wiki_name,
             text_analyzer=kwargs.get("text_analyzer", "text_en"),
         )
-    raise ValueError(f"Unknown wiki storage backend {backend!r} — expected 'sqlite'," " 'memory', or 'arangodb'")
+    if backend in _EXTRA_BACKENDS:
+        return _EXTRA_BACKENDS[backend](storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)
+    known = ", ".join(["'sqlite'", "'memory'", "'arangodb'", *(repr(b) for b in _EXTRA_BACKENDS)])
+    raise ValueError(f"Unknown wiki storage backend {backend!r} — expected one of {known}")
