@@ -49,6 +49,16 @@ Bot Management handler).
 - **Backend API only** — no frontend in this spec. Handlers extend
   `navigator.views.BaseView` (CBV) and/or `BaseHandler` for bare GET helpers,
   matching every existing handler in `packages/ai-parrot-server`.
+- **Route prefix is `/api/v1/astudio/`** — NOT `/api/v1/astudio/`: another
+  installed service already occupies "studio"-style routes on the same
+  deployment, so the URL namespace must be `astudio`. Internal code naming
+  (package `handlers/studio/`, class names `AgentStudio*`) is unaffected.
+- **Shared skills catalog**: skills saved to the catalog are re-usable by
+  everybody in the field (org-wide), listed **ordered/grouped by category**
+  and **filterable by owner** (the owning user). Storage: extend the
+  existing `SkillRegistry` with an org-wide shared namespace and an
+  owner-user field, AND persist catalog entries in a new Postgres table
+  (asyncdb `Model`) so category ordering / owner filtering are plain SQL.
 - **Auth + ownership-aware**: all Studio endpoints behind
   `@is_authenticated()` / `@user_session()`; agents created through the
   Studio carry their creator as owner (reuse the owner-aware patterns from
@@ -83,7 +93,7 @@ Bot Management handler).
 
 ## Options Explored
 
-### Option A: Studio Facade — new `/api/v1/studio/*` namespace of thin handlers over existing managers, plus gap-filling modules
+### Option A: Studio Facade — new `/api/v1/astudio/*` namespace of thin handlers over existing managers, plus gap-filling modules
 
 A new `handlers/studio/` package in `ai-parrot-server` exposing one coherent
 namespace. Handlers are deliberately thin: they delegate to `BotManager`,
@@ -129,6 +139,17 @@ written only where nothing exists today:
 7. **Scheduler run-now**: added to the existing `SchedulerJobsHandler`
    (`PATCH action="run_now"` alongside pause/resume/update) rather than a
    parallel handler.
+8. **Shared skills catalog** (`studio/skills_catalog.py`): org-wide catalog
+   of saved skills re-usable by everybody. Hybrid storage: extend
+   `SkillRegistry` (`parrot/skills/store.py`) with an org-wide shared
+   namespace and an **owner-user** field (today `Skill` only tracks
+   `owner_agent_id`), and persist every catalog entry to a **new Postgres
+   table** (asyncdb `Model`, e.g. `navigator.ai_skills_catalog`) so listing
+   is plain SQL: ordered/grouped by `category`, filterable by `owner`.
+   Publishing a skill (from an agent's `skills/` dir or authored via the
+   meta-agent) upserts both stores; importing a catalog skill materializes
+   it into the target agent's `AGENTS_DIR/{agent}/skills/` dir
+   (frontmatter-validated) and flags `reload_required`.
 
 ✅ **Pros:**
 - Maximum reuse — ~70% of required behavior already exists behind other
@@ -147,7 +168,7 @@ written only where nothing exists today:
   action; `create_agent_definition` must stop dropping fields) — cross-module
   coordination.
 - Two agent-creation surfaces coexist (`/api/v1/bots` and
-  `/api/v1/studio/agents`) until a later deprecation decision.
+  `/api/v1/astudio/agents`) until a later deprecation decision.
 - The meta-agent overlaps conceptually with the existing
   `AgentFactoryHandler` — must be positioned as its evolution, sharing the
   builder/finalize machinery, or we fork that logic.
@@ -245,7 +266,7 @@ of record; `/api/v1/bots` reads through it.
 
 ### Option C: Extend existing handlers in place — no new namespace
 
-No `/api/v1/studio/*`. Add the missing endpoints to the handlers that almost
+No `/api/v1/astudio/*`. Add the missing endpoints to the handlers that almost
 do the job already: `bots.py` gains reload + draft/activate verbs;
 `scheduler.py` gains `run_now`; `credentials.py` gains an `llm_api_key`
 credential kind; `config_handler.py` gains file-asset CRUD;
@@ -344,55 +365,65 @@ skills. A thin REST shim can be generated later for the web UI.
 
 ### User-Facing Behavior
 
-All endpoints under `/api/v1/studio/*`, authenticated
+All endpoints under `/api/v1/astudio/*`, authenticated
 (`@is_authenticated()` / `@user_session()`), ownership-aware. Proposed
 surface (final routes belong to the spec):
 
-- **Agents** — `POST /studio/agents` creates a simple agent (registered into
+- **Agents** — `POST /astudio/agents` creates a simple agent (registered into
   `AgentRegistry`; `persist: true` also writes the YAML definition into
-  `AGENTS_DIR/agents/<category>/<name>.yaml`); `GET /studio/agents[/{name}]`
+  `AGENTS_DIR/agents/<category>/<name>.yaml`); `GET /astudio/agents[/{name}]`
   lists/reads (merging registry + DB views like `ChatbotHandler._get_all`);
-  `POST /studio/agents/{name}/reload` re-reads YAML/identity/skills/kb and
+  `POST /astudio/agents/{name}/reload` re-reads YAML/identity/skills/kb and
   swaps the shared registered instance; `DELETE` for factory-origin agents.
 - **Drafts** — the meta-agent (or the user directly) saves generated Python
   agent files as drafts (`AGENTS_DIR/_drafts/<name>.py`);
-  `GET /studio/drafts`, `GET /studio/drafts/{name}` (content + validation
-  report), `POST /studio/drafts/{name}/activate` moves the file into
+  `GET /astudio/drafts`, `GET /astudio/drafts/{name}` (content + validation
+  report), `POST /astudio/drafts/{name}/activate` moves the file into
   `AGENTS_DIR/` and imports+registers it; activation is the only path from
   generated code to live code.
-- **Meta-agent** — `POST /studio/assistant` converses with the AgentStudio
+- **Meta-agent** — `POST /astudio/assistant` converses with the AgentStudio
   agent (default `AnthropicClient`, Opus tier, BYOK-aware). It can scaffold
   Python agents inheriting any catalog base class (→ drafts), create
   YAML-based agents, and author skill files (frontmatter-validated) and KB
   files on natural-language request.
-- **Files** — `GET/PUT/DELETE /studio/agents/{name}/files/{kind}/{filename}`
+- **Files** — `GET/PUT/DELETE /astudio/agents/{name}/files/{kind}/{filename}`
   for `kind ∈ {identity, kb, skills}`; identity restricted to the five
   canonical names; skills validated with `parse_skill_file` before write;
   responses include whether a reload is needed to take effect.
-- **Testing** — `POST /studio/agents/{name}/test/ask` (LLM path, session
+- **Testing** — `POST /astudio/agents/{name}/test/ask` (LLM path, session
   test-instance semantics like `BotConfigTestHandler`);
-  `POST /studio/tools/{slug}/execute` (deterministic `tool.execute(**kwargs)`
-  with args); `POST /studio/agents/{name}/tools` assigns a tool/toolkit
+  `POST /astudio/tools/{slug}/execute` (deterministic `tool.execute(**kwargs)`
+  with args); `POST /astudio/agents/{name}/tools` assigns a tool/toolkit
   (registered via `bot.tool_manager.register_toolkit(...)`); vector-store
   retrieval tests delegate to the existing stores API.
-- **Toolkit surfaces** — `GET /studio/toolkits/{slug}/schema` returns the
+- **Toolkit surfaces** — `GET /astudio/toolkits/{slug}/schema` returns the
   configuration schema (constructor params → JSON schema) starting with
   `LLMWikiToolkit` (incl. `WikiConfig.storage_dir` — "in which directory the
   LLM wiki starts"), `DatasetManager`, `InfographicToolkit`;
-  `POST /studio/agents/{name}/toolkits` assigns a configured toolkit.
+  `POST /astudio/agents/{name}/toolkits` assigns a configured toolkit.
 - **Scheduler** — reuse `GET/POST/PATCH/DELETE
   /api/v1/parrot/scheduler/schedules*`; add `PATCH action="run_now"` and a
   last-execution-result read.
 - **Vector stores** — reuse `POST/PUT/PATCH /api/v1/ai/stores` for
   create/upload/test; Studio adds only agent-assignment
   (`vector_store_config` update + reload).
-- **BYOK** — `POST /studio/keys` stores a provider API key in the user's
-  encrypted vault; `GET /studio/keys` lists (masked); `DELETE` removes.
+- **BYOK** — `POST /astudio/keys` stores a provider API key in the user's
+  encrypted vault; `GET /astudio/keys` lists (masked); `DELETE` removes.
   Test runs resolve the caller's key through the broker when present.
-- **Catalogs** — `GET /studio/catalog/base-classes` (agent base classes +
+- **Catalogs** — `GET /astudio/catalog/base-classes` (agent base classes +
   public configurable attributes), `/catalog/llm-clients`
   (`SUPPORTED_CLIENTS`), `/catalog/tools` (reuse `_build_catalog`),
-  `/catalog/vector-stores`, `/catalog/skills/{agent}`.
+  `/catalog/vector-stores`, `/catalog/skills/{agent}` (one agent's local
+  skills).
+- **Shared skills catalog** — `GET /astudio/skills` lists org-wide shared
+  skills **ordered/grouped by category**, with query filters
+  `?category=<cat>&owner=<user>` (owner is a first-class column);
+  `POST /astudio/skills` publishes a skill to the catalog (frontmatter
+  validated; owner set from session); `GET /astudio/skills/{id}` reads one
+  (body + versions); `PUT/DELETE /astudio/skills/{id}` restricted to
+  owner/admin; `POST /astudio/agents/{name}/skills/import/{id}` copies a
+  catalog skill into that agent's `skills/` directory (`reload_required`
+  flagged in the response).
 
 ### Internal Behavior
 
@@ -420,6 +451,15 @@ surface (final routes belong to the spec):
 - **Reload semantics**: replace-in-registry. In-flight requests holding the
   old instance finish on it; new `get_instance()` calls get the new one.
   Old singletons get their `cleanup()`/`close()` invoked best-effort.
+- **Skills catalog storage**: dual-write. The extended `SkillRegistry`
+  (shared org namespace, e.g. `"<org_id>/_shared"`, plus a new
+  `owner_user_id` field on `Skill`) keeps the existing embedding-search and
+  git-like versioning; the new Postgres table is the durable system of
+  record and the query plane for the catalog listing (ORDER BY category,
+  WHERE owner). Writes go PG-first, then registry (best-effort, repairable
+  by a re-sync); reads for listing hit PG, reads for semantic search hit the
+  registry. Category values come from the existing `SkillCategory` enum
+  (extensible).
 
 ### Edge Cases & Error Handling
 
@@ -449,13 +489,20 @@ surface (final routes belong to the spec):
 - **Ownership**: non-owner mutation attempts → 403 via the PBAC evaluator
   when configured (`_PBACHandlerMixin` fail-open pattern preserved for
   installs without a PDP, but ownership checks still enforced from session).
+- **Skills catalog**: duplicate name in the catalog → 409 (suggest new
+  version of the existing skill instead); frontmatter invalid → 422;
+  non-owner PUT/DELETE → 403; unknown `category` filter → 400 listing valid
+  `SkillCategory` values; import into an agent whose `skills/` dir already
+  has that name → 409 unless `overwrite=true`; PG write succeeds but
+  registry write fails → entry still valid, flagged `search_index_stale`
+  for the re-sync job.
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `agentstudio-management`: the `/api/v1/studio/*` handler namespace
+- `agentstudio-management`: the `/api/v1/astudio/*` handler namespace
   (agents, drafts, files, testing, catalogs, keys) — this spec.
 - `agent-draft-activation`: draft store + static validation + explicit
   activate pipeline for generated Python agents.
@@ -469,6 +516,9 @@ surface (final routes belong to the spec):
   existing scheduler handler.
 - `toolkit-config-surfaces`: config-schema introspection + assignment for
   `LLMWikiToolkit`, `DatasetManager`, `InfographicToolkit`.
+- `shared-skills-catalog`: org-wide re-usable skills catalog — extended
+  `SkillRegistry` (shared namespace + owner-user field) + new Postgres
+  table; list ordered by category, filtered by owner; publish/import flows.
 
 ### Modified Capabilities
 - `vectorstore-handler-api` (FEAT existing): consumed as-is; possible small
@@ -493,12 +543,13 @@ surface (final routes belong to the spec):
 | `packages/ai-parrot/src/parrot/auth/broker.py` | extends | new resolver type for user LLM keys |
 | `packages/ai-parrot/src/parrot/bots/factory/` | depends on / extends | meta-agent reuses builders + HITL finalize |
 | `parrot/skills/parsers.py`, `skills/file_registry.py` | depends on | skill file validation + discovery |
+| `parrot/skills/store.py`, `skills/models.py` | modifies | shared org namespace + `owner_user_id` on `Skill`; PG persistence hooks |
 | `parrot/bots/prompts/identity.py`, `bots/mixins/identity.py` | depends on | identity file contract + hot-reload seam |
 | `parrot/tools/discovery.py`, `parrot_tools.TOOL_REGISTRY` | depends on | tool catalogs |
 | `parrot/clients/factory.py` | depends on | LLM client catalog + BYOK `api_key` pass-through |
 | `handlers/stores/` (VectorStoreHandler) | depends on | store create/upload/test reused as-is |
 | `agents/` (AGENTS_DIR) on-disk layout | extends | adds `_drafts/`; formalizes `<agent>/{identity,kb,skills}/` |
-| DB | none new | no new tables in recommended option (drafts on filesystem; keys in existing vault/DocumentDB) |
+| DB | one new table | `navigator.ai_skills_catalog` (asyncdb `Model`, pattern of `AgentSchedule`) for the shared skills catalog; drafts stay on filesystem; keys in existing vault/DocumentDB |
 
 No breaking changes to existing routes. Deployment: no new services; new
 routes registered inside `BotManager.setup(app)`.
@@ -758,6 +809,31 @@ def parse_skill_directory(skill_dir: Path) -> SkillDefinition: ...  # parsers.py
 class SkillFileRegistry:  # file_registry.py:17
     def __init__(self, skills_dir: Path, learned_dir: Optional[Path] = None): ...  # :29
 # per-agent dirs: AGENTS_DIR/{agent_id}/skills[/learned] (skills/mixin.py:141)
+
+# DB-backed skill registry — packages/ai-parrot/src/parrot/skills/store.py
+class SkillRegistry:  # store.py (Redis + file persistence, embedding search)
+    def __init__(self, namespace: str = "default",
+                 embedding_model="sentence-transformers/all-mpnet-base-v2",
+                 dimension: int = 768, redis_url: Optional[str] = None,
+                 persistence_path: Optional[Path] = None,
+                 extraction_llm=None, min_diff_threshold: int = 50): ...  # :132
+    # namespace = "org_id/agent_id" isolation; async upload_skill / read_skill /
+    # search_skills / list_skills / get_skill_versions / deprecate_skill /
+    # revoke_skill; git-like versioning via unified diffs
+
+# packages/ai-parrot/src/parrot/skills/models.py
+class SkillCategory(str, Enum):  # :29 — tool_usage, workflow, domain,
+    ...                          # error_handling, user_preference, integration,
+                                 # optimization, general
+class SkillStatus(str, Enum): ...  # :21 — active, deprecated, revoked, draft
+@dataclass
+class Skill:  # :158
+    skill_id: str; namespace: str = "default"   # "org_id/agent_id"
+    owner_agent_id: str = ""                    # AGENT owner — no user owner field
+    metadata: SkillMetadata; status: SkillStatus
+    current_version: int; version_count: int
+    created_at: datetime; updated_at: datetime
+    access_count: int; usefulness_score: float
 ```
 
 ```python
@@ -842,6 +918,8 @@ from parrot.knowledge.wiki import LLMWikiToolkit, WikiConfig             # wiki/
 from parrot.skills.parsers import parse_skill_file                       # skills/parsers.py:37
 from parrot.bots.prompts.identity import IDENTITY_FILES, load_identity   # identity.py:27,51
 from parrot.security.credentials_utils import encrypt_credential, decrypt_credential  # :19,:52
+from parrot.skills.store import SkillRegistry, create_skill_registry     # store.py:132 (+factory)
+from parrot.skills.models import Skill, SkillCategory, SkillStatus       # models.py:158,29,21
 ```
 
 #### Key Attributes & Constants
@@ -902,6 +980,14 @@ from parrot.security.credentials_utils import encrypt_credential, decrypt_creden
 - ~~Full-fidelity YAML round-trip~~ — `create_agent_definition` drops
   `toolkits`, `prompt`, `vector_store`, `tags`, `policies`, `mcp_servers`,
   `priority`, `at_startup`, `config`.
+- ~~A Postgres table for skills~~ — `SkillRegistry` persists to Redis +
+  file only (`_save_to_disk`/`_load_from_disk`); no asyncdb `Model`, no SQL
+  table exists for skills. `navigator.ai_skills_catalog` is NEW.
+- ~~An owner-USER field on `Skill`~~ — only `owner_agent_id` (the creating
+  agent) exists (skills/models.py:168); user-level ownership is NEW.
+- ~~An org-wide shared skills namespace~~ — namespaces today are
+  `"org_id/agent_id"` per-agent isolation (store.py:134,146); no shared
+  catalog namespace or cross-agent listing endpoint exists.
 
 ---
 
@@ -911,8 +997,8 @@ from parrot.security.credentials_utils import encrypt_credential, decrypt_creden
   registry/manager primitives (unregister + reload + YAML round-trip fix)
   and the `handlers/studio/` package scaffold must land first; after that,
   Files CRUD, Catalog GETs, BYOK, Scheduler run-now, Toolkit surfaces,
-  Testing endpoints, and the Meta-agent are mutually independent modules
-  touching disjoint files.
+  Testing endpoints, the Shared skills catalog, and the Meta-agent are
+  mutually independent modules touching disjoint files.
 - **Cross-feature independence**: Touches `registry.py`, `manager.py`, and
   `handlers/scheduler.py`, which are hot files for other in-flight work —
   check `/sdd-status` for open features over `manager/manager.py` before
@@ -943,5 +1029,17 @@ from parrot.security.credentials_utils import encrypt_credential, decrypt_creden
 - [ ] Canonical agent-YAML schema for Studio writes: the `agent:`-keyed definition format (the one actually loaded) — confirm; and does fixing `create_agent_definition` field loss belong to this feature's first task or a separate prerequisite fix? — *Owner: Jesus*
 - [ ] `LLMWikiToolkit` server-side construction: who builds its three toolkit deps (`pageindex_toolkit`, `graphindex_toolkit`, `okf_toolkit`) when a user assigns a wiki surface — reuse the bot's `_pageindex_toolkit`/`_graphindex_toolkit` capture or construct fresh from `WikiConfig`? — *Owner: dev during spec*
 - [ ] Draft store location/state: filesystem `AGENTS_DIR/_drafts/` + JSON state file vs. a small DB table (auditability vs. zero-migration). — *Owner: Jesus*
-- [ ] PBAC policy naming for `/api/v1/studio/*` (new resource ids for the PDP) and whether admins bypass ownership. — *Owner: Jesus*
+- [ ] PBAC policy naming for `/api/v1/astudio/*` (new resource ids for the PDP) and whether admins bypass ownership. — *Owner: Jesus*
 - [ ] Deprecation signal for the old Bot Management surface: mark `/api/v1/bot_management` responses with a `Deprecation` header once Studio ships, or leave silent? — *Owner: Jesus*
+- [x] Route prefix — *Owner: Jesus*: `/api/v1/astudio/` (another installed
+  service already occupies "studio" routes); internal code naming stays
+  `studio`/`AgentStudio`.
+- [x] Shared skills catalog storage — *Owner: Jesus*: extend `SkillRegistry`
+  with an org-wide shared namespace + owner-user field AND persist entries
+  in a new Postgres table for SQL ordering (category) and filtering (owner).
+- [ ] Skills catalog category vocabulary: constrain to the existing
+  `SkillCategory` enum or allow free-form categories (enum + "other")?
+  — *Owner: Jesus*
+- [ ] Skills catalog source-of-truth details: exact table name/columns for
+  `navigator.ai_skills_catalog`, and whether the Redis registry re-sync is a
+  startup job or an admin endpoint. — *Owner: dev during spec*
