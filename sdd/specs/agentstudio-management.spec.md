@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-467
 **Date**: 2026-08-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 0.28.x / ai-parrot 0.29.x (next minor)
 **Brainstorm**: `sdd/proposals/agentstudio-management.brainstorm.md` (Option A)
 
