@@ -384,3 +384,7 @@ docker/matrix/synapse/homeserver.yaml
 docker/matrix/synapse/appservices/
 docker/matrix/synapse/media_store/
 docker/matrix/.env
+
+# Embedded Admin UI build output (FEAT-468) — built by release CI (Node 24
+# LTS + pnpm 9) into package-data; never committed to git.
+packages/ai-parrot-server/src/parrot/server/ui/dist/

@@ -105,6 +105,10 @@ namespaces = true
 "parrot.handlers" = ["*.sql"]
 "parrot.handlers.models" = ["*.sql"]
 "parrot.mcp.transports" = ["*.proto"]
+# Embedded Admin UI (FEAT-468): built by release CI (Node 24 LTS + pnpm 9)
+# into src/parrot/server/ui/dist/ before `uv build`; never committed to git.
+# Globs are non-recursive per key — keep Vite's output flat (dist/*, dist/assets/*).
+"parrot.server.ui" = ["dist/*", "dist/assets/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
