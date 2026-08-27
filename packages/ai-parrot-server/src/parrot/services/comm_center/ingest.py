@@ -173,6 +173,20 @@ def _row_to_recipient(raw: dict, reserved_used: set) -> RecipientIn | None:
     for key, value in raw.items():
         norm = _normalize_column(key)
         cleaned = _clean_value(value)
+        # The documented JSON contract nests extra columns under "extra"
+        # (docs/comm_center_api.md, and RecipientIn.extra is declared for exactly that),
+        # while a spreadsheet row arrives flat. Both reach this function, so accept both.
+        # Treating the documented shape as just another column double-nests it --
+        # extra == {"extra": {...}} -- so no extra column ever became a pass-2 kwarg and
+        # every {{ own_column }} placeholder rendered literally, in the preview and in the
+        # delivered message alike.
+        if norm == "extra" and isinstance(value, dict):
+            for extra_key, extra_value in value.items():
+                extra_norm = _normalize_column(extra_key)
+                if extra_norm in _RESERVED_NAMES:
+                    reserved_used.add(extra_norm)
+                extra[extra_norm] = _clean_value(extra_value)
+            continue
         if norm in _RESERVED_NAMES:
             reserved_used.add(norm)
         if norm in _CANONICAL_FIELDS:

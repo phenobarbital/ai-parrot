@@ -133,3 +133,54 @@ class TestIngest:
         assert rows[0].phone == "+34600000000"
         assert rows[0].username == "agomez"
         assert rows[0].extra["department"] == "Sales"
+
+    async def test_json_nested_extra_becomes_pass2_kwargs(self):
+        """The documented JSON shape nests extras; treating it as a column broke them.
+
+        `docs/comm_center_api.md` defines a recipient as
+        `{"name": ..., "extra": {"any_extra_column": "value"}}`, and `RecipientIn.extra`
+        is declared for exactly that. But every JSON request reaches
+        `_row_to_recipient`, which classifies unknown keys as columns -- so "extra" itself
+        landed in `extra`, giving `{"extra": {...}}`. No extra column ever became a pass-2
+        kwarg, and `{{ ciudad }}` rendered literally in the preview and in the delivered
+        message alike.
+        """
+        rows = [
+            {
+                "name": "Ana Gomez",
+                "email": "ana@example.com",
+                "extra": {"ciudad": "Bogota", "  Plan  ": "gold"},
+            }
+        ]
+
+        recipients = await ingest_recipients(rows=rows)
+
+        assert recipients[0].extra["ciudad"] == "Bogota"
+        # Keys are normalized inside the nested object too, exactly as flat columns are:
+        # trimmed and lower-cased (no space folding — `_normalize_column` does not do it
+        # for flat columns either).
+        assert recipients[0].extra["plan"] == "gold"
+        # And the wrapper key is gone rather than nested one level deeper.
+        assert "extra" not in recipients[0].extra
+
+    async def test_flat_extra_columns_still_work(self):
+        """A spreadsheet row arrives flat; both shapes must keep working."""
+        rows = [{"name": "Ana", "email": "a@e.com", "ciudad": "Bogota"}]
+
+        recipients = await ingest_recipients(rows=rows)
+
+        assert recipients[0].extra["ciudad"] == "Bogota"
+
+    async def test_reserved_name_inside_nested_extra_is_reported(self):
+        """A reserved name must warn wherever it comes from.
+
+        `message` is filled in by the render context, so a column of that name cannot be
+        used as a placeholder. The flat path already warned; the nested path has to warn
+        for the same reason.
+        """
+        rows = [{"name": "Ana", "email": "a@e.com", "extra": {"message": "x"}}]
+
+        _rows, warnings = await ingest_recipients(rows=rows, return_warnings=True)
+
+        assert any("message" in w for w in warnings)
+
