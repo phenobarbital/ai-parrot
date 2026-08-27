@@ -366,7 +366,14 @@ packages/ai-parrot/src/parrot/_version.py
 corpus/compliance_soc2_hipaa/raw/
 corpus/compliance_soc2_hipaa/trees/
 # parrot LLM-wiki state (local retrieval plane)
-.parrot/
+# NOTE: `.parrot/*` (not `.parrot/`) so the negation below can still
+# re-include one committed file — a trailing-slash directory pattern
+# would stop git from ever descending into .parrot/ to check it.
+.parrot/*
+# ...except the committed per-env overlay (FEAT-461): every teammate
+# gets the no-VPN sqlite default with no ENV exported. Needs `git add -f`
+# for any NEW committed .parrot/ file — see CLAUDE.md.
+!.parrot/wiki.local.json
 
 #MCP Custom Local configs
 .mcp.json
