@@ -111,7 +111,7 @@
       "feature_id": "FEAT-468",
       "feature": "ui-server-backend",
       "spec": "sdd/specs/ui-server-backend.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -120,9 +120,9 @@
       "parallel": false,
       "parallelism_notes": "Consumes Router/AuthStore/API client singletons from TASK-2527.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2528-admin-ui-shell-login.md"
+      "started_at": "2026-08-27T18:00:39+00:00",
+      "completed_at": "2026-08-27T18:02:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2528-admin-ui-shell-login.md"
     },
     {
       "id": "TASK-2529",

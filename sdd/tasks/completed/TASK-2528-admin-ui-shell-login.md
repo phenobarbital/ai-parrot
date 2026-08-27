@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-468 — UI Server Backend — Embedded Admin UI Foundation
 **Spec**: `sdd/specs/ui-server-backend.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2527
@@ -171,10 +171,92 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed)
+**Date**: 2026-08-27
 **Notes**:
+- `pages/Login.svelte` — username/password form (bound `$state`, show/hide
+  password toggle) submitting through `AuthStore.login()`; inline error
+  banner (`role="alert"`) from the login failure message; `?next=`
+  (validated via `router.svelte.ts`'s `isInAppPath`) honored on success,
+  falling back to `/admin/home`. Discovery of `GET /api/v1/auth/methods`
+  happens in `onMount` and is wrapped in try/catch so a discovery failure
+  never blocks the BasicAuth form (`methods = null` on failure).
+- `lib/components/ProviderButtons.svelte` — renders one button per
+  discovered non-BasicAuth backend from the `{<key>: AuthMethodInfo}`
+  response shape (verified against `navigator_auth.auth.AuthHandler
+  .auth_methods` + `AuthBackend`'s `name/uri/description/icon/external/
+  headers` fields); `external` backends render as a link to
+  `${config.apiBaseUrl}${uri}`, non-external ones render disabled with a
+  tooltip — the Codebase Contract's explicit fallback for backends with no
+  vendored OAuth-popup flow (the full navauth `providers/registry.ts` +
+  `google.ts`/`microsoft.ts`/`sso.ts`/popup machinery was NOT ported).
+  BasicAuth is always filtered out via its `headers['x-auth-method']`.
+- `lib/nav.ts` — data-only `navEntries: NavEntry[]` (Home/Dashboard/
+  Agents), each `{path, label, icon}` (inline SVG path data — no icon
+  library was vendored).
+- `lib/components/Sidebar.svelte` — renders `navEntries`, highlights the
+  active entry against `router.path`, navigates via `router.navigate()`
+  (intercepting the default link click).
+- `lib/components/Topbar.svelte` — identity resolved from
+  `authStore.user` (best-effort across `name`/`username`/`user`/`email`
+  keys, since the login response shape varies by backend), `ThemeSwitcher`,
+  and a sign-out button. `handleLogout()` calls `authStore.logout()` then
+  `router.navigate(config.loginPath)` — TASK-2527's `AuthStore.logout()`
+  only clears session state by contract, so the post-logout redirect is
+  this shell's responsibility (mirrors `handle401()`'s own redirect).
+- `lib/components/ThemeSwitcher.svelte` — single light/dark toggle button
+  (not the source's 4-entry dropdown) since only `light`/`dark` exist in
+  this scaffold's `ThemeStore` (TASK-2527) and neither `@iconify/svelte`
+  nor the corporate `AppDropdown` wrapper were vendored.
+- `lib/components/AppShell.svelte` — Sidebar + Topbar + a `children`
+  snippet content area.
+- `pages/{Home,Dashboard,Agents}.svelte` — placeholder Cards (real content
+  is TASK-2529/2530, explicitly out of scope here).
+- `App.svelte` rewritten: owns the route table (`router.routes`, lazy
+  `import()` per page, `requiresAuth` per non-login route), resolves the
+  current path through `router.match()` + `router.guard()` on every
+  `router.path` change (`$effect`), wraps `requiresAuth` pages in
+  `AppShell`, renders `Login` bare. `resolve()` recurses synchronously
+  through redirects (bare-root normalization → no-match fallback → guard
+  redirect) rather than relying on the `$effect` re-firing on a path
+  mutated from within its own callback — this was empirically necessary:
+  an initial non-recursive version left `ActiveComponent` unset in tests
+  even though `router.path` had already stabilized (see Deviations).
+- `App.test.ts` rewritten (TASK-2525's original synchronous placeholder
+  assertion no longer applies — `App.svelte` now resolves asynchronously):
+  asserts the unauthenticated root eventually renders the Login page via
+  `findByText` with an extended 10s timeout, because a *cold* dynamic
+  `import()` of a `.svelte` page under Vite's test-time transform took
+  ~3.2-3.7s in this sandbox on the first hit — comfortably past
+  testing-library's 1000ms default. Login/Dashboard/Home/Agents chunks
+  code-split correctly in `pnpm build`'s output (separate `.js` per page).
+- New test files: `pages/Login.test.ts` (5 tests — submit+`next`, submit
+  with no `next` falls back to Home, server error message inline,
+  providers render from a mocked discovery response, discovery failure
+  leaves the BasicAuth form standing alone) and
+  `lib/components/AppShell.test.ts` (2 tests — nav registry renders,
+  logout clears auth + routes to login) via a small
+  `AppShellHarness.test.svelte` fixture (not a production file — supplies
+  the `children` snippet `AppShell` requires, which
+  `@testing-library/svelte`'s `render()` cannot pass directly).
+- `pnpm test` — 26/26 passed (6 files). `pnpm build` green
+  (`pnpm generate && vite build`, 751 modules, per-route code-splitting
+  confirmed). `grep -rn '\$app/\|\$env/' src/` clean.
 
-**Deviations from spec**: none
+**Deviations from spec**:
+- `ProviderButtons`/`ThemeSwitcher` are deliberately much smaller than the
+  navauth/corporate sources — the Codebase Contract explicitly permits
+  "plain links/disabled with a tooltip" in place of the full OAuth-popup
+  provider machinery, and `ThemeSwitcher` only needs 2 states, not 4.
+- No standalone `LoadingSpinner.svelte` was created (not in the Files
+  table) — `Login.svelte`'s submit button shows inline "Signing in…" text
+  instead of porting the source's DaisyUI-based spinner component.
+- `App.svelte`'s route resolution recurses through redirects synchronously
+  within one `resolve()` call rather than only reacting to `$effect`
+  re-fires on each `router.path` mutation — a deviation from the more
+  "obviously idiomatic" effect-only design, adopted after it produced an
+  intermittent unresolved-render failure under `@testing-library/svelte`
+  (see Notes); behavior at the DOM level is identical, this only affects
+  internal sequencing/determinism.
+- `config.ts` (TASK-2527) gained one additive field, `authMethodsUrl`, for
+  this page's discovery call — no existing field changed.
