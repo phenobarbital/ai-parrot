@@ -1,12 +1,15 @@
 name: legal
-version: "1.0"
+version: "1.1"
 description: >
-  Legal Norms Graph domain (FEAT-449, Sprint 1). Declares the BOE
+  Legal Norms Graph domain (FEAT-449, Sprints 1 + 1.5/2). Declares the BOE
   (Boletin Oficial del Estado) consolidated-legislation vocabulary:
   norma, articulo and materia entities, their provenance relations
-  (modifica, deroga, pertenece_a), and the article_in_force temporal
-  traversal pattern. Zero LLM involvement — ingestion and resolution are
-  entirely deterministic.
+  (modifica, deroga, pertenece_a), the article_in_force temporal
+  traversal pattern, the legal_articulos_view ArangoSearch view + the
+  search_articles lexical-candidate pattern, and the append-only
+  SpanSuppression entity written by the librarian answer layer's span
+  verifier. Zero LLM involvement in retrieval — ingestion and resolution
+  are entirely deterministic.
 
 entities:
   Norma:
@@ -76,6 +79,46 @@ entities:
           required: true
           description: Display name of the materia
 
+  SpanSuppression:
+    collection: span_suppressions
+    key_field: suppression_id
+    properties:
+      - suppression_id:
+          type: string
+          required: true
+          unique: true
+          description: Composite record id ("{execution_id}:{seq}")
+      - execution_id:
+          type: string
+          required: true
+          description: Librarian flow execution this suppression belongs to
+      - suppressed_text:
+          type: string
+          required: true
+          description: The sentence/note text that was suppressed
+      - claimed_anchors:
+          type: list
+          description: SpanRef/payload keys the suppressed text claimed as anchors
+      - reason:
+          type: string
+          required: true
+          description: >
+            One of span_not_found | hash_mismatch | quote_mismatch |
+            anchor_lost | atom_contradicted (SuppressionRecord.reason)
+      - user_id:
+          type: string
+          description: User attributed to the execution, when known
+      - created_at:
+          type: string
+          required: true
+          description: >
+            When the suppression was recorded, ISO-8601 datetime
+            (PropertyDef.type has no "datetime" literal — schema.py:30 —
+            so this is declared as "string" like the rest of the
+            codebase's timestamp-as-ISO-string properties; deviation
+            from the spec §3 M3 YAML block noted in the task's
+            Completion Note)
+
 relations:
   modifica:
     from: Norma
@@ -98,6 +141,18 @@ relations:
           target_field: materia_id
           match_type: exact
           description: Norm-to-materia membership via materia_id field
+
+search_views:
+  legal_articulos_view:
+    links:
+      - entity: Articulo
+        fields:
+          - path: "versions[*].text"
+            analyzers: ["text_es", "text_en"]
+      - entity: Norma
+        fields:
+          - path: "titulo"
+            analyzers: ["text_es", "text_en"]
 
 traversal_patterns:
   article_in_force:
@@ -123,4 +178,33 @@ traversal_patterns:
           FILTER v.valid_from <= @as_of
           FILTER v.valid_to == null OR v.valid_to > @as_of
           RETURN v
+    post_action: none
+
+  search_articles:
+    description: >
+      Lexical candidate search over article wordings, then in-force version
+      resolution for @as_of. SEARCH matches at DOCUMENT level (any version's
+      text can match) — the temporal filter selects the in-force version and
+      the Python helper applies the token-containment guard so a hit that
+      exists only in a superseded wording is dropped (see search_articles()
+      in parrot_tools/legal/boe/queries.py). Analyzer names cannot be bind
+      vars inside ANALYZER()/TOKENS() and view names cannot be bind vars at
+      all — both are literal here, matching the view declared above.
+    trigger_intents:
+      - que dice la ley sobre
+      - que articulo regula
+      - normativa aplicable
+      - which article regulates
+    query_template: >
+      FOR a IN legal_articulos_view
+        SEARCH ANALYZER(a.versions.text IN TOKENS(@query, "text_es"), "text_es")
+            OR ANALYZER(a.versions.text IN TOKENS(@query, "text_en"), "text_en")
+        LET score = BM25(a)
+        SORT score DESC
+        LIMIT @limit
+        FOR v IN a.versions
+          FILTER v.valid_from <= @as_of
+          FILTER v.valid_to == null OR v.valid_to > @as_of
+          RETURN { articulo_key: a._key, norma_ref: a.norma_ref,
+                   numero: a.numero, version: v, score: score }
     post_action: none
