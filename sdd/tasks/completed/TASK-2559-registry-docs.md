@@ -108,8 +108,42 @@ _No automated tests. Verification is the grep check above; record the commands r
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added a "Meeting registry (FEAT-472)" subsection to
+`docs/superpowers/specs/2026-08-23-fireflies-wiki-agent-design.md`
+(identity model, `classify`/`revise`/`repair_path`/`backfill_from_vault`
+behavior, degradation, out-of-scope/divergence notes), updated the 07:00
+job description to a 4-step list (added `mark_wiki_ingested`), added the
+three env vars to the Configuration table, documented `/sync` and the new
+report fields (`wiki["stamped"]`, `revised`/`repaired`/`duplicates`
+(reserved)/`probable_duplicates`/`from_date`/`registry`), added a
+FEAT-472 bullet to Error handling, and extended Testing/Deliverables with
+the three new FEAT-472 test files and `meeting_registry.py` itself.
+Created `docs/runbooks/fireflies-meeting-registry.md` (house style from
+`docs/runbooks/jira-issues-namespace.md`): what/where/configuration,
+daily operation (`/sync` usage + reply format), inspecting the registry
+via `sqlite3`, forcing a re-fetch (both available whole-run levers — no
+per-meeting reset verb exists), `forget`/`reject` semantics (with an
+explicit implementation note on the `doc_metadata["fireflies"]["rejected"]`
+deviation from the spec's literal "row status" wording — see TASK-2554's
+Completion Note for why), backfill/merge + its `merge=False` dry run, the
+`external_id` convention (cross-linked to the `SourceCollectionManager`
+class docstring), relation to the operating contract §14/§25 including
+the in-place-revision divergence, and a troubleshooting table. Added a
+0.2 Revision History row to the spec noting the two production defects
+TASK-2558 fixed along the way. Every identifier documented was `grep`-
+verified against the merged code before being written (commands run:
+`grep -n "FIREFLIES_REGISTRY_DIR\|FIREFLIES_SYNC_OVERLAP_DAYS\|FIREFLIES_RECHECK_DAYS" packages/ai-parrot/src/parrot/agents/conf.py`;
+`grep -n "def sync_now\|force_refetch\|@telegram_command" agents/fireflies_wiki.py`;
+`grep -n "class MeetingRegistry\|async def \|EXTERNAL_ID_PREFIX\|DOC_METADATA_KEY" packages/ai-parrot/src/parrot/agents/meeting_registry.py`;
+`grep -n '"revised"\|"repaired"\|"duplicates"\|"probable_duplicates"\|"from_date"\|"registry"\|"synced"\|"skipped"' packages/ai-parrot/src/parrot/agents/obsidian.py`;
+`grep -n "class BackfillReport" -A 6 packages/ai-parrot/src/parrot/agents/meeting_registry.py`;
+`grep -n "find_by_external_id\|find_entries_by_external_ids\|list_by_external_prefix\|set_external_id" packages/ai-parrot/src/parrot/knowledge/wiki/sources.py`).
+No code changes; no automated tests (per scope) — this is the final task
+for FEAT-472.
 
-**Deviations from spec**: none
+**Deviations from spec**: none (the two implementation deviations from
+earlier tasks — the `rejected` flag storage in TASK-2554, and the two
+production bugfixes in TASK-2558 — are documented here and in their own
+tasks' Completion Notes, not introduced by this task).
