@@ -11,10 +11,7 @@ from pathlib import Path
 
 import pytest
 
-_AGENT_SRC = (
-    Path(__file__).resolve().parents[2]
-    / "src" / "parrot" / "handlers" / "agent.py"
-)
+_AGENT_SRC = Path(__file__).resolve().parents[2] / "src" / "parrot" / "handlers" / "agent.py"
 _SRC = _AGENT_SRC.read_text(encoding="utf-8")
 
 

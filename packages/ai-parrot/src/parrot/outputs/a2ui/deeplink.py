@@ -84,8 +84,7 @@ class ResumePayload(BaseModel):
         envelope = A2UIRendererMessage.model_validate(value)
         if envelope.action is None:
             raise ValueError(
-                "ResumePayload.action_payload must be an A2UIRendererMessage "
-                "'action' envelope (FEAT-470 G6)."
+                "ResumePayload.action_payload must be an A2UIRendererMessage " "'action' envelope (FEAT-470 G6)."
             )
         return value
 

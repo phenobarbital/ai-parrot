@@ -36,9 +36,7 @@ def build_structured_message(action_payload: dict[str, Any]) -> str:
     native-input submit path (``parrot.integrations.msteams.wrapper``, TASK-2545)
     so both ends of the pipe agree on one wire contract.
     """
-    return json.dumps(
-        {"type": "a2ui_action", "action": action_payload}, sort_keys=True
-    )
+    return json.dumps({"type": "a2ui_action", "action": action_payload}, sort_keys=True)
 
 
 class ChannelDeepLinkResume:
@@ -72,9 +70,7 @@ class ChannelDeepLinkResume:
         try:
             payload = await self.service.consume(token)
         except DeepLinkExpiredError:
-            self.logger.info(
-                "A2UI %s deep-link resume rejected (expired/replayed token).", self.channel
-            )
+            self.logger.info("A2UI %s deep-link resume rejected (expired/replayed token).", self.channel)
             return {"ok": False, "reply": EXPIRED_MESSAGE}
 
         query = build_structured_message(payload.action_payload)
@@ -84,7 +80,5 @@ class ChannelDeepLinkResume:
             agent_id=payload.agent_id,
             query=query,
         )
-        self.logger.info(
-            "A2UI %s deep-link resumed session %s.", self.channel, payload.session_id
-        )
+        self.logger.info("A2UI %s deep-link resumed session %s.", self.channel, payload.session_id)
         return {"ok": True, "session_id": payload.session_id, "result": result}

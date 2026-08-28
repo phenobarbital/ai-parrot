@@ -44,9 +44,7 @@ class TestDeepLinkResumeWeb:
         injected = {}
 
         async def fake_invoker(*, agent_name, query, session_id, user_id):
-            injected.update(
-                agent_name=agent_name, query=query, session_id=session_id, user_id=user_id
-            )
+            injected.update(agent_name=agent_name, query=query, session_id=session_id, user_id=user_id)
             return {"echo": "ok"}
 
         handler = DeepLinkResumeHandler(service, fake_invoker)
@@ -81,7 +79,10 @@ class TestDeepLinkResumeWeb:
         handler = DeepLinkResumeHandler(service, fake_invoker)
 
         dl = await service.mint(
-            session_id="s", user_id="u", agent_id="a", channel="web",
+            session_id="s",
+            user_id="u",
+            agent_id="a",
+            channel="web",
             action_payload=_action_envelope("x"),
         )
         # First consume succeeds via a permissive invoker.
@@ -102,7 +103,10 @@ class TestDeepLinkResumeWeb:
         service = DeepLinkService(FakeRedis(), base_url="https://app.example")
         handler = DeepLinkResumeHandler(service, lambda **k: _ok())
         dl = await service.mint(
-            session_id="s", user_id="u", agent_id="a", channel="web",
+            session_id="s",
+            user_id="u",
+            agent_id="a",
+            channel="web",
             action_payload=_action_envelope("Approve"),
         )
         landing = handler.render_landing(dl.token_id)
@@ -124,7 +128,10 @@ class TestDeepLinkResumeWeb:
 
         msg = build_structured_message(
             ResumePayload(
-                session_id="s", user_id="u", agent_id="a", channel="web",
+                session_id="s",
+                user_id="u",
+                agent_id="a",
+                channel="web",
                 action_payload=_action_envelope("go"),
             )
         )

@@ -11,6 +11,7 @@ enum values (``"TASK_STATE_SUBMITTED"``) and v1.0 field shapes; v0.3 emits the
 legacy lowercase values (``"submitted"``) and the flat card shape. Every
 ``from_dict()`` auto-detects the incoming format and accepts BOTH.
 """
+
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
@@ -22,6 +23,7 @@ import uuid
 @dataclass
 class AgentConfig:
     """Configuration for an A2A agent."""
+
     name: str
     description: str
     port: int
@@ -37,12 +39,13 @@ class TaskState(str, Enum):
     :func:`parse_task_state` on deserialization and :func:`serialize_task_state`
     on serialization.
     """
+
     UNSPECIFIED = "TASK_STATE_UNSPECIFIED"
     SUBMITTED = "TASK_STATE_SUBMITTED"
     WORKING = "TASK_STATE_WORKING"
     COMPLETED = "TASK_STATE_COMPLETED"
     FAILED = "TASK_STATE_FAILED"
-    CANCELED = "TASK_STATE_CANCELED"            # was CANCELLED (double-L) in v0.3
+    CANCELED = "TASK_STATE_CANCELED"  # was CANCELLED (double-L) in v0.3
     INPUT_REQUIRED = "TASK_STATE_INPUT_REQUIRED"
     REJECTED = "TASK_STATE_REJECTED"
     AUTH_REQUIRED = "TASK_STATE_AUTH_REQUIRED"  # NEW in v1.0
@@ -53,6 +56,7 @@ class TaskState(str, Enum):
 
 class Role(str, Enum):
     """Message role — v1.0.0 ProtoJSON values."""
+
     UNSPECIFIED = "ROLE_UNSPECIFIED"
     USER = "ROLE_USER"
     AGENT = "ROLE_AGENT"
@@ -67,7 +71,7 @@ _TASK_STATE_V03: Dict["TaskState", str] = {
     TaskState.WORKING: "working",
     TaskState.COMPLETED: "completed",
     TaskState.FAILED: "failed",
-    TaskState.CANCELED: "cancelled",           # v0.3 used the double-L spelling
+    TaskState.CANCELED: "cancelled",  # v0.3 used the double-L spelling
     TaskState.INPUT_REQUIRED: "input_required",
     TaskState.REJECTED: "rejected",
     TaskState.AUTH_REQUIRED: "auth_required",
@@ -128,6 +132,7 @@ def parse_role(value: Union[str, "Role"]) -> "Role":
 @dataclass
 class Part:
     """Atomic content unit."""
+
     text: Optional[str] = None
     file_uri: Optional[str] = None
     file_bytes: Optional[bytes] = None
@@ -232,6 +237,7 @@ class Part:
 @dataclass
 class Message:
     """Communication unit between agents."""
+
     message_id: str
     role: Role
     parts: List[Part]
@@ -249,12 +255,7 @@ class Message:
             parts = [Part.from_data(content)]
         else:
             parts = content
-        return cls(
-            message_id=str(uuid.uuid4()),
-            role=Role.USER,
-            parts=parts,
-            **kwargs
-        )
+        return cls(message_id=str(uuid.uuid4()), role=Role.USER, parts=parts, **kwargs)
 
     @classmethod
     def agent(cls, content: Union[str, Dict, List[Part]], **kwargs) -> "Message":
@@ -264,12 +265,7 @@ class Message:
             parts = [Part.from_data(content)]
         else:
             parts = content
-        return cls(
-            message_id=str(uuid.uuid4()),
-            role=Role.AGENT,
-            parts=parts,
-            **kwargs
-        )
+        return cls(message_id=str(uuid.uuid4()), role=Role.AGENT, parts=parts, **kwargs)
 
     def get_text(self) -> str:
         """Extract all text content from parts."""
@@ -316,6 +312,7 @@ class Message:
 @dataclass
 class TaskStatus:
     """Current status of a task."""
+
     state: TaskState
     message: Optional[Message] = None
     timestamp: Optional[str] = None
@@ -364,6 +361,7 @@ def _reject_action_components(components: Any) -> None:
 @dataclass
 class Artifact:
     """Output produced by an agent."""
+
     artifact_id: str
     parts: List[Part]
     name: Optional[str] = None
@@ -410,8 +408,7 @@ class Artifact:
         message = deserialize(envelope)
         if not isinstance(message, A2UIAgentMessage) or message.create_surface is None:
             raise ValueError(
-                "Only display 'createSurface' envelopes may be emitted over A2A in v1; "
-                f"got envelope={envelope!r}."
+                "Only display 'createSurface' envelopes may be emitted over A2A in v1; " f"got envelope={envelope!r}."
             )
         _reject_action_components(message.create_surface.components)
         part = Part(
@@ -437,19 +434,15 @@ class Artifact:
         if envelope:
             return cls.from_a2ui_envelope(envelope, name=name)
 
-        if hasattr(response, 'content'):
+        if hasattr(response, "content"):
             # AIMessage
             text = response.content
-        elif hasattr(response, 'response'):
+        elif hasattr(response, "response"):
             text = response.response
         else:
             text = str(response)
 
-        return cls(
-            artifact_id=str(uuid.uuid4()),
-            name=name,
-            parts=[Part.from_text(text)]
-        )
+        return cls(artifact_id=str(uuid.uuid4()), name=name, parts=[Part.from_text(text)])
 
     def to_dict(self, version: str = "1.0") -> Dict[str, Any]:
         return {
@@ -468,6 +461,7 @@ class Artifact:
 @dataclass
 class Task:
     """Unit of work with lifecycle."""
+
     id: str
     context_id: str
     status: TaskStatus
@@ -480,14 +474,11 @@ class Task:
         return cls(
             id=str(uuid.uuid4()),
             context_id=context_id or str(uuid.uuid4()),
-            status=TaskStatus(state=TaskState.SUBMITTED)
+            status=TaskStatus(state=TaskState.SUBMITTED),
         )
 
     def working(self, message: Optional[str] = None) -> "Task":
-        self.status = TaskStatus(
-            state=TaskState.WORKING,
-            message=Message.agent(message) if message else None
-        )
+        self.status = TaskStatus(state=TaskState.WORKING, message=Message.agent(message) if message else None)
         return self
 
     def complete(self, response: Any) -> "Task":
@@ -496,10 +487,7 @@ class Task:
         return self
 
     def fail(self, error: str) -> "Task":
-        self.status = TaskStatus(
-            state=TaskState.FAILED,
-            message=Message.agent(error)
-        )
+        self.status = TaskStatus(state=TaskState.FAILED, message=Message.agent(error))
         return self
 
     def to_dict(self, version: str = "1.0") -> Dict[str, Any]:
@@ -522,6 +510,7 @@ class Task:
 @dataclass
 class AgentExtension:
     """A protocol extension declared by an agent (v1.0)."""
+
     uri: str
     description: Optional[str] = None
     required: bool = False
@@ -548,8 +537,9 @@ class AgentExtension:
 @dataclass
 class AgentInterface:
     """v1.0 AgentCard interface entry."""
+
     url: str
-    protocol_binding: str   # "JSONRPC" | "GRPC" | "HTTP+JSON"
+    protocol_binding: str  # "JSONRPC" | "GRPC" | "HTTP+JSON"
     protocol_version: str = "1.0"
     tenant: Optional[str] = None
 
@@ -577,6 +567,7 @@ class AgentInterface:
 @dataclass
 class AgentProvider:
     """Organization that provides the agent (v1.0)."""
+
     url: str
     organization: str
 
@@ -591,6 +582,7 @@ class AgentProvider:
 @dataclass
 class SecurityScheme:
     """Base security scheme (v1.0 securitySchemes entry)."""
+
     type: str
     description: Optional[str] = None
 
@@ -619,11 +611,11 @@ class SecurityScheme:
 @dataclass
 class APIKeySecurityScheme(SecurityScheme):
     """API key security scheme."""
-    name: str = ""
-    location: str = "header"   # "header" | "query" | "cookie"
 
-    def __init__(self, name: str = "", location: str = "header",
-                 description: Optional[str] = None):
+    name: str = ""
+    location: str = "header"  # "header" | "query" | "cookie"
+
+    def __init__(self, name: str = "", location: str = "header", description: Optional[str] = None):
         super().__init__(type="apiKey", description=description)
         self.name = name
         self.location = location
@@ -646,11 +638,11 @@ class APIKeySecurityScheme(SecurityScheme):
 @dataclass
 class HTTPAuthSecurityScheme(SecurityScheme):
     """HTTP authentication security scheme (Bearer/Basic)."""
+
     scheme: str = "bearer"
     bearer_format: Optional[str] = None
 
-    def __init__(self, scheme: str = "bearer", bearer_format: Optional[str] = None,
-                 description: Optional[str] = None):
+    def __init__(self, scheme: str = "bearer", bearer_format: Optional[str] = None, description: Optional[str] = None):
         super().__init__(type="http", description=description)
         self.scheme = scheme
         self.bearer_format = bearer_format
@@ -674,10 +666,10 @@ class HTTPAuthSecurityScheme(SecurityScheme):
 @dataclass
 class OAuth2SecurityScheme(SecurityScheme):
     """OAuth 2.0 security scheme."""
+
     flows: Optional[Dict[str, Any]] = None
 
-    def __init__(self, flows: Optional[Dict[str, Any]] = None,
-                 description: Optional[str] = None):
+    def __init__(self, flows: Optional[Dict[str, Any]] = None, description: Optional[str] = None):
         super().__init__(type="oauth2", description=description)
         self.flows = flows or {}
 
@@ -694,10 +686,10 @@ class OAuth2SecurityScheme(SecurityScheme):
 @dataclass
 class OpenIdConnectSecurityScheme(SecurityScheme):
     """OpenID Connect security scheme."""
+
     open_id_connect_url: str = ""
 
-    def __init__(self, open_id_connect_url: str = "",
-                 description: Optional[str] = None):
+    def __init__(self, open_id_connect_url: str = "", description: Optional[str] = None):
         super().__init__(type="openIdConnect", description=description)
         self.open_id_connect_url = open_id_connect_url
 
@@ -729,6 +721,7 @@ class MutualTlsSecurityScheme(SecurityScheme):
 @dataclass
 class SecurityRequirement:
     """A security requirement: a map of scheme name -> required scopes."""
+
     schemes: Dict[str, List[str]] = field(default_factory=dict)
 
     def to_dict(self, version: str = "1.0") -> Dict[str, Any]:
@@ -742,6 +735,7 @@ class SecurityRequirement:
 @dataclass
 class AgentCardSignature:
     """A JWS signature over the AgentCard (v1.0). Signing itself is out of scope."""
+
     protected: str
     signature: str
     header: Optional[Dict[str, Any]] = None
@@ -764,7 +758,8 @@ class AgentCardSignature:
 @dataclass
 class AuthenticationInfo:
     """Authentication details for a push notification webhook (v1.0)."""
-    scheme: str            # e.g., "Bearer", "Basic"
+
+    scheme: str  # e.g., "Bearer", "Basic"
     credentials: Optional[str] = None
 
     def to_dict(self, version: str = "1.0") -> Dict[str, Any]:
@@ -781,6 +776,7 @@ class AuthenticationInfo:
 @dataclass
 class TaskPushNotificationConfig:
     """Configuration for a task's push-notification webhook (v1.0)."""
+
     id: str
     task_id: str
     url: str
@@ -814,6 +810,7 @@ class TaskPushNotificationConfig:
 @dataclass
 class SendMessageConfiguration:
     """Configuration accompanying a `SendMessage` request (v1.0)."""
+
     accepted_output_modes: Optional[List[str]] = None
     task_push_notification_config: Optional[TaskPushNotificationConfig] = None
     history_length: Optional[int] = None
@@ -834,9 +831,7 @@ class SendMessageConfiguration:
         push = data.get("pushNotificationConfig") or data.get("taskPushNotificationConfig")
         return cls(
             accepted_output_modes=data.get("acceptedOutputModes"),
-            task_push_notification_config=(
-                TaskPushNotificationConfig.from_dict(push) if push else None
-            ),
+            task_push_notification_config=(TaskPushNotificationConfig.from_dict(push) if push else None),
             history_length=data.get("historyLength"),
             return_immediately=data.get("returnImmediately", False),
         )
@@ -845,6 +840,7 @@ class SendMessageConfiguration:
 @dataclass
 class A2AError:
     """A2A JSON-RPC error object."""
+
     code: int
     message: str
     data: Optional[Any] = None
@@ -877,6 +873,7 @@ A2A_ERROR_CODES: Dict[str, tuple] = {
 @dataclass
 class AgentSkill:
     """A capability exposed by an agent (maps to a tool)."""
+
     id: str
     name: str
     description: str
@@ -908,9 +905,7 @@ class AgentSkill:
             if self.output_modes is not None:
                 data["outputModes"] = self.output_modes
             if self.security_requirements is not None:
-                data["securityRequirements"] = [
-                    s.to_dict(version) for s in self.security_requirements
-                ]
+                data["securityRequirements"] = [s.to_dict(version) for s in self.security_requirements]
         return data
 
     @classmethod
@@ -925,15 +920,14 @@ class AgentSkill:
             examples=data.get("examples", []),
             input_modes=data.get("inputModes"),
             output_modes=data.get("outputModes"),
-            security_requirements=(
-                [SecurityRequirement.from_dict(s) for s in sec] if sec else None
-            ),
+            security_requirements=([SecurityRequirement.from_dict(s) for s in sec] if sec else None),
         )
 
 
 @dataclass
 class AgentCapabilities:
     """Capabilities supported by an agent."""
+
     streaming: bool = True
     push_notifications: bool = False
     extended_agent_card: bool = False
@@ -969,6 +963,7 @@ class AgentCard:
     read-only backward-compat properties (``url``, ``preferred_transport``,
     ``protocol_version``) so existing consumers keep working.
     """
+
     name: str
     description: str
     version: str
@@ -1005,11 +1000,7 @@ class AgentCard:
         if self.supported_interfaces:
             self.supported_interfaces[0].url = value
         else:
-            self.supported_interfaces = [
-                AgentInterface(
-                    url=value, protocol_binding="JSONRPC", protocol_version="1.0"
-                )
-            ]
+            self.supported_interfaces = [AgentInterface(url=value, protocol_binding="JSONRPC", protocol_version="1.0")]
 
     @property
     def preferred_transport(self) -> str:
@@ -1024,11 +1015,7 @@ class AgentCard:
         if self.supported_interfaces:
             self.supported_interfaces[0].protocol_binding = value
         else:
-            self.supported_interfaces = [
-                AgentInterface(
-                    url="", protocol_binding=value, protocol_version="1.0"
-                )
-            ]
+            self.supported_interfaces = [AgentInterface(url="", protocol_binding=value, protocol_version="1.0")]
 
     @property
     def protocol_version(self) -> str:
@@ -1059,13 +1046,9 @@ class AgentCard:
         if self.documentation_url is not None:
             data["documentationUrl"] = self.documentation_url
         if self.security_schemes is not None:
-            data["securitySchemes"] = {
-                k: v.to_dict("1.0") for k, v in self.security_schemes.items()
-            }
+            data["securitySchemes"] = {k: v.to_dict("1.0") for k, v in self.security_schemes.items()}
         if self.security_requirements is not None:
-            data["securityRequirements"] = [
-                s.to_dict("1.0") for s in self.security_requirements
-            ]
+            data["securityRequirements"] = [s.to_dict("1.0") for s in self.security_requirements]
         if self.signatures is not None:
             data["signatures"] = [s.to_dict("1.0") for s in self.signatures]
         if self.icon_url is not None:
@@ -1116,9 +1099,7 @@ class AgentCard:
         # => v0.3. `additionalInterfaces` (v0.3 optional) is also accepted.
         interfaces: List[AgentInterface] = []
         if data.get("supportedInterfaces"):
-            interfaces = [
-                AgentInterface.from_dict(i) for i in data["supportedInterfaces"]
-            ]
+            interfaces = [AgentInterface.from_dict(i) for i in data["supportedInterfaces"]]
         elif data.get("url"):
             interfaces = [
                 AgentInterface(
@@ -1146,16 +1127,9 @@ class AgentCard:
             default_output_modes=data.get("defaultOutputModes", ["text/plain", "application/json"]),
             provider=AgentProvider.from_dict(provider) if provider else None,
             documentation_url=data.get("documentationUrl"),
-            security_schemes=(
-                {k: SecurityScheme.from_dict(v) for k, v in schemes.items()}
-                if schemes else None
-            ),
-            security_requirements=(
-                [SecurityRequirement.from_dict(s) for s in sec_reqs] if sec_reqs else None
-            ),
-            signatures=(
-                [AgentCardSignature.from_dict(s) for s in sigs] if sigs else None
-            ),
+            security_schemes=({k: SecurityScheme.from_dict(v) for k, v in schemes.items()} if schemes else None),
+            security_requirements=([SecurityRequirement.from_dict(s) for s in sec_reqs] if sec_reqs else None),
+            signatures=([AgentCardSignature.from_dict(s) for s in sigs] if sigs else None),
             icon_url=data.get("iconUrl"),
             tags=data.get("tags", []),
         )
@@ -1164,6 +1138,7 @@ class AgentCard:
 @dataclass
 class RegisteredAgent:
     """Definition about a Registered Agent."""
+
     url: str
     card: AgentCard
     last_seen: datetime = field(default_factory=datetime.utcnow)

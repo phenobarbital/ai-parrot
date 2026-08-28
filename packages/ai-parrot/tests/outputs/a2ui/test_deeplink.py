@@ -90,7 +90,10 @@ class TestDeepLinkService:
     async def test_deeplink_single_use(self):
         svc = _service()
         dl = await svc.mint(
-            session_id="s1", user_id="u1", agent_id="a1", channel="web",
+            session_id="s1",
+            user_id="u1",
+            agent_id="a1",
+            channel="web",
             action_payload=_action_envelope("x"),
         )
         first = await svc.consume(dl.token_id)
@@ -101,7 +104,10 @@ class TestDeepLinkService:
     async def test_expired_token_fails(self):
         svc = _service()
         dl = await svc.mint(
-            session_id="s1", user_id="u1", agent_id="a1", channel="web",
+            session_id="s1",
+            user_id="u1",
+            agent_id="a1",
+            channel="web",
             action_payload=_action_envelope("x"),
         )
         svc.redis.expire_now(svc._key(dl.token_id))  # simulate TTL expiry
@@ -111,7 +117,10 @@ class TestDeepLinkService:
     async def test_consume_uses_atomic_getdel_when_available(self):
         svc = _service()
         dl = await svc.mint(
-            session_id="s", user_id="u", agent_id="a", channel="web",
+            session_id="s",
+            user_id="u",
+            agent_id="a",
+            channel="web",
             action_payload=_action_envelope("x"),
         )
         await svc.consume(dl.token_id)
@@ -121,7 +130,10 @@ class TestDeepLinkService:
     async def test_consume_fallback_without_getdel(self):
         svc = DeepLinkService(LegacyFakeRedis(), base_url="https://app.example")
         dl = await svc.mint(
-            session_id="s", user_id="u", agent_id="a", channel="web",
+            session_id="s",
+            user_id="u",
+            agent_id="a",
+            channel="web",
             action_payload=_action_envelope("x"),
         )
         payload = await svc.consume(dl.token_id)
@@ -132,7 +144,10 @@ class TestDeepLinkService:
     async def test_consume_returns_server_side_payload(self):
         svc = _service()
         dl = await svc.mint(
-            session_id="s9", user_id="u9", agent_id="a9", channel="web",
+            session_id="s9",
+            user_id="u9",
+            agent_id="a9",
+            channel="web",
             action_payload=_action_envelope("approve", row=3),
         )
         payload = await svc.consume(dl.token_id)
@@ -151,7 +166,10 @@ class TestResumePayloadActionEnvelope:
         # A valid v1.0 'action' envelope round-trips as-is.
         envelope = _action_envelope("approve")
         payload = ResumePayload(
-            session_id="s", user_id="u", agent_id="a", channel="web",
+            session_id="s",
+            user_id="u",
+            agent_id="a",
+            channel="web",
             action_payload=envelope,
         )
         assert payload.action_payload == envelope
@@ -164,13 +182,19 @@ class TestResumePayloadActionEnvelope:
         }
         with pytest.raises(ValueError):
             ResumePayload(
-                session_id="s", user_id="u", agent_id="a", channel="web",
+                session_id="s",
+                user_id="u",
+                agent_id="a",
+                channel="web",
                 action_payload=non_action,
             )
 
     async def test_malformed_payload_raises_value_error(self):
         with pytest.raises(ValidationError):
             ResumePayload(
-                session_id="s", user_id="u", agent_id="a", channel="web",
+                session_id="s",
+                user_id="u",
+                agent_id="a",
+                channel="web",
                 action_payload={"not": "an envelope"},
             )

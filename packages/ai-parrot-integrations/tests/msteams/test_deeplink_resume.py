@@ -55,8 +55,11 @@ class TestDeepLinkResumeTeams:
         service = _service()
         resume = ChannelDeepLinkResume(service, channel="msteams")
         dl = await service.mint(
-            session_id="teams-sess", user_id="teams-user", agent_id="assistant",
-            channel="msteams", action_payload=_action_envelope("confirm"),
+            session_id="teams-sess",
+            user_id="teams-user",
+            agent_id="assistant",
+            channel="msteams",
+            action_payload=_action_envelope("confirm"),
         )
         # The Teams wrapper extracts the token from activity.value and delegates.
         injected = {}

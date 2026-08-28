@@ -127,7 +127,7 @@ def setup_deeplink_routes(
     the AgentTalk POST flow (``agent_name``/``query``/``session_id``/``user_id``).
     """
     handler = DeepLinkResumeHandler(service, invoker)
-    app.router.add_get(path, handler.landing)   # confirm page — safe for prescanners
-    app.router.add_post(path, handler.resume)   # consumes the single-use token
+    app.router.add_get(path, handler.landing)  # confirm page — safe for prescanners
+    app.router.add_post(path, handler.resume)  # consumes the single-use token
     logger.info("Registered A2UI deep-link web resume routes (GET landing + POST) at %s", path)
     return handler

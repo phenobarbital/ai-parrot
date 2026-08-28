@@ -67,9 +67,7 @@ class TestDeepLinkResumeTelegram:
         injected = {}
 
         async def inject(*, session_id, user_id, agent_id, query):
-            injected.update(
-                session_id=session_id, user_id=user_id, agent_id=agent_id, query=query
-            )
+            injected.update(session_id=session_id, user_id=user_id, agent_id=agent_id, query=query)
             return {"resumed": True}
 
         outcome = await resume.resume(dl.token_id, inject=inject)
@@ -86,7 +84,10 @@ class TestDeepLinkResumeTelegram:
         service = _service()
         resume = ChannelDeepLinkResume(service, channel="telegram")
         dl = await service.mint(
-            session_id="s", user_id="u", agent_id="a", channel="telegram",
+            session_id="s",
+            user_id="u",
+            agent_id="a",
+            channel="telegram",
             action_payload=_action_envelope("x"),
         )
         # Consume once (success), then replay → friendly message, session untouched.
