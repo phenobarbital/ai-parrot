@@ -1,0 +1,40 @@
+{
+  "feat_id": "FEAT-464",
+  "phase": "committed",
+  "started_at": "2026-08-26T16:16:00Z",
+  "updated_at": "2026-08-26T16:30:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 10,
+    "grep_calls": 4,
+    "git_calls": 0,
+    "depth_reached": 1
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "Create a sample Agent swarm with Matrix Swarm feature, including Matrix homeserver via docker-compose"
+  },
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": { "status": "complete", "completed_at": "2026-08-26T16:22:00Z", "findings_count": 6, "wiki_queries": 4, "wiki_pages": 7, "files_read": 10, "grep_calls": 4 },
+    "synthesis": { "status": "complete", "overall_confidence": "high", "claims_high": 6, "claims_medium": 1, "claims_low": 0 },
+    "review_gate": { "status": "complete", "user_action": "approved" },
+    "qa": { "status": "complete", "questions_total": 2, "questions_answered": 2, "unknowns_resolved": 2 },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/matrix-swarm-sample.proposal.md"
+    }
+  },
+  "truncated": false,
+  "truncation_reason": null
+}

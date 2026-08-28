@@ -115,7 +115,13 @@ class TestBuild:
         config = load_project_config(repo)
         assert config.wiki_name == "kb"
         assert config.backend == "memory"
-        result = runner.invoke(wiki, ["query", "store", "--path", str(repo)])
+        # FEAT-461: with no ENV/WIKI_ENV set, `build` auto-generates the
+        # missing `local` overlay (`{"backend": "sqlite"}` — the no-VPN
+        # default), which now outranks the persisted base backend for a
+        # bare `query`. An explicit --backend flag still wins over that
+        # overlay, so a follow-up read must repeat the same flag to reach
+        # the custom "memory" plane just built.
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--backend", "memory"])
         assert result.exit_code == 0, result.output
 
 
@@ -1110,15 +1116,15 @@ class TestIngestSourceArgument:
 
     def test_discover_documents_removed(self):
         assert not hasattr(cli_module, "_discover_documents")
+
+
 def _second_repo(tmp_path: Path, runner: CliRunner, name: str = "other") -> Path:
     """Build a second, independent wiki project with colliding page ids."""
     other = tmp_path / name
     (other / "pkg").mkdir(parents=True)
     (other / "pkg" / "store.py").write_text(PY_STORE, encoding="utf-8")
     (other / "pkg" / "util.py").write_text(PY_UTIL, encoding="utf-8")
-    (other / "README.md").write_text(
-        "# Other\n\nAnother demo project.", encoding="utf-8"
-    )
+    (other / "README.md").write_text("# Other\n\nAnother demo project.", encoding="utf-8")
     _build(runner, other)
     return other
 
@@ -1148,9 +1154,7 @@ class TestNamespaceReads:
         other = _second_repo(tmp_path, runner)
         _write_namespaces(repo, {"other": {"path": str(other)}})
 
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert "file:pkg/store.py" in ids
@@ -1192,18 +1196,14 @@ class TestNamespaceReads:
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
         _write_namespaces(repo, {"other": {"path": str(other)}})
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--ns", "nope"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--ns", "nope"])
         assert result.exit_code != 0
         assert "Unknown namespace" in result.output
         assert "other" in result.output
 
     def test_no_namespaces_is_unchanged(self, runner, repo):
         _build(runner, repo)
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert ids
@@ -1227,9 +1227,7 @@ class TestNamespaceReads:
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert ids and all("::" not in i for i in ids)
 
-    def test_explicit_path_beats_env_with_namespaces(
-        self, runner, repo, tmp_path, monkeypatch
-    ):
+    def test_explicit_path_beats_env_with_namespaces(self, runner, repo, tmp_path, monkeypatch):
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
         _write_namespaces(repo, {"other": {"path": str(other)}})
@@ -1254,9 +1252,7 @@ class TestNamespaceReads:
         assert page.exit_code == 0, page.output
         assert "other::file:pkg/store.py" in page.output
 
-        rel = runner.invoke(
-            wiki, ["related", "other::dir:pkg", "--path", str(repo), "--json"]
-        )
+        rel = runner.invoke(wiki, ["related", "other::dir:pkg", "--path", str(repo), "--json"])
         assert rel.exit_code == 0, rel.output
         rows = json.loads(rel.output)
         assert rows
@@ -1325,21 +1321,15 @@ class TestNamespaceReads:
         assert result.exit_code == 0, result.output
         assert "skipped: unbuilt" in result.output
 
-    def test_global_registry_namespace_is_read(
-        self, runner, repo, tmp_path, isolated_home
-    ):
+    def test_global_registry_namespace_is_read(self, runner, repo, tmp_path, isolated_home):
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
         isolated_home.mkdir(parents=True, exist_ok=True)
         (isolated_home / "wikis.json").write_text(
-            json.dumps(
-                {"version": 1, "namespaces": {"glob": {"path": str(other)}}}
-            ),
+            json.dumps({"version": 1, "namespaces": {"glob": {"path": str(other)}}}),
             encoding="utf-8",
         )
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert any(i.startswith("glob::") for i in ids)
@@ -1349,9 +1339,7 @@ class TestNamespaceReads:
 class TestNamespaceRegistry:
     """FEAT-450 — ``wikitoolkit ns list|add|remove``."""
 
-    def test_add_list_remove_repo_and_global(
-        self, runner, repo, tmp_path, isolated_home
-    ):
+    def test_add_list_remove_repo_and_global(self, runner, repo, tmp_path, isolated_home):
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
 
@@ -1366,16 +1354,20 @@ class TestNamespaceRegistry:
         added_global = runner.invoke(
             wiki,
             [
-                "ns", "add", "brain", "--store", str(brain),
-                "--global", "--path", str(repo),
+                "ns",
+                "add",
+                "brain",
+                "--store",
+                str(brain),
+                "--global",
+                "--path",
+                str(repo),
             ],
         )
         assert added_global.exit_code == 0, added_global.output
         assert (isolated_home / "wikis.json").exists()
 
-        listed = runner.invoke(
-            wiki, ["ns", "list", "--path", str(repo), "--json"]
-        )
+        listed = runner.invoke(wiki, ["ns", "list", "--path", str(repo), "--json"])
         assert listed.exit_code == 0, listed.output
         rows = {r["name"]: r for r in json.loads(listed.output)}
         assert rows["other"]["origin"] == "repo"
@@ -1392,17 +1384,10 @@ class TestNamespaceRegistry:
         assert (repo / stored).resolve() == other.resolve()
         assert config.wiki_name
 
-        removed = runner.invoke(
-            wiki, ["ns", "remove", "brain", "--global", "--path", str(repo)]
-        )
+        removed = runner.invoke(wiki, ["ns", "remove", "brain", "--global", "--path", str(repo)])
         assert removed.exit_code == 0, removed.output
         rows = {
-            r["name"]
-            for r in json.loads(
-                runner.invoke(
-                    wiki, ["ns", "list", "--path", str(repo), "--json"]
-                ).output
-            )
+            r["name"] for r in json.loads(runner.invoke(wiki, ["ns", "list", "--path", str(repo), "--json"]).output)
         }
         assert rows == {"other"}
 
@@ -1423,15 +1408,20 @@ class TestNamespaceRegistry:
         both = runner.invoke(
             wiki,
             [
-                "ns", "add", "x", "--project", str(tmp_path),
-                "--store", str(tmp_path), "--path", str(repo),
+                "ns",
+                "add",
+                "x",
+                "--project",
+                str(tmp_path),
+                "--store",
+                str(tmp_path),
+                "--path",
+                str(repo),
             ],
         )
         assert both.exit_code != 0 and "exactly one" in both.output
 
-    def test_add_rejects_duplicate_in_same_registry(
-        self, runner, repo, tmp_path
-    ):
+    def test_add_rejects_duplicate_in_same_registry(self, runner, repo, tmp_path):
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
         args = ["ns", "add", "other", "--project", str(other), "--path", str(repo)]
@@ -1446,8 +1436,14 @@ class TestNamespaceRegistry:
             runner.invoke(
                 wiki,
                 [
-                    "ns", "add", "dup", "--project", str(other),
-                    "--global", "--path", str(repo),
+                    "ns",
+                    "add",
+                    "dup",
+                    "--project",
+                    str(other),
+                    "--global",
+                    "--path",
+                    str(repo),
                 ],
             ).exit_code
             == 0
@@ -1478,6 +1474,88 @@ class TestNamespaceRegistry:
         assert accepted.exit_code == 0, accepted.output
         assert "wikitoolkit build --path" in accepted.output
         assert load_project_config(repo).namespaces["notes"].kind == "vault"
+
+    def test_add_database_defaults_to_arangodb_backend(self, runner, repo):
+        _build(runner, repo)
+        added = runner.invoke(
+            wiki,
+            ["ns", "add", "legis", "--database", "wiki_legis", "--path", str(repo)],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["legis"].backend == "arangodb"
+
+    def test_add_database_accepts_registered_extra_backend(self, runner, repo):
+        """FEAT-449 M7: --database entries may name a satellite-registered
+        backend (e.g. 'ontology_legal') instead of forcing 'arangodb'."""
+        _build(runner, repo)
+        added = runner.invoke(
+            wiki,
+            [
+                "ns",
+                "add",
+                "legal",
+                "--database",
+                "legal_db",
+                "--backend",
+                "ontology_legal",
+                "--path",
+                str(repo),
+            ],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["legal"].backend == "ontology_legal"
+
+    def test_add_database_still_accepts_explicit_arangodb(self, runner, repo):
+        _build(runner, repo)
+        added = runner.invoke(
+            wiki,
+            [
+                "ns",
+                "add",
+                "legis",
+                "--database",
+                "wiki_legis",
+                "--backend",
+                "arangodb",
+                "--path",
+                str(repo),
+            ],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["legis"].backend == "arangodb"
+
+    def test_add_store_rejects_non_local_backend(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        store_dir = tmp_path / "store"
+        store_dir.mkdir()
+        rejected = runner.invoke(
+            wiki,
+            [
+                "ns",
+                "add",
+                "legal",
+                "--store",
+                str(store_dir),
+                "--backend",
+                "ontology_legal",
+                "--path",
+                str(repo),
+            ],
+        )
+        assert rejected.exit_code != 0
+        assert "not valid for --store" in rejected.output
+        assert "legal" not in load_project_config(repo).namespaces
+
+    def test_add_store_still_accepts_sqlite_and_memory(self, runner, repo, tmp_path):
+        _build(runner, repo)
+        store_dir = tmp_path / "store"
+        store_dir.mkdir()
+        added = runner.invoke(
+            wiki,
+            ["ns", "add", "mem", "--store", str(store_dir), "--backend", "memory", "--path", str(repo)],
+        )
+        assert added.exit_code == 0, added.output
+        assert load_project_config(repo).namespaces["mem"].backend == "memory"
 
     def test_remove_missing_namespace_errors(self, runner, repo):
         _build(runner, repo)
@@ -1510,9 +1588,7 @@ class TestNamespaceWrites:
         )
         assert saved.exit_code == 0, saved.output
 
-        in_other = runner.invoke(
-            wiki, ["query", "zebra", "--path", str(other), "--json"]
-        )
+        in_other = runner.invoke(wiki, ["query", "zebra", "--path", str(other), "--json"])
         assert "zebra" in in_other.output
 
         in_local = runner.invoke(
@@ -1523,12 +1599,7 @@ class TestNamespaceWrites:
 
     def test_remember_defaults_to_local(self, runner, repo, tmp_path):
         other = self._setup(runner, repo, tmp_path)
-        assert (
-            runner.invoke(
-                wiki, ["remember", "okapi fact", "--path", str(repo), "--json"]
-            ).exit_code
-            == 0
-        )
+        assert runner.invoke(wiki, ["remember", "okapi fact", "--path", str(repo), "--json"]).exit_code == 0
         assert (
             "okapi"
             in runner.invoke(
@@ -1536,26 +1607,17 @@ class TestNamespaceWrites:
                 ["query", "okapi", "--path", str(repo), "--ns", "local", "--json"],
             ).output
         )
-        assert (
-            "okapi"
-            not in runner.invoke(
-                wiki, ["query", "okapi", "--path", str(other), "--json"]
-            ).output
-        )
+        assert "okapi" not in runner.invoke(wiki, ["query", "okapi", "--path", str(other), "--json"]).output
 
     def test_remember_ns_all_is_rejected(self, runner, repo, tmp_path):
         self._setup(runner, repo, tmp_path)
-        result = runner.invoke(
-            wiki, ["remember", "x", "--ns", "all", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["remember", "x", "--ns", "all", "--path", str(repo)])
         assert result.exit_code != 0
         assert "exactly one namespace" in result.output
 
     def test_remember_ns_unknown_is_rejected(self, runner, repo, tmp_path):
         self._setup(runner, repo, tmp_path)
-        result = runner.invoke(
-            wiki, ["remember", "x", "--ns", "ghost", "--path", str(repo)]
-        )
+        result = runner.invoke(wiki, ["remember", "x", "--ns", "ghost", "--path", str(repo)])
         assert result.exit_code != 0 and "Unknown namespace" in result.output
 
     def test_store_and_ns_together_are_rejected(self, runner, repo, tmp_path):
@@ -1563,8 +1625,12 @@ class TestNamespaceWrites:
         result = runner.invoke(
             wiki,
             [
-                "remember", "x", "--ns", "other",
-                "--store", str(load_project_config(repo).storage_path(repo)),
+                "remember",
+                "x",
+                "--ns",
+                "other",
+                "--store",
+                str(load_project_config(repo).storage_path(repo)),
             ],
         )
         assert result.exit_code != 0
@@ -1575,27 +1641,35 @@ class TestNamespaceWrites:
         noted = runner.invoke(
             wiki,
             [
-                "note", "other::file:pkg/store.py", "a foreign note",
-                "--ns", "other", "--path", str(repo), "--json",
+                "note",
+                "other::file:pkg/store.py",
+                "a foreign note",
+                "--ns",
+                "other",
+                "--path",
+                str(repo),
+                "--json",
             ],
         )
         assert noted.exit_code == 0, noted.output
-        page = runner.invoke(
-            wiki, ["page", "file:pkg/store.py", "--path", str(other)]
-        )
+        page = runner.invoke(wiki, ["page", "file:pkg/store.py", "--path", str(other)])
         assert "a foreign note" in page.output
 
         linked = runner.invoke(
             wiki,
             [
-                "link", "file:pkg/store.py", "file:pkg/util.py",
-                "--ns", "other", "--path", str(repo), "--json",
+                "link",
+                "file:pkg/store.py",
+                "file:pkg/util.py",
+                "--ns",
+                "other",
+                "--path",
+                str(repo),
+                "--json",
             ],
         )
         assert linked.exit_code == 0, linked.output
-        rel = runner.invoke(
-            wiki, ["related", "other::file:pkg/store.py", "--path", str(repo), "--json"]
-        )
+        rel = runner.invoke(wiki, ["related", "other::file:pkg/store.py", "--path", str(repo), "--json"])
         assert "other::file:pkg/util.py" in rel.output
 
     def test_mismatched_qualified_id_is_rejected(self, runner, repo, tmp_path):
@@ -1603,8 +1677,13 @@ class TestNamespaceWrites:
         result = runner.invoke(
             wiki,
             [
-                "note", "elsewhere::file:pkg/store.py", "text",
-                "--ns", "other", "--path", str(repo),
+                "note",
+                "elsewhere::file:pkg/store.py",
+                "text",
+                "--ns",
+                "other",
+                "--path",
+                str(repo),
             ],
         )
         assert result.exit_code != 0
@@ -1624,31 +1703,23 @@ class TestNamespaceWrites:
 class TestNamespaceReviewRegressions:
     """Regressions from the FEAT-450 code review (F3, F4, F6, L2)."""
 
-    def test_ns_add_resolves_a_relative_project_path(
-        self, runner, repo, tmp_path
-    ):
+    def test_ns_add_resolves_a_relative_project_path(self, runner, repo, tmp_path):
         """F3 — a typed relative path must resolve to what the user meant."""
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
         with runner.isolated_filesystem(temp_dir=tmp_path) as cwd:
             rel = os.path.relpath(other, cwd)
-            added = runner.invoke(
-                wiki, ["ns", "add", "sib", "--project", rel, "--path", str(repo)]
-            )
+            added = runner.invoke(wiki, ["ns", "add", "sib", "--project", rel, "--path", str(repo)])
         assert added.exit_code == 0, added.output
         stored = load_project_config(repo).namespaces["sib"].path
         assert (repo / stored).resolve() == other.resolve()
 
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         assert result.exit_code == 0, result.output
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert any(i.startswith("sib::") for i in ids)
 
-    def test_ns_add_global_stores_an_absolute_path(
-        self, runner, repo, tmp_path, isolated_home
-    ):
+    def test_ns_add_global_stores_an_absolute_path(self, runner, repo, tmp_path, isolated_home):
         """F3 — a global entry is read back relative to PARROT_HOME."""
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
@@ -1657,20 +1728,22 @@ class TestNamespaceReviewRegressions:
             added = runner.invoke(
                 wiki,
                 [
-                    "ns", "add", "glob", "--project", rel,
-                    "--global", "--path", str(repo),
+                    "ns",
+                    "add",
+                    "glob",
+                    "--project",
+                    rel,
+                    "--global",
+                    "--path",
+                    str(repo),
                 ],
             )
         assert added.exit_code == 0, added.output
-        stored = json.loads(
-            (isolated_home / "wikis.json").read_text(encoding="utf-8")
-        )["namespaces"]["glob"]["path"]
+        stored = json.loads((isolated_home / "wikis.json").read_text(encoding="utf-8"))["namespaces"]["glob"]["path"]
         assert Path(stored).is_absolute()
         assert Path(stored).resolve() == other.resolve()
 
-        result = runner.invoke(
-            wiki, ["query", "store", "--path", str(repo), "--json"]
-        )
+        result = runner.invoke(wiki, ["query", "store", "--path", str(repo), "--json"])
         ids = {row["concept_id"] for row in json.loads(result.output)}
         assert any(i.startswith("glob::") for i in ids)
 
@@ -1694,9 +1767,7 @@ class TestNamespaceReviewRegressions:
         )
         assert scoped["namespace"] == "other"
         assert scoped["wiki_name"] == "other"
-        assert Path(scoped["storage_dir"]).resolve() == (
-            load_project_config(other).storage_path(other).resolve()
-        )
+        assert Path(scoped["storage_dir"]).resolve() == (load_project_config(other).storage_path(other).resolve())
         # Source staleness is a local-manifest concept — absent, not faked.
         assert scoped["sources"] is None
         assert scoped["stale_sources"] is None
@@ -1704,22 +1775,16 @@ class TestNamespaceReviewRegressions:
         assert scoped["stats"]["pages"] == local["stats"]["pages"]
         assert "namespace" not in local
 
-    def test_status_ns_text_output_names_the_namespace(
-        self, runner, repo, tmp_path
-    ):
+    def test_status_ns_text_output_names_the_namespace(self, runner, repo, tmp_path):
         _build(runner, repo)
         other = _second_repo(tmp_path, runner)
         _write_namespaces(repo, {"other": {"path": str(other)}})
-        result = runner.invoke(
-            wiki, ["status", "--path", str(repo), "--ns", "other"]
-        )
+        result = runner.invoke(wiki, ["status", "--path", str(repo), "--ns", "other"])
         assert result.exit_code == 0, result.output
         assert "Namespace : other" in result.output
         assert "Sources   :" not in result.output
 
-    def test_concurrent_global_ns_add_keeps_both(
-        self, runner, repo, tmp_path, isolated_home
-    ):
+    def test_concurrent_global_ns_add_keeps_both(self, runner, repo, tmp_path, isolated_home):
         """F6 — the registry read-modify-write is serialised."""
         import threading
 
@@ -1736,25 +1801,27 @@ class TestNamespaceReviewRegressions:
                 .invoke(
                     wiki,
                     [
-                        "ns", "add", name, "--store", str(target),
-                        "--global", "--path", str(repo),
+                        "ns",
+                        "add",
+                        name,
+                        "--store",
+                        str(target),
+                        "--global",
+                        "--path",
+                        str(repo),
                     ],
                 )
                 .exit_code
             )
 
-        threads = [
-            threading.Thread(target=add, args=(n,)) for n in ("aa", "bb")
-        ]
+        threads = [threading.Thread(target=add, args=(n,)) for n in ("aa", "bb")]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
         assert results == [0, 0]
-        registry = json.loads(
-            (isolated_home / "wikis.json").read_text(encoding="utf-8")
-        )
+        registry = json.loads((isolated_home / "wikis.json").read_text(encoding="utf-8"))
         assert set(registry["namespaces"]) == {"aa", "bb"}
 
     def test_build_keeps_pages_of_another_corpus(self, runner, repo, tmp_path):
@@ -1768,9 +1835,7 @@ class TestNamespaceReviewRegressions:
         (vault / "Note.md").write_text("# Note\n\nzebra\n", encoding="utf-8")
 
         config = load_project_config(repo)
-        store = create_wiki_store(
-            config.storage_path(repo), wiki_name=config.wiki_name
-        )
+        store = create_wiki_store(config.storage_path(repo), wiki_name=config.wiki_name)
         sources = _open_sources(repo, config, store=store)
         scan, _stats = scan_vault(vault)
         asyncio.run(_ingest_files(store, sources, vault, scan, force=True))
@@ -1785,9 +1850,7 @@ class TestNamespaceReviewRegressions:
         """...while build's own pruning is unchanged."""
         _build(runner, repo)
         config = load_project_config(repo)
-        store = create_wiki_store(
-            config.storage_path(repo), wiki_name=config.wiki_name
-        )
+        store = create_wiki_store(config.storage_path(repo), wiki_name=config.wiki_name)
         assert asyncio.run(store.get_page("file:pkg/util.py")) is not None
         (repo / "pkg" / "util.py").unlink()
         _build(runner, repo)

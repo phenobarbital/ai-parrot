@@ -1,0 +1,55 @@
+/* =============================================================
+ * Tailwind v4 @theme — registers project palette tokens as
+ * utility classes (bg-primary-500, text-accent-700, etc.).
+ *
+ * Top-level @theme {} only — must NOT live inside a selector.
+ * Per-theme overrides happen in light.css/dark.css/midnight.css
+ * /warm.css via :root or [data-theme="..."] scopes.
+ * ============================================================= */
+
+@theme {
+  /* Primary colors (blue) */
+  --color-primary-50: oklch(97% 0.02 250);
+  --color-primary-100: oklch(94% 0.04 250);
+  --color-primary-200: oklch(88% 0.08 250);
+  --color-primary-300: oklch(78% 0.12 250);
+  --color-primary-400: oklch(68% 0.16 250);
+  --color-primary-500: oklch(58% 0.18 250);
+  --color-primary-600: oklch(50% 0.18 250);
+  --color-primary-700: oklch(42% 0.16 250);
+  --color-primary-800: oklch(35% 0.14 250);
+  --color-primary-900: oklch(28% 0.12 250);
+
+  /* Secondary colors (gray) */
+  --color-secondary-50: oklch(98% 0.01 260);
+  --color-secondary-100: oklch(96% 0.02 260);
+  --color-secondary-200: oklch(92% 0.02 260);
+  --color-secondary-300: oklch(86% 0.03 260);
+  --color-secondary-400: oklch(72% 0.03 260);
+  --color-secondary-500: oklch(58% 0.03 260);
+  --color-secondary-600: oklch(48% 0.03 260);
+  --color-secondary-700: oklch(40% 0.03 260);
+  --color-secondary-800: oklch(30% 0.02 260);
+  --color-secondary-900: oklch(20% 0.02 260);
+
+  /* Accent colors (purple/magenta) */
+  --color-accent-50: oklch(97% 0.03 320);
+  --color-accent-100: oklch(94% 0.06 320);
+  --color-accent-200: oklch(88% 0.12 320);
+  --color-accent-300: oklch(78% 0.18 320);
+  --color-accent-400: oklch(68% 0.24 320);
+  --color-accent-500: oklch(62% 0.26 320);
+  --color-accent-600: oklch(55% 0.26 320);
+  --color-accent-700: oklch(48% 0.24 320);
+  --color-accent-800: oklch(40% 0.2 320);
+  --color-accent-900: oklch(32% 0.16 320);
+
+  /* Semantic colors */
+  --color-success: oklch(65% 0.25 144);
+  --color-warning: oklch(80% 0.2 85);
+  --color-error: oklch(60% 0.25 27);
+  --color-info: oklch(70% 0.2 220);
+
+  --color-neutral: oklch(25% 0.05 250);
+  --color-neutral-content: oklch(98% 0.02 250);
+}

@@ -330,6 +330,11 @@ class IdeationNode(DevLoopNode):
             # Read/Grep/Glob to verify Code Context claims, Write/Edit for
             # the document itself, Bash for the explicit-path git commit.
             allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit"],
+            # The dispatch is write-capable AND runs at the base checkout
+            # (see _dispatch_cwd), so it needs the dispatcher's narrow
+            # PROJECT_ROOT waiver of the WORKTREE_BASE_PATH confinement —
+            # ideation predates the feature worktree by construction.
+            allow_project_root_cwd=True,
             model="claude-sonnet-4-6",
         )
         return await self._dispatcher.dispatch(

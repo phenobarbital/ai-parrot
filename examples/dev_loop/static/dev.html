@@ -439,6 +439,7 @@ const app = {
     documentPath: "", documentKind: "proposal",
     jiraIssueKey: "",
     devAgents: [], devIsolation: "shared",
+    flowType: "auto", baseBranch: "auto",
     judges: [], skipQa: false, skipJira: false,
     // FEAT-412: per-run plan-approval gate toggle.
     requirePlanApproval: false,
@@ -525,7 +526,17 @@ function foldAction(a) {
   const s = app.s;
   switch (a.type) {
     case "run/created":   s.createdAt = a.ts; s.phase = "created"; break;
-    case "run/closed":    s.finishedAt = a.ts; s.phase = a.phase || "closed"; break;
+    case "run/closed":    s.finishedAt = a.ts;
+                          // `RunClosed` names the field `outcome`, not `phase`
+                          // — and it is the authoritative last word on both
+                          // terminal projections: the runner reads them off the
+                          // Handoff node's own response, so they land even when
+                          // the flow-event `run/prLinked` never fires. Mirrors
+                          // the server reducer's `action.pr_url or state.pr_url`.
+                          s.phase = a.outcome || "closed";
+                          if (a.pr_url) s.prUrl = a.pr_url;
+                          if (a.jira_issue_key) s.jiraKey = a.jira_issue_key;
+                          break;
     case "run/cancelled": s.phase = "cancelled"; break;
 
     case "node/started":   { const n = node(a.node_id); n.status = "running"; n.started_at = a.ts; break; }
@@ -732,14 +743,38 @@ function slugify(s) {
     .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+// FEAT-466 TASK-2508: mirror the ops console's resolvedFlow(). This
+// console's `kind` is never "bug" (enhancement | new_feature | feature),
+// so the kind-derived default is always "feature" here — but an explicit
+// operator override to "hotfix" is still honoured (composes field-wise,
+// same precedence as resolve_flow()).
+function resolvedFlow() {
+  const f = app.form;
+  const type = f.flowType !== "auto" ? f.flowType : "feature";
+  const base = f.baseBranch !== "auto" ? f.baseBranch : (type === "hotfix" ? "main" : "dev");
+  return { type, base };
+}
+
+// FEAT-466 TASK-2508 guard (§F): resolve_flow() raises ValueError for
+// type=hotfix + base_branch != main. Never let a stale "dev"/"staging"
+// base_branch survive a switch into an effective hotfix type.
+function sanitizeFlowOverride() {
+  const f = app.form;
+  if (resolvedFlow().type === "hotfix" && f.baseBranch !== "auto" && f.baseBranch !== "main") {
+    f.baseBranch = "auto";
+  }
+}
+
 function renderReady() {
   const f = app.form;
   const maxRounds = app.config?.defaults?.ideation_max_rounds ?? 2;
+  const rf = resolvedFlow();
   const rows = app.mode === "feature"
     ? [
         ["intent", "feature (ideation skipped)"],
         ["document", f.documentPath ? f.documentPath.split("/").pop() : "— required —"],
         ["doc kind", f.documentKind],
+        ["flow", `${rf.type} → ${rf.base}`],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
         ["judges", `${effectiveJudges().length} · majority`],
         ["jira", f.jiraIssueKey || "none (optional)"],
@@ -751,6 +786,7 @@ function renderReady() {
         ["will write", docTargetHint()],
         ["description", f.description.trim() ? `${f.description.trim().length} chars` : "— required —"],
         ["HITL rounds", `≤ ${maxRounds}`],
+        ["flow", `${rf.type} → ${rf.base}`],
         ["dev agents", f.devAgents.length ? f.devAgents.map((a) => `${a.agent}×${a.count}`).join(" ") : "planner-sized"],
         ["judges", `${effectiveJudges().length} · majority`],
         ["plan gate", f.requirePlanApproval ? "REQUIRED" : "off"],
@@ -1319,6 +1355,21 @@ function tabBodyHtml(tab) {
       ${["shared", "isolated"].map((v) =>
         `<label class="seg-opt ${f.devIsolation === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
     </div>`;
+  // FEAT-466 TASK-2508: console flow-type / base-branch override (mirrors
+  // examples/dev_loop/static/index.html's implementation verbatim).
+  const flowTypeSeg = `
+    <div class="seg" data-seg="flowType">
+      ${["auto", "feature", "hotfix"].map((v) =>
+        `<label class="seg-opt ${f.flowType === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
+  // Filter on the RESOLVED (effective) type — see sanitizeFlowOverride().
+  const baseBranchValues = resolvedFlow().type === "hotfix"
+    ? ["auto", "main"] : ["auto", "dev", "main", "staging"];
+  const baseBranchSeg = `
+    <div class="seg" data-seg="baseBranch">
+      ${baseBranchValues.map((v) =>
+        `<label class="seg-opt ${f.baseBranch === v ? "on" : ""}" data-val="${v}">${v}</label>`).join("")}
+    </div>`;
 
   if (tab === "ideation") {
     const d = app.config?.defaults || {};
@@ -1372,6 +1423,16 @@ function tabBodyHtml(tab) {
       <div class="field" style="max-width:280px">
         <span class="field-label">Worktree isolation</span>
         ${isolationSeg}
+      </div>
+      <div class="field" style="max-width:280px">
+        <span class="field-label">Flow type (FEAT-466)</span>
+        ${flowTypeSeg}
+        <p class="hint">auto = feature (this console never files a bug).</p>
+      </div>
+      <div class="field" style="max-width:360px">
+        <span class="field-label">Base branch (FEAT-466)</span>
+        ${baseBranchSeg}
+        <p class="hint">auto = derive from flow type (hotfix → main, feature → dev). Hotfix only allows main.</p>
       </div>
     </div>`;
   }
@@ -1503,6 +1564,9 @@ function buildPayload() {
   if (f.judges.length) payload.judge_panel = f.judges;
   if (f.skipQa) payload.skip_qa = true;
   if (f.skipJira) payload.skip_jira = true;
+  // FEAT-466 TASK-2508: "auto" is a UI-only sentinel — never reaches Python.
+  if (f.flowType !== "auto") payload.flow_type = f.flowType;
+  if (f.baseBranch !== "auto") payload.base_branch = f.baseBranch;
   // FEAT-412: ALWAYS send the boolean, both true and false.
   // The checkbox is initialised from the server's own default at boot, so its
   // state is always a deliberate, user-visible value — and the server only
@@ -1628,11 +1692,21 @@ document.addEventListener("click", (e) => {
   const t = e.target;
 
   const kind = t.closest("[data-kind]");
-  if (kind) { app.kind = kind.dataset.kind; applyMode(); return; }
+  if (kind) {
+    app.kind = kind.dataset.kind;
+    sanitizeFlowOverride(); // FEAT-466 TASK-2508
+    applyMode(); return;
+  }
   const dk = t.closest("[data-dockind]");
   if (dk) { app.form.documentKind = dk.dataset.dockind; renderKindPicker(); renderReady(); return; }
   const view = t.closest("[data-view]");
   if (view) { app.view = view.dataset.view; renderKindPicker(); renderExecution(); return; }
+  const flowSeg = t.closest('[data-seg="flowType"] [data-val]');
+  if (flowSeg) {
+    app.form.flowType = flowSeg.dataset.val;
+    sanitizeFlowOverride();
+    renderTabs(); renderReady(); return;
+  }
   const seg = t.closest("[data-seg] [data-val]");
   if (seg) {
     app.form[seg.closest("[data-seg]").dataset.seg] = seg.dataset.val;

@@ -152,6 +152,67 @@ class TestListenerMultiplexing:
         await flow.run_flow(FlowContext(initial_task=""))
         assert "1:flow_started" in seen and "2:flow_started" in seen
 
+    @pytest.mark.asyncio
+    async def test_async_listeners_are_drained_before_run_flow_returns(self) -> None:
+        """A slow async listener must still have run when run_flow returns.
+
+        Async listeners are scheduled fire-and-forget so one cannot stall the
+        scheduler, which used to mean the events describing how a run ENDED
+        were still in flight when the caller built its terminal state from
+        them — a failed node stayed "running" in the dev-loop console forever.
+        """
+        seen: List[str] = []
+
+        async def slow(event: str, node_id: str, info: Any) -> None:
+            await asyncio.sleep(0.02)
+            seen.append(f"{event}:{node_id}")
+
+        flow = AgentsFlow("drain-listeners", on_node_event=slow)
+        flow.add_node(StubNode(node_id="a"))
+        flow.add_node(StubNode(node_id="b", fail=True))
+        flow.add_edge("a", "b")
+
+        await flow.run_flow(FlowContext(initial_task=""))
+
+        # Every event, including the two emitted microseconds before the
+        # return, has landed.
+        assert "node_failed:b" in seen
+        assert "flow_completed:" in seen
+        assert not [t for t in flow._pending_event_tasks if not t.done()]
+
+    @pytest.mark.asyncio
+    async def test_drain_is_bounded_and_never_raises(self) -> None:
+        """A hung or raising listener must not hold the result hostage."""
+        started = asyncio.Event()
+
+        async def hangs(event: str, node_id: str, info: Any) -> None:
+            started.set()
+            await asyncio.sleep(30)
+
+        flow = AgentsFlow("drain-bounded", on_node_event=hangs)
+        flow.add_node(StubNode(node_id="solo"))
+
+        result = await asyncio.wait_for(
+            _run_with_short_drain(flow), timeout=5.0
+        )
+
+        assert started.is_set()
+        assert result is not None
+        # Left running — the drain gave up rather than blocking the run.
+        for task in list(flow._pending_event_tasks):
+            task.cancel()
+
+
+async def _run_with_short_drain(flow: AgentsFlow) -> Any:
+    """Run *flow* with the event drain clamped to a test-sized timeout."""
+    original = flow._drain_event_tasks
+
+    async def _short() -> None:
+        await original(timeout=0.05)
+
+    flow._drain_event_tasks = _short  # type: ignore[method-assign]
+    return await flow.run_flow(FlowContext(initial_task=""))
+
 
 class TestFlowBracketEvents:
     @pytest.mark.asyncio

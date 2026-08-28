@@ -393,6 +393,13 @@ class DevLoopRunner:
         # the periodic sweep alongside gate expiry.
         self._pending_retention: Dict[str, float] = {}
         self._sweep_task: Optional[asyncio.Task] = None
+        # run_id -> FIFO of envelopes awaiting their XADD, plus the SINGLE
+        # writer task draining it. One writer per run is what makes the
+        # actions stream's order match `server_seq` — see
+        # :meth:`_make_envelope_sink`. `None` on the queue is the shutdown
+        # sentinel pushed by :meth:`_flush_actions_queue`.
+        self._actions_queues: Dict[str, "asyncio.Queue[Any]"] = {}
+        self._actions_writers: Dict[str, asyncio.Task] = {}
 
     # ── AHP-style host registry (FEAT-322) ──────────────────────────────────
 
@@ -477,10 +484,22 @@ class DevLoopRunner:
 
         ``SessionHost.apply`` invokes this callback synchronously (never
         awaited) and swallows any exception it raises. Because the actual
-        Redis XADD is async I/O, this schedules a best-effort background
-        task rather than blocking the reducer — the in-memory fold has
-        already happened by the time this is called, so a slow/failing
-        sink can never affect run correctness (never-break-a-run).
+        Redis XADD is async I/O, the envelope is handed to ``run_id``'s
+        single background writer rather than blocking the reducer — the
+        in-memory fold has already happened by the time this is called, so
+        a slow/failing sink can never affect run correctness
+        (never-break-a-run).
+
+        ORDER MATTERS, and one writer per run is what guarantees it. This
+        used to spawn an independent task per envelope; concurrent tasks on
+        a pooled client each take their own connection, so arrival order at
+        Redis did not have to match ``server_seq``. Any envelope that landed
+        after ``run/closed`` was then lost to every console, because
+        ``FlowStreamMultiplexer.state_tail`` stops on the first terminal
+        action it sees — which is how a completed Handoff node stayed
+        "running" with its PR link dropped. Enqueueing is synchronous and
+        happens inside ``apply``'s single-writer slice, so the queue is in
+        ``server_seq`` order by construction and the writer preserves it.
 
         FEAT-377 TASK-1917 (G6): also the park/resume trigger point — this
         is the ONE place every gate open/resolve passes through regardless
@@ -490,13 +509,7 @@ class DevLoopRunner:
 
         def _sink(envelope: ActionEnvelope) -> None:
             if self._redis_url:
-                try:
-                    asyncio.get_running_loop().create_task(
-                        self._xadd_envelope(run_id, envelope)
-                    )
-                except RuntimeError:
-                    # No running loop (e.g. sync test harness) — drop silently.
-                    pass
+                self._enqueue_envelope(run_id, envelope)
 
             t = envelope.action.type
             if t == "gate/opened":
@@ -521,6 +534,113 @@ class DevLoopRunner:
                         pass
 
         return _sink
+
+    def _enqueue_envelope(self, run_id: str, envelope: ActionEnvelope) -> None:
+        """Hand one envelope to ``run_id``'s single actions-stream writer.
+
+        Synchronous on purpose: it runs inside ``SessionHost.apply``, so the
+        queue ends up in ``server_seq`` order by construction. The writer
+        task is created on first use and lives until
+        :meth:`_flush_actions_queue` retires it, so there is no
+        empty-queue/exit race that could strand a late envelope.
+
+        Args:
+            run_id: The run whose actions stream the envelope belongs to.
+            envelope: The sequenced envelope to publish.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (e.g. sync test harness) — drop silently, same
+            # contract as the per-envelope task this replaced.
+            return
+        queue = self._actions_queues.get(run_id)
+        if queue is None:
+            queue = asyncio.Queue()
+            self._actions_queues[run_id] = queue
+        queue.put_nowait(envelope)
+        writer = self._actions_writers.get(run_id)
+        if writer is None or writer.done():
+            self._actions_writers[run_id] = loop.create_task(
+                self._drain_actions_queue(run_id, queue)
+            )
+
+    async def _drain_actions_queue(
+        self, run_id: str, queue: "asyncio.Queue[Any]"
+    ) -> None:
+        """XADD ``run_id``'s envelopes one at a time, in ``server_seq`` order.
+
+        Awaiting each XADD before pulling the next entry is the whole point:
+        it serialises the writes onto one connection's command order. Returns
+        on the ``None`` sentinel from :meth:`_flush_actions_queue`.
+
+        Args:
+            run_id: The run being published.
+            queue: That run's envelope FIFO.
+        """
+        while True:
+            envelope = await queue.get()
+            if envelope is None:
+                return
+            await self._xadd_envelope(run_id, envelope)
+
+    async def _flush_actions_queue(
+        self, run_id: str, timeout: float = 5.0
+    ) -> None:
+        """Publish ``run_id``'s remaining envelopes, then retire its writer.
+
+        Called from :meth:`_close_host` so a finished run's stream is
+        complete — ``run/closed`` is enqueued before the sentinel, so it is
+        genuinely the last entry and a console tailing the stream can stop on
+        it without truncating anything.
+
+        Args:
+            run_id: The run to flush.
+            timeout: Upper bound in seconds. A wedged Redis leaves the writer
+                to be garbage-collected rather than holding up the caller —
+                the actions stream is a best-effort mirror of state already
+                folded in memory.
+        """
+        queue = self._actions_queues.pop(run_id, None)
+        writer = self._actions_writers.pop(run_id, None)
+        if queue is not None:
+            queue.put_nowait(None)
+        if writer is None or writer.done():
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(writer), timeout=timeout)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            self.logger.debug(
+                "dev-loop actions-stream flush for run %s did not finish in "
+                "%.1fs — remaining envelopes dropped", run_id, timeout,
+            )
+        except Exception:  # noqa: BLE001 - actions publish must never break a run
+            self.logger.debug(
+                "dev-loop actions-stream flush failed for run %s",
+                run_id, exc_info=True,
+            )
+
+    def _retire_actions_writer(self, run_id: str) -> None:
+        """Drop ``run_id``'s actions-stream writer without waiting for it.
+
+        For an ABANDONED run only. ``_close_host`` — and the awaited flush
+        inside it — never runs when ``run_flow`` raises or is cancelled, so
+        the writer would otherwise stay parked on ``queue.get()`` for the
+        life of the process. Synchronous and non-awaiting on purpose: it is
+        called from an ``except BaseException`` branch, where awaiting during
+        cancellation could re-raise before the caller re-raises ``exc``.
+
+        Anything still queued is discarded. Such a run never produced a
+        ``run/closed``, so its stream is incomplete regardless and consoles
+        fall back to their socket-close handling.
+
+        Args:
+            run_id: The abandoned run whose writer should be retired.
+        """
+        self._actions_queues.pop(run_id, None)
+        writer = self._actions_writers.pop(run_id, None)
+        if writer is not None and not writer.done():
+            writer.cancel()
 
     async def _ensure_actions_redis(self) -> Any:
         """Return a cached async Redis client for the actions stream."""
@@ -1001,6 +1121,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             # Exactly-once release: only if this run is STILL holding its
@@ -1020,7 +1141,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
@@ -1165,6 +1286,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             if rid in self._active:
@@ -1177,7 +1299,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop feature run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
@@ -1314,6 +1436,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._retire_actions_writer(rid)
             raise
         finally:
             if rid in self._active:
@@ -1326,7 +1449,7 @@ class DevLoopRunner:
         self.logger.info(
             "Dev-loop revision run %s finished status=%s", rid, result.status
         )
-        self._close_host(host, result, ctx)
+        await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
@@ -1334,7 +1457,7 @@ class DevLoopRunner:
 
     # ── Host terminal handling (FEAT-322) ───────────────────────────────────
 
-    def _close_host(
+    async def _close_host(
         self, host: SessionHost, result: FlowResult, ctx: FlowContext,
     ) -> None:
         """Fold ``run/closed``, persist the terminal snapshot + run bundle,
@@ -1403,6 +1526,10 @@ class DevLoopRunner:
         self._apply_root_action(
             RunSummaryChanged(summary=self._run_summary_from_host(host))
         )
+        # Every `host.apply` for this run has happened, so `run/closed` is the
+        # last thing in the queue. Draining here is what lets a console stop
+        # tailing on it without truncating a still-in-flight node event.
+        await self._flush_actions_queue(run_id)
         self._discard_host(run_id)
 
 

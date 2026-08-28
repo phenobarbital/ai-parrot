@@ -125,6 +125,42 @@ async def test_flow_legacy_xadd_failure_does_not_break_session_fold(monkeypatch)
     assert host.state.nodes["qa"].status == "running"
 
 
+@pytest.mark.asyncio
+async def test_session_fold_precedes_the_redis_round_trip(monkeypatch):
+    """The host must be folded before this coroutine's first ``await``.
+
+    ``AgentsFlow._notify_node_event`` schedules this publisher
+    fire-and-forget, so anything sequenced after an ``await`` races the end
+    of the run. When the XADD came first, the last events of a run — the
+    node that failed, then the terminal handler — were still parked on
+    Redis when ``DevLoopRunner._close_host`` snapshotted the host, and the
+    console showed a failed node as forever "running".
+    """
+    pub = FlowEventPublisher(redis_url="redis://localhost:6399/9", run_id_holder={})
+    host = SessionHost(RUN_ID)
+    ctx = _ctx_with({"run_id": RUN_ID, "session_host": host})
+
+    status_seen_by_redis: list[str] = []
+
+    class _SlowRedis:
+        async def xadd(self, *args, **kwargs):
+            # By the time the network call is reached, the fold is done.
+            status_seen_by_redis.append(host.state.nodes["qa"].status)
+            return b"1-0"
+
+    async def _ensure_redis():
+        return _SlowRedis()
+
+    monkeypatch.setattr(pub, "_ensure_redis", _ensure_redis)
+
+    await pub(
+        "node_failed", "qa",
+        {"flow": "dev-loop", "context": ctx, "error": "boom"},
+    )
+
+    assert status_seen_by_redis == ["failed"]
+
+
 # ---------------------------------------------------------------------------
 # dispatcher.py — _apply_to_session_host (the ONE shared shim helper)
 # ---------------------------------------------------------------------------

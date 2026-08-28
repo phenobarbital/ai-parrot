@@ -61,6 +61,7 @@ from xml.etree import ElementTree as ET
 
 from parrot_tools.legal.ids import article_key, is_valid_boe_id, normalize_boe_id
 
+from .hashing import HASH_NORM_VERSION, normalize_for_hash, seal_hash
 from .models import ArticleVersion, ParsedNorm
 
 logger = logging.getLogger(__name__)
@@ -229,7 +230,10 @@ def _parse_bloque(bloque_el: ET.Element, norma_boe_id: str) -> dict:
             kind = _classify_kind(notas)
             modified_by = version_el.get("id_norma")
 
-        text = None if kind == "supresion" else _extract_body_text(version_el)
+        raw = None if kind == "supresion" else _extract_body_text(version_el)
+        text = normalize_for_hash(raw) if raw is not None else None  # STORE normalized text
+        content_hash = seal_hash(text) if text is not None else None
+        norm_version = HASH_NORM_VERSION if text is not None else None
 
         versions.append(
             ArticleVersion(
@@ -241,6 +245,8 @@ def _parse_bloque(bloque_el: ET.Element, norma_boe_id: str) -> dict:
                 kind=kind,
                 source="boe_consolidada",
                 derived=False,
+                content_hash=content_hash,
+                hash_norm_version=norm_version,
             )
         )
 

@@ -3,7 +3,7 @@
 **Feature**: commcenter-post-launch-fixes
 **Feature ID**: FEAT-445
 **Spec**: (follow-up to sdd/specs/commcenter-notify.spec.md — FEAT-417)
-**Status**: [x] done-with-issues
+**Status**: [x] done
 **Priority**: high
 **Depends-on**: none
 **Assigned-to**: unassigned
@@ -68,8 +68,8 @@ The navigator-api venv was running 1.5.5 at ship time.
 - [x] A test mocks `importlib.metadata.version` to return "1.5.5" and
       asserts the RuntimeError is raised
 - [x] `docs/comm_center.md` mentions the 1.6.0 minimum
-- [ ] `uv lock` succeeds with the new pins — **see Completion Note, this
-      one could not be satisfied**
+- [x] `uv lock` succeeds with the new pins — **resolved**: flowtask bumped
+      to >=5.12.14 (loosens azure-identity ==1.20.0 → >=1.20.0,<2)
 
 ### Completion Note
 

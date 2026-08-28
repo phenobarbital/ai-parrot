@@ -42,6 +42,20 @@ class ClaudeCodeDispatchProfile(BaseModel):
             "genuinely needs the inherited MCP surface."
         ),
     )
+    allow_project_root_cwd: bool = Field(
+        default=False,
+        description=(
+            "Opt-in waiver of the WORKTREE_BASE_PATH confinement for the "
+            "SINGLE path ``conf.PROJECT_ROOT`` (the base checkout). The "
+            "confinement exists to stop a write-capable session escaping its "
+            "feature worktree; a dispatch that must author and commit on the "
+            "base branch — ideation writing sdd/proposals/<slug>.md before any "
+            "worktree exists — has the base checkout as its legitimate "
+            "workspace. Nothing else is waived: any other path outside the "
+            "worktree base still raises, and this flag never widens the check "
+            "to a parent or sibling directory."
+        ),
+    )
     timeout_seconds: int = Field(default=1800, ge=60, le=7200)
     model: str = "claude-sonnet-4-6"
 

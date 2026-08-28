@@ -17,6 +17,7 @@ Server infrastructure for the [AI-Parrot](https://github.com/phenobarbital/ai-pa
 | `parrot.autonomous` | AutonomousOrchestrator, transport layer (parrot-fs), deploy tools |
 | `parrot.mcp` (server) | MCPServer, MCPToolAdapter, MCPServerConfig, transports, CLI |
 | `parrot.a2a` (server) | A2AServer, A2AEnabledMixin, A2ASecurityMiddleware |
+| `parrot.server.ui` | Embedded Admin UI (`setup_admin_ui()`, `/admin`) — login, status dashboard, read-only agent inventory. See [`docs/admin-ui.md`](../../docs/admin-ui.md). |
 
 ## Installation
 

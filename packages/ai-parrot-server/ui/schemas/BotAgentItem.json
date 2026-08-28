@@ -1,0 +1,24 @@
+{
+  "additionalProperties": true,
+  "description": "A single agent entry as emitted by ``GET /api/v1/bots``.\n\nDeliberately permissive: database-backed agents are serialized via\n``ChatbotHandler._bot_model_to_dict`` (full ``BotModel`` field set),\nwhile registry-backed agents without a ``bot_config`` fall back to a\nsmall ad hoc shape (``name``, ``module_path``, ``file_path``,\n``singleton``, ``at_startup``, ``priority``, ``tags``) \u2014 see\n``parrot.handlers.bots.ChatbotHandler._bot_model_to_dict`` /\n``._registry_agent_to_dict``. Only ``name`` and ``source`` are pinned\ndown here; every other field is allowed but not required.",
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "source": {
+      "enum": [
+        "database",
+        "registry"
+      ],
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "source"
+  ],
+  "title": "BotAgentItem",
+  "type": "object"
+}

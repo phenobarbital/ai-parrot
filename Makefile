@@ -3,7 +3,7 @@
 
 .PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
-		generate-registry check-registry build-codec-rs build-navrules-rs build-rust \
+		generate-registry check-registry build-codec-rs build-navrules-rs build-rust build-server-ui \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
 		install-supertonic docker-tool-worker docker-integrations docker-dev \
@@ -175,7 +175,7 @@ install-loaders-all:
 # too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
 # Install either in a separate env.
 install-all:
-	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4 --no-extra liveavatar-voice
+	uv sync --frozen --no-dev --all-packages --all-extras --no-extra liveavatar-voice
 	uv pip install querysource
 	$(MAKE) build-rust
 	@echo "All packages installed with ALL extras (except gemma4)."
@@ -198,7 +198,7 @@ endif
 # too — livekit-agents needs psutil>=7.0 but flowtask hard-pins psutil==6.0.0.
 # Install either in a separate env.
 develop:
-	uv sync --all-packages --all-extras --no-extra gemma4
+	uv sync --all-packages --all-extras
 	$(MAKE) build-inplace
 	$(MAKE) build-rust
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
@@ -295,7 +295,7 @@ install-supertonic:
 	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
 
 # Build and publish all packages
-release: lint test clean check-registry build-rust
+release: lint test clean check-registry build-rust build-server-ui
 	uv build --package ai-parrot
 	uv build --package ai-parrot-tools
 	uv build --package ai-parrot-loaders
@@ -393,6 +393,26 @@ build-navrules-rs:
 
 # Build all Rust extensions (parrot_codec + navrules)
 build-rust: build-codec-rs build-navrules-rs
+
+# FEAT-468: build the embedded Admin UI (Node 24 LTS + pnpm 9) BEFORE
+# `uv build --package ai-parrot-server`. `packages/ai-parrot-server/src/
+# parrot/server/ui/dist/` is gitignored — the pyproject.toml package-data
+# glob ("parrot.server.ui" = ["dist/*", "dist/assets/*"], TASK-2523) only
+# picks up files that already exist there at build time, so skipping this
+# step silently ships a wheel with NO Admin UI. Fails loudly (via `test -f`)
+# rather than falling through to a UI-less wheel.
+build-server-ui:
+	@echo "Building embedded Admin UI (packages/ai-parrot-server/ui)..."
+	@command -v corepack >/dev/null 2>&1 || { echo "❌ corepack not found — install Node 24 LTS first."; exit 1; }
+	cd packages/ai-parrot-server/ui && \
+		corepack enable && \
+		corepack prepare pnpm@9 --activate && \
+		pnpm install --frozen-lockfile && \
+		pnpm generate && \
+		pnpm build
+	@test -f packages/ai-parrot-server/src/parrot/server/ui/dist/index.html || \
+		{ echo "❌ Admin UI build did not produce dist/index.html — aborting."; exit 1; }
+	@echo "✅ Admin UI built: packages/ai-parrot-server/src/parrot/server/ui/dist/"
 
 # Full build using uv (builds all workspace packages)
 build: clean

@@ -8,6 +8,7 @@ test suite. No real Redis or Postgres connection is ever attempted.
 """
 
 import asyncio
+import re
 import uuid
 
 import pytest
@@ -281,6 +282,65 @@ class TestRetry:
         assert row_store[stuck.id].status == "queued"
 
 
+class StrictFetchConn:
+    """A connection double that fails the way asyncdb/asyncpg actually fail.
+
+    The previous doubles here were declared ``fetchall(self, query, params=None)``,
+    which happily accepted a whole tuple of parameters as one argument. The real
+    driver is ``fetchall(sentence, *args)`` and forwards to ``stmt.fetch(*args)``,
+    so it rejects that on two independent grounds:
+
+    - **arity** — a tuple counts as ONE argument, so a two-placeholder query gets
+      "the server expects 2 arguments for this query, 1 was passed";
+    - **type** — for a single-placeholder query the tuple becomes the *value* of
+      ``$1``, and Postgres refuses it with "invalid input for query argument $1:
+      (UUID(...),) (bytes is not a 16-char string)".
+
+    ``aggregate_batch_status`` shipped with the second form and returned 500 for
+    every request. A double that cannot reproduce the driver's own errors cannot
+    catch this class of bug, so this one enforces both rules.
+    """
+
+    def __init__(self, rows: list):
+        self.rows = rows
+        self.calls: list = []
+
+    async def fetchall(self, query, *args):
+        self.calls.append((query, args))
+        expected = len({placeholder for placeholder in re.findall(r"\$\d+", query)})
+        if len(args) != expected:
+            raise RuntimeError(
+                f"Error on Fetch: the server expects {expected} arguments for "
+                f"this query, {len(args)} was passed"
+            )
+        for position, value in enumerate(args, start=1):
+            if isinstance(value, (tuple, list)):
+                raise RuntimeError(
+                    f"Postgres Error: invalid input for query argument "
+                    f"${position}: {value!r} (bytes is not a 16-char string)"
+                )
+        return self.rows
+
+
+class StrictConnCtx:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class StrictAsyncDB:
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def connection(self):
+        return StrictConnCtx(self._conn)
+
+
 class TestAggregation:
     """Batch progress aggregation and paginated details."""
 
@@ -342,6 +402,29 @@ class TestAggregation:
         result = await dispatch.aggregate_batch_status(batch_id, details=True, limit=10_000)
 
         assert len(result["rows"]) == 5  # clamped internally, but only 5 rows exist
+
+    async def test_batch_id_is_splatted_not_passed_as_a_tuple(self, row_store, monkeypatch):
+        """Regression: every call to this endpoint used to 500 before this fix.
+
+        ``fetchall(query, (batch_id,))`` passes the tuple as the value of ``$1``.
+        It survives an arity check — one argument, one placeholder — so only a
+        double that also validates the *type* catches it, which is why
+        :class:`StrictFetchConn` rejects tuples outright.
+
+        This is the same defect as the one fixed in ``get_batches()``, in a
+        different file: there it failed on arity, here on type.
+        """
+        batch_id = uuid.uuid4()
+        conn = StrictFetchConn([{"status": "queued", "count": 1}])
+        monkeypatch.setattr(dispatch, "_get_db", lambda: StrictAsyncDB(conn))
+
+        result = await dispatch.aggregate_batch_status(batch_id)
+
+        assert result["by_status"] == {"queued": 1}
+        # One flat argument, the UUID itself — not a tuple wrapping it.
+        _query, args = conn.calls[0]
+        assert args == (batch_id,)
+        assert not isinstance(args[0], (tuple, list))
 
 
 class TestLazyImport:
