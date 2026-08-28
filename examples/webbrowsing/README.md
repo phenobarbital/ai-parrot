@@ -15,6 +15,7 @@ tag pages and author pages.
 | `seed_catalog.py` | Source of truth — regenerates the catalog (`python seed_catalog.py`). Importable with a different `base_url`. |
 | `browsing_agent.py` | LLM agent wired with the toolkit: it matches natural language against the catalog and runs actions deterministically. |
 | `local_demo.py` | **No LLM, no network**: serves an offline replica of the site's DOM and runs the same catalog against it — doubles as an end-to-end smoke test. |
+| `../agents/webbrowsing_agent.py` | `WebNavigatorAgent` — an Agent subclass that receives the Chrome profile paths (`user_data_dir`, `profile_directory`) at initialization and drives sites through this catalog. |
 
 ## Catalogued actions
 
