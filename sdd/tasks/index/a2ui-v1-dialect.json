@@ -274,7 +274,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -284,8 +284,8 @@
       "parallelism_notes": "Toca adaptive_cards.py y msteams/wrapper.py; sin solape con 2544.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2545-adaptive-cards-native-inputs-teams-submit.md"
+      "completed_at": "2026-08-28T22:14:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2545-adaptive-cards-native-inputs-teams-submit.md"
     },
     {
       "id": "TASK-2546",
