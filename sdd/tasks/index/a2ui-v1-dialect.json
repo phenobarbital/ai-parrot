@@ -1,0 +1,357 @@
+{
+  "feature": "a2ui-v1-dialect",
+  "feature_id": "FEAT-470",
+  "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-28T16:20:59+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2532",
+      "slug": "wire-models-v1",
+      "title": "Wire v1.0 models: envelope-by-key, Component v1.0, common types, full message set",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Bloque secuencial #1: todo depende de estos modelos.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2532-wire-models-v1.md"
+    },
+    {
+      "id": "TASK-2533",
+      "slug": "serialization-v1-and-compat",
+      "title": "serialization v1.0 (version 'v1.0', envelope-by-key) + compat.normalize_legacy",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2532"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Secuencial: cierra el bloque wire.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2533-serialization-v1-and-compat.md"
+    },
+    {
+      "id": "TASK-2534",
+      "slug": "vendor-spec-and-jsonschema-dep",
+      "title": "Vendorizar schemas oficiales v1.0 (pin SHA), load_spec, jsonschema como dependencia dura, test de drift",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2532"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sólo crea `catalog/basic/spec/` y toca pyproject; no comparte archivos con TASK-2533.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2534-vendor-spec-and-jsonschema-dep.md"
+    },
+    {
+      "id": "TASK-2535",
+      "slug": "catalog-validation-v1",
+      "title": "Validación de catálogo v1.0: resolve_catalog, validate_message (jsonschema), validate_envelope ampliado, FunctionDefinition/allowed_*",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2533",
+        "TASK-2534"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cierra el bloque secuencial; desbloquea los carriles paralelos.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2535-catalog-validation-v1.md"
+    },
+    {
+      "id": "TASK-2536",
+      "slug": "basic-catalog-primitives",
+      "title": "Catálogo básico: modelos de las 18 primitivas con enums exactos, Checkable e INSTRUCTIONS",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2535"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sólo crea archivos bajo catalog/basic/; paralelo con TASK-2537.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2536-basic-catalog-primitives.md"
+    },
+    {
+      "id": "TASK-2537",
+      "slug": "function-evaluator",
+      "title": "FunctionEvaluator: 14 funciones renderer-side, formatString, @index, ValidationResult, FunctionDefinitions del básico",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2535"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Archivo nuevo `catalog/basic/functions.py`; paralelo con TASK-2536.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2537-function-evaluator.md"
+    },
+    {
+      "id": "TASK-2538",
+      "slug": "bake-v1",
+      "title": "bake_envelope v1.0: path (abs/rel), call, ChildTemplate + @index, parrot_optional, post-condición",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2537"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifica baking.py; depende del evaluador.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2538-bake-v1.md"
+    },
+    {
+      "id": "TASK-2539",
+      "slug": "parrot-catalog-lowering-v1",
+      "title": "Catálogo parrot: mover a catalog/parrot/, Card→InfoCard, lower() a primitivas v1.0, DataTable→ChildTemplate, allowed_*",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-2536",
+        "TASK-2538"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Toca los 8 componentes propios; secuencial tras primitivas y bake.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2539-parrot-catalog-lowering-v1.md"
+    },
+    {
+      "id": "TASK-2540",
+      "slug": "build-form-export-builders-root",
+      "title": "build_form(), export_catalog_definition(), builders emiten root + catalogId",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2539"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depende del catálogo parrot v1.0.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2540-build-form-export-builders-root.md"
+    },
+    {
+      "id": "TASK-2541",
+      "slug": "infographic-adapter-remap",
+      "title": "Adaptador Infographic → primitivas v1.0 (Tabs/Divider/List/CheckBox/Image.fit)",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2540"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Sólo toca adapters/infographic.py y sus tests; paralelo con TASK-2542.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2541-infographic-adapter-remap.md"
+    },
+    {
+      "id": "TASK-2542",
+      "slug": "recipes-layoutspec-v2-migrate",
+      "title": "Recetas: LayoutSpec v2, SUPPORTED_SCHEMA_VERSION=2, migrate_layout/migrate_store, freeze v2",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2540"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Toca recipes/ y tools/infographic_recipes/; paralelo con TASK-2541.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2542-recipes-layoutspec-v2-migrate.md"
+    },
+    {
+      "id": "TASK-2543",
+      "slug": "renderer-capabilities-ssr-pdf",
+      "title": "RendererCapabilities.supported_*, RenderedArtifact.metadata['degraded'], SSR-HTML y PDF con 18 primitivas",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2540"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Abre el carril de renderers; toca core renderers/__init__ y artifacts (compartidos), por eso va primero y en serie.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2543-renderer-capabilities-ssr-pdf.md"
+    },
+    {
+      "id": "TASK-2544",
+      "slug": "interactive-html-echarts-folium-v1",
+      "title": "interactive-html, ECharts y Folium sobre primitivas v1.0",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2543"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Archivos distintos de TASK-2545; paralelizable.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2544-interactive-html-echarts-folium-v1.md"
+    },
+    {
+      "id": "TASK-2545",
+      "slug": "adaptive-cards-native-inputs-teams-submit",
+      "title": "Adaptive Cards: inputs nativos + Action.Submit{a2ui_action} + Action.OpenUrl; Teams wrapper enruta a2ui_action",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2543"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Toca adaptive_cards.py y msteams/wrapper.py; sin solape con 2544.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2545-adaptive-cards-native-inputs-teams-submit.md"
+    },
+    {
+      "id": "TASK-2546",
+      "slug": "transport-a2a-handlers-deeplinks-v1",
+      "title": "Transporte v1.0: A2A URI/mime, handlers a2ui_envelope, deep links con action v1.0, integraciones",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2540",
+        "TASK-2545"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cruza tres paquetes; secuencial.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2546-transport-a2a-handlers-deeplinks-v1.md"
+    },
+    {
+      "id": "TASK-2547",
+      "slug": "producer-emission-toolkits-v1",
+      "title": "Productor LLM v1.0 (structured_output, instructions básico+parrot, re-prompt con códigos), emission y toolkits",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2540"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Toca producer y los dos toolkits; puede correr en paralelo con 2546 en la práctica pero comparte fixtures — se deja secuencial.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2547-producer-emission-toolkits-v1.md"
+    },
+    {
+      "id": "TASK-2548",
+      "slug": "conformance-docs-deprecations",
+      "title": "Suite de conformidad v1.0, docs de migración, deprecaciones y limpieza de xfails",
+      "feature_id": "FEAT-470",
+      "feature": "a2ui-v1-dialect",
+      "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2541",
+        "TASK-2542",
+        "TASK-2544",
+        "TASK-2545",
+        "TASK-2546",
+        "TASK-2547"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cierre: depende de todo.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2548-conformance-docs-deprecations.md"
+    }
+  ]
+}
