@@ -15,6 +15,7 @@ These tests statically parse the chain files and the ``pyproject.toml``
 declarations to guard against that defect recurring, and independently
 confirm the chain actually imports in a fresh interpreter.
 """
+
 import ast
 import re
 import subprocess
