@@ -946,7 +946,9 @@ class InfographicToolkit(AbstractToolkit):
                     title=title,
                 )
 
-            properties = dict(layout.properties or {})
+            # v2 LayoutSpec (FEAT-470 TASK-2542): props live top-level, not
+            # nested under a "properties" key.
+            properties = dict(layout.model_extra or {})
             if layout.component == "Infographic":
                 envelope = build_infographic(
                     title=properties.get("title") or title or template_name,

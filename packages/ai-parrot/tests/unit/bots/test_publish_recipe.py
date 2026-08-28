@@ -150,11 +150,10 @@ class TestPublishRecipe:
 
 _REPORT_LAYOUT = LayoutSpec(
     component="Report",
-    properties={
-        "title": "Budget Variance",
-        "summary": {"$bind": "/narrative/headline", "optional": True},
-        "sections": [{"heading": "Snapshot", "components": []}],
-    },
+    title="Budget Variance",
+    summary={"path": "/narrative/headline"},
+    sections=[{"heading": "Snapshot", "components": []}],
+    metadata={"extensions": {"parrot_optional": ["/narrative/headline"]}},
 )
 
 
@@ -172,7 +171,7 @@ class TestPublishRecipeLayout:
         recipe = await agent.publish_recipe("r-legacy", _covered_descriptor())
         assert isinstance(recipe, InfographicRecipe)
         assert recipe.layout.component == "Infographic"
-        assert recipe.layout.properties == {"template": "budget.html"}
+        assert recipe.layout.props == {"template": "budget.html"}
 
     async def test_narrative_carried_through(self, agent):
         descriptor = _covered_descriptor().model_copy(

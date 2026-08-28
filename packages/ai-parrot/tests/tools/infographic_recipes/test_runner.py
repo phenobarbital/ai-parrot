@@ -187,7 +187,8 @@ def _make_recipe(**overrides) -> InfographicRecipe:
         ],
         layout=LayoutSpec(
             component="Infographic",
-            properties={"title": {"$bind": "/result"}, "sections": []},
+            title={"path": "/result"},
+            sections=[],
         ),
         render=RenderSpec(profile="fake-recorder"),
         updated_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
@@ -224,7 +225,7 @@ class TestRecipeRunner:
             transforms=[
                 TransformStep(transformer="does-not-exist", inputs=["snapshots"], output_key="x")
             ],
-            layout=LayoutSpec(component="Infographic", properties={"sections": []}),
+            layout=LayoutSpec(component="Infographic", sections=[]),
         )
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager)
@@ -266,7 +267,8 @@ class TestRecipeRunner:
         recipe = _make_recipe(
             layout=LayoutSpec(
                 component="Infographic",
-                properties={"title": {"$bind": "/does_not_exist"}, "sections": []},
+                title={"path": "/does_not_exist"},
+                sections=[],
             )
         )
         store = _FakeStore({recipe.name: recipe})
@@ -286,7 +288,8 @@ class TestRecipeRunner:
             ],
             layout=LayoutSpec(
                 component="Infographic",
-                properties={"title": {"$bind": "/undeclared_key"}, "sections": []},
+                title={"path": "/undeclared_key"},
+                sections=[],
             ),
         )
         store = _FakeStore({recipe.name: recipe})
@@ -487,11 +490,10 @@ class TestDriftCheckOptional:
         recipe = _make_recipe(
             layout=LayoutSpec(
                 component="Infographic",
-                properties={
-                    "title": {"$bind": "/result"},
-                    "narrative": {"$bind": "/narrative/headline", "optional": True},
-                    "sections": [],
-                },
+                title={"path": "/result"},
+                narrative={"path": "/narrative/headline"},
+                sections=[],
+                metadata={"extensions": {"parrot_optional": ["/narrative/headline"]}},
             )
         )
         store = _FakeStore({recipe.name: recipe})
@@ -506,7 +508,8 @@ class TestDriftCheckOptional:
         recipe = _make_recipe(
             layout=LayoutSpec(
                 component="Infographic",
-                properties={"title": {"$bind": "/does_not_exist"}, "sections": []},
+                title={"path": "/does_not_exist"},
+                sections=[],
             )
         )
         store = _FakeStore({recipe.name: recipe})
@@ -523,11 +526,10 @@ class TestDriftCheckOptional:
         recipe = _make_recipe(
             layout=LayoutSpec(
                 component="Infographic",
-                properties={
-                    "title": {"$bind": "/result"},
-                    "narrative": {"$bind": "/narrative/headline", "optional": True},
-                    "sections": [],
-                },
+                title={"path": "/result"},
+                narrative={"path": "/narrative/headline"},
+                sections=[],
+                metadata={"extensions": {"parrot_optional": ["/narrative/headline"]}},
             )
         )
         store = _FakeStore({recipe.name: recipe})
@@ -654,11 +656,10 @@ class TestNarrativeStep:
             narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"),
             layout=LayoutSpec(
                 component="Infographic",
-                properties={
-                    "title": {"$bind": "/result"},
-                    "summary": {"$bind": "/narrative", "optional": True},
-                    "sections": [],
-                },
+                title={"path": "/result"},
+                summary={"path": "/narrative"},
+                sections=[],
+                metadata={"extensions": {"parrot_optional": ["/narrative"]}},
             ),
         )
         store = _FakeStore({recipe.name: recipe})
@@ -719,11 +720,10 @@ class TestDryRunNarrative:
             narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"),
             layout=LayoutSpec(
                 component="Infographic",
-                properties={
-                    "title": {"$bind": "/result"},
-                    "summary": {"$bind": "/narrative", "optional": True},
-                    "sections": [],
-                },
+                title={"path": "/result"},
+                summary={"path": "/narrative"},
+                sections=[],
+                metadata={"extensions": {"parrot_optional": ["/narrative"]}},
             ),
         )
         store = _FakeStore({recipe.name: recipe})

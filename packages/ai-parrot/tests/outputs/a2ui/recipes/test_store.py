@@ -25,7 +25,7 @@ def _make_recipe(name: str = "budget-variance-daily", owner: str | None = None) 
         name=name,
         title="Daily Budget Variance",
         owner=owner,
-        layout=LayoutSpec(component="Infographic", properties={}),
+        layout=LayoutSpec(component="Infographic"),
         updated_at=datetime(2020, 1, 1, tzinfo=timezone.utc),  # store.save() overwrites this
     )
 
@@ -146,13 +146,79 @@ async def test_schema_version_mismatch_raises(tmp_path):
     recipe = _make_recipe()
     await store.save(recipe)
 
-    # Simulate a future/incompatible schema_version written to disk.
+    # Simulate a future/incompatible schema_version written to disk (2 is
+    # SUPPORTED_SCHEMA_VERSION as of FEAT-470 TASK-2542 — only >2 or <1 is
+    # rejected; 1 is auto-migrated in memory, see TestSchemaVersionMigration).
     path = tmp_path / f"{recipe.name}.yaml"
-    text = path.read_text().replace("schema_version: 1", "schema_version: 2")
+    text = path.read_text().replace("schema_version: 2", "schema_version: 3")
     path.write_text(text)
 
     with pytest.raises(RecipeSchemaVersionError, match="schema_version"):
         await store.get(recipe.name)
+
+
+class TestSchemaVersionMigration:
+    """FEAT-470 TASK-2542: stores read v1 (auto-migrate in memory) and write v2."""
+
+    _V1_YAML = """
+schema_version: 1
+name: legacy-recipe
+title: Legacy Recipe
+owner: null
+layout:
+  component: Infographic
+  properties:
+    title: "Legacy Title"
+    summary: {$bind: "/narrative", optional: true}
+updated_at: "2020-01-01T00:00:00+00:00"
+"""
+
+    async def test_store_reads_v1_writes_v2(self, tmp_path):
+        store = FileRecipeStore(tmp_path)
+        path = tmp_path / "legacy-recipe.yaml"
+        path.write_text(self._V1_YAML)
+
+        # Reading auto-migrates in memory (schema_version=1 on disk is fine).
+        assert await store._raw_schema_version("legacy-recipe") == 1
+        recipe = await store.get("legacy-recipe")
+        assert recipe.schema_version == 2
+        assert recipe.layout.props["title"] == "Legacy Title"
+        assert recipe.layout.props["summary"] == {"path": "/narrative"}
+        assert recipe.layout.metadata.extensions.root["parrot_optional"] == ["/narrative"]
+
+        # The v1 file on disk is untouched until an explicit save().
+        assert await store._raw_schema_version("legacy-recipe") == 1
+
+        await store.save(recipe)
+        assert await store._raw_schema_version("legacy-recipe") == 2
+
+    async def test_db_store_reads_v1_writes_v2(self):
+        store = DBRecipeStore(redis_url=None)
+        # A v1-shaped recipe still constructs/validates directly (v1's
+        # "properties" key is merely an ordinary, unpromoted extra field on
+        # the v2 LayoutSpec model) — plant one straight into the in-memory
+        # fallback dict, mirroring a pre-FEAT-470 stored recipe.
+        legacy = InfographicRecipe(
+            schema_version=1,
+            name="legacy-db-recipe",
+            title="Legacy DB Recipe",
+            layout=LayoutSpec(component="Infographic", properties={"title": "Legacy DB Title"}),
+            updated_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+        )
+        store._recipes[("", "legacy-db-recipe")] = legacy
+
+        assert await store._raw_schema_version("legacy-db-recipe") == 1
+        loaded = await store.get("legacy-db-recipe")
+        assert loaded.schema_version == 2
+        assert loaded.layout.props["title"] == "Legacy DB Title"
+        # The (unpromoted, v1-shaped) "properties" extra survives the
+        # round-trip verbatim — migrate_layout only fires when the raw
+        # `schema_version` says v1, which this in-memory entry now no longer
+        # claims to be (still 1 until an explicit save() persists v2).
+        assert await store._raw_schema_version("legacy-db-recipe") == 1
+
+        await store.save(loaded)
+        assert await store._raw_schema_version("legacy-db-recipe") == 2
 
 
 async def test_db_store_crud():

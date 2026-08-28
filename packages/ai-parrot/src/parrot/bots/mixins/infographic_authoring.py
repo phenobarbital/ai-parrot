@@ -408,9 +408,11 @@ class InfographicAuthoringMixin:
         # FEAT-420 (Module 7): use the descriptor's declared A2UI layout
         # verbatim when present; absent means today's template-based
         # LayoutSpec, unchanged (spec criterion G-G).
+        # v2 LayoutSpec (FEAT-470 TASK-2542): props live top-level, not
+        # nested under a "properties" key.
         layout = descriptor.layout or LayoutSpec(
             component="Infographic",
-            properties={"template": descriptor.template},
+            template=descriptor.template,
         )
 
         recipe = InfographicRecipe(

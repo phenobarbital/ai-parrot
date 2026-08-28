@@ -2,9 +2,9 @@
 
 An :class:`InfographicRecipe` is the persisted, replayable "construction
 instructions" for an A2UI infographic: dataset bindings, a registered
-transform chain, a catalog-component layout (with ``$bind`` pointers into
-``dataModel``), and a render profile. Recipes are pure data — never stored
-or executed code (spec G1).
+transform chain, a catalog-component layout (v2, FEAT-470 TASK-2542: props
+top-level, ``{"path": ...}`` pointers into ``dataModel``), and a render
+profile. Recipes are pure data — never stored or executed code (spec G1).
 
 Core-side, dependency-free (spec G8): pydantic v2 + stdlib + PyYAML only.
 This module MUST NEVER import ``parrot.tools.dataset_manager``,
@@ -19,22 +19,32 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+# FEAT-470 TASK-2542: ``LayoutSpec`` v2 reuses the wire's ``ComponentMetadata``
+# shape for its own ``metadata.extensions.parrot_optional`` (a list of
+# pointers a bind may be absent for) — the exact same convention
+# ``compat.normalize_legacy_component`` already hoists a legacy
+# ``{"$bind": ..., "optional": true}`` binding into. ``models.py`` is a2ui
+# core, dependency-free (spec G8) — importing it here does not violate the
+# "recipes core stays data-plane-free" rule above (only DatasetManager/bots/
+# clients are forbidden).
+from parrot.outputs.a2ui.models import ComponentMetadata
+
 # FEAT-326: additive optional descriptor field. ``infographic_sections`` is a
 # pydantic-only module (it does NOT import DatasetManager/bots/clients), so this
 # import respects FEAT-324's "recipes core stays data-plane-free" rule.
 from parrot.tools.infographic_sections import SectionDescriptor
 
 __all__ = [
-    "RecipeParam",
     "DataSourceSpec",
-    "TransformStep",
+    "InfographicRecipe",
     "LayoutSpec",
+    "NarrativeSpec",
+    "RecipeParam",
+    "RecipeRunError",
     "RenderSpec",
     "ScheduleSpec",
-    "NarrativeSpec",
-    "InfographicRecipe",
+    "TransformStep",
     "TransformerManifest",
-    "RecipeRunError",
 ]
 
 
@@ -97,18 +107,52 @@ class TransformStep(BaseModel):
 
 
 class LayoutSpec(BaseModel):
-    """The catalog-component tree for the recipe's rendered layout.
+    """The catalog-component definition for the recipe's rendered layout.
+
+    v2 (schema_version >= 2, FEAT-470 TASK-2542): catalog properties live
+    TOP-LEVEL (``extra="allow"``), mirroring the A2UI v1.0 wire
+    :class:`~parrot.outputs.a2ui.models.Component` shape — NOT nested under a
+    ``properties`` key. Data-model bindings use ``{"path": "/pointer"}`` (the
+    wire's ``DataBinding`` shape) — never an inline sibling ``"optional"``
+    key (the wire's own ``DataBinding`` is ``extra="forbid"`` and has no such
+    key). A binding that may legitimately be absent at run time is instead
+    listed by its pointer in THIS layout's own
+    ``metadata.extensions.parrot_optional`` (spec criterion G-E), mirroring
+    how :mod:`parrot.outputs.a2ui.baking` reads the same convention off a
+    wire ``Component``'s own metadata — consumed by
+    :class:`~parrot.tools.infographic_recipes.runner.RecipeRunner`'s
+    bind-pointer bookkeeping (``runner._optional_paths``). A v1 layout
+    (``{"component", "properties"}`` + legacy ``{"$bind": ...,
+    "optional": ...}``) is migrated via
+    :func:`parrot.outputs.a2ui.recipes.migrate.migrate_layout`, which hoists
+    every promoted binding's ``optional`` marker into ``metadata`` exactly
+    this way (it reuses :func:`parrot.outputs.a2ui.compat.normalize_legacy_component`,
+    whose hoisting behavior this docstring describes).
 
     Attributes:
         component: Catalog component name (e.g. ``"Infographic"``).
-        properties: Catalog properties; data-carrying properties use
-            ``{"$bind": "/pointer"}`` bindings into the assembled ``dataModel``.
+        child: Optional single-child reference, mirroring the wire
+            ``Component.child`` (shape parity with the wire — unused by the
+            current single-node recipe layout).
+        children: Optional multi-child reference, mirroring the wire
+            ``Component.children`` (shape parity — unused by the current
+            single-node recipe layout).
+        metadata: Layout-level metadata; ``extensions.parrot_optional`` lists
+            data-model pointers (anywhere in the nested tree) allowed to be
+            absent at run time without aborting the replay.
     """
 
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     component: str
-    properties: dict[str, Any] = Field(default_factory=dict)
+    child: Optional[str] = None
+    children: Optional[list[Any]] = None
+    metadata: Optional[ComponentMetadata] = None
+
+    @property
+    def props(self) -> dict[str, Any]:
+        """Every top-level catalog property (everything but ``component``/``child``/``children``)."""
+        return dict(self.model_extra or {})
 
 
 class RenderSpec(BaseModel):
@@ -179,7 +223,12 @@ class InfographicRecipe(BaseModel):
     hand-authored recipes (spec G2).
 
     Attributes:
-        schema_version: Recipe schema version (bump on breaking model changes).
+        schema_version: Recipe schema version (bump on breaking model
+            changes). Defaults to 2 (FEAT-470 TASK-2542 — v2 ``LayoutSpec``,
+            top-level props, ``{"path"}`` bindings). A v1 recipe still
+            constructs/validates (``schema_version=1`` is accepted, just no
+            longer the default); stores auto-migrate it in memory on read
+            (see ``recipes/store.py``/``recipes/migrate.py``).
         name: Unique recipe name, scoped per store/owner.
         title: Human-readable title.
         description: Optional longer description.
@@ -208,7 +257,7 @@ class InfographicRecipe(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    schema_version: int = 1
+    schema_version: int = 2
     name: str
     title: str
     description: Optional[str] = None

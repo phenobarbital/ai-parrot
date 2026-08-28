@@ -235,18 +235,21 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             sections=cls._transform_sections(),
             params=dict(cls._SNAPSHOT_PARAMS),
             dataset_sql=dict(cls._DATASET_SQL),
+            # v2 LayoutSpec (FEAT-470 TASK-2542): props top-level, `{"path"}`
+            # bindings; a binding's `optional` marker moves to the layout's
+            # own `metadata.extensions.parrot_optional` (a flat list of
+            # pointers) rather than an inline sibling key.
             layout=LayoutSpec(
                 component="Report",
-                properties={
-                    "title": "Daily Budget Variance — Executive Summary",
-                    "summary": {"$bind": "/narrative", "optional": True},
-                    "sections": [
-                        {
-                            "heading": "Executive Summary",
-                            "text": {"$bind": "/narrative", "optional": True},
-                        },
-                    ],
-                },
+                title="Daily Budget Variance — Executive Summary",
+                summary={"path": "/narrative"},
+                sections=[
+                    {
+                        "heading": "Executive Summary",
+                        "text": {"path": "/narrative"},
+                    },
+                ],
+                metadata={"extensions": {"parrot_optional": ["/narrative"]}},
             ),
             narrative=cls._narrative_spec(),
         )
@@ -260,63 +263,69 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             sections=cls._transform_sections(),
             params=dict(cls._SNAPSHOT_PARAMS),
             dataset_sql=dict(cls._DATASET_SQL),
+            # v2 LayoutSpec (FEAT-470 TASK-2542): props top-level, `{"path"}`
+            # bindings; nested Infographic section-component descriptors
+            # keep their OWN "properties" wrapper unchanged (that is the
+            # composite's own authored-descriptor shape, not the wire
+            # Component shape LayoutSpec mirrors); a binding's `optional`
+            # marker moves to the layout's own
+            # `metadata.extensions.parrot_optional`.
             layout=LayoutSpec(
                 component="Infographic",
-                properties={
-                    "title": "Daily Budget Variance Dashboard",
-                    "sections": [
-                        {
-                            "heading": "Snapshot",
-                            "components": [
-                                {
-                                    "component": "KPICard",
-                                    "properties": {
-                                        "label": "Revenue (Actual)",
-                                        "value": {
-                                            "$bind": "/variance_analysis/last_totals/rev_actual"
-                                        },
+                title="Daily Budget Variance Dashboard",
+                sections=[
+                    {
+                        "heading": "Snapshot",
+                        "components": [
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "Revenue (Actual)",
+                                    "value": {
+                                        "path": "/variance_analysis/last_totals/rev_actual"
                                     },
                                 },
-                                {
-                                    "component": "KPICard",
-                                    "properties": {
-                                        "label": "Revenue Variance",
-                                        "value": {
-                                            "$bind": "/variance_analysis/last_totals/rev_variance"
-                                        },
+                            },
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "Revenue Variance",
+                                    "value": {
+                                        "path": "/variance_analysis/last_totals/rev_variance"
                                     },
                                 },
-                                {
-                                    "component": "KPICard",
-                                    "properties": {
-                                        "label": "EBITDA Variance",
-                                        "value": {
-                                            "$bind": "/variance_analysis/last_totals/ebitda_variance"
-                                        },
+                            },
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "EBITDA Variance",
+                                    "value": {
+                                        "path": "/variance_analysis/last_totals/ebitda_variance"
                                     },
                                 },
-                            ],
-                        },
-                        {
-                            "heading": "Top Movers",
-                            "text": {"$bind": "/narrative", "optional": True},
-                            "components": [
-                                {
-                                    "component": "DataTable",
-                                    "properties": {
-                                        "columns": [
-                                            {"name": "division"},
-                                            {"name": "project"},
-                                            {"name": "ebitda_variance"},
-                                            {"name": "trend"},
-                                        ],
-                                        "data": {"$bind": "/top_movers/worst"},
-                                    },
+                            },
+                        ],
+                    },
+                    {
+                        "heading": "Top Movers",
+                        "text": {"path": "/narrative"},
+                        "components": [
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [
+                                        {"name": "division"},
+                                        {"name": "project"},
+                                        {"name": "ebitda_variance"},
+                                        {"name": "trend"},
+                                    ],
+                                    "data": {"path": "/top_movers/worst"},
                                 },
-                            ],
-                        },
-                    ],
-                },
+                            },
+                        ],
+                    },
+                ],
+                metadata={"extensions": {"parrot_optional": ["/narrative"]}},
             ),
             narrative=cls._narrative_spec(),
         )
