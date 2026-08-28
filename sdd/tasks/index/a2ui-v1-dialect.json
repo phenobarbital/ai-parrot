@@ -14,14 +14,14 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Bloque secuencial #1: todo depende de estos modelos.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2532-wire-models-v1.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Secuencial: cierra el bloque wire.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2533-serialization-v1-and-compat.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "Sólo crea `catalog/basic/spec/` y toca pyproject; no comparte archivos con TASK-2533.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2534-vendor-spec-and-jsonschema-dep.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": false,
       "parallelism_notes": "Cierra el bloque secuencial; desbloquea los carriles paralelos.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2535-catalog-validation-v1.md"
     },
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": true,
       "parallelism_notes": "Sólo crea archivos bajo catalog/basic/; paralelo con TASK-2537.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2536-basic-catalog-primitives.md"
     },
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": true,
       "parallelism_notes": "Archivo nuevo `catalog/basic/functions.py`; paralelo con TASK-2536.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2537-function-evaluator.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,7 +142,7 @@
       "parallel": false,
       "parallelism_notes": "Modifica baking.py; depende del evaluador.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2538-bake-v1.md"
     },
@@ -153,7 +153,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": false,
       "parallelism_notes": "Toca los 8 componentes propios; secuencial tras primitivas y bake.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2539-parrot-catalog-lowering-v1.md"
     },
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": false,
       "parallelism_notes": "Depende del catálogo parrot v1.0.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2540-build-form-export-builders-root.md"
     },
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -203,7 +203,7 @@
       "parallel": true,
       "parallelism_notes": "Sólo toca adapters/infographic.py y sus tests; paralelo con TASK-2542.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2541-infographic-adapter-remap.md"
     },
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": true,
       "parallelism_notes": "Toca recipes/ y tools/infographic_recipes/; paralelo con TASK-2541.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2542-recipes-layoutspec-v2-migrate.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -243,7 +243,7 @@
       "parallel": false,
       "parallelism_notes": "Abre el carril de renderers; toca core renderers/__init__ y artifacts (compartidos), por eso va primero y en serie.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2543-renderer-capabilities-ssr-pdf.md"
     },
@@ -254,7 +254,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -263,7 +263,7 @@
       "parallel": true,
       "parallelism_notes": "Archivos distintos de TASK-2545; paralelizable.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2544-interactive-html-echarts-folium-v1.md"
     },
@@ -274,7 +274,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -283,7 +283,7 @@
       "parallel": true,
       "parallelism_notes": "Toca adaptive_cards.py y msteams/wrapper.py; sin solape con 2544.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2545-adaptive-cards-native-inputs-teams-submit.md"
     },
@@ -294,7 +294,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -304,7 +304,7 @@
       "parallel": false,
       "parallelism_notes": "Cruza tres paquetes; secuencial.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2546-transport-a2a-handlers-deeplinks-v1.md"
     },
@@ -315,7 +315,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -324,7 +324,7 @@
       "parallel": false,
       "parallelism_notes": "Toca producer y los dos toolkits; puede correr en paralelo con 2546 en la práctica pero comparte fixtures — se deja secuencial.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2547-producer-emission-toolkits-v1.md"
     },
@@ -335,7 +335,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -349,7 +349,7 @@
       "parallel": false,
       "parallelism_notes": "Cierre: depende de todo.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2548-conformance-docs-deprecations.md"
     }
