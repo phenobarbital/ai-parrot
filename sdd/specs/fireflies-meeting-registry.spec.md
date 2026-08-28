@@ -14,7 +14,7 @@ base_branch: dev
 **Status**: approved
 **Target version**: next minor
 **Input**: `sdd/proposals/fireflies-meeting-registry.brainstorm.md` (status `exploration`, Recommended Option A, all 12 open questions resolved)
-**Related**: `sdd/proposals/brainstorm-obsidian-wiki-knowledgebase.md` §14 "Deduplication and Source Identity" and §25 "Processed Source Registry" — the operating contract for the future knowledgebase agent; this feature implements the code-side registry that contract assumes (see §7 Known Risks for the one documented divergence).
+**Related**: `sdd/references/obsidian-wiki-operating-contract.md` §14 "Deduplication and Source Identity" and §25 "Processed Source Registry" — the operating contract for the future knowledgebase agent; this feature implements the code-side registry that contract assumes (see §7 Known Risks for the one documented divergence).
 
 ---
 
