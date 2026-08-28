@@ -234,7 +234,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -244,8 +244,8 @@
       "parallelism_notes": "Abre el carril de renderers; toca core renderers/__init__ y artifacts (compartidos), por eso va primero y en serie.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2543-renderer-capabilities-ssr-pdf.md"
+      "completed_at": "2026-08-28T20:05:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2543-renderer-capabilities-ssr-pdf.md"
     },
     {
       "id": "TASK-2544",

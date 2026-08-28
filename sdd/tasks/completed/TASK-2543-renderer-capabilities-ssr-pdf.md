@@ -138,7 +138,95 @@ class TestTASK2543:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- **Stale Codebase Contract, corrected before implementing**: `RenderedArtifact`
+  (`artifacts.py`) ALREADY had a `metadata: dict[str, Any] = Field(default_factory=dict)`
+  field (added by an earlier, unrelated task) — the contract's "Does NOT
+  Exist" note ("SIN campo metadata") was wrong. No code change was needed
+  in `artifacts.py`; `test_artifacts.py` already covered it
+  (`test_model_fields_match_spec` asserts `art.metadata == {}`), so it
+  needed no MODIFY either despite being listed in Files to Create/Modify.
+- `RendererCapabilities` (`renderers/__init__.py`): added
+  `supported_catalog_ids: list[str]` (default `[BASIC_CATALOG_ID,
+  DEFAULT_CATALOG_ID]`) and `supported_components: set[str]` (default
+  empty set — each renderer declares its own).
+- `renderers/degrade.py` (new): `degrade(node: BasicNode, reason) -> BasicNode`
+  builds a `Text` placeholder (`metadata.extensions.parrot_role="notice"`);
+  `degradation_record(node, reason) -> dict` builds the structured record a
+  renderer appends to its own list before dumping it into
+  `RenderedArtifact.metadata["degraded"]` (the helper holds no state itself
+  — only the calling renderer knows the full set of degradations for one
+  render pass).
+- `ssr_html.py` full rewrite. Key architectural finding made while
+  implementing (not previously documented anywhere): the CORRECT pipeline
+  order is **lower every composite component FIRST** (via its own
+  registered `lower()` + `to_components()`, replacing it in the envelope's
+  flat component list) **then bake** — never the reverse. A composite like
+  `DataTable` lowers to a row `ChildTemplate` (`template_source` + a
+  `ChildTemplate` reference), and template/binding expansion is exclusively
+  `bake_envelope`'s job; baking BEFORE lowering (my first attempt) leaves
+  every composite's internal `ChildTemplate` never expanded, since baking
+  only ever sees the envelope's OWN top-level (still-composite) components.
+  This exact lowering-then-bake contract is independently pinned by the
+  pre-existing `test_datatable_row_materialization.py` (`_surface_and_bake`
+  helper: lower -> `to_components` -> wrap in a `CreateSurface` -> bake) —
+  confirmed by reading it after my initial (baking-first) implementation's
+  DataTable rows rendered empty. `_lower_composites()` does the flattening
+  (a composite's `lower()` preserves the ORIGINAL component's id on its
+  outermost node, so no cross-reference rewriting is needed for siblings
+  that point at it); `_reconstruct()` then does pure id-reference resolution
+  over the now-all-primitive baked dicts (no more `lower()` calls at
+  reconstruction time). Dispatch: one `_render_<Name>` method per primitive
+  (`Text/Image/Icon/Video/AudioPlayer/Row/Column/List/Card/Tabs/Modal/
+  Divider/Button/TextField/CheckBox/ChoicePicker/Slider/DateTimeInput`),
+  reading top-level (camelCase-aliased where the official schema uses one,
+  e.g. `posterUrl`/`svgPath`) props off `node.model_extra`. Modal's
+  `content` id-reference is resolved to a nested `BasicNode` during
+  `_reconstruct` (not at render time) so `_render_Modal` can render it
+  inline without needing `by_id` in scope.
+- `pdf.py`: `PDFRenderer` now subclasses `SSRHTMLRenderer` directly (spec:
+  "hereda del SSR") and overrides `_UNSUPPORTED = frozenset({"Video",
+  "AudioPlayer"})` so both always degrade via the shared dispatch's own
+  unsupported-check (weasyprint cannot play media in a static PDF);
+  declares `supported_components = SSRHTMLRenderer.capabilities.supported_components
+  - {"Video", "AudioPlayer"}`. `_build_intermediate_html` now returns
+  `(document, degraded)` (propagating SSR's own degradation list into the
+  PDF artifact's `metadata["degraded"]`) and reads Chart's baked dict
+  directly (`_chart_svg(bc)`, top-level props — no more `bc["properties"]`).
+- **Necessary "unblocking fix" pattern (same as prior tasks in this
+  feature) — 1 file outside this task's own file list**:
+  `test_e2e_ssr_html.py` was already UNCOLLECTABLE before this task
+  (`ModuleNotFoundError: parrot.outputs.a2ui.catalog.components`, a stale
+  import left over from TASK-2539's `catalog/components/` -> `catalog/parrot/`
+  rename — confirmed via `git stash` that it failed identically before any
+  of this task's changes). Rewrote its two tests to v1.0 conventions
+  (`id="root"`, top-level props, `{"path"}` bindings) since it directly
+  exercises this task's own DataTable-row-materialization path end-to-end.
+- Verified end-to-end: a hand-built envelope covering all 18 primitives
+  (nested inside Column/Row/List/Card/Tabs/Modal) renders without
+  exception, fully HTML-escaped, zero external `src`/`href` (only deep-link
+  anchors), zero `metadata["degraded"]` entries. An unknown component
+  degrades to a visible notice + one `metadata["degraded"]` record.
+- `pytest packages/ai-parrot-visualizations/tests/outputs/`
+  (excluding `test_adaptive_cards.py`/`test_echarts.py`/
+  `test_interactive_html.py` — TASK-2544/2545's own files, still importing
+  the stale `catalog.components` path): 30 passed, 1 skipped (folium,
+  optional dep). `packages/ai-parrot/tests/outputs/a2ui/` (excluding
+  `test_producer.py`, TASK-2547's own file) + the recipes/toolkit-wiring
+  consequential test dirs: 559 passed, 8 pre-existing failures (documented:
+  `test_delivery_teams.py` missing `azure`; `test_infographic_toolkit_a2ui_wiring.py`'s
+  `_infographic()` helper — TASK-2547's own file/root cause). `ruff check`
+  (scoped to lines this task introduced; pre-existing style debt in
+  `renderers/__init__.py`/test files confirmed via git-HEAD diff and left
+  untouched): clean.
+
+**Deviations from spec**: `test_e2e_ssr_html.py` modified beyond this
+task's own file list — a necessary, narrowly-scoped consequence (it was
+already broken/uncollectable before this task; fixing it directly exercises
+this task's own rewritten renderer, same pattern as TASK-2538/2539/2541/2542).
+`artifacts.py` was NOT modified despite being listed in Files to
+Create/Modify — the `metadata` field it was meant to add already existed
+(added by an earlier, unrelated task); the Codebase Contract's claim that
+it didn't exist was stale.
