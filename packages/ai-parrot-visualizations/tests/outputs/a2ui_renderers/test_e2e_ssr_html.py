@@ -19,13 +19,11 @@ async def test_e2e_tool_envelope_to_html():
         catalogId="https://parrot.dev/catalogs/v1",
         components=[
             Component(
-                id="blk-000",
+                id="root",
                 component="DataTable",
-                properties={
-                    "title": "<b>Sales</b>",  # hostile-ish data value
-                    "columns": [{"name": "region"}, {"name": "total"}],
-                    "data": {"$bind": "/rows"},
-                },
+                title="<b>Sales</b>",  # hostile-ish data value
+                columns=[{"name": "region"}, {"name": "total"}],
+                data={"path": "/rows"},
             )
         ],
         dataModel={"rows": [{"region": "EU", "total": 5}]},
@@ -42,7 +40,7 @@ async def test_e2e_tool_envelope_to_html():
     assert "<b>Sales</b>" not in doc
     assert "&lt;b&gt;Sales&lt;/b&gt;" in doc
     # Baked: no live bindings remain.
-    assert "$bind" not in doc
+    assert '"path"' not in doc
     # ...and the bound rows actually reach the document. Absence of "$bind" alone
     # was never proof of that: before row materialisation the resolved rows sat in
     # an inert property on a childless node and every table rendered empty.
@@ -57,12 +55,10 @@ async def test_e2e_bound_rows_render_as_escaped_cells():
         catalogId="https://parrot.dev/catalogs/v1",
         components=[
             Component(
-                id="blk-000",
+                id="root",
                 component="DataTable",
-                properties={
-                    "columns": [{"name": "region"}, {"name": "total"}],
-                    "data": {"$bind": "/rows"},
-                },
+                columns=[{"name": "region"}, {"name": "total"}],
+                data={"path": "/rows"},
             )
         ],
         dataModel={
