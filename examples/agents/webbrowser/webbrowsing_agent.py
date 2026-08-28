@@ -16,13 +16,13 @@ catalogued script deterministically.
 
 Usage::
 
-    python examples/agents/webbrowsing_agent.py "dame las citas del tag love"
+    python examples/agents/webbrowser/webbrowsing_agent.py "dame las citas del tag love"
 
     # Against your real Chrome profile (close Chrome first — it locks
     # the profile directory; or point at a copy):
     CHROME_USER_DATA=~/.config/google-chrome \\
     CHROME_PROFILE="Profile 1" \\
-    python examples/agents/webbrowsing_agent.py "inicia sesión en quotes"
+    python examples/agents/webbrowser/webbrowsing_agent.py "inicia sesión en quotes"
 """
 import asyncio
 import os
@@ -33,7 +33,7 @@ from typing import Optional, Union
 from parrot.bots.agent import Agent
 from parrot_tools.browsing import WebBrowsingToolkit
 
-DEFAULT_CATALOG = Path(__file__).parent.parent / "webbrowsing" / "catalog"
+DEFAULT_CATALOG = Path(__file__).parents[2] / "webbrowsing" / "catalog"
 
 SYSTEM_PROMPT = """You are a web-navigation assistant that operates websites
 through a catalog of pre-recorded, deterministic action scripts.
