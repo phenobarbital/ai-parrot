@@ -1302,17 +1302,20 @@ wikitoolkit sync obsidian --prune
   export pluralization (`entity` → `entities/`) unless overridden via
   `folders`.
 - **Frontmatter marker**: every synced note carries `wiki_sync:
-  <wiki_name>`, `wiki_id: <concept_id>` and `namespace: <plane>` (plus
-  `aliases`, `tags: [wiki/<category>]`, `summary`, `updated`), so notes
-  are searchable in Obsidian and safely identifiable as managed.
+  <wiki_name>`, `wiki_scope: <wiki_name>@<repo-root digest>`, `wiki_id:
+  <concept_id>` and `namespace: <plane>` (plus `aliases`, `tags:
+  [wiki/<category>]`, `summary`, `updated`), so notes are searchable in
+  Obsidian and safely identifiable as managed.
 - **Edges become wikilinks**: edges between two synced pages render as a
   `## Related` section of `[[wikilinks]]`, so the wiki graph shows up in
   Obsidian's graph view.
 - **Idempotent**: rendering is deterministic — an unchanged page is
   reported `unchanged` and never rewritten.
 - **Prune is marker-guarded**: `--prune` (or `"prune": true`) deletes
-  only notes carrying this wiki's `wiki_sync` marker whose page vanished
-  or is no longer selected; hand-written notes are never touched, and a
+  only notes whose `wiki_scope` matches THIS project exactly (name +
+  repo-root digest — two projects sharing a vault, even with the same
+  `wiki_name`, can never prune each other) and whose page vanished or is
+  no longer selected; hand-written notes are never touched, and a
   namespace that was skipped this run is left alone.
 - Applied runs are logged to the bookkeeper as `SYNC_OBSIDIAN`;
   `--dry-run` applies and logs nothing.

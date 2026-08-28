@@ -30,7 +30,9 @@ engine behind ``ObsidianToolkit`` — never raw file I/O.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -51,12 +53,23 @@ from parrot.knowledge.wiki.project import (
     resolve_vault_dir,
 )
 from parrot.knowledge.wiki.store import BaseWikiStore
+
+# Package-internal reuse: `_open_plane` is sync.py's canonical
+# "open the plane for a resolved config" helper; both modules live in
+# the same package and must open planes identically.
 from parrot.knowledge.wiki.sync import _open_plane
 
 logger = logging.getLogger(__name__)
 
 #: Frontmatter key marking a note as managed by this sync (prune guard).
 SYNC_MARKER_KEY = "wiki_sync"
+
+#: Frontmatter key carrying the owning project's scope identity —
+#: ``<wiki_name>@<digest of the resolved repo root>``. Prune requires an
+#: exact scope match, so two projects that happen to share a vault AND a
+#: ``wiki_name`` (the config default is the literal ``"codebase"``) can
+#: never prune each other's notes.
+SYNC_SCOPE_KEY = "wiki_scope"
 
 #: Frontmatter key carrying the source page's stable ``concept_id``.
 SYNC_ID_KEY = "wiki_id"
@@ -69,9 +82,37 @@ LOCAL_PLANE = "local"
 
 
 class ObsidianSyncError(RuntimeError):
-    """Raised when the sync cannot run at all (no vault, unbuilt plane,
-    unknown namespace). Never raised mid-write — validation happens
-    before the first note is touched."""
+    """Raised when the sync cannot run (no vault, unbuilt plane, unknown
+    namespace) — always before the first note is touched — or, wrapping
+    an unexpected mid-apply failure, after the partial report has been
+    audited to the bookkeeper."""
+
+
+def project_scope(root: Path, wiki_name: str) -> str:
+    """Stable scope identity written as :data:`SYNC_SCOPE_KEY`.
+
+    ``wiki_name`` alone is not unique (it defaults to ``"codebase"``), so
+    the resolved repo root is digested in. Moving the repo changes the
+    scope, which fails SAFE: old notes are simply never pruned again.
+    """
+    digest = hashlib.sha1(str(Path(root).resolve()).encode()).hexdigest()[:12]
+    return f"{wiki_name}@{digest}"
+
+
+def _safe_segment(value: str, fallback: str = "other") -> str:
+    """Sanitize one vault path segment derived from store content.
+
+    Page categories (and namespace names, which may carry ``:``) come
+    from data, not config, so they never get to inject separators or
+    traversal into the vault-relative path — the vault backend's own
+    sandbox would refuse the write, but only with an untyped mid-run
+    crash. Separators collapse to ``-``; leading/trailing dots are
+    stripped; an empty result falls back.
+    """
+    clean = re.sub(r"[\\/:]+", "-", str(value)).strip().strip(".")
+    if not clean:
+        return fallback
+    return clean
 
 
 class ObsidianSyncReport(BaseModel):
@@ -104,8 +145,16 @@ class ObsidianSyncReport(BaseModel):
 
 
 def folder_for_category(category: str, sync_config: ObsidianSyncConfig) -> str:
-    """Vault folder a category maps onto (override, else plural form)."""
-    return sync_config.folders.get(category) or category_dir(category)
+    """Vault folder a category maps onto.
+
+    An explicit override wins — including an EMPTY override, meaning
+    "no per-category subfolder" (mirrors how an empty ``root_folder`` is
+    honored). Otherwise the pluralized category directory (sanitized:
+    the category value is page data, not config).
+    """
+    if category in sync_config.folders:
+        return sync_config.folders[category]
+    return _safe_segment(category_dir(category))
 
 
 def note_relpath(
@@ -115,14 +164,20 @@ def note_relpath(
 
     Layout: ``<root_folder>/[<namespace>/]<category folder>/<flat id>.md``
     — the local plane writes directly under the root folder, foreign
-    namespaces each get their own subtree.
+    namespaces each get their own (sanitized) subtree; empty segments
+    are skipped. Known caveat (shared with the OKF export convention):
+    two distinct concept_ids whose flattened stems collide within one
+    folder resolve to the same note path (last write wins), and a local
+    page id equal to a namespace's folder name would clash file-vs-dir.
     """
-    parts = [sync_config.root_folder] if sync_config.root_folder else []
-    if namespace != LOCAL_PLANE:
-        parts.append(namespace)
-    parts.append(folder_for_category(category, sync_config))
-    parts.append(f"{flatten_concept_id_for_filename(concept_id)}.md")
-    return "/".join(parts)
+    ns_segment = "" if namespace == LOCAL_PLANE else _safe_segment(namespace)
+    segments = (
+        sync_config.root_folder,
+        ns_segment,
+        folder_for_category(category, sync_config),
+        f"{flatten_concept_id_for_filename(concept_id)}.md",
+    )
+    return "/".join(part for part in segments if part)
 
 
 def render_note(
@@ -130,6 +185,7 @@ def render_note(
     related: list[tuple[str, str, str]],
     *,
     wiki_name: str,
+    scope: str,
     namespace: str,
 ) -> str:
     """Render one wiki page as a deterministic Obsidian note.
@@ -139,6 +195,8 @@ def render_note(
         related: ``(link_target, display_title, rel)`` rows for the
             ``## Related`` section; targets are vault paths sans ``.md``.
         wiki_name: Written as the :data:`SYNC_MARKER_KEY` marker value.
+        scope: Project scope identity (:func:`project_scope`) written as
+            :data:`SYNC_SCOPE_KEY` — the prune ownership guard.
         namespace: Source plane name (``local`` or a namespace).
 
     Returns:
@@ -148,6 +206,7 @@ def render_note(
     title = str(page.get("title") or page["concept_id"])
     frontmatter: dict[str, Any] = {
         SYNC_MARKER_KEY: wiki_name,
+        SYNC_SCOPE_KEY: scope,
         SYNC_ID_KEY: page["concept_id"],
         SYNC_NAMESPACE_KEY: namespace,
         "category": category,
@@ -224,6 +283,7 @@ async def _sync_plane(
     store: BaseWikiStore,
     *,
     wiki_name: str,
+    scope: str,
     sync_config: ObsidianSyncConfig,
     category_filter: set[str] | None,
     dry_run: bool,
@@ -268,6 +328,7 @@ async def _sync_plane(
             page,
             related_by_src.get(concept_id, []),
             wiki_name=wiki_name,
+            scope=scope,
             namespace=plane_name,
         )
         try:
@@ -293,6 +354,7 @@ async def _prune_vanished(
     vault: Any,
     *,
     wiki_name: str,
+    scope: str,
     sync_config: ObsidianSyncConfig,
     synced: dict[str, set[str]],
     dry_run: bool,
@@ -300,8 +362,10 @@ async def _prune_vanished(
 ) -> None:
     """Delete marker-carrying notes whose page vanished or was deselected.
 
-    Only notes whose frontmatter carries ``wiki_sync == wiki_name`` AND a
-    ``namespace`` that was actually synced in THIS run are candidates —
+    Only notes whose frontmatter carries ``wiki_sync == wiki_name`` AND
+    an exactly matching ``wiki_scope`` (this project's identity — two
+    projects sharing a vault and a wiki_name never prune each other) AND
+    a ``namespace`` that was actually synced in THIS run are candidates —
     a skipped namespace's notes are left alone (its pages were never
     enumerated), and hand-written notes are never touched.
     """
@@ -318,6 +382,8 @@ async def _prune_vanished(
             continue
         front = note.frontmatter
         if front.get(SYNC_MARKER_KEY) != wiki_name:
+            continue
+        if front.get(SYNC_SCOPE_KEY) != scope:
             continue
         plane = front.get(SYNC_NAMESPACE_KEY)
         if plane not in synced:
@@ -360,8 +426,10 @@ async def sync_obsidian(
         The sync report.
 
     Raises:
-        ObsidianSyncError: No vault is configured, the local plane is not
-            built, or the selector names an undeclared namespace.
+        ObsidianSyncError: No vault is configured (or the configured one
+            does not exist), the local plane is not built, the selector
+            names an undeclared namespace — or, wrapping the cause, a
+            run aborted mid-apply (the partial report is audited first).
     """
     from parrot.interfaces.obsidian import create_vault_backend
 
@@ -373,8 +441,14 @@ async def sync_obsidian(
     declared = merge_namespaces(config.namespaces, load_global_registry().namespaces)
     include_local, foreign = _expand_planes(names, declared)
 
-    vault_dir = resolve_vault_dir(root, config, override=vault or sync_config.vault_dir)
+    override = vault or sync_config.vault_dir
+    vault_dir = resolve_vault_dir(root, config, override=override)
     if vault_dir is None:
+        configured = override or config.vault_dir
+        if configured:
+            raise ObsidianSyncError(
+                f"Configured Obsidian vault directory does not exist: {configured}"
+            )
         raise ObsidianSyncError(
             "No Obsidian vault configured. Pass --vault, or set "
             "`obsidian_sync.vault_dir` (or `vault_dir`) in .parrot/wiki.json."
@@ -412,6 +486,7 @@ async def sync_obsidian(
             report.skipped_namespaces.append(f"{skip.name}: {skip.reason} — {skip.detail}")
         planes.extend((handle.name, handle.store) for handle in handles)
 
+    scope = project_scope(root, config.wiki_name)
     backend = create_vault_backend(backend="local", vault_path=vault_dir)
     await backend.open()
     try:
@@ -422,6 +497,7 @@ async def sync_obsidian(
                 plane_name,
                 store,
                 wiki_name=config.wiki_name,
+                scope=scope,
                 sync_config=sync_config,
                 category_filter=category_filter,
                 dry_run=dry_run,
@@ -432,11 +508,23 @@ async def sync_obsidian(
             await _prune_vanished(
                 backend,
                 wiki_name=config.wiki_name,
+                scope=scope,
                 sync_config=sync_config,
                 synced=synced,
                 dry_run=dry_run,
                 report=report,
             )
+    except Exception as exc:
+        # A mid-apply failure must never leave the writes already made
+        # invisible to the audit log — log what was applied, then fail
+        # typed instead of leaking a backend/store exception.
+        report.namespaces = list(synced)
+        _audit(root, config, report)
+        raise ObsidianSyncError(
+            f"Obsidian sync aborted mid-apply (created={report.created}, "
+            f"updated={report.updated}, pruned={report.pruned} already "
+            f"applied and audited): {exc}"
+        ) from exc
     finally:
         await backend.close()
 

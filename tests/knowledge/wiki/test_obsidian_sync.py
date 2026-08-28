@@ -17,7 +17,10 @@ from click.testing import CliRunner
 from parrot.knowledge.wiki.obsidian_sync import (
     SYNC_ID_KEY,
     SYNC_MARKER_KEY,
+    SYNC_SCOPE_KEY,
     ObsidianSyncError,
+    folder_for_category,
+    project_scope,
     sync_obsidian,
 )
 from parrot.knowledge.wiki.project import (
@@ -224,6 +227,85 @@ class TestPrune:
         assert (vault / "LLM Wiki" / "concepts" / "beta.md").is_file()
 
 
+class TestPruneScope:
+    async def test_shared_vault_same_wiki_name_never_cross_prunes(self, tmp_path: Path) -> None:
+        """Two projects with the SAME wiki_name sharing one vault must not
+        prune each other's notes (adversarial-review high finding)."""
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        stores = {}
+        for repo in ("repo-a", "repo-b"):
+            root = tmp_path / repo
+            (root / ".parrot").mkdir(parents=True)
+            (root / ".parrot" / "wiki.json").write_text(
+                json.dumps(
+                    {
+                        "wiki_name": "codebase",  # the common default
+                        "backend": "sqlite",
+                        "obsidian_sync": {"vault_dir": str(vault)},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stores[repo] = _open_plane(root, load_effective_config(root).config)
+        await stores["repo-a"].upsert_pages([_page("alpha")])
+        await stores["repo-b"].upsert_pages([_page("beta")])
+        await sync_obsidian(tmp_path / "repo-a")
+        await sync_obsidian(tmp_path / "repo-b")
+        report = await sync_obsidian(tmp_path / "repo-a", prune=True)
+        assert report.pruned == 0
+        assert (vault / "LLM Wiki" / "concepts" / "alpha.md").is_file()
+        assert (vault / "LLM Wiki" / "concepts" / "beta.md").is_file()
+
+    async def test_scope_written_and_stable(self, project) -> None:
+        root, store, vault = project
+        await store.upsert_pages([_page("alpha")])
+        await sync_obsidian(root)
+        front = _frontmatter(vault / "LLM Wiki" / "concepts" / "alpha.md")
+        assert front[SYNC_SCOPE_KEY] == project_scope(root, "testwiki")
+        assert front[SYNC_SCOPE_KEY].startswith("testwiki@")
+
+    async def test_prune_deselected_category(self, project) -> None:
+        """Narrowing the category selection prunes the now-deselected notes."""
+        root, store, vault = project
+        await store.upsert_pages([_page("alpha", category="concept"), _page("acme", category="entity")])
+        await sync_obsidian(root)
+        report = await sync_obsidian(root, categories=["entity"], prune=True)
+        assert report.pruned == 1
+        assert not (vault / "LLM Wiki" / "concepts" / "alpha.md").exists()
+        assert (vault / "LLM Wiki" / "entities" / "acme.md").is_file()
+
+
+class TestPathSafety:
+    def test_empty_folder_override_is_honored(self) -> None:
+        from parrot.knowledge.wiki.project import ObsidianSyncConfig
+
+        cfg = ObsidianSyncConfig(folders={"concept": ""})
+        assert folder_for_category("concept", cfg) == ""
+
+    async def test_empty_folder_override_places_notes_under_root(self, project) -> None:
+        root, store, vault = project
+        config_path = root / ".parrot" / "wiki.json"
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        data["obsidian_sync"]["folders"] = {"concept": ""}
+        config_path.write_text(json.dumps(data), encoding="utf-8")
+        await store.upsert_pages([_page("alpha")])
+        report = await sync_obsidian(root)
+        assert report.created == 1
+        assert (vault / "LLM Wiki" / "alpha.md").is_file()
+
+    async def test_traversal_shaped_category_is_sanitized(self, project) -> None:
+        """A hostile category value from page data must neither escape the
+        vault nor crash the run with an untyped error."""
+        root, store, vault = project
+        await store.upsert_pages([_page("evil", category="../../outside")])
+        report = await sync_obsidian(root)
+        assert report.created == 1
+        written = list((vault / "LLM Wiki").rglob("evil.md"))
+        assert len(written) == 1  # landed inside the managed subtree
+        assert not (vault.parent / "outside").exists()
+
+
 class TestGuards:
     async def test_no_vault_configured_raises(self, tmp_path: Path) -> None:
         root = tmp_path / "repo"
@@ -249,6 +331,25 @@ class TestGuards:
         root, _store, _vault = project
         with pytest.raises(ObsidianSyncError, match="Unknown namespace"):
             await sync_obsidian(root, namespaces=["nope"])
+
+    async def test_configured_but_missing_vault_is_distinguished(self, project, tmp_path: Path) -> None:
+        root, _store, _vault = project
+        with pytest.raises(ObsidianSyncError, match="does not exist"):
+            await sync_obsidian(root, vault=str(tmp_path / "no-such-vault"))
+
+    async def test_unopenable_namespace_is_skipped_not_fatal(self, project, tmp_path: Path) -> None:
+        """A declared-but-unbuilt namespace is reported and skipped; the
+        local plane still syncs and prune leaves the skip's subtree alone."""
+        root, store, _vault = project
+        await store.upsert_pages([_page("alpha")])
+        config_path = root / ".parrot" / "wiki.json"
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        data["namespaces"] = {"ghost": {"store": str(tmp_path / "missing-plane")}}
+        config_path.write_text(json.dumps(data), encoding="utf-8")
+        report = await sync_obsidian(root, namespaces=["local", "ghost"], prune=True)
+        assert report.namespaces == ["local"]
+        assert report.skipped_namespaces and report.skipped_namespaces[0].startswith("ghost:")
+        assert report.created == 1
 
 
 class TestNamespacePlanes:
