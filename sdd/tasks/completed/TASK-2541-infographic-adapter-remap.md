@@ -117,7 +117,52 @@ class TestTASK2541:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `_bind_rows` now emits `{"path": ...}` (not `$bind`); `bullet_list` ->
+  `List{direction:'vertical'}` of `Text`; `checklist` -> `List` of
+  `CheckBox{label, value}`; `image` -> `Image{url, fit:'contain',
+  description}` (no longer wrapped in a card); `card_grid` -> `Row` of
+  `InfoCard`; `callout`/`quote`/`chain`/`code`/default-`summary` ->
+  `InfoCard` (renamed from `Card`); `steps` -> `List` of numbered `Text`.
+  `accordion`/`tab_view` now nest as a SINGLE `Tabs{tabs:[{title, child}]}`
+  descriptor within the CURRENT section (one tab per item/pane, each
+  pane's blocks recursively walked into a `Column`) — `_flatten_container`
+  (sibling-section flattening) is kept ONLY as the degradation path beyond
+  `_MAX_NESTING_DEPTH`, per the Scope's literal wording.
+- **Required a necessary extension to `catalog/parrot/infographic.py`'s
+  `_lower_child`** (not in this task's file list, but the Scope's own
+  remap is impossible to satisfy without it — same "unblocking fix"
+  pattern already used for TASK-2539's `baking.py`): nested composite
+  descriptors can now name an official Basic Catalog primitive
+  (`is_primitive=True`); such a descriptor needs NO further `.lower()`
+  call (primitives don't implement one) — it's wrapped directly into a
+  `BasicNode`. Generalized this to also recursively lower nested
+  `children`/`child` sub-descriptors (needed for `List`/`Row`/`Column`
+  wrapping other primitives) and `Tabs.tabs[].child` sub-descriptors
+  (building real `TabSpec`s). Also added a top-level `from
+  parrot.outputs.a2ui.catalog import basic` import to guarantee the 18
+  primitives are registered before `_lower_child` looks any of them up
+  (previously relied on an earlier, unrelated `validate_envelope` call
+  having already triggered that registration as a side effect — fragile).
+- Verified END-TO-END: `infographic_response_to_envelope()` -> `.lower()`
+  -> `to_components()` -> `validate_envelope()` on a payload exercising
+  every remapped block type (`TestAllBlocksEnvelope`, `TestTabsNesting`,
+  `test_adapter_output_validates`) — 39 flattened components, zero
+  UNKNOWN_COMPONENT/UNALLOWED_*/DANGLING_CHILD errors.
+- Rewrote the 55-ish test file: `.properties` dict access -> `model_extra`;
+  `Card`->`InfoCard` assertions; new `TestBlockTypeRemap`/`TestTabsNesting`
+  classes for the new mappings; `TestContainerFlattening` renamed
+  `TestTabsNesting` (tests the NEW nested-Tabs default behavior, plus one
+  test for the beyond-depth-cap degradation fallback). Preserved all
+  purity/malformed-input/chart/table test coverage from the original file.
+- `pytest test_infographic_adapter.py`: 61 passed. Full
+  `packages/ai-parrot/tests/outputs/a2ui/` (excluding `recipes/`,
+  `test_producer.py` — TASK-2542/2547's own files): 317 passed, one
+  pre-existing unrelated failure (missing `azure` module). `ruff check`:
+  clean.
+
+**Deviations from spec**: `catalog/parrot/infographic.py`'s `_lower_child`
+extended beyond this task's file list — a necessary, narrowly-scoped fix
+without which the Scope's own remap cannot function (documented above).

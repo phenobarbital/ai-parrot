@@ -194,7 +194,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Sólo toca adapters/infographic.py y sus tests; paralelo con TASK-2542.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2541-infographic-adapter-remap.md"
+      "completed_at": "2026-08-28T19:06:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2541-infographic-adapter-remap.md"
     },
     {
       "id": "TASK-2542",
