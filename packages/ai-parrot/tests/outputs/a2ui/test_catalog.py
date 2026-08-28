@@ -1,7 +1,8 @@
-"""Unit tests for the A2UI component catalog (TASK-1721 / Module 2)."""
+"""Unit tests for the A2UI component catalog (TASK-1721 / Module 2, updated FEAT-470)."""
+
+from typing import ClassVar
 
 import pytest
-
 from parrot.outputs.a2ui.catalog import (
     DEFAULT_CATALOG_ID,
     BasicNode,
@@ -27,13 +28,16 @@ def cleanup_catalog():
 
 
 def _surface(*component_names: str) -> CreateSurface:
+    """Build a surface with a ``root`` Column wrapping each named component."""
+    children = [
+        Component(id=f"blk-{i}", component=name)
+        for i, name in enumerate(component_names)
+    ]
+    root = Component(id="root", component="Column", children=[c.id for c in children])
     return CreateSurface(
         surfaceId="main",
         catalogId=DEFAULT_CATALOG_ID,
-        components=[
-            Component(id=f"blk-{i}", component=name)
-            for i, name in enumerate(component_names)
-        ],
+        components=[root, *children],
     )
 
 
@@ -41,7 +45,7 @@ class TestComponentRegistration:
     def test_register_component_roundtrip(self, cleanup_catalog):
         @register_component("Widget")
         class Widget:
-            SCHEMA = {"type": "object"}
+            SCHEMA: ClassVar[dict] = {"type": "object"}
             INSTRUCTIONS = "A widget."
 
             def lower(self, component, data_model):
@@ -59,7 +63,7 @@ class TestComponentRegistration:
 
             @register_component("NoLower")
             class NoLower:  # no lower() → cannot register
-                SCHEMA = {}
+                SCHEMA: ClassVar[dict] = {}
 
     def test_register_with_non_callable_lower_rejected(self):
         with pytest.raises(ComponentContractError):
