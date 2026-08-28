@@ -310,6 +310,32 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         return True
 
     # =========================================================================
+    # A2UI Native-Input Submit (FEAT-470 TASK-2545)
+    # =========================================================================
+
+    @staticmethod
+    def _decode_a2ui_input_id(encoded: str) -> str:
+        """Decode a Teams-safe Adaptive Card ``Input.id`` back to its JSON Pointer.
+
+        Inverse of ``_encode_binding_id`` in
+        ``parrot.outputs.a2ui_renderers.adaptive_cards`` (RFC 6901 tilde-escape:
+        ``~1`` -> ``/``, ``~0`` -> ``~``). Duplicated locally rather than
+        imported — ``ai-parrot-integrations`` does not depend on
+        ``ai-parrot-visualizations`` (the satellite that ships the renderer).
+        A plain key with no escape sequences round-trips unchanged, so it is
+        safe to apply indiscriminately to every submitted key.
+
+        Args:
+            encoded: The raw key from ``activity.value`` (an Adaptive Card
+                element id).
+
+        Returns:
+            The decoded JSON Pointer (or the original string, if it carried
+            no escapes).
+        """
+        return encoded.replace("~1", "/").replace("~0", "~")
+
+    # =========================================================================
     # A2UI Deep-Link Resume
     # =========================================================================
 
@@ -391,6 +417,38 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             self.logger.warning(
                 "A2UI deep-link token in card submission but Redis unavailable."
             )
+
+        # A2UI native-input submit (FEAT-470 TASK-2545): card Submit carries
+        # {"a2ui_action": <v1.0 "action" envelope>, "surfaceId": "..."} plus
+        # every native Input.* element's value, keyed by its (tilde-encoded)
+        # binding id. Unlike the deep-link resume above, no token/Redis
+        # round-trip is needed — the action arrived directly in this turn —
+        # so it is injected into the SAME session via `form_orchestrator
+        # .process_message`, mirroring the `inject()` closure's own call.
+        a2ui_action = submitted_data.get('a2ui_action')
+        if a2ui_action:
+            values = {
+                self._decode_a2ui_input_id(key): value
+                for key, value in submitted_data.items()
+                if key not in ('a2ui_action', 'surfaceId')
+            }
+            query = json.dumps(
+                {"type": "a2ui_action", "action": a2ui_action, "values": values},
+                sort_keys=True,
+            )
+            result = await self.form_orchestrator.process_message(
+                message=query,
+                conversation_id=conversation_id,
+                context={"user_id": user_id, "session_id": conversation_id},
+            )
+            if result and result.raw_response is not None:
+                parsed = self._parse_response(result.raw_response)
+                await self._send_parsed_response(parsed, turn_context)
+            elif result and result.response_text:
+                await self.send_text(result.response_text, turn_context)
+            else:
+                await self.send_text("Action processed.", turn_context)
+            return
 
         # Slash-style commands embedded in Adaptive Card Submit actions — e.g.
         # the Jira menu card buttons send {"command": "/connect_jira"}. These
