@@ -10,6 +10,20 @@ from parrot.outputs.a2ui.deeplink import DeepLinkService
 pytestmark = pytest.mark.asyncio
 
 
+def _action_envelope(name: str = "approve", **context) -> dict:
+    """Build a valid v1.0 ``A2UIRendererMessage`` 'action' envelope."""
+    return {
+        "version": "v1.0",
+        "action": {
+            "name": name,
+            "surfaceId": "main",
+            "sourceComponentId": "btn1",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "context": context,
+        },
+    }
+
+
 class FakeRedis:
     def __init__(self):
         self.store = {}
@@ -42,7 +56,7 @@ class TestDeepLinkResumeWeb:
             user_id="user-1",
             agent_id="assistant",
             channel="web",
-            action_payload={"action": "approve", "row": 7, "label": "Approve"},
+            action_payload=_action_envelope("approve", row=7),
         )
 
         body, status = await handler.handle(dl.token_id)
@@ -55,8 +69,8 @@ class TestDeepLinkResumeWeb:
         assert injected["user_id"] == "user-1"
         assert injected["agent_name"] == "assistant"
         decoded = json.loads(injected["query"])
-        assert decoded["type"] == "a2ui_action_resume"
-        assert decoded["action"]["action"] == "approve"
+        assert decoded["type"] == "a2ui_action"
+        assert decoded["action"]["action"]["name"] == "approve"
 
     async def test_expired_or_replayed_click_friendly_landing(self):
         service = DeepLinkService(FakeRedis(), base_url="https://app.example")
@@ -68,7 +82,7 @@ class TestDeepLinkResumeWeb:
 
         dl = await service.mint(
             session_id="s", user_id="u", agent_id="a", channel="web",
-            action_payload={"action": "x"},
+            action_payload=_action_envelope("x"),
         )
         # First consume succeeds via a permissive invoker.
         ok_handler = DeepLinkResumeHandler(service, lambda **k: _ok())
@@ -89,7 +103,7 @@ class TestDeepLinkResumeWeb:
         handler = DeepLinkResumeHandler(service, lambda **k: _ok())
         dl = await service.mint(
             session_id="s", user_id="u", agent_id="a", channel="web",
-            action_payload={"action": "x", "label": "Approve"},
+            action_payload=_action_envelope("Approve"),
         )
         landing = handler.render_landing(dl.token_id)
         assert "<form method='post'" in landing
@@ -111,10 +125,10 @@ class TestDeepLinkResumeWeb:
         msg = build_structured_message(
             ResumePayload(
                 session_id="s", user_id="u", agent_id="a", channel="web",
-                action_payload={"action": "go"},
+                action_payload=_action_envelope("go"),
             )
         )
-        assert json.loads(msg)["type"] == "a2ui_action_resume"
+        assert json.loads(msg)["type"] == "a2ui_action"
 
 
 async def _ok():

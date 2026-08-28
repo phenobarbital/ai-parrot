@@ -2700,6 +2700,10 @@ class AgentTalk(BaseView):
                 }
                 # FEAT-273: envelope-complete per output — carry the A2UI envelope in
                 # the final stream dict only (defensive getattr for legacy messages).
+                # FEAT-470: the envelope is the v1.0 sobre (dict, e.g.
+                # {"version": "v1.0", "createSurface": {...}}) or a list of sobres;
+                # this handler is envelope-agnostic and forwards it verbatim — v1.0-ness
+                # is guaranteed upstream by parrot.outputs.a2ui.emission.finalize_a2ui_response.
                 a2ui_envelope = getattr(ai_message, 'a2ui_envelope', None)
                 if a2ui_envelope is not None:
                     envelope['a2ui_envelope'] = a2ui_envelope
@@ -2817,6 +2821,9 @@ class AgentTalk(BaseView):
             response = response.response
 
         # FEAT-273: A2UI mode — surface the declarative envelope in the JSON response.
+        # FEAT-470: "a2ui_envelope" here is the v1.0 sobre (dict) or a list of sobres,
+        # forwarded verbatim (envelope-agnostic) — v1.0-ness is guaranteed upstream by
+        # parrot.outputs.a2ui.emission.finalize_a2ui_response.
         if getattr(response, "output_mode", None) == OutputMode.A2UI:
             return self.json_response(
                 {

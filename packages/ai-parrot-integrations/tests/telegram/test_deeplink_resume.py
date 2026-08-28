@@ -1,4 +1,4 @@
-"""Telegram deep-link resume tests (TASK-1736, spec §4).
+"""Telegram deep-link resume tests (TASK-1736, spec §4; FEAT-470 TASK-2546 v1.0).
 
 Exercise the per-channel resume helper (`ChannelDeepLinkResume`) with a real
 `DeepLinkService` over a fake Redis. The Telegram wrapper delegates to this helper via a
@@ -15,6 +15,20 @@ from parrot.integrations.a2ui_resume import ChannelDeepLinkResume, build_structu
 from parrot.outputs.a2ui.deeplink import DeepLinkService
 
 pytestmark = pytest.mark.asyncio
+
+
+def _action_envelope(name: str = "approve", **context) -> dict:
+    """Build a valid v1.0 ``A2UIRendererMessage`` 'action' envelope."""
+    return {
+        "version": "v1.0",
+        "action": {
+            "name": name,
+            "surfaceId": "main",
+            "sourceComponentId": "btn1",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "context": context,
+        },
+    }
 
 
 class FakeRedis:
@@ -46,7 +60,7 @@ class TestDeepLinkResumeTelegram:
             user_id="tg-user-1",
             agent_id="assistant",
             channel="telegram",
-            action_payload={"action": "approve", "row": 4},
+            action_payload=_action_envelope("approve", row=4),
         )
 
         # The telegram wrapper's inject closure overrides the session and resumes.
@@ -65,15 +79,15 @@ class TestDeepLinkResumeTelegram:
         assert injected["session_id"] == "tg-sess-1"  # original session restored
         assert injected["user_id"] == "tg-user-1"
         decoded = json.loads(injected["query"])
-        assert decoded["type"] == "a2ui_action_resume"
-        assert decoded["action"]["action"] == "approve"
+        assert decoded["type"] == "a2ui_action"
+        assert decoded["action"]["action"]["name"] == "approve"
 
     async def test_expired_token_friendly_message(self):
         service = _service()
         resume = ChannelDeepLinkResume(service, channel="telegram")
         dl = await service.mint(
             session_id="s", user_id="u", agent_id="a", channel="telegram",
-            action_payload={"action": "x"},
+            action_payload=_action_envelope("x"),
         )
         # Consume once (success), then replay → friendly message, session untouched.
         await resume.resume(dl.token_id, inject=_noop_inject)
@@ -86,9 +100,13 @@ class TestDeepLinkResumeTelegram:
         outcome = await resume.resume("", inject=_must_not_run)
         assert outcome["ok"] is False
 
-    async def test_build_structured_message_shape(self):
-        msg = build_structured_message({"action": "go"})
-        assert json.loads(msg) == {"type": "a2ui_action_resume", "action": {"action": "go"}}
+    async def test_resume_message_format(self):
+        # FEAT-470 TASK-2546 spec §4: build_structured_message emits
+        # {"type": "a2ui_action", "action": <v1.0 sobre>} — same tag/shape the
+        # Teams Adaptive Cards a2ui_action submit branch (TASK-2545) expects.
+        envelope = _action_envelope("go")
+        msg = build_structured_message(envelope)
+        assert json.loads(msg) == {"type": "a2ui_action", "action": envelope}
 
 
 async def _noop_inject(**kwargs):

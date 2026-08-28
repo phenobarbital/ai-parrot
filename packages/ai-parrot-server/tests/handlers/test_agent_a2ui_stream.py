@@ -34,6 +34,15 @@ class TestA2UIStreamContract:
         assert "OutputMode.A2UI" in _SRC
         assert '"a2ui_envelope": getattr(response, "a2ui_envelope", None)' in _SRC
 
+    def test_handler_a2ui_envelope_is_v1(self):
+        # FEAT-470: both the stream and non-stream paths document (and forward
+        # verbatim, envelope-agnostic) the v1.0 sobre — never reshaping it or
+        # branching on a legacy `messageType`/`properties` shape.
+        assert _SRC.count("FEAT-470") >= 2
+        assert "v1.0 sobre" in _SRC
+        assert "messageType" not in _SRC
+        assert "'properties'" not in _SRC
+
     def test_handler_importable_if_built(self):
         # Runs the real import only where the Cython extension is built (e.g. CI).
         pytest.importorskip("parrot.handlers.agent")

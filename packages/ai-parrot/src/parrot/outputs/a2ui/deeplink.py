@@ -25,7 +25,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from parrot.outputs.a2ui.artifacts import DeepLink
 
@@ -54,6 +54,13 @@ class ResumePayload(BaseModel):
     """Server-side payload restored when a deep link is consumed.
 
     Never serialized into the token URL — it lives only in Redis (spec §7).
+
+    Attributes:
+        action_payload: A v1.0 A2UI-A2A ``A2UIRendererMessage`` envelope whose
+            message key is ``action`` (FEAT-470 G6) — i.e.
+            ``{"version": "v1.0", "action": {...}}``. Validated at construction
+            time; a non-``action`` (or otherwise malformed) envelope raises
+            ``ValueError``.
     """
 
     session_id: str
@@ -61,6 +68,26 @@ class ResumePayload(BaseModel):
     agent_id: str
     channel: str
     action_payload: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("action_payload")
+    @classmethod
+    def _validate_action_envelope(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Ensure ``action_payload`` validates as an ``A2UIRendererMessage.action``.
+
+        Raises:
+            ValueError: If ``value`` does not validate as an
+                :class:`~parrot.outputs.a2ui.models.A2UIRendererMessage` whose
+                message key is ``action``.
+        """
+        from parrot.outputs.a2ui.models import A2UIRendererMessage
+
+        envelope = A2UIRendererMessage.model_validate(value)
+        if envelope.action is None:
+            raise ValueError(
+                "ResumePayload.action_payload must be an A2UIRendererMessage "
+                "'action' envelope (FEAT-470 G6)."
+            )
+        return value
 
 
 class DeepLinkService:
@@ -111,7 +138,8 @@ class DeepLinkService:
             user_id: Originating user id.
             agent_id: Originating agent id.
             channel: Channel to resume (e.g. ``"web"``, ``"telegram"``, ``"msteams"``).
-            action_payload: The action to inject on resume (server-side only).
+            action_payload: A v1.0 ``A2UIRendererMessage`` ``action`` envelope to
+                inject on resume (server-side only) — see :class:`ResumePayload`.
             ttl: Optional TTL override (seconds).
 
         Returns:
@@ -129,8 +157,13 @@ class DeepLinkService:
         await self.redis.set(self._key(token_id), payload.model_dump_json(), ex=ttl)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
         self.logger.debug("Minted A2UI deep link %s for session %s", token_id, session_id)
+        # action_payload is a v1.0 A2UIRendererMessage 'action' envelope
+        # (FEAT-470 G6) — {"version": "v1.0", "action": {"name": ..., ...}}.
+        # There is no dedicated "label" field on the wire; fall back to the
+        # action's `name` (and finally a generic default).
+        action_name = (action_payload.get("action") or {}).get("name")
         return DeepLink(
-            action_label=str(action_payload.get("label", "Open")),
+            action_label=str(action_name or "Open"),
             url=self._resume_url(channel, token_id),
             token_id=token_id,
             expires_at=expires_at,

@@ -332,35 +332,32 @@ class TaskStatus:
         }
 
 
-# --- A2UI-A2A extension (FEAT-273 Module 13, display only) ----------------------
+# --- A2UI-A2A extension (FEAT-273 Module 13, display only; FEAT-470 v1.0) -------
 # Single owner of the A2UI-A2A extension identifiers. Display envelopes are carried
 # in a data Part per the official A2UI-A2A extension; action/interaction legs are FEAT-B.
-A2UI_EXTENSION_URI = "https://a2ui.org/extensions/a2a/display/v1"
-A2UI_MEDIA_TYPE = "application/vnd.a2ui.envelope+json"
+A2UI_EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v1.0"
+A2UI_MEDIA_TYPE = "application/a2ui+json"
 
 
-def _reject_action_components(envelope: Dict[str, Any]) -> None:
-    """Raise if a display A2UI envelope contains action-bearing components (v1).
+def _reject_action_components(components: Any) -> None:
+    """Raise if a display A2UI ``createSurface`` carries action-bearing components.
 
-    Best-effort: consults the catalog registry when available; unknown components
-    are left alone (their action-ness cannot be determined here).
+    v1.0 components declare interactivity directly via the top-level ``action``
+    field (:class:`parrot.outputs.a2ui.models.Component.action`) — no catalog
+    lookup is needed to determine action-bearing-ness (FEAT-470, unlike the
+    pre-v1.0 catalog ``requires_actions`` flag this replaces).
+
+    Args:
+        components: The surface's top-level ``Component`` model instances.
+
+    Raises:
+        ValueError: If any component carries a non-null ``action``.
     """
-    try:
-        from parrot.outputs.a2ui.catalog import get_component
-    except ImportError:  # pragma: no cover - a2ui always present in core
-        return
-    for comp in envelope.get("components", []) or []:
-        name = comp.get("component") if isinstance(comp, dict) else None
-        if not name:
-            continue
-        try:
-            entry = get_component(name)
-        except KeyError:
-            continue
-        if entry.definition.requires_actions:
+    for comp in components or []:
+        if getattr(comp, "action", None) is not None:
             raise ValueError(
-                f"Display-only A2A emit (FEAT-273): component {name!r} is action-bearing; "
-                "interactive A2UI over A2A is FEAT-B."
+                f"Display-only A2A emit (FEAT-273): component {comp.component!r} is "
+                "action-bearing; interactive A2UI over A2A is FEAT-B."
             )
 
 
@@ -381,14 +378,18 @@ class Artifact:
         name: str = "a2ui-surface",
         artifact_id: Optional[str] = None,
     ) -> "Artifact":
-        """Wrap a display A2UI ``CreateSurface`` envelope into an A2A Artifact.
+        """Wrap a display A2UI v1.0 ``createSurface`` envelope into an A2A Artifact.
 
         The already-serialized envelope dict (from ``AIMessage.a2ui_envelope``) is placed
         verbatim into a data :class:`Part` with the A2UI-A2A extension metadata — the a2a
         layer never re-shapes it (``parrot.outputs.a2ui.serialization`` owns ``version``).
+        A legacy (pre-v1.0) dialect envelope (``"messageType" in envelope``) is normalized
+        via :func:`parrot.outputs.a2ui.serialization.deserialize` — the sole owner of that
+        normalization (FEAT-470 G5) — before the ``createSurface`` key is read; an
+        unrecognized/unnormalizable legacy shape is rejected, not guessed at.
 
         Args:
-            envelope: The serialized ``createSurface`` envelope dict.
+            envelope: The serialized v1.0 (or legacy) envelope dict.
             name: Artifact name.
             artifact_id: Optional explicit id (a UUID4 is generated when omitted).
 
@@ -402,16 +403,20 @@ class Artifact:
         """
         if not isinstance(envelope, dict):
             raise TypeError(f"A2UI envelope must be a dict, got {type(envelope)!r}.")
-        message_type = envelope.get("messageType")
-        if message_type not in (None, "createSurface"):
+
+        from parrot.outputs.a2ui.models import A2UIAgentMessage
+        from parrot.outputs.a2ui.serialization import deserialize
+
+        message = deserialize(envelope)
+        if not isinstance(message, A2UIAgentMessage) or message.create_surface is None:
             raise ValueError(
                 "Only display 'createSurface' envelopes may be emitted over A2A in v1; "
-                f"got messageType={message_type!r}."
+                f"got envelope={envelope!r}."
             )
-        _reject_action_components(envelope)
+        _reject_action_components(message.create_surface.components)
         part = Part(
             data=envelope,
-            metadata={"extensionUri": A2UI_EXTENSION_URI, "mediaType": A2UI_MEDIA_TYPE},
+            metadata={"mimeType": A2UI_MEDIA_TYPE, "extensionUri": A2UI_EXTENSION_URI},
         )
         return cls(
             artifact_id=artifact_id or str(uuid.uuid4()),
