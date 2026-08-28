@@ -137,6 +137,15 @@ dependencies = [
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
     "navigator-eventbus>=0.2.1",
+    # wikitoolkit ships in core (project.scripts) and its import chain
+    # (wiki/cli.py → graphindex/__init__.py → signals.py / communities.py /
+    # builder.py / sqlite_reader.py) imports these unconditionally at module
+    # level, so a bare install must carry them (FEAT-471).
+    "rustworkx>=0.15",
+    "networkx>=3.0",
+    "pathspec>=0.12",
+    "aiosqlite>=0.17",
+    "orjson>=3.9",
 ]
 
 [project.scripts]
@@ -209,14 +218,11 @@ flowtask = [
 
 # GraphIndex knowledge graph indexing (FEAT-187)
 # Note: faiss-cpu is already in core dependencies — not included here
+# Note: rustworkx, networkx, pathspec, aiosqlite, orjson moved to core
+# dependencies (FEAT-471) — wikitoolkit imports them unconditionally.
 graphindex = [
-    "rustworkx>=0.15",
-    "networkx>=3.0",
     "tree-sitter>=0.23",
     "tree-sitter-languages>=1.10",
-    "pathspec>=0.12",
-    "aiosqlite>=0.17",
-    "orjson>=3.9",
 ]
 
 # LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
