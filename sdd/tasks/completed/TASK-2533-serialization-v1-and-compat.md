@@ -142,7 +142,41 @@ class TestTASK2533:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `serialize()` accepts either an inner message (`CreateSurface`, ...) or an
+  already-built envelope, and produces exactly `{"version": "v1.0",
+  "<key>": {...}}`. Explicit `value: null` on `UpdateDataModel`/
+  `AgentFunctionResponse`/`RendererFunctionResponse` is deliberately
+  preserved through `exclude_none=True` dumping (re-injected post-dump) —
+  losing it would silently turn a "delete this key" into a no-op.
+- `deserialize()` detects `"messageType" in data` via
+  `compat.is_legacy_envelope`, normalizes via `compat.normalize_legacy`
+  (`DeprecationWarning`), then validates as `A2UIAgentMessage`/
+  `A2UIRendererMessage` by inspecting which key set is present.
+- `compat.normalize_legacy` supports the four legacy message types the
+  Scope names explicitly (`createSurface`, `updateComponents`,
+  `updateDataModel`, `callFunction`). Legacy `action`/`actionResponse` are
+  intentionally NOT translated — the v1.0 `ActionMessage` shape requires
+  `sourceComponentId`/`timestamp`/`context` that the legacy `Action` model
+  never carried, so a lossless mapping isn't possible; `normalize_legacy`
+  raises a clear `ValueError` for any unsupported `messageType` rather than
+  guessing (spec §7 Known Risks: "no adivinar").
+- `deserialize()`'s return type widens to
+  `A2UIAgentMessage | A2UIRendererMessage | list[A2UIAgentMessage]` — the
+  list case is the one legacy `updateDataModel` with >1 `contents` key,
+  which fans out into N v1.0 envelopes with no single-message equivalent.
+  This is a deliberate, documented extension of the original single-message
+  contract, driven directly by the Scope's own "N sobres" requirement.
+- Reintroduced `A2UIMessageBase` in TASK-2532's `models.py` (see that
+  task's Completion Note) so `__init__.py`'s exports here didn't need to
+  drop the existing `emission.py` `isinstance` check.
+- `pytest test_serialization.py test_compat.py`: 27 passed. `ruff check`:
+  clean. `grep -rn '"1.0"' serialization.py`: empty (confirmed only
+  `"v1.0"` appears).
+
+**Deviations from spec**: legacy `action`/`actionResponse` messageTypes are
+NOT normalized (see Notes) — the Scope bullet list never named them as
+translation targets, and the v1.0 `ActionMessage` shape genuinely lacks a
+lossless source in the legacy `Action` model.
