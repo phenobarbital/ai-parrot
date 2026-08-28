@@ -149,7 +149,41 @@ class TestTASK2535:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `catalog/base.py`: added `is_primitive`/`allowed_parents`/`allowed_children`
+  to `ComponentDefinition`; added `FunctionDefinition`; added the seven
+  error-code constants; `CatalogValidationError` now supports both a
+  single `code=` (e.g. `resolve_catalog`) and an aggregate `issues=` list
+  (e.g. `validate_envelope`'s "report everything" contract), keeping
+  `.unknown_components`/`.action_components` for backward compatibility.
+- `catalog/__init__.py`: `resolve_catalog`, `register_function`/
+  `get_function`/`list_functions`, `validate_message` (jsonschema against
+  the vendored `agent_to_renderer`/`renderer_to_agent` schemas via
+  `catalog.basic.schema_registry()`), and a full `validate_envelope`
+  rewrite for the v1.0 flat-adjacency-list wire (root required, duplicate
+  ids, dangling `child`/`children` (list or `ChildTemplate`),
+  `allowed_parents`/`allowed_children`, and the LLM action gate).
+- Per the task's own Implementation Notes (the Python registry has no
+  basic-catalog primitives until TASK-2536), `_component_exists` checks
+  the vendored `catalog.json`'s component list directly as the source of
+  truth for the Basic Catalog, and ALSO treats it as available under
+  `DEFAULT_CATALOG_ID` (parrot) — implementing G2 ("el catálogo parrot
+  incluye el básico") at the validation layer.
+- LLM action gate: implemented as `comp.action is not None` (checks the
+  actual wire instance) OR the legacy `ComponentDefinition.requires_actions`
+  flag (kept for backward compatibility with existing registered
+  components/tests) — origin=LLM rejects either.
+- `catalog_instructions()`'s `.rstrip(": ")` bug fixed by simply removing
+  the (unnecessary, since `list_components()` already filters non-empty
+  instructions) strip call.
+- `test_catalog.py`: updated `_surface()` helper to wrap components in a
+  `root` Column (v1.0 requires `id=="root"`); added `ClassVar` annotations
+  to two pre-existing `SCHEMA = {...}` class attributes to satisfy
+  `ruff RUF012` since the file was touched.
+- `pytest test_catalog.py catalog/`: 31 passed. `ruff check`: clean.
+
+**Deviations from spec**: none — the dual `requires_actions` +
+`comp.action is not None` LLM gate is additive (keeps existing behavior
+working) on top of the new wire-level check the spec calls for.
