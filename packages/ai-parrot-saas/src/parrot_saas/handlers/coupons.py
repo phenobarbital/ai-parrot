@@ -31,6 +31,11 @@ APP_COUPON_REPOSITORY = "saas_coupons"
 #: Key under which ``setup_saas_api`` publishes the issuer.
 APP_COUPON_ISSUER = "saas_coupon_issuer"
 
+#: Key under which ``setup_saas_api`` publishes the delivery service. Read by
+#: the flow runner rather than by any handler here — a coupon is delivered by a
+#: flow, never by an HTTP call.
+APP_COUPON_DELIVERY = "saas_coupon_delivery"
+
 #: PBAC resource these routes are gated by, under the shared ``saas`` type.
 PBAC_RESOURCE_NAME = "coupons"
 
@@ -343,6 +348,7 @@ def setup_coupon_routes(
 
 
 __all__ = (
+    "APP_COUPON_DELIVERY",
     "APP_COUPON_ISSUER",
     "APP_COUPON_REPOSITORY",
     "CouponCollectionView",

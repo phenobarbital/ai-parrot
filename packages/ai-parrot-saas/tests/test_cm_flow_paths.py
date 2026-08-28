@@ -23,6 +23,7 @@ from parrot_saas.flows.community_manager.models import (
     CouponIssued,
     ReviewIntake,
 )
+from parrot_saas.reviews.models import Guest
 from parrot_saas.tenancy.context import TenantContext
 
 
@@ -51,11 +52,17 @@ def _review(**overrides) -> ReviewIntake:
 
 
 async def _run(tenant: TenantContext, shared: dict, **deps):
-    """Run the flow with ``shared`` seeded, returning (result, executed)."""
+    """Run the flow with ``shared`` seeded, returning (result, executed).
+
+    The seeded dict is updated with the run's final shared state on the way
+    out, so a test can assert on what the nodes *wrote* — the eligibility
+    context in particular — and not only on what they returned.
+    """
     flow = build_community_manager_flow(tenant=tenant, **deps)
     ctx = FlowContext(initial_task="community-manager")
     ctx.shared_data.update(shared)
     result = await flow.run_flow(ctx)
+    shared.update(ctx.shared_data)
     return result, [n.node_id for n in result.nodes]
 
 
@@ -465,6 +472,138 @@ async def test_a_wired_issuer_mints_a_real_coupon(
         conn = AsyncDB("pg", dsn=test_dsn)
         async with await conn.connection():
             await conn.execute(f"DROP SCHEMA IF EXISTS {unique_schema} CASCADE")
+
+
+async def test_the_rules_see_the_real_review_with_nothing_seeded(tenant) -> None:
+    """The vocabulary a tenant writes rules in must be filled by the flow.
+
+    Every other rules test in this file hands ``eligibility_ctx`` to the graph
+    ready-made, so none of them could notice that nothing populated it. This
+    one seeds only the review and lets the flow do the rest — the same
+    ``recover_detractor`` rule the documentation shows, matching a real
+    one-star review because the intake, triage and publish results were
+    translated into ``ctx.rating``, ``ctx.sentiment`` and
+    ``ctx.reply_published``.
+    """
+    from parrot_saas.reviews.mock import MockReviewSource
+    from parrot_saas.reviews.port import ReviewEvent
+    from parrot_saas.rules.builder import DEFAULT_ELIGIBILITY_RULES, build_ruleset
+
+    class _Guests:
+        """A guest who consented, so the run reaches eligibility."""
+
+        async def get(self, tenant_id, guest_id):
+            return Guest(
+                guest_id=guest_id,
+                tenant_id=tenant_id,
+                email="guest@example.com",
+                consent_marketing=True,
+                lifetime_visits=3,
+            )
+
+    source = MockReviewSource(seed_demo=False)
+    source.seed("bar-pepe", ReviewEvent(source="mock", external_id="ext-1"))
+
+    shared = {
+        "review": _review(rating=1, guest_id="g-1"),
+        "tenant_id": "bar-pepe",
+        "timezone": tenant.timezone,
+    }
+
+    result, executed = await _run(
+        tenant,
+        shared,
+        review_source=source,
+        guest_repository=_Guests(),
+        ruleset=build_ruleset(DEFAULT_ELIGIBILITY_RULES),
+    )
+
+    assert topo.COUPON_ELIGIBILITY in executed
+    decision = result.responses[topo.COUPON_ELIGIBILITY]
+    assert decision.eligible is True, shared.get("eligibility_ctx")
+    assert decision.rule_name == "recover_detractor"
+
+    # And the context the rules saw is published for whoever asks why.
+    seen = shared["eligibility_ctx"]
+    assert seen["rating"] == 1
+    assert seen["reply_published"] is True
+    assert seen["consent_marketing"] is True
+    assert seen["lifetime_visits"] == 3
+
+
+async def test_a_promoter_is_not_offered_the_detractor_coupon(tenant) -> None:
+    """The mirror of the case above: the same rule must *not* fire."""
+    from parrot_saas.reviews.mock import MockReviewSource
+    from parrot_saas.reviews.port import ReviewEvent
+    from parrot_saas.rules.builder import DEFAULT_ELIGIBILITY_RULES, build_ruleset
+
+    class _Guests:
+        async def get(self, tenant_id, guest_id):
+            return Guest(
+                guest_id=guest_id,
+                tenant_id=tenant_id,
+                email="guest@example.com",
+                consent_marketing=True,
+            )
+
+    source = MockReviewSource(seed_demo=False)
+    source.seed("bar-pepe", ReviewEvent(source="mock", external_id="ext-1"))
+
+    result, executed = await _run(
+        tenant,
+        {
+            "review": _review(rating=5, text="Wonderful evening.", guest_id="g-1"),
+            "tenant_id": "bar-pepe",
+        },
+        review_source=source,
+        guest_repository=_Guests(),
+        ruleset=build_ruleset(DEFAULT_ELIGIBILITY_RULES),
+    )
+
+    assert result.responses[topo.COUPON_ELIGIBILITY].eligible is False
+    assert topo.COUPON_ISSUE not in executed
+    assert result.responses[topo.CLOSE].outcome == "replied_not_eligible"
+
+
+async def test_a_delivered_coupon_closes_the_run(tenant) -> None:
+    """The last edge of the branch, with a delivery service wired in."""
+    from parrot_saas.flows.community_manager.models import (
+        ContactCapture,
+        ContactChannel,
+        CouponDecision,
+        CouponIssued,
+    )
+
+    class _Delivery:
+        def __init__(self) -> None:
+            self.calls: list = []
+
+        async def send(self, tenant_id, contact, issued, *, business=""):
+            self.calls.append((tenant_id, issued.coupon_code, business))
+            return type("_R", (), {"delivered": True, "reason": ""})()
+
+    delivery = _Delivery()
+    shared = {
+        "review": _review(),
+        "tenant_id": "bar-pepe",
+        "contact": ContactCapture(
+            contact_available=True,
+            channel=ContactChannel.EMAIL,
+            guest_id="g-1",
+        ),
+        "eligibility": CouponDecision(eligible=True, offer_code="RECOVER20"),
+        "issued": CouponIssued(
+            issued=True, coupon_code="RECOVER20-7KQF9M", offer_code="RECOVER20"
+        ),
+    }
+
+    result, executed = await _run(tenant, shared, delivery=delivery)
+
+    assert topo.COUPON_DELIVER in executed
+    assert result.responses[topo.COUPON_DELIVER].delivered is True
+    assert result.responses[topo.CLOSE].outcome == "coupon_delivered"
+    # The tenant's display name, not its slug, is what a guest reads.
+    assert delivery.calls[0][2] == "Bar Pepe"
 
 
 # ---------------------------------------------------------------------------

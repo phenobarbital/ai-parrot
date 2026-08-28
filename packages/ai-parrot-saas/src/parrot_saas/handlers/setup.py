@@ -34,6 +34,7 @@ from ..tenancy.middleware import (
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
 from .coupons import (
+    APP_COUPON_DELIVERY,
     APP_COUPON_ISSUER,
     APP_COUPON_REPOSITORY,
     CouponCollectionView,
@@ -325,6 +326,17 @@ def setup_saas_api(
 
     review_repository = ReviewRepository(resolved_dsn, schema=resolved_schema)
     guest_repository = GuestRepository(resolved_dsn, schema=resolved_schema)
+
+    # Built here rather than per run: it holds provider connection options
+    # (SMTP credentials, an SMS token) that belong to the deployment, not to a
+    # tenant, and it resolves the guest's contact handle itself at send time so
+    # that no address ever enters the flow's shared state.
+    from ..coupons.delivery import CouponDelivery
+
+    _app[APP_COUPON_DELIVERY] = CouponDelivery(
+        guest_repository=guest_repository,
+        coupon_repository=coupon_repository,
+    )
     _app[APP_INGEST_SERVICE] = ReviewIngestService(
         reviews=review_repository,
         guests=guest_repository,
@@ -408,6 +420,7 @@ def setup_saas_api(
 
 
 __all__ = (
+    "APP_COUPON_DELIVERY",
     "APP_COUPON_ISSUER",
     "APP_COUPON_REPOSITORY",
     "APP_INGEST_SERVICE",

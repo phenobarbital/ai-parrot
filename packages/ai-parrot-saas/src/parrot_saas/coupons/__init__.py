@@ -17,12 +17,19 @@ if TYPE_CHECKING:  # pragma: no cover - import only for type checkers
         CouponStatus,
         DiscountType,
     )
-    from .repository import CouponRepository, OfferAlreadyExists, RedemptionError
+    from .delivery import CouponDelivery, DeliveryReceipt
+    from .repository import (
+        CouponRepository,
+        GuestCouponHistory,
+        OfferAlreadyExists,
+        RedemptionError,
+    )
 
 __all__ = (
     "BudgetPeriod",
     "Coupon",
     "CouponBudget",
+    "CouponDelivery",
     "CouponEvent",
     "CouponIssuer",
     "CouponOffer",
@@ -30,7 +37,9 @@ __all__ = (
     "CouponOfferUpdate",
     "CouponRepository",
     "CouponStatus",
+    "DeliveryReceipt",
     "DiscountType",
+    "GuestCouponHistory",
     "OfferAlreadyExists",
     "RedemptionError",
     "generate_code",
@@ -53,6 +62,12 @@ _LAZY_EXPORTS = {
     "CouponRepository": ("parrot_saas.coupons.repository", "CouponRepository"),
     "OfferAlreadyExists": ("parrot_saas.coupons.repository", "OfferAlreadyExists"),
     "RedemptionError": ("parrot_saas.coupons.repository", "RedemptionError"),
+    "GuestCouponHistory": (
+        "parrot_saas.coupons.repository",
+        "GuestCouponHistory",
+    ),
+    "CouponDelivery": ("parrot_saas.coupons.delivery", "CouponDelivery"),
+    "DeliveryReceipt": ("parrot_saas.coupons.delivery", "DeliveryReceipt"),
 }
 
 

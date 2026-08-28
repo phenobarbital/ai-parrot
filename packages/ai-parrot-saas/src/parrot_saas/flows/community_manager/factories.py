@@ -48,6 +48,7 @@ def build_cm_node_factories(
     review_repository: Optional[Any] = None,
     guest_repository: Optional[Any] = None,
     ruleset: Optional[Any] = None,
+    coupon_repository: Optional[Any] = None,
     issuer: Optional[Any] = None,
     delivery: Optional[Any] = None,
     node_timeout: float = 120.0,
@@ -68,6 +69,8 @@ def build_cm_node_factories(
             attempt are recorded in.
         guest_repository: Repository resolving guest contact details.
         ruleset: Compiled navrules ``RuleSet`` for coupon eligibility.
+        coupon_repository: Repository the eligibility node reads its
+            anti-abuse counters from before evaluating the ruleset.
         issuer: Coupon issuance service.
         delivery: Coupon delivery service.
         node_timeout: Wall-clock budget applied to each outbound call. The
@@ -124,13 +127,18 @@ def build_cm_node_factories(
             CaptureContactNode, guest_repository=guest_repository
         ),
         topo.NODE_TYPES[topo.COUPON_ELIGIBILITY]: _with(
-            CouponEligibilityNode, ruleset=ruleset
+            CouponEligibilityNode,
+            ruleset=ruleset,
+            coupon_repository=coupon_repository,
         ),
         topo.NODE_TYPES[topo.COUPON_ISSUE]: _with(
             CouponIssueNode, issuer=issuer
         ),
         topo.NODE_TYPES[topo.COUPON_DELIVER]: _with(
-            CouponDeliverNode, delivery=delivery, timeout=node_timeout
+            CouponDeliverNode,
+            delivery=delivery,
+            business_name=tenant.name,
+            timeout=node_timeout,
         ),
         topo.NODE_TYPES[topo.CLOSE]: _with(
             CloseNode, review_repository=review_repository

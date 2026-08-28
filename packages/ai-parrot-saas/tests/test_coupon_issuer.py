@@ -383,3 +383,96 @@ async def test_offers_and_coupons_are_tenant_scoped(coupons, issuer) -> None:
     assert theirs.issued is False
     assert theirs.reason == "unknown_offer"
     assert await coupons.list_coupons("hotel-x") == []
+
+
+# ---------------------------------------------------------------------------
+# The anti-abuse counters the eligibility rules read
+# ---------------------------------------------------------------------------
+
+
+async def test_guest_history_counts_across_offers_and_inside_the_window(
+    coupons, issuer
+) -> None:
+    """``ctx.coupons_issued_90d`` has to see every offer, not one.
+
+    ``count_for_guest`` is per-offer and unbounded in time, so a guest could
+    collect one of each offer on every review and never trip it. This is the
+    cross-offer, time-boxed view a tenant writes anti-abuse rules against.
+    """
+    guest = "11111111-1111-1111-1111-111111111111"
+    await _offer(coupons, code="RECOVER20", max_per_guest=0)
+    await _offer(coupons, code="WELCOME10", max_per_guest=0)
+    await issuer.issue("bar-pepe", offer_code="RECOVER20", guest_id=guest)
+    await issuer.issue("bar-pepe", offer_code="WELCOME10", guest_id=guest)
+
+    history = await coupons.guest_history("bar-pepe", guest)
+
+    assert history.issued_in_window == 2
+    assert history.window_days == 90
+    assert history.days_since_last(never=3650) == 0
+
+
+async def test_guest_history_excludes_voided_coupons(coupons, issuer) -> None:
+    """Withdrawing a mistaken issuance gives the guest their allowance back."""
+    guest = "11111111-1111-1111-1111-111111111111"
+    await _offer(coupons, max_per_guest=0)
+    issued = await issuer.issue(
+        "bar-pepe", offer_code="RECOVER20", guest_id=guest
+    )
+    coupon = await coupons.get_coupon_by_code("bar-pepe", issued.coupon_code)
+    await coupons.void("bar-pepe", coupon.coupon_id)
+
+    history = await coupons.guest_history("bar-pepe", guest)
+
+    assert history.issued_in_window == 0
+
+
+async def test_guest_history_respects_the_window(coupons, issuer) -> None:
+    """A coupon from last year must not hold back this year's guest."""
+    guest = "11111111-1111-1111-1111-111111111111"
+    await _offer(coupons, max_per_guest=0)
+    issued = await issuer.issue(
+        "bar-pepe", offer_code="RECOVER20", guest_id=guest
+    )
+    async with coupons.acquire() as conn:
+        await conn.execute(
+            f"UPDATE {coupons.table('coupons')} "
+            "SET issued_at = now() - interval '200 days' WHERE code = $1",
+            issued.coupon_code,
+        )
+
+    history = await coupons.guest_history("bar-pepe", guest)
+
+    assert history.issued_in_window == 0
+    assert 195 <= history.days_since_last(never=3650) <= 205
+
+
+async def test_guest_history_is_empty_for_a_guest_with_no_coupons(
+    coupons,
+) -> None:
+    """"Never" is a sentinel, not a missing value — see NEVER_COUPONED_DAYS."""
+    history = await coupons.guest_history(
+        "bar-pepe", "22222222-2222-2222-2222-222222222222"
+    )
+
+    assert history.issued_in_window == 0
+    assert history.last_issued_at is None
+    assert history.days_since_last(never=3650) == 3650
+
+
+async def test_guest_history_does_not_cross_tenants(coupons, issuer) -> None:
+    """Every read in this package is tenant-scoped; this one included."""
+    guest = "11111111-1111-1111-1111-111111111111"
+    await _offer(coupons, max_per_guest=0)
+    await issuer.issue("bar-pepe", offer_code="RECOVER20", guest_id=guest)
+
+    history = await coupons.guest_history("hotel-x", guest)
+
+    assert history.issued_in_window == 0
+
+
+async def test_guest_history_tolerates_an_anonymous_review(coupons) -> None:
+    """A review with no guest is ordinary, not an error."""
+    history = await coupons.guest_history("bar-pepe", "")
+
+    assert history.issued_in_window == 0

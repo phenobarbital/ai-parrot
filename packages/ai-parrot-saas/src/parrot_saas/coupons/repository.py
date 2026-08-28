@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import json
 import uuid as _uuid
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
 from ..db.repository import BaseRepository
@@ -37,6 +38,48 @@ _COUPON_COLUMNS = (
 _EVENT_COLUMNS = (
     "event_id, tenant_id, coupon_id, event, detail, actor, created_at"
 )
+
+
+@dataclass(frozen=True, slots=True)
+class GuestCouponHistory:
+    """What a guest has already been given, for anti-abuse rules.
+
+    Deliberately raw facts rather than rule vocabulary: the mapping onto
+    ``ctx.coupons_issued_90d`` and ``ctx.last_coupon_days_ago`` belongs to the
+    eligibility node, so the coupon package does not have to know what the
+    rules engine calls things.
+
+    Attributes:
+        issued_in_window: Coupons issued inside the requested window, across
+            every offer. Voided ones are excluded — withdrawing a mistaken
+            issuance has to give the guest their allowance back.
+        last_issued_at: When they were last given one, or ``None`` for never.
+        window_days: The window that was counted, echoed back so a caller
+            cannot misreport which period the count covers.
+    """
+
+    issued_in_window: int = 0
+    last_issued_at: Optional[datetime] = None
+    window_days: int = 90
+
+    def days_since_last(self, *, never: int) -> int:
+        """Days since the last coupon, or ``never`` when there was none.
+
+        Args:
+            never: Value standing for "no coupon has ever been issued". The
+                caller supplies it because the sentinel is the rules engine's
+                vocabulary, not this package's.
+
+        Returns:
+            Whole days elapsed, floored at zero so a clock skew cannot produce
+            a negative that no rule would be written to expect.
+        """
+        if self.last_issued_at is None:
+            return never
+        last = self.last_issued_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return max(0, (datetime.now(timezone.utc) - last).days)
 
 
 class OfferAlreadyExists(ValueError):
@@ -269,6 +312,50 @@ class CouponRepository(BaseRepository):
         )
         return int(row["n"]) if row else 0
 
+    async def guest_history(
+        self, tenant_id: str, guest_id: str, *, window_days: int = 90
+    ) -> GuestCouponHistory:
+        """Summarise what one guest has already received.
+
+        Counts across **every** offer, which is what makes it useful to an
+        anti-abuse rule: :meth:`count_for_guest` is per-offer and unbounded in
+        time, so a guest could collect one of each offer on every review and
+        never trip it. The issuer's ``max_per_guest`` check is per-offer and
+        transactional; this is the cross-offer, time-boxed view a tenant
+        writes ``ctx.coupons_issued_90d`` against.
+
+        Args:
+            tenant_id: Owning tenant.
+            guest_id: The guest. An unknown or malformed id yields an empty
+                history rather than an error — an anonymous review simply has
+                no coupon record.
+            window_days: How far back to count.
+
+        Returns:
+            The guest's coupon history.
+        """
+        guest = as_uuid(guest_id)
+        if guest is None:
+            return GuestCouponHistory(window_days=window_days)
+        row = await self.fetch_one(
+            tenant_id,
+            "SELECT count(*) FILTER ("
+            "    WHERE issued_at >= now() - make_interval(days => $3)"
+            ") AS issued_in_window, "
+            "max(issued_at) AS last_issued_at "
+            f"FROM {self.table('coupons')} "
+            "WHERE tenant_id = $1 AND guest_id = $2 AND status <> 'void'",
+            guest,
+            int(window_days),
+        )
+        if row is None:
+            return GuestCouponHistory(window_days=window_days)
+        return GuestCouponHistory(
+            issued_in_window=int(row["issued_in_window"] or 0),
+            last_issued_at=row["last_issued_at"],
+            window_days=window_days,
+        )
+
     async def mark_delivered(
         self, tenant_id: str, coupon_id: str
     ) -> Optional[Coupon]:
@@ -438,6 +525,7 @@ def _utcnow() -> datetime:
 
 __all__ = (
     "CouponRepository",
+    "GuestCouponHistory",
     "OfferAlreadyExists",
     "RedemptionError",
     "as_uuid",
