@@ -166,6 +166,51 @@ class TestSourceCollectionManagerArangoCRUD:
         mock_arango_db.query = AsyncMock(return_value=([], None))
         assert manager.mark_ingested("missing", ["p1"]) is None
 
+    def test_arango_doc_mapping_external_id(self, manager, mock_arango_db):
+        """FEAT-472: `_entry_to_doc`/`_doc_to_entry` round-trip `external_id`."""
+        entry = SourceManifestEntry(
+            source_id="src-fireflies-1",
+            source_uri="/meetings/2026-08-01-standup.md",
+            file_hash="deadbeef",
+            mtime=1.0,
+            ingested_at="2026-08-01T00:00:00Z",
+            external_id="fireflies:abc123",
+        )
+        manager._upsert(entry)
+        bind_vars = mock_arango_db.execute.call_args.kwargs["bind_vars"]
+        assert bind_vars["doc"]["external_id"] == "fireflies:abc123"
+
+        mock_arango_db.query = AsyncMock(return_value=([bind_vars["doc"]], None))
+        fetched = manager.get_source("src-fireflies-1")
+        assert fetched is not None
+        assert fetched.external_id == "fireflies:abc123"
+
+    def test_find_by_external_id_found(self, manager, mock_arango_db):
+        mock_arango_db.query = AsyncMock(
+            return_value=(
+                [
+                    {
+                        "source_id": "src-1",
+                        "source_uri": "/a.md",
+                        "file_hash": "h1",
+                        "mtime": 1.0,
+                        "ingested_at": "2026-08-01T00:00:00Z",
+                        "pages_generated": [],
+                        "status": "ingested",
+                        "external_id": "fireflies:abc",
+                    }
+                ],
+                None,
+            )
+        )
+        entry = manager.find_by_external_id("fireflies:abc")
+        assert entry is not None
+        assert entry.source_id == "src-1"
+
+    def test_find_by_external_id_not_found(self, manager, mock_arango_db):
+        mock_arango_db.query = AsyncMock(return_value=([], None))
+        assert manager.find_by_external_id("fireflies:missing") is None
+
 
 class TestArangoQueryHelpers:
     """Direct coverage of the private AQL bridging helpers."""

@@ -52,8 +52,8 @@ _SOURCES_UPSERT_SQL = (
     " (source_id, source_uri, file_hash, mtime, ingested_at,"
     "  pages_generated, status, destination, decision_source,"
     "  charter_version, composite_score, doc_metadata,"
-    "  content_type, loader)"
-    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "  content_type, loader, external_id)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     " ON CONFLICT(source_id) DO UPDATE SET"
     "  source_uri=excluded.source_uri, file_hash=excluded.file_hash,"
     "  mtime=excluded.mtime, ingested_at=excluded.ingested_at,"
@@ -64,7 +64,8 @@ _SOURCES_UPSERT_SQL = (
     "  composite_score=excluded.composite_score,"
     "  doc_metadata=excluded.doc_metadata,"
     "  content_type=excluded.content_type,"
-    "  loader=excluded.loader"
+    "  loader=excluded.loader,"
+    "  external_id=excluded.external_id"
 )
 
 #: Max bind parameters per sqlite ``IN (...)`` clause. SQLite's own
@@ -92,6 +93,16 @@ _SOURCES_DOCUMENT_COLUMNS: dict[str, str] = {
     "loader": "TEXT",
 }
 
+#: FEAT-472 additive column on the `sources` table: an immutable external
+#: identity (``"<source>:<id>"``, e.g. ``"fireflies:abc123"``) that lets a
+#: row be found without depending on its (mutable) path/title. Nullable so
+#: pre-FEAT-472 databases keep opening cleanly; see
+#: ``_migrate_sources_columns``, which also (idempotently) creates
+#: ``idx_sources_external_id`` for pre-existing databases.
+_SOURCES_EXTERNAL_COLUMNS: dict[str, str] = {
+    "external_id": "TEXT",
+}
+
 
 class SourceCollectionManager:
     """Manages the raw-source collection for a single wiki instance.
@@ -105,6 +116,17 @@ class SourceCollectionManager:
         manifest_path: ``.manifest.json`` location (json-mode storage;
             sqlite-mode legacy migration source).
         logger: Standard Python logger.
+
+    External identity convention (FEAT-472): a source may optionally carry
+    an ``external_id`` — an immutable identity in ``"<source>:<id>"`` form
+    (e.g. ``"fireflies:abc123"`` for a Fireflies transcript id), distinct
+    from ``source_id``/``source_uri`` which are derived from the file's
+    path and change if the file is renamed or moved. Any future external
+    source integration (Jira, audio notes, etc.) that needs
+    identity-not-path dedup should adopt the same ``"<source>:<id>"``
+    convention rather than inventing a parallel registry. See
+    :meth:`find_by_external_id`, :meth:`find_entries_by_external_ids`,
+    :meth:`list_by_external_prefix`, and :meth:`set_external_id`.
 
     Example::
 
@@ -202,7 +224,7 @@ class SourceCollectionManager:
     # Public API
     # ------------------------------------------------------------------
 
-    def add_source(self, path: Path) -> SourceManifestEntry:
+    def add_source(self, path: Path, *, external_id: str | None = None) -> SourceManifestEntry:
         """Register a new source file in the sources table.
 
         Computes the SHA-1 hash and mtime of the file at registration
@@ -211,6 +233,9 @@ class SourceCollectionManager:
 
         Args:
             path: Absolute or relative path to the source file.
+            external_id: FEAT-472 immutable external identity in
+                ``"<source>:<id>"`` form (e.g. ``"fireflies:abc123"``).
+                ``None`` (default) leaves the source without one.
 
         Returns:
             The created or updated :class:`SourceManifestEntry`.
@@ -234,6 +259,7 @@ class SourceCollectionManager:
             ingested_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             pages_generated=[],
             status="ingested",
+            external_id=external_id,
         )
         self._upsert(entry)
         self.logger.debug(
@@ -425,15 +451,16 @@ class SourceCollectionManager:
             path = Path(entry.source_uri)
             if not path.exists():
                 continue
+            # FEAT-472: model_copy(update=...) — see mark_ingested's
+            # docstring note; the batch twin had the same field-dropping bug.
             updated.append(
-                SourceManifestEntry(
-                    source_id=entry.source_id,
-                    source_uri=entry.source_uri,
-                    file_hash=self._compute_hash(path),
-                    mtime=path.stat().st_mtime,
-                    ingested_at=entry.ingested_at,
-                    pages_generated=pages,
-                    status=status,
+                entry.model_copy(
+                    update={
+                        "file_hash": self._compute_hash(path),
+                        "mtime": path.stat().st_mtime,
+                        "pages_generated": pages,
+                        "status": status,
+                    }
                 )
             )
         if updated:
@@ -553,16 +580,20 @@ class SourceCollectionManager:
             return None
 
         # Refresh hash and mtime in case the file was re-written during ingest.
+        # FEAT-472: model_copy(update=...) instead of reconstructing a fresh
+        # SourceManifestEntry from scratch — the latter silently dropped
+        # every FEAT-402/451/472 field (destination, doc_metadata,
+        # external_id, ...) that isn't one of the seven positional ones
+        # below on every re-ingest.
         path = Path(entry.source_uri)
         if path.exists():
-            entry = SourceManifestEntry(
-                source_id=entry.source_id,
-                source_uri=entry.source_uri,
-                file_hash=self._compute_hash(path),
-                mtime=path.stat().st_mtime,
-                ingested_at=entry.ingested_at,
-                pages_generated=pages_generated,
-                status=status,
+            entry = entry.model_copy(
+                update={
+                    "file_hash": self._compute_hash(path),
+                    "mtime": path.stat().st_mtime,
+                    "pages_generated": pages_generated,
+                    "status": status,
+                }
             )
             self._upsert(entry)
         return entry
@@ -577,6 +608,7 @@ class SourceCollectionManager:
         composite_score: float | None = None,
         pages_generated: list[str] | None = None,
         status: str | None = None,
+        external_id: str | None = None,
     ) -> SourceManifestEntry:
         """Register or update a source with its supervised-ingestion decision.
 
@@ -604,6 +636,10 @@ class SourceCollectionManager:
                 archived-without-pages documents pass ``None`` or ``[]``.
             status: Lifecycle status override. Defaults to ``"rejected"``
                 when ``destination == "discard"``, else ``"ingested"``.
+            external_id: FEAT-472 immutable external identity in
+                ``"<source>:<id>"`` form. ``None`` (default) leaves any
+                existing value on the row unchanged when the source is
+                already tracked, or leaves it unset for a new source.
 
         Returns:
             The created or updated :class:`SourceManifestEntry`.
@@ -649,6 +685,7 @@ class SourceCollectionManager:
             decision_source=decision_source,
             charter_version=charter_version,
             composite_score=composite_score,
+            external_id=(external_id if external_id is not None else (existing.external_id if existing else None)),
         )
         self._upsert(entry)
         self.logger.debug(
@@ -746,6 +783,184 @@ class SourceCollectionManager:
         return self._find_id_by_uri(source_uri)
 
     # ------------------------------------------------------------------
+    # FEAT-472: external-id readers/writers
+    # ------------------------------------------------------------------
+
+    def find_by_external_id(self, external_id: str) -> SourceManifestEntry | None:
+        """Look up a source by its immutable external identity.
+
+        Args:
+            external_id: ``"<source>:<id>"`` value to search for (e.g.
+                ``"fireflies:abc123"``).
+
+        Returns:
+            The matching :class:`SourceManifestEntry`, or ``None`` if no
+            row carries that ``external_id``.
+        """
+        if self.backend == "json":
+            for entry in self._manifest.values():
+                if entry.external_id == external_id:
+                    return entry
+            return None
+        if self.backend == "arangodb":
+            return self._run_async(self._async_find_by_external_id(external_id))
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM sources WHERE external_id = ? LIMIT 1",
+                (external_id,),
+            ).fetchone()
+        return self._row_to_entry(row) if row else None
+
+    def find_entries_by_external_ids(self, external_ids: list[str]) -> dict[str, SourceManifestEntry]:
+        """Look up many sources by external id in as few statements as possible.
+
+        Args:
+            external_ids: ``"<source>:<id>"`` values to search for.
+
+        Returns:
+            Mapping of ``external_id`` -> entry, containing only the ids
+            that are actually tracked.
+        """
+        if not external_ids:
+            return {}
+        wanted = set(external_ids)
+        if self.backend == "json":
+            return {
+                e.external_id: e
+                for e in self._manifest.values()
+                if e.external_id is not None and e.external_id in wanted
+            }
+        if self.backend == "arangodb":
+            rows = self._run_async(
+                self._arango_query(
+                    "FOR doc IN @@collection FILTER doc.external_id IN @ids RETURN doc",
+                    {"@collection": _ARANGO_SOURCES_COLLECTION, "ids": list(wanted)},
+                )
+            )
+            return {e.external_id: e for e in (self._doc_to_entry(row) for row in rows) if e.external_id}
+
+        found: dict[str, SourceManifestEntry] = {}
+        ordered = list(wanted)
+        with self._connect() as conn:
+            for start in range(0, len(ordered), _SQLITE_IN_CHUNK):
+                chunk = ordered[start : start + _SQLITE_IN_CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                rows = conn.execute(
+                    f"SELECT * FROM sources WHERE external_id IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    entry = self._row_to_entry(row)
+                    if entry.external_id is not None:
+                        found[entry.external_id] = entry
+        return found
+
+    def list_by_external_prefix(self, prefix: str) -> list[SourceManifestEntry]:
+        """List every source whose ``external_id`` starts with ``prefix``.
+
+        Args:
+            prefix: External-id prefix to match, e.g. ``"fireflies:"``.
+
+        Returns:
+            Matching entries; rows with a ``None`` external_id or a
+            different prefix are excluded.
+        """
+        if self.backend == "json":
+            return [e for e in self._manifest.values() if e.external_id is not None and e.external_id.startswith(prefix)]
+        if self.backend == "arangodb":
+            rows = self._run_async(
+                self._arango_query(
+                    "FOR doc IN @@collection"
+                    " FILTER doc.external_id != null"
+                    " FILTER STARTS_WITH(doc.external_id, @prefix)"
+                    " RETURN doc",
+                    {"@collection": _ARANGO_SOURCES_COLLECTION, "prefix": prefix},
+                )
+            )
+            return [self._doc_to_entry(row) for row in rows]
+        with self._connect() as conn:
+            # LIKE with a trailing '%' after escaping SQLite's own LIKE
+            # wildcards ('%', '_') in the prefix itself, so a literal
+            # prefix containing those characters cannot widen the match.
+            escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            rows = conn.execute(
+                "SELECT * FROM sources WHERE external_id LIKE ? ESCAPE '\\'",
+                (f"{escaped}%",),
+            ).fetchall()
+        return [self._row_to_entry(row) for row in rows]
+
+    def set_external_id(self, source_id: str, external_id: str | None) -> SourceManifestEntry | None:
+        """Set (or clear) the external identity of an already-tracked source.
+
+        Args:
+            source_id: The tracked source to update.
+            external_id: New ``"<source>:<id>"`` value, or ``None`` to
+                clear it.
+
+        Returns:
+            The updated :class:`SourceManifestEntry`, or ``None`` if
+            ``source_id`` is not tracked.
+        """
+        entry = self.get_source(source_id)
+        if entry is None:
+            self.logger.warning("set_external_id: source_id=%s not found", source_id)
+            return None
+        updated = entry.model_copy(update={"external_id": external_id})
+        self._upsert(updated)
+        self.logger.debug("set_external_id: source_id=%s external_id=%s", source_id, external_id)
+        return updated
+
+    def update_source_uri(self, source_id: str, new_uri: Path | str) -> SourceManifestEntry | None:
+        """Repoint a tracked source at a new path, keeping its ``source_id``.
+
+        Used by repair flows that move/rename the underlying file: the
+        row's identity (``source_id``, and any ``external_id``) survives
+        the move; only ``source_uri``/``file_hash``/``mtime`` change.
+
+        Args:
+            source_id: The tracked source to update.
+            new_uri: The file's new location. Must exist.
+
+        Returns:
+            The updated :class:`SourceManifestEntry`, or ``None`` if
+            ``source_id`` is not tracked.
+
+        Raises:
+            FileNotFoundError: If ``new_uri`` does not exist.
+            ValueError: If ``new_uri`` is already tracked under a
+                *different* ``source_id`` (would otherwise surface as a
+                ``sqlite3.IntegrityError`` on the ``source_uri`` UNIQUE
+                constraint).
+        """
+        entry = self.get_source(source_id)
+        if entry is None:
+            self.logger.warning("update_source_uri: source_id=%s not found", source_id)
+            return None
+        path = Path(new_uri).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Source file not found: {path}")
+        new_source_uri = str(path)
+        owner_id = self._find_id_by_uri(new_source_uri)
+        if owner_id is not None and owner_id != source_id:
+            raise ValueError(
+                f"update_source_uri: {new_source_uri!r} is already tracked" f" by a different source_id={owner_id!r}"
+            )
+        updated = entry.model_copy(
+            update={
+                "source_uri": new_source_uri,
+                "file_hash": self._compute_hash(path),
+                "mtime": path.stat().st_mtime,
+            }
+        )
+        self._upsert(updated)
+        self.logger.debug(
+            "update_source_uri: source_id=%s new_uri=%s",
+            source_id,
+            new_source_uri,
+        )
+        return updated
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
@@ -814,6 +1029,7 @@ class SourceCollectionManager:
             (json.dumps(entry.doc_metadata) if entry.doc_metadata is not None else None),
             entry.content_type,
             entry.loader,
+            entry.external_id,
         )
 
     @staticmethod
@@ -865,6 +1081,7 @@ class SourceCollectionManager:
             doc_metadata=doc_metadata,
             content_type=SourceCollectionManager._optional_column(row, "content_type"),
             loader=SourceCollectionManager._optional_column(row, "loader"),
+            external_id=SourceCollectionManager._optional_column(row, "external_id"),
         )
 
     def _compute_hash(self, path: Path) -> str:
@@ -1036,6 +1253,7 @@ class SourceCollectionManager:
             doc_metadata=doc.get("doc_metadata"),
             content_type=doc.get("content_type"),
             loader=doc.get("loader"),
+            external_id=doc.get("external_id"),
         )
 
     @staticmethod
@@ -1057,6 +1275,7 @@ class SourceCollectionManager:
             "doc_metadata": entry.doc_metadata,
             "content_type": entry.content_type,
             "loader": entry.loader,
+            "external_id": entry.external_id,
         }
 
     async def _async_upsert(self, entry: SourceManifestEntry) -> None:
@@ -1113,23 +1332,36 @@ class SourceCollectionManager:
         )
         return rows[0] if rows else None
 
+    async def _async_find_by_external_id(self, external_id: str) -> SourceManifestEntry | None:
+        """Look up a single source document by ``external_id`` (FEAT-472)."""
+        rows = await self._arango_query(
+            "FOR doc IN @@collection FILTER doc.external_id == @external_id" " LIMIT 1 RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "external_id": external_id},
+        )
+        return self._doc_to_entry(rows[0]) if rows else None
+
     def _migrate_sources_columns(self) -> None:
-        """Additively add the FEAT-402/FEAT-451 columns to ``sources``.
+        """Additively add the FEAT-402/FEAT-451/FEAT-472 columns to ``sources``.
 
         Idempotent — guarded on ``PRAGMA table_info(sources)`` — and
         additive only, never rewriting or dropping existing rows/columns,
-        so pre-FEAT-402 and pre-FEAT-451 databases keep opening cleanly.
-        Follows the :meth:`_migrate_json_manifest` compatibility precedent
-        (existing data is never touched; only missing structure is added).
+        so pre-FEAT-402, pre-FEAT-451, and pre-FEAT-472 databases keep
+        opening cleanly. Follows the :meth:`_migrate_json_manifest`
+        compatibility precedent (existing data is never touched; only
+        missing structure is added). Also (idempotently, via ``CREATE
+        INDEX IF NOT EXISTS``) creates ``idx_sources_external_id`` so a
+        pre-existing database gains the same index a fresh one gets from
+        ``WIKI_SCHEMA_SQL``.
         """
         with self._connect() as conn:
             existing = {row["name"] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
-            for column_map in (_SOURCES_DECISION_COLUMNS, _SOURCES_DOCUMENT_COLUMNS):
+            for column_map in (_SOURCES_DECISION_COLUMNS, _SOURCES_DOCUMENT_COLUMNS, _SOURCES_EXTERNAL_COLUMNS):
                 for name, col_type in column_map.items():
                     if name in existing:
                         continue
                     conn.execute(f"ALTER TABLE sources ADD COLUMN {name} {col_type}")
                     self.logger.debug("Migrated sources table: added column %s (%s)", name, col_type)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sources_external_id ON sources(external_id)")
 
     def _migrate_json_manifest(self) -> None:
         """One-time migration of a legacy ``.manifest.json`` into SQLite.

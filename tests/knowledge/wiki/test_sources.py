@@ -750,3 +750,224 @@ class TestBulkManifestOperations:
         assert mgr.entry_is_stale(fresh) is mgr.is_stale(fresh.source_id) is False
         assert mgr.entry_is_stale(mgr.get_source(changed_id)) is mgr.is_stale(changed_id) is True
         assert mgr.entry_is_stale(entries[2]) is True, "a deleted file is stale"
+
+
+class TestExternalIdMigration:
+    """FEAT-472: additive `sources.external_id` column + index migration."""
+
+    def test_migration_adds_external_id_column(self, tmp_path):
+        """A pre-FEAT-472 (14-column) sources table opens cleanly and gains
+        the new external_id column + index; existing rows are preserved."""
+        import sqlite3
+
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        db_path = sources_dir.parent / "wiki.db"
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE sources (
+                source_id        TEXT PRIMARY KEY,
+                source_uri       TEXT NOT NULL UNIQUE,
+                file_hash        TEXT NOT NULL,
+                mtime            REAL NOT NULL,
+                ingested_at      TEXT NOT NULL,
+                pages_generated  TEXT NOT NULL DEFAULT '[]',
+                status           TEXT NOT NULL DEFAULT 'ingested',
+                destination      TEXT,
+                decision_source  TEXT,
+                charter_version  TEXT,
+                composite_score  REAL,
+                doc_metadata     TEXT,
+                content_type     TEXT,
+                loader           TEXT
+            )
+            """)
+        conn.execute(
+            "INSERT INTO sources"
+            " (source_id, source_uri, file_hash, mtime, ingested_at,"
+            "  pages_generated, status)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "src-old000003",
+                "/docs/legacy3.md",
+                "feedface" * 5,
+                1.0,
+                "2025-09-01T00:00:00Z",
+                "[]",
+                "ingested",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        mgr = SourceCollectionManager(sources_dir, db_path=db_path)
+
+        raw_conn = sqlite3.connect(str(db_path))
+        columns = {row[1] for row in raw_conn.execute("PRAGMA table_info(sources)")}
+        indexes = {row[1] for row in raw_conn.execute("PRAGMA index_list(sources)")}
+        raw_conn.close()
+        assert "external_id" in columns
+        assert "idx_sources_external_id" in indexes
+
+        entry = mgr.get_source("src-old000003")
+        assert entry is not None
+        assert entry.external_id is None  # pre-existing row untouched
+
+        # Opening it again must be a no-op (idempotent).
+        SourceCollectionManager(sources_dir, db_path=db_path)
+
+    def test_new_db_has_external_id_column_from_ddl(self, sources_dir, sample_source):
+        """A brand-new database already has external_id (None by default)."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source)
+        assert entry.external_id is None
+
+
+class TestExternalIdReadersWriters:
+    """FEAT-472: add_source(external_id=...), find_by_external_id, etc."""
+
+    @pytest.mark.parametrize("backend", ["sqlite", "json"])
+    def test_add_source_with_external_id_roundtrip(self, tmp_path, backend):
+        sources_dir = tmp_path / "sources"
+        sources_dir.mkdir()
+        f = sources_dir / "meeting.md"
+        f.write_text("# Meeting\n")
+
+        mgr = SourceCollectionManager(sources_dir, backend=backend)
+        entry = mgr.add_source(f, external_id="fireflies:abc")
+
+        found = mgr.find_by_external_id("fireflies:abc")
+        assert found is not None
+        assert found.source_id == entry.source_id
+        assert mgr.find_by_external_id("fireflies:unknown") is None
+
+    def test_external_id_survives_mark_ingested(self, sources_dir, sample_source):
+        """mark_ingested must not drop FEAT-402/451/472 fields (bugfix)."""
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source, external_id="fireflies:xyz")
+        mgr.record_document_metadata(
+            entry.source_id,
+            doc_metadata={"author": "A"},
+            content_type="text/markdown",
+            loader="MarkdownLoader",
+        )
+
+        updated = mgr.mark_ingested(entry.source_id, pages_generated=["page-1"])
+
+        assert updated is not None
+        assert updated.external_id == "fireflies:xyz"
+        assert updated.doc_metadata == {"author": "A"}
+        assert updated.content_type == "text/markdown"
+        assert updated.loader == "MarkdownLoader"
+
+        fetched = mgr.get_source(entry.source_id)
+        assert fetched.external_id == "fireflies:xyz"
+        assert fetched.doc_metadata == {"author": "A"}
+
+    def test_external_id_survives_mark_ingested_many(self, sources_dir):
+        mgr = SourceCollectionManager(sources_dir)
+        files = []
+        for i in range(3):
+            f = sources_dir / f"m{i}.md"
+            f.write_text(f"# m{i}")
+            files.append(f)
+        entries = [mgr.add_source(f, external_id=f"fireflies:{i}") for i, f in enumerate(files)]
+
+        mgr.mark_ingested_many({e.source_id: [f"page-{i}"] for i, e in enumerate(entries)})
+
+        for i, e in enumerate(entries):
+            fetched = mgr.get_source(e.source_id)
+            assert fetched.external_id == f"fireflies:{i}"
+            assert fetched.pages_generated == [f"page-{i}"]
+
+    def test_list_by_external_prefix(self, sources_dir):
+        mgr = SourceCollectionManager(sources_dir)
+        f1 = sources_dir / "a.md"
+        f1.write_text("a")
+        f2 = sources_dir / "b.md"
+        f2.write_text("b")
+        f3 = sources_dir / "c.md"
+        f3.write_text("c")
+        mgr.add_source(f1, external_id="fireflies:1")
+        mgr.add_source(f2, external_id="fireflies:2")
+        mgr.add_source(f3, external_id="jira:1")
+
+        found = mgr.list_by_external_prefix("fireflies:")
+
+        assert {e.external_id for e in found} == {"fireflies:1", "fireflies:2"}
+
+    def test_find_entries_by_external_ids_chunked(self, sources_dir):
+        from parrot.knowledge.wiki.sources import _SQLITE_IN_CHUNK
+
+        mgr = SourceCollectionManager(sources_dir)
+        ids = []
+        for i in range(_SQLITE_IN_CHUNK + 7):
+            f = sources_dir / f"bulk{i}.md"
+            f.write_text(str(i))
+            ext_id = f"fireflies:{i}"
+            mgr.add_source(f, external_id=ext_id)
+            ids.append(ext_id)
+
+        found = mgr.find_entries_by_external_ids(ids)
+
+        assert len(found) == len(ids)
+
+    def test_set_external_id(self, sources_dir, sample_source):
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source)
+        assert entry.external_id is None
+
+        updated = mgr.set_external_id(entry.source_id, "fireflies:new")
+        assert updated is not None
+        assert updated.external_id == "fireflies:new"
+        assert mgr.get_source(entry.source_id).external_id == "fireflies:new"
+
+        cleared = mgr.set_external_id(entry.source_id, None)
+        assert cleared.external_id is None
+
+    def test_set_external_id_unknown_source_id(self, sources_dir):
+        mgr = SourceCollectionManager(sources_dir)
+        assert mgr.set_external_id("nonexistent", "fireflies:x") is None
+
+
+class TestUpdateSourceUri:
+    """FEAT-472: SourceCollectionManager.update_source_uri."""
+
+    def test_update_source_uri_keeps_source_id(self, sources_dir, sample_source):
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source, external_id="fireflies:abc")
+
+        new_path = sources_dir / "renamed.md"
+        sample_source.rename(new_path)
+
+        updated = mgr.update_source_uri(entry.source_id, new_path)
+
+        assert updated is not None
+        assert updated.source_id == entry.source_id
+        assert updated.source_uri == str(new_path.resolve())
+        assert updated.external_id == "fireflies:abc"
+        assert mgr.find_by_uri(str(new_path.resolve())) == entry.source_id
+
+    def test_update_source_uri_missing_file_raises(self, sources_dir, sample_source):
+        mgr = SourceCollectionManager(sources_dir)
+        entry = mgr.add_source(sample_source)
+
+        with pytest.raises(FileNotFoundError):
+            mgr.update_source_uri(entry.source_id, sources_dir / "ghost.md")
+
+    def test_update_source_uri_conflict_raises(self, sources_dir):
+        mgr = SourceCollectionManager(sources_dir)
+        f1 = sources_dir / "one.md"
+        f1.write_text("one")
+        f2 = sources_dir / "two.md"
+        f2.write_text("two")
+        e1 = mgr.add_source(f1)
+        mgr.add_source(f2)
+
+        with pytest.raises(ValueError, match="already tracked"):
+            mgr.update_source_uri(e1.source_id, f2)
+
+    def test_update_source_uri_unknown_source_id_returns_none(self, sources_dir, sample_source):
+        mgr = SourceCollectionManager(sources_dir)
+        assert mgr.update_source_uri("nonexistent", sample_source) is None
