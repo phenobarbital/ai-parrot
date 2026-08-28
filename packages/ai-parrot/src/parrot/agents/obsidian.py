@@ -13,16 +13,25 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
 from navconfig import config
 from pydantic import BaseModel, EmailStr, Field
 
+from parrot.agents.conf import FIREFLIES_REGISTRY_DIR, FIREFLIES_SYNC_OVERLAP_DAYS
 from parrot.bots.agent import BasicAgent
 from parrot.interfaces.obsidian.okf import project_okf_block
 from parrot.knowledge.okf.ontology import ConceptType, RelationType
 from parrot.models.responses import AIMessage
 from parrot.tools.obsidian import ObsidianToolkit
+
+if TYPE_CHECKING:
+    # FEAT-472: deferred to a TYPE_CHECKING-only import — meeting_registry.py
+    # itself imports FirefliesObsidianAgent from this module (for
+    # _make_note_title), so a top-level import here would cycle. The real
+    # (runtime) import happens lazily inside configure(), by which point
+    # both modules are fully loaded.
+    from parrot.agents.meeting_registry import MeetingRegistry
 
 #: Leading markdown/ordered list markers the LLM may already have written
 #: ("- ", "* ", "1. ", "2) ") — stripped so
@@ -189,6 +198,7 @@ class FirefliesObsidianAgent(BasicAgent):
         fireflies_token: Optional[str] = None,
         meetings_folder: str = "meetings",
         default_filters: Optional["FirefliesFilters"] = None,
+        registry_dir: Optional[str | Path] = None,
         **kwargs,
     ):
         """Initialize the Fireflies→Obsidian sync agent.
@@ -202,6 +212,12 @@ class FirefliesObsidianAgent(BasicAgent):
                 to every :meth:`sync_fireflies_transcripts` call (e.g. for a
                 scheduled daemon). Per-call ``filters`` override this
                 field-by-field — see :func:`_merge_filters`.
+            registry_dir: FEAT-472 directory whose ``wiki.db`` backs the
+                id-keyed :class:`~parrot.agents.meeting_registry.MeetingRegistry`.
+                Defaults to ``FIREFLIES_REGISTRY_DIR``. The registry is
+                opened in :meth:`configure`, not here — construction may
+                do file I/O and this constructor must stay synchronous
+                and side-effect-light.
             **kwargs: Forwarded to Agent.__init__()
         """
         super().__init__(name=name, **kwargs)
@@ -215,6 +231,11 @@ class FirefliesObsidianAgent(BasicAgent):
         self.fireflies_token = fireflies_token
         self.meetings_folder = meetings_folder
         self.default_filters = default_filters
+        self.registry_dir = Path(registry_dir) if registry_dir else Path(FIREFLIES_REGISTRY_DIR)
+        #: FEAT-472 id-keyed dedup registry; built in :meth:`configure`.
+        #: ``None`` until configured, or if construction/backfill failed —
+        #: every call site must degrade to the title-based fallback.
+        self.registry: Optional[MeetingRegistry] = None
 
         # Initialize Obsidian toolkit
         self.obsidian_toolkit = ObsidianToolkit(
@@ -226,6 +247,11 @@ class FirefliesObsidianAgent(BasicAgent):
                 "search",
                 "create",
                 "update",
+                # FEAT-472: repair_path/merge_duplicates move renamed notes
+                # back to their canonical path and delete duplicate notes —
+                # both only ever inside self.meetings_folder.
+                "move",
+                "delete",
             }
         )
 
@@ -260,6 +286,35 @@ class FirefliesObsidianAgent(BasicAgent):
                 "Fireflies tools): %s", exc,
             )
 
+        # --- FEAT-472: open the meeting registry and backfill once ---
+        from parrot.agents.meeting_registry import MeetingRegistry
+
+        try:
+            registry = MeetingRegistry(self.registry_dir)
+            if registry.available:
+                report = await registry.backfill_from_vault(
+                    toolkit=self.obsidian_toolkit,
+                    meetings_folder=self.meetings_folder,
+                    analysis_heading=self.ANALYSIS_HEADING,
+                )
+                self.logger.info(
+                    "MeetingRegistry backfill: seeded=%d without_analysis=%d"
+                    " duplicates=%d unmerged=%d",
+                    report.seeded,
+                    report.without_analysis,
+                    len(report.duplicates),
+                    len(report.unmerged),
+                )
+            self.registry = registry
+        except Exception as exc:
+            # Warning-only: the sync/analysis loops both fall back to
+            # title-based dedup when self.registry is None (spec §2 G10).
+            self.logger.warning(
+                "MeetingRegistry unavailable (falling back to title-based"
+                " dedup): %s", exc,
+            )
+            self.registry = None
+
     async def _ensure_fireflies_mcp(self) -> None:
         """Lazy-init Fireflies MCP server on first use."""
         if self._mcp_fireflies_initialized:
@@ -290,6 +345,7 @@ class FirefliesObsidianAgent(BasicAgent):
         skip_existing: bool = True,
         filters: Optional["FirefliesFilters"] = None,
         include_summary: bool = False,
+        force_refetch: bool = False,
     ) -> Dict[str, Any]:
         """Fetch latest Fireflies transcripts and save to Obsidian.
 
@@ -308,15 +364,27 @@ class FirefliesObsidianAgent(BasicAgent):
         ``sdd/specs/fireflies-mcp-improvements.spec.md`` §7 Known Risks), not
         a bug. Scope ``filters``/``limit`` accordingly for large accounts.
 
+        FEAT-472: when the :class:`~parrot.agents.meeting_registry.MeetingRegistry`
+        is available (``self.registry.available``), dedup is id-keyed —
+        see :meth:`_sync_via_registry` for the full decision table. When it
+        is unavailable, this falls back byte-identically to the original
+        title-based dedup (:meth:`_sync_via_titles`).
+
         Args:
             limit: Max transcripts to fetch, total across all pages (default: 10)
-            skip_existing: Skip transcripts already in vault (default: True)
+            skip_existing: Skip transcripts already in vault (default: True).
+                With the registry available and ``False``, a `classify()`
+                "skip" result is no longer treated as final: the row is
+                still touched via `record_synced` (refreshing its freshness
+                window) even though nothing is rewritten on disk.
             filters: Optional :class:`FirefliesFilters` to scope which
                 meetings are fetched (date range, keyword/scope,
                 organizer/participant emails, mine-only, channel). Merged
                 with ``self.default_filters`` — per-call fields here win over
                 the agent's default on the same field (see
-                :func:`_merge_filters`).
+                :func:`_merge_filters`). An explicit ``from_date`` here (or
+                on ``default_filters``) always wins over the registry's own
+                suggestion.
             include_summary: When ``True``, additionally fetch Fireflies'
                 native per-meeting summary (``fireflies_get_summary``) and
                 append it verbatim as a :attr:`FIREFLIES_SUMMARY_HEADING`
@@ -326,23 +394,46 @@ class FirefliesObsidianAgent(BasicAgent):
                 the transcript alone and still counts under
                 ``report["synced"]``; the failure is recorded in
                 ``report["errors"]``.
+            force_refetch: FEAT-472. When ``True``, bypasses `classify`'s
+                cheap-skip path — every known id is re-fetched and
+                re-fingerprinted regardless of how recently it was synced.
+                Has no effect when the registry is unavailable.
 
         Returns:
             Dict with:
             - status: 'ok' | 'error'
             - synced: number of new transcripts saved
             - skipped: number of transcripts already in the vault
-            - notes: list of note titles created by this run (feed these to
-              :meth:`summarize_transcript`)
+            - revised: FEAT-472 number of known ids updated in place
+            - notes: list of note titles created/revised by this run (feed
+              these to :meth:`summarize_transcript`)
             - errors: list of error messages
+            - repaired: FEAT-472 list of `RepairResult` dicts for renamed
+              notes moved back to their canonical path
+            - duplicates: reserved (populated by the registry's own
+              `backfill_from_vault`/`merge_duplicates` in :meth:`configure`,
+              never by this method)
+            - probable_duplicates: FEAT-472 list of
+              ``{"id", "matches"}`` for transcripts whose fingerprint
+              matches a DIFFERENT known id
+            - from_date: FEAT-472 the `fromDate` sent to the MCP when
+              derived from the registry (``None`` otherwise)
+            - registry: FEAT-472 ``"ok"`` | ``"unavailable"``
             - timestamp: ISO-8601 sync time
         """
-        report = {
+        registry_ok = self.registry is not None and self.registry.available
+        report: Dict[str, Any] = {
             "status": "ok",
             "synced": 0,
             "skipped": 0,
+            "revised": 0,
             "notes": [],
             "errors": [],
+            "repaired": [],
+            "duplicates": [],
+            "probable_duplicates": [],
+            "from_date": None,
+            "registry": "ok" if registry_ok else "unavailable",
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -353,6 +444,14 @@ class FirefliesObsidianAgent(BasicAgent):
             filter_args = (
                 _filters_to_tool_args(effective_filters) if effective_filters else {}
             )
+
+            if registry_ok and "fromDate" not in filter_args:
+                suggested = await self.registry.suggest_from_date(
+                    overlap_days=FIREFLIES_SYNC_OVERLAP_DAYS
+                )
+                if suggested:
+                    filter_args["fromDate"] = suggested
+                    report["from_date"] = suggested
 
             # Fetch transcripts, paginating transparently past the tool's
             # 50-per-call cap until `limit` is reached or the API is
@@ -395,106 +494,21 @@ class FirefliesObsidianAgent(BasicAgent):
                 self.logger.info("No transcripts found")
                 return report
 
-            # Get existing meeting files
-            existing_titles = set()
-            if skip_existing:
-                existing_titles = await self._get_existing_meeting_titles()
-
-            # Sync each transcript
-            for transcript in transcripts:
-                try:
-                    transcript_id = transcript.get("id")
-                    title = transcript.get("title", "Untitled Meeting")
-                    date = transcript.get("date", datetime.utcnow().isoformat())
-
-                    # Skip if already synced
-                    note_title = self._make_note_title(date, title)
-                    if note_title in existing_titles:
-                        self.logger.info(f"Skipping existing: {note_title}")
-                        report["skipped"] += 1
-                        continue
-
-                    # Fetch full transcript
-                    transcript_result = await self._call_fireflies_tool(
-                        "fireflies_get_transcript",
-                        {"transcriptId": transcript_id}
-                    )
-
-                    # Extract transcript text from ToolResult
-                    transcript_text = (
-                        transcript_result.result
-                        if hasattr(transcript_result, "result")
-                        else str(transcript_result)
-                    )
-
-                    # Optionally fetch Fireflies' native summary. Additive
-                    # to the transcript above, never a replacement — a
-                    # failure here is soft: the note is still created from
-                    # the transcript alone.
-                    has_summary = False
-                    if include_summary:
-                        try:
-                            summary_result = await self._call_fireflies_tool(
-                                "fireflies_get_summary",
-                                {"transcriptId": transcript_id}
-                            )
-                            if summary_result and getattr(summary_result, "success", False):
-                                summary_text = (
-                                    summary_result.result
-                                    if hasattr(summary_result, "result")
-                                    else str(summary_result)
-                                )
-                                transcript_text = self._append_fireflies_summary_section(
-                                    transcript_text, summary_text
-                                )
-                                has_summary = True
-                            else:
-                                report["errors"].append(
-                                    f"Fireflies summary unavailable for {transcript_id}"
-                                )
-                        except Exception as e:
-                            error_msg = f"Failed to fetch Fireflies summary for {transcript_id}: {e}"
-                            self.logger.error(error_msg)
-                            report["errors"].append(error_msg)
-
-                    # Save to Obsidian
-                    metadata = {
-                        "fireflies_id": transcript_id,
-                        "date": date,
-                        "title": title,
-                        "participants": transcript.get("participants", []),
-                        "duration_minutes": transcript.get("duration", 0),
-                        "synced_at": datetime.utcnow().isoformat(),
-                    }
-
-                    # Generate OKF frontmatter for knowledge graph integration
-                    okf_metadata = self._build_okf_frontmatter(
-                        fireflies_id=transcript_id,
-                        title=title,
-                        date=date,
-                        participants=transcript.get("participants", []),
-                        duration=transcript.get("duration", 0),
-                    )
-
-                    # Merge OKF metadata with basic Fireflies metadata
-                    merged_metadata = {**metadata, **okf_metadata}
-                    if has_summary:
-                        merged_metadata["has_fireflies_summary"] = True
-
-                    await self.obsidian_toolkit.create_note(
-                        path=f"{self.meetings_folder}/{note_title}.md",
-                        content=transcript_text,
-                        frontmatter=merged_metadata,
-                    )
-
-                    self.logger.info(f"✅ Synced: {note_title}")
-                    report["notes"].append(note_title)
-                    report["synced"] += 1
-
-                except Exception as e:
-                    error_msg = f"Failed to sync {transcript.get('id', 'unknown')}: {e}"
-                    self.logger.error(error_msg)
-                    report["errors"].append(error_msg)
+            if registry_ok:
+                await self._sync_via_registry(
+                    transcripts,
+                    report,
+                    skip_existing=skip_existing,
+                    include_summary=include_summary,
+                    force_refetch=force_refetch,
+                )
+            else:
+                await self._sync_via_titles(
+                    transcripts,
+                    report,
+                    skip_existing=skip_existing,
+                    include_summary=include_summary,
+                )
 
         except Exception as e:
             report["status"] = "error"
@@ -502,6 +516,346 @@ class FirefliesObsidianAgent(BasicAgent):
             self.logger.error(f"Sync failed: {e}", exc_info=True)
 
         return report
+
+    async def _sync_via_titles(
+        self,
+        transcripts: List[Dict[str, Any]],
+        report: Dict[str, Any],
+        *,
+        skip_existing: bool,
+        include_summary: bool,
+    ) -> None:
+        """Original title-based dedup path (pre-FEAT-472).
+
+        Used verbatim as the fallback when the meeting registry is
+        unavailable (spec §2 G10) — byte-identical to the sync loop body
+        before this feature.
+        """
+        existing_titles = set()
+        if skip_existing:
+            existing_titles = await self._get_existing_meeting_titles()
+
+        for transcript in transcripts:
+            try:
+                transcript_id = transcript.get("id")
+                title = transcript.get("title", "Untitled Meeting")
+                date = transcript.get("date", datetime.utcnow().isoformat())
+
+                # Skip if already synced
+                note_title = self._make_note_title(date, title)
+                if note_title in existing_titles:
+                    self.logger.info(f"Skipping existing: {note_title}")
+                    report["skipped"] += 1
+                    continue
+
+                # Fetch full transcript
+                transcript_result = await self._call_fireflies_tool(
+                    "fireflies_get_transcript",
+                    {"transcriptId": transcript_id}
+                )
+
+                # Extract transcript text from ToolResult
+                transcript_text = (
+                    transcript_result.result
+                    if hasattr(transcript_result, "result")
+                    else str(transcript_result)
+                )
+
+                # Optionally fetch Fireflies' native summary. Additive
+                # to the transcript above, never a replacement — a
+                # failure here is soft: the note is still created from
+                # the transcript alone.
+                has_summary = False
+                if include_summary:
+                    try:
+                        summary_result = await self._call_fireflies_tool(
+                            "fireflies_get_summary",
+                            {"transcriptId": transcript_id}
+                        )
+                        if summary_result and getattr(summary_result, "success", False):
+                            summary_text = (
+                                summary_result.result
+                                if hasattr(summary_result, "result")
+                                else str(summary_result)
+                            )
+                            transcript_text = self._append_fireflies_summary_section(
+                                transcript_text, summary_text
+                            )
+                            has_summary = True
+                        else:
+                            report["errors"].append(
+                                f"Fireflies summary unavailable for {transcript_id}"
+                            )
+                    except Exception as e:
+                        error_msg = f"Failed to fetch Fireflies summary for {transcript_id}: {e}"
+                        self.logger.error(error_msg)
+                        report["errors"].append(error_msg)
+
+                # Save to Obsidian
+                metadata = {
+                    "fireflies_id": transcript_id,
+                    "date": date,
+                    "title": title,
+                    "participants": transcript.get("participants", []),
+                    "duration_minutes": transcript.get("duration", 0),
+                    "synced_at": datetime.utcnow().isoformat(),
+                }
+
+                # Generate OKF frontmatter for knowledge graph integration
+                okf_metadata = self._build_okf_frontmatter(
+                    fireflies_id=transcript_id,
+                    title=title,
+                    date=date,
+                    participants=transcript.get("participants", []),
+                    duration=transcript.get("duration", 0),
+                )
+
+                # Merge OKF metadata with basic Fireflies metadata
+                merged_metadata = {**metadata, **okf_metadata}
+                if has_summary:
+                    merged_metadata["has_fireflies_summary"] = True
+
+                await self.obsidian_toolkit.create_note(
+                    path=f"{self.meetings_folder}/{note_title}.md",
+                    content=transcript_text,
+                    frontmatter=merged_metadata,
+                )
+
+                self.logger.info(f"✅ Synced: {note_title}")
+                report["notes"].append(note_title)
+                report["synced"] += 1
+
+            except Exception as e:
+                error_msg = f"Failed to sync {transcript.get('id', 'unknown')}: {e}"
+                self.logger.error(error_msg)
+                report["errors"].append(error_msg)
+
+    async def _sync_via_registry(
+        self,
+        transcripts: List[Dict[str, Any]],
+        report: Dict[str, Any],
+        *,
+        skip_existing: bool,
+        include_summary: bool,
+        force_refetch: bool,
+    ) -> None:
+        """FEAT-472 id-keyed dedup path (spec §2 "Sync loop").
+
+        For each listing item: ``self.registry.classify(...)`` decides
+        create/skip/revise (fetching the transcript itself only when
+        needed); a "revise" (or "create" whose row lost its note file)
+        goes through :meth:`MeetingRegistry.repair_path` first so a
+        renamed note is moved back to its canonical path rather than
+        duplicated.
+        """
+        transcript_cache: Dict[str, str] = {}
+        summary_cache: Dict[str, str] = {}
+
+        for transcript in transcripts:
+            transcript_id = transcript.get("id")
+            try:
+                title = transcript.get("title", "Untitled Meeting")
+                date = transcript.get("date", datetime.utcnow().isoformat())
+                participants = transcript.get("participants", [])
+                duration = transcript.get("duration", 0)
+
+                async def _fetch(tid: str) -> str:
+                    result = await self._call_fireflies_tool(
+                        "fireflies_get_transcript", {"transcriptId": tid}
+                    )
+                    text = result.result if hasattr(result, "result") else str(result)
+                    transcript_cache[tid] = text
+                    return text
+
+                fetch_summary = None
+                if include_summary:
+
+                    async def _fetch_summary(tid: str) -> Optional[str]:
+                        try:
+                            result = await self._call_fireflies_tool(
+                                "fireflies_get_summary", {"transcriptId": tid}
+                            )
+                            if result and getattr(result, "success", False):
+                                text = (
+                                    result.result if hasattr(result, "result") else str(result)
+                                )
+                                summary_cache[tid] = text
+                                return text
+                            report["errors"].append(
+                                f"Fireflies summary unavailable for {tid}"
+                            )
+                        except Exception as e:
+                            error_msg = f"Failed to fetch Fireflies summary for {tid}: {e}"
+                            self.logger.error(error_msg)
+                            report["errors"].append(error_msg)
+                        return None
+
+                    fetch_summary = _fetch_summary
+
+                classified = await self.registry.classify(
+                    transcript,
+                    fetch=_fetch,
+                    fetch_summary=fetch_summary,
+                    force_refetch=force_refetch,
+                )
+
+                if classified.probable_duplicate_of:
+                    report["probable_duplicates"].append(
+                        {"id": transcript_id, "matches": classified.probable_duplicate_of}
+                    )
+
+                if classified.action == "skip":
+                    report["skipped"] += 1
+                    if not skip_existing and classified.record is not None:
+                        # skip_existing=False still means "sync everything":
+                        # nothing changed so there is no note to (re)write,
+                        # but the row is touched so its freshness window
+                        # (FIREFLIES_RECHECK_DAYS) advances from now.
+                        record = classified.record
+                        await self.registry.record_synced(
+                            fireflies_id=record.fireflies_id,
+                            note_path=Path(record.note_path),
+                            title=record.title,
+                            meeting_date=record.meeting_date,
+                            participants=record.participants,
+                            duration_minutes=record.duration_minutes,
+                            fingerprint=record.fingerprint,
+                            summary_fingerprint=record.summary_fingerprint,
+                            reset_analysis=False,
+                        )
+                    continue
+
+                canonical_title = self._make_note_title(date, title)
+                repair_result = await self.registry.repair_path(
+                    transcript_id,
+                    toolkit=self.obsidian_toolkit,
+                    meetings_folder=self.meetings_folder,
+                    canonical_title=canonical_title,
+                )
+                if repair_result.moved:
+                    report["repaired"].append(repair_result.model_dump())
+
+                transcript_text = classified.fetched_text or transcript_cache.get(transcript_id, "")
+                summary_text = summary_cache.get(transcript_id)
+                has_summary = False
+                if summary_text:
+                    transcript_text = self._append_fireflies_summary_section(
+                        transcript_text, summary_text
+                    )
+                    has_summary = True
+
+                if repair_result.to_path is None:
+                    # CREATE — brand-new id, or a revise whose note vanished
+                    # and could not be found anywhere in meetings_folder.
+                    note_title = await self.registry.unique_slug(
+                        self.meetings_folder, canonical_title, vault_path=self.vault_path
+                    )
+                    metadata = {
+                        "fireflies_id": transcript_id,
+                        "date": date,
+                        "title": title,
+                        "participants": participants,
+                        "duration_minutes": duration,
+                        "synced_at": datetime.utcnow().isoformat(),
+                    }
+                    okf_metadata = self._build_okf_frontmatter(
+                        fireflies_id=transcript_id,
+                        title=title,
+                        date=date,
+                        participants=participants,
+                        duration=duration,
+                    )
+                    merged_metadata = {**metadata, **okf_metadata}
+                    if has_summary:
+                        merged_metadata["has_fireflies_summary"] = True
+
+                    note_rel = f"{self.meetings_folder}/{note_title}.md"
+                    await self.obsidian_toolkit.create_note(
+                        path=note_rel,
+                        content=transcript_text,
+                        frontmatter=merged_metadata,
+                    )
+                    await self.registry.record_synced(
+                        fireflies_id=transcript_id,
+                        note_path=self.vault_path / note_rel,
+                        title=title,
+                        meeting_date=date,
+                        participants=participants,
+                        duration_minutes=duration,
+                        fingerprint=classified.fingerprint,
+                        summary_fingerprint=classified.summary_fingerprint,
+                        reset_analysis=False,
+                    )
+                    self.logger.info(f"✅ Synced: {note_title}")
+                    report["notes"].append(note_title)
+                    report["synced"] += 1
+                else:
+                    # REVISE — content changed for a known id; update the
+                    # body in place (never a second file for a known id).
+                    note_rel = self._vault_relative_path(repair_result.to_path)
+                    await self.obsidian_toolkit.update_note(
+                        path=note_rel, content=transcript_text, preserve_frontmatter=True
+                    )
+                    await self._refresh_note_frontmatter(
+                        note_rel,
+                        {
+                            "title": title,
+                            "participants": participants,
+                            "synced_at": datetime.utcnow().isoformat(),
+                        },
+                    )
+                    await self.registry.record_synced(
+                        fireflies_id=transcript_id,
+                        note_path=Path(repair_result.to_path),
+                        title=title,
+                        meeting_date=date,
+                        participants=participants,
+                        duration_minutes=duration,
+                        fingerprint=classified.fingerprint,
+                        summary_fingerprint=classified.summary_fingerprint,
+                        reset_analysis=True,
+                    )
+                    self.logger.info(f"✅ Revised: {note_rel}")
+                    report["notes"].append(PurePosixPath(note_rel).stem)
+                    report["revised"] += 1
+
+            except Exception as e:
+                error_msg = f"Failed to sync {transcript_id or 'unknown'}: {e}"
+                self.logger.error(error_msg)
+                report["errors"].append(error_msg)
+
+    def _vault_relative_path(self, abs_path: str | Path) -> str:
+        """Convert an absolute note path (as stored in the registry) to the
+        vault-relative POSIX path :class:`ObsidianToolkit` methods expect.
+        """
+        return Path(abs_path).resolve().relative_to(self.vault_path.resolve()).as_posix()
+
+    async def _refresh_note_frontmatter(self, path: str, patch: Dict[str, Any]) -> None:
+        """Merge `patch` into a note's existing frontmatter, body untouched.
+
+        :meth:`ObsidianToolkit.update_note` can only replace either the
+        body (``preserve_frontmatter=True``) or the WHOLE file verbatim
+        (``preserve_frontmatter=False``) — there is no "patch just these
+        frontmatter keys" primitive (tools/obsidian.py:471-503). This reads
+        the note's current frontmatter + body, merges `patch` into the
+        frontmatter (every other existing key, including the OKF block,
+        is preserved), and rewrites the whole file via the latter.
+
+        Args:
+            path: Vault-relative note path.
+            patch: Frontmatter keys to add/overwrite.
+        """
+        import yaml
+
+        current = await self.obsidian_toolkit.read_note(path, include_content=True)
+        frontmatter = dict(current.get("frontmatter") or {})
+        frontmatter.update(patch)
+        content = current.get("content", "")
+        block = yaml.safe_dump(
+            frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True
+        )
+        full_text = f"---\n{block}---\n\n{content}"
+        await self.obsidian_toolkit.update_note(path, content=full_text, preserve_frontmatter=False)
 
     async def summarize_transcript(
         self,
@@ -604,12 +958,25 @@ class FirefliesObsidianAgent(BasicAgent):
 
         Args:
             note_titles: Explicit notes to consider (e.g. ``report['notes']``
-                from :meth:`sync_fireflies_transcripts`). When None, the whole
-                meetings folder is scanned.
+                from :meth:`sync_fireflies_transcripts`). When given, this
+                bypasses the registry entirely (same ``_has_analysis``-gated
+                behaviour as before FEAT-472), regardless of registry
+                availability. When ``None`` and the registry is available,
+                candidates come from
+                :meth:`~parrot.agents.meeting_registry.MeetingRegistry.pending_analysis`
+                instead of a folder scan.
             granularity: 'minimal' | 'standard' | 'detailed'.
             limit: Max notes to analyze in this run (None = no limit). Useful
                 to bound LLM cost when catching up on a backlog.
             force: Re-analyze notes that already carry an Analysis section.
+                FEAT-472 note: with the registry driving candidates (`
+                note_titles=None` and the registry available),
+                `pending_analysis()` already excludes done-and-current rows
+                by construction — `force` has no additional effect there
+                (there is no registry verb to list every row regardless of
+                status); it only changes behaviour for the
+                ``note_titles``-explicit and fallback (registry-unavailable)
+                paths, exactly as before this feature.
 
         Returns:
             Dict with:
@@ -625,11 +992,24 @@ class FirefliesObsidianAgent(BasicAgent):
             "errors": [],
         }
 
+        registry_ok = self.registry is not None and self.registry.available
+        # FEAT-472: note_title -> MeetingRecord, populated only when
+        # candidates came from the registry — drives mark_analyzed /
+        # mark_analysis_failed below instead of the title-only fallback.
+        record_by_title: Dict[str, Any] = {}
+
         try:
-            if note_titles is None:
-                candidates = sorted(await self._get_existing_meeting_titles())
-            else:
+            if note_titles is not None:
                 candidates = list(note_titles)
+            elif registry_ok:
+                pending = await self.registry.pending_analysis()
+                candidates = []
+                for record in pending:
+                    note_title = Path(record.note_path).stem
+                    record_by_title[note_title] = record
+                    candidates.append(note_title)
+            else:
+                candidates = sorted(await self._get_existing_meeting_titles())
 
             if not candidates:
                 self.logger.info("No meeting notes to analyze.")
@@ -646,7 +1026,14 @@ class FirefliesObsidianAgent(BasicAgent):
                     )
                     break
 
-                if not force and await self._has_analysis(note_title):
+                record = record_by_title.get(note_title)
+                # No registry record for this candidate (explicit
+                # note_titles, or registry unavailable) — same gate as
+                # before FEAT-472. Candidates sourced from the registry
+                # NEVER reach this check: pending_analysis() already
+                # applied the "needs analysis" filter, so _has_analysis
+                # is never called for them.
+                if record is None and not force and await self._has_analysis(note_title):
                     self.logger.debug("Already analyzed, skipping: %s", note_title)
                     outcome["skipped"].append(note_title)
                     continue
@@ -657,11 +1044,13 @@ class FirefliesObsidianAgent(BasicAgent):
                 )
                 if analysis.get("status") == "ok":
                     outcome["analyzed"].append(note_title)
+                    if record is not None:
+                        await self.registry.mark_analyzed(record.fireflies_id, record.fingerprint)
                 else:
-                    outcome["errors"].append({
-                        "note": note_title,
-                        "error": analysis.get("error", "unknown error"),
-                    })
+                    error_msg = analysis.get("error", "unknown error")
+                    outcome["errors"].append({"note": note_title, "error": error_msg})
+                    if record is not None:
+                        await self.registry.mark_analysis_failed(record.fireflies_id, error_msg)
 
             if outcome["errors"]:
                 outcome["status"] = "partial"
