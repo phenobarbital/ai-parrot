@@ -1,0 +1,130 @@
+"""``parrot.outputs.a2ui.catalog.basic`` — vendored official A2UI v1.0 spec.
+
+Ships the six official JSON Schema documents from
+``google/A2UI@90157ec10f36cf8e192daa71c95d2684af20c756``
+(``specification/v1_0/{catalogs/basic/catalog,json/common_types,
+json/agent_to_renderer,json/renderer_to_agent,json/catalog_definition,
+json/agent_capabilities}.json``), pinned by commit SHA, plus a
+:func:`schema_registry` that resolves every ``$ref`` between them.
+
+This is the ONLY module in ``parrot.outputs.a2ui`` that is allowed to depend
+on the exact upstream document shapes — everything else (models, catalog
+validation) is verified against these vendored copies, never fetched live.
+:func:`load_spec` is the single read path; :func:`schema_registry` builds
+the ``referencing.Registry`` jsonschema validators need.
+
+One-way import rule (G8): this module MUST NEVER import from
+``parrot.bots``, ``parrot.clients``, agents, or DatasetManager.
+"""
+
+from __future__ import annotations
+
+import functools
+import json
+from pathlib import Path
+from typing import Literal
+
+from referencing import Registry, Resource
+
+__all__ = [
+    "BASIC_CATALOG_ID",
+    "SPEC_COMMIT",
+    "SPEC_FILES",
+    "SpecName",
+    "load_spec",
+    "schema_registry",
+]
+
+#: The official basic catalog's own ``$id`` (verified against the vendored
+#: ``catalog.json``, spec §2/AC-G2).
+BASIC_CATALOG_ID = "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json"
+
+#: The pinned upstream commit every vendored document in ``spec/`` was
+#: fetched from. Bumping this is a deliberate, changelog-worthy act (spec §7
+#: Known Risks: "Drift de la spec").
+SPEC_COMMIT = "90157ec10f36cf8e192daa71c95d2684af20c756"
+
+_SPEC_DIR = Path(__file__).parent / "spec"
+
+SpecName = Literal[
+    "catalog",
+    "common_types",
+    "agent_to_renderer",
+    "renderer_to_agent",
+    "catalog_definition",
+    "agent_capabilities",
+]
+
+#: Logical spec name -> vendored filename under ``spec/``.
+SPEC_FILES: dict[SpecName, str] = {
+    "catalog": "catalog.json",
+    "common_types": "common_types.json",
+    "agent_to_renderer": "agent_to_renderer.json",
+    "renderer_to_agent": "renderer_to_agent.json",
+    "catalog_definition": "catalog_definition.json",
+    "agent_capabilities": "agent_capabilities.json",
+}
+
+#: ``agent_to_renderer.json``'s ``Component`` def and ``common_types.json``'s
+#: ``FunctionCall`` def both ``$ref`` a relative ``"catalog.json#/$defs/..."``
+#: — resolved (relative to THEIR OWN base ``$id``,
+#: ``https://a2ui.org/specification/v1_0/{agent_to_renderer,common_types}.json``)
+#: to ``https://a2ui.org/specification/v1_0/catalog.json``. That is NOT the
+#: basic catalog's own ``$id`` (``BASIC_CATALOG_ID``, under
+#: ``.../catalogs/basic/catalog.json``) — verified directly against the
+#: pinned upstream documents. This is deliberate upstream design: the
+#: message schemas are catalog-agnostic, and ``"catalog.json"`` is a
+#: well-known relative alias for "whichever catalog is active", resolved by
+#: whoever builds the registry for a given validation. Here, the only
+#: catalog vendored is the basic one, so :func:`schema_registry` aliases it
+#: under this id. TASK-2535's per-surface/per-message registry build on
+#: this pattern to swap in the ACTUALLY-active catalog (basic or parrot).
+_CATALOG_ALIAS_ID = "https://a2ui.org/specification/v1_0/catalog.json"
+
+
+@functools.cache
+def load_spec(name: SpecName) -> dict:
+    """Load one of the six vendored, SHA-pinned A2UI v1.0 JSON Schemas.
+
+    Args:
+        name: One of ``"catalog"``, ``"common_types"``, ``"agent_to_renderer"``,
+            ``"renderer_to_agent"``, ``"catalog_definition"``,
+            ``"agent_capabilities"``.
+
+    Returns:
+        The parsed JSON Schema document. Cached — treat the result as
+        read-only; callers must not mutate it.
+
+    Raises:
+        ValueError: If ``name`` is not a recognized spec name.
+    """
+    try:
+        filename = SPEC_FILES[name]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown A2UI spec name {name!r}. Valid names: {sorted(SPEC_FILES)}."
+        ) from exc
+    path = _SPEC_DIR / filename
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def schema_registry() -> Registry:
+    """Build a ``referencing.Registry`` resolving every vendored ``$ref``.
+
+    Registers all six vendored documents under their own ``$id``, plus the
+    basic catalog a second time under the ``"catalog.json"`` relative-ref
+    alias the message schemas actually resolve against (see
+    ``_CATALOG_ALIAS_ID``).
+
+    Returns:
+        A ``referencing.Registry`` ready to back a
+        ``jsonschema.Draft202012Validator``.
+    """
+    registry = Registry()
+    for name in SPEC_FILES:
+        doc = load_spec(name)
+        registry = registry.with_resource(doc["$id"], Resource.from_contents(doc))
+    registry = registry.with_resource(
+        _CATALOG_ALIAS_ID, Resource.from_contents(load_spec("catalog"))
+    )
+    return registry
