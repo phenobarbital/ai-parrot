@@ -1,7 +1,6 @@
-"""Unit tests for typed A2UI envelope builders (TASK-1739 / Module 11, D1a)."""
+"""Unit tests for typed A2UI v1.0 envelope builders (FEAT-470 TASK-2540, Module 5, D1a)."""
 
 import pytest
-
 from parrot.outputs.a2ui import builders
 from parrot.outputs.a2ui.catalog import (
     CatalogValidationError,
@@ -30,6 +29,20 @@ class TestEnvelopeBuilders:
             # Passes display-only (LLM-origin) validation.
             validate_envelope(env, origin=ProducerOrigin.LLM)
 
+    def test_builders_emit_root(self):
+        for env in (
+            builders.build_chart(chart_type="bar", x="m", y=["v"]),
+            builders.build_kpicard(label="Rev", value=100),
+            builders.build_card(title="Hi"),
+            builders.build_datatable(columns=[{"name": "a"}]),
+            builders.build_infographic(title="T", sections=[{"heading": "H"}]),
+        ):
+            assert env.components[0].id == "root"
+
+    def test_build_card_emits_infocard(self):
+        env = builders.build_card(title="Hi")
+        assert env.components[0].component == "InfoCard"
+
     def test_builder_deterministic(self):
         def make():
             return serialize(
@@ -37,14 +50,6 @@ class TestEnvelopeBuilders:
             )
 
         assert make() == make()
-
-    def test_builder_rejects_requires_actions_components(self):
-        with pytest.raises(CatalogValidationError):
-            builders.build_surface(
-                "Form",
-                {"fields": [{"name": "e", "input": "text"}], "submit": {"action": "s"}},
-                surface_id="bad",
-            )
 
     def test_builder_rejects_unknown_component(self):
         with pytest.raises(CatalogValidationError):
@@ -65,4 +70,4 @@ class TestEnvelopeBuilders:
 
     def test_chart_binding_passthrough(self):
         env = builders.build_chart(chart_type="bar", x="m", y=["v"], data_binding="/charts/0")
-        assert env.components[0].properties["data"] == {"$bind": "/charts/0"}
+        assert env.components[0].model_extra["data"] == {"path": "/charts/0"}

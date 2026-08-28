@@ -1,106 +1,158 @@
-"""A2UI ``Form`` catalog component (Module 3) — the one ``requires_actions=True``
-component in v1 (resolved OQ-B, spec §8).
+"""``build_form()`` — v1.0 form composition helper (Module 5, FEAT-470 TASK-2540).
 
-Form ships **schema + instructions** for the complete v1.0 message set, but no
-renderer supports it in v1. Because TASK-1721's registry enforces the mandatory
-``lower()`` contract (G4, literal), Form ships a minimal read-only degraded
-lowering: a Column of field-label Texts plus a "form not available on this surface"
-notice (spec §7 "Known Risks" — actions stripped + visible notice). Submission,
-`action`/`actionResponse` dispatch, and rendering are FEAT-B territory.
+``Form`` is NOT a registered catalog component in v1.0 (spec G6, retired in
+TASK-2539): a form is composed directly from Basic Catalog input primitives
+(``TextField``/``CheckBox``/``ChoicePicker``/``DateTimeInput``) plus a
+``Button`` whose ``action.event`` carries the submit event name and a
+``context`` binding every field's current value. This keeps forms fully
+interactive on any v1.0-compliant renderer — no bespoke ``Form`` schema, no
+degraded "not available" notice.
+
+``build_form()`` is ``ProducerOrigin.TOOL``-only by construction: it emits a
+``Button.action``, which the LLM-origin gate (spec G2/D10b) always rejects.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from parrot.outputs.a2ui.catalog import register_component
-from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree
-from parrot.outputs.a2ui.models import Component
+from pydantic import BaseModel, ConfigDict
 
-FORM_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "title": {"type": "string"},
-        "fields": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "label": {"type": "string"},
-                    "input": {
-                        "type": "string",
-                        "enum": ["text", "number", "select", "checkbox", "date", "textarea"],
-                    },
-                    "required": {"type": "boolean", "default": False},
-                },
-                "required": ["name", "input"],
-            },
-        },
-        "submit": {
-            "type": "object",
-            "description": "Submit action descriptor (dispatched in FEAT-B).",
-            "properties": {
-                "label": {"type": "string"},
-                "action": {"type": "string"},
-            },
-        },
-    },
-    "required": ["fields", "submit"],
-}
-
-FORM_INSTRUCTIONS = (
-    "Form collects user input via `fields` (name/label/input type) and a `submit` "
-    "descriptor. NOTE: Form is NOT available on display-only surfaces in v1 — do not "
-    "emit it from the display (LLM) producer. It is action-bearing "
-    "(requires_actions=True) and degrades to a read-only notice on static surfaces."
+from parrot.outputs.a2ui.models import (
+    Action,
+    CheckRule,
+    Component,
+    EventAction,
+    FunctionCall,
 )
 
+__all__ = ["FormField", "FormSubmit", "build_form"]
 
-@register_component("Form", requires_actions=True)
-class FormComponent:
-    """The ``Form`` catalog component (action-bearing; schema-only in v1)."""
+#: The field->primitive mapping this helper supports (spec §2/§5).
+FormFieldInput = Literal["text", "number", "select", "checkbox", "date", "textarea"]
 
-    SCHEMA = FORM_SCHEMA
-    INSTRUCTIONS = FORM_INSTRUCTIONS
 
-    def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
-        """Lower a Form to a read-only degraded Basic tree (pure, deterministic).
+class FormField(BaseModel):
+    """One field in a composed form.
 
-        Static surfaces cannot dispatch actions, so the form renders as its field
-        labels plus a visible "not available" notice (spec §7).
-        """
-        props = component.properties
-        children: list[BasicNode] = []
+    Attributes:
+        name: The field's data-model key (bound at ``/<id_prefix>/<name>``).
+        label: The field's display label.
+        input: Which Basic Catalog input primitive to compose.
+        required: Whether a ``required`` check is attached.
+        options: Required for ``input="select"`` — ``[{"label", "value"}, ...]``.
+    """
 
-        title = props.get("title")
-        if title is not None:
-            children.append(
-                BasicNode(component="Text", properties={"role": "title", "text": title})
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    label: str
+    input: FormFieldInput
+    required: bool = False
+    options: list[dict[str, str]] | None = None
+
+
+class FormSubmit(BaseModel):
+    """The form's submit action descriptor.
+
+    Attributes:
+        label: The submit button's label.
+        action: The event name dispatched on submit (``Button.action.event.name``).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    label: str
+    action: str
+
+
+def _field_value_path(id_prefix: str, field: FormField) -> dict[str, str]:
+    return {"path": f"/{id_prefix}/{field.name}"}
+
+
+def _lower_field(id_prefix: str, field: FormField) -> Component:
+    """Compose one :class:`FormField` into its Basic Catalog input primitive."""
+    field_id = f"{id_prefix}-{field.name}"
+    value_path = _field_value_path(id_prefix, field)
+    checks = None
+    if field.required:
+        checks = [
+            CheckRule(
+                condition=FunctionCall(call="required", args={"value": value_path}),
+                message=f"{field.label} is required.",
             )
+        ]
 
-        for field in props.get("fields") or []:
-            children.append(
-                BasicNode(
-                    component="Text",
-                    properties={
-                        "role": "field-label",
-                        "text": field.get("label") or field.get("name", ""),
-                    },
-                )
-            )
-
-        children.append(
-            BasicNode(
-                component="Text",
-                properties={
-                    "role": "notice",
-                    "text": "This form is not available on this surface.",
-                },
-            )
+    if field.input in ("text", "textarea", "number"):
+        variant = {"text": "shortText", "textarea": "longText", "number": "number"}[field.input]
+        return Component(
+            id=field_id, component="TextField", label=field.label, value=value_path,
+            variant=variant, checks=checks,
         )
-        return BasicNode(
-            component="Column",
-            properties={"variant": "form", "componentId": component.id},
-            children=children,
+    if field.input == "select":
+        return Component(
+            id=field_id, component="ChoicePicker", label=field.label,
+            options=field.options or [], value=value_path, checks=checks,
         )
+    if field.input == "checkbox":
+        return Component(
+            id=field_id, component="CheckBox", label=field.label, value=value_path, checks=checks
+        )
+    if field.input == "date":
+        return Component(
+            id=field_id, component="DateTimeInput", label=field.label, value=value_path,
+            enableDate=True, checks=checks,
+        )
+    raise ValueError(f"Unsupported form field input type: {field.input!r}")
+
+
+def build_form(
+    *, id_prefix: str, title: str | None, fields: list[FormField], submit: FormSubmit
+) -> list[Component]:
+    """Compose a form from Basic Catalog primitives (spec §2 ``build_form``).
+
+    Args:
+        id_prefix: Prefix for every generated component id (the returned
+            root ``Column`` itself uses ``id_prefix`` verbatim — pass
+            ``"root"`` to make the form the surface's own root).
+        title: Optional form title (rendered as a ``Text``).
+        fields: The form's fields, in display order.
+        submit: The submit button's label + dispatched event name.
+
+    Returns:
+        A flat list of v1.0 :class:`Component` instances — the root
+        ``Column`` FIRST, followed by every field/title/button component (a
+        valid v1.0 adjacency-list fragment, ready to splice into
+        ``CreateSurface.components``).
+    """
+    children_ids: list[str] = []
+    rest: list[Component] = []
+
+    if title is not None:
+        title_id = f"{id_prefix}-title"
+        rest.append(Component(id=title_id, component="Text", text=title))
+        children_ids.append(title_id)
+
+    for field in fields:
+        rest.append(_lower_field(id_prefix, field))
+        children_ids.append(f"{id_prefix}-{field.name}")
+
+    label_id = f"{id_prefix}-submit-label"
+    rest.append(Component(id=label_id, component="Text", text=submit.label))
+
+    context: dict[str, Any] = {
+        field.name: _field_value_path(id_prefix, field) for field in fields
+    }
+    button_id = f"{id_prefix}-submit"
+    rest.append(
+        Component(
+            id=button_id,
+            component="Button",
+            child=label_id,
+            action=Action(event=EventAction(name=submit.action, context=context)),
+        )
+    )
+    children_ids.append(button_id)
+
+    root = Component(id=id_prefix, component="Column", children=children_ids)
+    return [root, *rest]
