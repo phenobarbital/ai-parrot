@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-472
 **Date**: 2026-08-29
 **Author**: Jesus Lara (spec: Claude session 2026-08-29)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Input**: `sdd/proposals/fireflies-meeting-registry.brainstorm.md` (status `exploration`, Recommended Option A, all 12 open questions resolved)
 **Related**: `sdd/proposals/brainstorm-obsidian-wiki-knowledgebase.md` §14 "Deduplication and Source Identity" and §25 "Processed Source Registry" — the operating contract for the future knowledgebase agent; this feature implements the code-side registry that contract assumes (see §7 Known Risks for the one documented divergence).
@@ -790,8 +790,8 @@ No new third-party dependencies.
 - [x] Telegram `--force-refetch`? — *Resolved in brainstorm*: yes. → since no Telegram `sync` command exists today, Module 5 adds `/sync force_refetch=true|false limit=<n>` (keyword parse mode).
 - [x] Backfill duplicates: report-only or merge? — *Resolved in brainstorm*: merge duplicates, always with a report of what was kept/removed. → G8, Module 3 (plus a `merge=False` dry-run flag as insurance).
 - [x] `external_id` as the general convention for other sources? — *Resolved in brainstorm*: yes — document `<source>:<id>`; migrating Jira/audio-notes callers is follow-up work. → Non-Goals, §7 Patterns.
-- [ ] Should the knowledgebase agent (`fireflies-wiki-knowledgebase-agent` brainstorm) consume `report["revised"]` to file `source-revision` review items, or should this registry gain a `revision_policy` switch (`in_place | review`) later? Decide when that agent is specced — not blocking. — *Owner: Jesus Lara*
-- [ ] Should the Markdown mirror `Wiki/Registry/processed-sources.md` (contract §25) be generated from this registry by a future exporter (`list_by_external_prefix("fireflies:")` → one line per row)? Not blocking. — *Owner: Jesus Lara*
+- [x] Should the knowledgebase agent (`fireflies-wiki-knowledgebase-agent` brainstorm) consume `report["revised"]` to file `source-revision` review items, or should this registry gain a `revision_policy` switch (`in_place | review`) later? Decide when that agent is specced — not blocking. — *Owner: Jesus Lara*: resolve during build
+- [x] Should the Markdown mirror `Wiki/Registry/processed-sources.md` (contract §25) be generated from this registry by a future exporter (`list_by_external_prefix("fireflies:")` → one line per row)? Not blocking. — *Owner: Jesus Lara*: Yes.
 
 ---
 
