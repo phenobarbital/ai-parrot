@@ -35,9 +35,7 @@ __all__ = [
 _V1_VERSION = "v1.0"
 
 #: Legacy ``messageType`` values this module knows how to normalize.
-_SUPPORTED_LEGACY_TYPES = frozenset(
-    {"createSurface", "updateComponents", "updateDataModel", "callFunction"}
-)
+_SUPPORTED_LEGACY_TYPES = frozenset({"createSurface", "updateComponents", "updateDataModel", "callFunction"})
 
 
 def is_legacy_envelope(data: dict[str, Any]) -> bool:
@@ -129,9 +127,7 @@ def normalize_legacy_component(comp: dict[str, Any]) -> dict[str, Any]:
         new_comp["children"] = children
 
     if optional_paths:
-        new_comp["metadata"] = {
-            "extensions": {"parrot_optional": optional_paths}
-        }
+        new_comp["metadata"] = {"extensions": {"parrot_optional": optional_paths}}
 
     return new_comp
 
@@ -139,9 +135,7 @@ def normalize_legacy_component(comp: dict[str, Any]) -> dict[str, Any]:
 def _normalize_create_surface(data: dict[str, Any]) -> dict[str, Any]:
     inner: dict[str, Any] = {
         "surfaceId": data["surfaceId"],
-        "components": [
-            normalize_legacy_component(c) for c in data.get("components", [])
-        ],
+        "components": [normalize_legacy_component(c) for c in data.get("components", [])],
         "dataModel": data.get("dataModel", {}),
     }
     if data.get("catalogId"):
@@ -154,9 +148,7 @@ def _normalize_update_components(data: dict[str, Any]) -> dict[str, Any]:
         "version": _V1_VERSION,
         "updateComponents": {
             "surfaceId": data["surfaceId"],
-            "components": [
-                normalize_legacy_component(c) for c in data.get("components", [])
-            ],
+            "components": [normalize_legacy_component(c) for c in data.get("components", [])],
         },
     }
 

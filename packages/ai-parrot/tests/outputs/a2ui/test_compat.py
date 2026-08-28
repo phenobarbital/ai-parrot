@@ -11,9 +11,7 @@ class TestIsLegacyEnvelope:
         assert compat.is_legacy_envelope(legacy_create_surface_envelope())
 
     def test_v1_envelope_not_legacy(self):
-        assert not compat.is_legacy_envelope(
-            {"version": "v1.0", "createSurface": {"surfaceId": "s"}}
-        )
+        assert not compat.is_legacy_envelope({"version": "v1.0", "createSurface": {"surfaceId": "s"}})
 
 
 class TestNormalizeLegacyComponent:
@@ -78,9 +76,7 @@ class TestNormalizeLegacyUpdateComponents:
         legacy = {
             "messageType": "updateComponents",
             "surfaceId": "main",
-            "components": [
-                {"id": "x", "component": "Card", "properties": {"title": "hi"}}
-            ],
+            "components": [{"id": "x", "component": "Card", "properties": {"title": "hi"}}],
         }
         result = compat.normalize_legacy(legacy)
         assert result["version"] == "v1.0"

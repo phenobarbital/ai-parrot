@@ -42,9 +42,7 @@ def make_root_column(children: list[Component]) -> list[Component]:
         ``[root_column, *children]`` — the root ``Column`` followed by its
         children, ready to drop into ``CreateSurface.components``.
     """
-    root = Component(
-        id="root", component="Column", children=[c.id for c in children]
-    )
+    root = Component(id="root", component="Column", children=[c.id for c in children])
     return [root, *children]
 
 

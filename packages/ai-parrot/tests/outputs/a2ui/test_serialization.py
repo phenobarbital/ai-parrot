@@ -32,9 +32,7 @@ class TestSerializeEnvelopeByKey:
 
     def test_serialize_never_emits_message_type(self):
         """No serialized message, at any nesting level, carries `messageType`."""
-        payload = serialize(
-            UpdateDataModel(surfaceId="main", path="/x", value=1)
-        )
+        payload = serialize(UpdateDataModel(surfaceId="main", path="/x", value=1))
         assert "messageType" not in payload
         assert "messageType" not in payload["updateDataModel"]
 
@@ -78,9 +76,7 @@ class TestLegacyNormalizeCreateSurface:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             restored = deserialize(legacy_create_surface_envelope())
-            assert any(
-                issubclass(w.category, DeprecationWarning) for w in caught
-            )
+            assert any(issubclass(w.category, DeprecationWarning) for w in caught)
         assert isinstance(restored, A2UIAgentMessage)
         assert restored.create_surface.surface_id == "main"
         assert len(restored.create_surface.components) == 2
@@ -90,9 +86,7 @@ class TestLegacyNormalizeCardToInfoCard:
     def test_legacy_normalize_card_to_infocard(self):
         legacy = legacy_create_surface_envelope()
         restored = deserialize(legacy)
-        card = next(
-            c for c in restored.create_surface.components if c.id == "blk-001"
-        )
+        card = next(c for c in restored.create_surface.components if c.id == "blk-001")
         assert card.component == "InfoCard"
 
 
@@ -118,9 +112,7 @@ class TestLegacyBindOptionalToExtensions:
         """{"$bind", "optional": true} normalizes to {"path"} + parrot_optional."""
         legacy = legacy_create_surface_envelope()
         restored = deserialize(legacy)
-        card = next(
-            c for c in restored.create_surface.components if c.id == "blk-001"
-        )
+        card = next(c for c in restored.create_surface.components if c.id == "blk-001")
         assert card.model_extra["title"] == {"path": "/title"}
         assert card.metadata.extensions.root["parrot_optional"] == ["/subtitle"]
 

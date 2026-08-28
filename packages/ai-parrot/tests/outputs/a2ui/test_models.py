@@ -41,9 +41,7 @@ class TestChildrenListOrTemplate:
         as_list = Component(id="r", component="Row", children=["a", "b"])
         assert as_list.children == ["a", "b"]
 
-        as_template = Component(
-            id="l", component="List", children={"componentId": "tpl", "path": "/items"}
-        )
+        as_template = Component(id="l", component="List", children={"componentId": "tpl", "path": "/items"})
         assert isinstance(as_template.children, ChildTemplate)
         assert as_template.children.component_id == "tpl"
         assert as_template.children.path == "/items"

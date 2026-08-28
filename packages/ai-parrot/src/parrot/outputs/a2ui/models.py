@@ -167,9 +167,7 @@ class DataBinding(BaseModel):
     @classmethod
     def _check_pointer(cls, value: str) -> str:
         if not is_valid_pointer(value):
-            raise ValueError(
-                f"DataBinding.path {value!r} is not a well-formed JSON Pointer."
-            )
+            raise ValueError(f"DataBinding.path {value!r} is not a well-formed JSON Pointer.")
         return value
 
 
@@ -267,9 +265,7 @@ class Action(BaseModel):
     @model_validator(mode="after")
     def _exactly_one(self) -> Action:
         if (self.event is None) == (self.function_call is None):
-            raise ValueError(
-                "Action requires exactly one of 'event' or 'functionCall'."
-            )
+            raise ValueError("Action requires exactly one of 'event' or 'functionCall'.")
         return self
 
 
@@ -356,10 +352,7 @@ class Extensions(RootModel[dict[str, Any]]):
     def _check_keys(self) -> Extensions:
         for key in self.root:
             if not isinstance(key, str) or not key.isidentifier():
-                raise ValueError(
-                    f"Extensions key {key!r} is not a valid Unicode identifier "
-                    "(UAX #31)."
-                )
+                raise ValueError(f"Extensions key {key!r} is not a valid Unicode identifier " "(UAX #31).")
             if key.startswith(_RESERVED_EXTENSION_PREFIX):
                 raise ValueError(
                     f"Extensions key {key!r} uses the reserved {_RESERVED_EXTENSION_PREFIX!r} "
@@ -575,9 +568,7 @@ class _FunctionResponseBase(A2UIMessageBase):
         has_value = "value" in self.model_fields_set
         has_error = self.error is not None
         if has_value == has_error:
-            raise ValueError(
-                f"{type(self).__name__} requires exactly one of 'value' or 'error'."
-            )
+            raise ValueError(f"{type(self).__name__} requires exactly one of 'value' or 'error'.")
         return self
 
 
@@ -642,9 +633,7 @@ class RendererFunctionResponse(_FunctionResponseBase):
 #: :class:`ErrorMessage` using one of these codes MUST carry ``surfaceId`` and
 #: ``path`` (and no ``functionCallId``); any other code is a "generic" error
 #: that requires exactly one of ``surfaceId``/``functionCallId``.
-_VALIDATION_ERROR_CODES = frozenset(
-    {"VALIDATION_FAILED", "UNALLOWED_PARENT", "UNALLOWED_CHILD"}
-)
+_VALIDATION_ERROR_CODES = frozenset({"VALIDATION_FAILED", "UNALLOWED_PARENT", "UNALLOWED_CHILD"})
 
 
 class ErrorMessage(A2UIMessageBase):
@@ -678,21 +667,14 @@ class ErrorMessage(A2UIMessageBase):
     def _check_shape(self) -> ErrorMessage:
         if self.code in _VALIDATION_ERROR_CODES:
             if self.surface_id is None or self.path is None:
-                raise ValueError(
-                    f"ErrorMessage with code {self.code!r} requires 'surfaceId' and 'path'."
-                )
+                raise ValueError(f"ErrorMessage with code {self.code!r} requires 'surfaceId' and 'path'.")
             if self.function_call_id is not None:
-                raise ValueError(
-                    f"ErrorMessage with code {self.code!r} must not carry 'functionCallId'."
-                )
+                raise ValueError(f"ErrorMessage with code {self.code!r} must not carry 'functionCallId'.")
         else:
             has_surface = self.surface_id is not None
             has_call = self.function_call_id is not None
             if has_surface == has_call:
-                raise ValueError(
-                    "Generic ErrorMessage requires exactly one of 'surfaceId' or "
-                    "'functionCallId'."
-                )
+                raise ValueError("Generic ErrorMessage requires exactly one of 'surfaceId' or " "'functionCallId'.")
         return self
 
 
@@ -724,19 +706,11 @@ class A2UIAgentMessage(BaseModel):
 
     version: Literal["v1.0"]
     create_surface: CreateSurface | None = Field(default=None, alias="createSurface")
-    update_components: UpdateComponents | None = Field(
-        default=None, alias="updateComponents"
-    )
-    update_data_model: UpdateDataModel | None = Field(
-        default=None, alias="updateDataModel"
-    )
+    update_components: UpdateComponents | None = Field(default=None, alias="updateComponents")
+    update_data_model: UpdateDataModel | None = Field(default=None, alias="updateDataModel")
     delete_surface: DeleteSurface | None = Field(default=None, alias="deleteSurface")
-    call_renderer_function: CallRendererFunction | None = Field(
-        default=None, alias="callRendererFunction"
-    )
-    agent_function_response: AgentFunctionResponse | None = Field(
-        default=None, alias="agentFunctionResponse"
-    )
+    call_renderer_function: CallRendererFunction | None = Field(default=None, alias="callRendererFunction")
+    agent_function_response: AgentFunctionResponse | None = Field(default=None, alias="agentFunctionResponse")
 
     @model_validator(mode="after")
     def _exactly_one_key(self) -> A2UIAgentMessage:
@@ -750,10 +724,7 @@ class A2UIAgentMessage(BaseModel):
         )
         present = sum(1 for k in keys if k is not None)
         if present != 1:
-            raise ValueError(
-                "A2UIAgentMessage requires exactly one message key besides "
-                f"'version', got {present}."
-            )
+            raise ValueError("A2UIAgentMessage requires exactly one message key besides " f"'version', got {present}.")
         return self
 
 
@@ -773,12 +744,8 @@ class A2UIRendererMessage(BaseModel):
 
     version: Literal["v1.0"]
     action: ActionMessage | None = None
-    call_agent_function: CallAgentFunction | None = Field(
-        default=None, alias="callAgentFunction"
-    )
-    renderer_function_response: RendererFunctionResponse | None = Field(
-        default=None, alias="rendererFunctionResponse"
-    )
+    call_agent_function: CallAgentFunction | None = Field(default=None, alias="callAgentFunction")
+    renderer_function_response: RendererFunctionResponse | None = Field(default=None, alias="rendererFunctionResponse")
     error: ErrorMessage | None = None
 
     @model_validator(mode="after")
@@ -792,23 +759,15 @@ class A2UIRendererMessage(BaseModel):
         present = sum(1 for k in keys if k is not None)
         if present != 1:
             raise ValueError(
-                "A2UIRendererMessage requires exactly one message key besides "
-                f"'version', got {present}."
+                "A2UIRendererMessage requires exactly one message key besides " f"'version', got {present}."
             )
         return self
 
 
 #: Convenience alias for typing an arbitrary agent-to-renderer inner message.
 A2UIAgentInnerMessage = (
-    CreateSurface
-    | UpdateComponents
-    | UpdateDataModel
-    | DeleteSurface
-    | CallRendererFunction
-    | AgentFunctionResponse
+    CreateSurface | UpdateComponents | UpdateDataModel | DeleteSurface | CallRendererFunction | AgentFunctionResponse
 )
 
 #: Convenience alias for typing an arbitrary renderer-to-agent inner message.
-A2UIRendererInnerMessage = (
-    ActionMessage | CallAgentFunction | RendererFunctionResponse | ErrorMessage
-)
+A2UIRendererInnerMessage = ActionMessage | CallAgentFunction | RendererFunctionResponse | ErrorMessage
