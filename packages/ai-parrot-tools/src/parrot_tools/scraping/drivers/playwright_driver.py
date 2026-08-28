@@ -39,7 +39,14 @@ class PlaywrightDriver(AbstractDriver):
     # ── Lifecycle ────────────────────────────────────────────────
 
     async def start(self) -> None:
-        """Launch browser and create a default context + page."""
+        """Launch browser and create a default context + page.
+
+        When ``config.user_data_dir`` is set, a *persistent context* is
+        launched over that profile directory instead of a fresh browser +
+        incognito context, so the page sees the profile's cookies, saved
+        sessions and credential store (``config.channel="chrome"`` opens
+        a real installed Google Chrome for real Chrome profiles).
+        """
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
@@ -50,17 +57,37 @@ class PlaywrightDriver(AbstractDriver):
         }
         if self.config.proxy:
             launch_kwargs["proxy"] = self.config.proxy
-        self._browser = await browser_launcher.launch(**launch_kwargs)
+        if self.config.channel:
+            launch_kwargs["channel"] = self.config.channel
 
-        context_kwargs = self._build_context_kwargs()
-        self._context = await self._browser.new_context(**context_kwargs)
-        self._context.set_default_timeout(self.config.timeout * 1000)
+        if self.config.user_data_dir:
+            context_kwargs = self._build_context_kwargs()
+            # storage_state is not supported by persistent contexts —
+            # the profile directory itself IS the storage state.
+            context_kwargs.pop("storage_state", None)
+            self._browser = None
+            self._context = await browser_launcher.launch_persistent_context(
+                self.config.user_data_dir,
+                **launch_kwargs,
+                **context_kwargs,
+            )
+            self._context.set_default_timeout(self.config.timeout * 1000)
+            # Persistent contexts open with an initial page.
+            pages = self._context.pages
+            self._page = pages[0] if pages else await self._context.new_page()
+        else:
+            self._browser = await browser_launcher.launch(**launch_kwargs)
 
-        self._page = await self._context.new_page()
+            context_kwargs = self._build_context_kwargs()
+            self._context = await self._browser.new_context(**context_kwargs)
+            self._context.set_default_timeout(self.config.timeout * 1000)
+
+            self._page = await self._context.new_page()
         self.logger.info(
-            "PlaywrightDriver started: browser=%s headless=%s",
+            "PlaywrightDriver started: browser=%s headless=%s persistent=%s",
             self.config.browser_type,
             self.config.headless,
+            bool(self.config.user_data_dir),
         )
 
     async def quit(self) -> None:

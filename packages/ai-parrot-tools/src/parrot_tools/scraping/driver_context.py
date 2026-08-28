@@ -116,6 +116,10 @@ class _SeleniumSetupAdapter:
             options["custom_user_agent"] = self._config.custom_user_agent
         if self._config.mobile_device:
             options["mobile_device"] = self._config.mobile_device
+        if self._config.user_data_dir:
+            options["user_data_dir"] = self._config.user_data_dir
+        if self._config.profile_directory:
+            options["profile_directory"] = self._config.profile_directory
 
         driver = SeleniumDriver(
             browser=self._config.browser,
@@ -192,6 +196,8 @@ class _PlaywrightSetup:
                 if self._config.custom_user_agent
                 else None
             ),
+            user_data_dir=self._config.user_data_dir,
+            channel=self._config.browser_channel,
         )
         driver = PlaywrightDriver(pw_config)
         await driver.start()

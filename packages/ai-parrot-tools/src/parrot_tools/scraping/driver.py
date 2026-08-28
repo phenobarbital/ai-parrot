@@ -61,6 +61,7 @@ class SeleniumSetup:
         auto_install: bool = True,
         cache_valid_range: int = 7,
         user_data_dir: Optional[str] = None,
+        profile_directory: Optional[str] = None,
         enable_logging: bool = True,
         timeout: int = 10,
         detach: bool = False,
@@ -80,6 +81,8 @@ class SeleniumSetup:
             auto_install: Auto-install driver if not found
             cache_valid_range: Driver cache validity in days
             user_data_dir: Custom user data directory
+            profile_directory: Profile folder inside user_data_dir
+                (Chrome: "Default", "Profile 1", ...)
             enable_logging: Enable detailed logging
         """
         self.browser = browser
@@ -91,6 +94,7 @@ class SeleniumSetup:
         self.auto_install = auto_install
         self.cache_valid_range = cache_valid_range
         self.user_data_dir = user_data_dir
+        self.profile_directory = profile_directory
         self.enable_logging = enable_logging
         self.timeout = timeout or 10  # Default timeout for waits
         # Additional configuration
@@ -148,6 +152,8 @@ class SeleniumSetup:
         # User data directory
         if self.user_data_dir:
             options.add_argument(f"--user-data-dir={self.user_data_dir}")
+        if self.profile_directory:
+            options.add_argument(f"--profile-directory={self.profile_directory}")
 
         # Mobile emulation
         if self.mobile:

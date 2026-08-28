@@ -31,6 +31,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "bing_search": "parrot_tools.bingsearch.BingSearchTool",
     "bloomberg": "parrot_tools.bloomberg.BloombergTool",
     "break_even_analysis": "parrot_tools.breakeven.BreakEvenAnalysisTool",
+    "web_browsing": "parrot_tools.browsing.toolkit.WebBrowsingToolkit",
     "business_automation": "parrot_tools.business_automation.toolkit.BusinessAutomationToolkit",
     "calculator": "parrot_tools.calculator.tool.CalculatorTool",
     "chart": "parrot_tools.chart.ChartTool",
