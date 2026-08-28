@@ -315,7 +315,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -325,8 +325,8 @@
       "parallelism_notes": "Toca producer y los dos toolkits; puede correr en paralelo con 2546 en la práctica pero comparte fixtures — se deja secuencial.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2547-producer-emission-toolkits-v1.md"
+      "completed_at": "2026-08-28T22:57:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2547-producer-emission-toolkits-v1.md"
     },
     {
       "id": "TASK-2548",
