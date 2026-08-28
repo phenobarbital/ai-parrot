@@ -76,10 +76,7 @@ def test_no_exec_in_a2ui_subtree(forbidden):
         for lineno, line in enumerate(text.splitlines(), 1):
             if forbidden in line:
                 offenders.append(f"{path}:{lineno}: {line.strip()}")
-    assert not offenders, (
-        f"G1 violation — {forbidden!r} found under the A2UI subtrees:\n"
-        + "\n".join(offenders)
-    )
+    assert not offenders, f"G1 violation — {forbidden!r} found under the A2UI subtrees:\n" + "\n".join(offenders)
 
 
 def test_subtrees_exist_and_are_scanned():

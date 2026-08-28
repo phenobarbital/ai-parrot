@@ -37,11 +37,12 @@ def _warn_if_deprecated(mode: OutputMode) -> None:
             stacklevel=3,
         )
 
+
 class Renderer(Protocol):
     """Protocol for output renderers."""
+
     @staticmethod
-    def render(data: Any, **kwargs) -> Any:
-        ...
+    def render(data: Any, **kwargs) -> Any: ...
 
 
 RENDERERS: dict[OutputMode, type[Renderer]] = {}
@@ -49,26 +50,26 @@ _PROMPTS: dict[OutputMode, str] = {}
 
 # Module-level dispatch table — maps OutputMode → module name(s) to import
 _MODULE_MAP: dict = {
-    OutputMode.TEXT:            ('.text',),
-    OutputMode.TERMINAL:        ('.terminal',),          # no renderer; TerminalGenerator is in generators/
-    OutputMode.HTML:            ('.html',),
-    OutputMode.JSON:            ('.json',),
-    OutputMode.MARKDOWN:        ('.markdown',),
-    OutputMode.YAML:            ('.yaml',),
-    OutputMode.CHART:           ('.chart',),             # base class only; no renderer registered
-    OutputMode.MAP:             ('.map',),
-    OutputMode.STRUCTURED_CHART: ('.structured_chart',),
-    OutputMode.STRUCTURED_TABLE: ('.structured_table',),
-    OutputMode.STRUCTURED_MAP:   ('.structured_map',),
-    OutputMode.JINJA2:          ('.jinja2',),
-    OutputMode.TEMPLATE_REPORT: ('.template_report',),
-    OutputMode.ECHARTS:         ('.echarts',),
-    OutputMode.TABLE:           ('.table',),
-    OutputMode.APPLICATION:     ('.application',),
-    OutputMode.CARD:            ('.card',),
-    OutputMode.WHATSAPP:        ('.whatsapp',),
-    OutputMode.SLACK:           ('.slack',),
-    OutputMode.INFOGRAPHIC:     ('.infographic', '.infographic_html'),
+    OutputMode.TEXT: (".text",),
+    OutputMode.TERMINAL: (".terminal",),  # no renderer; TerminalGenerator is in generators/
+    OutputMode.HTML: (".html",),
+    OutputMode.JSON: (".json",),
+    OutputMode.MARKDOWN: (".markdown",),
+    OutputMode.YAML: (".yaml",),
+    OutputMode.CHART: (".chart",),  # base class only; no renderer registered
+    OutputMode.MAP: (".map",),
+    OutputMode.STRUCTURED_CHART: (".structured_chart",),
+    OutputMode.STRUCTURED_TABLE: (".structured_table",),
+    OutputMode.STRUCTURED_MAP: (".structured_map",),
+    OutputMode.JINJA2: (".jinja2",),
+    OutputMode.TEMPLATE_REPORT: (".template_report",),
+    OutputMode.ECHARTS: (".echarts",),
+    OutputMode.TABLE: (".table",),
+    OutputMode.APPLICATION: (".application",),
+    OutputMode.CARD: (".card",),
+    OutputMode.WHATSAPP: (".whatsapp",),
+    OutputMode.SLACK: (".slack",),
+    OutputMode.INFOGRAPHIC: (".infographic", ".infographic_html"),
 }
 
 
@@ -80,12 +81,15 @@ def register_renderer(mode: OutputMode, system_prompt: str | None = None):
         mode: OutputMode enum value
         system_prompt: Optional system prompt to inject when using this mode
     """
+
     def decorator(cls):
         RENDERERS[mode] = cls
         if system_prompt:
             _PROMPTS[mode] = system_prompt
         return cls
+
     return decorator
+
 
 def get_renderer(mode: OutputMode) -> type[Renderer]:
     """Get the renderer class for the given output mode."""
@@ -94,13 +98,12 @@ def get_renderer(mode: OutputMode) -> type[Renderer]:
         modules = _MODULE_MAP.get(mode, ())
         with contextlib.suppress(ImportError):
             for mod in modules:
-                import_module(mod, 'parrot.outputs.formats')
+                import_module(mod, "parrot.outputs.formats")
     try:
         return RENDERERS[mode]
     except KeyError as exc:
-        raise ValueError(
-            f"No renderer registered for mode: {mode}"
-        ) from exc
+        raise ValueError(f"No renderer registered for mode: {mode}") from exc
+
 
 def get_output_prompt(mode: OutputMode) -> str | None:
     """Get system prompt for mode."""
@@ -109,6 +112,7 @@ def get_output_prompt(mode: OutputMode) -> str | None:
         with contextlib.suppress(ValueError):
             get_renderer(mode)
     return _PROMPTS.get(mode)
+
 
 def has_system_prompt(mode: OutputMode) -> bool:
     """Check if mode has a registered system prompt."""
@@ -147,7 +151,7 @@ def get_infographic_html_renderer():
         # FEAT-200 moved this module to the ai-parrot-visualizations satellite;
         # only translate the error when the renderer module itself is missing,
         # not when one of its own dependencies fails to import.
-        if exc.name and exc.name.endswith('infographic_html'):
+        if exc.name and exc.name.endswith("infographic_html"):
             raise ImportError(
                 "Infographic HTML rendering requires the 'ai-parrot-visualizations' "
                 "package (renderers moved out of core in FEAT-200). Install it with: "
@@ -162,13 +166,13 @@ def get_infographic_html_renderer():
 from .base import RenderError, RenderResult
 
 __all__ = (
-    'RENDERERS',
-    'RenderError',
-    'RenderResult',
-    'Renderer',
-    'get_infographic_html_renderer',
-    'get_output_prompt',
-    'get_renderer',
-    'has_system_prompt',
-    'register_renderer',
+    "RENDERERS",
+    "RenderError",
+    "RenderResult",
+    "Renderer",
+    "get_infographic_html_renderer",
+    "get_output_prompt",
+    "get_renderer",
+    "has_system_prompt",
+    "register_renderer",
 )

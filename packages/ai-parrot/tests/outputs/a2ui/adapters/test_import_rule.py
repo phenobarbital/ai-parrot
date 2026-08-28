@@ -70,10 +70,7 @@ def _run_import_probe(src_dir: Path, import_stmt: str, sanity_assert: str) -> No
 
 def test_adapters_subpackage_has_no_forbidden_imports():
     offenders = _forbidden_import_offenders(_python_files())
-    assert not offenders, (
-        "G8 one-way import-rule violation in parrot.outputs.a2ui.adapters:\n"
-        + "\n".join(offenders)
-    )
+    assert not offenders, "G8 one-way import-rule violation in parrot.outputs.a2ui.adapters:\n" + "\n".join(offenders)
 
 
 def test_adapters_subpackage_importable_without_agents_or_clients():
@@ -87,9 +84,8 @@ def test_adapters_subpackage_importable_without_agents_or_clients():
 def test_catalog_basic_has_no_forbidden_imports():
     assert _CATALOG_BASIC_DIR.is_dir(), f"expected catalog/basic subpackage at {_CATALOG_BASIC_DIR}"
     offenders = _forbidden_import_offenders(_CATALOG_BASIC_DIR.rglob("*.py"))
-    assert not offenders, (
-        "G8 one-way import-rule violation in parrot.outputs.a2ui.catalog.basic:\n"
-        + "\n".join(offenders)
+    assert not offenders, "G8 one-way import-rule violation in parrot.outputs.a2ui.catalog.basic:\n" + "\n".join(
+        offenders
     )
 
 
@@ -104,9 +100,7 @@ def test_catalog_basic_importable_without_agents_or_clients():
 def test_compat_has_no_forbidden_imports():
     assert _COMPAT_FILE.is_file(), f"expected compat module at {_COMPAT_FILE}"
     offenders = _forbidden_import_offenders([_COMPAT_FILE])
-    assert not offenders, (
-        "G8 one-way import-rule violation in parrot.outputs.a2ui.compat:\n" + "\n".join(offenders)
-    )
+    assert not offenders, "G8 one-way import-rule violation in parrot.outputs.a2ui.compat:\n" + "\n".join(offenders)
 
 
 def test_compat_importable_without_agents_or_clients():
