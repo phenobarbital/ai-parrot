@@ -119,7 +119,45 @@ class TestTASK2538:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `_resolve_value` now resolves `{"path"}` (still via lazily-loaded
+  `jsonpointer`, resolving relative paths against `scope_path` via
+  `FunctionEvaluator._resolve_scoped_pointer`) and evaluates `{"call"}` via
+  a shared, stateless `FunctionEvaluator` instance. `metadata.extensions.
+  parrot_optional` (a list of pointers) is consulted for the optional-omit
+  behavior that used to live on `{"$bind", "optional": true}`.
+- `ChildTemplate` expansion: `_expand_template` resolves `template.path` to
+  a list via `jsonpointer`, clones the template component once per item
+  with `scope_path=f"{template.path}/{i}"` and `index=i` (so relative
+  paths and `${@index}` resolve correctly), suffixes the clone's `id` (and,
+  if present, its own `child`/single-level `children` list) with `-<i>`,
+  and the parent's `children` is replaced with the concrete clone-id list.
+  The template SOURCE component itself is excluded from the flat output
+  (never rendered standalone) — deeper nested-template-within-template
+  suffix rewriting is NOT implemented (undocumented edge case, not tested).
+- `checks` are NOT special-cased/excluded from resolution — initially
+  considered excluding them (since they are meant to validate live user
+  input, not display data) but the task's own acceptance criterion
+  (`_has_live_binding(comp) is False` for ALL baked components) is
+  unconditional, so `checks` go through the same resolve pass as every
+  other prop; any binding inside a check that a static bake can't resolve
+  must be marked `parrot_optional` by whoever authored it.
+- `test_baking.py` (ai-parrot-visualizations satellite) and the new core
+  `test_baking_v1.py` both updated/created to the v1.0 wire.
+- **Test infra note (pre-existing, not introduced by this task)**: running
+  `pytest packages/ai-parrot/tests/outputs/a2ui packages/ai-parrot-
+  visualizations/tests/outputs/a2ui_renderers` in ONE invocation fails ALL
+  files under `a2ui_renderers/` (including ones untouched by this feature,
+  e.g. `test_pdf.py`, `test_ssr_html.py`) with `ModuleNotFoundError: No
+  module named 'tests.outputs.a2ui_renderers'` — a cross-package rootdir/
+  import-mode collision between the two packages' own `tests/` trees.
+  Confirmed each package's suite passes fine run SEPARATELY; did not
+  attempt to fix this repo-wide pytest configuration issue (out of scope).
+- `pytest test_baking_v1.py catalog/ test_catalog.py test_models.py
+  test_serialization.py test_compat.py test_no_exec.py` (ai-parrot): 153
+  passed. `pytest test_baking.py` (ai-parrot-visualizations, standalone):
+  3 passed. `ruff check`: clean.
+
+**Deviations from spec**: none.
