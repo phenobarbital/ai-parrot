@@ -132,7 +132,31 @@ class TestTASK2544:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: jesuslarag@gmail.com (via sdd-worker)
+**Date**: 2026-08-28
+**Notes**: Verified the Codebase Contract against the current source (all
+signatures matched — no contract update needed). On starting this task,
+`interactive_html.py`'s `_render_prim_Tabs`/`_render_prim_List`/
+`_render_prim_Divider`/native-input dispatch, and `echarts.py`/
+`folium_map.py`'s `supported_components` declarations + top-level/`{path}`
+prop reads were already present in the working tree, landed uncommitted by
+a concurrent sdd-worker run for this same feature and swept into an
+earlier `style: apply black formatting (post sdd-worker)` commit
+(`42f74b090`) without ever getting a dedicated TASK-2544 commit (the
+per-spec index still showed `in-progress`). The 3 test files already
+carried `TestTASK2544` classes with the exact test names from this task's
+Test Specification (`test_interactive_html_renders_new_primitives`,
+`test_interactive_chart_reads_top_level_props`, `test_echarts_capabilities`,
+`test_folium_capabilities`). I verified this implementation line-by-line
+against the task Scope and spec §2/§3 Module 7/§6, ran the 3 target test
+files (29/29 passed), ran `ruff check` on all 6 touched files (found 12
+pre-existing findings — `UP045 Optional[...] -> X | None` in
+`interactive_html.py` and stale/unsorted `# noqa: E402` in the three test
+files — fixed with `ruff check --fix`, reran tests green), and committed
+the fix under a dedicated `TASK-2544` commit to close out the task's SDD
+paper trail.
+**Deviations from spec**: none in the Scope itself — the only deviation
+from the expected workflow is procedural (see Notes): the substantive
+code for this task was already present and committed under an unrelated
+commit message before this session started, rather than freshly
+implemented here.

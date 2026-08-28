@@ -254,7 +254,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -264,8 +264,8 @@
       "parallelism_notes": "Archivos distintos de TASK-2545; paralelizable.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2544-interactive-html-echarts-folium-v1.md"
+      "completed_at": "2026-08-28T21:53:50+00:00",
+      "file": "sdd/tasks/completed/TASK-2544-interactive-html-echarts-folium-v1.md"
     },
     {
       "id": "TASK-2545",
