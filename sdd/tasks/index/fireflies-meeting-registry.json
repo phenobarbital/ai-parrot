@@ -14,7 +14,7 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: every later task imports the new manager API. Touches core wiki files (sources.py/models.py/store.py) shared with completed FEAT-402/451.",
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2553-wiki-sources-external-id.md"
+      "completed_at": "2026-08-28T23:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2553-wiki-sources-external-id.md"
     },
     {
       "id": "TASK-2554",
