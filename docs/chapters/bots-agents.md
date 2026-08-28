@@ -31,6 +31,8 @@ agents together via sequential, parallel or DAG-based execution.
 
 - [Agents](../agent.md), [Agent Mesh](../agent_mesh.md)
 - [Crew Handler](../crew_handler.md)
+- [WebAgent](../web-agent.md) (Chrome DevTools) and
+  [WebNavigatorAgent](../web-navigator-agent.md) (catalogued browsing)
 - [AgentCrew Guide](../orchestration/agentcrew.md) and
   [AgentsFlow Guide](../orchestration/agentsflow.md)
 
