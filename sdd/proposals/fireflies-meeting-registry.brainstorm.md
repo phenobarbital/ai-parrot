@@ -78,7 +78,17 @@ the vault and wiki), and every downstream consumer — daily/weekly digests,
 - **Registry drives the sync window.** `from_date` defaults to
   `max(synced_at) − overlap` (cold start: existing behaviour). No
   server-side "exclude processed" exists on the Fireflies MCP; the
-  fingerprint gate absorbs the overlap.
+  fingerprint gate absorbs the overlap. Fireflies is not observed to
+  change a transcript later than ~2 days after the meeting, so
+  `FIREFLIES_SYNC_OVERLAP_DAYS=2` and `FIREFLIES_RECHECK_DAYS=7` are
+  fixed defaults; `force_refetch` exists for the exceptions.
+- **`external_id` is a general convention.** Values are `<source>:<id>`
+  (`fireflies:<transcript_id>` here). The column is documented as the
+  pattern future external-source ingests (Jira `jira_sync.py`, audio
+  notes) should adopt; migrating them is out of scope.
+- **Repair may move files; merge may delete them.** Both verbs are
+  explicit, reported, and limited to the meetings folder; the parent
+  toolkit's `allowed_operations` grows by `"move"` and `"delete"`.
 - **Full lifecycle in one place.** Registry records sync, analysis and
   wiki-ingest state per meeting (decided in discovery). The wiki ingest
   itself stays incremental through the existing manifest staleness check.
@@ -265,11 +275,17 @@ into frontmatter as state changes. Obsidian users see all state inline.
   note in place**, drops the stale `## Analysis`, and the next
   `summarize_pending_transcripts()` re-analyses it. The sync report gains a
   `revised` counter alongside `synced` / `skipped`.
-- The sync report also lists `repaired` notes (registry path fixed after a
-  rename) and the effective `from_date` used.
-- First run on an existing vault logs a one-line backfill summary
-  ("registry seeded from N notes, M without analysis") and behaves exactly
-  like today for those notes — no duplicates, no forced re-analysis.
+- The sync report also lists `repaired` notes (renamed notes moved back to
+  the canonical `YYYY-MM-DD-slug` path and re-registered) and the
+  effective `from_date` used.
+- `sync_fireflies_transcripts(force_refetch=True)` / Telegram
+  `sync --force-refetch` re-fingerprints every transcript in the window
+  instead of trusting the cheap listing-metadata skip.
+- First run on an existing vault logs a backfill summary ("registry
+  seeded from N notes, M without analysis, K duplicate ids merged") and
+  behaves exactly like today for those notes — no forced re-analysis.
+  Duplicate notes for one id are merged (one kept, the rest deleted) and
+  every merge is itemised in the report.
 - `summarize_pending_transcripts()` reports `skipped` from the registry
   instead of re-reading every note; `force=True` still re-analyses.
 - With `FIREFLIES_WIKI_*` unset or the wiki plane failing to build, all of
@@ -297,15 +313,23 @@ into frontmatter as state changes. Obsidian users see all state inline.
    - id unknown → `create`.
    - id known, `title/date/duration` unchanged and `synced_at` newer than
      `FIREFLIES_RECHECK_DAYS` (default 7) → `skip` **without** fetching the
-     transcript (cheap path).
+     transcript (cheap path). `force_refetch=True` (exposed on
+     `sync_fireflies_transcripts` and as `--force-refetch` on the Telegram
+     `sync` command) disables this path: every id in the window is fetched
+     and fingerprinted.
    - otherwise → fetch transcript, normalise, `sha256`; equal to stored
      fingerprint → `skip`; different (or stored `None` from backfill) →
      `revise`.
 4. **Repair.** Before `create`/`revise`, verify `source_uri` still exists.
    If not, scan the meetings folder frontmatter for the id
-   (`read_notes`, chunked); found → `repair_path()` updates `source_uri`
-   (and `pages_generated` is left to the ingest); not found → treat as
-   `create`.
+   (`read_notes`, chunked); found → `repair_path()`: `move_note` the file
+   back to the canonical `{meetings_folder}/{YYYY-MM-DD-slug}.md` path
+   (the parent's `ObsidianToolkit` gains `"move"` in
+   `allowed_operations`), then update `source_uri`; if the canonical path
+   is already taken by a *different* id, keep the user's path and only
+   update the registry. `pages_generated` is left to the ingest. Not
+   found → treat as `create`. Every move is listed under
+   `report["repaired"]` as `{id, from, to}`.
 5. **Write.**
    - `create`: `create_note` (slug de-duplicated with `-n` suffix against
      the registry, not just the filesystem), then `record_synced()` →
@@ -341,9 +365,14 @@ into frontmatter as state changes. Obsidian users see all state inline.
   once, fall back to today's title-based dedup for that run; report carries
   `registry: "unavailable"`. Never abort the sync.
 - **Backfill finds two notes with the same `fireflies_id`** (a duplicate
-  created by the old behaviour): register the oldest (by mtime) as the
-  canonical path, list the others under `report["duplicates"]`; do **not**
-  delete anything automatically.
+  created by the old behaviour): `merge_duplicates()` keeps the note that
+  carries an `## Analysis` (newest by mtime if several or none), moves it
+  to the canonical path if needed, deletes the others via `delete_note`
+  (the parent toolkit gains `"delete"` for this single verb), and records
+  every decision in `report["duplicates"]` as `{id, kept, removed[]}`.
+  The merge never runs silently: it is part of the backfill report and
+  logged at INFO per id. Any note whose frontmatter is unparsable is left
+  untouched and listed under `report["unmerged"]`.
 - **Note deleted by the user**: `classify` sees the id but no file →
   repair scan finds nothing → `create` re-writes the note. If the user
   wants a meeting gone for good they must also remove the row (a
@@ -372,8 +401,9 @@ into frontmatter as state changes. Obsidian users see all state inline.
 ### New Capabilities
 - `fireflies-meeting-registry`: id-keyed registry (facade over
   `SourceCollectionManager`) recording sync / analysis / wiki state per
-  Fireflies transcript, with create-skip-revise classification, path
-  repair, backfill and sync-window suggestion.
+  Fireflies transcript, with create-skip-revise classification,
+  `force_refetch`, path repair (move back to canonical path), backfill
+  with reported duplicate merge, and sync-window suggestion.
 - `wiki-sources-external-id`: additive `external_id` column + lookups on
   the wiki `sources` manifest (sqlite/json/arangodb parity).
 
@@ -394,7 +424,8 @@ into frontmatter as state changes. Obsidian users see all state inline.
 | `parrot/knowledge/wiki/models.py` `SourceManifestEntry` | extends | `external_id: str \| None = None` |
 | `parrot/knowledge/wiki/sources.py` | extends | column migration, upsert SQL (+1 column), `find_by_external_id`, `find_entries_by_external_ids`, `external_id` kwarg on `add_source`/`record_decision`, Arango doc mapping |
 | `parrot/knowledge/wiki/store.py` `WIKI_SCHEMA_SQL` | extends | `external_id TEXT` + index on fresh databases (migration covers old ones) |
-| `parrot/agents/obsidian.py` | modifies | sync loop, summarize loop, `configure()`, constructor arg `registry_dir`, report schema |
+| `parrot/agents/obsidian.py` | modifies | sync loop, summarize loop, `configure()`, constructor arg `registry_dir`, `force_refetch` param, `allowed_operations` += `"move"`, `"delete"`, report schema |
+| Telegram `sync` command on the Fireflies agents | extends | `--force-refetch` flag |
 | `parrot/agents/conf.py` | extends | `FIREFLIES_SYNC_OVERLAP_DAYS`, `FIREFLIES_RECHECK_DAYS`, `FIREFLIES_REGISTRY_DIR` (default = `FIREFLIES_WIKI_STORAGE_DIR`) |
 | new `parrot/agents/meeting_registry.py` | new | `MeetingRegistry` facade + `MeetingRecord` Pydantic model + `normalise_transcript()` / `fingerprint()` |
 | `agents/fireflies_wiki.py` | modifies | one call after ingest (`mark_wiki_ingested`); `git add -f` |
@@ -544,7 +575,7 @@ from parrot.agents.conf import FIREFLIES_WIKI_STORAGE_DIR                      #
 #### Key Attributes & Constants
 - `SourceManifestEntry.source_uri` is UNIQUE and is the *vault-note path* for notes registered by the vault ingest (`sources.py:205-224`).
 - `SourceCollectionManager.backend` ∈ `{"sqlite","json","arangodb"}` (`sources.py:161`); the meeting agents use sqlite, keyed on `wiki.db` under the storage dir.
-- `ObsidianToolkit.allowed_operations` in the parent agent is `{"read","list","search","create","update"}` (`agents/obsidian.py:224-230`) — `"move"` is **not** enabled; path repair therefore updates the registry only and never moves files.
+- `ObsidianToolkit.allowed_operations` in the parent agent is `{"read","list","search","create","update"}` (`agents/obsidian.py:224-230`) — `"move"` and `"delete"` are **not** enabled today; this feature adds both (repair → `move_note`, duplicate merge → `delete_note`).
 - `FirefliesObsidianAgent.ANALYSIS_HEADING == "## Analysis"` (referenced `agents/obsidian.py:720`).
 - The wiki manifest's staleness rule is *file* mtime + SHA-1 (`sources.py:479-527`) — distinct from the transcript fingerprint introduced here.
 
@@ -588,8 +619,8 @@ from parrot.agents.conf import FIREFLIES_WIKI_STORAGE_DIR                      #
 - [x] Revise policy when a known transcript's content changes? — *Owner: Jesus Lara*: update the note body in place, drop `## Analysis`, reset analysis to pending.
 - [x] Fingerprint algorithm? — *Owner: Jesus Lara*: sha256 of the normalised transcript text; Fireflies summary hashed separately; `file_hash` untouched.
 - [x] Registry scope — sync + analysis only, or also the wiki mark? — *Owner: Jesus Lara*: full lifecycle, including `wiki_ingested_at`.
-- [ ] Should `"move"` be added to the parent's `ObsidianToolkit.allowed_operations` so path repair can *also* re-normalise a renamed note back to the `YYYY-MM-DD-slug` convention, or is registry-only repair (no file moves) the safer default? — *Owner: Jesus Lara*
-- [ ] Defaults for `FIREFLIES_SYNC_OVERLAP_DAYS` (proposed 2) and `FIREFLIES_RECHECK_DAYS` (proposed 7): are late Fireflies re-finalisations observed beyond a week? — *Owner: Jesus Lara*
-- [ ] Should the Telegram `sync` command expose `--force-refetch` (ignore the cheap-skip, fingerprint everything in the window)? — *Owner: Jesus Lara*
-- [ ] Backfill duplicates (two notes, one id): report-only as proposed, or offer a `merge_duplicates` verb that keeps the newest analysis and deletes the rest? — *Owner: Jesus Lara*
-- [ ] Should the `external_id` convention (`fireflies:<id>`) be documented as the general pattern for other external sources (Jira `jira_sync.py`, audio notes) so they can stop keying on path too? — *Owner: Jesus Lara*
+- [x] Should `"move"` be added to the parent's `ObsidianToolkit.allowed_operations` so path repair can *also* re-normalise a renamed note back to the `YYYY-MM-DD-slug` convention? — *Owner: Jesus Lara*: yes — enable `"move"`; repair may move the note back to the canonical path.
+- [x] Defaults for `FIREFLIES_SYNC_OVERLAP_DAYS` (proposed 2) and `FIREFLIES_RECHECK_DAYS` (proposed 7)? — *Owner: Jesus Lara*: Fireflies changes are not observed beyond ~2 days after a meeting; keep overlap=2, recheck=7 as a generous ceiling.
+- [x] Should the Telegram `sync` command expose `--force-refetch`? — *Owner: Jesus Lara*: yes.
+- [x] Backfill duplicates (two notes, one id): report-only, or a `merge_duplicates` verb? — *Owner: Jesus Lara*: merge duplicates, **always with a report** of what was kept/removed.
+- [x] Should the `external_id` convention be the general pattern for other external sources (Jira, audio notes)? — *Owner: Jesus Lara*: yes — document `<source>:<id>` as the convention; migrating Jira/audio-notes callers is follow-up work, not this feature.
