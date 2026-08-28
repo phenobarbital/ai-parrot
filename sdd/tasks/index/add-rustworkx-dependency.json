@@ -14,14 +14,14 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Root of the feature: every other task depends on the pyproject changes. Covers spec Modules 1 and 2 (both pure metadata edits that must precede the lock regeneration).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T21:53:58+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2549-promote-wikitoolkit-deps-to-core.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-2549"],
+      "depends_on": [
+        "TASK-2549"
+      ],
       "parallel": false,
       "parallelism_notes": "Mutates the shared .venv (uv sync / uv sync --extra wiki) and uv.lock; must not run concurrently with tests or other worktree activity in the same venv.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T21:53:58+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2550-regenerate-uv-lock.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-2549"],
+      "depends_on": [
+        "TASK-2549"
+      ],
       "parallel": true,
       "parallelism_notes": "Only creates tests/knowledge/test_wiki_cli_core_deps.py; shares no files with TASK-2550 or TASK-2552. Can run alongside TASK-2552 once TASK-2549 is done (the static check only reads pyproject.toml, so it does not need the regenerated lock).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T21:53:58+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2551-wiki-cli-core-deps-regression-test.md"
     },
@@ -68,14 +72,16 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2549"],
+      "depends_on": [
+        "TASK-2549"
+      ],
       "parallel": true,
       "parallelism_notes": "Docs only (docs/graphindex.md, CLAUDE.md); shares no files with any other task. Can run alongside TASK-2551.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T21:53:58+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2552-wikitoolkit-install-docs.md"
     }
