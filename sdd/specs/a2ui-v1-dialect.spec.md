@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-470
 **Date**: 2026-08-28
 **Author**: Jesus Lara (con Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 **Brainstorm**: `sdd/proposals/a2ui-v1-dialect.brainstorm.md` (Option B)
 **Followed by**: FEAT-469 `a2ui-agent-functions` (runtime RPC; depende de este spec)
@@ -735,11 +735,11 @@ pdf.py: PDFRenderer :99 ; _rasterize :137 · echarts.py: EChartsRenderer :56 ; _
 - [x] Degradación de inputs en Adaptive Cards — *Resolved in spec clarification*: **inputs nativos ya** (`Input.Text/Toggle/ChoiceSet/Number/Date/Time` + `Action.Submit` con `a2ui_action`), recibidos por el wrapper de Teams existente; `agentFunctionResponse` llega con FEAT-469.
 - [x] ¿`agent_capabilities` aquí o en el follow-up? — *Resolved by FEAT-469 spec*: en FEAT-469 (aquí sólo URI/mime).
 - [x] `catalogId` del catálogo parrot — *Resolved by brainstorm C2*: se mantiene `https://parrot.dev/catalogs/v1`.
-- [ ] ¿Comando de migración de recetas como subcomando CLI (`parrot a2ui migrate-recipes`) además de `migrate_store()`? — *Owner: Jesus Lara* (decidible en Module 6)
-- [ ] Forma exacta del mensaje `action` en `renderer_to_agent.json` (ubicación de `surfaceId`/`dataModel`) — leer del JSON vendorizado en Module 2. — *Owner: implementación*
+- [x] ¿Comando de migración de recetas como subcomando CLI (`parrot a2ui migrate-recipes`) además de `migrate_store()`? — *Owner: Jesus Lara* (decidible en Module 6): revisión para determinar.
+- [ ] Forma exacta del mensaje `action` en `renderer_to_agent.json` (ubicación de `surfaceId`/`dataModel`) — leer del JSON vendorizado en Module 2. — *Owner: implementación*: 
 - [ ] Codificación de `Input.id` con `/` en Teams (ver riesgo) — *Owner: implementación (Module 7)*
-- [ ] Adoptar el renderer web oficial (`@a2ui/lit`) para `interactive-html` — feature posterior; verificar nombre/versión del paquete npm. — *Owner: Jesus Lara*
-- [ ] Modelo y umbral definitivos del spike de tasa first-shot (propuesto ≥ 85 % / 20 prompts). — *Owner: Jesus Lara*
+- [ ] Adoptar el renderer web oficial (`@a2ui/lit`) para `interactive-html` — feature posterior; verificar nombre/versión del paquete npm. — *Owner: Jesus Lara*: si, adoptar.
+- [ ] Modelo y umbral definitivos del spike de tasa first-shot (propuesto ≥ 85 % / 20 prompts). — *Owner: Jesus Lara*: aceptar sugerencia
 
 ---
 
