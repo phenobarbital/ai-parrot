@@ -249,8 +249,17 @@ class SourceCollectionManager:
 
         source_uri = str(path)
         existing_id = self._find_id_by_uri(source_uri)
+        existing = self.get_source(existing_id) if existing_id else None
         source_id = existing_id or self._generate_source_id(source_uri)
 
+        # FEAT-472 bugfix: re-adding an ALREADY-tracked URI (e.g. the wiki's
+        # own incremental ingest loader calling add_source on a file
+        # MeetingRegistry already registered for id-keyed dedup) used to
+        # silently wipe every FEAT-402/451/472 column back to its default
+        # by reconstructing the entry from only the seven fields below —
+        # the same class of bug TASK-2553 fixed on mark_ingested/
+        # mark_ingested_many. Preserve them here too; only external_id can
+        # be explicitly overridden by the caller.
         entry = SourceManifestEntry(
             source_id=source_id,
             source_uri=source_uri,
@@ -259,7 +268,14 @@ class SourceCollectionManager:
             ingested_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             pages_generated=[],
             status="ingested",
-            external_id=external_id,
+            external_id=(external_id if external_id is not None else (existing.external_id if existing else None)),
+            destination=existing.destination if existing else None,
+            decision_source=existing.decision_source if existing else None,
+            charter_version=existing.charter_version if existing else None,
+            composite_score=existing.composite_score if existing else None,
+            doc_metadata=existing.doc_metadata if existing else None,
+            content_type=existing.content_type if existing else None,
+            loader=existing.loader if existing else None,
         )
         self._upsert(entry)
         self.logger.debug(

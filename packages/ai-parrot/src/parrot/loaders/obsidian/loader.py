@@ -306,11 +306,22 @@ class ObsidianVaultLoader:
                 full = vault_root / rel
                 source_id = source_manager.find_by_uri(str(full))
                 is_new = source_id is None
-                if not is_new and not source_manager.is_stale(source_id):
+                entry = None if is_new else source_manager.get_source(source_id)
+                # FEAT-472: a row can exist and be hash/mtime-fresh without
+                # this loader ever having ingested it — MeetingRegistry
+                # (parrot.agents.meeting_registry) registers the SAME
+                # sources row via add_source() for its own id-keyed dedup,
+                # independently of any wiki ingest. "not stale" used to be
+                # a reliable proxy for "already has PageIndex nodes"
+                # because this loader was the row's only writer; that
+                # assumption no longer holds, so an entry with no
+                # pages_generated yet is always (re-)ingested regardless
+                # of staleness.
+                never_ingested = entry is not None and not (entry.pages_generated or [])
+                if not is_new and not never_ingested and not source_manager.is_stale(source_id):
                     return
-                # Stale: drop the previous nodes, then re-ingest.
-                if not is_new:
-                    entry = source_manager.get_source(source_id)
+                # Stale (or never ingested): drop any previous nodes, then re-ingest.
+                if entry is not None:
                     for node_id in getattr(entry, "pages_generated", None) or []:
                         try:
                             await pageindex_toolkit.delete_node(
