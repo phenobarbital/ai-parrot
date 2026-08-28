@@ -1,109 +1,133 @@
-"""Unit tests for A2UI v1.0 envelope models (TASK-1720 / Module 1)."""
+"""Unit tests for A2UI v1.0 wire models (FEAT-470 TASK-2532).
+
+Model-only tests — intentionally do NOT import
+:mod:`parrot.outputs.a2ui.serialization` (its rewrite is TASK-2533, landed
+in the same session; see that task's tests for round-trip coverage).
+"""
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
-
 from parrot.outputs.a2ui.models import (
-    A2UIMessage,
+    A2UIAgentMessage,
     Action,
-    ActionResponse,
-    CallFunction,
+    ChildTemplate,
     Component,
-    CreateSurface,
-    UpdateComponents,
+    ComponentMetadata,
+    DataBinding,
     UpdateDataModel,
-    is_binding_expression,
-    is_valid_pointer,
 )
-from parrot.outputs.a2ui.serialization import deserialize, serialize
+from pydantic import ValidationError
 
-_ADAPTER = TypeAdapter(A2UIMessage)
+from ._v1 import make_component
 
 
-def _sample(message_type: str):
-    """Build a minimal valid instance for each message type."""
-    if message_type == "createSurface":
-        return CreateSurface(
-            surfaceId="main",
-            catalogId="https://parrot.dev/catalogs/v1",
-            components=[Component(id="blk-000", component="Column", children=[])],
+class TestComponentPropsTopLevel:
+    def test_component_props_top_level(self):
+        """Component() dumps catalog props top-level; no 'properties' key."""
+        comp = make_component("Text", text="hi", variant="caption")
+        dumped = comp.model_dump(by_alias=True)
+        assert "properties" not in dumped
+        assert dumped["text"] == "hi"
+        assert dumped["variant"] == "caption"
+
+    def test_component_catalog_id_alias(self):
+        comp = Component(id="x", component="Text", catalogId="basic", text="hi")
+        assert comp.catalog_id == "basic"
+        assert comp.model_dump(by_alias=True)["catalogId"] == "basic"
+
+
+class TestChildrenListOrTemplate:
+    def test_children_list_or_template(self):
+        """Both a plain id list and a ChildTemplate are accepted for `children`."""
+        as_list = Component(id="r", component="Row", children=["a", "b"])
+        assert as_list.children == ["a", "b"]
+
+        as_template = Component(
+            id="l", component="List", children={"componentId": "tpl", "path": "/items"}
         )
-    if message_type == "updateComponents":
-        return UpdateComponents(
-            surfaceId="main",
-            components=[Component(id="blk-000", component="Chart")],
-        )
-    if message_type == "updateDataModel":
-        return UpdateDataModel(surfaceId="main", contents={"/charts/blk-000": [1, 2]})
-    if message_type == "action":
-        return Action(surfaceId="main", componentId="blk-000", action="submit")
-    if message_type == "actionResponse":
-        return ActionResponse(surfaceId="main", action="submit", payload={"ok": True})
-    if message_type == "callFunction":
-        return CallFunction(functionName="refresh", arguments={"id": 1})
-    raise AssertionError(message_type)
+        assert isinstance(as_template.children, ChildTemplate)
+        assert as_template.children.component_id == "tpl"
+        assert as_template.children.path == "/items"
 
-
-class TestMessageSet:
-    @pytest.mark.parametrize(
-        "message_type",
-        [
-            "createSurface",
-            "updateComponents",
-            "updateDataModel",
-            "action",
-            "actionResponse",
-            "callFunction",
-        ],
-    )
-    def test_message_set_roundtrip(self, message_type):
-        """Every v1.0 message type serializes and deserializes to an identical model."""
-        original = _sample(message_type)
-        restored = deserialize(serialize(original))
-        assert restored == original
-        assert type(restored) is type(original)
-
-    def test_discriminated_union_dispatch(self):
-        """Parsing a dict routes to the correct concrete message class."""
-        parsed = _ADAPTER.validate_python(
-            {
-                "messageType": "updateDataModel",
-                "surfaceId": "main",
-                "contents": {"/x": 1},
-            }
-        )
-        assert isinstance(parsed, UpdateDataModel)
-
-    def test_binding_syntax_valid_pointer_accepted(self):
-        """A well-formed pointer-shaped binding passes light syntax validation."""
-        comp = Component(
-            id="blk-000",
-            component="Chart",
-            properties={"series": {"$bind": "/charts/blk-000/series"}},
-        )
-        assert comp.properties["series"]["$bind"] == "/charts/blk-000/series"
-
-    def test_binding_syntax_malformed_rejected(self):
-        """A malformed binding expression raises a validation error."""
+    def test_child_template_requires_both_fields(self):
         with pytest.raises(ValidationError):
-            Component(
-                id="blk-000",
-                component="Chart",
-                properties={"series": {"$bind": "not a pointer"}},
+            ChildTemplate(componentId="tpl")
+
+
+class TestDataBindingPathOnly:
+    def test_data_binding_path_only(self):
+        """DataBinding accepts {"path"} and rejects the legacy {"$bind"} shape."""
+        binding = DataBinding(path="/a/b")
+        assert binding.path == "/a/b"
+
+    def test_data_binding_rejects_bind_key(self):
+        with pytest.raises(ValidationError):
+            DataBinding(**{"$bind": "/a/b"})
+
+    def test_data_binding_rejects_malformed_pointer(self):
+        with pytest.raises(ValidationError):
+            DataBinding(path="not-a-pointer")
+
+
+class TestUpdateDataModelValueRequired:
+    def test_update_data_model_value_required(self):
+        """Omitting `value` is a ValidationError; `value=None` is accepted."""
+        with pytest.raises(ValidationError):
+            UpdateDataModel(surfaceId="s")
+
+    def test_update_data_model_value_none_allowed(self):
+        msg = UpdateDataModel(surfaceId="s", value=None)
+        assert msg.value is None
+
+    def test_update_data_model_optional_path(self):
+        msg = UpdateDataModel(surfaceId="s", value={"a": 1})
+        assert msg.path is None
+
+
+class TestEnvelopeExactlyOneKey:
+    def test_envelope_exactly_one_key(self):
+        """Two message keys (or zero) raise; exactly one validates."""
+        with pytest.raises(ValidationError):
+            A2UIAgentMessage(
+                version="v1.0",
+                createSurface={"surfaceId": "s"},
+                deleteSurface={"surfaceId": "s"},
             )
-
-    def test_is_valid_pointer(self):
-        assert is_valid_pointer("")
-        assert is_valid_pointer("/a/b/c")
-        assert is_valid_pointer("/i18n/title~1sub")
-        assert not is_valid_pointer("no-leading-slash")
-        assert not is_valid_pointer("/has space")
-
-    def test_is_binding_expression(self):
-        assert is_binding_expression({"$bind": "/x"})
-        assert not is_binding_expression({"value": 1})
-        assert not is_binding_expression("/x")
-
-    def test_datamodel_rejects_non_pointer_key(self):
         with pytest.raises(ValidationError):
-            UpdateDataModel(surfaceId="main", contents={"bad key": 1})
+            A2UIAgentMessage(version="v1.0")
+
+        ok = A2UIAgentMessage(version="v1.0", createSurface={"surfaceId": "s"})
+        assert ok.create_surface.surface_id == "s"
+
+    def test_envelope_rejects_wrong_version(self):
+        with pytest.raises(ValidationError):
+            A2UIAgentMessage(version="1.0", createSurface={"surfaceId": "s"})
+
+
+class TestActionEventXorFunctionCall:
+    def test_action_event_xor_function_call(self):
+        """Action requires exactly one of `event`/`functionCall`."""
+        with pytest.raises(ValidationError):
+            Action()
+        with pytest.raises(ValidationError):
+            Action(event={"name": "submit"}, functionCall={"call": "openUrl"})
+
+        by_event = Action(event={"name": "submit"})
+        assert by_event.event.name == "submit"
+        assert by_event.function_call is None
+
+        by_call = Action(functionCall={"call": "openUrl", "args": {"url": "https://x"}})
+        assert by_call.function_call.call == "openUrl"
+        assert by_call.event is None
+
+
+class TestExtensionsKeysUax31AndReservedPrefix:
+    def test_extensions_keys_uax31_and_reserved_prefix(self):
+        """Extension keys must be Unicode identifiers; `a2ui_` is reserved."""
+        ok = ComponentMetadata(extensions={"parrot_role": "caption"})
+        assert ok.extensions.root == {"parrot_role": "caption"}
+
+        with pytest.raises(ValidationError):
+            ComponentMetadata(extensions={"a2ui_official": True})
+
+        with pytest.raises(ValidationError):
+            ComponentMetadata(extensions={"not a valid key!": 1})
