@@ -110,6 +110,7 @@ def load_spec(name: SpecName) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@functools.cache
 def schema_registry() -> Registry:
     """Build a ``referencing.Registry`` resolving every vendored ``$ref``.
 
@@ -117,6 +118,12 @@ def schema_registry() -> Registry:
     basic catalog a second time under the ``"catalog.json"`` relative-ref
     alias the message schemas actually resolve against (see
     ``_CATALOG_ALIAS_ID``).
+
+    Cached (TASK-2548 — the p50<50ms ``validate_envelope``/``validate_message``
+    benchmark, spec §5 "Rendimiento"): a ``referencing.Registry`` built purely
+    from :func:`load_spec`'s own already-cached, read-only documents is itself
+    immutable and safe to reuse across calls — rebuilding it on every single
+    ``validate_message`` call (as before) dominated the benchmark's runtime.
 
     Returns:
         A ``referencing.Registry`` ready to back a

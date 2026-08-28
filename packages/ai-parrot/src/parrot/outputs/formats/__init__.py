@@ -1,23 +1,25 @@
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
 import contextlib
 import warnings
-from typing import Protocol, Dict, Type, Any, Optional
 from importlib import import_module
+from typing import Any, Protocol
+
 from ...models.outputs import OutputMode
 
 # FEAT-273 (Module 12 / G7): legacy OutputModes superseded by the A2UI pipeline.
 # Each entry names the A2UI replacement path (single source of truth for the message).
 # Kept modes (JSON/YAML/MARKDOWN/SLACK/WHATSAPP/TERMINAL, infographic-JSON) are ABSENT.
-_A2UI_REPLACEMENTS: Dict[OutputMode, str] = {
+_A2UI_REPLACEMENTS: dict[OutputMode, str] = {
     OutputMode.ECHARTS: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.STRUCTURED_CHART: "OutputMode.A2UI with the Chart catalog component",
     OutputMode.MAP: "OutputMode.A2UI with the Map catalog component",
     OutputMode.STRUCTURED_MAP: "OutputMode.A2UI with the Map catalog component",
     OutputMode.TABLE: "OutputMode.A2UI with the DataTable catalog component",
     OutputMode.STRUCTURED_TABLE: "OutputMode.A2UI with the DataTable catalog component",
-    OutputMode.CARD: "OutputMode.A2UI with the Card/KPICard catalog components",
+    OutputMode.CARD: "OutputMode.A2UI with the InfoCard/KPICard catalog components",
     OutputMode.TEMPLATE_REPORT: "OutputMode.A2UI with the Report catalog component",
     OutputMode.JINJA2: "OutputMode.A2UI with the Report catalog component",
     OutputMode.HTML: "OutputMode.A2UI with the SSR-HTML renderer",
@@ -42,8 +44,8 @@ class Renderer(Protocol):
         ...
 
 
-RENDERERS: Dict[OutputMode, Type[Renderer]] = {}
-_PROMPTS: Dict[OutputMode, str] = {}
+RENDERERS: dict[OutputMode, type[Renderer]] = {}
+_PROMPTS: dict[OutputMode, str] = {}
 
 # Module-level dispatch table — maps OutputMode → module name(s) to import
 _MODULE_MAP: dict = {
@@ -70,7 +72,7 @@ _MODULE_MAP: dict = {
 }
 
 
-def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
+def register_renderer(mode: OutputMode, system_prompt: str | None = None):
     """
     Decorator to register a renderer class and optionally its system prompt.
 
@@ -85,7 +87,7 @@ def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
         return cls
     return decorator
 
-def get_renderer(mode: OutputMode) -> Type[Renderer]:
+def get_renderer(mode: OutputMode) -> type[Renderer]:
     """Get the renderer class for the given output mode."""
     _warn_if_deprecated(mode)
     if mode not in RENDERERS:
@@ -100,7 +102,7 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
             f"No renderer registered for mode: {mode}"
         ) from exc
 
-def get_output_prompt(mode: OutputMode) -> Optional[str]:
+def get_output_prompt(mode: OutputMode) -> str | None:
     """Get system prompt for mode."""
     # Trigger lazy loading to ensure decorator has run
     if mode not in _PROMPTS:
@@ -157,16 +159,16 @@ def get_infographic_html_renderer():
     return _Cls
 
 
-from .base import RenderResult, RenderError
+from .base import RenderError, RenderResult
 
 __all__ = (
     'RENDERERS',
-    'register_renderer',
-    'get_renderer',
-    'Renderer',
-    'get_output_prompt',
-    'has_system_prompt',
-    'get_infographic_html_renderer',
-    'RenderResult',
     'RenderError',
+    'RenderResult',
+    'Renderer',
+    'get_infographic_html_renderer',
+    'get_output_prompt',
+    'get_renderer',
+    'has_system_prompt',
+    'register_renderer',
 )

@@ -26,7 +26,9 @@ Python registry.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -278,6 +280,57 @@ def _component_exists(name: str, resolved_catalog_id: str) -> bool:
     return entry is not None and entry.definition.catalog_id == resolved_catalog_id
 
 
+#: Serializes access to :func:`_unicode_aware_jsonschema`'s module-global patch
+#: (jsonschema itself has no per-call regex-engine hook — see its docstring).
+_UNICODE_JSONSCHEMA_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _unicode_aware_jsonschema():
+    """Patch ``jsonschema``'s internal ``re`` references to a Unicode-property-aware engine.
+
+    The vendored ``common_types.json#/$defs/Extensions`` pattern
+    (``^[\\p{XID_Start}_][\\p{XID_Continue}]*$``, spec §7 "claves UAX #31")
+    uses PCRE/ECMA-style ``\\p{}`` Unicode property escapes that Python's
+    stdlib ``re`` module does not support (``re.error: bad escape \\p``).
+    ``jsonschema``'s ``pattern``/``patternProperties``/``additionalProperties``/
+    ``unevaluatedProperties`` keywords all resolve this pattern via plain
+    module-level ``re`` references in ``jsonschema._keywords``/
+    ``jsonschema._utils`` — with no per-call regex-engine hook to override
+    instead. Every envelope carrying a non-empty ``metadata.extensions``
+    (i.e. virtually every LOWERED Parrot-catalog component — this is how
+    presentation semantics like ``parrot_role``/``parrot_variant`` are
+    carried, spec G4) would otherwise crash validation entirely instead of
+    passing/failing it (surfaced by TASK-2548's conformance sweep — this was
+    never previously exercised because ``test_validate_message_agent_to_renderer``,
+    TASK-2535, only ever validated a plain ``BASIC_CATALOG_ID`` envelope with
+    no ``metadata.extensions``).
+
+    Swaps in the ``regex`` package (drop-in ``re``-API-compatible, supports
+    ``\\p{}``) for the duration of one ``validate_message`` call when
+    importable — restored in a ``finally`` (lock-serialized: this mutates
+    shared module state, so concurrent callers must not interleave the
+    swap). A no-op when ``regex`` is unavailable (only patterns that use
+    ``\\p{}`` were ever broken; everything else validates exactly as before).
+    """
+    try:
+        import regex as _regex
+    except ImportError:
+        yield
+        return
+
+    import jsonschema._keywords as _kw
+    import jsonschema._utils as _ut
+
+    with _UNICODE_JSONSCHEMA_LOCK:
+        original = (_kw.re, _ut.re)
+        _kw.re, _ut.re = _regex, _regex
+        try:
+            yield
+        finally:
+            _kw.re, _ut.re = original
+
+
 def validate_message(message: A2UIAgentMessage | A2UIRendererMessage) -> None:
     """Validate a full v1.0 envelope against the official wire JSON Schemas.
 
@@ -306,7 +359,8 @@ def validate_message(message: A2UIAgentMessage | A2UIRendererMessage) -> None:
     schema = basic.load_spec(schema_name)
     registry = basic.schema_registry()
     validator_cls = jsonschema.validators.validator_for(schema)
-    validator_cls(schema, registry=registry).validate(payload)
+    with _unicode_aware_jsonschema():
+        validator_cls(schema, registry=registry).validate(payload)
 
 
 def _child_ids(component: Component) -> list[str]:

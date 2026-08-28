@@ -30,6 +30,22 @@ KPICARD_INSTRUCTIONS = (
 )
 
 
+def _as_text(value: Any) -> Any:
+    """Coerce a scalar KPI value/delta to the Basic Catalog ``Text.text`` shape.
+
+    ``value``/``delta`` are documented as "number, string, or binding"
+    (``KPICARD_SCHEMA``) — but the Basic Catalog ``Text`` primitive's own
+    ``text`` field is ``DynamicString`` (string | ``{"path"}`` | ``{"call"}``),
+    which rejects a bare number (TASK-2548 conformance sweep caught this: a
+    numeric ``value`` like ``42`` failed ``agent_to_renderer.json`` validation
+    outright). A binding/call dict, or ``None``, passes through unchanged;
+    any other scalar is stringified.
+    """
+    if value is None or isinstance(value, dict):
+        return value
+    return str(value)
+
+
 @register_component("KPICard")
 class KPICardComponent:
     """The ``KPICard`` catalog component (display-only)."""
@@ -48,19 +64,25 @@ class KPICardComponent:
             ),
             BasicNode(
                 component="Text",
-                text=props.get("value"),
+                text=_as_text(props.get("value")),
                 metadata={"extensions": {"parrot_role": "value", "parrot_unit": props.get("unit")}},
             ),
         ]
-        if props.get("delta") is not None or props.get("trend") is not None:
+        delta, trend = props.get("delta"), props.get("trend")
+        if delta is not None or trend is not None:
+            # Text.text is REQUIRED on the Basic Catalog primitive (unlike
+            # this component's own optional `delta`) — fall back to `trend`
+            # (itself meaningful text: "up"/"down"/"flat") and finally an
+            # empty string, never an absent/None text (TASK-2548 conformance
+            # sweep: a text-less Text node fails agent_to_renderer.json).
             children.append(
                 BasicNode(
                     component="Text",
-                    text=props.get("delta"),
+                    text=_as_text(delta) if delta is not None else str(trend or ""),
                     metadata={
                         "extensions": {
                             "parrot_role": "delta",
-                            "parrot_trend": props.get("trend"),
+                            "parrot_trend": trend,
                         }
                     },
                 )
