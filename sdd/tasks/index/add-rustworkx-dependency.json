@@ -32,7 +32,7 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Mutates the shared .venv (uv sync / uv sync --extra wiki) and uv.lock; must not run concurrently with tests or other worktree activity in the same venv.",
       "assigned_to": null,
       "started_at": "2026-08-28T21:53:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2550-regenerate-uv-lock.md"
+      "completed_at": "2026-08-28T22:00:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2550-regenerate-uv-lock.md"
     },
     {
       "id": "TASK-2551",
