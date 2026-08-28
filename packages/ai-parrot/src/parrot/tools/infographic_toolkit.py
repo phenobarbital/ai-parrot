@@ -898,8 +898,9 @@ class InfographicToolkit(AbstractToolkit):
 
         The spliced ``payload`` IS the data model: the template's client-side JS
         reads it from the marker script tag, and a descriptor's declared
-        ``layout`` carries ``$bind`` pointers into exactly that document. So when
-        a layout is declared it is used VERBATIM against the payload — the same
+        ``layout`` carries ``{"path": ...}`` bindings (A2UI v1.0, FEAT-470) into
+        exactly that document. So when a layout is declared it is used VERBATIM
+        against the payload — the same
         contract ``RecipeRunner._assemble_envelope_or_raise`` honours for saved
         recipes (this mirrors its component dispatch, but degrades instead of
         raising, because the A2UI lane is additive here).
@@ -1269,9 +1270,10 @@ class InfographicToolkit(AbstractToolkit):
             title: Human-readable recipe title.
             layout_component: Catalog component name for the layout (e.g.
                 ``"Infographic"``, ``"Chart"``).
-            layout_properties: Catalog properties for the layout; data-carrying
-                properties use ``{"$bind": "/pointer"}`` bindings into the
-                dataModel produced by ``transform_steps``.
+            layout_properties: Catalog properties for the layout (A2UI v1.0,
+                top-level, no ``properties`` wrapper); data-carrying properties
+                use ``{"path": "/pointer"}`` bindings into the dataModel
+                produced by ``transform_steps``.
             dataset_names: Mapping of data-source alias -> registered
                 DatasetManager dataset name, e.g. ``{"snapshots": "budget_ledger"}``.
             transform_steps: Ordered list of transform-step dicts, each shaped

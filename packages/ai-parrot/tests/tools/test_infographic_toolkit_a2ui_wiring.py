@@ -13,7 +13,6 @@ skipped the same way ``test_toolkits_a2ui_migration.py`` does.
 import importlib
 
 import pytest
-
 from parrot.models.infographic import InfographicResponse
 
 
@@ -64,10 +63,16 @@ def _response() -> InfographicResponse:
 
 
 def _infographic(envelope: dict) -> dict:
+    """Return the root ``Infographic`` component's dict — A2UI v1.0 (FEAT-470):
+    catalog props live top-level on the ``Component``, not nested under a
+    legacy ``"properties"`` key (that shape survives only for the adapter's
+    OWN nested ``sections[].components[]`` descriptors, which are not wire
+    ``Component`` objects).
+    """
     components = envelope["components"]
     assert len(components) == 1
     assert components[0]["component"] == "Infographic"
-    return components[0]["properties"]
+    return components[0]
 
 
 class TestEnvelopeCarriesRealComponents:
