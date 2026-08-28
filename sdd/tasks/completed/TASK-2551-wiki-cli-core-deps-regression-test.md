@@ -188,10 +188,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-29
+**Notes**: Created `tests/knowledge/test_wiki_cli_core_deps.py` with the
+three specified tests. Read the header of each `CHAIN_FILES` entry via
+`ast` before finalising the allow-list: besides the five FEAT-471 deps
+(`rustworkx`, `networkx`, `pathspec`, `aiosqlite`, `orjson`) the chain
+also imports `click`, `pydantic`, `yaml` (mapped to dist name `pyyaml`
+via `NAME_MAP`) — all already core deps — plus `aiohttp` and `numpy`,
+which are not declared directly but are satisfied transitively (aiohttp
+via aiohttp-swagger3/aiohttp-cors/navigator-api; numpy via pandas /
+rustworkx's own requirement), so both went into an explicit
+`KNOWN_TRANSITIVE` allow-set rather than being silently ignored.
+`pytest tests/knowledge/test_wiki_cli_core_deps.py -v` — 3 passed;
+`ruff check` clean. Manually verified the regression guard: temporarily
+removed `"rustworkx>=0.15"` from core `dependencies`, reran the suite —
+`test_wiki_chain_third_party_imports_are_core_deps` failed with a clear
+assertion naming `signals.py` / `rustworkx`; reverted (`git diff` on the
+pyproject file was empty again) and reran — all 3 passed.
 
 **Deviations from spec**: none

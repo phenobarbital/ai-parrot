@@ -217,10 +217,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-28
+**Notes**: Added the explanatory comment block + five deps
+(`rustworkx>=0.15`, `networkx>=3.0`, `pathspec>=0.12`, `aiosqlite>=0.17`,
+`orjson>=3.9`) to `packages/ai-parrot/pyproject.toml` core `dependencies`
+(after `navigator-eventbus`), removed the same five from the `graphindex`
+extra (kept `tree-sitter`/`tree-sitter-languages` + a note pointing at
+FEAT-471), and added `rustworkx>=0.15` to
+`packages/ai-parrot-tools/pyproject.toml`. Spec §8 open question on
+`numpy`: left undeclared in core, per the default resolution — it is
+only pulled in transitively via `pandas` today and `rustworkx`'s own
+requirement is satisfied by the resolver; no action needed. Verified
+both files parse with `tomllib` and the acceptance-criteria assertion
+script passes.
 
 **Deviations from spec**: none

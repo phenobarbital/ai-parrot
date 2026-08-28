@@ -146,10 +146,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-29
+**Notes**: Ran `uv lock` (not `--upgrade`) against the TASK-2549 pyproject
+changes — resolution was already consistent (905 packages, no diff).
+Created a Python 3.12 venv in the worktree (`uv venv --python 3.12
+--clear`; the system default `uv venv` picks CPython 3.14, which has no
+`asyncdb` wheel — unrelated pre-existing constraint, not a FEAT-471
+concern) and ran `uv sync` (no extras): `rustworkx==0.18.1` (Required-by:
+ai-parrot, ai-parrot-tools), `networkx==3.4.2`, `pathspec==1.1.1` (also
+required by black/mypy) all installed; `wikitoolkit status` exited 0;
+`python -c "import parrot.knowledge.wiki.cli"` succeeded. Restored the
+dev env with `uv sync --extra wiki` (tree-sitter grammars + leidenalg/
+python-igraph reinstalled; `import tree_sitter` succeeded again).
+Verification transcript saved to `artifacts/logs/feat-471-uv-sync.log`
+(local only — see Deviations).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**:
+1. **`uv.lock` is not tracked by git in this repo** — `.gitignore:250`
+   lists `uv.lock` (root cause: commit `4ffd761b8 "Delete uv.lock"`
+   deliberately untracked it). The spec/task assumed a committed lock
+   file ("commit `uv.lock`... as its own commit"); that assumption is
+   stale relative to current repo policy. `uv lock` was still run and
+   verified locally (no diff — TASK-2549's pyproject edits already fully
+   determine the resolution), but there is nothing to `git add`/commit
+   for this file. Did not force-add a gitignored file to override a
+   deliberate project decision.
+2. **`artifacts/` is also gitignored** (`.gitignore:275`), consistent
+   with CLAUDE.md's "Save evidence to `artifacts/logs/`" instruction
+   which never says to commit it. `artifacts/logs/feat-471-uv-sync.log`
+   was created as instructed but is local evidence only, not part of
+   this commit.
+3. The worktree ships without the gitignored `env/<environment>/.env`
+   assets NavConfig requires to bootstrap (`.gitignore:173`). Copied
+   `env/` from the main checkout into the worktree (itself gitignored,
+   not committed) purely to run the verification locally — this is
+   worktree-local setup, not a code change, and is outside this task's
+   file scope.
 
-**Deviations from spec**: none
+Net effect on the git history for this task: no committable diff exists
+(uv.lock and the log are both gitignored); only the SDD state update
+(this file move + index entry) is committed.
