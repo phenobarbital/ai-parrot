@@ -14,14 +14,14 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation: every later task imports the new manager API. Touches core wiki files (sources.py/models.py/store.py) shared with completed FEAT-402/451.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2553-wiki-sources-external-id.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2553"],
+      "depends_on": [
+        "TASK-2553"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports the external_id API from TASK-2553; could be developed against a stub but the gain does not justify a merge on sources.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2554-meeting-registry-facade.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2554"],
+      "depends_on": [
+        "TASK-2554"
+      ],
       "parallel": false,
       "parallelism_notes": "Same file as TASK-2554 (meeting_registry.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2555-registry-backfill-merge-repair.md"
     },
@@ -68,14 +72,17 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2554", "TASK-2555"],
+      "depends_on": [
+        "TASK-2554",
+        "TASK-2555"
+      ],
       "parallel": false,
       "parallelism_notes": "Consumes every registry verb; the only task touching agents/obsidian.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2556-rewire-fireflies-obsidian-agent.md"
     },
@@ -86,14 +93,16 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-2556"],
+      "depends_on": [
+        "TASK-2556"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs the force_refetch parameter and self.registry from TASK-2556. agents/fireflies_wiki.py is gitignored — git add -f.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2557-wiki-agent-ingest-stamp-and-sync-command.md"
     },
@@ -104,14 +113,16 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-2557"],
+      "depends_on": [
+        "TASK-2557"
+      ],
       "parallel": false,
       "parallelism_notes": "Exercises the whole stack; must run after all production code lands.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2558-registry-integration-tests.md"
     },
@@ -122,14 +133,16 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-2557"],
+      "depends_on": [
+        "TASK-2557"
+      ],
       "parallel": true,
       "parallelism_notes": "Docs only — shares no files with TASK-2558 and can run in a separate worktree alongside it once TASK-2557 is done.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2559-registry-docs.md"
     }
