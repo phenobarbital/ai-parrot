@@ -52,7 +52,7 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Only creates tests/knowledge/test_wiki_cli_core_deps.py; shares no files with TASK-2550 or TASK-2552. Can run alongside TASK-2552 once TASK-2549 is done (the static check only reads pyproject.toml, so it does not need the regenerated lock).",
       "assigned_to": null,
       "started_at": "2026-08-28T21:53:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2551-wiki-cli-core-deps-regression-test.md"
+      "completed_at": "2026-08-28T22:02:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2551-wiki-cli-core-deps-regression-test.md"
     },
     {
       "id": "TASK-2552",
