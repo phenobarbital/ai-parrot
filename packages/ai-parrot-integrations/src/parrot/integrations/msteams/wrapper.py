@@ -3,6 +3,7 @@ MS Teams Agent Wrapper.
 
 Connects MS Teams messages to AI-Parrot agents.
 """
+
 import logging
 import json
 import re
@@ -47,11 +48,12 @@ from parrot.outputs.cards import (
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from parrot.auth.jira_oauth import JiraOAuthManager
 
 
-logging.getLogger('msrest').setLevel(logging.WARNING)
+logging.getLogger("msrest").setLevel(logging.WARNING)
 
 _debug_storage_logger = logging.getLogger(__name__)
 
@@ -90,8 +92,15 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
     # Supported audio content types for voice notes
     AUDIO_CONTENT_TYPES = {
-        "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-wav",
-        "audio/mp4", "audio/webm", "video/webm", "audio/m4a", "audio/mp3"
+        "audio/ogg",
+        "audio/mpeg",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/mp4",
+        "audio/webm",
+        "video/webm",
+        "audio/m4a",
+        "audio/mp3",
     }
 
     def __init__(
@@ -101,7 +110,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         app: web.Application,
         forms_directory: Optional[str] = None,
         voice_config: Optional[VoiceTranscriberConfig] = None,
-        oauth_manager: Optional['JiraOAuthManager'] = None,
+        oauth_manager: Optional["JiraOAuthManager"] = None,
     ):
         super().__init__()
         self.agent = agent
@@ -124,15 +133,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # file watching; YAML loading (if any) is handled separately.
         self.form_cache = FormCache()
         self._forms_directory = forms_directory or (
-            str(Path(config.forms_directory))
-            if getattr(config, "forms_directory", None)
-            else None
+            str(Path(config.forms_directory)) if getattr(config, "forms_directory", None) else None
         )
 
         # Dialog state
-        self.dialog_state = self.conversation_state.create_property(
-            "DialogState"
-        )
+        self.dialog_state = self.conversation_state.create_property("DialogState")
         self.dialogs = DialogSet(self.dialog_state)
 
         # Form components
@@ -147,11 +152,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         )
 
         # Initialize Adapter
-        self.adapter = Adapter(
-            config=self.config,
-            logger=self.logger,
-            conversation_state=self.conversation_state
-        )
+        self.adapter = Adapter(config=self.config, logger=self.logger, conversation_state=self.conversation_state)
 
         # Command router — always created for agent commands;
         # Jira commands added only when oauth_manager is provided (FEAT-225).
@@ -174,26 +175,21 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 )
             else:
                 self.logger.warning(
-                    "No client_id configured — MS Teams proactive notification "
-                    "after Jira OAuth will be skipped"
+                    "No client_id configured — MS Teams proactive notification " "after Jira OAuth will be skipped"
                 )
 
         # Route
         # Clean chatbot_id to be safe for URL
-        safe_id = self.config.chatbot_id.replace(' ', '_').lower()
+        safe_id = self.config.chatbot_id.replace(" ", "_").lower()
         self.route = f"/api/teambots/{safe_id}/messages"
         # Register Handler
         self.app.router.add_post(self.route, self.handle_request)
-        self.logger.info(
-            "Registered MS Teams webhook at %s", self.route
-        )
+        self.logger.info("Registered MS Teams webhook at %s", self.route)
 
         # Register route as auth exclusion
         if auth := self.app.get("auth"):
             auth.add_exclude_list(self.route)
-            self.logger.info(
-                "Excluded %s from auth middleware", self.route
-            )
+            self.logger.info("Excluded %s from auth middleware", self.route)
 
         # Load predefined YAML forms (if a directory was supplied)
         if self._forms_directory:
@@ -208,8 +204,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         without breaking bot startup.
         """
         self.logger.debug(
-            "YAML form loading requested for '%s' but FormCache no longer "
-            "supports directory loading; skipping.",
+            "YAML form loading requested for '%s' but FormCache no longer " "supports directory loading; skipping.",
             self._forms_directory,
         )
 
@@ -232,7 +227,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         dialog = self.dialog_factory.create_dialog(
             form=form,
             on_complete=None,  # Handle in wrapper instead
-            on_cancel=None,    # Handle in wrapper instead
+            on_cancel=None,  # Handle in wrapper instead
         )
 
         # Store conversation_id in dialog for later use
@@ -354,9 +349,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         from parrot.integrations.a2ui_resume import ChannelDeepLinkResume
 
         service = DeepLinkService(redis)
-        self._deeplink_resume = ChannelDeepLinkResume(
-            service, channel="msteams", logger=self.logger
-        )
+        self._deeplink_resume = ChannelDeepLinkResume(service, channel="msteams", logger=self.logger)
         return self._deeplink_resume
 
     # =========================================================================
@@ -393,6 +386,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if a2ui_token:
             resume_helper = self._get_deeplink_resume()
             if resume_helper is not None:
+
                 async def inject(*, session_id, user_id, agent_id, query):
                     result = await self.form_orchestrator.process_message(
                         message=query,
@@ -414,9 +408,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 else:
                     await self.send_text(outcome["reply"], turn_context)
                 return
-            self.logger.warning(
-                "A2UI deep-link token in card submission but Redis unavailable."
-            )
+            self.logger.warning("A2UI deep-link token in card submission but Redis unavailable.")
 
         # A2UI native-input submit (FEAT-470 TASK-2545): card Submit carries
         # {"a2ui_action": <v1.0 "action" envelope>, "surfaceId": "..."} plus
@@ -425,12 +417,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # round-trip is needed — the action arrived directly in this turn —
         # so it is injected into the SAME session via `form_orchestrator
         # .process_message`, mirroring the `inject()` closure's own call.
-        a2ui_action = submitted_data.get('a2ui_action')
+        a2ui_action = submitted_data.get("a2ui_action")
         if a2ui_action:
             values = {
                 self._decode_a2ui_input_id(key): value
                 for key, value in submitted_data.items()
-                if key not in ('a2ui_action', 'surfaceId')
+                if key not in ("a2ui_action", "surfaceId")
             }
             query = json.dumps(
                 {"type": "a2ui_action", "action": a2ui_action, "values": values},
@@ -456,16 +448,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # command interception in on_message_activity never sees them. Route
         # them through the command router so card buttons behave like typed
         # slash commands.
-        command = submitted_data.get('command')
+        command = submitted_data.get("command")
         if command and self._command_router is not None:
             handled = await self._command_router.try_dispatch(command, turn_context)
             if handled:
                 return
 
         # Check for action type
-        action = submitted_data.get('_action', 'submit')
+        action = submitted_data.get("_action", "submit")
 
-        if action == 'cancel':
+        if action == "cancel":
             # Cancel active dialog
             await dialog_context.cancel_all_dialogs()
             await self._on_form_cancel(turn_context, conversation_id)
@@ -483,18 +475,15 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if results.status == DialogTurnStatus.Complete:
             # Dialog finished - handle completion
             form_data = results.result
-            if form_data and not form_data.get('_cancelled'):
+            if form_data and not form_data.get("_cancelled"):
                 await self._on_form_complete(form_data, turn_context, conversation_id)
-            elif form_data and form_data.get('_cancelled'):
+            elif form_data and form_data.get("_cancelled"):
                 await self._on_form_cancel(turn_context, conversation_id)
 
         elif results.status == DialogTurnStatus.Empty:
             # No active dialog - might be a standalone card
             self.logger.warning("Card submission but no active dialog")
-            await self.send_text(
-                "I received your submission but wasn't expecting it. Please try again.",
-                turn_context
-            )
+            await self.send_text("I received your submission but wasn't expecting it. Please try again.", turn_context)
 
     # =========================================================================
     # Webhook Handler
@@ -504,22 +493,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         """
         Handle incoming webhook requests.
         """
-        if request.content_type.lower() != 'application/json':
+        if request.content_type.lower() != "application/json":
             return web.Response(status=HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
 
         body = await request.json()
         activity = Activity().deserialize(body)
-        auth_header = request.headers.get('Authorization', '')
+        auth_header = request.headers.get("Authorization", "")
 
         try:
-            response = await self.adapter.process_activity(
-                auth_header, activity, self.on_turn
-            )
+            response = await self.adapter.process_activity(auth_header, activity, self.on_turn)
             if response:
-                return web.json_response(
-                    data=response.body,
-                    status=response.status
-                )
+                return web.json_response(data=response.body, status=response.status)
             return web.Response(status=HTTPStatus.OK)
 
         except Exception as e:
@@ -564,9 +548,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 # like "jira" or "integrations" that don't carry a "/" prefix.
                 plain = clean_text.lower().strip()
                 if plain in ("jira", "integrations"):
-                    dispatched = await self._command_router.try_dispatch_plain(
-                        plain, turn_context
-                    )
+                    dispatched = await self._command_router.try_dispatch_plain(plain, turn_context)
             if dispatched:
                 return  # command handled — skip agent processing
 
@@ -589,10 +571,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # Handle Adaptive Card submissions
         if turn_context.activity.value:
-            await self._handle_card_submission(
-                turn_context,
-                dialog_context
-            )
+            await self._handle_card_submission(turn_context, dialog_context)
             return
 
         # Check for audio attachments BEFORE text processing
@@ -614,7 +593,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Check for group/channel processing
         # Ensure we handle mentions correctly in channels/groups
         conversation_type = turn_context.activity.conversation.conversation_type
-        is_group = conversation_type in ('channel', 'groupChat')
+        is_group = conversation_type in ("channel", "groupChat")
 
         if is_group:
             # Check if mentions are enabled for groups
@@ -631,7 +610,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                         if mentioned.get("id") == turn_context.activity.recipient.id:
                             is_mentioned = True
                             break
-            
+
             # If not mentioned and it's a group/channel, ignore
             if not is_mentioned:
                 return
@@ -659,7 +638,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             context={
                 "user_id": turn_context.activity.from_property.id,
                 "session_id": conversation_id,
-            }
+            },
         )
 
         # Handle result
@@ -736,11 +715,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     #             turn_context
     #         )
 
-    async def on_members_added_activity(
-        self,
-        members_added: list[ChannelAccount],
-        turn_context: TurnContext
-    ):
+    async def on_members_added_activity(self, members_added: list[ChannelAccount], turn_context: TurnContext):
         """
         Welcome new members.
         """
@@ -748,15 +723,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             if member.id != turn_context.activity.recipient.id:
                 if self.config.welcome_message:
                     # Send welcome as a simple card
-                    welcome_card = self._build_adaptive_card(
-                        ParsedResponse(text=self.config.welcome_message)
-                    )
+                    welcome_card = self._build_adaptive_card(ParsedResponse(text=self.config.welcome_message))
                     try:
                         await self.send_card(welcome_card, turn_context)
                     except Exception as e:
-                        self.logger.warning(
-                            f"Could not send welcome card to {member.id}: {e}"
-                        )
+                        self.logger.warning(f"Could not send welcome card to {member.id}: {e}")
 
     def _remove_mentions(self, activity: Activity, text: str) -> str:
         """Remove @bot mentions from text."""
@@ -777,7 +748,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         with contextlib.suppress(Exception):
             bot_name = activity.recipient.name
             if bot_name and text.lower().startswith(f"@{bot_name.lower()}"):
-                text = text[len(bot_name) + 1:].strip()
+                text = text[len(bot_name) + 1 :].strip()
 
         return text.strip()
 
@@ -803,11 +774,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # U+2007: Figure Space
         # U+2060: Word Joiner
         replacements = {
-            '\u00A0': ' ',   # NBSP
-            '\u202F': ' ',   # Narrow NBSP (French)
-            '\u2007': ' ',   # Figure Space
-            '\u2060': '',    # Word Joiner (remove)
-            '\uFEFF': '',    # BOM / Zero Width No-Break Space (remove)
+            "\u00a0": " ",  # NBSP
+            "\u202f": " ",  # Narrow NBSP (French)
+            "\u2007": " ",  # Figure Space
+            "\u2060": "",  # Word Joiner (remove)
+            "\ufeff": "",  # BOM / Zero Width No-Break Space (remove)
         }
 
         for char, replacement in replacements.items():
@@ -861,13 +832,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # Check for multiple audio attachments and warn
         audio_count = sum(
-            1 for a in (turn_context.activity.attachments or [])
+            1
+            for a in (turn_context.activity.attachments or [])
             if any(ct in (a.content_type or "").lower() for ct in self.AUDIO_CONTENT_TYPES)
         )
         if audio_count > 1:
-            self.logger.warning(
-                f"Multiple audio attachments ({audio_count}), processing first only"
-            )
+            self.logger.warning(f"Multiple audio attachments ({audio_count}), processing first only")
 
         # Send typing indicator
         await self.send_typing(turn_context)
@@ -886,22 +856,15 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
             if not transcribed_text:
                 await self.send_text(
-                    "I couldn't understand the audio. Please try again or type your message.",
-                    turn_context
+                    "I couldn't understand the audio. Please try again or type your message.", turn_context
                 )
                 return
 
             # Show transcription to user (if enabled)
             if self._voice_config.show_transcription:
-                await self.send_text(
-                    f'🎤 *"{transcribed_text}"*',
-                    turn_context
-                )
+                await self.send_text(f'🎤 *"{transcribed_text}"*', turn_context)
 
-            self.logger.info(
-                f"Transcribed voice note ({result.duration_seconds:.1f}s): "
-                f"{transcribed_text[:50]}..."
-            )
+            self.logger.info(f"Transcribed voice note ({result.duration_seconds:.1f}s): " f"{transcribed_text[:50]}...")
 
             # Process through normal flow
             await self._process_transcribed_message(
@@ -916,13 +879,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await self.send_text(
                 f"Voice note too long. Please keep it under "
                 f"{self._voice_config.max_audio_duration_seconds} seconds.",
-                turn_context
+                turn_context,
             )
         except Exception as e:
             self.logger.error("Voice transcription error: %s", e, exc_info=True)
             await self.send_text(
-                "Sorry, I couldn't process your voice note. Please try typing your message.",
-                turn_context
+                "Sorry, I couldn't process your voice note. Please try typing your message.", turn_context
             )
 
     async def _get_attachment_token(self, turn_context: TurnContext) -> Optional[str]:
@@ -941,11 +903,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             # Try to get the token from adapter's credentials
             # MS Teams may require the bot token for CDN access
             connector_client = turn_context.adapter.connector_client
-            if hasattr(connector_client, 'config') and hasattr(connector_client.config, 'credentials'):
+            if hasattr(connector_client, "config") and hasattr(connector_client.config, "credentials"):
                 creds = connector_client.config.credentials
-                if hasattr(creds, 'get_token'):
+                if hasattr(creds, "get_token"):
                     token_response = await creds.get_token()
-                    if hasattr(token_response, 'token'):
+                    if hasattr(token_response, "token"):
                         return token_response.token
             return None
         except Exception as e:
@@ -982,7 +944,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 "user_id": turn_context.activity.from_property.id,
                 "session_id": conversation_id,
                 "source": "voice_note",  # Mark source for analytics
-            }
+            },
         )
 
         # Handle result (same as text flow)
@@ -1032,7 +994,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return None
 
         # Try to find JSON code blocks with triple backticks
-        json_pattern = r'```(?:json)?\s*\n(.*?)\n```'
+        json_pattern = r"```(?:json)?\s*\n(.*?)\n```"
         matches = re.findall(json_pattern, text, re.DOTALL | re.IGNORECASE)
 
         for match in matches:
@@ -1042,20 +1004,20 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 # Check if it's an Adaptive Card directly
                 if isinstance(parsed_json, dict):
                     # Direct AdaptiveCard
-                    if parsed_json.get('type') == 'AdaptiveCard':
+                    if parsed_json.get("type") == "AdaptiveCard":
                         self.logger.info("Detected direct AdaptiveCard in JSON block")
                         return parsed_json
 
                     # MS Teams message with attachments containing AdaptiveCard
-                    if parsed_json.get('type') == 'message':
-                        if attachments := parsed_json.get('attachments', []):
+                    if parsed_json.get("type") == "message":
+                        if attachments := parsed_json.get("attachments", []):
                             for attachment in attachments:
                                 if isinstance(attachment, dict):
                                     # Check if attachment has contentType for adaptive card
-                                    content_type = attachment.get('contentType', '')
-                                    if 'adaptivecard' in content_type.lower():
+                                    content_type = attachment.get("contentType", "")
+                                    if "adaptivecard" in content_type.lower():
                                         # Return the content of the adaptive card
-                                        card_content = attachment.get('content')
+                                        card_content = attachment.get("content")
                                         if card_content and isinstance(card_content, dict):
                                             self.logger.info("Detected AdaptiveCard in message attachment")
                                             return card_content
@@ -1064,8 +1026,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                             # Return first attachment's content if it looks like a card
                             first_attachment = attachments[0]
                             if isinstance(first_attachment, dict):
-                                content = first_attachment.get('content', first_attachment)
-                                if isinstance(content, dict) and content.get('type') == 'AdaptiveCard':
+                                content = first_attachment.get("content", first_attachment)
+                                if isinstance(content, dict) and content.get("type") == "AdaptiveCard":
                                     self.logger.info("Detected AdaptiveCard in first attachment")
                                     return content
 
@@ -1074,18 +1036,18 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # Fallback: try parsing the entire text as raw JSON (no backticks)
         stripped = text.strip()
-        if stripped.startswith('{'):
+        if stripped.startswith("{"):
             try:
                 parsed_json = json.loads(stripped)
                 if isinstance(parsed_json, dict):
-                    if parsed_json.get('type') == 'AdaptiveCard':
+                    if parsed_json.get("type") == "AdaptiveCard":
                         self.logger.info("Detected raw AdaptiveCard JSON (no code block)")
                         return parsed_json
-                    if parsed_json.get('type') == 'message':
-                        for attachment in parsed_json.get('attachments', []):
+                    if parsed_json.get("type") == "message":
+                        for attachment in parsed_json.get("attachments", []):
                             if isinstance(attachment, dict):
-                                content = attachment.get('content', attachment)
-                                if isinstance(content, dict) and content.get('type') == 'AdaptiveCard':
+                                content = attachment.get("content", attachment)
+                                if isinstance(content, dict) and content.get("type") == "AdaptiveCard":
                                     self.logger.info("Detected AdaptiveCard in raw message JSON")
                                     return content
             except json.JSONDecodeError:
@@ -1107,11 +1069,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # First check if response contains an Adaptive Card JSON
         text_to_check = None
 
-        if hasattr(response, 'output') and response.output:
+        if hasattr(response, "output") and response.output:
             text_to_check = str(response.output)
-        elif hasattr(response, 'content') and response.content:
+        elif hasattr(response, "content") and response.content:
             text_to_check = str(response.content)
-        elif hasattr(response, 'response') and response.response:
+        elif hasattr(response, "response") and response.response:
             text_to_check = str(response.response)
 
         if text_to_check:
@@ -1154,108 +1116,129 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Explicit code block from parsed response
         if parsed.has_code:
             label = f"**Code** ({parsed.code_language or 'text'}):"
-            sections.append(CodeSection(
-                code=parsed.code,
-                language=parsed.code_language,
-                label=label,
-                spacing="Medium",
-            ))
+            sections.append(
+                CodeSection(
+                    code=parsed.code,
+                    language=parsed.code_language,
+                    label=label,
+                    spacing="Medium",
+                )
+            )
 
         # Table data (pandas DataFrame)
         if parsed.has_table and parsed.table_data is not None:
             try:
                 df = parsed.table_data
                 columns = [str(c) for c in df.columns]
-                rows = [
-                    [str(val) for val in row.values]
-                    for _, row in df.head(50).iterrows()
-                ]
-                sections.append(TableSection(
-                    columns=columns,
-                    rows=rows,
-                    total_rows=len(df),
-                    max_display_rows=50,
-                    spacing="Medium",
-                ))
+                rows = [[str(val) for val in row.values] for _, row in df.head(50).iterrows()]
+                sections.append(
+                    TableSection(
+                        columns=columns,
+                        rows=rows,
+                        total_rows=len(df),
+                        max_display_rows=50,
+                        spacing="Medium",
+                    )
+                )
             except Exception:
                 # Fallback to monospace markdown table
                 if parsed.table_markdown:
-                    sections.append(TextSection(
-                        text=parsed.table_markdown,
-                        role="monospace",
-                    ))
+                    sections.append(
+                        TextSection(
+                            text=parsed.table_markdown,
+                            role="monospace",
+                        )
+                    )
         elif parsed.table_markdown:
-            sections.append(TextSection(
-                text=parsed.table_markdown,
-                role="monospace",
-            ))
+            sections.append(
+                TextSection(
+                    text=parsed.table_markdown,
+                    role="monospace",
+                )
+            )
 
         # Charts as images
-        if hasattr(parsed, 'charts') and parsed.charts:
+        if hasattr(parsed, "charts") and parsed.charts:
             for chart in parsed.charts:
                 try:
                     data_uri = chart.to_data_uri()
-                    entries = [ImageEntry(
-                        url=data_uri,
-                        alt_text=f"Chart: {chart.title}",
-                        size="Large",
-                    )]
-                    sections.append(ImageSection(
-                        images=entries,
-                        spacing="Medium",
-                    ))
+                    entries = [
+                        ImageEntry(
+                            url=data_uri,
+                            alt_text=f"Chart: {chart.title}",
+                            size="Large",
+                        )
+                    ]
+                    sections.append(
+                        ImageSection(
+                            images=entries,
+                            spacing="Medium",
+                        )
+                    )
                     self.logger.info("Added chart to card spec: %s", chart.title)
                 except Exception as e:
-                    self.logger.error(
-                        "Failed to embed chart '%s': %s", chart.title, e
+                    self.logger.error("Failed to embed chart '%s': %s", chart.title, e)
+                    sections.append(
+                        TextSection(
+                            text=f"Chart '{chart.title}' could not be displayed",
+                            color="Warning",
+                        )
                     )
-                    sections.append(TextSection(
-                        text=f"Chart '{chart.title}' could not be displayed",
-                        color="Warning",
-                    ))
 
         # Images (URLs and local paths)
         image_entries: list[ImageEntry] = []
         for image_path in parsed.images[:3]:
-            image_str = str(image_path) if hasattr(image_path, '__str__') else image_path
-            if isinstance(image_str, str) and image_str.startswith(('http://', 'https://')):
-                image_entries.append(ImageEntry(
-                    url=image_str,
-                    alt_text="Generated Image",
-                    size="Large",
-                ))
-            elif hasattr(image_path, 'name'):
-                sections.append(TextSection(
-                    text=f"Image: {image_path.name}",
-                    is_subtle=True,
-                ))
+            image_str = str(image_path) if hasattr(image_path, "__str__") else image_path
+            if isinstance(image_str, str) and image_str.startswith(("http://", "https://")):
+                image_entries.append(
+                    ImageEntry(
+                        url=image_str,
+                        alt_text="Generated Image",
+                        size="Large",
+                    )
+                )
+            elif hasattr(image_path, "name"):
+                sections.append(
+                    TextSection(
+                        text=f"Image: {image_path.name}",
+                        is_subtle=True,
+                    )
+                )
 
         # Documents that are base64 data URIs (inline images)
         for doc in parsed.documents[:5]:
-            doc_str = str(doc) if hasattr(doc, '__str__') else doc
-            if isinstance(doc_str, str) and doc_str.startswith('data:image/'):
-                image_entries.append(ImageEntry(
-                    url=doc_str,
-                    alt_text="Generated Chart",
-                    size="Large",
-                ))
-            elif hasattr(doc, 'name'):
-                sections.append(TextSection(
-                    text=f"Document: {doc.name}",
-                    is_subtle=True,
-                ))
-            elif isinstance(doc_str, str) and not doc_str.startswith('data:'):
-                sections.append(TextSection(
-                    text=f"Document: {doc_str[:50]}...",
-                    is_subtle=True,
-                ))
+            doc_str = str(doc) if hasattr(doc, "__str__") else doc
+            if isinstance(doc_str, str) and doc_str.startswith("data:image/"):
+                image_entries.append(
+                    ImageEntry(
+                        url=doc_str,
+                        alt_text="Generated Chart",
+                        size="Large",
+                    )
+                )
+            elif hasattr(doc, "name"):
+                sections.append(
+                    TextSection(
+                        text=f"Document: {doc.name}",
+                        is_subtle=True,
+                    )
+                )
+            elif isinstance(doc_str, str) and not doc_str.startswith("data:"):
+                sections.append(
+                    TextSection(
+                        text=f"Document: {doc_str[:50]}...",
+                        is_subtle=True,
+                    )
+                )
 
         if image_entries:
-            sections.append(ImageSection(
-                images=image_entries,
-                spacing="Medium",
-                separator=True,
-            ))
+            sections.append(
+                ImageSection(
+                    images=image_entries,
+                    spacing="Medium",
+                    separator=True,
+                )
+            )
 
         return CardSpec(
             sections=sections,
@@ -1279,9 +1262,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         return render(spec)
 
     async def _send_parsed_response(
-        self,
-        parsed: Union[ParsedResponse, Dict[str, Any]],
-        turn_context: TurnContext
+        self, parsed: Union[ParsedResponse, Dict[str, Any]], turn_context: TurnContext
     ) -> None:
         """
         Send parsed response to MS Teams.

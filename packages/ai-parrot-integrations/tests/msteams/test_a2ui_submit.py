@@ -45,8 +45,7 @@ def _wrapper(*, process_message_result=None) -> MSTeamsAgentWrapper:
     wrapper._command_router = None
     wrapper.form_orchestrator = MagicMock()
     wrapper.form_orchestrator.process_message = AsyncMock(
-        return_value=process_message_result
-        or SimpleNamespace(raw_response=None, response_text="Action handled.")
+        return_value=process_message_result or SimpleNamespace(raw_response=None, response_text="Action handled.")
     )
     wrapper.send_text = AsyncMock()
     wrapper._send_parsed_response = AsyncMock()
@@ -100,7 +99,10 @@ class TestTeamsWrapperRoutesA2UIAction:
     async def test_teams_wrapper_a2ui_action_returns_early_before_command_router(self):
         """The `a2ui_action` branch must short-circuit — never fall through to
         the slash-command / dialog-continuation handling below it."""
-        sobre = {"version": "v1.0", "action": {"name": "go", "surfaceId": "s1", "sourceComponentId": "b", "timestamp": "t", "context": {}}}
+        sobre = {
+            "version": "v1.0",
+            "action": {"name": "go", "surfaceId": "s1", "sourceComponentId": "b", "timestamp": "t", "context": {}},
+        }
         wrapper = _wrapper()
         wrapper._command_router = MagicMock()
         wrapper._command_router.try_dispatch = AsyncMock(side_effect=AssertionError("must not be reached"))
