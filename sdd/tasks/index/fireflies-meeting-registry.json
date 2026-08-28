@@ -93,7 +93,7 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Needs the force_refetch parameter and self.registry from TASK-2556. agents/fireflies_wiki.py is gitignored — git add -f.",
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2557-wiki-agent-ingest-stamp-and-sync-command.md"
+      "completed_at": "2026-08-28T23:41:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2557-wiki-agent-ingest-stamp-and-sync-command.md"
     },
     {
       "id": "TASK-2558",
