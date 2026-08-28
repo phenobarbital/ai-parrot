@@ -54,6 +54,9 @@ __all__ = (
     "FIREFLIES_WIKI_ANALYSIS_LIMIT",
     "FIREFLIES_WIKI_DAILY_WINDOW_DAYS",
     "FIREFLIES_WIKI_WEEKLY_WINDOW_DAYS",
+    "FIREFLIES_REGISTRY_DIR",
+    "FIREFLIES_SYNC_OVERLAP_DAYS",
+    "FIREFLIES_RECHECK_DAYS",
     "AUDIO_NOTES_WIKI_NAME",
     "AUDIO_NOTES_WIKI_STORAGE_DIR",
     "AUDIO_NOTES_FOLDER",
@@ -157,6 +160,31 @@ FIREFLIES_WIKI_EXTRACT_ENTITIES: bool = config.getboolean(
     "FIREFLIES_WIKI_EXTRACT_ENTITIES",
     fallback=False,
 )
+
+
+# ---------------------------------------------------------------------------
+# Meeting registry (FEAT-472) — id-keyed dedup for the Fireflies sync
+# ---------------------------------------------------------------------------
+
+#: Directory whose ``wiki.db`` backs the `MeetingRegistry` facade. Defaults
+#: to the same storage dir as the meetings wiki plane so the parent agent's
+#: standalone registry and the wiki toolkit's manager share one file
+#: (spec §2 G5) once the wiki toolkit opens on the same path.
+FIREFLIES_REGISTRY_DIR: str = config.get(
+    "FIREFLIES_REGISTRY_DIR",
+    fallback=FIREFLIES_WIKI_STORAGE_DIR,
+)
+
+#: Days subtracted from the registry's `max(synced_at)` to compute the
+#: sync window's `from_date` (spec §2 G9). Default 2 — the user observes
+#: no Fireflies changes later than ~2 days after a meeting.
+FIREFLIES_SYNC_OVERLAP_DAYS: int = config.getint("FIREFLIES_SYNC_OVERLAP_DAYS", fallback=2)
+
+#: A row younger than this many days (by `synced_at`) is eligible for the
+#: classify() cheap-skip path (no transcript fetch) when the listing's
+#: title/date/duration are unchanged (spec §2 G9). Default 7 — a generous
+#: ceiling on top of the sync overlap.
+FIREFLIES_RECHECK_DAYS: int = config.getint("FIREFLIES_RECHECK_DAYS", fallback=7)
 
 
 # ---------------------------------------------------------------------------
