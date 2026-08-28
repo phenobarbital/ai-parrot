@@ -3,7 +3,7 @@
 # - type: feature  (default)  → base_branch: dev (or any non-main branch)
 # - type: hotfix              → base_branch MUST be: main
 type: feature
-base_branch: feat-470-a2ui-v1-dialect
+base_branch: dev
 ---
 
 # Brainstorm: A2UI v1.0 for STRUCTURED_CHART / STRUCTURED_TABLE / STRUCTURED_MAP
@@ -12,7 +12,7 @@ base_branch: feat-470-a2ui-v1-dialect
 **Author**: Jesus Lara (with Claude)
 **Status**: exploration
 **Recommended Option**: A (with the schema-derivation technique from Option D)
-**Depends on**: FEAT-470 `a2ui-v1-dialect` (sub-feature; branches from `feat-470-a2ui-v1-dialect`)
+**Depends on**: FEAT-470 `a2ui-v1-dialect` — starts only after its PR merges to `dev` (start gate, Q5)
 **Related**: FEAT-215 (STRUCTURED_CHART), FEAT-218 (STRUCTURED_TABLE), FEAT-221 (STRUCTURED_MAP), FEAT-224 (structured `artifacts[]` envelope), FEAT-273 (A2UI core)
 
 ---
@@ -68,8 +68,9 @@ renderers.
 
 Decisions locked during discovery (Rounds 0–3):
 
-- **Flow**: `type: feature`, `base_branch: feat-470-a2ui-v1-dialect`
-  (sub-feature). Merges to `dev` only after FEAT-470 lands.
+- **Flow**: `type: feature`, `base_branch: dev`. **Start gate**: the worktree is
+  created only after FEAT-470 has merged to `dev` (no rebase over in-flight
+  catalog/producer changes).
 - **Dual-emit** (R1a): `response.output` (config JSON) and `response.data`
   (rows) keep their current shape. A v1.0 `CreateSurface` is **added** in
   `response.a2ui_envelope`, built **deterministically** — zero LLM
@@ -96,6 +97,17 @@ Decisions locked during discovery (Rounds 0–3):
 - **Map layout** (R2c): one `dataModel` path per layer
   (`/layers/<i>/features`); `folium_map` is the native renderer;
   `Map.lower()` stays a titled layer summary for static surfaces.
+- **`response.output` hint** (Q2): the legacy config mirror additionally
+  carries `surfaceId` (same value as `artifactId`) so consumers reading only
+  `output` can correlate with the envelope. No other key changes.
+- **Deprecation** (Q3): v1 `definition` shape is cut in this feature
+  (target 0.29.x); `artifact_definition_to_legacy()` shim + guide supported
+  through 0.31, then the shim is removed.
+- **LLM producer** (Q4): the FEAT-470 LLM producer may emit
+  `Chart`/`DataTable`/`Map`, but `data` MUST be a `{"path"}` binding into a
+  tool-supplied `dataModel`; inline rows from `origin=LLM` are rejected by
+  `validate_envelope` (D1: tools own data). Components stay
+  `requires_actions=False`.
 - **Row cap** (R2d): reuse the renderer's existing `row_limit`
   (`DEFAULT_ROW_LIMIT = 1000`, `structured_table.py:39`). On overflow the
   envelope carries the capped rows with `truncated: true` + `totalRows`
@@ -597,8 +609,8 @@ from parrot.outputs.a2ui.compat import normalize_legacy
   2548 (conformance suite) are still in progress; 2547/2548 touch
   `catalog_instructions()` and the conformance tests we will extend. Nothing
   in FEAT-471 (rustworkx) or other in-flight worktrees overlaps.
-- **Recommended isolation**: `per-spec` — one worktree branched from
-  `feat-470-a2ui-v1-dialect` **after TASK-2548 completes**, tasks sequential.
+- **Recommended isolation**: `per-spec` — one worktree branched from `dev`
+  **after the FEAT-470 PR merges**, tasks sequential.
 - **Rationale**: the shared foundation (schema derivation changes the very
   files FEAT-470 is still finishing) makes parallel worktrees a merge hazard;
   the lanes are small enough that sequential execution costs little.
@@ -607,7 +619,7 @@ from parrot.outputs.a2ui.compat import normalize_legacy
 
 ## Open Questions
 
-- [x] Flow type / base branch — *Owner: Jesus Lara*: `feature`, base `feat-470-a2ui-v1-dialect` (sub-feature).
+- [x] Flow type / base branch — *Owner: Jesus Lara*: `feature`, base `dev`; start only after FEAT-470 merges (see start-gate question).
 - [x] Dual-emit vs replace — *Owner: Jesus Lara*: dual-emit; `output`/`data` unchanged, envelope added in `a2ui_envelope`.
 - [x] Schema parity — *Owner: Jesus Lara*: full parity of `Chart`/`DataTable`/`Map` with the config models.
 - [x] Row placement — *Owner: Jesus Lara*: `dataModel` + `{"path"}` bindings.
@@ -615,9 +627,9 @@ from parrot.outputs.a2ui.compat import normalize_legacy
 - [x] `artifacts[]` relationship — *Owner: Jesus Lara*: `definition` becomes the v1.0 component node; `surfaceId == artifactId`; add `schemaVersion: 2`; legacy shim + frontend guide rewrite.
 - [x] Map layout — *Owner: Jesus Lara*: `/layers/<i>/features`, folium native, `lower()` stays a layer summary.
 - [x] Row cap — *Owner: Jesus Lara*: reuse `row_limit` (`DEFAULT_ROW_LIMIT = 1000`) with `truncated`/`totalRows`.
-- [ ] Does `export_catalog_definition()` / the vendored catalog format accept Pydantic `$defs` in component schemas, or must the derived schemas be inlined (Option D)? — *Owner: implementer (spike, ≤ 1h)*
+- [x] Does `export_catalog_definition()` / the vendored catalog format accept Pydantic `$defs` in component schemas? — *Owner: Claude (spike 2026-08-29)*: yes — `StructuredMapConfig.model_json_schema(by_alias=True)` (with `$defs` MapColumn/MapLayer/MapQuery/MapViewport) and the inlined variant BOTH validate against the vendored `catalog_definition.json`; no inlining required (keep a small inliner as optional hardening).
 - [x] Is `handlers/agent.py` forwarding of `a2ui_envelope` gated on `output_mode == A2UI`? — *Owner: Claude (verified)*: the **stream** path (`handlers/agent.py:2703-2705`) forwards it whenever present — no change needed; the **non-stream** path (`:2826`) sits inside the `output_mode == A2UI` branch and must be widened to "envelope present".
-- [ ] Should `response.output`'s config mirror carry a `schemaVersion`/`surfaceId` hint too, or only `artifacts[]`? — *Owner: Jesus Lara*
-- [ ] Deprecation timeline for the FEAT-224 v1 `definition` shape (one minor release? tied to frontend rollout?) — *Owner: Jesus Lara*
-- [ ] Should the FEAT-470 LLM producer (TASK-2547) be allowed to emit `Chart`/`DataTable`/`Map` with inline `dataModel` rows, or must those components remain tool-only (`ProducerOrigin.TOOL`)? — *Owner: Jesus Lara*
-- [ ] Start gate: wait for FEAT-470 TASK-2548 (conformance suite) before branching, or branch now from TASK-2544 and rebase? — *Owner: Jesus Lara*
+- [x] Should `response.output`'s config mirror carry a `surfaceId` hint too? — *Owner: Jesus Lara*: yes — add `surfaceId` (== `artifactId`) to `response.output`; `schemaVersion` only on `artifacts[]`.
+- [x] Deprecation timeline for the FEAT-224 v1 `definition` shape — *Owner: Jesus Lara*: cut in this feature (0.29.x); legacy shim supported for two minor releases (through 0.31), then removed.
+- [x] May the FEAT-470 LLM producer emit `Chart`/`DataTable`/`Map` with inline `dataModel` rows? — *Owner: Jesus Lara*: tool-only data — the LLM may emit the components but `data` must be a `{"path"}` binding to a tool-supplied dataModel; inline rows rejected for `origin=LLM`.
+- [x] Start gate — *Owner: Jesus Lara*: wait for the FEAT-470 PR to merge into `dev`; then branch from `dev`. Spec/tasks may be written before that.
