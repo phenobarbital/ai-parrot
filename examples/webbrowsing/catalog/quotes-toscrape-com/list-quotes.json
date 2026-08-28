@@ -1,0 +1,39 @@
+{
+  "site": "quotes-toscrape-com",
+  "name": "list-quotes",
+  "title": "Listar citas",
+  "description": "Open the home page and extract every quote on it: text, author and tags.",
+  "kind": "operation",
+  "params": {},
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://quotes.toscrape.com/"
+    },
+    {
+      "action": "extract",
+      "selector": "div.quote",
+      "multiple": true,
+      "extract_name": "quotes",
+      "fields": {
+        "text": {
+          "selector": "span.text"
+        },
+        "author": {
+          "selector": "small.author"
+        },
+        "tags": {
+          "selector": "div.tags a.tag",
+          "multiple": true
+        }
+      }
+    }
+  ],
+  "compose": [],
+  "requires": [],
+  "tags": [],
+  "version": "1.0",
+  "source": "llm",
+  "created_at": "2026-08-26T10:03:30.403457Z",
+  "updated_at": "2026-08-26T10:03:30.404034Z"
+}

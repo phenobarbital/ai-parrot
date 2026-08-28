@@ -1,0 +1,36 @@
+{
+  "site": "quotes-toscrape-com",
+  "name": "login-and-list",
+  "title": "Sesión + listado",
+  "description": "Full flow: make sure we are logged in, then list the quotes on the home page. 'login' is injected as a prerequisite and runs at most once per sequence.",
+  "kind": "composite",
+  "params": {
+    "username": {
+      "description": "Forwarded to the login prerequisite",
+      "required": true,
+      "default": "parrot",
+      "example": null
+    },
+    "password": {
+      "description": "Forwarded to the login prerequisite",
+      "required": true,
+      "default": "parrot",
+      "example": null
+    }
+  },
+  "steps": [],
+  "compose": [
+    {
+      "action": "list-quotes",
+      "params": {}
+    }
+  ],
+  "requires": [
+    "login"
+  ],
+  "tags": [],
+  "version": "1.0",
+  "source": "llm",
+  "created_at": "2026-08-26T10:03:30.409376Z",
+  "updated_at": "2026-08-26T10:03:30.409724Z"
+}
