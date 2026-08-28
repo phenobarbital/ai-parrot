@@ -267,9 +267,7 @@ _SPIKE_PROMPTS: ClassVar[list[str]] = [
 ]
 
 #: ``artifacts/logs/feat-470-producer-rate.md`` — repo root relative to this file.
-_RATE_LOG_PATH = (
-    Path(__file__).resolve().parents[5] / "artifacts" / "logs" / "feat-470-producer-rate.md"
-)
+_RATE_LOG_PATH = Path(__file__).resolve().parents[5] / "artifacts" / "logs" / "feat-470-producer-rate.md"
 
 
 def _append_rate_log(successes: int, total: int, rate: float) -> None:

@@ -158,7 +158,7 @@ def _repair_prompt(base_prompt: str, error: str | CatalogValidationError, offend
         + (f"Rejected fragment: {fragment}\n" if fragment else "")
         + "Use only the catalog components listed; do NOT use action-bearing components "
         "(forms/submit) — this is a display-only surface. The envelope MUST contain "
-        "exactly one component with id \"root\"."
+        'exactly one component with id "root".'
     )
 
 
@@ -214,7 +214,7 @@ async def generate_envelope(
         + "You produce ONLY an A2UI v1.0 createSurface envelope for the requested "
         "display UI, using ONLY these catalog components (Basic Catalog + Parrot "
         "catalog):\n" + instructions + "\n\n"
-        "Rule: the envelope MUST contain exactly one component with id \"root\" — "
+        'Rule: the envelope MUST contain exactly one component with id "root" — '
         "every other component must be reachable from it via child/children."
     )
     config = StructuredOutputConfig(output_type=CreateSurface)
@@ -230,16 +230,12 @@ async def generate_envelope(
             system_prompt=system,
             structured_output=config,
         )
-        last_text = getattr(response, "response", None) or _stringify(
-            getattr(response, "output", None)
-        )
+        last_text = getattr(response, "response", None) or _stringify(getattr(response, "output", None))
         envelope, parse_error = _extract_envelope(getattr(response, "output", None))
 
         if envelope is None:
             last_error = parse_error or "unparseable response"
-            logger.warning(
-                "A2UI producer attempt %d/%d: %s", attempt, max_attempts, last_error
-            )
+            logger.warning("A2UI producer attempt %d/%d: %s", attempt, max_attempts, last_error)
             current_prompt = _repair_prompt(prompt, last_error, getattr(response, "output", None))
             continue
 
@@ -253,9 +249,7 @@ async def generate_envelope(
                 max_attempts,
                 last_error,
             )
-            current_prompt = _repair_prompt(
-                prompt, exc, envelope.model_dump(by_alias=True, mode="json")
-            )
+            current_prompt = _repair_prompt(prompt, exc, envelope.model_dump(by_alias=True, mode="json"))
             continue
 
         return ProducerResult(envelope=envelope, degraded=False, attempts=attempt)
