@@ -263,6 +263,87 @@ class WikiNamespaceConfig(BaseModel):
         return str(getattr(self, self.kind))
 
 
+class ObsidianSyncConfig(BaseModel):
+    """Settings for ``wikitoolkit sync obsidian`` (wiki plane -> vault mirror).
+
+    Declares WHAT is mirrored into the Obsidian vault and WHERE it lands:
+    which page categories are synchronized and which vault folder each
+    category maps onto. Lives under ``obsidian_sync`` in
+    ``.parrot/wiki.json`` (and can be overridden per environment via the
+    :class:`WikiEnvOverlay`).
+
+    Attributes:
+        vault_dir: Target Obsidian vault root. Falls back to the project's
+            :attr:`WikiProjectConfig.vault_dir` (then to the project root
+            itself when it is a vault) via ``resolve_vault_dir``.
+        root_folder: Vault-relative folder all synced notes live under.
+            Keeps the mirror clearly separated from hand-written notes.
+        categories: Page categories to synchronize. Empty means every
+            category found in the plane.
+        folders: Category -> vault folder overrides. A category not named
+            here defaults to its pluralized directory name (the same
+            convention as the OKF export: ``entity`` -> ``entities/``).
+        namespaces: Which wiki planes to mirror: ``"local"`` (the
+            project's own plane, the default) and/or the names of declared
+            federated namespaces. ``"all"`` expands to the local plane
+            plus every declared namespace.
+        prune: Also delete previously synced notes whose page no longer
+            exists (or is no longer selected). Only notes carrying the
+            sync marker frontmatter are ever deleted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    vault_dir: str | None = Field(
+        default=None,
+        description="Target vault root; defaults to the project vault_dir",
+    )
+    root_folder: str = Field(
+        default="LLM Wiki",
+        description="Vault folder that holds every synced note",
+    )
+    categories: list[str] = Field(
+        default_factory=list,
+        description="Categories to sync; empty = all",
+    )
+    folders: dict[str, str] = Field(
+        default_factory=dict,
+        description="Category -> vault folder overrides",
+    )
+    namespaces: list[str] = Field(
+        default_factory=lambda: ["local"],
+        description="Planes to sync: 'local', declared namespaces, or 'all'",
+    )
+    prune: bool = Field(
+        default=False,
+        description="Delete marker-carrying notes whose page vanished",
+    )
+
+    @field_validator("root_folder", "folders")
+    @classmethod
+    def _validate_folders(cls, value: Any) -> Any:
+        """Reject absolute or escaping folder values at load time."""
+        candidates = value.values() if isinstance(value, dict) else [value]
+        for folder in candidates:
+            clean = str(folder).replace("\\", "/")
+            if clean.startswith("/") or ".." in clean.split("/"):
+                raise ValueError(
+                    f"Obsidian sync folder {folder!r} must be vault-relative "
+                    "and must not contain '..'"
+                )
+        return value
+
+    @field_validator("namespaces")
+    @classmethod
+    def _validate_plane_names(cls, value: list[str]) -> list[str]:
+        """Allow 'local'/'all' plus valid namespace names."""
+        for name in value:
+            if name in ("local", "all"):
+                continue
+            validate_namespace_name(name)
+        return value
+
+
 class GlobalWikiRegistry(BaseModel):
     """The per-user namespace registry stored at ``PARROT_HOME/wikis.json``.
 
@@ -312,6 +393,9 @@ class WikiProjectConfig(BaseModel):
             keyed by namespace name. Merged with the global registry
             (repo entries win) by :func:`merge_namespaces`. Written only
             by ``wikitoolkit ns add``.
+        obsidian_sync: Settings for ``wikitoolkit sync obsidian`` —
+            which categories are mirrored into the Obsidian vault and
+            which folder each category maps onto.
     """
 
     wiki_name: str = Field(default="codebase")
@@ -348,6 +432,13 @@ class WikiProjectConfig(BaseModel):
         description=(
             "Federated namespaces declared by this repo, keyed by name. "
             "Repo entries override same-named global registry entries."
+        ),
+    )
+    obsidian_sync: ObsidianSyncConfig | None = Field(
+        default=None,
+        description=(
+            "Settings for `wikitoolkit sync obsidian`: which categories "
+            "sync into the vault and which folder each one maps onto."
         ),
     )
 
@@ -625,6 +716,8 @@ class WikiEnvOverlay(BaseModel):
             (see :func:`load_effective_config`) rather than replacing
             the whole mapping.
         vault_dir: Obsidian vault directory override.
+        obsidian_sync: Obsidian sync settings override (replaced
+            wholesale, like every non-namespace overlay field).
         sync_graph: GraphIndex mirroring override.
         body_max_chars: Page body length cap override.
         max_file_kb: Scanned file size cap override.
@@ -642,6 +735,7 @@ class WikiEnvOverlay(BaseModel):
     arango_text_analyzer: str | None = None
     namespaces: dict[str, WikiNamespaceConfig] | None = None
     vault_dir: str | None = None
+    obsidian_sync: ObsidianSyncConfig | None = None
     sync_graph: bool | None = None
     body_max_chars: int | None = Field(default=None, ge=1_000)
     max_file_kb: int | None = Field(default=None, ge=1)
