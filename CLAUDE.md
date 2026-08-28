@@ -486,6 +486,10 @@ search (`grep`/`rg`/`find`/`cat` via Bash):
 - `wikitoolkit build` — refresh the graph after large changes
   (a git post-commit hook may already keep it fresh).
 
+`query`/`page`/`related`/`status` work on a core `ai-parrot` install
+(FEAT-471); `build`'s tree-sitter/Leiden accuracy features need
+`uv sync --extra wiki`.
+
 Ids may come back qualified as `<namespace>::<id>` (e.g.
 `asyncdb::file:pool.py`) when federated namespaces are configured
 (FEAT-450) — local pages stay unprefixed. Pass a qualified id verbatim
