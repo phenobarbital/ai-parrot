@@ -1,4 +1,4 @@
-"""A2UI ``Timeline`` catalog component (Module 3).
+"""A2UI ``Timeline`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
 Net-new vocabulary: an ordered list of ``events`` each with ``timestamp``, ``title``,
 ``description``. Lowering keeps events in INPUT order (never re-sorted — determinism
@@ -48,40 +48,54 @@ class TimelineComponent:
     INSTRUCTIONS = TIMELINE_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
-        """Lower a Timeline to a Basic Catalog tree (pure, deterministic)."""
-        props = component.properties
+        """Lower a Timeline to a Basic Catalog ``Column`` tree (title + event rows)."""
+        props = component.model_extra or {}
         children: list[BasicNode] = []
 
         title = props.get("title")
         if title is not None:
             children.append(
-                BasicNode(component="Text", properties={"role": "title", "text": title})
+                BasicNode(
+                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
+                )
             )
 
         for event in props.get("events") or []:
-            row_children = [
+            row_children: list[BasicNode] = []
+            if event.get("timestamp") is not None:
+                row_children.append(
+                    BasicNode(
+                        component="Text",
+                        text=event["timestamp"],
+                        metadata={"extensions": {"parrot_role": "timestamp"}},
+                    )
+                )
+            row_children.append(
                 BasicNode(
                     component="Text",
-                    properties={"role": "timestamp", "text": event.get("timestamp")},
-                ),
-                BasicNode(
-                    component="Text",
-                    properties={"role": "event-title", "text": event.get("title", "")},
-                ),
-            ]
+                    text=event.get("title", ""),
+                    metadata={"extensions": {"parrot_role": "event-title"}},
+                )
+            )
             if event.get("description") is not None:
                 row_children.append(
                     BasicNode(
                         component="Text",
-                        properties={"role": "event-description", "text": event["description"]},
+                        text=event["description"],
+                        metadata={"extensions": {"parrot_role": "event-description"}},
                     )
                 )
             children.append(
-                BasicNode(component="Row", properties={"role": "event"}, children=row_children)
+                BasicNode(
+                    component="Row",
+                    children=row_children,
+                    metadata={"extensions": {"parrot_role": "event"}},
+                )
             )
 
         return BasicNode(
+            id=component.id,
             component="Column",
-            properties={"variant": "timeline", "componentId": component.id},
             children=children,
+            metadata={"extensions": {"parrot_variant": "timeline"}},
         )

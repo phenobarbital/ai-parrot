@@ -1,4 +1,4 @@
-"""A2UI ``Map`` catalog component (Module 3).
+"""A2UI ``Map`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
 Schema vocabulary is adapted from ``StructuredMapConfig``/``MapLayer``/``MapViewport``
 (``parrot.models.outputs``): ``layers``, ``viewport``, ``baseLayer``, ``title``,
@@ -6,7 +6,7 @@ Schema vocabulary is adapted from ``StructuredMapConfig``/``MapLayer``/``MapView
 
 ``lower()`` degrades a Map to a static-friendly Basic tree (title/description Text
 plus a layer-summary Column). Interactive tiles are the folium-map renderer's native
-path (Module 5, satellite) — no geo/folium markup appears in the lowered tree.
+path (Module 7, satellite) — no geo/folium markup appears in the lowered tree.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ MAP_SCHEMA: dict[str, Any] = {
             },
         },
         "data": {
-            "description": "Data-model binding ({'$bind': '/pointer'}) to geo features.",
+            "description": "Data-model binding ({'path': '/pointer'}) to geo features.",
         },
     },
     "required": ["layers"],
@@ -51,7 +51,7 @@ MAP_SCHEMA: dict[str, Any] = {
 MAP_INSTRUCTIONS = (
     "Use Map for geospatial data. Declare `layers` (each with `name`/`type`), an "
     "optional `viewport` (center/zoom) and `baseLayer`. Bind features with "
-    "`data: {\"$bind\": \"/pointer\"}`. On static surfaces the map degrades to a "
+    "`data: {\"path\": \"/pointer\"}`. On static surfaces the map degrades to a "
     "titled layer summary. Display-only."
 )
 
@@ -64,40 +64,47 @@ class MapComponent:
     INSTRUCTIONS = MAP_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
-        """Lower a Map to a static-friendly Basic Catalog tree (pure, deterministic)."""
-        props = component.properties
+        """Lower a Map to a static-friendly Basic Catalog ``Card{child: Column}`` tree."""
+        props = component.model_extra or {}
         children: list[BasicNode] = []
 
         title = props.get("title")
         if title is not None:
             children.append(
-                BasicNode(component="Text", properties={"role": "title", "text": title})
+                BasicNode(
+                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
+                )
             )
         description = props.get("description")
         if description is not None:
             children.append(
                 BasicNode(
                     component="Text",
-                    properties={"role": "description", "text": description},
+                    text=description,
+                    metadata={"extensions": {"parrot_role": "description"}},
                 )
             )
 
         layer_items = [
             BasicNode(
                 component="Text",
-                properties={"role": "layer", "text": layer.get("name", "")},
+                text=layer.get("name", ""),
+                metadata={"extensions": {"parrot_role": "layer"}},
             )
             for layer in (props.get("layers") or [])
         ]
-        summary_props: dict[str, Any] = {"role": "layer-summary"}
+        extensions: dict[str, Any] = {"parrot_role": "layer-summary"}
         if "data" in props:
-            summary_props["data"] = props["data"]
+            extensions["parrot_layer_data"] = props["data"]
         children.append(
-            BasicNode(component="Column", properties=summary_props, children=layer_items)
+            BasicNode(
+                component="Column", children=layer_items, metadata={"extensions": extensions}
+            )
         )
 
         return BasicNode(
+            id=component.id,
             component="Card",
-            properties={"variant": "map", "componentId": component.id},
-            children=children,
+            child=BasicNode(component="Column", children=children),
+            metadata={"extensions": {"parrot_variant": "map"}},
         )

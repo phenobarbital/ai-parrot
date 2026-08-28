@@ -1,16 +1,22 @@
-"""A2UI v1 catalog components (Module 3).
+"""A2UI v1.0 parrot catalog components (Module 5, FEAT-470 TASK-2539).
 
 Importing this package runs each component module's ``@register_component``
-side-effect, populating the catalog allowlist. Parallel Module 3 tasks each add
-their own imports here (one per line, merge-friendly).
+side-effect, populating the catalog allowlist under
+:data:`~parrot.outputs.a2ui.catalog.base.DEFAULT_CATALOG_ID`
+(``https://parrot.dev/catalogs/v1``).
+
+``form`` is intentionally NOT imported here — ``Form`` is retired as a
+registered component (spec G6); ``build_form()`` (TASK-2540) replaces it with
+a composition helper over Basic Catalog primitives.
 """
 
-from parrot.outputs.a2ui.catalog.components import card  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import chart  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import datatable  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import form  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import infographic  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import kpicard  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import map  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import report  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import timeline  # noqa: F401
+from parrot.outputs.a2ui.catalog.parrot import (
+    chart,  # noqa: F401
+    datatable,  # noqa: F401
+    infocard,  # noqa: F401
+    infographic,  # noqa: F401
+    kpicard,  # noqa: F401
+    map,  # noqa: F401
+    report,  # noqa: F401
+    timeline,  # noqa: F401
+)

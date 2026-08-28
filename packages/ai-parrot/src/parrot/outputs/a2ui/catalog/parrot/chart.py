@@ -1,14 +1,14 @@
-"""A2UI ``Chart`` catalog component (Module 3).
+"""A2UI ``Chart`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
 Schema vocabulary is adapted from ``StructuredChartConfig``
 (``parrot.models.outputs`` — FEAT-218/221): ``type``, ``x``, ``y``, ``stacked``,
 ``showLegend``, ``xAxisMode``, ``palette``. The Pydantic class is NOT imported into
 the wire format; only its field vocabulary is mirrored into the JSON Schema.
 
-In A2UI the config's INPUT-ONLY ``data`` array is replaced by a data-model binding:
-rows are bound via a ``{"$bind": "/pointer"}`` expression, resolved in the Module 6
-bake pass. ECharts option-building is renderer-side (satellite) — the lowered tree
-here contains only Basic Catalog primitives.
+In A2UI v1.0 the config's INPUT-ONLY ``data`` array is replaced by a data-model
+binding: rows are bound via a ``{"path": "/pointer"}`` expression, resolved in
+the bake pass. ECharts option-building is renderer-side (satellite) — the
+lowered tree here contains only Basic Catalog primitives.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ CHART_SCHEMA: dict[str, Any] = {
         "xAxisMode": {"type": "string"},
         "palette": {"type": "array", "items": {"type": "string"}},
         "data": {
-            "description": "Data-model binding ({'$bind': '/pointer'}) to the row set.",
+            "description": "Data-model binding ({'path': '/pointer'}) to the row set.",
         },
     },
     "required": ["type", "x", "y"],
@@ -48,7 +48,7 @@ CHART_SCHEMA: dict[str, Any] = {
 CHART_INSTRUCTIONS = (
     "Use Chart to visualize numeric series over a categorical/temporal axis. "
     "Set `type` (bar/line/area/scatter/pie), `x` (label column) and `y` (one or "
-    "more value columns). Bind the row data with `data: {\"$bind\": \"/pointer\"}` "
+    "more value columns). Bind the row data with `data: {\"path\": \"/pointer\"}` "
     "into the data model — never inline large arrays. Display-only."
 )
 
@@ -61,45 +61,58 @@ class ChartComponent:
     INSTRUCTIONS = CHART_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
-        """Lower a Chart to a Basic Catalog tree (pure, deterministic).
+        """Lower a Chart to a Basic Catalog ``Card{child: Column}`` tree.
 
         A chart without a graphics backend degrades to its data summary: title,
         a type caption, an axis line, and a series list. Any data-model binding is
         passed through untouched (resolution happens in the bake pass).
         """
-        props = component.properties
+        props = component.model_extra or {}
         children: list[BasicNode] = []
 
         title = props.get("title")
         if title is not None:
             children.append(
-                BasicNode(component="Text", properties={"role": "title", "text": title})
+                BasicNode(
+                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
+                )
             )
         children.append(
             BasicNode(
                 component="Text",
-                properties={"role": "caption", "text": f"Chart ({props.get('type', 'bar')})"},
+                text=f"Chart ({props.get('type', 'bar')})",
+                metadata={"extensions": {"parrot_role": "caption"}},
             )
         )
         axis_text = f"x: {props.get('x', '')} | y: {', '.join(props.get('y', []) or [])}"
         children.append(
-            BasicNode(component="Text", properties={"role": "axis", "text": axis_text})
+            BasicNode(
+                component="Text", text=axis_text, metadata={"extensions": {"parrot_role": "axis"}}
+            )
         )
 
         series_children = [
-            BasicNode(component="Text", properties={"role": "series", "text": name})
+            BasicNode(
+                component="Text", text=name, metadata={"extensions": {"parrot_role": "series"}}
+            )
             for name in (props.get("y") or [])
         ]
-        series_props: dict[str, Any] = {"role": "series-list"}
+        extensions: dict[str, Any] = {"parrot_role": "series-list"}
         if "data" in props:
-            # Pass the binding through unresolved — the bake pass will resolve it.
-            series_props["data"] = props["data"]
-        children.append(
-            BasicNode(component="Column", properties=series_props, children=series_children)
+            # Pass the binding through unresolved (under an extension key, so the
+            # node still validates against the official Column schema) — the
+            # bake pass resolves it.
+            extensions["parrot_series_data"] = props["data"]
+        series_node = BasicNode(
+            component="Column",
+            children=series_children,
+            metadata={"extensions": extensions},
         )
+        children.append(series_node)
 
         return BasicNode(
+            id=component.id,
             component="Card",
-            properties={"variant": "chart", "componentId": component.id},
-            children=children,
+            child=BasicNode(component="Column", children=children),
+            metadata={"extensions": {"parrot_variant": "chart"}},
         )

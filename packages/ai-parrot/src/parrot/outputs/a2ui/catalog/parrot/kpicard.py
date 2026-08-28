@@ -1,4 +1,4 @@
-"""A2UI ``KPICard`` catalog component (Module 3).
+"""A2UI ``KPICard`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
 Net-new vocabulary (no prior KPICard model exists): ``label``, ``value``, ``unit``,
 ``delta``, ``trend``. Display-only (``requires_actions=False``).
@@ -38,19 +38,19 @@ class KPICardComponent:
     INSTRUCTIONS = KPICARD_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
-        """Lower a KPICard to a Basic Catalog tree (pure, deterministic)."""
-        props = component.properties
+        """Lower a KPICard to a Basic Catalog ``Card{child: Column}`` tree."""
+        props = component.model_extra or {}
         children: list[BasicNode] = [
             BasicNode(
                 component="Text",
-                properties={"role": "label", "text": props.get("label", "")},
+                text=props.get("label", ""),
+                metadata={"extensions": {"parrot_role": "label"}},
             ),
             BasicNode(
                 component="Text",
-                properties={
-                    "role": "value",
-                    "text": props.get("value"),
-                    "unit": props.get("unit"),
+                text=props.get("value"),
+                metadata={
+                    "extensions": {"parrot_role": "value", "parrot_unit": props.get("unit")}
                 },
             ),
         ]
@@ -58,15 +58,18 @@ class KPICardComponent:
             children.append(
                 BasicNode(
                     component="Text",
-                    properties={
-                        "role": "delta",
-                        "text": props.get("delta"),
-                        "trend": props.get("trend"),
+                    text=props.get("delta"),
+                    metadata={
+                        "extensions": {
+                            "parrot_role": "delta",
+                            "parrot_trend": props.get("trend"),
+                        }
                     },
                 )
             )
         return BasicNode(
+            id=component.id,
             component="Card",
-            properties={"variant": "kpi", "componentId": component.id},
-            children=children,
+            child=BasicNode(component="Column", children=children),
+            metadata={"extensions": {"parrot_variant": "kpi"}},
         )

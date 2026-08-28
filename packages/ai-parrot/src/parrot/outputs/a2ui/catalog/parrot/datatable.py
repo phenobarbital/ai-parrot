@@ -1,9 +1,14 @@
-"""A2UI ``DataTable`` catalog component (Module 3).
+"""A2UI ``DataTable`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
 Schema vocabulary is adapted from ``StructuredTableConfig``/``TableColumn``
 (``parrot.models.outputs``): ``columns`` (name/type/title/format), ``totalRows``,
 ``truncated``. The INPUT-ONLY ``data`` array is replaced by a data-model binding.
-The Pydantic class is not imported into the wire format.
+
+v1.0 rows are a ``ChildTemplate`` (spec §2/§5): a single row-pattern
+:class:`~parrot.outputs.a2ui.catalog.base.BasicNode` (one ``Text`` cell per
+declared column, bound via a column-name-RELATIVE ``{"path": "<name>"}``)
+materialized once per data-model row by the bake pass (TASK-2538), instead of
+this module eagerly walking an already-resolved row list.
 """
 
 from __future__ import annotations
@@ -12,7 +17,7 @@ from typing import Any
 
 from parrot.outputs.a2ui.catalog import register_component
 from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree
-from parrot.outputs.a2ui.models import Component
+from parrot.outputs.a2ui.models import ChildTemplate, Component
 
 DATATABLE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -34,7 +39,7 @@ DATATABLE_SCHEMA: dict[str, Any] = {
         "totalRows": {"type": "integer"},
         "truncated": {"type": "boolean", "default": False},
         "data": {
-            "description": "Data-model binding ({'$bind': '/pointer'}) to the rows.",
+            "description": "Data-model binding ({'path': '/pointer'}) to the rows.",
         },
     },
     "required": ["columns"],
@@ -42,45 +47,9 @@ DATATABLE_SCHEMA: dict[str, Any] = {
 
 DATATABLE_INSTRUCTIONS = (
     "Use DataTable to present tabular rows. Declare `columns` (each with `name` and "
-    "optional `type`/`title`/`format`). Bind rows with `data: {\"$bind\": \"/pointer\"}`. "
+    "optional `type`/`title`/`format`). Bind rows with `data: {\"path\": \"/pointer\"}`. "
     "Set `totalRows`/`truncated` when the row set is capped. Display-only."
 )
-
-
-def _lower_row(row: Any, column_names: list[Any]) -> BasicNode:
-    """Lower one resolved row to a ``Row`` of ``Text`` cells (pure, deterministic).
-
-    Cells follow the DECLARED column order, so a table never renders its columns
-    in dict-insertion order. Mapping rows are read by column name; sequence rows
-    positionally; a scalar row degrades to a single cell.
-
-    Args:
-        row: One resolved row — a mapping keyed by column name, a sequence of
-            cell values, or a scalar.
-        column_names: Column ``name`` values in declared order.
-
-    Returns:
-        A ``Row`` node whose children are one ``Text`` cell per column.
-    """
-    if isinstance(row, dict):
-        # No declared columns is degenerate (the schema requires them); fall back
-        # to the row's own key order so data still reaches the surface.
-        keys = column_names or list(row)
-        values = [row.get(name) for name in keys]
-    elif isinstance(row, (list, tuple)):
-        count = len(column_names) or len(row)
-        values = [row[i] if i < len(row) else None for i in range(count)]
-    else:
-        values = [row]
-
-    return BasicNode(
-        component="Row",
-        properties={"role": "row"},
-        children=[
-            BasicNode(component="Text", properties={"role": "cell", "text": value})
-            for value in values
-        ],
-    )
 
 
 @register_component("DataTable")
@@ -91,57 +60,75 @@ class DataTableComponent:
     INSTRUCTIONS = DATATABLE_INSTRUCTIONS
 
     def lower(self, component: Component, data_model: dict[str, Any]) -> BasicTree:
-        """Lower a DataTable to a Basic Catalog tree (pure, deterministic)."""
-        props = component.properties
-        children: list[BasicNode] = []
-
-        title = props.get("title")
-        if title is not None:
-            children.append(
-                BasicNode(component="Text", properties={"role": "title", "text": title})
-            )
+        """Lower a DataTable to a Basic Catalog ``Card`` tree with a row template."""
+        props = component.model_extra or {}
+        columns = props.get("columns") or []
 
         header_cells = [
             BasicNode(
                 component="Text",
-                properties={
-                    "role": "column-header",
-                    "text": col.get("title") or col.get("name", ""),
-                },
+                text=col.get("title") or col.get("name", ""),
+                metadata={"extensions": {"parrot_role": "column-header"}},
             )
-            for col in (props.get("columns") or [])
+            for col in columns
         ]
-        children.append(
-            BasicNode(component="Row", properties={"role": "header"}, children=header_cells)
+
+        top_children: list[BasicNode] = []
+        title = props.get("title")
+        if title is not None:
+            top_children.append(
+                BasicNode(
+                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
+                )
+            )
+        top_children.append(
+            BasicNode(
+                component="Row",
+                children=header_cells,
+                metadata={"extensions": {"parrot_role": "header"}},
+            )
         )
 
-        body_props: dict[str, Any] = {"role": "rows"}
-        if "totalRows" in props:
-            body_props["totalRows"] = props["totalRows"]
-        if props.get("truncated"):
-            body_props["truncated"] = True
-
-        # Two-phase contract (spec §7):
-        #  * REQUEST-live — ``data`` is still a binding expression: pass it through
-        #    untouched for renderers that resolve it client-side.
-        #  * CONFIGURE-bake — the bake pass already replaced the binding with the
-        #    row list, so materialise one Row of Text cells per row. Without this
-        #    the rows stay in an inert property and every static renderer emits an
-        #    empty table (the SSR-HTML renderer only draws Text/Image leaves).
         data = props.get("data")
-        row_nodes: list[BasicNode] = []
-        if isinstance(data, list):
-            column_names = [col.get("name") for col in (props.get("columns") or [])]
-            row_nodes = [_lower_row(row, column_names) for row in data]
-        elif "data" in props:
-            body_props["data"] = data
+        table_path = (
+            data["path"]
+            if isinstance(data, dict) and "path" in data
+            else f"/tables/{component.id}"
+        )
+        row_id = f"{component.id}-row"
+        row_template = BasicNode(
+            id=row_id,
+            component="Row",
+            children=[
+                BasicNode(
+                    component="Text",
+                    text={"path": col["name"]},
+                    metadata={"extensions": {"parrot_role": "cell"}},
+                )
+                for col in columns
+                if col.get("name")
+            ],
+            metadata={"extensions": {"parrot_role": "row"}},
+        )
 
-        children.append(
-            BasicNode(component="Column", properties=body_props, children=row_nodes)
+        body_extensions: dict[str, Any] = {"parrot_role": "rows"}
+        if "totalRows" in props:
+            body_extensions["parrot_total_rows"] = props["totalRows"]
+        if props.get("truncated"):
+            body_extensions["parrot_truncated"] = True
+
+        top_children.append(
+            BasicNode(
+                component="Column",
+                children=ChildTemplate(componentId=row_id, path=table_path),
+                template_source=row_template,
+                metadata={"extensions": body_extensions},
+            )
         )
 
         return BasicNode(
+            id=component.id,
             component="Card",
-            properties={"variant": "table", "componentId": component.id},
-            children=children,
+            child=BasicNode(component="Column", children=top_children),
+            metadata={"extensions": {"parrot_variant": "table", "parrot_component_id": component.id}},
         )
