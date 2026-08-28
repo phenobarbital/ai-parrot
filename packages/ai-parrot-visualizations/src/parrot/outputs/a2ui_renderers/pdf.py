@@ -17,7 +17,7 @@ import html
 import logging
 
 import parrot.outputs.a2ui.catalog.basic
-import parrot.outputs.a2ui.catalog.parrot
+import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.models import CreateSurface

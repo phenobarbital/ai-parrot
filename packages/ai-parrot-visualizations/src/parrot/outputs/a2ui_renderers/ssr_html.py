@@ -41,7 +41,7 @@ from typing import Any, Optional
 # Ensure the v1.0 catalogs (Basic primitives + Parrot composites) are
 # registered so lowering/dispatch can resolve every component name.
 import parrot.outputs.a2ui.catalog.basic
-import parrot.outputs.a2ui.catalog.parrot
+import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
 from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
