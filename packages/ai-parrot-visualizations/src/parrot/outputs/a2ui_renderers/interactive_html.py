@@ -59,7 +59,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Ensure the v1.0 catalogs (Basic primitives + Parrot composites) are
 # registered so lowering/dispatch can resolve every component name.
@@ -440,7 +440,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         children_ids = data.pop("children", None)
         metadata = data.pop("metadata", None)
 
-        tabs: Optional[list[TabSpec]] = None
+        tabs: list[TabSpec] | None = None
         if "tabs" in data:
             tabs = [
                 TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id)) for tab in data.pop("tabs")

@@ -5,9 +5,9 @@ import pytest
 pytest.importorskip("jsonpointer")
 pytest.importorskip("folium")
 
-from parrot.outputs.a2ui.models import Component, CreateSurface  # noqa: E402
-from parrot.outputs.a2ui.renderers import get_a2ui_renderer  # noqa: E402
-from parrot.outputs.a2ui_renderers import folium_map as fm  # noqa: E402
+from parrot.outputs.a2ui.models import Component, CreateSurface
+from parrot.outputs.a2ui.renderers import get_a2ui_renderer
+from parrot.outputs.a2ui_renderers import folium_map as fm
 
 pytestmark = pytest.mark.asyncio
 
