@@ -218,8 +218,47 @@ async def test_unavailable_registry_degrades(tmp_path, monkeypatch): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: Created `parrot/agents/meeting_registry.py` with the exact Pydantic
+models from spec §2 (`MeetingRecord`, `Classified`, `RepairResult`,
+`MergeResult`, `BackfillReport`), `normalise_transcript`/`fingerprint` pure
+helpers, and `MeetingRegistry` implementing `lookup`, `classify`,
+`record_synced`, `pending_analysis`, `mark_analyzed`, `mark_analysis_failed`,
+`mark_wiki_ingested`, `suggest_from_date`, `unique_slug`, `forget`, plus
+`available` degradation (constructor catches `sqlite3.Error`/`OSError`, logs
+once, verbs return neutral values). `repair_path`/`backfill_from_vault`/
+`merge_duplicates` are `NotImplementedError` stubs for TASK-2555, matching the
+spec's exact signatures (incl. `ObsidianToolkit` type hints). Every manager
+call goes through `asyncio.to_thread`; every `doc_metadata` write is a
+read-merge-write via a shared `_merge_doc_metadata` helper that never clobbers
+sibling keys (FEAT-451's own metadata). Added the three conf constants
+(`FIREFLIES_REGISTRY_DIR`, `FIREFLIES_SYNC_OVERLAP_DAYS`,
+`FIREFLIES_RECHECK_DAYS`) to `agents/conf.py`, following the existing
+`config.get`/`config.getint` pattern, and to `__all__`. 18 tests in
+`tests/test_meeting_registry.py` cover normalisation/fingerprint equality,
+every `classify` branch (create/cheap-skip/recheck-expiry/changed-content/
+backfilled-None/force-refetch/rejected/probable-duplicate), `pending_analysis`
+selection, `record_synced` doc_metadata merge preservation, `suggest_from_date`,
+`unique_slug` filesystem+registry collisions, `mark_wiki_ingested` filtering,
+and the unavailable-registry degradation path (verbs + constructor). All pass;
+`ruff check` clean on both new/changed files (`conf.py`'s pre-existing
+lint findings — `List` vs `list`, unsorted `__all__`, `timezone.utc` — predate
+this change and are out of scope).
 
-**Deviations from spec**: none
+**Deviations from spec**: The spec's Known Risks section says
+`forget(id, reject=True)` "marks the row `status='rejected'`" — but
+`MeetingRecord` has no `status` field, and the sanctioned Codebase Contract
+for this task only lists `record_document_metadata`/`set_external_id`/etc.
+(not `mark_ingested`/`record_decision`, the only manager methods that
+currently touch `SourceManifestEntry.status`, and both have their own bugs —
+`mark_ingested` requires the file to still exist, defeating forget's stated
+"note deleted by the user" use case; `record_decision` still drops
+`doc_metadata` on an update, losing all fireflies state). Implemented
+`reject=True` as a `doc_metadata["fireflies"]["rejected"] = True` flag
+instead, checked by `classify` the same way a `status="rejected"` row would
+be (permanent skip). Public behavior (`forget(id, reject=True)` →
+`classify` returns `"skip"` forever) is unchanged; only the internal
+storage of the flag differs from the literal wording in §7. Flagging for
+spec author review — no `sources.py` change was in this task's file list,
+so this was resolved without touching Module 1 again.
