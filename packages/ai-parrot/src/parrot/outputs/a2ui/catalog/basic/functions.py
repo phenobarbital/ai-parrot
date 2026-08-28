@@ -25,7 +25,6 @@ from typing import Any
 from parrot.outputs.a2ui.catalog.base import (
     INVALID_FUNCTION_CALL,
     CatalogValidationError,
-    FunctionDefinition,
 )
 from parrot.outputs.a2ui.models import (
     CheckRule,
@@ -595,34 +594,3 @@ class FunctionEvaluator:
     def _not(args: dict[str, Any]) -> bool:
         return not bool(args.get("value"))
 
-
-def basic_functions() -> list[FunctionDefinition]:
-    """Return the :class:`FunctionDefinition` of every official Basic Catalog function.
-
-    Also registers each into the catalog's function registry (idempotent —
-    mirrors :func:`parrot.outputs.a2ui.catalog.basic.basic_components`'s
-    registration side effect).
-
-    Returns:
-        The 14 Basic Catalog functions' definitions (name-sorted).
-    """
-    from parrot.outputs.a2ui.catalog import register_function
-    from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID, load_spec
-
-    definitions: list[FunctionDefinition] = []
-    for name, spec in load_spec("catalog")["functions"].items():
-        args_schema: dict[str, Any] = {}
-        for sub in spec.get("allOf", []):
-            args_prop = sub.get("properties", {}).get("args")
-            if args_prop is not None:
-                args_schema = args_prop
-        definition = FunctionDefinition(
-            name=name,
-            catalog_id=BASIC_CATALOG_ID,
-            args_schema=args_schema,
-            return_type=spec.get("returnType", "any"),
-            requires_user_activation=bool(spec.get("requiresUserActivation", False)),
-        )
-        register_function(definition)
-        definitions.append(definition)
-    return sorted(definitions, key=lambda d: d.name)

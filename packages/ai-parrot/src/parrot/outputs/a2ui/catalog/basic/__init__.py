@@ -22,9 +22,11 @@ from __future__ import annotations
 import functools
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from referencing import Registry, Resource
+
+from parrot.outputs.a2ui.catalog.base import FunctionDefinition
 
 __all__ = [
     "BASIC_CATALOG_ID",
@@ -32,6 +34,7 @@ __all__ = [
     "SPEC_FILES",
     "SpecName",
     "basic_components",
+    "basic_functions",
     "load_spec",
     "schema_registry",
 ]
@@ -214,8 +217,43 @@ def basic_components() -> list:
     return [d for d in list_components() if d.catalog_id == BASIC_CATALOG_ID]
 
 
-# Register the 18 primitives as soon as this package is imported, so that
-# `parrot.outputs.a2ui.catalog`'s own resolution (`_component_exists` et al.)
-# and any renderer/producer code can rely on them being present without
-# every caller having to remember to call `basic_components()` first.
+def basic_functions() -> list[FunctionDefinition]:
+    """Return the :class:`FunctionDefinition` of every official Basic Catalog function.
+
+    Source of truth: the vendored ``catalog.json``'s ``functions`` object
+    (TASK-2537's ``FunctionEvaluator`` implements their behavior; this just
+    exposes their metadata). Also registers each into the catalog's function
+    registry (idempotent — mirrors :func:`basic_components`'s registration
+    side effect).
+
+    Returns:
+        The 14 Basic Catalog functions' definitions (name-sorted).
+    """
+    from parrot.outputs.a2ui.catalog import register_function
+
+    definitions: list[FunctionDefinition] = []
+    for name, spec in load_spec("catalog")["functions"].items():
+        args_schema: dict[str, Any] = {}
+        for sub in spec.get("allOf", []):
+            args_prop = sub.get("properties", {}).get("args")
+            if args_prop is not None:
+                args_schema = args_prop
+        definition = FunctionDefinition(
+            name=name,
+            catalog_id=BASIC_CATALOG_ID,
+            args_schema=args_schema,
+            return_type=spec.get("returnType", "any"),
+            requires_user_activation=bool(spec.get("requiresUserActivation", False)),
+        )
+        register_function(definition)
+        definitions.append(definition)
+    return sorted(definitions, key=lambda d: d.name)
+
+
+# Register the 18 primitives + 14 functions as soon as this package is
+# imported, so that `parrot.outputs.a2ui.catalog`'s own resolution
+# (`_component_exists` et al.) and any renderer/producer code can rely on
+# them being present without every caller having to remember to call
+# `basic_components()`/`basic_functions()` first.
 _register_primitives()
+basic_functions()

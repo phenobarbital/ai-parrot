@@ -7,10 +7,8 @@ from parrot.outputs.a2ui.catalog.base import (
     INVALID_FUNCTION_CALL,
     CatalogValidationError,
 )
-from parrot.outputs.a2ui.catalog.basic.functions import (
-    FunctionEvaluator,
-    basic_functions,
-)
+from parrot.outputs.a2ui.catalog.basic import basic_functions
+from parrot.outputs.a2ui.catalog.basic.functions import FunctionEvaluator
 from parrot.outputs.a2ui.models import (
     CheckRule,
     DataBinding,
