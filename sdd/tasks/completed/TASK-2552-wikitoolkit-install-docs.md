@@ -134,10 +134,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-08-29
+**Notes**: Rewrote `docs/graphindex.md` §Installation to state that a
+plain `pip install ai-parrot` core install is enough for the retrieval
+CLI (`status`/`query`/`page`/`related`) and the MCP server as of
+FEAT-471, that `pip install "ai-parrot[graphindex]"` now pulls only
+`tree-sitter`/`tree-sitter-languages` (the other five moved to core),
+and that a bare `uv sync` in this workspace uninstalls those extras —
+`uv sync --extra wiki` restores them. Added a 2-line note to CLAUDE.md's
+"Codebase Knowledge Graph (LLM Wiki)" section, right after the
+`wikitoolkit build` bullet, with the same core-vs-extra guidance.
+`git diff --stat` shows only the two docs files.
 
 **Deviations from spec**: none
