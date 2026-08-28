@@ -1,9 +1,14 @@
 """Triage, drafting, guardrail and publication of a public reply.
 
-``TriageNode`` and ``ReplyDraftNode`` become LLM-backed in T15; they carry
-deterministic fallbacks here so the whole graph is exercisable without an API
-key. ``GuardrailNode`` is deterministic by design — its job is to be the part
-that does *not* depend on a model's judgement.
+``TriageNode`` and ``ReplyDraftNode`` are the only nodes in the graph that call
+a model. Both keep a deterministic fallback, and neither ever raises because of
+one: a tenant that has not uploaded a key yet, a provider outage and a slow
+response all end in a template reply rather than in an unanswered guest. That
+is also what keeps the whole graph — every route through it — exercisable with
+no API key at all.
+
+``GuardrailNode`` is deterministic by design: its job is to be the part that
+does *not* depend on a model's judgement.
 """
 from __future__ import annotations
 
@@ -23,11 +28,54 @@ from ..models import (
     Severity,
     TriageAction,
 )
+from ..prompts import render_reply_task, render_triage_task
 from navconfig.logging import logging
 
 from .base import CMNode, register_cm_node
 
 logger = logging.getLogger("parrot_saas.flows.cm.reply")
+
+
+def _record_usage(shared: dict, role: str, message: Any) -> None:
+    """Accumulate what one model call cost, per role.
+
+    Two calls per review, paid for with the tenant's own key. Recording from
+    the first day is the difference between being able to bill and quota later
+    and having to guess: ``NodeExecutionInfo`` carries no tenant dimension, and
+    neither do the observability ContextVars.
+
+    Cost is deliberately not computed here — ``estimated_cost`` comes back
+    ``None`` for both providers, and pricing lives in
+    ``parrot.observability.cost.calculator`` rather than on the hot path.
+    """
+    usage = getattr(message, "usage", None)
+    if usage is None:
+        return
+    shared.setdefault("usage", {})[role] = {
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+        "completion_tokens": getattr(usage, "completion_tokens", 0),
+        "total_tokens": getattr(usage, "total_tokens", 0),
+        "model": getattr(message, "model", "") or "",
+        "provider": getattr(message, "provider", "") or "",
+    }
+
+
+async def _invoke(agent: Any, task: str, *, session_id: str, **kwargs: Any):
+    """Call an agent for one review, with no memory of any other.
+
+    ``invoke`` defaults to using conversation history, and these agents are
+    built once per tenant and shared across every review that tenant receives.
+    Left on, the classification of one review would depend on the ones before
+    it — the same text getting a different verdict depending on arrival order,
+    which is both wrong and impossible to reproduce.
+    """
+    return await agent.invoke(
+        task,
+        session_id=session_id,
+        use_conversation_history=False,
+        **kwargs,
+    )
+
 
 #: Ratings at or below this are treated as detractors by the fallback triage.
 DETRACTOR_MAX_RATING = 2
@@ -70,20 +118,76 @@ class TriageNode(CMNode):
     a missed reply is a visible business failure, an unnecessary one is not.
 
     Attributes:
-        agent: Optional configured agent. When absent the node uses the
-            rating-based fallback.
+        agent: Configured agent. Absent — a tenant that has not uploaded a
+            Google key yet — the node uses the rating-based fallback, which is
+            what keeps the whole graph runnable offline.
+        timeout: Wall-clock budget for the call. The scheduler enforces none.
     """
 
     agent: Optional[Any] = None
+    timeout: float = 60.0
 
     async def execute(
         self, ctx: FlowContext, deps: DependencyResults, **kwargs: Any
     ) -> ReviewTriage:
         """Return the triage verdict for the run's review."""
+        shared = self.shared_state(ctx)
         review = self._review(ctx)
-        triage = self._fallback_triage(review)
-        self.shared_state(ctx)["triage"] = triage
+
+        triage = await self._classify(shared, review)
+        if triage is None:
+            triage = self._fallback_triage(review)
+        shared["triage"] = triage
         return triage
+
+    async def _classify(
+        self, shared: dict, review: ReviewIntake
+    ) -> Optional[ReviewTriage]:
+        """Ask the model to classify the review.
+
+        Returns:
+            The verdict, or ``None`` when there is no agent or the call did not
+            produce one. Every failure path returns ``None`` rather than
+            raising: a model being slow, down or confused must not leave a
+            guest unanswered when a rating-based guess would do.
+        """
+        if self.agent is None:
+            return None
+        try:
+            message = await self.with_timeout(
+                _invoke(
+                    self.agent,
+                    render_triage_task(review),
+                    session_id=review.review_id or review.external_id,
+                    response_model=ReviewTriage,
+                ),
+                self.timeout,
+                "classifying the review",
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade to the heuristic
+            logger.warning(
+                "triage model call failed for review %s (%s); "
+                "falling back to the rating heuristic",
+                review.review_id,
+                exc,
+            )
+            return None
+
+        _record_usage(shared, "triage", message)
+        parsed = getattr(message, "structured_output", None)
+        if isinstance(parsed, ReviewTriage):
+            return parsed
+
+        # A parse failure does not raise upstream — the client swallows it and
+        # hands back the raw text instead (clients/base.py), so what arrives
+        # here can be a string. Checking is the only way to know.
+        logger.warning(
+            "triage model returned %s rather than a verdict for review %s; "
+            "falling back to the rating heuristic",
+            type(parsed).__name__,
+            review.review_id,
+        )
+        return None
 
     def _review(self, ctx: FlowContext) -> ReviewIntake:
         """Return the review under consideration."""
@@ -132,19 +236,33 @@ class ReplyDraftNode(CMNode):
     """
 
     agent: Optional[Any] = None
+    timeout: float = 60.0
 
     async def execute(
         self, ctx: FlowContext, deps: DependencyResults, **kwargs: Any
     ) -> ReplyDraft:
-        """Return a candidate reply."""
+        """Return a candidate reply.
+
+        On a repair round the previous draft and the guardrail's reasons go
+        into the prompt. That is what makes the loop a loop: without them the
+        model sees an identical request, writes an identical draft, and the
+        run burns its whole revision budget arriving where it started.
+        """
         shared = self.shared_state(ctx)
         review = shared.get("review")
         state = self.node_state(ctx)
         attempt = int(state.get("attempt", 0)) + 1
         state["attempt"] = attempt
 
+        previous = getattr(shared.get("draft"), "text", "") if attempt > 1 else ""
+        reasons = list(getattr(shared.get("guardrail"), "reasons", []) or [])
+
+        text = await self._draft(shared, review, previous, reasons)
+        if not text:
+            text = self._fallback_text(review, previous, reasons)
+
         draft = ReplyDraft(
-            text=self._fallback_text(review),
+            text=text,
             language=getattr(review, "language", "en"),
             tone="apologetic" if getattr(review, "rating", 0) <= 2 else "warm",
             attempt=attempt,
@@ -152,15 +270,90 @@ class ReplyDraftNode(CMNode):
         shared["draft"] = draft
         return draft
 
-    @staticmethod
-    def _fallback_text(review: Optional[ReviewIntake]) -> str:
-        """Return a safe, generic reply used when no model is configured."""
-        if review is not None and review.rating <= DETRACTOR_MAX_RATING:
-            return (
-                "We are sorry your visit fell short of what we aim for. "
-                "Thank you for telling us — we would like to put it right."
+    async def _draft(
+        self,
+        shared: dict,
+        review: Optional[ReviewIntake],
+        previous: str,
+        reasons: list[str],
+    ) -> str:
+        """Ask the model for a reply.
+
+        Returns:
+            The drafted text, or an empty string when there is no agent or the
+            call did not produce one — in which case the template answers
+            instead. A guest getting a generic reply is a poor outcome; a
+            guest getting none because a model timed out is a worse one.
+        """
+        if self.agent is None or review is None:
+            return ""
+        try:
+            message = await self.with_timeout(
+                _invoke(
+                    self.agent,
+                    render_reply_task(
+                        review,
+                        shared.get("triage"),
+                        previous=previous,
+                        reasons=reasons,
+                    ),
+                    session_id=review.review_id or review.external_id,
+                ),
+                self.timeout,
+                "drafting the reply",
             )
-        return "Thank you for taking the time to share your experience."
+        except Exception as exc:  # noqa: BLE001 - degrade to the template
+            logger.warning(
+                "drafting model call failed for review %s (%s); "
+                "falling back to the template",
+                getattr(review, "review_id", "?"),
+                exc,
+            )
+            return ""
+
+        _record_usage(shared, "reply_draft", message)
+        return str(getattr(message, "output", "") or "").strip()
+
+    @staticmethod
+    def _fallback_text(
+        review: Optional[ReviewIntake],
+        previous: str = "",
+        reasons: Optional[list[str]] = None,
+    ) -> str:
+        """Return a safe, generic reply used when no model is available.
+
+        On a repair round it does what little it can with the reasons — mostly
+        lengthening a draft that was judged too curt. It will not write a good
+        reply; the point is that it writes a **different** one, so the loop can
+        converge instead of resubmitting the same text until the budget runs
+        out.
+
+        Args:
+            review: The review being answered.
+            previous: The rejected draft, if any.
+            reasons: Why it was rejected.
+
+        Returns:
+            The template reply.
+        """
+        detractor = review is not None and review.rating <= DETRACTOR_MAX_RATING
+        base = (
+            "We are sorry your visit fell short of what we aim for. "
+            "Thank you for telling us — we would like to put it right."
+            if detractor
+            else "Thank you for taking the time to share your experience."
+        )
+        if not previous:
+            return base
+
+        if any("shorter than" in reason for reason in (reasons or [])):
+            return (
+                f"{base} Your feedback goes straight to the team who were on "
+                "that day, and we would be glad to welcome you back."
+            )
+        # Nothing specific to act on: return the plain template, which at
+        # least differs from whatever the model produced.
+        return base
 
 
 @register_cm_node("cm.guardrail")

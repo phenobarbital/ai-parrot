@@ -103,9 +103,11 @@ def build_cm_node_factories(
             tenant_id=tenant.tenant_id,
             timezone=tenant.timezone,
         ),
-        topo.NODE_TYPES[topo.TRIAGE]: _with(TriageNode, agent=triage_agent),
+        topo.NODE_TYPES[topo.TRIAGE]: _with(
+            TriageNode, agent=triage_agent, timeout=node_timeout
+        ),
         topo.NODE_TYPES[topo.REPLY_DRAFT]: _with(
-            ReplyDraftNode, agent=reply_agent
+            ReplyDraftNode, agent=reply_agent, timeout=node_timeout
         ),
         topo.NODE_TYPES[topo.GUARDRAIL]: _with(
             GuardrailNode,

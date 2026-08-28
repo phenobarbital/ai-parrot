@@ -41,6 +41,10 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 from navconfig.logging import logging
 
 from .. import conf
+from ..flows.community_manager.prompts import (
+    build_reply_prompt,
+    build_triage_prompt,
+)
 from ..tenancy.context import TenantContext
 from .credentials import (
     ANTHROPIC_API_KEY_SECRET,
@@ -55,20 +59,6 @@ logger = logging.getLogger("parrot_saas.llm.builder")
 ROLE_TRIAGE = "triage"
 ROLE_REPLY = "reply_draft"
 
-#: Minimal working prompts. Brand voice, locale shaping and the revise-round
-#: wording are the LLM nodes' own concern (they own the output contract), so
-#: these stay deliberately plain rather than pretending to be final.
-_TRIAGE_PROMPT = (
-    "You triage guest reviews for a hospitality business. Read the review and "
-    "decide whether it warrants a public reply, classifying its sentiment and "
-    "severity. Answer only with the requested structured fields."
-)
-_REPLY_PROMPT = (
-    "You draft short, sincere public replies to guest reviews for a "
-    "hospitality business. Never invent facts about the visit, never promise "
-    "compensation, and never mention discounts or coupons. Answer only with "
-    "the reply text."
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +87,11 @@ def default_cm_agent_specs(tenant: TenantContext) -> tuple[AgentSpec, ...]:
     Model choice is a tenant setting first and a deployment default second, so
     a tenant that wants a stronger reply model can say so without a redeploy.
 
+    The system prompts are built from the tenant too — its display name, its
+    locale and its ``settings["brand_voice"]``. They belong on the agent rather
+    than on each call because the agent is built once per tenant and any change
+    to the tenant already invalidates its cached runtime.
+
     Args:
         tenant: The tenant to serve.
 
@@ -110,14 +105,14 @@ def default_cm_agent_specs(tenant: TenantContext) -> tuple[AgentSpec, ...]:
             provider="google",
             secret_key=GOOGLE_API_KEY_SECRET,
             model=settings.get("triage_model") or conf.SAAS_CM_TRIAGE_MODEL,
-            system_prompt=_TRIAGE_PROMPT,
+            system_prompt=build_triage_prompt(tenant),
         ),
         AgentSpec(
             role=ROLE_REPLY,
             provider="anthropic",
             secret_key=ANTHROPIC_API_KEY_SECRET,
             model=settings.get("reply_model") or conf.SAAS_CM_REPLY_MODEL,
-            system_prompt=_REPLY_PROMPT,
+            system_prompt=build_reply_prompt(tenant),
         ),
     )
 

@@ -212,6 +212,69 @@ async def test_repair_loop_reenters_drafting(tenant) -> None:
     assert result.responses[topo.GUARDRAIL].attempt == 3
 
 
+async def test_a_rejected_draft_is_repaired_and_published(tenant) -> None:
+    """The repair loop converges: round one is rejected, round two publishes.
+
+    The fake drafter answers *from the prompt it is given* — it writes a clean
+    reply only once it can see why the previous one was refused. So this test
+    fails unless the guardrail's reasons genuinely reach the drafting prompt,
+    which is the whole point of the loop and precisely what the node did not do
+    before T15: it built its prompt from the review alone, produced the same
+    draft twice, and every rejected review ended in ``blocked``.
+    """
+
+    class _Drafter:
+        """Answers badly until told what was wrong."""
+
+        def __init__(self) -> None:
+            self.prompts: list[str] = []
+
+        async def invoke(self, task: str, **kwargs):
+            self.prompts.append(task)
+            if "banned phrase" in task:
+                text = (
+                    "We are truly sorry the food was cold and the service "
+                    "slow, and we have raised both with the team who were on "
+                    "that evening."
+                )
+            else:
+                # Offering a discount in public is exactly what the guardrail
+                # exists to catch.
+                text = (
+                    "Our apologies for the poor experience — here is a "
+                    "discount for your next visit with us."
+                )
+            return type(
+                "_Msg", (), {"output": text, "structured_output": text, "usage": None}
+            )()
+
+    class _Publisher:
+        """Minimal ``ReviewSource.reply`` recording what went out."""
+
+        def __init__(self) -> None:
+            self.published: list[str] = []
+
+        async def reply(self, tenant_id: str, external_id: str, text: str):
+            self.published.append(text)
+            return type("_Reply", (), {"external_reply_id": "ext-reply-1"})()
+
+    drafter, publisher = _Drafter(), _Publisher()
+    result, executed = await _run(
+        tenant,
+        {"review": _review()},
+        reply_agent=drafter,
+        review_source=publisher,
+    )
+
+    assert len(drafter.prompts) == 2
+    assert "discount" in drafter.prompts[1]  # the rejected draft came back
+    assert topo.PUBLISH_REPLY in executed
+    assert result.responses[topo.GUARDRAIL].status == "approved"
+    assert result.responses[topo.GUARDRAIL].attempt == 2
+    assert len(publisher.published) == 1
+    assert "discount" not in publisher.published[0]
+
+
 # ---------------------------------------------------------------------------
 # Failure fan-in
 # ---------------------------------------------------------------------------
