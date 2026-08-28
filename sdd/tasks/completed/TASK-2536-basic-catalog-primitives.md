@@ -132,7 +132,46 @@ class TestTASK2536:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- All 18 primitives implemented as `Component` subclasses (`layout.py`:
+  Row/Column/List/Card/Tabs/Modal/Divider; `media.py`: Text/Image/Icon/
+  Video/AudioPlayer; `inputs.py`: Button/TextField/CheckBox/ChoicePicker/
+  Slider/DateTimeInput), each with `component: Literal["Name"]`, exact
+  enums/defaults transcribed from the vendored `catalog.json`, and a
+  class-level `INSTRUCTIONS: ClassVar[str]`. `Checkable` is a plain
+  (non-Pydantic) mixin in `inputs.py` — `checks` was already a generic
+  field on `Component` (TASK-2532), so the mixin is a documentation/typing
+  marker mirroring the official schema's own `allOf: [Checkable, ...]`
+  composition, not a new field.
+- Registration: `catalog/basic/__init__.py._register_primitives()` calls
+  `register_component(name, catalog_id=BASIC_CATALOG_ID, is_primitive=True)`
+  for all 18, called once at package import time (idempotent). None of the
+  18 declare `allowedParents`/`allowedChildren` in the vendored JSON (that
+  key only appears on the reserved `Surface` container in
+  `common_types.json`), so none is passed.
+- **Circular-import fix (required for this task to work, touches
+  `catalog/__init__.py` beyond TASK-2535's own changes)**: `catalog/basic`
+  registers via `register_component` from the PARENT `catalog` package at
+  ITS import time; `catalog/__init__.py`'s TASK-2535 code had a top-level
+  `from parrot.outputs.a2ui.catalog import basic`, which deadlocks the
+  moment `catalog.basic` is actually imported (parent not yet fully
+  initialized). Fixed by moving that import to be LOCAL (inside
+  `_basic_component_names`/`_component_exists`/`validate_message`) —
+  documented inline with the reasoning.
+- Anti-drift test (`test_basic_component_enums`, parametrized x18) compares
+  `model_json_schema()`'s enums against the vendored `catalog.json`'s
+  `properties[...].enum` for every property, including inside `allOf`
+  (Checkable composition) — genuinely caught nothing, but proves the
+  mechanism works.
+- Fixed a pre-existing test in TASK-2535's `test_validation_v1.py`
+  (`test_catalog_instructions_no_rstrip_bug`) that assumed `catalog_instructions()`
+  output ended with the newly-registered fake component — no longer true
+  once the 18 basic primitives are also registered and alphabetically sort
+  after it (`Video` > `TrailingColon`); changed the assertion to `in`
+  rather than `endswith`.
+- `pytest catalog/ test_catalog.py test_models.py test_serialization.py
+  test_compat.py`: 118 passed. `ruff check`: clean.
+
+**Deviations from spec**: none.

@@ -93,7 +93,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Sólo crea archivos bajo catalog/basic/; paralelo con TASK-2537.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2536-basic-catalog-primitives.md"
+      "completed_at": "2026-08-28T17:54:18+00:00",
+      "file": "sdd/tasks/completed/TASK-2536-basic-catalog-primitives.md"
     },
     {
       "id": "TASK-2537",
