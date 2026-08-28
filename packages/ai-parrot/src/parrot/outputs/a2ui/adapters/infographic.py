@@ -1,8 +1,10 @@
-"""``InfographicResponse`` → A2UI ``CreateSurface`` adapter (FEAT-273 Module 11 lane).
+"""``InfographicResponse`` → A2UI v1.0 ``CreateSurface`` adapter (FEAT-470 TASK-2541).
 
 Bridges the legacy structured infographic model (:mod:`parrot.models.infographic`,
 an ordered flat list of typed blocks) to the A2UI ``Infographic`` composite catalog
-component (a header plus ordered *sections* nesting other catalog components).
+component (a header plus ordered *sections* nesting other catalog components —
+which may now themselves be official Basic Catalog primitives, TASK-2539's
+``_lower_child`` primitive-passthrough).
 
 The function is **pure and deterministic**: same input → byte-identical envelope.
 No clocks, no uuids, no network, no LLM tokens (spec G2/D1a).
@@ -17,29 +19,34 @@ Blocks are grouped with these rules, applied in order:
 * Any **later** ``title`` block opens a new section (``heading`` = its title,
   ``text`` = its subtitle).
 * A ``divider`` block closes the current section and opens an anonymous one.
-* ``accordion`` and ``tab_view`` blocks flatten: each item/pane becomes its own
-  sibling section (A2UI sections do not nest), with its nested blocks mapped as
-  that section's components.
+* ``accordion``/``tab_view`` blocks map to a nested ``Tabs{tabs:[{title, child}]}``
+  descriptor within the CURRENT section (one tab per item/pane, each pane's own
+  nested blocks wrapped in a ``Column``) — UNLESS nesting exceeds
+  :data:`_MAX_NESTING_DEPTH`, in which case they degrade to the legacy
+  flatten-into-sibling-sections behavior (``_flatten_container``).
 * Every other block maps to a nested catalog component appended to the current
   section. A ``summary`` becomes the section's ``text`` when that slot is still
-  free, otherwise a ``Card``.
+  free, otherwise an ``InfoCard``.
 
 Block → component mapping
 -------------------------
 =================  =====================================================
-Block              A2UI component
+Block              A2UI v1.0 component
 =================  =====================================================
 ``hero_card``      ``KPICard``
 ``chart``          ``Chart`` (+ rows into the data model, bound by pointer)
 ``table``          ``DataTable`` (+ rows into the data model)
 ``timeline``       ``Timeline``
 ``progress``       one ``KPICard`` per item
-``summary``        section ``text``, else ``Card``
-``bullet_list``    ``Card`` (items rendered into ``body``)
-``checklist``      ``Card`` (items rendered into ``body``)
-``callout``        ``Card`` (``badge`` carries the level)
-``quote``          ``Card`` (``footer`` carries the attribution)
-``image``          ``Card`` (``image`` + ``footer`` caption)
+``summary``        section ``text``, else ``InfoCard``
+``bullet_list``    ``List{direction:'vertical'}`` of ``Text``
+``checklist``      ``List`` of ``CheckBox{label, value}``
+``accordion``/``tab_view``  ``Tabs{tabs:[{title, child}]}``
+``divider``        ``Divider`` (also still closes/opens a section)
+``card_grid``      ``Row`` of ``InfoCard``
+``callout``        ``InfoCard`` (``badge`` carries the level)
+``quote``          ``InfoCard`` (``footer`` carries the attribution)
+``image``          ``Image{url, fit, description}``
 =================  =====================================================
 
 Known lossy degradations (spec §8, OQ-C):
@@ -50,9 +57,9 @@ Known lossy degradations (spec §8, OQ-C):
 * Presentation-only fields (``layout``, ``color_by_sign``, per-series colors,
   table ``style``, bullet ``columns``…) are dropped: A2UI carries data and
   semantics, and the renderer owns presentation.
-* ``Card`` ``title`` is omitted for blocks with no title-like field. The lowering
-  in ``catalog/components/card.py`` skips absent properties, so this degrades to a
-  title-less card rather than an invented heading.
+* ``InfoCard`` ``title`` is omitted for blocks with no title-like field. The
+  lowering in ``catalog/parrot/infocard.py`` skips absent properties, so this
+  degrades to a title-less card rather than an invented heading.
 
 One-way import rule (G8): this module imports only the a2ui core and the pure
 Pydantic ``parrot.models.infographic`` module — never agents, clients or
@@ -61,7 +68,7 @@ DatasetManager.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from parrot.outputs.a2ui.builders import build_infographic
 from parrot.outputs.a2ui.models import CreateSurface
@@ -109,7 +116,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
     )
 
 
-def _as_dict_or_none(value: Any) -> Optional[dict[str, Any]]:
+def _as_dict_or_none(value: Any) -> dict[str, Any] | None:
     """Like :func:`_as_dict`, but returns ``None`` instead of raising.
 
     Used when coercing an item nested inside a list (a block in
@@ -142,16 +149,7 @@ def _unique(name: str, taken: dict[str, int]) -> str:
     return name if count == 1 else f"{name} ({count})"
 
 
-def _lines(items: list[Any], *, ordered: bool = False) -> str:
-    """Render list items as a deterministic text block for a ``Card`` body."""
-    out: list[str] = []
-    for index, item in enumerate(items, 1):
-        text = item if isinstance(item, str) else str(item)
-        out.append(f"{index}. {text}" if ordered else f"• {text}")
-    return "\n".join(out)
-
-
-def _text(value: Any) -> Optional[str]:
+def _text(value: Any) -> str | None:
     """Flatten an ``I18nText`` value to a single string for A2UI properties.
 
     The A2UI envelope is single-language in v1: prefer the ``"en"`` key,
@@ -181,9 +179,9 @@ class _SectionAccumulator:
 
     def __init__(self) -> None:
         self._sections: list[dict[str, Any]] = []
-        self._current: Optional[dict[str, Any]] = None
+        self._current: dict[str, Any] | None = None
 
-    def open(self, *, heading: Optional[str] = None, text: Optional[str] = None) -> None:
+    def open(self, *, heading: str | None = None, text: str | None = None) -> None:
         """Close the current section and start a new one."""
         self.close()
         self._current = _clean({"heading": heading, "text": text})
@@ -234,7 +232,7 @@ class _Converter:
 
     def _bind_rows(self, bucket: str, key: str, rows: list[dict[str, Any]]) -> dict[str, str]:
         self.data_model.setdefault(bucket, {})[key] = rows
-        return {"$bind": f"/{bucket}/{key}"}
+        return {"path": f"/{bucket}/{key}"}
 
     # -- per-block mappings ---------------------------------------------
 
@@ -340,32 +338,34 @@ class _Converter:
             )
         return descriptors
 
+    def _bullet_list(self, block: dict[str, Any]) -> dict[str, Any]:
+        """Map a ``bullet_list`` block to ``List{direction:'vertical'}`` of ``Text``."""
+        items = [
+            _descriptor("Text", {"text": item if isinstance(item, str) else str(item)})
+            for item in (block.get("items") or [])
+        ]
+        return _descriptor("List", {"direction": "vertical", "children": items})
+
+    def _checklist(self, block: dict[str, Any]) -> dict[str, Any]:
+        """Map a ``checklist`` block to a ``List`` of ``CheckBox{label, value}``."""
+        items = []
+        for raw in block.get("items") or []:
+            item = _as_dict_or_none(raw)
+            if item is None:
+                continue
+            items.append(
+                _descriptor(
+                    "CheckBox",
+                    {"label": item.get("text") or "", "value": bool(item.get("checked"))},
+                )
+            )
+        return _descriptor("List", {"direction": "vertical", "children": items})
+
     def _card_like(self, block: dict[str, Any], block_type: str) -> dict[str, Any]:
-        """Map the block types that share the generic ``Card`` shape."""
-        if block_type == "bullet_list":
-            return _descriptor(
-                "Card",
-                {
-                    "title": block.get("title"),
-                    "body": _lines(
-                        block.get("items") or [], ordered=bool(block.get("ordered"))
-                    ),
-                },
-            )
-        if block_type == "checklist":
-            lines = []
-            for raw in block.get("items") or []:
-                item = _as_dict_or_none(raw)
-                if item is None:
-                    continue
-                mark = "[x]" if item.get("checked") else "[ ]"
-                lines.append(f"{mark} {item.get('text') or ''}".rstrip())
-            return _descriptor(
-                "Card", {"title": block.get("title"), "body": "\n".join(lines)}
-            )
+        """Map the block types that share the generic ``InfoCard`` shape."""
         if block_type == "callout":
             return _descriptor(
-                "Card",
+                "InfoCard",
                 {
                     "title": block.get("title"),
                     "body": block.get("content") or "",
@@ -377,21 +377,21 @@ class _Converter:
                 part for part in (block.get("author"), block.get("source")) if part
             )
             return _descriptor(
-                "Card",
+                "InfoCard",
                 {"body": block.get("text") or "", "footer": attribution or None},
             )
         if block_type == "image":
             return _descriptor(
-                "Card",
+                "Image",
                 {
-                    "title": block.get("alt"),
-                    "image": block.get("url"),
-                    "footer": block.get("caption"),
+                    "url": block.get("url"),
+                    "fit": "contain",
+                    "description": block.get("alt") or block.get("caption"),
                 },
             )
         # summary (title present or text slot taken) and any unknown block type
         return _descriptor(
-            "Card",
+            "InfoCard",
             {
                 "title": block.get("title"),
                 "body": block.get("content") or block.get("text") or "",
@@ -399,7 +399,7 @@ class _Converter:
         )
 
     def _chain(self, block: dict[str, Any]) -> dict[str, Any]:
-        """Map a ``chain`` block to a ``Card`` with an arrow-joined node body."""
+        """Map a ``chain`` block to an ``InfoCard`` with an arrow-joined node body."""
         nodes = [
             node for node in (
                 _as_dict_or_none(raw) for raw in block.get("nodes") or []
@@ -408,7 +408,7 @@ class _Converter:
         labels = [_text(node.get("label")) or "" for node in nodes]
         subtitle = "vertical" if block.get("direction") == "vertical" else None
         return _descriptor(
-            "Card",
+            "InfoCard",
             {
                 "title": _text(block.get("title")),
                 "subtitle": subtitle,
@@ -417,7 +417,7 @@ class _Converter:
         )
 
     def _steps(self, block: dict[str, Any]) -> dict[str, Any]:
-        """Map a ``steps`` block to a ``Card`` with a numbered step body."""
+        """Map a ``steps`` block to ``List{direction:'vertical'}`` of numbered ``Text``."""
         lines = []
         for raw in block.get("steps") or []:
             step = _as_dict_or_none(raw)
@@ -426,18 +426,19 @@ class _Converter:
             label = _text(step.get("label")) or ""
             description = _text(step.get("description"))
             lines.append(f"{label} — {description}" if description else label)
-        return _descriptor(
-            "Card",
-            {
-                "title": _text(block.get("title")),
-                "body": _lines(lines, ordered=True),
-            },
-        )
+        items = [
+            _descriptor("Text", {"text": f"{i}. {line}"})
+            for i, line in enumerate(lines, 1)
+        ]
+        title = _text(block.get("title"))
+        if title is not None:
+            items.insert(0, _descriptor("Text", {"text": title, "variant": "caption"}))
+        return _descriptor("List", {"direction": "vertical", "children": items})
 
     def _code(self, block: dict[str, Any]) -> dict[str, Any]:
-        """Map a ``code`` block to a ``Card`` with the code as body, badge=language."""
+        """Map a ``code`` block to an ``InfoCard`` with the code as body, badge=language."""
         return _descriptor(
-            "Card",
+            "InfoCard",
             {
                 "title": _text(block.get("title")),
                 "body": block.get("code") or "",
@@ -445,23 +446,60 @@ class _Converter:
             },
         )
 
-    def _card_grid(self, block: dict[str, Any]) -> list[dict[str, Any]]:
-        """Map a ``card_grid`` block to one ``Card`` descriptor per grid card."""
-        descriptors = []
+    def _card_grid(self, block: dict[str, Any]) -> dict[str, Any]:
+        """Map a ``card_grid`` block to a ``Row`` of ``InfoCard`` descriptors."""
+        cards = []
         for raw in block.get("cards") or []:
             card = _as_dict_or_none(raw)
             if card is None:
                 continue
-            descriptors.append(
+            cards.append(
                 _descriptor(
-                    "Card",
+                    "InfoCard",
                     {
                         "title": _text(card.get("title")),
                         "body": _text(card.get("body")),
                     },
                 )
             )
-        return descriptors
+        return _descriptor("Row", {"children": cards})
+
+    def _tabs(self, block: dict[str, Any], block_type: str, depth: int) -> dict[str, Any]:
+        """Map an ``accordion``/``tab_view`` block to ``Tabs{tabs:[{title, child}]}``.
+
+        Each pane's nested blocks are walked into their own component
+        descriptors and wrapped in a ``Column`` — the pane's single ``child``.
+        """
+        if block_type == "accordion":
+            raw_entries = block.get("items") or []
+            label_key, blocks_key = "title", "content_blocks"
+        else:
+            raw_entries = block.get("tabs") or []
+            label_key, blocks_key = "label", "blocks"
+
+        tabs: list[dict[str, Any]] = []
+        for raw in raw_entries:
+            entry = _as_dict_or_none(raw)
+            if entry is None:
+                continue
+            pane_sections = _SectionAccumulator()
+            self.walk(entry.get(blocks_key) or [], pane_sections, depth=depth + 1, seen_title=True)
+            pane_children: list[dict[str, Any]] = []
+            for section in pane_sections.result():
+                if section.get("heading"):
+                    pane_children.append(
+                        _descriptor("Text", {"text": section["heading"], "variant": "caption"})
+                    )
+                if section.get("text"):
+                    pane_children.append(_descriptor("Text", {"text": section["text"]}))
+                pane_children.extend(section.get("components") or [])
+            tabs.append(
+                {
+                    "title": _text(entry.get(label_key)) or "",
+                    "child": _descriptor("Column", {"children": pane_children}),
+                }
+            )
+        return _descriptor("Tabs", {"tabs": tabs})
 
     # -- walk ------------------------------------------------------------
 
@@ -472,14 +510,14 @@ class _Converter:
         *,
         depth: int = 0,
         seen_title: bool = False,
-    ) -> tuple[Optional[str], Optional[str], bool]:
+    ) -> tuple[str | None, str | None, bool]:
         """Map ``blocks`` into ``sections``.
 
         Returns the surface ``(title, subtitle, seen_title)`` harvested from the
         first ``title`` block encountered.
         """
-        title: Optional[str] = None
-        subtitle: Optional[str] = None
+        title: str | None = None
+        subtitle: str | None = None
 
         for raw in blocks:
             block = _as_dict_or_none(raw)
@@ -502,13 +540,21 @@ class _Converter:
                 sections.open()
                 continue
 
-            if block_type in ("accordion", "tab_view") and depth < _MAX_NESTING_DEPTH:
-                self._flatten_container(block, block_type, sections, depth)
+            if block_type in ("accordion", "tab_view"):
+                if depth < _MAX_NESTING_DEPTH:
+                    sections.add(self._tabs(block, block_type, depth))
+                else:
+                    # Degradation fallback beyond the nesting cap: flatten
+                    # into sibling sections instead of a nested Tabs.
+                    self._flatten_container(block, block_type, sections, depth)
                 continue
 
-            if block_type == "summary" and not block.get("title"):
-                if sections.set_text(block.get("content") or ""):
-                    continue
+            if (
+                block_type == "summary"
+                and not block.get("title")
+                and sections.set_text(block.get("content") or "")
+            ):
+                continue
 
             if block_type == "chart":
                 sections.add(self._chart(block))
@@ -528,8 +574,11 @@ class _Converter:
             elif block_type == "code":
                 sections.add(self._code(block))
             elif block_type == "card_grid":
-                for descriptor in self._card_grid(block):
-                    sections.add(descriptor)
+                sections.add(self._card_grid(block))
+            elif block_type == "bullet_list":
+                sections.add(self._bullet_list(block))
+            elif block_type == "checklist":
+                sections.add(self._checklist(block))
             else:
                 sections.add(self._card_like(block, block_type))
 
@@ -574,8 +623,8 @@ def infographic_response_to_envelope(
     response: Any,
     *,
     surface_id: str = "infographic",
-    title: Optional[str] = None,
-    theme: Optional[str] = None,
+    title: str | None = None,
+    theme: str | None = None,
 ) -> CreateSurface:
     """Convert an ``InfographicResponse`` into a validated A2UI ``CreateSurface``.
 

@@ -16,6 +16,12 @@ from __future__ import annotations
 
 from typing import Any
 
+# Nested composite children may now name an official Basic Catalog primitive
+# (Divider/List/CheckBox/Image/Tabs, TASK-2541's adapter remap) — ensure the
+# 18 primitives are registered before `_lower_child` looks any of them up,
+# rather than relying on some earlier `validate_envelope` call having
+# already triggered `catalog.basic`'s lazy registration side effect.
+from parrot.outputs.a2ui.catalog import basic as _ensure_basic_registered  # noqa: F401
 from parrot.outputs.a2ui.catalog import get_component, register_component
 from parrot.outputs.a2ui.catalog.base import (
     BasicNode,
@@ -68,7 +74,17 @@ INFOGRAPHIC_INSTRUCTIONS = (
 def _lower_child(
     descriptor: dict[str, Any], data_model: dict[str, Any], child_id: str
 ) -> BasicNode:
-    """Lower a nested catalog child through its registered ``lower()`` (pure)."""
+    """Lower a nested catalog child through its registered ``lower()`` (pure).
+
+    A ``descriptor`` naming an official Basic Catalog primitive
+    (``is_primitive=True``, e.g. ``Divider``/``List``/``CheckBox``/``Image``,
+    TASK-2541's adapter remap) needs no further lowering — it's already a
+    Basic Catalog node; this just re-anchors its id and passes its top-level
+    props through. ``Tabs`` is special-cased further: its ``tabs`` prop
+    entries are ``{"title", "child": <nested descriptor>}`` at the adapter
+    layer (a descriptor can't carry a real component id yet), so each
+    ``child`` is itself lowered here before building the ``TabSpec``.
+    """
     name = descriptor["component"]
     try:
         entry = get_component(name)
@@ -77,7 +93,30 @@ def _lower_child(
             f"Unknown nested component {name!r} in composite",
             unknown_components=[name],
         ) from exc
-    child = Component(id=child_id, component=name, **(descriptor.get("properties") or {}))
+
+    props = dict(descriptor.get("properties") or {})
+
+    if entry.definition.is_primitive:
+        if name == "Tabs" and "tabs" in props:
+            tab_specs = [
+                TabSpec(
+                    title=tab.get("title"),
+                    child=_lower_child(tab["child"], data_model, f"{child_id}-tab{i}"),
+                )
+                for i, tab in enumerate(props.pop("tabs"))
+            ]
+            return BasicNode(id=child_id, component=name, tabs=tab_specs, **props)
+        children_prop = props.get("children")
+        if isinstance(children_prop, list) and children_prop and isinstance(children_prop[0], dict):
+            props["children"] = [
+                _lower_child(nested, data_model, f"{child_id}-c{i}")
+                for i, nested in enumerate(props.pop("children"))
+            ]
+        if isinstance(props.get("child"), dict):
+            props["child"] = _lower_child(props.pop("child"), data_model, f"{child_id}-child")
+        return BasicNode(id=child_id, component=name, **props)
+
+    child = Component(id=child_id, component=name, **props)
     return entry.component_cls().lower(child, data_model)
 
 
