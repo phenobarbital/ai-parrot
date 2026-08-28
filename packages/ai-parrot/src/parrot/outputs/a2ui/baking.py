@@ -235,13 +235,93 @@ def _bake_component(
     return resolved
 
 
+def _child_ids(component: Component) -> list[str]:
+    """Every child component id ``component`` references (``child``/``children``)."""
+    ids: list[str] = []
+    if component.child is not None:
+        ids.append(component.child)
+    if isinstance(component.children, list):
+        ids.extend(component.children)
+    return ids
+
+
+def _collect_subtree_ids(
+    comp_id: str, *, by_id: dict[str, Component], seen: set[str]
+) -> None:
+    """Recursively collect every id reachable from ``comp_id`` via ``child``/``children``.
+
+    Stops at a nested ``ChildTemplate`` boundary (its own source is a
+    SEPARATE template pattern, not part of THIS subtree) — multi-level
+    nested templates are not supported (documented limitation, TASK-2539).
+    """
+    if comp_id in seen:
+        return
+    seen.add(comp_id)
+    comp = by_id.get(comp_id)
+    if comp is None:
+        return
+    if isinstance(comp.children, ChildTemplate):
+        return
+    for child_id in _child_ids(comp):
+        _collect_subtree_ids(child_id, by_id=by_id, seen=seen)
+
+
+def _clone_subtree(
+    comp_id: str,
+    *,
+    by_id: dict[str, Component],
+    data_model: dict[str, Any],
+    scope_path: str,
+    index: int,
+    suffix: str,
+    out: list[dict[str, Any]],
+) -> str:
+    """Recursively bake+clone the subtree rooted at ``comp_id``, suffixing every id.
+
+    Args:
+        comp_id: The root id of the subtree to clone (unsuffixed).
+        by_id: Every top-level component in the envelope, keyed by id.
+        data_model: The envelope's data model.
+        scope_path: The JSON Pointer of the current template item.
+        index: The current 0-based template index.
+        suffix: Appended to every id in the subtree (``"-<i>"``).
+        out: Accumulator — every baked clone dict is appended here.
+
+    Returns:
+        The (suffixed) id of the cloned root.
+
+    Raises:
+        BakeError: If ``comp_id`` is not a known component.
+    """
+    comp = by_id.get(comp_id)
+    if comp is None:
+        raise BakeError(f"ChildTemplate subtree references unknown component id {comp_id!r}.")
+    baked = _bake_component(
+        comp, data_model=data_model, scope_path=scope_path, index=index, id_suffix=suffix
+    )
+    out.append(baked)
+    if not isinstance(comp.children, ChildTemplate):
+        for child_id in _child_ids(comp):
+            _clone_subtree(
+                child_id,
+                by_id=by_id,
+                data_model=data_model,
+                scope_path=scope_path,
+                index=index,
+                suffix=suffix,
+                out=out,
+            )
+    return baked["id"]
+
+
 def _expand_template(
     template: ChildTemplate,
     *,
     by_id: dict[str, Component],
     data_model: dict[str, Any],
 ) -> tuple[list[str], list[dict[str, Any]]]:
-    """Expand a ``ChildTemplate`` into one baked clone per data-model list item.
+    """Expand a ``ChildTemplate`` into one baked clone (of its FULL subtree) per
+    data-model list item.
 
     Args:
         template: The template (``componentId`` + ``path``).
@@ -249,15 +329,15 @@ def _expand_template(
         data_model: The envelope's data model.
 
     Returns:
-        ``(clone_ids, clone_dicts)`` — the generated ids (for the parent's
-        ``children``) and the baked clone dicts (appended to the flat output).
+        ``(clone_ids, clone_dicts)`` — the generated root ids (for the parent's
+        ``children``) and every baked clone dict (root + descendants,
+        appended to the flat output).
 
     Raises:
         BakeError: If the template component id is unknown, or ``path``
             does not resolve to a list.
     """
-    template_component = by_id.get(template.component_id)
-    if template_component is None:
+    if template.component_id not in by_id:
         raise BakeError(
             f"ChildTemplate references unknown component id {template.component_id!r}."
         )
@@ -277,15 +357,16 @@ def _expand_template(
     clone_ids: list[str] = []
     clone_dicts: list[dict[str, Any]] = []
     for i in range(len(items)):
-        clone = _bake_component(
-            template_component,
+        root_id = _clone_subtree(
+            template.component_id,
+            by_id=by_id,
             data_model=data_model,
             scope_path=f"{template.path}/{i}",
             index=i,
-            id_suffix=f"-{i}",
+            suffix=f"-{i}",
+            out=clone_dicts,
         )
-        clone_ids.append(clone["id"])
-        clone_dicts.append(clone)
+        clone_ids.append(root_id)
     return clone_ids, clone_dicts
 
 
@@ -308,11 +389,12 @@ def bake_envelope(envelope: CreateSurface) -> list[dict[str, Any]]:
     """
     data_model = envelope.data_model
     by_id = {comp.id: comp for comp in envelope.components}
-    template_source_ids = {
-        comp.children.component_id
-        for comp in envelope.components
-        if isinstance(comp.children, ChildTemplate)
-    }
+    template_source_ids: set[str] = set()
+    for comp in envelope.components:
+        if isinstance(comp.children, ChildTemplate):
+            _collect_subtree_ids(
+                comp.children.component_id, by_id=by_id, seen=template_source_ids
+            )
 
     baked: list[dict[str, Any]] = []
     for comp in envelope.components:

@@ -1,32 +1,44 @@
-"""Golden + contract tests for Chart/DataTable/Map components (TASK-1724)."""
+"""Golden + contract tests for Chart/DataTable/Map components (FEAT-470 TASK-2539, v1.0)."""
 
 import json
 from pathlib import Path
 
-from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.components import chart, datatable, map as map_mod
-from parrot.outputs.a2ui.models import Component
+from parrot.outputs.a2ui.catalog import get_component, validate_envelope
+from parrot.outputs.a2ui.catalog.base import to_components
+from parrot.outputs.a2ui.catalog.parrot import chart, datatable
+from parrot.outputs.a2ui.catalog.parrot import map as map_mod
+from parrot.outputs.a2ui.models import ChildTemplate, Component, CreateSurface
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
 def _dump(tree) -> bytes:
     """Deterministic serialization of a lowered tree."""
-    return json.dumps(tree.model_dump(), sort_keys=True).encode()
+    return json.dumps(tree.model_dump(mode="json", exclude_none=True), sort_keys=True, indent=2).encode() + b"\n"
+
+
+def _validates(tree) -> None:
+    flat = to_components(tree)
+    # Provide a stand-in for any ChildTemplate source id referenced by the
+    # tree so validate_envelope's dangling-child check doesn't fire on the
+    # (deliberately unresolved) bind-time reference.
+    root = Component(id="root", component="Column", children=[c.id for c in flat])
+    surface = CreateSurface(
+        surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat]
+    )
+    validate_envelope(surface)
 
 
 def _chart_component() -> Component:
     return Component(
         id="blk-000",
         component="Chart",
-        properties={
-            "title": "Revenue by Region",
-            "type": "bar",
-            "x": "region",
-            "y": ["q1", "q2"],
-            "showLegend": True,
-            "data": {"$bind": "/charts/blk-000"},
-        },
+        title="Revenue by Region",
+        type="bar",
+        x="region",
+        y=["q1", "q2"],
+        showLegend=True,
+        data={"path": "/charts/blk-000"},
     )
 
 
@@ -34,16 +46,14 @@ def _datatable_component() -> Component:
     return Component(
         id="blk-001",
         component="DataTable",
-        properties={
-            "title": "Sales",
-            "columns": [
-                {"name": "region", "title": "Region"},
-                {"name": "total", "type": "number"},
-            ],
-            "totalRows": 42,
-            "truncated": True,
-            "data": {"$bind": "/tables/blk-001"},
-        },
+        title="Sales",
+        columns=[
+            {"name": "region", "title": "Region"},
+            {"name": "total", "type": "number"},
+        ],
+        totalRows=42,
+        truncated=True,
+        data={"path": "/tables/blk-001"},
     )
 
 
@@ -51,13 +61,11 @@ def _map_component() -> Component:
     return Component(
         id="blk-002",
         component="Map",
-        properties={
-            "title": "Stores",
-            "description": "Store locations",
-            "layers": [{"name": "stores", "type": "markers"}],
-            "viewport": {"center": [40.0, -3.0], "zoom": 5},
-            "data": {"$bind": "/maps/blk-002"},
-        },
+        title="Stores",
+        description="Store locations",
+        layers=[{"name": "stores", "type": "markers"}],
+        viewport={"center": [40.0, -3.0], "zoom": 5},
+        data={"path": "/maps/blk-002"},
     )
 
 
@@ -79,10 +87,17 @@ class TestChartComponent:
 
     def test_chart_lowered_tree_has_no_echarts_config(self):
         tree = chart.ChartComponent().lower(_chart_component(), {})
-        blob = json.dumps(tree.model_dump())
+        blob = json.dumps(tree.model_dump(mode="json"))
         # No ECharts option object should leak into a lowered Basic tree.
         assert '"option"' not in blob
         assert "echarts" not in blob.lower()
+
+    def test_chart_emits_v1_primitives(self):
+        # The chart's binding stays live (bake-time concern) — strip it before
+        # validating structure against the basic catalog.
+        comp = Component(id="blk-000", component="Chart", title="X", type="bar", x="a", y=["b"])
+        tree = chart.ChartComponent().lower(comp, {})
+        _validates(tree)
 
 
 class TestDataTableComponent:
@@ -95,6 +110,24 @@ class TestDataTableComponent:
         two = _dump(datatable.DataTableComponent().lower(comp, {}))
         assert one == two
         assert one == (GOLDEN_DIR / "datatable_lowered.json").read_bytes()
+
+    def test_datatable_lowers_to_child_template(self):
+        tree = datatable.DataTableComponent().lower(_datatable_component(), {})
+        body = tree.child.children[-1]
+        assert isinstance(body.children, ChildTemplate)
+        assert body.children.path == "/tables/blk-001"
+        assert body.template_source is not None
+        assert body.children.component_id == body.template_source.id
+
+    def test_datatable_emits_v1_primitives(self):
+        comp = Component(id="t1", component="DataTable", columns=[{"name": "a"}, {"name": "b"}])
+        tree = datatable.DataTableComponent().lower(comp, {})
+        flat = to_components(tree)
+        root = Component(id="root", component="Column", children=[c.id for c in flat])
+        surface = CreateSurface(
+            surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat]
+        )
+        validate_envelope(surface)
 
 
 class TestMapComponent:
@@ -110,5 +143,9 @@ class TestMapComponent:
 
     def test_lowering_preserves_data_bindings(self):
         tree = map_mod.MapComponent().lower(_map_component(), {})
-        blob = json.dumps(tree.model_dump())
-        assert "/maps/blk-002" in blob and "$bind" in blob
+        blob = json.dumps(tree.model_dump(mode="json"))
+        assert "/maps/blk-002" in blob and '"path"' in blob
+
+    def test_map_emits_v1_primitives(self):
+        comp = Component(id="m1", component="Map", layers=[{"name": "l"}])
+        _validates(map_mod.MapComponent().lower(comp, {}))

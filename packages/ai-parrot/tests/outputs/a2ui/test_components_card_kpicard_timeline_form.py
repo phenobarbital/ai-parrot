@@ -1,30 +1,43 @@
-"""Golden + contract tests for Card/KPICard/Timeline/Form (TASK-1725)."""
+"""Golden + contract tests for InfoCard/KPICard/Timeline (FEAT-470 TASK-2539, v1.0).
+
+``Form`` is intentionally NOT covered here anymore — it is retired as a
+registered component (spec G6); see TASK-2540's ``build_form()`` tests.
+"""
 
 import json
 from pathlib import Path
 
-from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.components import card, form, kpicard, timeline
-from parrot.outputs.a2ui.models import Component
+import pytest
+from parrot.outputs.a2ui.catalog import get_component, validate_envelope
+from parrot.outputs.a2ui.catalog.base import to_components
+from parrot.outputs.a2ui.catalog.parrot import infocard, kpicard, timeline
+from parrot.outputs.a2ui.models import Component, CreateSurface
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
 def _dump(tree) -> bytes:
-    return json.dumps(tree.model_dump(), sort_keys=True).encode()
+    return json.dumps(tree.model_dump(mode="json", exclude_none=True), sort_keys=True, indent=2).encode() + b"\n"
 
 
-def _card() -> Component:
+def _validates(tree) -> None:
+    flat = to_components(tree)
+    root = Component(id="root", component="Column", children=[c.id for c in flat])
+    surface = CreateSurface(
+        surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat]
+    )
+    validate_envelope(surface)
+
+
+def _infocard() -> Component:
     return Component(
         id="blk-000",
-        component="Card",
-        properties={
-            "title": "Summary",
-            "subtitle": "Q1",
-            "body": "All good.",
-            "image": "https://example.com/x.png",
-            "footer": "footer",
-        },
+        component="InfoCard",
+        title="Summary",
+        subtitle="Q1",
+        body="All good.",
+        image="https://example.com/x.png",
+        footer="footer",
     )
 
 
@@ -32,7 +45,11 @@ def _kpicard() -> Component:
     return Component(
         id="blk-001",
         component="KPICard",
-        properties={"label": "Revenue", "value": 1200, "unit": "USD", "delta": 5, "trend": "up"},
+        label="Revenue",
+        value=1200,
+        unit="USD",
+        delta=5,
+        trend="up",
     )
 
 
@@ -40,39 +57,32 @@ def _timeline() -> Component:
     return Component(
         id="blk-002",
         component="Timeline",
-        properties={
-            "title": "History",
-            "events": [
-                {"timestamp": "2026-01", "title": "Kickoff", "description": "start"},
-                {"timestamp": "2026-02", "title": "Milestone"},
-            ],
-        },
+        title="History",
+        events=[
+            {"timestamp": "2026-01", "title": "Kickoff", "description": "start"},
+            {"timestamp": "2026-02", "title": "Milestone"},
+        ],
     )
 
 
-def _form() -> Component:
-    return Component(
-        id="blk-003",
-        component="Form",
-        properties={
-            "title": "Signup",
-            "fields": [
-                {"name": "email", "label": "Email", "input": "text", "required": True},
-                {"name": "age", "input": "number"},
-            ],
-            "submit": {"label": "Send", "action": "signup"},
-        },
-    )
+class TestInfoCardComponent:
+    def test_infocard_registered_card_resolves_basic(self):
+        assert get_component("InfoCard").definition.requires_actions is False
+        assert get_component("InfoCard").definition.catalog_id == "https://parrot.dev/catalogs/v1"
+        # "Card" itself resolves to the OFFICIAL Basic Catalog primitive, not parrot.
+        from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
 
+        assert get_component("Card").definition.catalog_id == BASIC_CATALOG_ID
 
-class TestCardComponent:
-    def test_card_registered_in_catalog(self):
-        assert get_component("Card").definition.requires_actions is False
+    def test_infocard_lowering_golden(self):
+        one = _dump(infocard.InfoCardComponent().lower(_infocard(), {}))
+        two = _dump(infocard.InfoCardComponent().lower(_infocard(), {}))
+        assert one == two == (GOLDEN_DIR / "infocard_lowered.json").read_bytes()
 
-    def test_card_lowering_golden(self):
-        one = _dump(card.CardComponent().lower(_card(), {}))
-        two = _dump(card.CardComponent().lower(_card(), {}))
-        assert one == two == (GOLDEN_DIR / "card_lowered.json").read_bytes()
+    def test_infocard_emits_v1_primitives(self):
+        tree = infocard.InfoCardComponent().lower(_infocard(), {})
+        assert tree.component == "Card"
+        _validates(tree)
 
 
 class TestKPICardComponent:
@@ -83,6 +93,9 @@ class TestKPICardComponent:
         one = _dump(kpicard.KPICardComponent().lower(_kpicard(), {}))
         two = _dump(kpicard.KPICardComponent().lower(_kpicard(), {}))
         assert one == two == (GOLDEN_DIR / "kpicard_lowered.json").read_bytes()
+
+    def test_kpicard_emits_v1_primitives(self):
+        _validates(kpicard.KPICardComponent().lower(_kpicard(), {}))
 
 
 class TestTimelineComponent:
@@ -96,27 +109,20 @@ class TestTimelineComponent:
 
     def test_timeline_preserves_event_order(self):
         tree = timeline.TimelineComponent().lower(_timeline(), {})
+        rows = [c for c in tree.children if c.metadata.extensions.root.get("parrot_role") == "event"]
         titles = [
-            child.children[1].properties["text"]
-            for child in tree.children
-            if child.properties.get("role") == "event"
+            grandchild.model_extra["text"]
+            for row in rows
+            for grandchild in row.children
+            if grandchild.metadata.extensions.root.get("parrot_role") == "event-title"
         ]
         assert titles == ["Kickoff", "Milestone"]
 
+    def test_timeline_emits_v1_primitives(self):
+        _validates(timeline.TimelineComponent().lower(_timeline(), {}))
 
-class TestFormComponent:
-    def test_form_registered_with_requires_actions_true(self):
-        assert get_component("Form").definition.requires_actions is True
 
-    def test_form_schema_validates_field_payload(self):
-        props = form.FORM_SCHEMA["properties"]
-        assert "fields" in props and "submit" in props
-
-    def test_form_instructions_flag_display_only_v1(self):
-        text = form.FORM_INSTRUCTIONS.lower()
-        assert "not available" in text and "v1" in text
-
-    def test_form_lowering_golden(self):
-        one = _dump(form.FormComponent().lower(_form(), {}))
-        two = _dump(form.FormComponent().lower(_form(), {}))
-        assert one == two == (GOLDEN_DIR / "form_lowered.json").read_bytes()
+class TestFormRetired:
+    def test_form_not_registered(self):
+        with pytest.raises(KeyError):
+            get_component("Form")

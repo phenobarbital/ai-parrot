@@ -1,144 +1,117 @@
-"""``DataTable`` row materialisation in the lowering (FEAT-273 Module 3/6).
+"""``DataTable`` row materialization via ``ChildTemplate`` (FEAT-470 TASK-2539, v1.0).
 
-The bake pass replaces a row binding with the resolved row list, but the
-lowering used to leave that list in an inert ``data`` property on a childless
-``Column``. Static renderers only draw ``Text``/``Image`` leaves, so every
-baked table rendered empty. These tests pin both halves of the two-phase
-contract: a live binding is passed through untouched, resolved rows become
-``Row``/``Text`` nodes.
+Pre-v1.0, ``lower()`` eagerly walked an already-RESOLVED row list into
+``Row``/``Text`` nodes at lowering time (a two-phase contract coupled to
+FEAT-273's bake pass). v1.0 replaces this entirely: ``lower()`` ALWAYS emits a
+single row-pattern ``ChildTemplate`` (never eager per-row nodes) — the bake
+pass (TASK-2538) is the ONLY place row lists are ever materialized, via
+``@index``/relative-path template expansion (spec §2/§5). These tests pin
+that end-to-end contract (lowering -> bake) for DataTable specifically.
 """
 
-import json
+from __future__ import annotations
 
 import pytest
 
-from parrot.outputs.a2ui.catalog import components as _all_components  # noqa: F401
-from parrot.outputs.a2ui.catalog.components import datatable
-from parrot.outputs.a2ui.models import Component
+pytest.importorskip("jsonpointer")
+
+from parrot.outputs.a2ui.baking import bake_envelope
+from parrot.outputs.a2ui.catalog import (
+    parrot as _all_parrot_components,  # noqa: F401
+)
+from parrot.outputs.a2ui.catalog.base import to_components
+from parrot.outputs.a2ui.catalog.parrot import datatable
+from parrot.outputs.a2ui.models import (
+    ChildTemplate,
+    Component,
+    CreateSurface,
+)
 
 COLUMNS = [{"name": "region", "title": "Region"}, {"name": "total", "type": "number"}]
 
 
 def _component(**props) -> Component:
-    payload = {"title": "Sales", "columns": COLUMNS}
+    payload = {"id": "blk-001", "component": "DataTable", "title": "Sales", "columns": COLUMNS}
     payload.update(props)
-    return Component(id="blk-001", component="DataTable", properties=payload)
+    return Component(**payload)
 
 
 def _lower(component: Component):
     return datatable.DataTableComponent().lower(component, {})
 
 
-def _rows_node(tree):
-    (node,) = [
-        child
-        for child in tree.children
-        if child.component == "Column" and child.properties.get("role") == "rows"
-    ]
-    return node
+def _rows_body(tree):
+    """The Column node carrying the ChildTemplate (last child of the wrapper Column)."""
+    return tree.child.children[-1]
 
 
-def _cells(row_node) -> list:
-    return [child.properties.get("text") for child in row_node.children]
-
-
-class TestLiveBindingPassthrough:
-    def test_binding_is_preserved_and_no_rows_are_invented(self):
-        tree = _lower(_component(data={"$bind": "/tables/blk-001"}))
-        rows = _rows_node(tree)
-        assert rows.properties["data"] == {"$bind": "/tables/blk-001"}
-        assert rows.children == []
-
-    def test_absent_data_yields_no_data_property(self):
-        rows = _rows_node(_lower(_component()))
-        assert "data" not in rows.properties
-        assert rows.children == []
-
-
-class TestBakedRowsMaterialise:
-    def test_resolved_rows_become_row_and_text_nodes(self):
-        tree = _lower(
-            _component(data=[{"region": "North", "total": 10}, {"region": "South", "total": 20}])
-        )
-        rows = _rows_node(tree)
-        assert [child.component for child in rows.children] == ["Row", "Row"]
-        assert _cells(rows.children[0]) == ["North", 10]
-        assert _cells(rows.children[1]) == ["South", 20]
-        assert all(
-            cell.properties["role"] == "cell"
-            for row in rows.children
-            for cell in row.children
-        )
-
-    def test_materialised_rows_drop_the_inert_data_property(self):
-        # Keeping it would duplicate the whole row set inside the tree.
-        rows = _rows_node(_lower(_component(data=[{"region": "North", "total": 1}])))
-        assert "data" not in rows.properties
-
-    def test_cells_follow_declared_column_order_not_dict_order(self):
-        rows = _rows_node(_lower(_component(data=[{"total": 10, "region": "North"}])))
-        assert _cells(rows.children[0]) == ["North", 10]
-
-    def test_missing_keys_become_empty_cells(self):
-        rows = _rows_node(_lower(_component(data=[{"region": "North"}])))
-        assert _cells(rows.children[0]) == ["North", None]
-
-    def test_extra_keys_outside_the_declared_columns_are_ignored(self):
-        rows = _rows_node(
-            _lower(_component(data=[{"region": "N", "total": 1, "secret": "x"}]))
-        )
-        assert _cells(rows.children[0]) == ["N", 1]
-
-    def test_sequence_rows_map_positionally(self):
-        rows = _rows_node(_lower(_component(data=[["North", 10], ["South"]])))
-        assert _cells(rows.children[0]) == ["North", 10]
-        assert _cells(rows.children[1]) == ["South", None]
-
-    def test_scalar_row_degrades_to_a_single_cell(self):
-        rows = _rows_node(_lower(_component(data=["North"])))
-        assert _cells(rows.children[0]) == ["North"]
-
-    def test_empty_row_list_renders_no_rows(self):
-        rows = _rows_node(_lower(_component(data=[])))
-        assert rows.children == []
-        assert "data" not in rows.properties
-
-    def test_rows_without_declared_columns_fall_back_to_row_keys(self):
-        component = Component(
-            id="blk-001",
-            component="DataTable",
-            properties={"columns": [], "data": [{"a": 1, "b": 2}]},
-        )
-        rows = _rows_node(_lower(component))
-        assert _cells(rows.children[0]) == [1, 2]
-
-    def test_totalrows_and_truncated_survive_materialisation(self):
-        rows = _rows_node(
-            _lower(_component(data=[{"region": "N", "total": 1}], totalRows=42, truncated=True))
-        )
-        assert rows.properties["totalRows"] == 42
-        assert rows.properties["truncated"] is True
-
-    @pytest.mark.parametrize(
-        "data",
-        [
-            [{"region": "North", "total": 10}],
-            {"$bind": "/tables/blk-001"},
-        ],
+def _surface_and_bake(component: Component, data_model: dict) -> list[dict]:
+    tree = _lower(component)
+    flat = to_components(tree)
+    root = Component(id="root", component="Column", children=[c.id for c in flat])
+    surface = CreateSurface(
+        surfaceId="s",
+        catalogId="https://parrot.dev/catalogs/v1",
+        components=[root, *flat],
+        dataModel=data_model,
     )
-    def test_lowering_stays_pure(self, data):
-        component = _component(data=data)
-        one = json.dumps(_lower(component).model_dump(), sort_keys=True)
-        two = json.dumps(_lower(component).model_dump(), sort_keys=True)
-        assert one == two
+    return bake_envelope(surface)
+
+
+class TestLoweringAlwaysEmitsChildTemplate:
+    def test_no_eager_rows_at_lowering_time(self):
+        rows = _rows_body(_lower(_component(data={"path": "/tables/blk-001"})))
+        assert isinstance(rows.children, ChildTemplate)
+        assert rows.template_source is not None
+
+    def test_default_table_path_when_data_not_bound(self):
+        rows = _rows_body(_lower(_component()))
+        assert rows.children.path == "/tables/blk-001"
+
+    def test_explicit_data_binding_path_is_honored(self):
+        rows = _rows_body(_lower(_component(data={"path": "/custom/rows"})))
+        assert rows.children.path == "/custom/rows"
+
+
+class TestBakedRowsMaterialize:
+    def test_resolved_rows_become_row_and_text_nodes(self):
+        baked = _surface_and_bake(
+            _component(data={"path": "/tables/blk-001"}),
+            {"tables": {"blk-001": [{"region": "North", "total": 10}, {"region": "South", "total": 20}]}},
+        )
+        row_clones = [c for c in baked if c["id"].startswith("blk-001-row-")]
+        assert len(row_clones) == 2
+        # Cells follow declared column order.
+        assert row_clones[0]["children"] is not None  # Row of cell ids
+        cell_ids_0 = row_clones[0]["children"]
+        cells_0 = [next(c for c in baked if c["id"] == cid) for cid in cell_ids_0]
+        assert [c["text"] for c in cells_0] == ["North", 10]
+
+    def test_cells_use_declared_column_order_via_relative_path(self):
+        baked = _surface_and_bake(
+            _component(data={"path": "/tables/blk-001"}),
+            {"tables": {"blk-001": [{"total": 10, "region": "North"}]}},
+        )
+        row = next(c for c in baked if c["id"] == "blk-001-row-0")
+        cells = [next(c for c in baked if c["id"] == cid) for cid in row["children"]]
+        assert [c["text"] for c in cells] == ["North", 10]
+
+    def test_empty_row_list_produces_no_clones(self):
+        baked = _surface_and_bake(
+            _component(data={"path": "/tables/blk-001"}), {"tables": {"blk-001": []}}
+        )
+        assert not [c for c in baked if c["id"].startswith("blk-001-row-")]
+
+    def test_totalrows_and_truncated_survive_in_extensions(self):
+        rows = _rows_body(_lower(_component(totalRows=42, truncated=True)))
+        extensions = rows.metadata.extensions.root
+        assert extensions["parrot_total_rows"] == 42
+        assert extensions["parrot_truncated"] is True
 
 
 class TestHeaderIsUnaffected:
     def test_header_still_uses_column_titles_then_names(self):
-        tree = _lower(_component(data=[{"region": "N", "total": 1}]))
-        (header,) = [
-            child
-            for child in tree.children
-            if child.component == "Row" and child.properties.get("role") == "header"
-        ]
-        assert [cell.properties["text"] for cell in header.children] == ["Region", "total"]
+        tree = _lower(_component())
+        header = tree.child.children[1]
+        assert header.component == "Row"
+        assert [cell.model_extra["text"] for cell in header.children] == ["Region", "total"]
