@@ -52,7 +52,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Sólo crea `catalog/basic/spec/` y toca pyproject; no comparte archivos con TASK-2533.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2534-vendor-spec-and-jsonschema-dep.md"
+      "completed_at": "2026-08-28T17:38:09+00:00",
+      "file": "sdd/tasks/completed/TASK-2534-vendor-spec-and-jsonschema-dep.md"
     },
     {
       "id": "TASK-2535",

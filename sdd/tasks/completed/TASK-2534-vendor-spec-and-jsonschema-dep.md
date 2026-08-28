@@ -119,7 +119,40 @@ class TestTASK2534:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- Fetched the six official v1.0 JSON Schemas directly from
+  `raw.githubusercontent.com/google/A2UI/90157ec10.../specification/v1_0/`
+  at the pinned commit and vendored them verbatim under
+  `catalog/basic/spec/`. Confirmed via GitHub's API that
+  `90157ec10f36cf8e192daa71c95d2684af20c756` is a real, resolvable commit.
+- Discovered (and documented in `_CATALOG_ALIAS_ID`) a real upstream
+  cross-reference quirk: `agent_to_renderer.json`'s `Component` def and
+  `common_types.json`'s `FunctionCall` def both `$ref` a RELATIVE
+  `"catalog.json#/..."`, which resolves (relative to their own `$id`,
+  `.../specification/v1_0/{agent_to_renderer,common_types}.json`) to
+  `https://a2ui.org/specification/v1_0/catalog.json` — NOT the basic
+  catalog's actual `$id` (`.../catalogs/basic/catalog.json`,
+  `BASIC_CATALOG_ID`). This is deliberate upstream design (the message
+  schemas are catalog-agnostic); `schema_registry()` aliases the basic
+  catalog under both ids so `$ref` resolution succeeds. Verified end-to-end
+  with a real `jsonschema.Draft202012Validator` against `agent_to_renderer.json`
+  before writing the test.
+- Added `jsonschema>=4.20` as a hard `ai-parrot` dependency and the
+  `spec/*.json` package-data glob to `pyproject.toml` (no `uv lock`
+  regeneration needed in this worktree — `jsonschema`/`referencing` were
+  already present as transitive deps at the versions the spec expects,
+  4.26.0/0.36.2).
+- Registered a `network` pytest marker in `packages/ai-parrot/pyproject.toml`
+  (didn't exist yet). `test_spec_drift_against_upstream` was run manually
+  once against the live GitHub raw content (passed) but is excluded from
+  the default `pytest` run via the marker, per the task's own
+  `@network`-is-optional-in-CI framing.
+- `pytest test_spec_vendored.py -m "not network"`: 6 passed;
+  `-m network`: 1 passed. `ruff check`: clean.
+
+**Deviations from spec**: none — the `catalog.json` alias-id handling is an
+implementation detail resolving an ambiguity the spec didn't call out
+(it wasn't aware of the exact upstream cross-reference shape), not a
+deviation from any stated requirement.
