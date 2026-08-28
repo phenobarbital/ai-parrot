@@ -52,7 +52,7 @@
       "feature_id": "FEAT-472",
       "feature": "fireflies-meeting-registry",
       "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Same file as TASK-2554 (meeting_registry.py).",
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2555-registry-backfill-merge-repair.md"
+      "completed_at": "2026-08-28T23:23:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2555-registry-backfill-merge-repair.md"
     },
     {
       "id": "TASK-2556",

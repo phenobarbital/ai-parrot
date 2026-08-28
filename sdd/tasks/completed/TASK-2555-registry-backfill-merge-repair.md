@@ -174,8 +174,52 @@ async def test_repair_path_not_found(registry, toolkit): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: Implemented `backfill_from_vault`, `merge_duplicates`, and
+`repair_path` in `parrot/agents/meeting_registry.py`, replacing the
+TASK-2554 `NotImplementedError` stubs, plus internal helpers `_vault_root`
+(resolves the toolkit's local-backend absolute vault path — the only way
+to convert vault-relative `ObsidianToolkit` paths to the absolute paths
+`SourceCollectionManager` requires, since none of the three signatures
+carry a `vault_path` parameter), `_date_from_filename` (`YYYY-MM-DD`
+fallback), and `_register_from_frontmatter` (shared registration logic
+for both backfill's single-note case and merge's kept note).
+`backfill_from_vault` is a no-op when any `fireflies:*` row already
+exists, chunks `read_notes` in batches of 50, groups by `fireflies_id`,
+routes single notes straight to registration and duplicate groups to
+`merge_duplicates` (or `unmerged` when `merge=False`), and logs progress
+every 500 notes plus an INFO summary. `merge_duplicates` picks the
+analysed note (else newest by mtime) among only the notes `read_notes`
+could actually parse — a note it could not even decode is never a keep
+or delete candidate, matching "never deletes unparsable frontmatter";
+duplicates are deleted before the canonical-path move is attempted so a
+duplicate that already occupies the canonical slot doesn't block it;
+registry ownership of the canonical path is checked (and skipped only
+when owned by a genuinely different id — a stale row for the SAME
+meeting must not block its own repair) before `move_note`, with a
+`FileExistsError` fallback. `repair_path` scans the folder's frontmatter
+via the same chunked reader when `source_uri` no longer exists, applying
+the identical "free = not on disk AND not owned by another id" rule
+before `update_source_uri` (which keeps `source_id`). 28 tests in
+`tests/test_meeting_registry.py` cover: backfill seeding (4 rows from 5
+notes + 1 unreadable file, one `MergeResult`, correct `without_analysis`
+count), idempotency, dry-run (`merge=False`), merge keeping the analysed
+note and moving it to its canonical path (including a variant where the
+kept note starts at a non-canonical filename), merge leaving an
+unreadable duplicate untouched, and repair's three outcomes (moved,
+blocked by another id's ownership, not found). All pass; `ruff check`
+clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: None from the task's own scope. One judgment
+call, flagged for spec-author awareness: the task's Codebase Contract
+gives `backfill_from_vault`/`merge_duplicates`/`repair_path` signatures
+with no `vault_path` parameter, yet converting the vault-relative paths
+`ObsidianToolkit` returns into the absolute paths `SourceCollectionManager`
+requires needs the vault root. Resolved via `toolkit.vault.vault_path` —
+a public (non-underscore) attribute of the local vault backend
+(`interfaces/obsidian/local.py:43`), not explicitly listed in this task's
+"Existing Signatures to Use" but the only way to honor the mandated
+signatures without adding a new parameter. `_vault_root` raises a clear
+`RuntimeError` if ever called against the REST backend (which has no
+`vault_path`), so this narrowing is explicit rather than silent.
