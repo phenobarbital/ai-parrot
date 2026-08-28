@@ -31,6 +31,7 @@ __all__ = [
     "SPEC_COMMIT",
     "SPEC_FILES",
     "SpecName",
+    "basic_components",
     "load_spec",
     "schema_registry",
 ]
@@ -128,3 +129,93 @@ def schema_registry() -> Registry:
         _CATALOG_ALIAS_ID, Resource.from_contents(load_spec("catalog"))
     )
     return registry
+
+
+def _register_primitives() -> None:
+    """Register the 18 official Basic Catalog primitives (TASK-2536).
+
+    Imported and called once, below, at package import time. Local imports
+    (rather than top-of-module) avoid a circular import: ``register_component``
+    lives in the PARENT package (``parrot.outputs.a2ui.catalog``), which itself
+    only ever imports ``catalog.basic`` lazily, inside function bodies (see
+    ``catalog/__init__.py``'s ``_component_exists``/``validate_message``) —
+    never at ITS OWN module top level — so by the time anything actually
+    triggers this package's import, the parent is guaranteed fully loaded.
+
+    None of the 18 primitives declare ``allowedParents``/``allowedChildren``
+    in the vendored ``catalog.json`` (that constraint is only used by the
+    reserved ``Surface`` container in ``common_types.json``, not by regular
+    catalog components) — so none is passed here either.
+    """
+    from parrot.outputs.a2ui.catalog import register_component
+    from parrot.outputs.a2ui.catalog.basic.inputs import (
+        Button,
+        CheckBox,
+        ChoicePicker,
+        DateTimeInput,
+        Slider,
+        TextField,
+    )
+    from parrot.outputs.a2ui.catalog.basic.layout import (
+        Card,
+        Column,
+        Divider,
+        List,
+        Modal,
+        Row,
+        Tabs,
+    )
+    from parrot.outputs.a2ui.catalog.basic.media import (
+        AudioPlayer,
+        Icon,
+        Image,
+        Text,
+        Video,
+    )
+
+    for cls in (
+        Text,
+        Image,
+        Icon,
+        Video,
+        AudioPlayer,
+        Row,
+        Column,
+        List,
+        Card,
+        Tabs,
+        Modal,
+        Divider,
+        Button,
+        TextField,
+        CheckBox,
+        ChoicePicker,
+        Slider,
+        DateTimeInput,
+    ):
+        register_component(
+            cls.__name__, catalog_id=BASIC_CATALOG_ID, is_primitive=True
+        )(cls)
+
+
+def basic_components() -> list:
+    """Return the :class:`ComponentDefinition` of every registered primitive.
+
+    Ensures the 18 primitives are registered (idempotent — ``register_component``
+    just overwrites the same entry) before listing them.
+
+    Returns:
+        The 18 Basic Catalog primitives' definitions, filtered from the full
+        catalog registry.
+    """
+    from parrot.outputs.a2ui.catalog import list_components
+
+    _register_primitives()
+    return [d for d in list_components() if d.catalog_id == BASIC_CATALOG_ID]
+
+
+# Register the 18 primitives as soon as this package is imported, so that
+# `parrot.outputs.a2ui.catalog`'s own resolution (`_component_exists` et al.)
+# and any renderer/producer code can rely on them being present without
+# every caller having to remember to call `basic_components()` first.
+_register_primitives()

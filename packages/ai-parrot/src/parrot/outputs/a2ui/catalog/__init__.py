@@ -32,7 +32,6 @@ from typing import Any
 
 import jsonschema
 
-from parrot.outputs.a2ui.catalog import basic
 from parrot.outputs.a2ui.catalog.base import (
     ACTION_NOT_ALLOWED_FOR_LLM,
     CATALOG_UNRESOLVED,
@@ -245,6 +244,8 @@ def resolve_catalog(
 
 def _basic_component_names() -> frozenset[str]:
     """The 18 official Basic Catalog primitive names (source of truth: vendored JSON)."""
+    from parrot.outputs.a2ui.catalog import basic  # local: see note below
+
     return frozenset(basic.load_spec("catalog")["components"].keys())
 
 
@@ -256,7 +257,18 @@ def _component_exists(name: str, resolved_catalog_id: str) -> bool:
     and/or the Python registry (Parrot catalog components, TASK-2539+).
     Per spec G2, the Parrot catalog `$ref`-includes the Basic Catalog, so a
     component resolved against :data:`DEFAULT_CATALOG_ID` may be either.
+
+    NOTE: ``parrot.outputs.a2ui.catalog.basic`` is imported LOCALLY (here and
+    in :func:`_basic_component_names`/:func:`validate_message`), never at
+    this module's top level. ``catalog.basic`` (TASK-2536) registers its 18
+    primitives via ``register_component`` from THIS module at its own
+    import time — a top-level ``from parrot.outputs.a2ui.catalog import
+    basic`` here would deadlock that as a circular import (this module
+    would not yet have defined ``register_component`` when ``catalog.basic``
+    tries to import it back).
     """
+    from parrot.outputs.a2ui.catalog import basic
+
     if resolved_catalog_id == basic.BASIC_CATALOG_ID:
         return name in _basic_component_names()
     if resolved_catalog_id == DEFAULT_CATALOG_ID:
@@ -280,6 +292,7 @@ def validate_message(message: A2UIAgentMessage | A2UIRendererMessage) -> None:
             corresponding official schema (``agent_to_renderer.json`` /
             ``renderer_to_agent.json``).
     """
+    from parrot.outputs.a2ui.catalog import basic
     from parrot.outputs.a2ui.serialization import serialize
 
     if isinstance(message, A2UIAgentMessage):

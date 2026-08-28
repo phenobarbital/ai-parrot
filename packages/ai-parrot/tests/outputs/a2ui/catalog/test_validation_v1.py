@@ -197,4 +197,4 @@ class TestCatalogInstructionsNoRstripBug:
                 return None
 
         cleanup_catalog.append("TrailingColon")
-        assert catalog_instructions().endswith("Always end with a colon:")
+        assert "TrailingColon: Always end with a colon:" in catalog_instructions()
