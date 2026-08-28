@@ -58,7 +58,9 @@ class TestNormaliseAndFingerprint:
 class TestClassify:
     async def test_classify_unknown_id_creates(self, registry: MeetingRegistry):
         fetch = await fetch_factory({"abc": "transcript text"})
-        result = await registry.classify({"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}, fetch=fetch)
+        result = await registry.classify(
+            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}, fetch=fetch
+        )
         assert result.action == "create"
         assert result.fetched_text == "transcript text"
         assert fetch.calls == ["abc"]
@@ -683,7 +685,9 @@ class TestMergeDuplicates:
 
 
 class TestRepairPath:
-    async def test_repair_path_moves_to_canonical(self, registry: MeetingRegistry, toolkit: ObsidianToolkit, vault: Path):
+    async def test_repair_path_moves_to_canonical(
+        self, registry: MeetingRegistry, toolkit: ObsidianToolkit, vault: Path
+    ):
         meetings = vault / "meetings"
         note_path = _write_note(
             meetings, "2026-08-06-standup-f.md", fireflies_id="id-f", title="Standup F", date="2026-08-06"
@@ -715,9 +719,7 @@ class TestRepairPath:
         assert (vault / "meetings" / "2026-08-06-standup-f.md").exists()
         assert not renamed.exists()
 
-        entry = registry._manager.get_source(
-            (await registry.lookup("id-f")).source_id
-        )
+        entry = registry._manager.get_source((await registry.lookup("id-f")).source_id)
         assert entry.source_uri == result.to_path
 
     async def test_repair_path_canonical_taken_by_other_id(
@@ -741,9 +743,7 @@ class TestRepairPath:
         )
 
         # The meeting being repaired was moved to a different filename.
-        moved_path = _write_note(
-            meetings, "moved-g2.md", fireflies_id="id-g2", title="Standup G2", date="2026-08-07"
-        )
+        moved_path = _write_note(meetings, "moved-g2.md", fireflies_id="id-g2", title="Standup G2", date="2026-08-07")
         await registry.record_synced(
             fireflies_id="id-g2",
             note_path=moved_path,
@@ -801,8 +801,6 @@ class TestRepairPath:
         registry = MeetingRegistry(tmp_path / "wiki")
         registry._available = False
 
-        result = await registry.repair_path(
-            "id-x", toolkit=toolkit, meetings_folder="meetings", canonical_title="x"
-        )
+        result = await registry.repair_path("id-x", toolkit=toolkit, meetings_folder="meetings", canonical_title="x")
         assert result.to_path is None
         assert result.moved is False

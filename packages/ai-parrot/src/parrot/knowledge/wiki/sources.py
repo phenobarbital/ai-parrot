@@ -882,7 +882,9 @@ class SourceCollectionManager:
             different prefix are excluded.
         """
         if self.backend == "json":
-            return [e for e in self._manifest.values() if e.external_id is not None and e.external_id.startswith(prefix)]
+            return [
+                e for e in self._manifest.values() if e.external_id is not None and e.external_id.startswith(prefix)
+            ]
         if self.backend == "arangodb":
             rows = self._run_async(
                 self._arango_query(
@@ -1308,8 +1310,7 @@ class SourceCollectionManager:
     async def _async_upsert_many(self, entries: list[SourceManifestEntry]) -> None:
         """UPSERT many source documents in one AQL statement."""
         await self._arango_execute(
-            "FOR doc IN @docs"
-            " UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@collection",
+            "FOR doc IN @docs" " UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@collection",
             {
                 "docs": [self._entry_to_doc(entry) for entry in entries],
                 "@collection": _ARANGO_SOURCES_COLLECTION,

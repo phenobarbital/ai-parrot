@@ -155,9 +155,7 @@ class TestRegistrySharedWithWikiToolkit:
         agent = _build_agent(vault_root, registry_dir, fake_fireflies)
         agent.registry = MeetingRegistry(registry_dir)
 
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "Transcript v1 content"}
         sync_report = await agent.sync_fireflies_transcripts(limit=10)
         assert sync_report["synced"] == 1
@@ -165,9 +163,7 @@ class TestRegistrySharedWithWikiToolkit:
         wiki_config = WikiConfig(wiki_name="meetings", storage_dir=registry_dir, sync_graph=False)
         wiki_toolkit = LLMWikiToolkit(_mock_pi(), None, None, wiki_config)
 
-        await wiki_toolkit.ingest_obsidian_vault(
-            "meetings", str(vault_root / "meetings"), incremental=True
-        )
+        await wiki_toolkit.ingest_obsidian_vault("meetings", str(vault_root / "meetings"), incremental=True)
 
         rows = agent.registry._manager.list_by_external_prefix("fireflies:")
         assert len(rows) == 1
@@ -200,9 +196,7 @@ class TestRegistrySharedWithWikiToolkit:
         assert len(rows_after) == 1
         assert rows_after[0].source_id == row.source_id  # same row, not a new one
 
-        await wiki_toolkit.ingest_obsidian_vault(
-            "meetings", str(vault_root / "meetings"), incremental=True
-        )
+        await wiki_toolkit.ingest_obsidian_vault("meetings", str(vault_root / "meetings"), incremental=True)
         rows_final = agent.registry._manager.list_by_external_prefix("fireflies:")
         assert len(rows_final) == 1
 
@@ -217,9 +211,7 @@ class TestEndToEndCreateReviseAnalyse:
         agent.registry = MeetingRegistry(registry_dir)
 
         # v1 -> created.
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "v1 transcript content"}
         r1 = await agent.sync_fireflies_transcripts(limit=10)
         assert r1["synced"] == 1
@@ -240,9 +232,7 @@ class TestEndToEndCreateReviseAnalyse:
         v2_fingerprint = record.fingerprint
 
         # Analyse -> done, with the v2 fingerprint.
-        agent.client.complete = AsyncMock(
-            return_value="##Summary\nAll good\n##Follow Ups\n1. q1\n##Insights\n- i1"
-        )
+        agent.client.complete = AsyncMock(return_value="##Summary\nAll good\n##Follow Ups\n1. q1\n##Insights\n- i1")
         outcome = await agent.summarize_pending_transcripts()
         assert outcome["analyzed"] == ["2026-08-01-standup"]
 

@@ -111,6 +111,7 @@ def schedule_tzinfo() -> timezone | ZoneInfo:
         )
         return timezone.utc
 
+
 #: Daily sync (Fireflies → Obsidian → wiki).
 FIREFLIES_WIKI_SYNC_HOUR: int = config.getint("FIREFLIES_WIKI_SYNC_HOUR", fallback=7)
 FIREFLIES_WIKI_SYNC_MINUTE: int = config.getint("FIREFLIES_WIKI_SYNC_MINUTE", fallback=0)

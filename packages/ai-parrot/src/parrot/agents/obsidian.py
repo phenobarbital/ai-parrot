@@ -8,6 +8,7 @@ under the 'meetings' folder. Supports two operations:
 
 The sync operation is safe to schedule every 8 hours via /schedule.
 """
+
 import logging
 import os
 import re
@@ -50,6 +51,8 @@ def _strip_list_marker(line: str) -> str:
         The item text without its leading marker(s).
     """
     return _LIST_MARKER_RE.sub("", line).strip()
+
+
 # SourceProvenance
 
 
@@ -252,7 +255,7 @@ class FirefliesObsidianAgent(BasicAgent):
                 # both only ever inside self.meetings_folder.
                 "move",
                 "delete",
-            }
+            },
         )
 
         self._mcp_fireflies_initialized = False
@@ -282,8 +285,8 @@ class FirefliesObsidianAgent(BasicAgent):
         except Exception as exc:
             # Warning-only: agent should still boot without Fireflies
             self.logger.warning(
-                "Fireflies MCP not available (agent will work without "
-                "Fireflies tools): %s", exc,
+                "Fireflies MCP not available (agent will work without " "Fireflies tools): %s",
+                exc,
             )
 
         # --- FEAT-472: open the meeting registry and backfill once ---
@@ -298,8 +301,7 @@ class FirefliesObsidianAgent(BasicAgent):
                     analysis_heading=self.ANALYSIS_HEADING,
                 )
                 self.logger.info(
-                    "MeetingRegistry backfill: seeded=%d without_analysis=%d"
-                    " duplicates=%d unmerged=%d",
+                    "MeetingRegistry backfill: seeded=%d without_analysis=%d" " duplicates=%d unmerged=%d",
                     report.seeded,
                     report.without_analysis,
                     len(report.duplicates),
@@ -310,8 +312,8 @@ class FirefliesObsidianAgent(BasicAgent):
             # Warning-only: the sync/analysis loops both fall back to
             # title-based dedup when self.registry is None (spec §2 G10).
             self.logger.warning(
-                "MeetingRegistry unavailable (falling back to title-based"
-                " dedup): %s", exc,
+                "MeetingRegistry unavailable (falling back to title-based" " dedup): %s",
+                exc,
             )
             self.registry = None
 
@@ -441,14 +443,10 @@ class FirefliesObsidianAgent(BasicAgent):
             await self._ensure_fireflies_mcp()
 
             effective_filters = _merge_filters(self.default_filters, filters)
-            filter_args = (
-                _filters_to_tool_args(effective_filters) if effective_filters else {}
-            )
+            filter_args = _filters_to_tool_args(effective_filters) if effective_filters else {}
 
             if registry_ok and "fromDate" not in filter_args:
-                suggested = await self.registry.suggest_from_date(
-                    overlap_days=FIREFLIES_SYNC_OVERLAP_DAYS
-                )
+                suggested = await self.registry.suggest_from_date(overlap_days=FIREFLIES_SYNC_OVERLAP_DAYS)
                 if suggested:
                     filter_args["fromDate"] = suggested
                     report["from_date"] = suggested
@@ -469,21 +467,15 @@ class FirefliesObsidianAgent(BasicAgent):
                         {**filter_args, "limit": page_limit, "skip": skip},
                     )
                 except Exception as e:
-                    report["errors"].append(
-                        f"Page fetch failed (skip={skip}): {e}"
-                    )
-                    self.logger.error(
-                        f"Fireflies page fetch failed (skip={skip}): {e}"
-                    )
+                    report["errors"].append(f"Page fetch failed (skip={skip}): {e}")
+                    self.logger.error(f"Fireflies page fetch failed (skip={skip}): {e}")
                     break
 
                 if not tool_result or not tool_result.success:
                     self.logger.info("No transcripts found or API error")
                     break
 
-                self.logger.debug(
-                    f"Fireflies API response: {tool_result.result[:200]}..."
-                )
+                self.logger.debug(f"Fireflies API response: {tool_result.result[:200]}...")
                 page = self._parse_fireflies_response(tool_result.result)
                 transcripts.extend(page)
                 if len(page) < page_limit:
@@ -550,15 +542,12 @@ class FirefliesObsidianAgent(BasicAgent):
 
                 # Fetch full transcript
                 transcript_result = await self._call_fireflies_tool(
-                    "fireflies_get_transcript",
-                    {"transcriptId": transcript_id}
+                    "fireflies_get_transcript", {"transcriptId": transcript_id}
                 )
 
                 # Extract transcript text from ToolResult
                 transcript_text = (
-                    transcript_result.result
-                    if hasattr(transcript_result, "result")
-                    else str(transcript_result)
+                    transcript_result.result if hasattr(transcript_result, "result") else str(transcript_result)
                 )
 
                 # Optionally fetch Fireflies' native summary. Additive
@@ -569,23 +558,16 @@ class FirefliesObsidianAgent(BasicAgent):
                 if include_summary:
                     try:
                         summary_result = await self._call_fireflies_tool(
-                            "fireflies_get_summary",
-                            {"transcriptId": transcript_id}
+                            "fireflies_get_summary", {"transcriptId": transcript_id}
                         )
                         if summary_result and getattr(summary_result, "success", False):
                             summary_text = (
-                                summary_result.result
-                                if hasattr(summary_result, "result")
-                                else str(summary_result)
+                                summary_result.result if hasattr(summary_result, "result") else str(summary_result)
                             )
-                            transcript_text = self._append_fireflies_summary_section(
-                                transcript_text, summary_text
-                            )
+                            transcript_text = self._append_fireflies_summary_section(transcript_text, summary_text)
                             has_summary = True
                         else:
-                            report["errors"].append(
-                                f"Fireflies summary unavailable for {transcript_id}"
-                            )
+                            report["errors"].append(f"Fireflies summary unavailable for {transcript_id}")
                     except Exception as e:
                         error_msg = f"Failed to fetch Fireflies summary for {transcript_id}: {e}"
                         self.logger.error(error_msg)
@@ -660,9 +642,7 @@ class FirefliesObsidianAgent(BasicAgent):
                 duration = transcript.get("duration", 0)
 
                 async def _fetch(tid: str) -> str:
-                    result = await self._call_fireflies_tool(
-                        "fireflies_get_transcript", {"transcriptId": tid}
-                    )
+                    result = await self._call_fireflies_tool("fireflies_get_transcript", {"transcriptId": tid})
                     text = result.result if hasattr(result, "result") else str(result)
                     transcript_cache[tid] = text
                     return text
@@ -672,18 +652,12 @@ class FirefliesObsidianAgent(BasicAgent):
 
                     async def _fetch_summary(tid: str) -> Optional[str]:
                         try:
-                            result = await self._call_fireflies_tool(
-                                "fireflies_get_summary", {"transcriptId": tid}
-                            )
+                            result = await self._call_fireflies_tool("fireflies_get_summary", {"transcriptId": tid})
                             if result and getattr(result, "success", False):
-                                text = (
-                                    result.result if hasattr(result, "result") else str(result)
-                                )
+                                text = result.result if hasattr(result, "result") else str(result)
                                 summary_cache[tid] = text
                                 return text
-                            report["errors"].append(
-                                f"Fireflies summary unavailable for {tid}"
-                            )
+                            report["errors"].append(f"Fireflies summary unavailable for {tid}")
                         except Exception as e:
                             error_msg = f"Failed to fetch Fireflies summary for {tid}: {e}"
                             self.logger.error(error_msg)
@@ -739,9 +713,7 @@ class FirefliesObsidianAgent(BasicAgent):
                 summary_text = summary_cache.get(transcript_id)
                 has_summary = False
                 if summary_text:
-                    transcript_text = self._append_fireflies_summary_section(
-                        transcript_text, summary_text
-                    )
+                    transcript_text = self._append_fireflies_summary_section(transcript_text, summary_text)
                     has_summary = True
 
                 if repair_result.to_path is None:
@@ -851,9 +823,7 @@ class FirefliesObsidianAgent(BasicAgent):
         frontmatter = dict(current.get("frontmatter") or {})
         frontmatter.update(patch)
         content = current.get("content", "")
-        block = yaml.safe_dump(
-            frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True
-        )
+        block = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False, allow_unicode=True)
         full_text = f"---\n{block}---\n\n{content}"
         await self.obsidian_toolkit.update_note(path, content=full_text, preserve_frontmatter=False)
 
@@ -909,10 +879,7 @@ class FirefliesObsidianAgent(BasicAgent):
             transcript_text = self._strip_analysis_section(note.get("content", ""))
 
             # Call LLM for analysis
-            analysis_prompt = self._build_analysis_prompt(
-                transcript_text,
-                granularity=granularity
-            )
+            analysis_prompt = self._build_analysis_prompt(transcript_text, granularity=granularity)
 
             self.logger.info(f"Analyzing with LLM (granularity={granularity})...")
             llm_response = await self.client.complete(analysis_prompt)
@@ -1018,11 +985,9 @@ class FirefliesObsidianAgent(BasicAgent):
             for note_title in candidates:
                 if limit is not None and len(outcome["analyzed"]) >= limit:
                     self.logger.info(
-                        "Analysis limit reached (%s); %s note(s) left for the "
-                        "next run.",
+                        "Analysis limit reached (%s); %s note(s) left for the " "next run.",
                         limit,
-                        len(candidates) - len(outcome["analyzed"])
-                        - len(outcome["skipped"]) - len(outcome["errors"]),
+                        len(candidates) - len(outcome["analyzed"]) - len(outcome["skipped"]) - len(outcome["errors"]),
                     )
                     break
 
@@ -1140,7 +1105,8 @@ class FirefliesObsidianAgent(BasicAgent):
                 "meeting",
                 "fireflies",
                 f"date:{date[:7]}",  # YYYY-MM for easy filtering
-            ] + (["audio-recorded"] if duration > 0 else []),
+            ]
+            + (["audio-recorded"] if duration > 0 else []),
             "timestamp": datetime.utcnow().isoformat(),
             "summary": f"Meeting: {title}. Participants: {', '.join(participants[:3])}{'...' if len(participants) > 3 else ''}. Duration: {duration:.1f} minutes.",
             "relates_to": [
@@ -1333,14 +1299,7 @@ class FirefliesObsidianAgent(BasicAgent):
             date_part = datetime.utcnow().strftime("%Y-%m-%d")
 
         # Slugify title
-        slug = (
-            meeting_title.lower()
-            .replace(" ", "-")
-            .replace("_", "-")
-            .replace("/", "-")
-            .replace("&", "-")
-            .strip("-")
-        )
+        slug = meeting_title.lower().replace(" ", "-").replace("_", "-").replace("/", "-").replace("&", "-").strip("-")
 
         return f"{date_part}-{slug}"
 

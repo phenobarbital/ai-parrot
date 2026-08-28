@@ -218,8 +218,7 @@ class MeetingRegistry:
             self._available = True
         except (sqlite3.Error, OSError) as exc:
             self.logger.warning(
-                "MeetingRegistry unavailable at %s: %s — falling back to"
-                " title-based dedup for this run",
+                "MeetingRegistry unavailable at %s: %s — falling back to" " title-based dedup for this run",
                 self.registry_dir,
                 exc,
             )
@@ -735,9 +734,9 @@ class MeetingRegistry:
         if not paths:
             return MergeResult(fireflies_id=fireflies_id, kept="", removed=[])
         for path in paths:
-            assert path.startswith(f"{meetings_folder}/"), (
-                f"merge_duplicates: {path!r} is outside meetings_folder={meetings_folder!r}"
-            )
+            assert path.startswith(
+                f"{meetings_folder}/"
+            ), f"merge_duplicates: {path!r} is outside meetings_folder={meetings_folder!r}"
 
         vault_root = self._vault_root(toolkit)
         notes: dict[str, dict[str, Any]] = {}
@@ -785,9 +784,7 @@ class MeetingRegistry:
             # A stale row for THIS SAME meeting may already carry the
             # canonical URI (e.g. a prior repair/merge) — only a
             # DIFFERENT id's ownership blocks the move.
-            existing_entry = await asyncio.to_thread(
-                self._manager.find_by_external_id, self._external_id(fireflies_id)
-            )
+            existing_entry = await asyncio.to_thread(self._manager.find_by_external_id, self._external_id(fireflies_id))
             owned_by_other = owner_id is not None and (existing_entry is None or owner_id != existing_entry.source_id)
             if not owned_by_other:
                 try:
@@ -864,9 +861,9 @@ class MeetingRegistry:
         if found_path is None:
             return RepairResult(fireflies_id=fireflies_id, from_path=current_uri, to_path=None, moved=False)
 
-        assert found_path.startswith(f"{meetings_folder}/"), (
-            f"repair_path: {found_path!r} is outside meetings_folder={meetings_folder!r}"
-        )
+        assert found_path.startswith(
+            f"{meetings_folder}/"
+        ), f"repair_path: {found_path!r} is outside meetings_folder={meetings_folder!r}"
         canonical_rel = f"{meetings_folder}/{canonical_title}.md"
         final_rel = found_path
         moved = False

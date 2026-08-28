@@ -110,9 +110,7 @@ class TestSyncSameIdChangedTitle:
         self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
     ):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}]
         fake_fireflies["transcripts"] = {"abc": "v1 transcript content"}
 
         first = await agent.sync_fireflies_transcripts(limit=10)
@@ -123,9 +121,7 @@ class TestSyncSameIdChangedTitle:
         assert len(list(meetings_dir.glob("*.md"))) == 1
 
         # Title AND content change -> a real revise (not a cheap skip).
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup Renamed", "date": "2026-08-01", "duration": 30}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup Renamed", "date": "2026-08-01", "duration": 30}]
         fake_fireflies["transcripts"] = {"abc": "v2 transcript content, materially different"}
         agent.obsidian_toolkit.create_note = AsyncMock(
             side_effect=AssertionError("create_note must not be called for a known id")
@@ -166,9 +162,7 @@ class TestSyncCheapSkipAndForceRefetch:
         self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
     ):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}]
         fake_fireflies["transcripts"] = {"abc": "same content"}
 
         await agent.sync_fireflies_transcripts(limit=10)
@@ -185,13 +179,9 @@ class TestSyncCheapSkipAndForceRefetch:
 
 
 class TestSyncFromDate:
-    async def test_sync_from_date_from_registry(
-        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
-    ):
+    async def test_sync_from_date_from_registry(self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "text"}
         await agent.sync_fireflies_transcripts(limit=10)
         fake_fireflies["calls"].clear()
@@ -205,20 +195,14 @@ class TestSyncFromDate:
         assert listing_calls[0]["fromDate"] == expected_from_date
         assert report["from_date"] == expected_from_date
 
-    async def test_sync_explicit_from_date_wins(
-        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
-    ):
+    async def test_sync_explicit_from_date_wins(self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "text"}
         await agent.sync_fireflies_transcripts(limit=10)
         fake_fireflies["calls"].clear()
 
-        report = await agent.sync_fireflies_transcripts(
-            limit=10, filters=FirefliesFilters(from_date="2020-01-01")
-        )
+        report = await agent.sync_fireflies_transcripts(limit=10, filters=FirefliesFilters(from_date="2020-01-01"))
 
         listing_calls = _tool_calls(fake_fireflies, "fireflies_get_transcripts")
         assert listing_calls[0]["fromDate"] == "2020-01-01"
@@ -237,13 +221,9 @@ class TestSyncFromDate:
 
 
 class TestSyncRegistryUnavailable:
-    async def test_sync_registry_unavailable_falls_back(
-        self, agent: FirefliesObsidianAgent, fake_fireflies
-    ):
+    async def test_sync_registry_unavailable_falls_back(self, agent: FirefliesObsidianAgent, fake_fireflies):
         agent.registry = None
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "text"}
 
         report = await agent.sync_fireflies_transcripts(limit=10)
@@ -257,9 +237,7 @@ class TestSyncRegistryUnavailable:
 class TestSyncReportFields:
     async def test_sync_report_fields(self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "text"}
 
         report = await agent.sync_fireflies_transcripts(limit=10)
@@ -269,19 +247,13 @@ class TestSyncReportFields:
 
 
 class TestSummarizePendingTranscripts:
-    async def test_summarize_uses_registry_pending(
-        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
-    ):
+    async def test_summarize_uses_registry_pending(self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "Transcript content for analysis."}
         await agent.sync_fireflies_transcripts(limit=10)
 
-        agent.client.complete = AsyncMock(
-            return_value="##Summary\nAll good\n##Follow Ups\n1. q1\n##Insights\n- i1"
-        )
+        agent.client.complete = AsyncMock(return_value="##Summary\nAll good\n##Follow Ups\n1. q1\n##Insights\n- i1")
         agent._has_analysis = AsyncMock(side_effect=AssertionError("_has_analysis must not be called"))
 
         outcome = await agent.summarize_pending_transcripts()
@@ -291,13 +263,9 @@ class TestSummarizePendingTranscripts:
         assert record.analysis_status == "done"
         assert record.analysis_fingerprint == record.fingerprint
 
-    async def test_summarize_failure_marks_failed(
-        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
-    ):
+    async def test_summarize_failure_marks_failed(self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path):
         agent.registry = MeetingRegistry(tmp_path / "registry")
-        fake_fireflies["listing"] = [
-            {"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}
-        ]
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
         fake_fireflies["transcripts"] = {"abc": "Transcript content for analysis."}
         await agent.sync_fireflies_transcripts(limit=10)
 

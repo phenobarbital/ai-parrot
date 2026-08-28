@@ -618,6 +618,7 @@ class TestRecordDocumentMetadata:
         )
         assert mgr.list_sources() == []
 
+
 class TestBulkManifestOperations:
     """The batch API behind the build pipeline's manifest phase.
 
