@@ -123,9 +123,7 @@ class TestBakeUnresolvableRaises:
 
     def test_bake_template_path_not_a_list_raises(self):
         surface = _surface(
-            Component(
-                id="root", component="List", children={"componentId": "row", "path": "/notalist"}
-            ),
+            Component(id="root", component="List", children={"componentId": "row", "path": "/notalist"}),
             Component(id="row", component="Text", text="x"),
             data_model={"notalist": {"a": 1}},
         )
@@ -136,9 +134,7 @@ class TestBakeUnresolvableRaises:
 class TestBakeRelativePathInTemplateScope:
     def test_relative_path_resolves_against_scope(self):
         surface = _surface(
-            Component(
-                id="root", component="List", children={"componentId": "row", "path": "/items"}
-            ),
+            Component(id="root", component="List", children={"componentId": "row", "path": "/items"}),
             Component(id="row", component="Text", text={"path": "label"}),
             data_model={"items": [{"label": "One"}, {"label": "Two"}]},
         )
@@ -152,9 +148,7 @@ class TestBakePostconditionNoLiveBinding:
         surface = _surface(
             Component(id="root", component="Column", children=["a", "list"]),
             Component(id="a", component="Text", text={"path": "/title"}),
-            Component(
-                id="list", component="List", children={"componentId": "row", "path": "/items"}
-            ),
+            Component(id="list", component="List", children={"componentId": "row", "path": "/items"}),
             Component(id="row", component="Text", text={"path": "name"}),
             data_model={"title": "Hi", "items": [{"name": "X"}, {"name": "Y"}]},
         )

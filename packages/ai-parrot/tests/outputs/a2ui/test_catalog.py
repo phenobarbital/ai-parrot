@@ -29,10 +29,7 @@ def cleanup_catalog():
 
 def _surface(*component_names: str) -> CreateSurface:
     """Build a surface with a ``root`` Column wrapping each named component."""
-    children = [
-        Component(id=f"blk-{i}", component=name)
-        for i, name in enumerate(component_names)
-    ]
+    children = [Component(id=f"blk-{i}", component=name) for i, name in enumerate(component_names)]
     root = Component(id="root", component="Column", children=[c.id for c in children])
     return CreateSurface(
         surfaceId="main",

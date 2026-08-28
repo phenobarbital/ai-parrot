@@ -43,8 +43,7 @@ def _load_weasyprint():
         return _import_weasyprint()
     except ImportError as exc:
         raise ImportError(
-            "The A2UI pdf renderer requires weasyprint. "
-            f"Install it with: pip install {_PDF_EXTRA}"
+            "The A2UI pdf renderer requires weasyprint. " f"Install it with: pip install {_PDF_EXTRA}"
         ) from exc
 
 
@@ -94,8 +93,7 @@ def _chart_svg(props: dict) -> str:
         # Inherits SSR's 18-primitive set minus Video/AudioPlayer — a static
         # rasterized PDF cannot play media; both degrade to a link (spec
         # Scope: "declara supported_components sin Video/Audio").
-        supported_components=SSRHTMLRenderer.capabilities.supported_components
-        - {"Video", "AudioPlayer"},
+        supported_components=SSRHTMLRenderer.capabilities.supported_components - {"Video", "AudioPlayer"},
     ),
 )
 class PDFRenderer(SSRHTMLRenderer):
@@ -134,9 +132,7 @@ class PDFRenderer(SSRHTMLRenderer):
             metadata={"degraded": degraded} if degraded else {},
         )
 
-    async def _build_intermediate_html(
-        self, envelope: CreateSurface, *, deep_links=None
-    ) -> tuple[str, list[dict]]:
+    async def _build_intermediate_html(self, envelope: CreateSurface, *, deep_links=None) -> tuple[str, list[dict]]:
         """Produce the baked, self-contained HTML fed to weasyprint (charts as SVG)."""
         ssr_artifact = await super().render(envelope, deep_links=deep_links)
         document = ssr_artifact.content.decode("utf-8")

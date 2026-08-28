@@ -92,9 +92,7 @@ class TestInfographicComponent:
         tree = infographic.InfographicComponent().lower(_infographic(), {})
         flat = to_components(tree)
         root = Component(id="root", component="Column", children=[c.id for c in flat])
-        surface = CreateSurface(
-            surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat]
-        )
+        surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat])
         validate_envelope(surface)
 
 

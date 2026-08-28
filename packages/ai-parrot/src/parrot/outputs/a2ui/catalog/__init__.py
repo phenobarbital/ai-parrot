@@ -214,9 +214,7 @@ def catalog_instructions() -> str:
     return "\n".join(lines)
 
 
-def resolve_catalog(
-    component_catalog_id: str | None, surface_catalog_id: str | None
-) -> str:
+def resolve_catalog(component_catalog_id: str | None, surface_catalog_id: str | None) -> str:
     """Resolve the effective catalog id for a component (spec §2 G2).
 
     Precedence: the component's own ``catalogId`` wins; otherwise the
@@ -301,8 +299,7 @@ def validate_message(message: A2UIAgentMessage | A2UIRendererMessage) -> None:
         schema_name = "renderer_to_agent"
     else:
         raise TypeError(
-            f"validate_message expects an A2UIAgentMessage or A2UIRendererMessage, "
-            f"got {type(message)!r}."
+            f"validate_message expects an A2UIAgentMessage or A2UIRendererMessage, " f"got {type(message)!r}."
         )
 
     payload = serialize(message)
@@ -361,9 +358,7 @@ def validate_envelope(
     Raises:
         CatalogValidationError: Aggregating every problem found, via ``.issues``.
     """
-    effective_surface_catalog_id = surface_catalog_id or getattr(
-        envelope, "catalog_id", None
-    )
+    effective_surface_catalog_id = surface_catalog_id or getattr(envelope, "catalog_id", None)
 
     components = envelope.components
     ids = [c.id for c in components]
@@ -406,13 +401,9 @@ def validate_envelope(
                 )
 
         try:
-            resolved_catalog_id = resolve_catalog(
-                comp.catalog_id, effective_surface_catalog_id
-            )
+            resolved_catalog_id = resolve_catalog(comp.catalog_id, effective_surface_catalog_id)
         except CatalogValidationError as exc:
-            issues.append(
-                {"code": exc.code, "message": str(exc), "path": comp.id}
-            )
+            issues.append({"code": exc.code, "message": str(exc), "path": comp.id})
         else:
             if not _component_exists(comp.component, resolved_catalog_id):
                 unknown_components.append(comp.component)

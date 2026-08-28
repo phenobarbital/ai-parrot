@@ -71,9 +71,7 @@ REPORT_INSTRUCTIONS = (
 )
 
 
-def _lower_child(
-    descriptor: dict[str, Any], data_model: dict[str, Any], child_id: str
-) -> BasicNode:
+def _lower_child(descriptor: dict[str, Any], data_model: dict[str, Any], child_id: str) -> BasicNode:
     """Lower a nested catalog child through its registered ``lower()`` (pure)."""
     name = descriptor["component"]
     try:
@@ -87,9 +85,7 @@ def _lower_child(
     return entry.component_cls().lower(child, data_model)
 
 
-def _lower_section(
-    section: dict[str, Any], data_model: dict[str, Any], section_id: str
-) -> BasicNode:
+def _lower_section(section: dict[str, Any], data_model: dict[str, Any], section_id: str) -> BasicNode:
     """Lower one section (heading + text + nested components) to a Column."""
     section_children: list[BasicNode] = [
         BasicNode(

@@ -97,9 +97,7 @@ class TestBakedRowsMaterialize:
         assert [c["text"] for c in cells] == ["North", 10]
 
     def test_empty_row_list_produces_no_clones(self):
-        baked = _surface_and_bake(
-            _component(data={"path": "/tables/blk-001"}), {"tables": {"blk-001": []}}
-        )
+        baked = _surface_and_bake(_component(data={"path": "/tables/blk-001"}), {"tables": {"blk-001": []}})
         assert not [c for c in baked if c["id"].startswith("blk-001-row-")]
 
     def test_totalrows_and_truncated_survive_in_extensions(self):

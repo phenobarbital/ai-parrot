@@ -112,9 +112,7 @@ class Image(Component):
     url: DynamicString
     description: DynamicString | None = None
     fit: Literal["contain", "cover", "fill", "none", "scaleDown"] = "fill"
-    variant: Literal[
-        "icon", "avatar", "smallFeature", "mediumFeature", "largeFeature", "header"
-    ] = "mediumFeature"
+    variant: Literal["icon", "avatar", "smallFeature", "mediumFeature", "largeFeature", "header"] = "mediumFeature"
 
 
 class IconSvgPath(BaseModel):
@@ -140,9 +138,7 @@ class Icon(Component):
 class Video(Component):
     """A video player."""
 
-    INSTRUCTIONS: ClassVar[str] = (
-        "Video: requires `url`. `posterUrl` is the poster image shown before playback."
-    )
+    INSTRUCTIONS: ClassVar[str] = "Video: requires `url`. `posterUrl` is the poster image shown before playback."
 
     component: Literal["Video"] = "Video"
     url: DynamicString
@@ -152,9 +148,7 @@ class Video(Component):
 class AudioPlayer(Component):
     """An audio player."""
 
-    INSTRUCTIONS: ClassVar[str] = (
-        "AudioPlayer: requires `url`. `description` is an optional title/summary."
-    )
+    INSTRUCTIONS: ClassVar[str] = "AudioPlayer: requires `url`. `description` is an optional title/summary."
 
     component: Literal["AudioPlayer"] = "AudioPlayer"
     url: DynamicString

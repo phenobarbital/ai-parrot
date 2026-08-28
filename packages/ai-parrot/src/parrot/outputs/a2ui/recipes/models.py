@@ -278,9 +278,7 @@ class InfographicRecipe(BaseModel):
         Returns:
             A YAML string, lossless round-trip via :meth:`from_yaml`.
         """
-        return yaml.safe_dump(
-            self.model_dump(mode="json"), sort_keys=False, allow_unicode=True
-        )
+        return yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False, allow_unicode=True)
 
     @classmethod
     def from_yaml(cls, text: str) -> "InfographicRecipe":

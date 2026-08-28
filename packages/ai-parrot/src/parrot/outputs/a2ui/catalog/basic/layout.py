@@ -32,9 +32,7 @@ class Row(Component):
 
     component: Literal["Row"] = "Row"
     children: ChildList
-    justify: Literal[
-        "center", "end", "spaceAround", "spaceBetween", "spaceEvenly", "start", "stretch"
-    ] = "start"
+    justify: Literal["center", "end", "spaceAround", "spaceBetween", "spaceEvenly", "start", "stretch"] = "start"
     align: Literal["start", "center", "end", "stretch"] = "stretch"
 
 
@@ -49,9 +47,7 @@ class Column(Component):
 
     component: Literal["Column"] = "Column"
     children: ChildList
-    justify: Literal[
-        "start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"
-    ] = "start"
+    justify: Literal["start", "center", "end", "spaceBetween", "spaceAround", "spaceEvenly", "stretch"] = "start"
     align: Literal["center", "end", "start", "stretch"] = "stretch"
 
 
@@ -59,8 +55,7 @@ class List(Component):
     """A vertical or horizontal list of items."""
 
     INSTRUCTIONS: ClassVar[str] = (
-        "List: lays out `children` (ids, or a template) vertically or "
-        "horizontally via `direction`."
+        "List: lays out `children` (ids, or a template) vertically or " "horizontally via `direction`."
     )
 
     component: Literal["List"] = "List"
@@ -117,20 +112,14 @@ class Modal(Component):
     )
 
     component: Literal["Modal"] = "Modal"
-    trigger: str = Field(
-        description="The id of the component that opens the modal when interacted with."
-    )
-    content: str = Field(
-        description="The id of the component to be displayed inside the modal."
-    )
+    trigger: str = Field(description="The id of the component that opens the modal when interacted with.")
+    content: str = Field(description="The id of the component to be displayed inside the modal.")
 
 
 class Divider(Component):
     """A horizontal or vertical rule."""
 
-    INSTRUCTIONS: ClassVar[str] = (
-        "Divider: a horizontal or vertical rule (`axis`, default horizontal)."
-    )
+    INSTRUCTIONS: ClassVar[str] = "Divider: a horizontal or vertical rule (`axis`, default horizontal)."
 
     component: Literal["Divider"] = "Divider"
     axis: Literal["horizontal", "vertical"] = "horizontal"

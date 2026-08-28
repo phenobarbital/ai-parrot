@@ -90,14 +90,7 @@ class TestMigrateLayout:
                 "title": raw["layout"]["title"],
                 "subtitle": raw["layout"]["subtitle"],
                 "sections": [
-                    {
-                        k: (
-                            {"$bind": v["path"], "optional": True}
-                            if k == "text"
-                            else v
-                        )
-                        for k, v in section.items()
-                    }
+                    {k: ({"$bind": v["path"], "optional": True} if k == "text" else v) for k, v in section.items()}
                     for section in raw["layout"]["sections"]
                 ],
             },
@@ -186,9 +179,9 @@ class TestMigrateStore:
         # A recipe whose on-disk schema_version is out of range: migrating it
         # must be reported as an error, not raise out of migrate_store and
         # abort the rest of the sweep.
-        (tmp_path / "broken.yaml").write_text(_v1_yaml_text("broken").replace(
-            "schema_version: 1", "schema_version: 99"
-        ))
+        (tmp_path / "broken.yaml").write_text(
+            _v1_yaml_text("broken").replace("schema_version: 1", "schema_version: 99")
+        )
 
         report = await migrate_store(store)
 

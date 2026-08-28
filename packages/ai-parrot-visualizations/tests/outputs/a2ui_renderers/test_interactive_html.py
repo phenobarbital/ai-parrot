@@ -1,4 +1,5 @@
-"""Unit tests for the interactive-HTML renderer (FEAT-324, Module 7)."""
+"""Unit tests for the interactive-HTML renderer (FEAT-324, Module 7;
+rewritten to v1.0 by FEAT-470 TASK-2544)."""
 
 import json
 import re
@@ -37,15 +38,13 @@ class TestInteractiveHTMLRenderer:
     async def test_interactive_html_self_contained(self):
         env = _envelope(
             Component(
-                id="b0",
+                id="root",
                 component="Chart",
-                properties={
-                    "type": "bar",
-                    "x": "day",
-                    "y": ["actual", "budget"],
-                    "data": {"$bind": "/rows"},
-                    "title": "Actual vs Budget",
-                },
+                type="bar",
+                x="day",
+                y=["actual", "budget"],
+                data={"path": "/rows"},
+                title="Actual vs Budget",
             ),
             data_model={"rows": [{"day": "Mon", "actual": 10, "budget": 8}]},
         )
@@ -68,15 +67,13 @@ class TestInteractiveHTMLRenderer:
     async def test_datamodel_embedded_and_parseable(self):
         data_model = {"rows": [{"day": "Mon", "actual": 10, "budget": 8}]}
         env = _envelope(
-            Component(id="b0", component="Card", properties={"title": "T"}),
+            Component(id="root", component="InfoCard", title="T"),
             data_model=data_model,
         )
         art = await InteractiveHTMLRenderer().render(env)
         doc = art.content.decode()
 
-        match = re.search(
-            r'<script type="application/json" id="report-data">(.*?)</script>', doc, re.DOTALL
-        )
+        match = re.search(r'<script type="application/json" id="report-data">(.*?)</script>', doc, re.DOTALL)
         assert match is not None
         parsed = json.loads(match.group(1))
         assert parsed == data_model
@@ -84,15 +81,13 @@ class TestInteractiveHTMLRenderer:
     async def test_chart_rendered_from_properties(self):
         env = _envelope(
             Component(
-                id="b0",
+                id="root",
                 component="Chart",
-                properties={
-                    "type": "bar",
-                    "x": "day",
-                    "y": ["actual", "budget"],
-                    "data": {"$bind": "/rows"},
-                    "title": "Actual vs Budget",
-                },
+                type="bar",
+                x="day",
+                y=["actual", "budget"],
+                data={"path": "/rows"},
+                title="Actual vs Budget",
             ),
             data_model={"rows": [{"day": "Mon", "actual": 10, "budget": 8}]},
         )
@@ -112,15 +107,13 @@ class TestInteractiveHTMLRenderer:
     async def test_chart_with_tabs_renders_day_tabs(self):
         env = _envelope(
             Component(
-                id="b0",
+                id="root",
                 component="Chart",
-                properties={
-                    "type": "line",
-                    "x": "division",
-                    "y": ["variance"],
-                    "tabs": {"$bind": "/tabs"},
-                    "title": "Daily Variance",
-                },
+                type="line",
+                x="division",
+                y=["variance"],
+                tabs={"path": "/tabs"},
+                title="Daily Variance",
             ),
             data_model={
                 "tabs": [
@@ -140,13 +133,11 @@ class TestInteractiveHTMLRenderer:
     async def test_datatable_rendered_with_sort_hooks(self):
         env = _envelope(
             Component(
-                id="b0",
+                id="root",
                 component="DataTable",
-                properties={
-                    "title": "Ledger",
-                    "columns": [{"name": "division", "title": "Division"}, {"name": "rev"}],
-                    "data": {"$bind": "/rows"},
-                },
+                title="Ledger",
+                columns=[{"name": "division", "title": "Division"}, {"name": "rev"}],
+                data={"path": "/rows"},
             ),
             data_model={"rows": [{"division": "Sales", "rev": 100}, {"division": "Ops", "rev": 50}]},
         )
@@ -161,10 +152,8 @@ class TestInteractiveHTMLRenderer:
 
     async def test_non_chart_components_render_server_side(self):
         env = _envelope(
-            Component(
-                id="b0", component="KPICard", properties={"label": "Revenue", "value": 100}
-            ),
-            Component(id="b1", component="Card", properties={"title": "Notes"}),
+            Component(id="k0", component="KPICard", label="Revenue", value=100),
+            Component(id="c1", component="InfoCard", title="Notes"),
         )
         art = await InteractiveHTMLRenderer().render(env)
         doc = art.content.decode()
@@ -175,34 +164,32 @@ class TestInteractiveHTMLRenderer:
     async def test_infographic_nested_chart_and_datatable(self):
         env = _envelope(
             Component(
-                id="b0",
+                id="root",
                 component="Infographic",
-                properties={
-                    "title": "Budget Variance",
-                    "sections": [
-                        {
-                            "heading": "Overview",
-                            "components": [
-                                {
-                                    "component": "Chart",
-                                    "properties": {
-                                        "type": "bar",
-                                        "x": "day",
-                                        "y": ["actual"],
-                                        "data": {"$bind": "/rows"},
-                                    },
+                title="Budget Variance",
+                sections=[
+                    {
+                        "heading": "Overview",
+                        "components": [
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "type": "bar",
+                                    "x": "day",
+                                    "y": ["actual"],
+                                    "data": {"path": "/rows"},
                                 },
-                                {
-                                    "component": "DataTable",
-                                    "properties": {
-                                        "columns": [{"name": "day"}],
-                                        "data": {"$bind": "/rows"},
-                                    },
+                            },
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [{"name": "day"}],
+                                    "data": {"path": "/rows"},
                                 },
-                            ],
-                        }
-                    ],
-                },
+                            },
+                        ],
+                    }
+                ],
             ),
             data_model={"rows": [{"day": "Mon", "actual": 10}]},
         )
@@ -215,10 +202,73 @@ class TestInteractiveHTMLRenderer:
         assert "data-sort-table" in doc
 
     async def test_sort_and_tab_hooks_present_in_behavior_js(self):
-        env = _envelope(Component(id="b0", component="Card", properties={"title": "T"}))
+        env = _envelope(Component(id="root", component="InfoCard", title="T"))
         art = await InteractiveHTMLRenderer().render(env)
         doc = art.content.decode()
 
         assert "data-sort-table" in doc  # behavior JS references the hook name
         assert "data-tabs-for" in doc
         assert "data-metric-toggle-for" in doc
+
+
+class TestTASK2544:
+    """FEAT-470 TASK-2544: 18-primitive dispatch, Tabs/List/Divider/inputs."""
+
+    async def test_interactive_html_renders_new_primitives(self):
+        """Tabs/List/Divider/inputs are present in the DOM (spec acceptance
+        criterion)."""
+        env = _envelope(
+            Component(
+                id="root",
+                component="Column",
+                children=["tabs1", "list1", "div1", "tf1", "cb1"],
+            ),
+            Component(
+                id="tabs1",
+                component="Tabs",
+                tabs=[{"title": "Tab A", "child": "ta1"}, {"title": "Tab B", "child": "tb1"}],
+            ),
+            Component(id="ta1", component="Text", text="content A"),
+            Component(id="tb1", component="Text", text="content B"),
+            Component(id="list1", component="List", direction="horizontal", children=["lt1"]),
+            Component(id="lt1", component="Text", text="list item"),
+            Component(id="div1", component="Divider", axis="horizontal"),
+            Component(id="tf1", component="TextField", label="Name", value="Alice"),
+            Component(id="cb1", component="CheckBox", label="Agree", value=True),
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+
+        assert "data-tabs=" in doc
+        assert "data-tabs-panes=" in doc
+        assert "content A" in doc and "content B" in doc
+        assert "list item" in doc
+        assert '<hr class="a2ui-divider-h">' in doc
+        assert "Name" in doc and "Alice" in doc
+        assert "Agree" in doc
+        assert art.metadata.get("degraded", []) == []
+
+    async def test_interactive_chart_reads_top_level_props(self):
+        """Chart props (v1.0) live top-level, not nested under "properties"."""
+        env = _envelope(
+            Component(
+                id="root",
+                component="Chart",
+                type="bar",
+                x="day",
+                y=["actual"],
+                data=[{"day": "Mon", "actual": 5}],
+                title="Top Level",
+            )
+        )
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert "Top Level" in doc
+        assert '"day":"Mon"' in doc.replace(" ", "") or "Mon" in doc
+
+    async def test_unsupported_component_degrades(self):
+        env = _envelope(Component(id="root", component="NotARealComponent", foo="bar"))
+        art = await InteractiveHTMLRenderer().render(env)
+        doc = art.content.decode()
+        assert "no renderer" in doc.lower() or "not supported" in doc.lower()
+        assert len(art.metadata["degraded"]) == 1

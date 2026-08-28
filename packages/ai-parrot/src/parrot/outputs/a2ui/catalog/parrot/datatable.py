@@ -47,7 +47,7 @@ DATATABLE_SCHEMA: dict[str, Any] = {
 
 DATATABLE_INSTRUCTIONS = (
     "Use DataTable to present tabular rows. Declare `columns` (each with `name` and "
-    "optional `type`/`title`/`format`). Bind rows with `data: {\"path\": \"/pointer\"}`. "
+    'optional `type`/`title`/`format`). Bind rows with `data: {"path": "/pointer"}`. '
     "Set `totalRows`/`truncated` when the row set is capped. Display-only."
 )
 
@@ -77,9 +77,7 @@ class DataTableComponent:
         title = props.get("title")
         if title is not None:
             top_children.append(
-                BasicNode(
-                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
-                )
+                BasicNode(component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}})
             )
         top_children.append(
             BasicNode(
@@ -90,11 +88,7 @@ class DataTableComponent:
         )
 
         data = props.get("data")
-        table_path = (
-            data["path"]
-            if isinstance(data, dict) and "path" in data
-            else f"/tables/{component.id}"
-        )
+        table_path = data["path"] if isinstance(data, dict) and "path" in data else f"/tables/{component.id}"
         row_id = f"{component.id}-row"
         row_template = BasicNode(
             id=row_id,

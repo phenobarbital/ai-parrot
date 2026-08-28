@@ -18,14 +18,12 @@ def _map_envelope() -> CreateSurface:
         catalogId="https://parrot.dev/catalogs/v1",
         components=[
             Component(
-                id="b0",
+                id="root",
                 component="Map",
-                properties={
-                    "title": "Stores",
-                    "layers": [{"name": "stores"}],
-                    "viewport": {"center": [40.4, -3.7], "zoom": 6},
-                    "data": {"$bind": "/points"},
-                },
+                title="Stores",
+                layers=[{"name": "stores"}],
+                viewport={"center": [40.4, -3.7], "zoom": 6},
+                data={"path": "/points"},
             )
         ],
         dataModel={"points": [{"lat": 40.4, "lon": -3.7, "popup": "Madrid"}]},
@@ -69,7 +67,15 @@ class TestFoliumMapRenderer:
         env = CreateSurface(
             surfaceId="m",
             catalogId="https://parrot.dev/catalogs/v1",
-            components=[Component(id="b0", component="Card", properties={"title": "x"})],
+            components=[Component(id="root", component="InfoCard", title="x")],
         )
         with pytest.raises(ValueError):
             await fm.FoliumMapRenderer().render(env)
+
+
+class TestTASK2544:
+    """FEAT-470 TASK-2544: folium_map declares supported_components."""
+
+    async def test_folium_capabilities(self):
+        caps = fm.FoliumMapRenderer.capabilities
+        assert caps.supported_components == {"Map"}

@@ -115,17 +115,14 @@ class FunctionEvaluator:
                 unknown function, or ``@index`` used outside template scope.
         """
         args = {
-            key: self._resolve_arg_value(
-                value, data_model=data_model, scope_path=scope_path, index=index
-            )
+            key: self._resolve_arg_value(value, data_model=data_model, scope_path=scope_path, index=index)
             for key, value in call.args.items()
         }
 
         if call.call == "@index":
             if index is None:
                 raise CatalogValidationError(
-                    "'@index' may only be used when evaluating a ChildTemplate "
-                    "item (template scope).",
+                    "'@index' may only be used when evaluating a ChildTemplate " "item (template scope).",
                     code=INVALID_FUNCTION_CALL,
                 )
             return index + args.get("offset", 0)
@@ -181,9 +178,7 @@ class FunctionEvaluator:
             if template[i] == "$" and i + 1 < n and template[i + 1] == "{":
                 end = self._find_matching_brace(template, i + 1)
                 expr = template[i + 2 : end]
-                value = self._eval_expr(
-                    expr, data_model=data_model, scope_path=scope_path, index=index
-                )
+                value = self._eval_expr(expr, data_model=data_model, scope_path=scope_path, index=index)
                 out.append(self._stringify(value))
                 i = end + 1
                 continue
@@ -216,13 +211,10 @@ class FunctionEvaluator:
             raw = self._resolve_pointer(rule.condition.path, data_model)
             result = raw if isinstance(raw, ValidationResult) else ValidationResult.model_validate(raw)
         else:
-            result = self.evaluate(
-                rule.condition, data_model=data_model, scope_path=scope_path, index=index
-            )
+            result = self.evaluate(rule.condition, data_model=data_model, scope_path=scope_path, index=index)
             if not isinstance(result, ValidationResult):
                 raise CatalogValidationError(
-                    f"CheckRule condition {rule.condition.call!r} did not return a "
-                    "ValidationResult.",
+                    f"CheckRule condition {rule.condition.call!r} did not return a " "ValidationResult.",
                     code=INVALID_FUNCTION_CALL,
                 )
         if not result.valid and not result.message and rule.message:
@@ -333,9 +325,7 @@ class FunctionEvaluator:
             parts.append("".join(current))
         return [p for p in parts if p.strip()]
 
-    def _eval_expr(
-        self, expr: str, *, data_model: dict[str, Any], scope_path: str, index: int | None
-    ) -> Any:
+    def _eval_expr(self, expr: str, *, data_model: dict[str, Any], scope_path: str, index: int | None) -> Any:
         """Evaluate the content of one ``${...}`` (path, function call, or ``@index``)."""
         expr = expr.strip()
         if expr == "@index" or expr.startswith("@index("):
@@ -366,8 +356,7 @@ class FunctionEvaluator:
     def _eval_index_expr(self, expr: str, *, index: int | None) -> int:
         if index is None:
             raise CatalogValidationError(
-                "'@index' may only be used when evaluating a ChildTemplate "
-                "item (template scope).",
+                "'@index' may only be used when evaluating a ChildTemplate " "item (template scope).",
                 code=INVALID_FUNCTION_CALL,
             )
         if expr == "@index":
@@ -385,20 +374,14 @@ class FunctionEvaluator:
             name, _, raw_value = part.partition(":")
             name = name.strip()
             raw_value = raw_value.strip()
-            args[name] = self._parse_arg_value(
-                raw_value, data_model=data_model, scope_path=scope_path, index=index
-            )
+            args[name] = self._parse_arg_value(raw_value, data_model=data_model, scope_path=scope_path, index=index)
         return args
 
-    def _parse_arg_value(
-        self, raw: str, *, data_model: dict[str, Any], scope_path: str, index: int | None
-    ) -> Any:
+    def _parse_arg_value(self, raw: str, *, data_model: dict[str, Any], scope_path: str, index: int | None) -> Any:
         if len(raw) >= 2 and raw[0] == "'" and raw[-1] == "'":
             return raw[1:-1]
         if raw.startswith("${") and raw.endswith("}"):
-            return self._eval_expr(
-                raw[2:-1], data_model=data_model, scope_path=scope_path, index=index
-            )
+            return self._eval_expr(raw[2:-1], data_model=data_model, scope_path=scope_path, index=index)
         if raw in ("true", "false"):
             return raw == "true"
         try:
@@ -433,14 +416,10 @@ class FunctionEvaluator:
                     raise KeyError(f"Pointer {pointer!r}: {token!r} not found in data model.")
                 node = node[token]
             else:
-                raise KeyError(
-                    f"Cannot resolve pointer {pointer!r}: intermediate value is not a dict/list."
-                )
+                raise KeyError(f"Cannot resolve pointer {pointer!r}: intermediate value is not a dict/list.")
         return node
 
-    def _resolve_arg_value(
-        self, value: Any, *, data_model: dict[str, Any], scope_path: str, index: int | None
-    ) -> Any:
+    def _resolve_arg_value(self, value: Any, *, data_model: dict[str, Any], scope_path: str, index: int | None) -> Any:
         """Resolve a wire ``FunctionCall.args`` value (literal, binding, or nested call)."""
         if isinstance(value, dict) and "call" in value:
             return self.evaluate(
@@ -453,9 +432,7 @@ class FunctionEvaluator:
             return self._resolve_pointer(value["path"], data_model)
         if isinstance(value, list):
             return [
-                self._resolve_arg_value(
-                    item, data_model=data_model, scope_path=scope_path, index=index
-                )
+                self._resolve_arg_value(item, data_model=data_model, scope_path=scope_path, index=index)
                 for item in value
             ]
         return value
@@ -496,9 +473,7 @@ class FunctionEvaluator:
         value = str(args.get("value", ""))
         min_len = args.get("min")
         max_len = args.get("max")
-        valid = (min_len is None or len(value) >= min_len) and (
-            max_len is None or len(value) <= max_len
-        )
+        valid = (min_len is None or len(value) >= min_len) and (max_len is None or len(value) <= max_len)
         return ValidationResult(
             valid=valid,
             code=None if valid else "LENGTH_OUT_OF_RANGE",
@@ -510,9 +485,7 @@ class FunctionEvaluator:
         value = args.get("value")
         min_value = args.get("min")
         max_value = args.get("max")
-        valid = (min_value is None or value >= min_value) and (
-            max_value is None or value <= max_value
-        )
+        valid = (min_value is None or value >= min_value) and (max_value is None or value <= max_value)
         return ValidationResult(
             valid=valid,
             code=None if valid else "NUMERIC_OUT_OF_RANGE",
@@ -593,4 +566,3 @@ class FunctionEvaluator:
     @staticmethod
     def _not(args: dict[str, Any]) -> bool:
         return not bool(args.get("value"))
-

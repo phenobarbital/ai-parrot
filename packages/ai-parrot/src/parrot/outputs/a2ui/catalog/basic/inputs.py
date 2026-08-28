@@ -113,9 +113,7 @@ class ChoicePicker(Checkable, Component):
     variant: Literal["multipleSelection", "mutuallyExclusive"] = "mutuallyExclusive"
     options: list[ChoiceOption]
     value: DynamicStringList
-    display_style: Literal["checkbox", "chips"] = Field(
-        default="checkbox", alias="displayStyle"
-    )
+    display_style: Literal["checkbox", "chips"] = Field(default="checkbox", alias="displayStyle")
     filterable: bool = False
 
 

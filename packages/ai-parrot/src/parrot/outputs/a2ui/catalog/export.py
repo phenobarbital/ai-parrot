@@ -29,9 +29,7 @@ from parrot.outputs.a2ui.catalog.basic import (
 __all__ = ["export_catalog_definition", "write_catalog_definition"]
 
 
-def export_catalog_definition(
-    *, catalog_id: str = DEFAULT_CATALOG_ID, include_basic: bool = True
-) -> dict[str, Any]:
+def export_catalog_definition(*, catalog_id: str = DEFAULT_CATALOG_ID, include_basic: bool = True) -> dict[str, Any]:
     """Build the catalog definition document for ``catalog_id`` (spec §2).
 
     Args:
@@ -52,9 +50,7 @@ def export_catalog_definition(
 
     if include_basic:
         for definition in basic_components():
-            components[definition.name] = {
-                "$ref": f"{BASIC_CATALOG_ID}#/components/{definition.name}"
-            }
+            components[definition.name] = {"$ref": f"{BASIC_CATALOG_ID}#/components/{definition.name}"}
         # Functions' schema (`catalog_definition.json#/$defs/FunctionDefinition`)
         # requires an inline `returnType` (`unevaluatedProperties: false`) — a
         # bare `$ref` doesn't satisfy it the way a component `$ref` does.

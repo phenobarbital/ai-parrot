@@ -105,9 +105,7 @@ def load_spec(name: SpecName) -> dict:
     try:
         filename = SPEC_FILES[name]
     except KeyError as exc:
-        raise ValueError(
-            f"Unknown A2UI spec name {name!r}. Valid names: {sorted(SPEC_FILES)}."
-        ) from exc
+        raise ValueError(f"Unknown A2UI spec name {name!r}. Valid names: {sorted(SPEC_FILES)}.") from exc
     path = _SPEC_DIR / filename
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -128,9 +126,7 @@ def schema_registry() -> Registry:
     for name in SPEC_FILES:
         doc = load_spec(name)
         registry = registry.with_resource(doc["$id"], Resource.from_contents(doc))
-    registry = registry.with_resource(
-        _CATALOG_ALIAS_ID, Resource.from_contents(load_spec("catalog"))
-    )
+    registry = registry.with_resource(_CATALOG_ALIAS_ID, Resource.from_contents(load_spec("catalog")))
     return registry
 
 
@@ -196,9 +192,7 @@ def _register_primitives() -> None:
         Slider,
         DateTimeInput,
     ):
-        register_component(
-            cls.__name__, catalog_id=BASIC_CATALOG_ID, is_primitive=True
-        )(cls)
+        register_component(cls.__name__, catalog_id=BASIC_CATALOG_ID, is_primitive=True)(cls)
 
 
 def basic_components() -> list:

@@ -54,11 +54,7 @@ class TimelineComponent:
 
         title = props.get("title")
         if title is not None:
-            children.append(
-                BasicNode(
-                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
-                )
-            )
+            children.append(BasicNode(component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}))
 
         for event in props.get("events") or []:
             row_children: list[BasicNode] = []

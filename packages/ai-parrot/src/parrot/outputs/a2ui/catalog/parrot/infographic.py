@@ -71,9 +71,7 @@ INFOGRAPHIC_INSTRUCTIONS = (
 )
 
 
-def _lower_child(
-    descriptor: dict[str, Any], data_model: dict[str, Any], child_id: str
-) -> BasicNode:
+def _lower_child(descriptor: dict[str, Any], data_model: dict[str, Any], child_id: str) -> BasicNode:
     """Lower a nested catalog child through its registered ``lower()`` (pure).
 
     A ``descriptor`` naming an official Basic Catalog primitive
@@ -109,8 +107,7 @@ def _lower_child(
         children_prop = props.get("children")
         if isinstance(children_prop, list) and children_prop and isinstance(children_prop[0], dict):
             props["children"] = [
-                _lower_child(nested, data_model, f"{child_id}-c{i}")
-                for i, nested in enumerate(props.pop("children"))
+                _lower_child(nested, data_model, f"{child_id}-c{i}") for i, nested in enumerate(props.pop("children"))
             ]
         if isinstance(props.get("child"), dict):
             props["child"] = _lower_child(props.pop("child"), data_model, f"{child_id}-child")
@@ -120,9 +117,7 @@ def _lower_child(
     return entry.component_cls().lower(child, data_model)
 
 
-def _lower_section(
-    section: dict[str, Any], data_model: dict[str, Any], section_id: str
-) -> BasicNode:
+def _lower_section(section: dict[str, Any], data_model: dict[str, Any], section_id: str) -> BasicNode:
     """Lower one section (heading + text + nested components) to a Column."""
     section_children: list[BasicNode] = []
     if section.get("heading") is not None:

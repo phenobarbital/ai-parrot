@@ -98,9 +98,7 @@ def migrate_layout(layout: dict[str, Any], *, from_version: int) -> dict[str, An
     return normalized
 
 
-async def migrate_store(
-    store: AbstractRecipeStore, *, dry_run: bool = False
-) -> MigrationReport:
+async def migrate_store(store: AbstractRecipeStore, *, dry_run: bool = False) -> MigrationReport:
     """Migrate every recipe in ``store`` to ``SUPPORTED_SCHEMA_VERSION`` (idempotent).
 
     Sweeps the unscoped (``owner=None``) recipe scope — the same scope

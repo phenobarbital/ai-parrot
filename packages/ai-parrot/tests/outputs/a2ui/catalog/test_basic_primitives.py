@@ -77,9 +77,9 @@ class TestBasicComponentEnums:
             assert model_prop is not None, f"{name}.{prop_name} missing from model schema"
             model_enum = _extract_enum(model_prop, schema.get("$defs", {}))
             assert model_enum is not None, f"{name}.{prop_name} has no enum in model"
-            assert set(model_enum) == set(enum_values), (
-                f"{name}.{prop_name} enum drift: model={model_enum} json={enum_values}"
-            )
+            assert set(model_enum) == set(
+                enum_values
+            ), f"{name}.{prop_name} enum drift: model={model_enum} json={enum_values}"
 
 
 def _flatten_properties(component_schema: dict) -> dict:

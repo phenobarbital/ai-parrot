@@ -38,9 +38,7 @@ def cleanup_catalog():
 
 def _root_surface(*components: Component) -> CreateSurface:
     """Build a CreateSurface whose first component is treated as ``root``."""
-    return CreateSurface(
-        surfaceId="main", catalogId=DEFAULT_CATALOG_ID, components=list(components)
-    )
+    return CreateSurface(surfaceId="main", catalogId=DEFAULT_CATALOG_ID, components=list(components))
 
 
 class TestValidateMessageAgentToRenderer:
@@ -99,9 +97,7 @@ class TestValidateRootRequiredAndUniqueIds:
 
 class TestDanglingChildReported:
     def test_dangling_child_reported(self):
-        surface = _root_surface(
-            Component(id="root", component="Column", children=["ghost"])
-        )
+        surface = _root_surface(Component(id="root", component="Column", children=["ghost"]))
         with pytest.raises(CatalogValidationError) as exc:
             validate_envelope(surface)
         assert DANGLING_CHILD in {i["code"] for i in exc.value.issues}

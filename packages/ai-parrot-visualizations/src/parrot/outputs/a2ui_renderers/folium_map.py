@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import parrot.outputs.a2ui.catalog.components  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.basic
+import parrot.outputs.a2ui.catalog.parrot
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.models import CreateSurface
@@ -33,7 +34,7 @@ _MAP_EXTRA = "ai-parrot-visualizations[a2ui,map]"
 
 def _import_folium():
     """Import ``folium`` (indirection point so tests can force failure)."""
-    import folium  # noqa: PLC0415 — lazy by design
+    import folium
 
     return folium
 
@@ -44,8 +45,7 @@ def _load_folium():
         return _import_folium()
     except ImportError as exc:
         raise ImportError(
-            "The A2UI folium_map renderer requires 'folium'. "
-            f"Install it with: pip install {_MAP_EXTRA}"
+            "The A2UI folium_map renderer requires 'folium'. " f"Install it with: pip install {_MAP_EXTRA}"
         ) from exc
 
 
@@ -56,6 +56,7 @@ def _load_folium():
         supports_actions=False,
         supports_updates=False,
         output="text/html",
+        supported_components={"Map"},
     ),
 )
 class FoliumMapRenderer(AbstractA2UIRenderer):
@@ -86,7 +87,7 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
         if map_comp is None:
             raise ValueError("folium_map renderer requires a 'Map' component in the envelope.")
 
-        props = map_comp["properties"]
+        props = map_comp
         viewport = props.get("viewport") or {}
         center = viewport.get("center") or [0.0, 0.0]
         zoom = viewport.get("zoom", 2)

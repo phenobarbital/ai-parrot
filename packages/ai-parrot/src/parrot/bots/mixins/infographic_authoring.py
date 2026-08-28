@@ -17,6 +17,7 @@ mapping and snapshot timestamps — but **never** the python code used to build 
 (resolved brainstorm decision; spec §2 / §5). Tier 2 (``publish_recipe``) is
 added by TASK-1885.
 """
+
 from __future__ import annotations
 
 import logging
@@ -175,7 +176,9 @@ class InfographicAuthoringMixin:
         )
         self.logger.info(
             "Generated tier-1 infographic: artifact=%s template=%s mode=%s",
-            result.artifact_id, template, descriptor.mode,
+            result.artifact_id,
+            template,
+            descriptor.mode,
         )
         return result, provenance
 
@@ -211,11 +214,7 @@ class InfographicAuthoringMixin:
         """
         dm = self._require_dm()
 
-        multi = [
-            {"section": s.name, "datasets": list(s.datasets)}
-            for s in descriptor.sections
-            if len(s.datasets) > 1
-        ]
+        multi = [{"section": s.name, "datasets": list(s.datasets)} for s in descriptor.sections if len(s.datasets) > 1]
         if multi:
             raise InfographicValidationError(
                 "multi_dataset_section_unsupported",
@@ -330,8 +329,7 @@ class InfographicAuthoringMixin:
                 pass
             else:
                 raise ValueError(
-                    f"Recipe (name={name!r}, owner={owner!r}) already exists; "
-                    f"pass overwrite=True to replace it."
+                    f"Recipe (name={name!r}, owner={owner!r}) already exists; " f"pass overwrite=True to replace it."
                 )
 
         transforms: List[TransformStep] = []
@@ -363,7 +361,8 @@ class InfographicAuthoringMixin:
         if gaps:
             self.logger.info(
                 "publish_recipe(%s): partial coverage — %d gap(s); recipe NOT saved.",
-                name, len(gaps),
+                name,
+                len(gaps),
             )
             return GapReport(gaps=gaps, covered=covered)
 
@@ -430,7 +429,9 @@ class InfographicAuthoringMixin:
         await store.save(recipe)
         self.logger.info(
             "publish_recipe(%s): saved with %d transform(s), delivery=%s.",
-            name, len(transforms), bool(delivery),
+            name,
+            len(transforms),
+            bool(delivery),
         )
         return recipe
 
@@ -467,10 +468,7 @@ class InfographicAuthoringMixin:
             return descriptor
         if isinstance(descriptor, str):
             return SectionDescriptor.model_validate_json(descriptor)
-        raise TypeError(
-            f"descriptor must be a SectionDescriptor or JSON string, got "
-            f"{type(descriptor).__name__}"
-        )
+        raise TypeError(f"descriptor must be a SectionDescriptor or JSON string, got " f"{type(descriptor).__name__}")
 
     def _require_toolkit(self) -> InfographicToolkit:
         """Return the wired toolkit or raise a clear error."""

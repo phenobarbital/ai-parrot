@@ -31,6 +31,7 @@ Module 8 and the Completion Note for the full rationale)::
 See ``examples/budget_variance_infographic.py`` for the end-to-end runner and
 ``examples/seed_finance_projection.py`` for the table seeder.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -281,27 +282,21 @@ class FinanceReporter(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
                                 "component": "KPICard",
                                 "properties": {
                                     "label": "Revenue (Actual)",
-                                    "value": {
-                                        "path": "/variance_analysis/last_totals/rev_actual"
-                                    },
+                                    "value": {"path": "/variance_analysis/last_totals/rev_actual"},
                                 },
                             },
                             {
                                 "component": "KPICard",
                                 "properties": {
                                     "label": "Revenue Variance",
-                                    "value": {
-                                        "path": "/variance_analysis/last_totals/rev_variance"
-                                    },
+                                    "value": {"path": "/variance_analysis/last_totals/rev_variance"},
                                 },
                             },
                             {
                                 "component": "KPICard",
                                 "properties": {
                                     "label": "EBITDA Variance",
-                                    "value": {
-                                        "path": "/variance_analysis/last_totals/ebitda_variance"
-                                    },
+                                    "value": {"path": "/variance_analysis/last_totals/ebitda_variance"},
                                 },
                             },
                         ],

@@ -51,7 +51,7 @@ MAP_SCHEMA: dict[str, Any] = {
 MAP_INSTRUCTIONS = (
     "Use Map for geospatial data. Declare `layers` (each with `name`/`type`), an "
     "optional `viewport` (center/zoom) and `baseLayer`. Bind features with "
-    "`data: {\"path\": \"/pointer\"}`. On static surfaces the map degrades to a "
+    '`data: {"path": "/pointer"}`. On static surfaces the map degrades to a '
     "titled layer summary. Display-only."
 )
 
@@ -70,11 +70,7 @@ class MapComponent:
 
         title = props.get("title")
         if title is not None:
-            children.append(
-                BasicNode(
-                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
-                )
-            )
+            children.append(BasicNode(component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}))
         description = props.get("description")
         if description is not None:
             children.append(
@@ -96,11 +92,7 @@ class MapComponent:
         extensions: dict[str, Any] = {"parrot_role": "layer-summary"}
         if "data" in props:
             extensions["parrot_layer_data"] = props["data"]
-        children.append(
-            BasicNode(
-                component="Column", children=layer_items, metadata={"extensions": extensions}
-            )
-        )
+        children.append(BasicNode(component="Column", children=layer_items, metadata={"extensions": extensions}))
 
         return BasicNode(
             id=component.id,

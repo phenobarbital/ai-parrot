@@ -17,7 +17,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import parrot.outputs.a2ui.catalog.components  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.basic
+import parrot.outputs.a2ui.catalog.parrot
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.models import CreateSurface
@@ -51,6 +52,7 @@ _SERIES_TYPE = {
         supports_actions=False,
         supports_updates=False,
         output="application/json",
+        supported_components={"Chart"},
     ),
 )
 class EChartsRenderer(AbstractA2UIRenderer):
@@ -82,10 +84,10 @@ class EChartsRenderer(AbstractA2UIRenderer):
         if chart is None:
             raise ValueError("echarts renderer requires a 'Chart' component in the envelope.")
 
-        option = self._build_option(chart["properties"])
+        option = self._build_option(chart)
 
         if wrap_html:
-            document = self._wrap_html(option, chart["properties"].get("title", ""))
+            document = self._wrap_html(option, chart.get("title", ""))
             return RenderedArtifact(
                 artifact_id=f"{_SURFACE_NAME}-{envelope.surface_id}",
                 mime_type="text/html",

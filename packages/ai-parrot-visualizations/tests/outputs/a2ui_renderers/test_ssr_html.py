@@ -20,8 +20,23 @@ _ALL_18_PRIMITIVES_ENVELOPE = CreateSurface(
             id="root",
             component="Column",
             children=[
-                "t1", "img1", "icon1", "vid1", "aud1", "row1", "list1", "card1",
-                "tabs1", "modal1", "div1", "btn1", "tf1", "cb1", "cp1", "sl1", "dt1",
+                "t1",
+                "img1",
+                "icon1",
+                "vid1",
+                "aud1",
+                "row1",
+                "list1",
+                "card1",
+                "tabs1",
+                "modal1",
+                "div1",
+                "btn1",
+                "tf1",
+                "cb1",
+                "cp1",
+                "sl1",
+                "dt1",
             ],
         ),
         Component(id="t1", component="Text", text="hello"),
@@ -88,8 +103,15 @@ class TestTASK2543:
         assert art.mime_type == "text/html"
         assert art.metadata.get("degraded", []) == []
         for expected in (
-            "hello", "row child", "list child", "card child", "tab content",
-            "modal content", "Click me", "Alice", "Vol",
+            "hello",
+            "row child",
+            "list child",
+            "card child",
+            "tab content",
+            "modal content",
+            "Click me",
+            "Alice",
+            "Vol",
         ):
             assert expected in doc
         # Self-contained: no external src/href (images/video/audio URLs are

@@ -40,18 +40,14 @@ class TestSchemaRegistryResolvesCommonTypes:
     def test_schema_registry_resolves_common_types(self):
         registry = schema_registry()
         resolver = registry.resolver()
-        resolved = resolver.lookup(
-            "https://a2ui.org/specification/v1_0/common_types.json#/$defs/Extensions"
-        )
+        resolved = resolver.lookup("https://a2ui.org/specification/v1_0/common_types.json#/$defs/Extensions")
         assert resolved.contents["type"] == "object"
 
     def test_schema_registry_resolves_catalog_alias(self):
         """agent_to_renderer.json's relative "catalog.json#/..." ref resolves."""
         registry = schema_registry()
         resolver = registry.resolver()
-        resolved = resolver.lookup(
-            "https://a2ui.org/specification/v1_0/catalog.json#/$defs/anyComponent"
-        )
+        resolved = resolver.lookup("https://a2ui.org/specification/v1_0/catalog.json#/$defs/anyComponent")
         assert "oneOf" in resolved.contents or "anyOf" in resolved.contents
 
     def test_validate_sample_create_surface_against_agent_to_renderer(self):
@@ -75,10 +71,7 @@ class TestSchemaRegistryResolvesCommonTypes:
 class TestSpecDriftAgainstUpstream:
     def test_spec_drift_against_upstream(self):
         """Every vendored file's bytes match the pinned upstream SHA's bytes."""
-        base = (
-            "https://raw.githubusercontent.com/google/A2UI/"
-            f"{SPEC_COMMIT}/specification/v1_0"
-        )
+        base = "https://raw.githubusercontent.com/google/A2UI/" f"{SPEC_COMMIT}/specification/v1_0"
         upstream_paths = {
             "catalog": "catalogs/basic/catalog.json",
             "common_types": "json/common_types.json",
@@ -91,9 +84,9 @@ class TestSpecDriftAgainstUpstream:
             local_bytes = _local_bytes(name)
             with urllib.request.urlopen(f"{base}/{rel_path}", timeout=15) as resp:
                 upstream_bytes = resp.read()
-            assert hashlib.sha256(local_bytes).hexdigest() == hashlib.sha256(
-                upstream_bytes
-            ).hexdigest(), f"{name} has drifted from the pinned upstream commit"
+            assert (
+                hashlib.sha256(local_bytes).hexdigest() == hashlib.sha256(upstream_bytes).hexdigest()
+            ), f"{name} has drifted from the pinned upstream commit"
 
 
 def _local_bytes(name: str) -> bytes:

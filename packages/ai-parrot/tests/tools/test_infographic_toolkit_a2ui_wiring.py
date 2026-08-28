@@ -132,6 +132,7 @@ class TestSurfaceMatchesTheRenderedResponse:
             r"_build_a2ui_envelope\(\s*infographic_response\b", source
         ), "render() must pass the InfographicResponse to _build_a2ui_envelope"
 
+
 class TestDataSpliceLane:
     """``render_data_template`` used to hardcode ``a2ui_envelope=None``."""
 
@@ -209,25 +210,16 @@ class TestDataSpliceLane:
         assert props["sections"][0]["text"] == "Data: alpha, beta"
 
     def test_descriptor_without_layout_uses_the_same_fallback(self, toolkit):
-        envelope = toolkit._build_a2ui_envelope_from_layout(
-            self._descriptor(), {"a": 1}, "art-8", template_name="dash"
-        )
+        envelope = toolkit._build_a2ui_envelope_from_layout(self._descriptor(), {"a": 1}, "art-8", template_name="dash")
         assert _infographic(envelope)["title"] == "dash"
 
     def test_empty_payload_yields_no_data_model(self, toolkit):
-        envelope = toolkit._build_a2ui_envelope_from_layout(
-            None, {}, "art-9", title="Empty", template_name="dash"
-        )
+        envelope = toolkit._build_a2ui_envelope_from_layout(None, {}, "art-9", title="Empty", template_name="dash")
         assert not envelope.get("data_model")
 
     def test_invalid_layout_degrades_to_none(self, toolkit, caplog):
         descriptor = self._descriptor({"component": "NotAnA2UIComponent"})
-        assert (
-            toolkit._build_a2ui_envelope_from_layout(
-                descriptor, {}, "art-10", template_name="dash"
-            )
-            is None
-        )
+        assert toolkit._build_a2ui_envelope_from_layout(descriptor, {}, "art-10", template_name="dash") is None
         assert "falling back to HTML-only result" in caplog.text
 
     def test_lane_is_wired_and_respects_the_flag(self, toolkit):

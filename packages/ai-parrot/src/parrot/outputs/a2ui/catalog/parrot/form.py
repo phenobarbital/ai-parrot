@@ -86,29 +86,37 @@ def _lower_field(id_prefix: str, field: FormField) -> Component:
     if field.input in ("text", "textarea", "number"):
         variant = {"text": "shortText", "textarea": "longText", "number": "number"}[field.input]
         return Component(
-            id=field_id, component="TextField", label=field.label, value=value_path,
-            variant=variant, checks=checks,
+            id=field_id,
+            component="TextField",
+            label=field.label,
+            value=value_path,
+            variant=variant,
+            checks=checks,
         )
     if field.input == "select":
         return Component(
-            id=field_id, component="ChoicePicker", label=field.label,
-            options=field.options or [], value=value_path, checks=checks,
+            id=field_id,
+            component="ChoicePicker",
+            label=field.label,
+            options=field.options or [],
+            value=value_path,
+            checks=checks,
         )
     if field.input == "checkbox":
-        return Component(
-            id=field_id, component="CheckBox", label=field.label, value=value_path, checks=checks
-        )
+        return Component(id=field_id, component="CheckBox", label=field.label, value=value_path, checks=checks)
     if field.input == "date":
         return Component(
-            id=field_id, component="DateTimeInput", label=field.label, value=value_path,
-            enableDate=True, checks=checks,
+            id=field_id,
+            component="DateTimeInput",
+            label=field.label,
+            value=value_path,
+            enableDate=True,
+            checks=checks,
         )
     raise ValueError(f"Unsupported form field input type: {field.input!r}")
 
 
-def build_form(
-    *, id_prefix: str, title: str | None, fields: list[FormField], submit: FormSubmit
-) -> list[Component]:
+def build_form(*, id_prefix: str, title: str | None, fields: list[FormField], submit: FormSubmit) -> list[Component]:
     """Compose a form from Basic Catalog primitives (spec §2 ``build_form``).
 
     Args:
@@ -140,9 +148,7 @@ def build_form(
     label_id = f"{id_prefix}-submit-label"
     rest.append(Component(id=label_id, component="Text", text=submit.label))
 
-    context: dict[str, Any] = {
-        field.name: _field_value_path(id_prefix, field) for field in fields
-    }
+    context: dict[str, Any] = {field.name: _field_value_path(id_prefix, field) for field in fields}
     button_id = f"{id_prefix}-submit"
     rest.append(
         Component(

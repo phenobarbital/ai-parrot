@@ -11,6 +11,7 @@ With ``return_direct=True`` the toolkit bypasses LLM re-summarisation: the
 result of ``infographic_render`` is the final agent output, consumed by
 ``PandasAgent.ask()``'s post-loop branch (TASK-1326).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -115,14 +116,13 @@ def _json_safe_default(obj: Any) -> Any:
     isoformat = getattr(obj, "isoformat", None)
     if callable(isoformat):
         return isoformat()
-    raise TypeError(
-        f"Object of type {type(obj).__name__} is not JSON serializable"
-    )
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 # ---------------------------------------------------------------------------
 # Structured error class
 # ---------------------------------------------------------------------------
+
 
 class InfographicValidationError(Exception):
     """Structured error raised by the validation pipeline.
@@ -155,6 +155,7 @@ class InfographicValidationError(Exception):
 # Result envelope
 # ---------------------------------------------------------------------------
 
+
 class InfographicRenderResult(BaseModel):
     """Envelope returned by InfographicToolkit.render (return_direct=True).
 
@@ -163,7 +164,7 @@ class InfographicRenderResult(BaseModel):
 
     artifact_id: str
     html_url: str
-    html_inline: Optional[str] = None   # None when len(html) >= _INLINE_THRESHOLD
+    html_inline: Optional[str] = None  # None when len(html) >= _INLINE_THRESHOLD
     template_name: str
     theme: Optional[str] = None
     data_variables: List[str] = Field(default_factory=list)
@@ -174,6 +175,7 @@ class InfographicRenderResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Toolkit
 # ---------------------------------------------------------------------------
+
 
 class InfographicToolkit(AbstractToolkit):
     """Toolkit that produces frozen, multi-dataset HTML infographic artifacts.
@@ -203,7 +205,7 @@ class InfographicToolkit(AbstractToolkit):
         infographic_get_recipe_contract — datasets/columns/params a recipe needs
     """
 
-    return_direct: bool = True          # bypass LLM re-summarisation
+    return_direct: bool = True  # bypass LLM re-summarisation
     tool_prefix: Optional[str] = "infographic"
     prefix_separator: str = "_"
     exclude_tools: Tuple[str, ...] = ()
@@ -267,9 +269,7 @@ class InfographicToolkit(AbstractToolkit):
         if recipe_runner is not None:
             self._recipe_runner = recipe_runner
         elif recipe_store is not None and dataset_manager is not None:
-            self._recipe_runner = RecipeRunner(
-                recipe_store, dataset_manager, artifact_store=artifact_store
-            )
+            self._recipe_runner = RecipeRunner(recipe_store, dataset_manager, artifact_store=artifact_store)
         else:
             self._recipe_runner = None
         if self._recipe_store is None:
@@ -390,6 +390,7 @@ class InfographicToolkit(AbstractToolkit):
             return
         # Lazy import avoids a tools→bots import cycle at module load.
         from parrot.bots.prompts import INFOGRAPHIC_SYSTEM_PROMPT_ADDON  # noqa: PLC0415
+
         if "## Infographic Generation Mode" in tmpl:
             return  # already injected
         bot.system_prompt_template = f"{tmpl}\n{INFOGRAPHIC_SYSTEM_PROMPT_ADDON}"
@@ -473,7 +474,9 @@ class InfographicToolkit(AbstractToolkit):
                 if len(df) > MAX_ENHANCE_ROWS:
                     self.logger.warning(
                         "DataFrame '%s' truncated from %d to %d rows for LLM context",
-                        name, len(df), MAX_ENHANCE_ROWS,
+                        name,
+                        len(df),
+                        MAX_ENHANCE_ROWS,
                     )
                     df = df.head(MAX_ENHANCE_ROWS)
                 data_context[name] = df.to_dict("records")
@@ -495,7 +498,10 @@ class InfographicToolkit(AbstractToolkit):
 
         self.logger.info(
             "Rendered infographic: template=%s theme=%s enhanced=%s size=%d bytes",
-            template.name, validated_theme, enhanced, len(html),
+            template.name,
+            validated_theme,
+            enhanced,
+            len(html),
         )
 
         a2ui_envelope = None
@@ -503,7 +509,8 @@ class InfographicToolkit(AbstractToolkit):
             # Same response object the HTML renderer consumed, so both surfaces
             # describe identical content.
             a2ui_envelope = self._build_a2ui_envelope(
-                infographic_response, artifact_id,
+                infographic_response,
+                artifact_id,
             )
 
         return InfographicRenderResult(
@@ -598,7 +605,9 @@ class InfographicToolkit(AbstractToolkit):
 
         self.logger.info(
             "Rendered template infographic: template=%s theme=%s size=%d bytes",
-            template_name, theme, len(html),
+            template_name,
+            theme,
+            len(html),
         )
 
         a2ui_envelope = None
@@ -606,9 +615,7 @@ class InfographicToolkit(AbstractToolkit):
             # The Jinja lane has no typed blocks — the template owns the layout.
             # Model what IS known semantically: the heading, plus the payload keys
             # the template was given. Anything richer would be fabricated.
-            synthetic_blocks: List[Dict[str, Any]] = [
-                {"type": "title", "title": title or template_name}
-            ]
+            synthetic_blocks: List[Dict[str, Any]] = [{"type": "title", "title": title or template_name}]
             if isinstance(data, dict) and data:
                 synthetic_blocks.append(
                     {
@@ -617,9 +624,7 @@ class InfographicToolkit(AbstractToolkit):
                     }
                 )
             a2ui_envelope = self._build_a2ui_envelope(
-                InfographicResponse(
-                    template=template_name, theme=theme, blocks=synthetic_blocks
-                ),
+                InfographicResponse(template=template_name, theme=theme, blocks=synthetic_blocks),
                 artifact_id,
                 title=title,
             )
@@ -704,9 +709,7 @@ class InfographicToolkit(AbstractToolkit):
 
         # Load the RAW template source (data-splice must NOT Jinja-render it).
         try:
-            source, _, _ = self._template_engine.env.loader.get_source(
-                self._template_engine.env, template_name
-            )
+            source, _, _ = self._template_engine.env.loader.get_source(self._template_engine.env, template_name)
         except Exception as exc:  # noqa: BLE001 — TemplateNotFound and friends
             raise InfographicValidationError(
                 "TEMPLATE_UNKNOWN",
@@ -715,9 +718,7 @@ class InfographicToolkit(AbstractToolkit):
 
         # Serialise safely: coerce numpy/pandas, reject NaN/Infinity loudly.
         try:
-            payload_json = json.dumps(
-                payload, allow_nan=False, default=_json_safe_default
-            )
+            payload_json = json.dumps(payload, allow_nan=False, default=_json_safe_default)
         except (ValueError, TypeError) as exc:
             raise InfographicValidationError(
                 "PAYLOAD_NOT_SERIALIZABLE",
@@ -730,11 +731,7 @@ class InfographicToolkit(AbstractToolkit):
         # the marker element and execute following markup in the browser. The
         # ``\uXXXX`` forms are valid JSON and decode back to the original
         # characters client-side (same mitigation as knowledge/graphindex).
-        payload_json = (
-            payload_json.replace("<", "\\u003c")
-            .replace(">", "\\u003e")
-            .replace("&", "\\u0026")
-        )
+        payload_json = payload_json.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
 
         html = self._splice_payload(source, payload_json, effective_marker)
 
@@ -747,13 +744,18 @@ class InfographicToolkit(AbstractToolkit):
 
         self.logger.info(
             "Rendered data-splice infographic: template=%s marker=%s size=%d bytes",
-            template_name, effective_marker, len(html),
+            template_name,
+            effective_marker,
+            len(html),
         )
 
         a2ui_envelope = None
         if self._emit_a2ui:
             a2ui_envelope = self._build_a2ui_envelope_from_layout(
-                descriptor, payload, artifact_id, title=title,
+                descriptor,
+                payload,
+                artifact_id,
+                title=title,
                 template_name=template_name,
             )
 
@@ -798,8 +800,7 @@ class InfographicToolkit(AbstractToolkit):
                     "marker_id": marker_id,
                     "expected": start_marker,
                     "detail": (
-                        f"No <script type=\"application/json\" id=\"{marker_id}\"> "
-                        "marker found in the template."
+                        f'No <script type="application/json" id="{marker_id}"> ' "marker found in the template."
                     ),
                 },
             )
@@ -810,10 +811,7 @@ class InfographicToolkit(AbstractToolkit):
                 "SPLICE_MARKER_MISSING",
                 {
                     "marker_id": marker_id,
-                    "detail": (
-                        "No closing </script> tag found after the "
-                        f'id="{marker_id}" marker.'
-                    ),
+                    "detail": ("No closing </script> tag found after the " f'id="{marker_id}" marker.'),
                 },
             )
         return source[:content_start] + "\n" + payload_json + "\n" + source[content_end:]
@@ -881,8 +879,7 @@ class InfographicToolkit(AbstractToolkit):
             return envelope.model_dump(mode="json")
         except Exception:
             self.logger.warning(
-                "A2UI envelope build failed for infographic %s; "
-                "falling back to HTML-only result.",
+                "A2UI envelope build failed for infographic %s; " "falling back to HTML-only result.",
                 artifact_id,
                 exc_info=True,
             )
@@ -930,9 +927,7 @@ class InfographicToolkit(AbstractToolkit):
 
         try:
             if layout is None:
-                blocks: List[Dict[str, Any]] = [
-                    {"type": "title", "title": title or template_name}
-                ]
+                blocks: List[Dict[str, Any]] = [{"type": "title", "title": title or template_name}]
                 if isinstance(payload, dict) and payload:
                     blocks.append(
                         {
@@ -968,8 +963,7 @@ class InfographicToolkit(AbstractToolkit):
             return envelope.model_dump(mode="json")
         except Exception:
             self.logger.warning(
-                "A2UI envelope build failed for data-splice infographic %s; "
-                "falling back to HTML-only result.",
+                "A2UI envelope build failed for data-splice infographic %s; " "falling back to HTML-only result.",
                 artifact_id,
                 exc_info=True,
             )
@@ -1102,10 +1096,7 @@ class InfographicToolkit(AbstractToolkit):
                 }
                 for idx, s in enumerate(template.block_specs)
             ],
-            "js_bundles": [
-                {"name": b.name, "url": b.url, "scope": b.scope}
-                for b in (template.js_bundles or [])
-            ],
+            "js_bundles": [{"name": b.name, "url": b.url, "scope": b.scope} for b in (template.js_bundles or [])],
         }
 
     async def validate_blocks(
@@ -1205,19 +1196,28 @@ class InfographicToolkit(AbstractToolkit):
             repl_locals = await self._get_repl_locals()
             if block_type == "chart":
                 block_dict = self._build_chart_block(
-                    repl_locals, data_variable, chart_type,
-                    label_column, value_columns, max_rows, title, layout,
+                    repl_locals,
+                    data_variable,
+                    chart_type,
+                    label_column,
+                    value_columns,
+                    max_rows,
+                    title,
+                    layout,
                 )
             elif block_type == "table":
                 block_dict = self._build_table_block(
-                    repl_locals, data_variable, table_columns, max_rows, title,
+                    repl_locals,
+                    data_variable,
+                    table_columns,
+                    max_rows,
+                    title,
                 )
             else:
                 if not isinstance(block, dict):
                     raise InfographicValidationError(
                         "BLOCK_LITERAL_MISSING",
-                        {"block_type": block_type,
-                         "detail": "Non chart/table blocks require a literal `block` dict."},
+                        {"block_type": block_type, "detail": "Non chart/table blocks require a literal `block` dict."},
                     )
                 block_dict = dict(block)
                 block_dict.setdefault("type", block_type)
@@ -1297,9 +1297,7 @@ class InfographicToolkit(AbstractToolkit):
         from parrot.outputs.a2ui.builders import build_surface  # noqa: PLC0415
 
         try:
-            envelope = build_surface(
-                layout_component, layout_properties, surface_id=f"freeze-{name}"
-            )
+            envelope = build_surface(layout_component, layout_properties, surface_id=f"freeze-{name}")
         except Exception as exc:  # noqa: BLE001 - surfaced as a structured tool error
             return {"status": "error", "detail": f"Invalid layout: {exc}"}
 
@@ -1353,9 +1351,7 @@ class InfographicToolkit(AbstractToolkit):
         user_id, _agent_id, _session_id = self._resolve_scope(bot)
         return await self._recipe_store.list(owner=user_id)
 
-    async def infographic_run_recipe(
-        self, name: str, params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    async def infographic_run_recipe(self, name: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Replay a saved recipe deterministically (no LLM) and render a fresh artifact.
 
         Re-fetches the recipe's datasets, re-runs its registered transform
@@ -1384,9 +1380,7 @@ class InfographicToolkit(AbstractToolkit):
         user_id, _agent_id, _session_id = self._resolve_scope(bot)
         pctx = self._current_recipe_pctx(user_id)
         try:
-            artifact = await self._recipe_runner.run(
-                name, params=params, pctx=pctx, recipe_owner=user_id
-            )
+            artifact = await self._recipe_runner.run(name, params=params, pctx=pctx, recipe_owner=user_id)
         except RecipeRunException as exc:
             return {"status": "error", "error": exc.error.model_dump()}
         return {
@@ -1440,13 +1434,8 @@ class InfographicToolkit(AbstractToolkit):
         return {
             "status": "ok",
             "name": recipe.name,
-            "datasets": [
-                {"alias": ds.alias, "dataset": ds.dataset} for ds in recipe.data_sources
-            ],
-            "params": [
-                {"name": p.name, "default": p.default, "description": p.description}
-                for p in recipe.params
-            ],
+            "datasets": [{"alias": ds.alias, "dataset": ds.dataset} for ds in recipe.data_sources],
+            "params": [{"name": p.name, "default": p.default, "description": p.description} for p in recipe.params],
             "transforms": transforms,
         }
 
@@ -1455,7 +1444,9 @@ class InfographicToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
 
     def _require_dataframe(
-        self, repl_locals: Dict[str, Any], name: Optional[str],
+        self,
+        repl_locals: Dict[str, Any],
+        name: Optional[str],
     ) -> pd.DataFrame:
         """Resolve ``name`` to a DataFrame in the REPL or raise structured."""
         if not name:
@@ -1466,9 +1457,7 @@ class InfographicToolkit(AbstractToolkit):
         if name not in repl_locals:
             raise InfographicValidationError(
                 "BLOCK_DATA_VAR_MISSING",
-                {"name": name, "available": sorted(
-                    k for k, v in repl_locals.items() if isinstance(v, pd.DataFrame)
-                )},
+                {"name": name, "available": sorted(k for k, v in repl_locals.items() if isinstance(v, pd.DataFrame))},
             )
         df = repl_locals[name]
         if not isinstance(df, pd.DataFrame):
@@ -1500,7 +1489,8 @@ class InfographicToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         if not chart_type:
             raise InfographicValidationError(
-                "BLOCK_CHART_INCOMPLETE", {"detail": "`chart_type` is required."},
+                "BLOCK_CHART_INCOMPLETE",
+                {"detail": "`chart_type` is required."},
             )
         if not label_column or not value_columns:
             raise InfographicValidationError(
@@ -1515,10 +1505,7 @@ class InfographicToolkit(AbstractToolkit):
             "type": "chart",
             "chart_type": chart_type,
             "labels": [str(v) for v in df[label_column].tolist()],
-            "series": [
-                {"name": col, "values": df[col].tolist()}
-                for col in value_columns
-            ],
+            "series": [{"name": col, "values": df[col].tolist()} for col in value_columns],
         }
         if title:
             block["title"] = title
@@ -1552,9 +1539,7 @@ class InfographicToolkit(AbstractToolkit):
         """Normalise + schema-validate one block; return a JSON-native dict."""
         normalized = self._normalize_blocks([block_dict])[0]
         try:
-            model = InfographicResponse.model_validate(
-                {"blocks": [normalized]}
-            ).blocks[0]
+            model = InfographicResponse.model_validate({"blocks": [normalized]}).blocks[0]
         except PydanticValidationError as exc:
             raise InfographicValidationError(
                 "BLOCK_SCHEMA_INVALID",
@@ -1563,7 +1548,10 @@ class InfographicToolkit(AbstractToolkit):
         return model.model_dump(mode="json")
 
     def _append_block(
-        self, repl_locals: Dict[str, Any], into: str, block_dict: Dict[str, Any],
+        self,
+        repl_locals: Dict[str, Any],
+        into: str,
+        block_dict: Dict[str, Any],
     ) -> Tuple[int, int]:
         """Append ``block_dict`` to the REPL accumulator list, creating it."""
         acc = repl_locals.get(into)
@@ -1625,16 +1613,12 @@ class InfographicToolkit(AbstractToolkit):
         )
 
         if not brief:
-            self.logger.warning(
-                "enhance requested without a brief — falling back to skeleton."
-            )
+            self.logger.warning("enhance requested without a brief — falling back to skeleton.")
             return skeleton, False
 
         bot = getattr(self, "_bot", None)
         if bot is None or not hasattr(bot, "enhance_infographic"):
-            self.logger.warning(
-                "Bound bot lacks enhance_infographic method — falling back."
-            )
+            self.logger.warning("Bound bot lacks enhance_infographic method — falling back.")
             return skeleton, False
 
         try:
@@ -1722,7 +1706,10 @@ class InfographicToolkit(AbstractToolkit):
         return coerced
 
     def _check_item_count(
-        self, idx: int, spec: BlockSpec, block_raw: Dict[str, Any],
+        self,
+        idx: int,
+        spec: BlockSpec,
+        block_raw: Dict[str, Any],
     ) -> None:
         """Raise SLOT_ITEM_COUNT_INVALID when min/max_items constraints are violated."""
         if spec.min_items is None and spec.max_items is None:
@@ -1801,6 +1788,7 @@ class InfographicToolkit(AbstractToolkit):
     @staticmethod
     def _normalize_blocks(blocks: List[Any]) -> List[Dict[str, Any]]:
         """Coerce NumPy/pandas scalars inside blocks to native JSON types."""
+
         def _default(obj: Any) -> Any:
             if hasattr(obj, "item"):  # numpy scalar
                 return obj.item()
@@ -1813,7 +1801,9 @@ class InfographicToolkit(AbstractToolkit):
         return json.loads(json.dumps(blocks, default=_default))
 
     def _validate_data_variables(
-        self, names: List[str], locals_: Dict[str, Any],
+        self,
+        names: List[str],
+        locals_: Dict[str, Any],
     ) -> Dict[str, pd.DataFrame]:
         """Validate that all data_variables are present and non-empty DataFrames."""
         out: Dict[str, pd.DataFrame] = {}
@@ -1823,7 +1813,8 @@ class InfographicToolkit(AbstractToolkit):
             df = locals_[name]
             if df is None or not isinstance(df, pd.DataFrame) or df.empty:
                 raise InfographicValidationError(
-                    "DATA_VAR_EMPTY", {"name": name, "type": type(df).__name__},
+                    "DATA_VAR_EMPTY",
+                    {"name": name, "type": type(df).__name__},
                 )
             out[name] = df
         return out
@@ -1879,21 +1870,9 @@ class InfographicToolkit(AbstractToolkit):
         if bot is None:
             return "_anon", "_anon", "_anon"
 
-        user_id = (
-            getattr(bot, "_current_user_id", None)
-            or getattr(bot, "user_id", None)
-            or "_anon"
-        )
-        agent_id = (
-            getattr(bot, "_current_agent_id", None)
-            or getattr(bot, "agent_id", None)
-            or "_anon"
-        )
-        session_id = (
-            getattr(bot, "_current_session_id", None)
-            or getattr(bot, "session_id", None)
-            or "_anon"
-        )
+        user_id = getattr(bot, "_current_user_id", None) or getattr(bot, "user_id", None) or "_anon"
+        agent_id = getattr(bot, "_current_agent_id", None) or getattr(bot, "agent_id", None) or "_anon"
+        session_id = getattr(bot, "_current_session_id", None) or getattr(bot, "session_id", None) or "_anon"
         return str(user_id), str(agent_id), str(session_id)
 
     # ------------------------------------------------------------------

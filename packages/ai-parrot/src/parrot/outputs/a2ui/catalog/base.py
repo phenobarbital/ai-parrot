@@ -194,9 +194,7 @@ def to_components(tree: BasicNode, *, id_prefix: str = "blk") -> list[Component]
 
         extra = dict(node.model_extra or {})
         if node.tabs is not None:
-            extra["tabs"] = [
-                {"title": tab.title, "child": _walk(tab.child)} for tab in node.tabs
-            ]
+            extra["tabs"] = [{"title": tab.title, "child": _walk(tab.child)} for tab in node.tabs]
 
         components.append(
             Component(
@@ -264,9 +262,7 @@ class FunctionDefinition(BaseModel):
     catalog_id: str
     args_schema: dict[str, Any] = Field(default_factory=dict)
     return_type: str = "any"
-    allowed_callers: Literal["rendererOnly", "agentOnly", "rendererOrAgent"] = (
-        "rendererOnly"
-    )
+    allowed_callers: Literal["rendererOnly", "agentOnly", "rendererOrAgent"] = "rendererOnly"
     requires_user_activation: bool = False
 
 

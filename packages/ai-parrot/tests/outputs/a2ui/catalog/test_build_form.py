@@ -14,7 +14,9 @@ def _fields() -> list[FormField]:
         FormField(name="email", label="Email", input="text", required=True),
         FormField(name="age", label="Age", input="number"),
         FormField(
-            name="plan", label="Plan", input="select",
+            name="plan",
+            label="Plan",
+            input="select",
             options=[{"label": "Basic", "value": "basic"}, {"label": "Pro", "value": "pro"}],
         ),
         FormField(name="subscribe", label="Subscribe", input="checkbox"),
@@ -46,9 +48,7 @@ class TestBuildFormComposition:
         assert button.action.event.context["email"] == {"path": "/root/email"}
 
     def test_required_field_carries_check(self):
-        components = build_form(
-            id_prefix="f", title=None, fields=_fields(), submit=FormSubmit(label="Go", action="go")
-        )
+        components = build_form(id_prefix="f", title=None, fields=_fields(), submit=FormSubmit(label="Go", action="go"))
         by_id = {c.id: c for c in components}
         email = by_id["f-email"]
         assert email.checks is not None
@@ -60,18 +60,14 @@ class TestBuildFormComposition:
         components = build_form(
             id_prefix="root", title="T", fields=_fields(), submit=FormSubmit(label="Go", action="go")
         )
-        surface = CreateSurface(
-            surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=components
-        )
+        surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=components)
         validate_envelope(surface, origin=ProducerOrigin.TOOL)
 
     def test_build_form_rejected_for_llm_origin(self):
         components = build_form(
             id_prefix="root", title="T", fields=_fields(), submit=FormSubmit(label="Go", action="go")
         )
-        surface = CreateSurface(
-            surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=components
-        )
+        surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=components)
         with pytest.raises(CatalogValidationError):
             validate_envelope(surface, origin=ProducerOrigin.LLM)
 

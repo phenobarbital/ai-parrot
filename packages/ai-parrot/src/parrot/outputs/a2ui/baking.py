@@ -137,20 +137,14 @@ def _resolve_value(
                     pointer,
                 )
                 return _ABSENT
-            raise BakeError(
-                f"Unresolvable data-model path {pointer!r}: {exc}"
-            ) from exc
+            raise BakeError(f"Unresolvable data-model path {pointer!r}: {exc}") from exc
 
     if _is_call_expr(value):
         call = FunctionCall.model_validate(value)
         try:
-            return _EVALUATOR.evaluate(
-                call, data_model=data_model, scope_path=scope_path, index=index
-            )
+            return _EVALUATOR.evaluate(call, data_model=data_model, scope_path=scope_path, index=index)
         except (KeyError, IndexError) as exc:
-            raise BakeError(
-                f"Unresolvable function call {call.call!r}: {exc}"
-            ) from exc
+            raise BakeError(f"Unresolvable function call {call.call!r}: {exc}") from exc
 
     if isinstance(value, dict):
         resolved = {
@@ -245,9 +239,7 @@ def _child_ids(component: Component) -> list[str]:
     return ids
 
 
-def _collect_subtree_ids(
-    comp_id: str, *, by_id: dict[str, Component], seen: set[str]
-) -> None:
+def _collect_subtree_ids(comp_id: str, *, by_id: dict[str, Component], seen: set[str]) -> None:
     """Recursively collect every id reachable from ``comp_id`` via ``child``/``children``.
 
     Stops at a nested ``ChildTemplate`` boundary (its own source is a
@@ -296,9 +288,7 @@ def _clone_subtree(
     comp = by_id.get(comp_id)
     if comp is None:
         raise BakeError(f"ChildTemplate subtree references unknown component id {comp_id!r}.")
-    baked = _bake_component(
-        comp, data_model=data_model, scope_path=scope_path, index=index, id_suffix=suffix
-    )
+    baked = _bake_component(comp, data_model=data_model, scope_path=scope_path, index=index, id_suffix=suffix)
     out.append(baked)
     if not isinstance(comp.children, ChildTemplate):
         for child_id in _child_ids(comp):
@@ -338,21 +328,14 @@ def _expand_template(
             does not resolve to a list.
     """
     if template.component_id not in by_id:
-        raise BakeError(
-            f"ChildTemplate references unknown component id {template.component_id!r}."
-        )
+        raise BakeError(f"ChildTemplate references unknown component id {template.component_id!r}.")
     jsonpointer = _load_jsonpointer()
     try:
         items = jsonpointer.resolve_pointer(data_model, template.path)
     except jsonpointer.JsonPointerException as exc:
-        raise BakeError(
-            f"ChildTemplate path {template.path!r} did not resolve: {exc}"
-        ) from exc
+        raise BakeError(f"ChildTemplate path {template.path!r} did not resolve: {exc}") from exc
     if not isinstance(items, list):
-        raise BakeError(
-            f"ChildTemplate path {template.path!r} must resolve to a list, "
-            f"got {type(items)!r}."
-        )
+        raise BakeError(f"ChildTemplate path {template.path!r} must resolve to a list, " f"got {type(items)!r}.")
 
     clone_ids: list[str] = []
     clone_dicts: list[dict[str, Any]] = []
@@ -392,9 +375,7 @@ def bake_envelope(envelope: CreateSurface) -> list[dict[str, Any]]:
     template_source_ids: set[str] = set()
     for comp in envelope.components:
         if isinstance(comp.children, ChildTemplate):
-            _collect_subtree_ids(
-                comp.children.component_id, by_id=by_id, seen=template_source_ids
-            )
+            _collect_subtree_ids(comp.children.component_id, by_id=by_id, seen=template_source_ids)
 
     baked: list[dict[str, Any]] = []
     for comp in envelope.components:
@@ -402,9 +383,7 @@ def bake_envelope(envelope: CreateSurface) -> list[dict[str, Any]]:
             continue  # consumed as a template pattern — never rendered standalone
         baked_comp = _bake_component(comp, data_model=data_model, scope_path="", index=None)
         if isinstance(comp.children, ChildTemplate):
-            clone_ids, clone_dicts = _expand_template(
-                comp.children, by_id=by_id, data_model=data_model
-            )
+            clone_ids, clone_dicts = _expand_template(comp.children, by_id=by_id, data_model=data_model)
             baked_comp["children"] = clone_ids
             baked.append(baked_comp)
             baked.extend(clone_dicts)
@@ -413,10 +392,7 @@ def bake_envelope(envelope: CreateSurface) -> list[dict[str, Any]]:
 
     for entry in baked:
         if _has_live_binding(entry):  # pragma: no cover - defensive
-            raise BakeError(
-                f"Component {entry.get('id')!r} still contains a live binding "
-                "after baking."
-            )
+            raise BakeError(f"Component {entry.get('id')!r} still contains a live binding " "after baking.")
     return baked
 
 

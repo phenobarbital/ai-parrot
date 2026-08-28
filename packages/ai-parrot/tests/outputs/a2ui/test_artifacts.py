@@ -136,13 +136,9 @@ class TestOptionalBindings:
         assert baked[0]["text"] == "Revenue is behind plan."
 
     def test_optional_marker_never_leaks_into_baked_dict(self):
-        baked = baking.bake_envelope(
-            _surface({"text": {"path": "/x"}}, {"x": "v"}, optional=["/x"])
-        )
+        baked = baking.bake_envelope(_surface({"text": {"path": "/x"}}, {"x": "v"}, optional=["/x"]))
         assert baked[0]["text"] == "v"
 
     def test_no_live_binding_survives_omission(self):
         """`bake_envelope`'s own surviving-binding check still passes."""
-        baking.bake_envelope(
-            _surface({"text": {"path": "/absent"}}, {}, optional=["/absent"])
-        )
+        baking.bake_envelope(_surface({"text": {"path": "/absent"}}, {}, optional=["/absent"]))

@@ -20,9 +20,9 @@ class TestEnvelopeBuilders:
             builders.build_datatable(columns=[{"name": "a"}], data_binding="/r"),
             builders.build_infographic(
                 title="T",
-                sections=[{"heading": "H", "components": [
-                    {"component": "KPICard", "properties": {"label": "x", "value": 1}}
-                ]}],
+                sections=[
+                    {"heading": "H", "components": [{"component": "KPICard", "properties": {"label": "x", "value": 1}}]}
+                ],
             ),
         ):
             assert isinstance(env, CreateSurface)
@@ -45,9 +45,7 @@ class TestEnvelopeBuilders:
 
     def test_builder_deterministic(self):
         def make():
-            return serialize(
-                builders.build_chart(chart_type="line", x="d", y=["a", "b"], title="X")
-            )
+            return serialize(builders.build_chart(chart_type="line", x="d", y=["a", "b"], title="X"))
 
         assert make() == make()
 

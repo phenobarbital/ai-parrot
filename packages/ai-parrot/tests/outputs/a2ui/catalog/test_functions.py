@@ -28,9 +28,7 @@ class TestFormatStringPathsAndEscape:
         assert result == "1 ${x}"
 
     def test_format_string_relative_path(self, evaluator):
-        out = evaluator.format_string(
-            "${name}", data_model={"items": [{"name": "Alice"}]}, scope_path="/items/0"
-        )
+        out = evaluator.format_string("${name}", data_model={"items": [{"name": "Alice"}]}, scope_path="/items/0")
         assert out == "Alice"
 
     def test_format_string_absolute_path(self, evaluator):
@@ -45,9 +43,7 @@ class TestFormatStringFunctionNamedArgs:
         assert out == "Date: 2026-01-16"
 
     def test_format_string_nested_literal_and_binding_args(self, evaluator):
-        out = evaluator.format_string(
-            "${formatNumber(value:${/n}, decimals:1)}", data_model={"n": 3.14159}
-        )
+        out = evaluator.format_string("${formatNumber(value:${/n}, decimals:1)}", data_model={"n": 3.14159})
         assert out == "3.1"
 
 
@@ -68,12 +64,10 @@ class TestIndexOnlyInTemplateScope:
 
 class TestValidatorsReturnValidationResult:
     def test_required(self, evaluator):
-        assert evaluator.evaluate(
-            FunctionCall(call="required", args={"value": ""}), data_model={}
-        ) == ValidationResult(valid=False, code="REQUIRED", message="This value is required.")
-        assert evaluator.evaluate(
-            FunctionCall(call="required", args={"value": "x"}), data_model={}
-        ).valid
+        assert evaluator.evaluate(FunctionCall(call="required", args={"value": ""}), data_model={}) == ValidationResult(
+            valid=False, code="REQUIRED", message="This value is required."
+        )
+        assert evaluator.evaluate(FunctionCall(call="required", args={"value": "x"}), data_model={}).valid
 
     def test_regex(self, evaluator):
         assert evaluator.evaluate(
@@ -90,25 +84,17 @@ class TestValidatorsReturnValidationResult:
             FunctionCall(call="length", args={"value": "hello", "min": 3, "max": 10}),
             data_model={},
         ).valid
-        assert not evaluator.evaluate(
-            FunctionCall(call="length", args={"value": "hi", "min": 3}), data_model={}
-        ).valid
+        assert not evaluator.evaluate(FunctionCall(call="length", args={"value": "hi", "min": 3}), data_model={}).valid
 
     def test_numeric(self, evaluator):
         assert evaluator.evaluate(
             FunctionCall(call="numeric", args={"value": 5, "min": 0, "max": 10}), data_model={}
         ).valid
-        assert not evaluator.evaluate(
-            FunctionCall(call="numeric", args={"value": 15, "max": 10}), data_model={}
-        ).valid
+        assert not evaluator.evaluate(FunctionCall(call="numeric", args={"value": 15, "max": 10}), data_model={}).valid
 
     def test_email(self, evaluator):
-        assert evaluator.evaluate(
-            FunctionCall(call="email", args={"value": "a@b.com"}), data_model={}
-        ).valid
-        assert not evaluator.evaluate(
-            FunctionCall(call="email", args={"value": "not-an-email"}), data_model={}
-        ).valid
+        assert evaluator.evaluate(FunctionCall(call="email", args={"value": "a@b.com"}), data_model={}).valid
+        assert not evaluator.evaluate(FunctionCall(call="email", args={"value": "not-an-email"}), data_model={}).valid
 
     def test_check_uses_rule_message_as_fallback_only(self, evaluator):
         """CheckRule.message is a FALLBACK — only used when the result has none."""
@@ -131,20 +117,12 @@ class TestValidatorsReturnValidationResult:
 
 class TestBooleanFunctions:
     def test_and(self, evaluator):
-        assert evaluator.evaluate(
-            FunctionCall(call="and", args={"values": [True, True]}), data_model={}
-        ) is True
-        assert evaluator.evaluate(
-            FunctionCall(call="and", args={"values": [True, False]}), data_model={}
-        ) is False
+        assert evaluator.evaluate(FunctionCall(call="and", args={"values": [True, True]}), data_model={}) is True
+        assert evaluator.evaluate(FunctionCall(call="and", args={"values": [True, False]}), data_model={}) is False
 
     def test_or(self, evaluator):
-        assert evaluator.evaluate(
-            FunctionCall(call="or", args={"values": [False, True]}), data_model={}
-        ) is True
-        assert evaluator.evaluate(
-            FunctionCall(call="or", args={"values": [False, False]}), data_model={}
-        ) is False
+        assert evaluator.evaluate(FunctionCall(call="or", args={"values": [False, True]}), data_model={}) is True
+        assert evaluator.evaluate(FunctionCall(call="or", args={"values": [False, False]}), data_model={}) is False
 
     def test_not(self, evaluator):
         assert evaluator.evaluate(FunctionCall(call="not", args={"value": True}), data_model={}) is False
@@ -160,9 +138,7 @@ class TestUnknownFunctionInvalidCall:
 
 class TestOpenUrlNoOp:
     def test_open_url_returns_none(self, evaluator):
-        result = evaluator.evaluate(
-            FunctionCall(call="openUrl", args={"url": "https://example.com"}), data_model={}
-        )
+        result = evaluator.evaluate(FunctionCall(call="openUrl", args={"url": "https://example.com"}), data_model={})
         assert result is None
 
 
@@ -171,9 +147,20 @@ class TestBasicFunctionsCount14:
         functions = basic_functions()
         assert len(functions) == 14
         assert {f.name for f in functions} == {
-            "required", "regex", "length", "numeric", "email",
-            "formatString", "formatNumber", "formatCurrency", "formatDate",
-            "pluralize", "openUrl", "and", "or", "not",
+            "required",
+            "regex",
+            "length",
+            "numeric",
+            "email",
+            "formatString",
+            "formatNumber",
+            "formatCurrency",
+            "formatDate",
+            "pluralize",
+            "openUrl",
+            "and",
+            "or",
+            "not",
         }
 
     def test_open_url_requires_user_activation(self):

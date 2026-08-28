@@ -23,9 +23,7 @@ def _validates(tree) -> None:
     # tree so validate_envelope's dangling-child check doesn't fire on the
     # (deliberately unresolved) bind-time reference.
     root = Component(id="root", component="Column", children=[c.id for c in flat])
-    surface = CreateSurface(
-        surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat]
-    )
+    surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat])
     validate_envelope(surface)
 
 
@@ -124,9 +122,7 @@ class TestDataTableComponent:
         tree = datatable.DataTableComponent().lower(comp, {})
         flat = to_components(tree)
         root = Component(id="root", component="Column", children=[c.id for c in flat])
-        surface = CreateSurface(
-            surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat]
-        )
+        surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat])
         validate_envelope(surface)
 
 

@@ -10,15 +10,18 @@ template's ``sdd/artifacts/budget_variance_dashboard_Template.html`` pattern
 ``@import`` (system font stack only — zero external network references).
 
 Unlike :class:`~parrot.outputs.a2ui_renderers.ssr_html.SSRHTMLRenderer`
-(``interactive=False``, fully static), this renderer intercepts ``Chart`` and
-``DataTable`` components BEFORE catalog lowering (their ``lower()``
-implementations intentionally degrade to a text/opaque-property summary —
-see ``parrot.outputs.a2ui.catalog.components.chart``/``datatable`` — real
-graphics/table rendering is a RENDERER concern, same precedent as
-:class:`~parrot.outputs.a2ui_renderers.echarts.EChartsRenderer`). Every other
-component (Card, KPICard, Form, Map, Timeline, Report, and an Infographic's
-own title/subtitle/section scaffolding) renders via standard catalog
-lowering, same as SSR-HTML.
+(``interactive=False``, fully static), this renderer intercepts ``Chart``,
+``DataTable``, and ``Infographic`` BEFORE catalog lowering (``Chart``/
+``DataTable``'s ``lower()`` implementations intentionally degrade to a
+text/opaque-property summary — real graphics/table rendering is a RENDERER
+concern, same precedent as :class:`~parrot.outputs.a2ui_renderers.echarts.EChartsRenderer`;
+``Infographic`` is intercepted so its nested section descriptors can
+recurse into the SAME Chart/DataTable interception rather than degrading
+them via ``InfographicComponent.lower()``). Every other component renders
+via the v1.0 lowering pipeline (composite -> ``to_components()`` -> bake ->
+reconstruct -> dispatch by primitive), same order as SSR-HTML (FEAT-470
+TASK-2543): a composite must be lowered+flattened BEFORE baking, since
+template/binding expansion is exclusively ``bake_envelope``'s job.
 
 **Behavior hooks** (vanilla JS, ES2017, no build step, no dependencies beyond
 the vendored Chart.js UMD bundle):
@@ -39,6 +42,10 @@ the vendored Chart.js UMD bundle):
   ``<th>`` cells — client-side column sort: reorders the ALREADY-rendered
   ``<tr>`` rows by parsed numeric or lexicographic comparison; no data
   re-fetch, no re-render from the data model.
+* ``[data-tabs="<id>"]`` nav + ``[data-tab-index]`` buttons paired with
+  ``[data-tabs-panes="<id>"]`` + ``[data-pane-index]`` panes (FEAT-470
+  TASK-2544) — the generic ``Tabs`` PRIMITIVE's click-to-switch behavior,
+  the same active-class-toggle pattern as the Chart day-tabs above.
 
 All hooks are driven purely by component properties / the embedded data —
 never hardcoded to any specific dashboard (the budget-variance example is
@@ -52,24 +59,31 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-# Ensure the core v1 catalog components are registered so lowering can resolve them.
-import parrot.outputs.a2ui.catalog.components  # noqa: F401
+# Ensure the v1.0 catalogs (Basic primitives + Parrot composites) are
+# registered so lowering/dispatch can resolve every component name.
+import parrot.outputs.a2ui.catalog.basic
+import parrot.outputs.a2ui.catalog.parrot
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode
+from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
 from parrot.outputs.a2ui.models import Component, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 
 logger = logging.getLogger(__name__)
 
 _SURFACE_NAME = "interactive-html"
+
+#: Components intercepted BEFORE lowering — their real (graphics/nested)
+#: rendering is this renderer's own job, not their catalog `lower()`.
+_INTERCEPTED = {"Chart", "DataTable", "Infographic"}
 
 #: Vendored Chart.js v4.5.1 UMD bundle (MIT license header preserved in the
 #: file itself). Shares the `formats/assets/` placement convention with the
@@ -96,9 +110,11 @@ _STYLE = (
     "margin:1rem;color:#1a1a1a}"
     ".a2ui-card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:.5rem 0}"
     ".a2ui-row{display:flex;gap:1rem}.a2ui-col{display:flex;flex-direction:column}"
+    ".a2ui-list-vertical{display:flex;flex-direction:column;gap:.25rem}"
+    ".a2ui-list-horizontal{display:flex;flex-direction:row;gap:.5rem}"
     ".a2ui-text{margin:.25rem 0}.a2ui-title{font-size:1.4rem;font-weight:700}"
     ".a2ui-heading{font-size:1.15rem;font-weight:600}.a2ui-subtitle{color:#5b6b8c}"
-    ".a2ui-section{margin:.5rem 0}"
+    ".a2ui-section{margin:.5rem 0}.a2ui-notice{color:#a00}"
     ".a2ui-tabs{display:flex;gap:.25rem;margin:.5rem 0}"
     ".daytab{padding:.25rem .75rem;border:1px solid #ccc;border-radius:999px;"
     "background:#fff;cursor:pointer}.daytab.active{background:#1f3864;color:#fff}"
@@ -108,9 +124,20 @@ _STYLE = (
     "table{border-collapse:collapse;width:100%}"
     "th,td{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;font-size:.9rem}"
     "th[data-sort-key]{cursor:pointer;user-select:none}"
+    ".a2ui-tabs-nav{display:flex;gap:.25rem;border-bottom:1px solid #ddd;margin:.5rem 0}"
+    ".tabbtn{padding:.35rem .75rem;border:1px solid #ccc;border-bottom:none;"
+    "border-radius:6px 6px 0 0;background:#f4f4f4;cursor:pointer}"
+    ".tabbtn.active{background:#fff;font-weight:600}"
+    ".a2ui-tab-pane{padding:.5rem 0}"
+    ".a2ui-divider-h{border:none;border-top:1px solid #ddd;margin:.5rem 0}"
+    ".a2ui-divider-v{border:none;border-left:1px solid #ddd;margin:0 .5rem;height:1em;display:inline-block}"
+    ".a2ui-field{margin:.25rem 0}.a2ui-field-label{font-weight:600;display:block}"
+    ".a2ui-field-value{color:#333}.a2ui-button{display:inline-block;padding:.25rem .5rem;"
+    "border:1px solid #999;border-radius:4px;background:#f5f5f5}"
+    ".a2ui-modal{border:2px dashed #999;padding:.5rem;margin:.5rem 0}"
 )
 
-_CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row", "Card": "a2ui-card"}
+_CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
 
 _BEHAVIOR_JS = r"""
 (function () {
@@ -199,6 +226,26 @@ _BEHAVIOR_JS = r"""
       });
     });
   });
+
+  // Generic Tabs primitive (FEAT-470 TASK-2544) — same active-class-toggle
+  // pattern as the Chart day-tabs above, generalized to any [data-tabs] nav.
+  document.querySelectorAll("[data-tabs]").forEach(function (nav) {
+    var tabsId = nav.getAttribute("data-tabs");
+    var panesGroup = document.querySelector('[data-tabs-panes="' + tabsId + '"]');
+    if (!panesGroup) return;
+    nav.querySelectorAll("[data-tab-index]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        nav.querySelectorAll("[data-tab-index]").forEach(function (b) {
+          b.classList.remove("active");
+        });
+        btn.classList.add("active");
+        var idx = btn.getAttribute("data-tab-index");
+        panesGroup.querySelectorAll("[data-pane-index]").forEach(function (pane) {
+          pane.style.display = pane.getAttribute("data-pane-index") === idx ? "" : "none";
+        });
+      });
+    });
+  });
 })();
 """
 
@@ -208,10 +255,41 @@ def _safe_json(value: Any) -> str:
     return json.dumps(value, default=str).replace("</", "<\\/")
 
 
+def _esc(value: Any) -> str:
+    """HTML-escape any baked (already-resolved) value as a display string."""
+    return html.escape("" if value is None else str(value))
+
+
 @register_a2ui_renderer(
     _SURFACE_NAME,
     RendererCapabilities(
-        interactive=True, supports_actions=False, supports_updates=False, output="text/html"
+        interactive=True,
+        supports_actions=False,
+        supports_updates=False,
+        output="text/html",
+        supported_components={
+            "AudioPlayer",
+            "Button",
+            "Card",
+            "CheckBox",
+            "ChoicePicker",
+            "Column",
+            "DateTimeInput",
+            "Divider",
+            "Icon",
+            "Image",
+            "List",
+            "Modal",
+            "Row",
+            "Slider",
+            "Tabs",
+            "Text",
+            "TextField",
+            "Video",
+            "Chart",
+            "DataTable",
+            "Infographic",
+        },
     ),
 )
 class InteractiveHTMLRenderer(AbstractA2UIRenderer):
@@ -230,8 +308,24 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         Returns:
             A ``RenderedArtifact`` with ``mime_type="text/html"``.
         """
-        baked_components = bake_envelope(envelope)
-        body_parts = [self._render_top(bc) for bc in baked_components]
+        # Lower every composite EXCEPT the ones this renderer intercepts
+        # directly (Chart/DataTable/Infographic) BEFORE baking — same
+        # lowering-then-bake order as SSR-HTML (FEAT-470 TASK-2543): a
+        # composite may lower to a row `ChildTemplate`, and template/binding
+        # expansion is exclusively `bake_envelope`'s job.
+        lowered_envelope = self._lower_composites(envelope)
+        baked_components = bake_envelope(lowered_envelope)
+        by_id = {bc["id"]: bc for bc in baked_components}
+
+        # Render every component NOT referenced as someone else's child —
+        # i.e. every genuine top-level entry (matches this renderer's
+        # existing multi-top-level-block convention: a bare envelope of
+        # independent components, not necessarily a single "root").
+        referenced = self._referenced_ids(baked_components)
+        degradations: list[dict[str, Any]] = []
+        body_parts = [
+            self._render_top(bc, by_id, degradations) for bc in baked_components if bc["id"] not in referenced
+        ]
 
         data_model_json = _safe_json(envelope.data_model)
         chart_js = _CHART_JS_SOURCE
@@ -254,19 +348,60 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             filename=f"{envelope.surface_id}.html",
             title=envelope.surface_id,
             surface=_SURFACE_NAME,
+            metadata={"degraded": degradations} if degradations else {},
         )
+
+    # -- lowering (composites -> flat primitives, BEFORE baking) -------------
+
+    def _lower_composites(self, envelope: CreateSurface) -> CreateSurface:
+        """Replace every non-primitive composite EXCEPT Chart/DataTable/Infographic
+        (this renderer's own intercepted components) with its lowered +
+        flattened primitive equivalents, in the envelope's flat component list.
+        """
+        new_components: list[Component] = []
+        for comp in envelope.components:
+            if comp.component in _INTERCEPTED:
+                new_components.append(comp)
+                continue
+            try:
+                entry = get_component(comp.component)
+            except KeyError:
+                entry = None
+            if entry is not None and not entry.definition.is_primitive:
+                tree = entry.component_cls().lower(comp, envelope.data_model)
+                new_components.extend(to_components(tree, id_prefix=f"{comp.id}-lc"))
+            else:
+                new_components.append(comp)
+        return envelope.model_copy(update={"components": new_components})
+
+    @staticmethod
+    def _referenced_ids(baked_components: list[dict[str, Any]]) -> set[str]:
+        """Every id referenced as a `child`/`children`/`tabs[].child` elsewhere."""
+        referenced: set[str] = set()
+        for bc in baked_components:
+            if isinstance(bc.get("child"), str):
+                referenced.add(bc["child"])
+            if isinstance(bc.get("children"), list):
+                referenced.update(c for c in bc["children"] if isinstance(c, str))
+            for tab in bc.get("tabs") or []:
+                if isinstance(tab, dict) and isinstance(tab.get("child"), str):
+                    referenced.add(tab["child"])
+        return referenced
 
     # -- top-level component dispatch ---------------------------------------
 
-    def _render_top(self, comp: dict[str, Any]) -> str:
+    def _render_top(
+        self, comp: dict[str, Any], by_id: dict[str, dict[str, Any]], degradations: list[dict[str, Any]]
+    ) -> str:
         name = comp["component"]
         if name == "Chart":
-            return self._render_chart(comp.get("properties", {}) or {})
+            return self._render_chart(comp)
         if name == "DataTable":
-            return self._render_datatable(comp.get("properties", {}) or {})
+            return self._render_datatable(comp)
         if name == "Infographic":
-            return self._render_infographic(comp.get("properties", {}) or {})
-        return self._render_via_lowering(comp)
+            return self._render_infographic(comp)
+        node = self._reconstruct(comp["id"], by_id)
+        return self._render_basic(node, degradations)
 
     def _render_descriptor(self, descriptor: dict[str, Any]) -> str:
         """Render a nested component descriptor (e.g. inside an Infographic section)."""
@@ -281,52 +416,184 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         except KeyError:
             logger.warning("Unknown nested component %r; skipping.", name)
             return ""
-        lowered = entry.component_cls().lower(
-            Component(id=f"nested-{uuid.uuid4().hex[:8]}", component=name, properties=properties),
-            {},
+        node_id = f"nested-{uuid.uuid4().hex[:8]}"
+        if entry.definition.is_primitive:
+            node = BasicNode(id=node_id, component=name, **properties)
+        else:
+            component = Component(id=node_id, component=name, **properties)
+            node = entry.component_cls().lower(component, {})
+        return self._render_basic(node, [])
+
+    # -- tree reconstruction (mirrors ssr_html.SSRHTMLRenderer._reconstruct) -
+
+    def _reconstruct(self, node_id: str, by_id: dict[str, dict[str, Any]]) -> BasicNode:
+        """Reconstruct a nested :class:`BasicNode` from the flat baked dict list.
+
+        Every node reaching this point is already a Basic Catalog primitive
+        (composites — other than Chart/DataTable/Infographic — were lowered
+        + flattened by :meth:`_lower_composites` BEFORE baking).
+        """
+        data = dict(by_id[node_id])
+        name = data.pop("component")
+        data.pop("id", None)
+        child_id = data.pop("child", None)
+        children_ids = data.pop("children", None)
+        metadata = data.pop("metadata", None)
+
+        tabs: Optional[list[TabSpec]] = None
+        if "tabs" in data:
+            tabs = [
+                TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id)) for tab in data.pop("tabs")
+            ]
+
+        if name == "Modal" and isinstance(data.get("content"), str):
+            data["content"] = self._reconstruct(data["content"], by_id)
+
+        child = self._reconstruct(child_id, by_id) if isinstance(child_id, str) else None
+        children = [self._reconstruct(cid, by_id) for cid in children_ids] if isinstance(children_ids, list) else None
+        return BasicNode(
+            id=node_id,
+            component=name,
+            child=child,
+            children=children,
+            tabs=tabs,
+            metadata=metadata,
+            **data,
         )
-        return self._render_basic(lowered)
 
-    # -- standard lowering path (Card/KPICard/Form/Map/Timeline/Report/…) ---
+    # -- 18-primitive dispatch (mirrors ssr_html.SSRHTMLRenderer) ------------
 
-    def _render_via_lowering(self, comp: dict[str, Any]) -> str:
-        name = comp["component"]
-        try:
-            entry = get_component(name)
-        except KeyError:
-            node = BasicNode(**comp)
-            return self._render_basic(node)
-        lowered = entry.component_cls().lower(
-            Component(
-                id=comp.get("id", ""),
-                component=name,
-                properties=comp.get("properties", {}) or {},
-                children=comp.get("children", []) or [],
-            ),
-            {},
-        )
-        return self._render_basic(lowered)
-
-    def _render_basic(self, node: BasicNode) -> str:
-        """Recursively render a lowered Basic Catalog node to escaped HTML (mirrors SSR-HTML)."""
+    def _render_basic(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         component = node.component
-        props = node.properties or {}
+        method = getattr(self, f"_render_prim_{component}", None)
+        if method is None:
+            degradations.append(degradation_record(node, f"{_SURFACE_NAME} has no renderer for {component}"))
+            return self._render_prim_Text(degrade(node, "no renderer available"), degradations)
+        return method(node, degradations)
 
-        if component == "Text":
-            role = props.get("role", "")
-            text = props.get("text")
-            cls = f"a2ui-text a2ui-{html.escape(str(role))}" if role else "a2ui-text"
-            return f'<p class="{cls}">{html.escape("" if text is None else str(text))}</p>'
+    def _render_children(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        children = node.children if isinstance(node.children, list) else []
+        return "".join(self._render_basic(child, degradations) for child in children)
 
-        if component == "Image":
-            src = str(props.get("src", ""))
-            if src.startswith("data:"):
-                return f'<img src="{html.escape(src, quote=True)}" alt="">'
-            return f'<div class="a2ui-image" data-image-url="{html.escape(src, quote=True)}">[image]</div>'
+    def _render_prim_Text(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        role = None
+        if node.metadata is not None and node.metadata.extensions is not None:
+            role = node.metadata.extensions.root.get("parrot_role")
+        cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
+        return f'<p class="{cls}">{_esc(props.get("text"))}</p>'
 
-        children_html = "".join(self._render_basic(child) for child in node.children)
-        css_class = _CONTAINER_COMPONENTS.get(component, f"a2ui-{html.escape(component.lower())}")
-        return f'<div class="{css_class}">{children_html}</div>'
+    def _render_prim_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        src = str(props.get("url", ""))
+        alt = _esc(props.get("description"))
+        if src.startswith("data:"):
+            return f'<img src="{html.escape(src, quote=True)}" alt="{alt}">'
+        return f'<div class="a2ui-image" data-image-url="{html.escape(src, quote=True)}">{alt or "[image]"}</div>'
+
+    def _render_prim_Icon(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        name = props.get("name")
+        if isinstance(name, dict) and "svgPath" in name:
+            return f'<span class="a2ui-icon" data-svg-path="{html.escape(str(name["svgPath"]), quote=True)}"></span>'
+        return f'<span class="a2ui-icon" data-icon="{_esc(name)}"></span>'
+
+    def _render_prim_Video(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        url = str(props.get("url", ""))
+        poster = props.get("posterUrl")
+        poster_attr = f' poster="{html.escape(str(poster), quote=True)}"' if poster else ""
+        return f'<video controls{poster_attr} data-video-url="{html.escape(url, quote=True)}"></video>'
+
+    def _render_prim_AudioPlayer(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        url = str(props.get("url", ""))
+        description = props.get("description")
+        parts = [f'<audio controls data-audio-url="{html.escape(url, quote=True)}"></audio>']
+        if description:
+            parts.append(f'<span class="a2ui-audio-desc">{_esc(description)}</span>')
+        return "".join(parts)
+
+    def _render_prim_Row(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        return f'<div class="a2ui-row">{self._render_children(node, degradations)}</div>'
+
+    def _render_prim_Column(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        return f'<div class="a2ui-col">{self._render_children(node, degradations)}</div>'
+
+    def _render_prim_List(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        direction = props.get("direction", "vertical")
+        cls = "a2ui-list-horizontal" if direction == "horizontal" else "a2ui-list-vertical"
+        return f'<div class="{cls}">{self._render_children(node, degradations)}</div>'
+
+    def _render_prim_Card(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        inner = self._render_basic(node.child, degradations) if node.child is not None else ""
+        return f'<div class="a2ui-card">{inner}</div>'
+
+    def _render_prim_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        """A ``Tabs`` primitive -> a ``[data-tabs]`` nav + ``[data-tabs-panes]``
+        pair, reusing the same click-to-switch behavior pattern as the
+        existing Chart day-tabs JS (FEAT-470 TASK-2544 Scope)."""
+        tabs_id = f"tabs-{node.id or uuid.uuid4().hex[:8]}"
+        buttons = []
+        panes = []
+        for i, tab in enumerate(node.tabs or []):
+            active = " active" if i == 0 else ""
+            buttons.append(
+                f'<button type="button" class="tabbtn{active}" data-tab-index="{i}">' f"{_esc(tab.title)}</button>"
+            )
+            display = "" if i == 0 else ' style="display:none"'
+            panes.append(
+                f'<div class="a2ui-tab-pane" data-pane-index="{i}"{display}>'
+                f"{self._render_basic(tab.child, degradations)}</div>"
+            )
+        nav = f'<div class="a2ui-tabs-nav" data-tabs="{tabs_id}">{"".join(buttons)}</div>'
+        panes_html = f'<div data-tabs-panes="{tabs_id}">{"".join(panes)}</div>'
+        return nav + panes_html
+
+    def _render_prim_Modal(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        content_node = props.get("content")
+        inner = self._render_basic(content_node, degradations) if isinstance(content_node, BasicNode) else ""
+        return f'<div class="a2ui-modal">{inner}</div>'
+
+    def _render_prim_Divider(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        axis = props.get("axis", "horizontal")
+        if axis == "vertical":
+            return '<span class="a2ui-divider-v"></span>'
+        return '<hr class="a2ui-divider-h">'
+
+    def _render_prim_Button(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        inner = self._render_basic(node.child, degradations) if node.child is not None else ""
+        return f'<span class="a2ui-button">{inner}</span>'
+
+    def _render_prim_TextField(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        return self._render_labeled_value(props.get("label"), props.get("value"))
+
+    def _render_prim_CheckBox(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        checked = "☑" if props.get("value") else "☐"
+        return self._render_labeled_value(props.get("label"), checked)
+
+    def _render_prim_ChoicePicker(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        value = props.get("value")
+        display = ", ".join(str(v) for v in value) if isinstance(value, list) else value
+        return self._render_labeled_value(props.get("label"), display)
+
+    def _render_prim_Slider(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        return self._render_labeled_value(props.get("label"), props.get("value"))
+
+    def _render_prim_DateTimeInput(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        return self._render_labeled_value(props.get("label"), props.get("value"))
+
+    def _render_labeled_value(self, label: Any, value: Any) -> str:
+        label_html = f'<span class="a2ui-field-label">{_esc(label)}</span>' if label else ""
+        return f'<div class="a2ui-field">{label_html}<span class="a2ui-field-value">{_esc(value)}</span></div>'
 
     # -- Chart / DataTable / Infographic (graphics-needing, intercepted) ----
 
@@ -335,7 +602,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
 
         Bypasses catalog lowering entirely (``ChartComponent.lower()``
         intentionally degrades to a text summary — real graphics are a
-        renderer concern, same precedent as ``EChartsRenderer``).
+        renderer concern, same precedent as ``EChartsRenderer``). ``props``
+        is the baked component's own top-level dict (v1.0 — never nested
+        under a "properties" key).
         """
         chart_id = f"chart-{uuid.uuid4().hex[:8]}"
         rows = props.get("data")
@@ -372,10 +641,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
                 f"{html.escape(str(col))}</button>"
                 for i, col in enumerate(y_columns)
             )
-            toggle_html = (
-                f'<div class="a2ui-metric-toggle" data-metric-toggle-for="{chart_id}">'
-                f"{buttons}</div>"
-            )
+            toggle_html = f'<div class="a2ui-metric-toggle" data-metric-toggle-for="{chart_id}">' f"{buttons}</div>"
 
         config_attr = html.escape(_safe_json(config), quote=True)
         return (
@@ -388,8 +654,9 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         """Render a real, sortable ``<table>`` from RESOLVED DataTable properties.
 
         Bypasses catalog lowering entirely (``DataTableComponent.lower()``
-        carries resolved rows as an OPAQUE property on an empty ``Column``
-        node — real tabular rendering is a renderer concern here).
+        carries resolved rows via a ``ChildTemplate`` — real tabular
+        rendering is a renderer concern here). ``props`` is the baked
+        component's own top-level dict (v1.0 — never nested).
         """
         columns = props.get("columns") or []
         rows = props.get("data")
@@ -424,7 +691,8 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
         """Render an Infographic's title/subtitle/sections, recursing into
         nested descriptors via :meth:`_render_descriptor` (Chart/DataTable
         aware) rather than delegating to ``InfographicComponent.lower()``
-        (which would degrade nested Charts/DataTables to text summaries)."""
+        (which would degrade nested Charts/DataTables to text summaries).
+        ``props`` is the baked component's own top-level dict (v1.0)."""
         parts: list[str] = []
         title = props.get("title")
         if title is not None:
@@ -439,9 +707,7 @@ class InteractiveHTMLRenderer(AbstractA2UIRenderer):
             section_parts: list[str] = []
             heading = section.get("heading")
             if heading is not None:
-                section_parts.append(
-                    f'<p class="a2ui-text a2ui-heading">{html.escape(str(heading))}</p>'
-                )
+                section_parts.append(f'<p class="a2ui-text a2ui-heading">{html.escape(str(heading))}</p>')
             text = section.get("text")
             if text is not None:
                 section_parts.append(f'<p class="a2ui-text a2ui-body">{html.escape(str(text))}</p>')

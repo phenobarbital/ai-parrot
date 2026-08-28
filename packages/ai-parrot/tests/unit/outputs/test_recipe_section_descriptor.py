@@ -1,4 +1,5 @@
 """Recipe ``section_descriptor`` model + store round-trip (FEAT-326, TASK-1885)."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -56,10 +57,7 @@ class TestRecipeSchema:
         yaml_text = legacy.to_yaml()
         assert "section_descriptor" in yaml_text  # dumped as null
         # Simulate a truly-legacy file: strip the field entirely.
-        stripped = "\n".join(
-            line for line in yaml_text.splitlines()
-            if not line.startswith("section_descriptor")
-        )
+        stripped = "\n".join(line for line in yaml_text.splitlines() if not line.startswith("section_descriptor"))
         path = tmp_path / "legacy.yaml"
         path.write_text(stripped, encoding="utf-8")
         loaded = await store.get("legacy")

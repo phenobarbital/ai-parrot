@@ -230,8 +230,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         tabs: Optional[list[TabSpec]] = None
         if "tabs" in data:
             tabs = [
-                TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id))
-                for tab in data.pop("tabs")
+                TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id)) for tab in data.pop("tabs")
             ]
 
         # Modal's `content`/`trigger` are prop-level id REFERENCES (not
@@ -243,11 +242,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             data["content"] = self._reconstruct(data["content"], by_id)
 
         child = self._reconstruct(child_id, by_id) if isinstance(child_id, str) else None
-        children = (
-            [self._reconstruct(cid, by_id) for cid in children_ids]
-            if isinstance(children_ids, list)
-            else None
-        )
+        children = [self._reconstruct(cid, by_id) for cid in children_ids] if isinstance(children_ids, list) else None
         return BasicNode(
             id=node_id,
             component=name,
@@ -269,9 +264,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
 
         method = getattr(self, f"_render_{component}", None)
         if method is None:
-            degradations.append(
-                degradation_record(node, f"{_SURFACE_NAME} has no renderer for {component}")
-            )
+            degradations.append(degradation_record(node, f"{_SURFACE_NAME} has no renderer for {component}"))
             return self._render_Text(degrade(node, "no renderer available"), degradations)
         return method(node, degradations)
 
@@ -310,10 +303,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         url = str(props.get("url", ""))
         poster = props.get("posterUrl")
         poster_attr = f' poster="{html.escape(str(poster), quote=True)}"' if poster else ""
-        return (
-            f'<video controls{poster_attr} data-video-url="{html.escape(url, quote=True)}">'
-            f"</video>"
-        )
+        return f'<video controls{poster_attr} data-video-url="{html.escape(url, quote=True)}">' f"</video>"
 
     def _render_AudioPlayer(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
         props = node.model_extra or {}
@@ -357,11 +347,7 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
         # resolved to a nested BasicNode during `_reconstruct`.
         props = node.model_extra or {}
         content_node = props.get("content")
-        inner = (
-            self._render_basic(content_node, degradations)
-            if isinstance(content_node, BasicNode)
-            else ""
-        )
+        inner = self._render_basic(content_node, degradations) if isinstance(content_node, BasicNode) else ""
         return f'<div class="a2ui-modal">{inner}</div>'
 
     def _render_Divider(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:

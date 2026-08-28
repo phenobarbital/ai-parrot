@@ -49,9 +49,7 @@ class KPICardComponent:
             BasicNode(
                 component="Text",
                 text=props.get("value"),
-                metadata={
-                    "extensions": {"parrot_role": "value", "parrot_unit": props.get("unit")}
-                },
+                metadata={"extensions": {"parrot_role": "value", "parrot_unit": props.get("unit")}},
             ),
         ]
         if props.get("delta") is not None or props.get("trend") is not None:

@@ -33,9 +33,7 @@ class TestExampleRecipeYaml:
     def test_snapshot_col_set_on_every_finance_step(self):
         recipe = InfographicRecipe.from_yaml(YAML.read_text())
         finance = {"day_totals", "division_breakdown", "variance_analysis", "top_movers"}
-        cols = {
-            t.params.get("snapshot_col") for t in recipe.transforms if t.transformer in finance
-        }
+        cols = {t.params.get("snapshot_col") for t in recipe.transforms if t.transformer in finance}
         assert len(cols) == 1 and None not in cols, f"inconsistent snapshot_col: {cols}"
 
     def test_has_an_optional_narrative_bind(self):

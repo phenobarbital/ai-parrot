@@ -75,9 +75,7 @@ class RecipeNotFoundError(LookupError):
     def __init__(self, name: str, available: list[str]) -> None:
         self.name = name
         self.available = available
-        super().__init__(
-            f"Recipe {name!r} not found; available recipes: {sorted(available)!r}"
-        )
+        super().__init__(f"Recipe {name!r} not found; available recipes: {sorted(available)!r}")
 
 
 class RecipeSchemaVersionError(ValueError):
@@ -112,9 +110,7 @@ def _validate_name(value: str, *, kind: str = "recipe name") -> None:
             rejects path separators, ``..``, and absolute paths outright.
     """
     if not value or not _VALID_NAME_RE.match(value) or ".." in value:
-        raise ValueError(
-            f"Invalid {kind} {value!r}: only letters, digits, '.', '_', '-' are allowed."
-        )
+        raise ValueError(f"Invalid {kind} {value!r}: only letters, digits, '.', '_', '-' are allowed.")
 
 
 def _check_schema_version(recipe: InfographicRecipe) -> InfographicRecipe:
@@ -338,15 +334,11 @@ class DBRecipeStore(AbstractRecipeStore):
                 return
             if self._use_redis:
                 try:
-                    self._redis = Redis.from_url(
-                        self.redis_url, decode_responses=True, socket_connect_timeout=5
-                    )
+                    self._redis = Redis.from_url(self.redis_url, decode_responses=True, socket_connect_timeout=5)
                     await self._redis.ping()
                     self.logger.info("DBRecipeStore connected to Redis")
                 except Exception as exc:  # noqa: BLE001 - mirrors SkillRegistry's broad fallback
-                    self.logger.warning(
-                        "DBRecipeStore Redis connection failed (%s); using in-memory store", exc
-                    )
+                    self.logger.warning("DBRecipeStore Redis connection failed (%s); using in-memory store", exc)
                     self._use_redis = False
             self._configured = True
 
@@ -361,9 +353,7 @@ class DBRecipeStore(AbstractRecipeStore):
         recipe = recipe.model_copy(update={"updated_at": datetime.now(timezone.utc)})
         async with self._lock:
             if self._use_redis and self._redis:
-                await self._redis.set(
-                    self._key(recipe.name, recipe.owner), recipe.model_dump_json()
-                )
+                await self._redis.set(self._key(recipe.name, recipe.owner), recipe.model_dump_json())
                 await self._redis.sadd(self._index_key(recipe.owner), recipe.name)
             else:
                 self._recipes[(recipe.owner or "", recipe.name)] = recipe

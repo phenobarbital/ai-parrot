@@ -33,9 +33,7 @@ class TestExportCatalogDefinitionValid:
 class TestExportIncludesBasicRefsAndInstructions:
     def test_export_includes_basic_refs_and_instructions(self):
         doc = export_catalog_definition()
-        assert doc["components"]["Text"] == {
-            "$ref": f"{BASIC_CATALOG_ID}#/components/Text"
-        }
+        assert doc["components"]["Text"] == {"$ref": f"{BASIC_CATALOG_ID}#/components/Text"}
         assert "returnType" in doc["functions"]["required"]
         assert "InfoCard" in doc["instructions"]
 

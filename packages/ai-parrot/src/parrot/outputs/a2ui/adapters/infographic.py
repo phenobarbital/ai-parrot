@@ -111,9 +111,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
         return dumper(mode="json")
     if isinstance(value, dict):
         return dict(value)
-    raise TypeError(
-        f"Expected an InfographicResponse, block model or mapping, got {type(value)!r}."
-    )
+    raise TypeError(f"Expected an InfographicResponse, block model or mapping, got {type(value)!r}.")
 
 
 def _as_dict_or_none(value: Any) -> dict[str, Any] | None:
@@ -189,9 +187,7 @@ class _SectionAccumulator:
     def close(self) -> None:
         """Flush the current section if it carries any content."""
         if self._current and (
-            self._current.get("heading")
-            or self._current.get("text")
-            or self._current.get("components")
+            self._current.get("heading") or self._current.get("text") or self._current.get("components")
         ):
             self._sections.append(self._current)
         self._current = None
@@ -284,9 +280,7 @@ class _Converter:
         rows: list[dict[str, Any]] = []
         for raw_row in block.get("rows") or []:
             cells = list(raw_row) if isinstance(raw_row, (list, tuple)) else [raw_row]
-            rows.append(
-                {name: (cells[i] if i < len(cells) else None) for i, name in enumerate(names)}
-            )
+            rows.append({name: (cells[i] if i < len(cells) else None) for i, name in enumerate(names)})
 
         properties = {
             "title": block.get("title") or block.get("caption"),
@@ -373,9 +367,7 @@ class _Converter:
                 },
             )
         if block_type == "quote":
-            attribution = " — ".join(
-                part for part in (block.get("author"), block.get("source")) if part
-            )
+            attribution = " — ".join(part for part in (block.get("author"), block.get("source")) if part)
             return _descriptor(
                 "InfoCard",
                 {"body": block.get("text") or "", "footer": attribution or None},
@@ -400,11 +392,7 @@ class _Converter:
 
     def _chain(self, block: dict[str, Any]) -> dict[str, Any]:
         """Map a ``chain`` block to an ``InfoCard`` with an arrow-joined node body."""
-        nodes = [
-            node for node in (
-                _as_dict_or_none(raw) for raw in block.get("nodes") or []
-            ) if node is not None
-        ]
+        nodes = [node for node in (_as_dict_or_none(raw) for raw in block.get("nodes") or []) if node is not None]
         labels = [_text(node.get("label")) or "" for node in nodes]
         subtitle = "vertical" if block.get("direction") == "vertical" else None
         return _descriptor(
@@ -426,10 +414,7 @@ class _Converter:
             label = _text(step.get("label")) or ""
             description = _text(step.get("description"))
             lines.append(f"{label} — {description}" if description else label)
-        items = [
-            _descriptor("Text", {"text": f"{i}. {line}"})
-            for i, line in enumerate(lines, 1)
-        ]
+        items = [_descriptor("Text", {"text": f"{i}. {line}"}) for i, line in enumerate(lines, 1)]
         title = _text(block.get("title"))
         if title is not None:
             items.insert(0, _descriptor("Text", {"text": title, "variant": "caption"}))
@@ -487,9 +472,7 @@ class _Converter:
             pane_children: list[dict[str, Any]] = []
             for section in pane_sections.result():
                 if section.get("heading"):
-                    pane_children.append(
-                        _descriptor("Text", {"text": section["heading"], "variant": "caption"})
-                    )
+                    pane_children.append(_descriptor("Text", {"text": section["heading"], "variant": "caption"}))
                 if section.get("text"):
                     pane_children.append(_descriptor("Text", {"text": section["text"]}))
                 pane_children.extend(section.get("components") or [])
@@ -531,9 +514,7 @@ class _Converter:
                     subtitle = block.get("subtitle")
                     seen_title = True
                 else:
-                    sections.open(
-                        heading=block.get("title"), text=block.get("subtitle")
-                    )
+                    sections.open(heading=block.get("title"), text=block.get("subtitle"))
                 continue
 
             if block_type == "divider":
@@ -549,11 +530,7 @@ class _Converter:
                     self._flatten_container(block, block_type, sections, depth)
                 continue
 
-            if (
-                block_type == "summary"
-                and not block.get("title")
-                and sections.set_text(block.get("content") or "")
-            ):
+            if block_type == "summary" and not block.get("title") and sections.set_text(block.get("content") or ""):
                 continue
 
             if block_type == "chart":

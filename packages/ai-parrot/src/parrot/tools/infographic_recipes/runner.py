@@ -112,9 +112,7 @@ def _collect_bind_pointers(value: Any) -> list[str]:
     pointer's optionality is declared instead.
     """
     pointers: list[str] = []
-    if isinstance(value, dict) and isinstance(value.get("path"), str) and is_valid_pointer(
-        value["path"]
-    ):
+    if isinstance(value, dict) and isinstance(value.get("path"), str) and is_valid_pointer(value["path"]):
         pointers.append(value["path"])
     elif isinstance(value, dict):
         for item in value.values():
@@ -421,15 +419,11 @@ class RecipeRunner:
     async def _load_recipe(self, name: str, owner: Optional[str] = None) -> InfographicRecipe:
         return await self.store.get(name, owner=owner)
 
-    def _resolve_params_or_raise(
-        self, recipe: InfographicRecipe, overrides: dict[str, Any] | None
-    ) -> dict[str, str]:
+    def _resolve_params_or_raise(self, recipe: InfographicRecipe, overrides: dict[str, Any] | None) -> dict[str, str]:
         try:
             return resolve_params(recipe.params, overrides)
         except ValueError as exc:
-            raise RecipeRunException(
-                RecipeRunError(recipe=recipe.name, stage="params", detail=str(exc))
-            ) from exc
+            raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="params", detail=str(exc))) from exc
 
     async def _fetch_frames(
         self,
@@ -454,11 +448,7 @@ class RecipeRunner:
                             )
                         ) from exc
                 sql = substitute(ds.sql, resolved_params) if ds.sql else None
-                conditions = (
-                    _substitute_value(ds.conditions, resolved_params)
-                    if ds.conditions is not None
-                    else None
-                )
+                conditions = _substitute_value(ds.conditions, resolved_params) if ds.conditions is not None else None
                 result = await self.dataset_manager.fetch_dataset(
                     ds.dataset, sql=sql, conditions=conditions, force_refresh=ds.force_refresh
                 )
@@ -473,18 +463,13 @@ class RecipeRunner:
                     )
                 entry = self.dataset_manager.get_dataset_entry(ds.dataset)
                 if entry is None:
-                    available = [
-                        d.get("name") for d in await self.dataset_manager.list_datasets()
-                    ]
+                    available = [d.get("name") for d in await self.dataset_manager.list_datasets()]
                     raise RecipeRunException(
                         RecipeRunError(
                             recipe=recipe.name,
                             stage="data",
                             dataset=ds.dataset,
-                            detail=(
-                                f"Dataset {ds.dataset!r} is not registered; "
-                                f"available datasets: {available!r}"
-                            ),
+                            detail=(f"Dataset {ds.dataset!r} is not registered; " f"available datasets: {available!r}"),
                         )
                     )
                 frames[ds.alias] = entry.df
@@ -492,9 +477,7 @@ class RecipeRunner:
         finally:
             _pctx_var.reset(token)
 
-    def _run_gate_or_raise(
-        self, recipe: InfographicRecipe, frames: dict[str, pd.DataFrame]
-    ) -> None:
+    def _run_gate_or_raise(self, recipe: InfographicRecipe, frames: dict[str, pd.DataFrame]) -> None:
         # Only DataFrame-backed (data-source alias) inputs are column-gated;
         # an input referencing a PRIOR step's dict output_key has no columns
         # to check and is validated instead at transform-execution time
@@ -532,8 +515,7 @@ class RecipeRunner:
                             stage="transform",
                             transformer=step.transformer,
                             detail=(
-                                f"Input {alias!r} is neither a data-source alias nor a "
-                                "prior step's output_key."
+                                f"Input {alias!r} is neither a data-source alias nor a " "prior step's output_key."
                             ),
                         )
                     )
@@ -553,9 +535,7 @@ class RecipeRunner:
             data_model[step.output_key] = result
         return data_model
 
-    async def _apply_narrative_best_effort(
-        self, recipe: InfographicRecipe, data_model: dict[str, Any]
-    ) -> None:
+    async def _apply_narrative_best_effort(self, recipe: InfographicRecipe, data_model: dict[str, Any]) -> None:
         """Populate ``data_model`` with LLM prose, best-effort (spec criterion G-E).
 
         Never raises: a missing narrator, a missing ``narrative`` declaration,
@@ -594,13 +574,9 @@ class RecipeRunner:
         if isinstance(prose, str) and prose.strip():
             data_model[spec.output_key] = prose
         else:
-            self.logger.info(
-                "Narrator returned no prose for recipe %r — rendering without it.", recipe.name
-            )
+            self.logger.info("Narrator returned no prose for recipe %r — rendering without it.", recipe.name)
 
-    def _check_bind_drift_or_raise(
-        self, recipe: InfographicRecipe, data_model: dict[str, Any]
-    ) -> None:
+    def _check_bind_drift_or_raise(self, recipe: InfographicRecipe, data_model: dict[str, Any]) -> None:
         optional_pointers = _optional_paths(recipe.layout)
         missing: set[str] = set()
         for pointer in _collect_bind_pointers(recipe.layout.props):
@@ -649,9 +625,7 @@ class RecipeRunner:
                     data_model=data_model,
                 )
         except CatalogValidationError as exc:
-            raise RecipeRunException(
-                RecipeRunError(recipe=recipe.name, stage="layout", detail=str(exc))
-            ) from exc
+            raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="layout", detail=str(exc))) from exc
         return envelope
 
     async def _render_or_raise(self, recipe: InfographicRecipe, envelope) -> RenderedArtifact:
@@ -662,9 +636,7 @@ class RecipeRunner:
         try:
             return await renderer.render(envelope)
         except Exception as exc:  # noqa: BLE001 - any renderer failure is stage="render"
-            raise RecipeRunException(
-                RecipeRunError(recipe=recipe.name, stage="render", detail=str(exc))
-            ) from exc
+            raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="render", detail=str(exc))) from exc
 
     async def _deliver_best_effort(self, recipe: InfographicRecipe, artifact: RenderedArtifact) -> None:
         # No RecipeRunError stage exists for delivery (spec's stage Literal is

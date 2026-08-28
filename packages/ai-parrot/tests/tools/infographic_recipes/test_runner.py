@@ -33,7 +33,6 @@ from parrot.outputs.a2ui.renderers import (
 )
 from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
 
-
 # ── Fake renderer (registered once at import time) ─────────────────────────
 
 _RENDERED_ENVELOPES: list = []
@@ -41,9 +40,7 @@ _RENDERED_ENVELOPES: list = []
 
 @register_a2ui_renderer(
     "fake-recorder",
-    RendererCapabilities(
-        interactive=True, supports_actions=False, supports_updates=False, output="text/html"
-    ),
+    RendererCapabilities(interactive=True, supports_actions=False, supports_updates=False, output="text/html"),
 )
 class _FakeRenderer(AbstractA2UIRenderer):
     async def render(self, envelope, *, bake: bool = True) -> RenderedArtifact:
@@ -75,9 +72,7 @@ class _FakeDatasetManager:
         self.pctx_seen_during_fetch: list = []
 
     async def fetch_dataset(self, name, sql=None, conditions=None, force_refresh=False):
-        self.fetch_calls.append(
-            {"name": name, "sql": sql, "conditions": conditions, "force_refresh": force_refresh}
-        )
+        self.fetch_calls.append({"name": name, "sql": sql, "conditions": conditions, "force_refresh": force_refresh})
         self.pctx_seen_during_fetch.append(_pctx_var.get())
         if name not in self._frames:
             return {"error": f"Dataset {name!r} not found.", "available": sorted(self._frames)}
@@ -143,9 +138,7 @@ def _increment(inputs, params):
 # TransformerRegistry's idempotent-reregistration rule (same name + same
 # func = no-op) holds even though this module is re-imported across the
 # whole suite's collection.
-transformer_registry.register(
-    "test_double_step", _double, requires_columns={"snapshots": ["value"]}
-)
+transformer_registry.register("test_double_step", _double, requires_columns={"snapshots": ["value"]})
 transformer_registry.register("test_increment_step", _increment, requires_columns={})
 
 
@@ -222,9 +215,7 @@ class TestRecipeRunner:
 
     async def test_runner_unknown_transformer(self, dataset_manager):
         recipe = _make_recipe(
-            transforms=[
-                TransformStep(transformer="does-not-exist", inputs=["snapshots"], output_key="x")
-            ],
+            transforms=[TransformStep(transformer="does-not-exist", inputs=["snapshots"], output_key="x")],
             layout=LayoutSpec(component="Infographic", sections=[]),
         )
         store = _FakeStore({recipe.name: recipe})
@@ -236,9 +227,7 @@ class TestRecipeRunner:
         assert "Unknown transformer" in exc_info.value.error.detail
 
     async def test_runner_dataset_not_registered(self, dataset_manager):
-        recipe = _make_recipe(
-            data_sources=[DataSourceSpec(dataset="missing-dataset", alias="snapshots")]
-        )
+        recipe = _make_recipe(data_sources=[DataSourceSpec(dataset="missing-dataset", alias="snapshots")])
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager)
 
@@ -283,9 +272,7 @@ class TestRecipeRunner:
 
     async def test_dry_run_collects_all_errors(self, dataset_manager):
         recipe = _make_recipe(
-            transforms=[
-                TransformStep(transformer="does-not-exist", inputs=["snapshots"], output_key="x")
-            ],
+            transforms=[TransformStep(transformer="does-not-exist", inputs=["snapshots"], output_key="x")],
             layout=LayoutSpec(
                 component="Infographic",
                 title={"path": "/undeclared_key"},
@@ -342,9 +329,7 @@ class TestRecipeRunner:
 
         assert store.get_calls == [("test-recipe", None)]
 
-    async def test_sql_param_substitution_rejects_injection_shaped_values(
-        self, dataset_manager
-    ):
+    async def test_sql_param_substitution_rejects_injection_shaped_values(self, dataset_manager):
         """A resolved param containing quotes/semicolons/comment markers must
         never be substituted into a DataSourceSpec.sql template — TableSource
         executes `sql` close to verbatim and documents itself as NOT a
@@ -439,11 +424,7 @@ class TestRecipeRunner:
         assert called == []
 
     async def test_delivery_invoked_when_configured(self, dataset_manager, monkeypatch):
-        recipe = _make_recipe(
-            render=RenderSpec(
-                profile="fake-recorder", delivery={"recipients": ["a@example.com"]}
-            )
-        )
+        recipe = _make_recipe(render=RenderSpec(profile="fake-recorder", delivery={"recipients": ["a@example.com"]}))
         store = _FakeStore({recipe.name: recipe})
         owner = object()
         runner = RecipeRunner(store, dataset_manager, owner=owner)
@@ -463,11 +444,7 @@ class TestRecipeRunner:
         assert called_kwargs["recipients"] == ["a@example.com"]
 
     async def test_delivery_skipped_without_owner_logs_warning(self, dataset_manager, monkeypatch):
-        recipe = _make_recipe(
-            render=RenderSpec(
-                profile="fake-recorder", delivery={"recipients": ["a@example.com"]}
-            )
-        )
+        recipe = _make_recipe(render=RenderSpec(profile="fake-recorder", delivery={"recipients": ["a@example.com"]}))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager)  # no owner
 
@@ -568,9 +545,7 @@ class TestNarrativeStep:
 
     async def test_no_narrator_skips_and_succeeds(self, dataset_manager):
         """G-E: pure replay never fails for lack of an LLM."""
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager)  # narrator=None
 
@@ -583,9 +558,7 @@ class TestNarrativeStep:
     async def test_narrator_populates_output_key(self, dataset_manager):
         """Prose lands at narrative.output_key."""
         narrator = _OkNarrator()
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager, narrator=narrator)
 
@@ -607,9 +580,7 @@ class TestNarrativeStep:
 
     async def test_narrator_exception_degrades(self, dataset_manager, caplog):
         """WARNING logged; run still returns an artifact."""
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager, narrator=_RaisingNarrator())
 
@@ -623,9 +594,7 @@ class TestNarrativeStep:
 
     async def test_empty_prose_writes_nothing(self, dataset_manager):
         """None/blank result must not create the key."""
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager, narrator=_EmptyNarrator())
 
@@ -637,9 +606,7 @@ class TestNarrativeStep:
     async def test_missing_facts_key_warns_and_skips(self, dataset_manager, caplog):
         """Narrator is not called when facts_key is absent from the data_model."""
         narrator = _OkNarrator()
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="does_not_exist")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="does_not_exist"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager, narrator=narrator)
 
@@ -687,24 +654,17 @@ class TestDryRunNarrative:
         (verified against models.py), so this reuses "layout" — identify the
         diagnostic by its `detail` text instead of a unique stage value.
         """
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="does_not_exist")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="does_not_exist"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager)
 
         errors = await runner.dry_run(recipe)
 
-        assert any(
-            "narrative.facts_key" in e.detail and "does_not_exist" in e.detail
-            for e in errors
-        )
+        assert any("narrative.facts_key" in e.detail and "does_not_exist" in e.detail for e in errors)
 
     async def test_dry_run_clean_for_wired_narrative(self, dataset_manager):
         """Correctly wired narrative produces no narrative-related error."""
-        recipe = _make_recipe(
-            narrative=NarrativeSpec(skill="budget-narrative", facts_key="result")
-        )
+        recipe = _make_recipe(narrative=NarrativeSpec(skill="budget-narrative", facts_key="result"))
         store = _FakeStore({recipe.name: recipe})
         runner = RecipeRunner(store, dataset_manager)
 

@@ -39,6 +39,7 @@ _RENDERER_NAMESPACE = "parrot.outputs.a2ui_renderers"
 #: Pip extra that ships the renderers.
 _A2UI_EXTRA = "ai-parrot-visualizations[a2ui]"
 
+
 def _extra_for(name: str) -> str:
     """Return the pip extra that ships the renderer ``name``.
 
@@ -70,9 +71,7 @@ class RendererCapabilities(BaseModel):
     supports_actions: bool
     supports_updates: bool
     output: str
-    supported_catalog_ids: list[str] = Field(
-        default_factory=lambda: [BASIC_CATALOG_ID, DEFAULT_CATALOG_ID]
-    )
+    supported_catalog_ids: list[str] = Field(default_factory=lambda: [BASIC_CATALOG_ID, DEFAULT_CATALOG_ID])
     supported_components: set[str] = Field(default_factory=set)
 
 
@@ -87,9 +86,7 @@ class AbstractA2UIRenderer(ABC):
     capabilities: RendererCapabilities
 
     @abstractmethod
-    async def render(
-        self, envelope: CreateSurface, *, bake: bool = True
-    ) -> "Any | str":
+    async def render(self, envelope: CreateSurface, *, bake: bool = True) -> "Any | str":
         """Render an envelope to a ``RenderedArtifact`` (baked) or a string.
 
         Args:

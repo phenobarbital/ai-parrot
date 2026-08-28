@@ -86,7 +86,11 @@ class TestFinanceReporterDescriptors:
         """
         layout = descriptors[key].layout
         optional_pointers = set(
-            (layout.metadata.extensions.root.get("parrot_optional") if layout.metadata and layout.metadata.extensions else None)
+            (
+                layout.metadata.extensions.root.get("parrot_optional")
+                if layout.metadata and layout.metadata.extensions
+                else None
+            )
             or []
         )
         found = []

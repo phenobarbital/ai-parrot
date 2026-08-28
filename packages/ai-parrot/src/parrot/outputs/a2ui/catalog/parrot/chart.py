@@ -48,7 +48,7 @@ CHART_SCHEMA: dict[str, Any] = {
 CHART_INSTRUCTIONS = (
     "Use Chart to visualize numeric series over a categorical/temporal axis. "
     "Set `type` (bar/line/area/scatter/pie), `x` (label column) and `y` (one or "
-    "more value columns). Bind the row data with `data: {\"path\": \"/pointer\"}` "
+    'more value columns). Bind the row data with `data: {"path": "/pointer"}` '
     "into the data model — never inline large arrays. Display-only."
 )
 
@@ -72,11 +72,7 @@ class ChartComponent:
 
         title = props.get("title")
         if title is not None:
-            children.append(
-                BasicNode(
-                    component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}
-                )
-            )
+            children.append(BasicNode(component="Text", text=title, metadata={"extensions": {"parrot_role": "title"}}))
         children.append(
             BasicNode(
                 component="Text",
@@ -85,16 +81,10 @@ class ChartComponent:
             )
         )
         axis_text = f"x: {props.get('x', '')} | y: {', '.join(props.get('y', []) or [])}"
-        children.append(
-            BasicNode(
-                component="Text", text=axis_text, metadata={"extensions": {"parrot_role": "axis"}}
-            )
-        )
+        children.append(BasicNode(component="Text", text=axis_text, metadata={"extensions": {"parrot_role": "axis"}}))
 
         series_children = [
-            BasicNode(
-                component="Text", text=name, metadata={"extensions": {"parrot_role": "series"}}
-            )
+            BasicNode(component="Text", text=name, metadata={"extensions": {"parrot_role": "series"}})
             for name in (props.get("y") or [])
         ]
         extensions: dict[str, Any] = {"parrot_role": "series-list"}
