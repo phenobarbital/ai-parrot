@@ -14,7 +14,7 @@
       "feature_id": "FEAT-471",
       "feature": "add-rustworkx-dependency",
       "spec": "sdd/specs/add-rustworkx-dependency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Root of the feature: every other task depends on the pyproject changes. Covers spec Modules 1 and 2 (both pure metadata edits that must precede the lock regeneration).",
       "assigned_to": null,
       "started_at": "2026-08-28T21:53:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2549-promote-wikitoolkit-deps-to-core.md"
+      "completed_at": "2026-08-28T21:55:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2549-promote-wikitoolkit-deps-to-core.md"
     },
     {
       "id": "TASK-2550",
