@@ -142,7 +142,39 @@ class TestTASK2537:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `FunctionEvaluator` (`catalog/basic/functions.py`) implements all 14
+  official functions plus the ``@index`` system function, dispatch via a
+  plain dict (no ``eval``/``exec`` anywhere — verified against
+  `test_no_exec.py`). `format_string` is a hand-rolled, balanced-delimiter
+  tokenizer (`_find_matching_brace`/`_find_matching_paren`/`_split_top_level`)
+  supporting absolute/relative JSON-Pointer paths, named-arg function calls
+  (including arbitrarily nested `${...}` inside args), and the `\${` escape.
+- `formatDate` uses `datetime.strftime` with a small TR35-token ->
+  strftime-directive table (no `babel`/`pendulum`, per the task's own "Does
+  NOT Exist" note); `formatCurrency` uses a 4-entry ISO-4217 symbol map with
+  a `"{code} "` fallback (no locale dependency).
+- `pluralize` implements English-only CLDR categories (`zero` if present
+  and value==0, `one` if `abs(value)==1`, else `other`) — the task's Scope
+  didn't ask for full CLDR plural-rule data, and none of the "Does NOT
+  Exist" exclusions allow a babel-class dependency.
+- **File-list correction**: initially implemented `basic_functions()`
+  inside `functions.py` (the CREATE file); the task's own file list says
+  `catalog/basic/__init__.py` MODIFY — "basic_functions" — mirroring
+  `basic_components()`'s home. Moved it there in a follow-up commit before
+  finishing this task, importing `register_function` from
+  `parrot.outputs.a2ui.catalog` lazily (same circular-import-avoidance
+  pattern TASK-2536 established for `register_component`). `catalog/basic/
+  __init__.py` now calls both `_register_primitives()` and
+  `basic_functions()` at package-import time.
+- `check()`'s `rule.message` is used strictly as the OFFICIAL schema's own
+  "fallback" (only when the evaluated `ValidationResult` carries no message
+  of its own) — confirmed this against `common_types.json#/$defs/CheckRule`
+  wording ("Optional fallback error message"), not an override.
+- `pytest catalog/ test_no_exec.py`: 143 passed. `ruff check`: clean.
+
+**Deviations from spec**: none — `pluralize`'s English-only category
+mapping and the currency-symbol fallback format are within the task's own
+explicit no-new-locale-dependency constraint, not scope reductions.

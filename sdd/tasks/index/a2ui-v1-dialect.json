@@ -113,7 +113,7 @@
       "feature_id": "FEAT-470",
       "feature": "a2ui-v1-dialect",
       "spec": "sdd/specs/a2ui-v1-dialect.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Archivo nuevo `catalog/basic/functions.py`; paralelo con TASK-2536.",
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2537-function-evaluator.md"
+      "completed_at": "2026-08-28T18:02:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2537-function-evaluator.md"
     },
     {
       "id": "TASK-2538",
