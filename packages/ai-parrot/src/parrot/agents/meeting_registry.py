@@ -39,6 +39,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from parrot.agents.conf import FIREFLIES_RECHECK_DAYS
+from parrot.agents.obsidian import FirefliesObsidianAgent
 from parrot.knowledge.wiki.models import SourceManifestEntry
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.tools.obsidian import ObsidianToolkit
@@ -573,22 +574,8 @@ class MeetingRegistry:
         return await asyncio.to_thread(self._manager.remove_source, entry.source_id)
 
     # ------------------------------------------------------------------
-    # Not implemented here — TASK-2555 (backfill, merge, repair)
+    # Backfill, duplicate merge, and path repair (TASK-2555)
     # ------------------------------------------------------------------
-
-    async def repair_path(
-        self,
-        fireflies_id: str,
-        *,
-        toolkit: ObsidianToolkit,
-        meetings_folder: str,
-        canonical_title: str,
-    ) -> RepairResult:
-        """Repair a renamed/moved note's registered path.
-
-        Implemented by TASK-2555 (spec §3 Module 3).
-        """
-        raise NotImplementedError("repair_path is implemented by TASK-2555")
 
     async def backfill_from_vault(
         self,
@@ -596,12 +583,121 @@ class MeetingRegistry:
         toolkit: ObsidianToolkit,
         meetings_folder: str,
         analysis_heading: str,
+        merge: bool = True,
     ) -> BackfillReport:
-        """Seed the registry from existing vault note frontmatter.
+        """Seed the registry from existing vault note frontmatter (spec §2 G8).
 
-        Implemented by TASK-2555 (spec §3 Module 3).
+        No-op (``seeded=0``) when the registry already has any
+        ``fireflies:*`` row — this is a ONE-TIME migration for a vault
+        that predates the registry, never a repeated resync.
+
+        Args:
+            toolkit: An :class:`ObsidianToolkit` (local backend) scoped to
+                the vault, with ``"read"``/``"bulk_read"``/``"list"``
+                allowed, plus ``"move"``/``"delete"`` when ``merge=True``.
+            meetings_folder: Vault-relative meetings folder.
+            analysis_heading: Heading marking a note as already analysed
+                (e.g. ``"## Analysis"``).
+            merge: When ``False``, duplicate ids are left entirely alone
+                (reported in ``unmerged``, nothing deleted or registered)
+                — a dry run.
+
+        Returns:
+            A :class:`BackfillReport` summarising what was seeded.
         """
-        raise NotImplementedError("backfill_from_vault is implemented by TASK-2555")
+        if not self.available:
+            return BackfillReport(seeded=0, without_analysis=0, duplicates=[], unmerged=[])
+
+        existing_rows = await asyncio.to_thread(self._manager.list_by_external_prefix, EXTERNAL_ID_PREFIX)
+        if existing_rows:
+            self.logger.debug("backfill_from_vault: registry already seeded, no-op")
+            return BackfillReport(seeded=0, without_analysis=0, duplicates=[], unmerged=[])
+
+        vault_root = self._vault_root(toolkit)
+        listing = await toolkit.list_notes(folder=meetings_folder, recursive=False)
+        paths = [info["path"] for info in listing.get("notes", [])]
+
+        notes_by_path: dict[str, dict[str, Any]] = {}
+        unmerged: list[str] = []
+        scanned = 0
+        for start in range(0, len(paths), 50):
+            batch_paths = paths[start : start + 50]
+            batch = await toolkit.read_notes(batch_paths, include_content=True)
+            for note in batch.get("notes", []):
+                notes_by_path[note["path"]] = note
+            unmerged.extend(batch.get("errors", {}))
+            scanned += len(batch_paths)
+            if scanned % 500 == 0:
+                self.logger.info("backfill_from_vault: %d/%d notes scanned", scanned, len(paths))
+
+        by_id: dict[str, list[str]] = {}
+        for path, note in notes_by_path.items():
+            fireflies_id = (note.get("frontmatter") or {}).get("fireflies_id")
+            if not fireflies_id:
+                continue  # not a Fireflies note — ignored, not an error
+            by_id.setdefault(fireflies_id, []).append(path)
+
+        seeded = 0
+        without_analysis = 0
+        duplicates: list[MergeResult] = []
+        for fireflies_id, note_paths in by_id.items():
+            if len(note_paths) == 1:
+                path = note_paths[0]
+                note = notes_by_path[path]
+                try:
+                    has_analysis = await self._register_from_frontmatter(
+                        vault_root / path,
+                        fireflies_id,
+                        note.get("frontmatter") or {},
+                        note.get("content", ""),
+                        analysis_heading,
+                    )
+                except (FileNotFoundError, OSError) as exc:
+                    self.logger.warning("backfill_from_vault: could not register %s: %s", path, exc)
+                    unmerged.append(path)
+                    continue
+                seeded += 1
+                if not has_analysis:
+                    without_analysis += 1
+                self.logger.info("backfill_from_vault: seeded fireflies_id=%s path=%s", fireflies_id, path)
+                continue
+
+            if not merge:
+                unmerged.extend(note_paths)
+                self.logger.info(
+                    "backfill_from_vault: fireflies_id=%s has %d duplicate notes, merge=False — left alone",
+                    fireflies_id,
+                    len(note_paths),
+                )
+                continue
+
+            result = await self.merge_duplicates(
+                fireflies_id,
+                note_paths,
+                toolkit=toolkit,
+                meetings_folder=meetings_folder,
+                analysis_heading=analysis_heading,
+            )
+            duplicates.append(result)
+            seeded += 1
+            entry = await asyncio.to_thread(self._manager.find_by_external_id, self._external_id(fireflies_id))
+            block = (entry.doc_metadata or {}).get(DOC_METADATA_KEY, {}) if entry else {}
+            if block.get("analysis_status") != "done":
+                without_analysis += 1
+
+        self.logger.info(
+            "backfill_from_vault: seeded=%d without_analysis=%d duplicates=%d unmerged=%d",
+            seeded,
+            without_analysis,
+            len(duplicates),
+            len(unmerged),
+        )
+        return BackfillReport(
+            seeded=seeded,
+            without_analysis=without_analysis,
+            duplicates=duplicates,
+            unmerged=unmerged,
+        )
 
     async def merge_duplicates(
         self,
@@ -612,11 +708,193 @@ class MeetingRegistry:
         meetings_folder: str,
         analysis_heading: str,
     ) -> MergeResult:
-        """Merge duplicate notes registered under one Fireflies id.
+        """Merge duplicate notes registered under one Fireflies id (spec §3 Module 3).
 
-        Implemented by TASK-2555 (spec §3 Module 3).
+        Keep rule: the note whose body contains ``analysis_heading``; if
+        several or none qualify, the newest by mtime. The kept note is
+        moved to the canonical path
+        (``{meetings_folder}/{_make_note_title(date, title)}.md``) when
+        that path is free (not on disk, not registry-owned by a
+        different id); every other note is deleted. Never deletes a note
+        whose frontmatter failed to parse.
+
+        Args:
+            fireflies_id: Raw Fireflies transcript id shared by ``paths``.
+            paths: Vault-relative note paths registered under this id
+                (must all be inside ``meetings_folder``).
+            toolkit: An :class:`ObsidianToolkit` with ``"read"``,
+                ``"bulk_read"``, ``"list"``, ``"move"``, and ``"delete"``
+                allowed.
+            meetings_folder: Vault-relative meetings folder.
+            analysis_heading: Heading marking a note as already analysed.
+
+        Returns:
+            A :class:`MergeResult` with the kept path and every removed
+            path.
         """
-        raise NotImplementedError("merge_duplicates is implemented by TASK-2555")
+        if not paths:
+            return MergeResult(fireflies_id=fireflies_id, kept="", removed=[])
+        for path in paths:
+            assert path.startswith(f"{meetings_folder}/"), (
+                f"merge_duplicates: {path!r} is outside meetings_folder={meetings_folder!r}"
+            )
+
+        vault_root = self._vault_root(toolkit)
+        notes: dict[str, dict[str, Any]] = {}
+        for start in range(0, len(paths), 50):
+            batch = await toolkit.read_notes(paths[start : start + 50], include_content=True)
+            for note in batch.get("notes", []):
+                notes[note["path"]] = note
+
+        listing = await toolkit.list_notes(folder=meetings_folder, recursive=False)
+        mtimes = {info["path"]: info.get("mtime") or 0.0 for info in listing.get("notes", [])}
+
+        # Paths whose frontmatter/content read_notes could not even parse
+        # (e.g. undecodable bytes) are NEVER candidates for keep or delete
+        # — "never deletes a note whose frontmatter failed to parse".
+        readable = [p for p in paths if p in notes]
+        if not readable:
+            self.logger.warning(
+                "merge_duplicates: fireflies_id=%s — none of %s could be read, nothing merged",
+                fireflies_id,
+                paths,
+            )
+            return MergeResult(fireflies_id=fireflies_id, kept="", removed=[])
+
+        analysed = [p for p in readable if analysis_heading in (notes[p].get("content") or "")]
+        kept = analysed[0] if len(analysed) == 1 else max(readable, key=lambda p: mtimes.get(p, 0.0))
+
+        kept_note = notes.get(kept, {})
+        frontmatter = kept_note.get("frontmatter") or {}
+        title = frontmatter.get("title", "")
+        meeting_date = frontmatter.get("date", "")
+        canonical_rel = f"{meetings_folder}/{FirefliesObsidianAgent._make_note_title(meeting_date, title)}.md"
+
+        removed = [p for p in readable if p != kept]
+        for path in removed:
+            try:
+                await toolkit.delete_note(path)
+            except FileNotFoundError:
+                pass
+
+        final_path = kept
+        if kept != canonical_rel:
+            owner_id = None
+            if self.available:
+                owner_id = await asyncio.to_thread(self._manager.find_by_uri, str(vault_root / canonical_rel))
+            # A stale row for THIS SAME meeting may already carry the
+            # canonical URI (e.g. a prior repair/merge) — only a
+            # DIFFERENT id's ownership blocks the move.
+            existing_entry = await asyncio.to_thread(
+                self._manager.find_by_external_id, self._external_id(fireflies_id)
+            )
+            owned_by_other = owner_id is not None and (existing_entry is None or owner_id != existing_entry.source_id)
+            if not owned_by_other:
+                try:
+                    await toolkit.move_note(kept, canonical_rel)
+                    final_path = canonical_rel
+                except FileExistsError:
+                    final_path = kept
+
+        content = kept_note.get("content", "")
+        try:
+            await self._register_from_frontmatter(
+                vault_root / final_path, fireflies_id, frontmatter, content, analysis_heading
+            )
+        except (FileNotFoundError, OSError) as exc:
+            self.logger.warning("merge_duplicates: could not register kept note %s: %s", final_path, exc)
+
+        self.logger.info(
+            "merge_duplicates: fireflies_id=%s kept=%s removed=%s",
+            fireflies_id,
+            final_path,
+            removed,
+        )
+        return MergeResult(fireflies_id=fireflies_id, kept=final_path, removed=removed)
+
+    async def repair_path(
+        self,
+        fireflies_id: str,
+        *,
+        toolkit: ObsidianToolkit,
+        meetings_folder: str,
+        canonical_title: str,
+    ) -> RepairResult:
+        """Repair a renamed/moved note's registered path (spec §2 G7).
+
+        Args:
+            fireflies_id: Raw Fireflies transcript id.
+            toolkit: An :class:`ObsidianToolkit` with ``"read"``,
+                ``"bulk_read"``, ``"list"``, and ``"move"`` allowed.
+            meetings_folder: Vault-relative meetings folder.
+            canonical_title: The note title (no ``.md`` suffix) the note
+                should live at, e.g.
+                ``FirefliesObsidianAgent._make_note_title(date, title)``.
+
+        Returns:
+            A :class:`RepairResult`. ``to_path=None`` means the note
+            could not be found anywhere in ``meetings_folder`` — the
+            caller should treat this as unregistered (create a new note).
+        """
+        if not self.available:
+            return RepairResult(fireflies_id=fireflies_id, from_path=None, to_path=None, moved=False)
+
+        entry = await asyncio.to_thread(self._manager.find_by_external_id, self._external_id(fireflies_id))
+        if entry is None:
+            return RepairResult(fireflies_id=fireflies_id, from_path=None, to_path=None, moved=False)
+
+        current_uri = entry.source_uri
+        if Path(current_uri).exists():
+            return RepairResult(fireflies_id=fireflies_id, from_path=current_uri, to_path=current_uri, moved=False)
+
+        vault_root = self._vault_root(toolkit)
+        listing = await toolkit.list_notes(folder=meetings_folder, recursive=False)
+        paths = [info["path"] for info in listing.get("notes", [])]
+
+        found_path: str | None = None
+        for start in range(0, len(paths), 50):
+            batch = await toolkit.read_notes(paths[start : start + 50], include_content=False)
+            for note in batch.get("notes", []):
+                if (note.get("frontmatter") or {}).get("fireflies_id") == fireflies_id:
+                    found_path = note["path"]
+                    break
+            if found_path is not None:
+                break
+
+        if found_path is None:
+            return RepairResult(fireflies_id=fireflies_id, from_path=current_uri, to_path=None, moved=False)
+
+        assert found_path.startswith(f"{meetings_folder}/"), (
+            f"repair_path: {found_path!r} is outside meetings_folder={meetings_folder!r}"
+        )
+        canonical_rel = f"{meetings_folder}/{canonical_title}.md"
+        final_rel = found_path
+        moved = False
+        if found_path != canonical_rel:
+            canonical_abs = vault_root / canonical_rel
+            owner_id = await asyncio.to_thread(self._manager.find_by_uri, str(canonical_abs))
+            # A stale registry row for THIS SAME meeting may still carry the
+            # canonical URI (that is exactly what we are about to correct)
+            # — only a DIFFERENT id's ownership blocks the move.
+            owned_by_other = owner_id is not None and owner_id != entry.source_id
+            if not canonical_abs.exists() and not owned_by_other:
+                try:
+                    await toolkit.move_note(found_path, canonical_rel)
+                    final_rel = canonical_rel
+                    moved = True
+                except FileExistsError:
+                    final_rel = found_path
+
+        new_uri = str(vault_root / final_rel)
+        await asyncio.to_thread(self._manager.update_source_uri, entry.source_id, new_uri)
+        self.logger.info(
+            "repair_path: fireflies_id=%s from=%s to=%s moved=%s",
+            fireflies_id,
+            current_uri,
+            new_uri,
+            moved,
+        )
+        return RepairResult(fireflies_id=fireflies_id, from_path=current_uri, to_path=new_uri, moved=moved)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -748,3 +1026,87 @@ class MeetingRegistry:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return dt
+
+    @staticmethod
+    def _vault_root(toolkit: ObsidianToolkit) -> Path:
+        """Absolute vault root backing `toolkit` (local backend only).
+
+        Raises:
+            RuntimeError: If `toolkit`'s backend has no ``vault_path``
+                (e.g. the REST backend) — backfill/merge/repair only
+                support the local filesystem backend, matching the
+                registry's own absolute-path convention.
+        """
+        vault_path = getattr(toolkit.vault, "vault_path", None)
+        if vault_path is None:
+            raise RuntimeError(
+                "MeetingRegistry: toolkit's vault backend has no vault_path"
+                " attribute — backfill_from_vault/merge_duplicates/repair_path"
+                " require the local ObsidianToolkit backend"
+            )
+        return Path(vault_path)
+
+    @staticmethod
+    def _date_from_filename(path: Path) -> str:
+        """Best-effort ``YYYY-MM-DD`` prefix from a note's filename stem."""
+        stem = path.stem
+        if len(stem) >= 10 and stem[4] == "-" and stem[7] == "-":
+            return stem[:10]
+        return ""
+
+    async def _register_from_frontmatter(
+        self,
+        abs_path: Path,
+        fireflies_id: str,
+        frontmatter: dict[str, Any],
+        content: str,
+        analysis_heading: str,
+    ) -> bool:
+        """Register (or refresh) a note discovered via frontmatter scanning.
+
+        Shared by :meth:`backfill_from_vault` (single-note case) and
+        :meth:`merge_duplicates` (the kept note). Fingerprints are left
+        ``None`` — nothing was fetched from Fireflies, only the note
+        itself was read — so the next sync always fetches once
+        (spec §2 "Backfill").
+
+        Args:
+            abs_path: Absolute filesystem path of the note (must exist).
+            fireflies_id: Raw Fireflies transcript id from frontmatter.
+            frontmatter: The note's parsed frontmatter dict.
+            content: The note's markdown body.
+            analysis_heading: Heading marking a note as already analysed.
+
+        Returns:
+            ``True`` if `content` already carries `analysis_heading`
+            (i.e. ``analysis_status`` was seeded as ``"done"``).
+        """
+        title = frontmatter.get("title") or ""
+        meeting_date = frontmatter.get("date") or self._date_from_filename(abs_path)
+        participants = frontmatter.get("participants") or []
+        duration_minutes = frontmatter.get("duration_minutes") or 0.0
+        synced_at = frontmatter.get("synced_at") or datetime.now(UTC).isoformat()
+        has_analysis = analysis_heading in content
+        external_id = self._external_id(fireflies_id)
+
+        existing_id = await asyncio.to_thread(self._manager.find_by_uri, str(abs_path))
+        if existing_id is None:
+            entry = await asyncio.to_thread(self._manager.add_source, abs_path, external_id=external_id)
+        else:
+            entry = await asyncio.to_thread(self._manager.get_source, existing_id)
+            if entry.external_id != external_id:
+                entry = await asyncio.to_thread(self._manager.set_external_id, existing_id, external_id)
+
+        patch = {
+            "fireflies_id": fireflies_id,
+            "title": title,
+            "meeting_date": meeting_date,
+            "participants": participants,
+            "duration_minutes": duration_minutes,
+            "fingerprint": None,
+            "summary_fingerprint": None,
+            "synced_at": synced_at,
+            "analysis_status": "done" if has_analysis else "pending",
+        }
+        await self._merge_doc_metadata(entry, patch)
+        return has_analysis

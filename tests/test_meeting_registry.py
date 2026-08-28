@@ -1,15 +1,17 @@
-"""Unit tests for the MeetingRegistry facade (FEAT-472, TASK-2554)."""
+"""Unit tests for the MeetingRegistry facade (FEAT-472, TASK-2554/2555)."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import yaml
 from parrot.agents.meeting_registry import (
     EXTERNAL_ID_PREFIX,
     MeetingRegistry,
     fingerprint,
     normalise_transcript,
 )
+from parrot.tools.obsidian import ObsidianToolkit
 
 
 @pytest.fixture
@@ -471,3 +473,336 @@ class TestUnavailableRegistry:
             assert registry.available is False
         finally:
             blocked_parent.chmod(stat.S_IRWXU)
+
+
+# ---------------------------------------------------------------------------
+# TASK-2555: backfill, duplicate merge, path repair
+# ---------------------------------------------------------------------------
+
+
+def _write_note(
+    meetings_dir: Path,
+    filename: str,
+    *,
+    fireflies_id: str,
+    title: str,
+    date: str,
+    has_analysis: bool = False,
+    participants: list[str] | None = None,
+    duration_minutes: float = 10.0,
+    synced_at: str = "2026-08-01T00:00:00+00:00",
+) -> Path:
+    frontmatter = {
+        "fireflies_id": fireflies_id,
+        "title": title,
+        "date": date,
+        "participants": participants or [],
+        "duration_minutes": duration_minutes,
+        "synced_at": synced_at,
+    }
+    block = yaml.safe_dump(frontmatter, default_flow_style=False, sort_keys=False)
+    body = "Meeting transcript body.\n"
+    if has_analysis:
+        body += "\n## Analysis\n\nKey takeaways here.\n"
+    path = meetings_dir / filename
+    path.write_text(f"---\n{block}---\n\n{body}", encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def vault(tmp_path: Path) -> Path:
+    """A vault with 5 Fireflies notes (one duplicated id) + 1 unreadable file."""
+    vault_root = tmp_path / "vault"
+    meetings = vault_root / "meetings"
+    meetings.mkdir(parents=True)
+
+    _write_note(meetings, "2026-08-01-standup-a.md", fireflies_id="id-a", title="Standup A", date="2026-08-01")
+    _write_note(
+        meetings,
+        "2026-08-02-standup-b.md",
+        fireflies_id="id-b",
+        title="Standup B",
+        date="2026-08-02",
+        has_analysis=True,
+    )
+    _write_note(meetings, "2026-08-03-standup-c1.md", fireflies_id="id-c", title="Standup C", date="2026-08-03")
+    _write_note(
+        meetings,
+        "2026-08-03-standup-c2.md",
+        fireflies_id="id-c",
+        title="Standup C",
+        date="2026-08-03",
+        has_analysis=True,
+    )
+    _write_note(meetings, "2026-08-04-standup-d.md", fireflies_id="id-d", title="Standup D", date="2026-08-04")
+
+    # A file that cannot even be decoded as UTF-8 — surfaces in read_notes'
+    # ``errors`` dict, never tolerated the way malformed YAML is.
+    (meetings / "unreadable.md").write_bytes(b"\xff\xfe not valid utf-8 \xfa")
+
+    return vault_root
+
+
+@pytest.fixture
+def toolkit(vault: Path) -> ObsidianToolkit:
+    return ObsidianToolkit(
+        vault_path=str(vault),
+        backend="local",
+        allowed_operations={"read", "bulk_read", "list", "search", "create", "update", "move", "delete"},
+    )
+
+
+class TestBackfillFromVault:
+    async def test_backfill_seeds_from_frontmatter(self, registry: MeetingRegistry, toolkit: ObsidianToolkit):
+        report = await registry.backfill_from_vault(
+            toolkit=toolkit, meetings_folder="meetings", analysis_heading="## Analysis"
+        )
+
+        assert report.seeded == 4  # a, b, merged-c, d
+        assert len(report.duplicates) == 1
+        assert report.duplicates[0].fireflies_id == "id-c"
+        # The analysed duplicate (c2) is kept, then moved to its own
+        # canonical path (title/date-derived, differs from either
+        # original filename).
+        assert set(report.duplicates[0].removed) == {"meetings/2026-08-03-standup-c1.md"}
+        assert report.duplicates[0].kept == "meetings/2026-08-03-standup-c.md"
+        assert "meetings/unreadable.md" in report.unmerged
+        assert report.without_analysis == 2  # a, d (b and merged-c have analysis)
+
+        a = await registry.lookup("id-a")
+        b = await registry.lookup("id-b")
+        c = await registry.lookup("id-c")
+        d = await registry.lookup("id-d")
+        assert a.fingerprint is None
+        assert a.analysis_status == "pending"
+        assert b.analysis_status == "done"
+        assert c.analysis_status == "done"
+        assert d.analysis_status == "pending"
+
+    async def test_backfill_idempotent(self, registry: MeetingRegistry, toolkit: ObsidianToolkit):
+        first = await registry.backfill_from_vault(
+            toolkit=toolkit, meetings_folder="meetings", analysis_heading="## Analysis"
+        )
+        assert first.seeded == 4
+
+        second = await registry.backfill_from_vault(
+            toolkit=toolkit, meetings_folder="meetings", analysis_heading="## Analysis"
+        )
+        assert second.seeded == 0
+        assert second.duplicates == []
+        assert second.unmerged == []
+
+    async def test_backfill_dry_run_reports_only(self, registry: MeetingRegistry, toolkit: ObsidianToolkit):
+        report = await registry.backfill_from_vault(
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            analysis_heading="## Analysis",
+            merge=False,
+        )
+
+        assert report.duplicates == []
+        assert "meetings/2026-08-03-standup-c1.md" in report.unmerged
+        assert "meetings/2026-08-03-standup-c2.md" in report.unmerged
+        # Nothing was deleted or registered for the duplicate id.
+        assert await registry.lookup("id-c") is None
+        assert (Path(toolkit.vault.vault_path) / "meetings" / "2026-08-03-standup-c1.md").exists()
+        assert (Path(toolkit.vault.vault_path) / "meetings" / "2026-08-03-standup-c2.md").exists()
+        # Non-duplicate ids are still seeded.
+        assert await registry.lookup("id-a") is not None
+
+
+class TestMergeDuplicates:
+    async def test_merge_duplicates_keeps_analysed(self, registry: MeetingRegistry, toolkit: ObsidianToolkit):
+        result = await registry.merge_duplicates(
+            "id-c",
+            ["meetings/2026-08-03-standup-c1.md", "meetings/2026-08-03-standup-c2.md"],
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            analysis_heading="## Analysis",
+        )
+
+        # The analysed note (c2) is kept, then moved to the canonical path
+        # derived from its own title/date ("Standup C" / "2026-08-03"),
+        # which differs from its original filename.
+        assert result.kept == "meetings/2026-08-03-standup-c.md"
+        assert result.removed == ["meetings/2026-08-03-standup-c1.md"]
+
+        vault_root = Path(toolkit.vault.vault_path)
+        assert not (vault_root / "meetings" / "2026-08-03-standup-c1.md").exists()
+        assert not (vault_root / "meetings" / "2026-08-03-standup-c2.md").exists()
+        assert (vault_root / "meetings" / "2026-08-03-standup-c.md").exists()
+
+        record = await registry.lookup("id-c")
+        assert record is not None
+        assert record.analysis_status == "done"
+
+    async def test_merge_duplicates_moves_kept_note_to_canonical_path(
+        self, registry: MeetingRegistry, toolkit: ObsidianToolkit, vault: Path
+    ):
+        meetings = vault / "meetings"
+        # Kept note (has analysis) lives at a NON-canonical path.
+        _write_note(
+            meetings,
+            "renamed-c.md",
+            fireflies_id="id-e",
+            title="Standup E",
+            date="2026-08-05",
+            has_analysis=True,
+        )
+        _write_note(meetings, "2026-08-05-standup-e.md", fireflies_id="id-e", title="Standup E", date="2026-08-05")
+
+        result = await registry.merge_duplicates(
+            "id-e",
+            ["meetings/renamed-c.md", "meetings/2026-08-05-standup-e.md"],
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            analysis_heading="## Analysis",
+        )
+
+        assert result.kept == "meetings/2026-08-05-standup-e.md"
+        vault_root = Path(toolkit.vault.vault_path)
+        assert (vault_root / "meetings" / "2026-08-05-standup-e.md").exists()
+        assert not (vault_root / "meetings" / "renamed-c.md").exists()
+
+    async def test_merge_duplicates_unparsable_left(self, registry: MeetingRegistry, toolkit: ObsidianToolkit):
+        # An unreadable path passed into merge_duplicates must never be
+        # deleted — read_notes simply can't produce content/frontmatter
+        # for it, so it is excluded from the analysed/mtime comparison
+        # and left on disk.
+        result = await registry.merge_duplicates(
+            "id-c",
+            ["meetings/2026-08-03-standup-c1.md", "meetings/unreadable.md"],
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            analysis_heading="## Analysis",
+        )
+
+        vault_root = Path(toolkit.vault.vault_path)
+        assert (vault_root / "meetings" / "unreadable.md").exists()
+        assert "meetings/unreadable.md" not in result.removed
+
+
+class TestRepairPath:
+    async def test_repair_path_moves_to_canonical(self, registry: MeetingRegistry, toolkit: ObsidianToolkit, vault: Path):
+        meetings = vault / "meetings"
+        note_path = _write_note(
+            meetings, "2026-08-06-standup-f.md", fireflies_id="id-f", title="Standup F", date="2026-08-06"
+        )
+        await registry.record_synced(
+            fireflies_id="id-f",
+            note_path=note_path,
+            title="Standup F",
+            meeting_date="2026-08-06",
+            participants=[],
+            duration_minutes=5.0,
+            fingerprint="fp",
+            summary_fingerprint=None,
+            reset_analysis=True,
+        )
+        # Simulate a rename: move the file on disk without updating the registry.
+        renamed = meetings / "renamed-f.md"
+        note_path.rename(renamed)
+
+        result = await registry.repair_path(
+            "id-f",
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            canonical_title="2026-08-06-standup-f",
+        )
+
+        assert result.moved is True
+        assert result.to_path == str(vault / "meetings" / "2026-08-06-standup-f.md")
+        assert (vault / "meetings" / "2026-08-06-standup-f.md").exists()
+        assert not renamed.exists()
+
+        entry = registry._manager.get_source(
+            (await registry.lookup("id-f")).source_id
+        )
+        assert entry.source_uri == result.to_path
+
+    async def test_repair_path_canonical_taken_by_other_id(
+        self, registry: MeetingRegistry, toolkit: ObsidianToolkit, vault: Path
+    ):
+        meetings = vault / "meetings"
+        # A DIFFERENT meeting already occupies the canonical path.
+        other_path = _write_note(
+            meetings, "2026-08-07-standup-g.md", fireflies_id="id-other", title="Standup G", date="2026-08-07"
+        )
+        await registry.record_synced(
+            fireflies_id="id-other",
+            note_path=other_path,
+            title="Standup G",
+            meeting_date="2026-08-07",
+            participants=[],
+            duration_minutes=5.0,
+            fingerprint="fp-other",
+            summary_fingerprint=None,
+            reset_analysis=True,
+        )
+
+        # The meeting being repaired was moved to a different filename.
+        moved_path = _write_note(
+            meetings, "moved-g2.md", fireflies_id="id-g2", title="Standup G2", date="2026-08-07"
+        )
+        await registry.record_synced(
+            fireflies_id="id-g2",
+            note_path=moved_path,
+            title="Standup G2",
+            meeting_date="2026-08-07",
+            participants=[],
+            duration_minutes=5.0,
+            fingerprint="fp-g2",
+            summary_fingerprint=None,
+            reset_analysis=True,
+        )
+        renamed = meetings / "renamed-g2.md"
+        moved_path.rename(renamed)
+
+        result = await registry.repair_path(
+            "id-g2",
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            canonical_title="2026-08-07-standup-g",  # collides with id-other
+        )
+
+        assert result.moved is False
+        assert result.to_path == str(renamed)
+        assert (vault / "meetings" / "2026-08-07-standup-g.md").exists()  # untouched
+
+    async def test_repair_path_not_found(self, registry: MeetingRegistry, toolkit: ObsidianToolkit, vault: Path):
+        meetings = vault / "meetings"
+        note_path = _write_note(
+            meetings, "2026-08-08-standup-h.md", fireflies_id="id-h", title="Standup H", date="2026-08-08"
+        )
+        await registry.record_synced(
+            fireflies_id="id-h",
+            note_path=note_path,
+            title="Standup H",
+            meeting_date="2026-08-08",
+            participants=[],
+            duration_minutes=5.0,
+            fingerprint="fp",
+            summary_fingerprint=None,
+            reset_analysis=True,
+        )
+        note_path.unlink()  # deleted, not renamed — cannot be found anywhere
+
+        result = await registry.repair_path(
+            "id-h",
+            toolkit=toolkit,
+            meetings_folder="meetings",
+            canonical_title="2026-08-08-standup-h",
+        )
+
+        assert result.to_path is None
+        assert result.moved is False
+
+    async def test_repair_path_unavailable_registry(self, tmp_path: Path, toolkit: ObsidianToolkit):
+        registry = MeetingRegistry(tmp_path / "wiki")
+        registry._available = False
+
+        result = await registry.repair_path(
+            "id-x", toolkit=toolkit, meetings_folder="meetings", canonical_title="x"
+        )
+        assert result.to_path is None
+        assert result.moved is False
