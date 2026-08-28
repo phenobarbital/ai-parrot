@@ -145,7 +145,44 @@ class TestTASK2540:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `build_form()` (`catalog/parrot/form.py`) composes `FormField`/`FormSubmit`
+  into a flat `list[Component]` (root `Column` first): each field maps to
+  `TextField`(text/number/textarea)/`ChoicePicker`(select)/`CheckBox`
+  (checkbox)/`DateTimeInput`(date), value-bound at `/<id_prefix>/<name>`,
+  with a `required`-function `CheckRule` when `field.required`; the submit
+  `Button.action.event` carries `name=submit.action` and a `context` dict
+  binding every field's current value. Since it emits `action`, it always
+  fails the LLM-origin gate — TOOL-only by construction, matching the
+  task's own Implementation Note.
+- `export_catalog_definition()` (`catalog/export.py`) validated end-to-end
+  against the REAL vendored `catalog_definition.json` schema via
+  `jsonschema`. One real finding along the way: the schema's
+  `FunctionDefinition` requires an inline `returnType`
+  (`unevaluatedProperties: false`) — a bare `$ref` (which works fine for
+  `ComponentDefinition`, which has no such requirement) does NOT satisfy
+  it. Fixed by copying the official function definitions verbatim from
+  `load_spec('catalog')['functions']` for `include_basic=True` instead of
+  `$ref`-ing them.
+- `builders.py`: `import parrot.outputs.a2ui.catalog.components` ->
+  `catalog.parrot`; `_binding()` emits `{"path": ...}` (not `$bind`);
+  `build_surface`'s default `component_id` changed from `"blk-000"` to
+  `"root"` (spec G6); `build_card` now emits `component="InfoCard"`
+  (public function name unchanged — no breaking API change).
+- **Found and fixed a git-staging defect from TASK-2539**: its commit had
+  accidentally captured PRE-EDIT (old-dialect) content for all 9 files
+  under `catalog/parrot/` due to a `git add <directory>` ordering mistake
+  — the working tree (and every test run) already had the correct v1.0
+  content, but the commit itself didn't match. Filed a separate `fix(...)`
+  commit correcting this before proceeding with TASK-2540's own commit, so
+  the feature branch history is now consistent with what was actually
+  tested.
+- `pytest packages/ai-parrot/tests/outputs/a2ui/` (excluding `adapters/`,
+  `recipes/`, `test_producer.py` — TASK-2541/2542/2547's own files, still
+  importing paths those tasks own): 254 passed. One pre-existing,
+  unrelated failure (`test_delivery_teams.py`, missing `azure` module).
+  `ruff check`: clean.
+
+**Deviations from spec**: none.
