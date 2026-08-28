@@ -145,7 +145,83 @@ class TestTASK2539:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-28
 **Notes**:
-**Deviations from spec**: none
+- `BasicNode` rewritten to v1.0 shape: `id?`, `component`, `child?`
+  (single nested `BasicNode`), `children?` (`list[BasicNode] | ChildTemplate`),
+  `template_source?` (the pattern node a sibling `ChildTemplate` refers to —
+  a new field beyond the task's own pseudocode, needed to let
+  `to_components` flatten template patterns generically), `tabs?`
+  (`list[TabSpec]`, also new — needed because `Tabs.tabs[]` is a `{title,
+  child}` array, which the generic `child`/`children` fields can't express),
+  and `metadata`. `to_components()` flattens depth-first (post-order),
+  auto-generating `f"{id_prefix}-{n}"` ids, rewriting `Tabs.tabs[].child`
+  into flattened ids, and flattening `template_source` alongside its
+  referencing node.
+- `git mv catalog/components -> catalog/parrot`; `card.py -> infocard.py`,
+  `@register_component("Card")` -> `@register_component("InfoCard")`.
+  `form.py` kept as a file (untouched, TASK-2540's to replace) but its
+  import dropped from `catalog/parrot/__init__.py` — Form is no longer
+  registered (spec G6).
+- All 8 `lower()` rewritten: props read via `component.model_extra` (not
+  `.properties`, which no longer exists); every non-schema-sanctioned extra
+  datum (chart/map row bindings, KPICard unit/trend, DataTable
+  totalRows/truncated) relocated into `metadata.extensions.parrot_*` — a
+  stray top-level prop not in the official primitive's schema would fail
+  strict jsonschema validation (`unevaluatedProperties: false`), which the
+  task's own acceptance criterion (`validate_envelope` on every lowered
+  tree) would have caught.
+- Infographic/Report: >1 section now lowers to a `Tabs` node (one tab per
+  section, `TabSpec`); exactly 1 section lowers to a plain `Column` (no
+  `Tabs` wrapper) — matches the Scope's "`Tabs` para secciones ... cuando
+  >1" literally.
+- DataTable: rows are NEVER eagerly materialized in `lower()` anymore —
+  always a `ChildTemplate` (`componentId: "<id>-row"`, `path` = the bound
+  `data.path` if present, else the Scope's literal `/tables/<id>` default)
+  with a row-pattern `template_source` (one `Text` cell per declared
+  column, each bound via a column-name-RELATIVE `{"path": "<name>"}`).
+- **Bug found + fixed in TASK-2538's `baking.py`** (not a new task-2539
+  file, but required for DataTable's ChildTemplate to actually bake
+  correctly): `_expand_template` only cloned the SINGLE template-source
+  node, never its nested children (e.g. DataTable's row cells) — a
+  multi-cell row template baked with empty/dangling cell references.
+  Rewrote it (`_clone_subtree`, `_collect_subtree_ids`, new `_child_ids`
+  helper — `_child_ids` was referenced but never defined, a leftover gap
+  from TASK-2538) to recursively clone the FULL subtree per template
+  item, and to exclude the full subtree (not just the root) from
+  `bake_envelope`'s top-level per-component loop.
+- Report's own `metadata` schema prop renamed to `reportMetadata` — it
+  collided with the wire's own reserved `Component.metadata` field (a
+  real, otherwise-silent name clash introduced by moving from the old
+  nested-`properties` dialect to v1.0's top-level-props convention).
+- Rewrote `test_components_card_kpicard_timeline_form.py`,
+  `test_components_chart_datatable_map.py`,
+  `test_components_infographic_report.py`,
+  `test_datatable_row_materialization.py` (the last is a full rewrite —
+  the old two-phase eager-materialization contract it tested no longer
+  exists) and regenerated all `golden/*_lowered.json` fixtures (`card` ->
+  `infocard`, `form` removed). Also had to fix `test_artifacts.py`
+  (untouched by this task's own file list, but its `TestOptionalBindings`
+  tests used the old `.properties`/`$bind` shape and would otherwise be a
+  silent regression from this rewrite) to the v1.0
+  `metadata.extensions.parrot_optional` convention.
+- `TestNestedComponentDelegation` (previously `TestNestedComponentValidation`)
+  now tests `.lower()`'s own `CatalogValidationError` for unknown nested
+  composite children, rather than `validate_envelope` — the generic v1.0
+  wire validator only understands the flat top-level adjacency list
+  (spec §2); Infographic/Report's `sections[].components[]` is
+  parrot-internal authoring data, validated by delegation at lower time.
+- `pytest packages/ai-parrot/tests/outputs/a2ui/` (excluding
+  `adapters/`, `recipes/`, `test_builders.py`, `test_producer.py` — all
+  explicitly owned by TASK-2540/2541/2542/2547, still importing the old
+  `catalog.components` path): 237 passed. One pre-existing, unrelated
+  failure (`test_delivery_teams.py`, `ModuleNotFoundError: No module named
+  'azure'` — a missing third-party dependency in this venv, nothing to do
+  with A2UI). `ruff check`: clean.
+
+**Deviations from spec**: `template_source`/`tabs` fields added to
+`BasicNode` beyond its literal pseudocode — required to make `to_components`
+work generically for `ChildTemplate` and `Tabs` respectively (see Notes).
+Report's `metadata` prop renamed to `reportMetadata` (name collision fix,
+see Notes).
