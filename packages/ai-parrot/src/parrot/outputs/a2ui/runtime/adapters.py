@@ -248,3 +248,41 @@ class ConversationMemorySurfaceStore:
             error is None,
         )
         return FunctionCallRecord.model_validate(raw)
+
+    # -- Dual delivery of agent->renderer calls (FEAT-469 TASK-2572) -------
+    #
+    # `PendingCallRegistry.add`/`.resolve` alone cannot express "delivered to
+    # the renderer, but still awaiting its response": `resolve()` DELETES the
+    # record on match, which is correct for *correlation* (the record's
+    # entire purpose) but would destroy it before a later
+    # `rendererFunctionResponse` could ever match it if reused as a
+    # "mark delivered" operation. `list_undelivered`/`mark_delivered` add a
+    # non-destructive `_delivered` marker instead — `FunctionCallRecord` has
+    # no such field (and is not extended with one; `extra="ignore"` is
+    # pydantic v2's BaseModel default, so `model_validate` on a record dict
+    # carrying this extra key round-trips safely). These two methods are
+    # NOT part of the frozen `PendingCallRegistry` Protocol — a transport
+    # that needs dual delivery (spec §8 resolved OQ) depends on this
+    # CONCRETE class directly, exactly as it must already do to construct
+    # this adapter in the first place.
+
+    async def list_undelivered(self, session_id: str) -> list[FunctionCallRecord]:
+        """Non-destructive peek: live pending calls not yet delivered to the renderer."""
+        async with self._lock_for(session_id):
+            history = await self._load_history(session_id)
+            pending = self._sweep_expired(dict(history.metadata.get(_PENDING_KEY, {})))
+            history.metadata[_PENDING_KEY] = pending
+            await self._memory.update_history(history)
+        return [
+            FunctionCallRecord.model_validate(raw) for raw in pending.values() if not raw.get("_delivered", False)
+        ]
+
+    async def mark_delivered(self, session_id: str, function_call_id: str) -> None:
+        """Mark a pending call as delivered, without resolving/removing it."""
+        async with self._lock_for(session_id):
+            history = await self._load_history(session_id)
+            pending = dict(history.metadata.get(_PENDING_KEY, {}))
+            if function_call_id in pending:
+                pending[function_call_id] = {**pending[function_call_id], "_delivered": True}
+            history.metadata[_PENDING_KEY] = pending
+            await self._memory.update_history(history)

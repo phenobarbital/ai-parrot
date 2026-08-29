@@ -33,6 +33,8 @@ from navconfig.logging import logging
 from parrot.models.outputs import OutputMode
 from parrot.outputs.formats.text import markdown_to_plain
 from parrot.a2a.models import (
+    A2UI_EXTENSION_URI,
+    A2UI_MEDIA_TYPE,
     AgentCard,
     AgentInterface,
     AgentSkill,
@@ -46,11 +48,17 @@ from parrot.a2a.models import (
     Role,
     SendMessageConfiguration,
     TaskPushNotificationConfig,
+    register_a2ui_extension,
     serialize_task_state,
     serialize_role,
     parse_task_state,
     A2A_ERROR_CODES,
 )
+from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.runtime.adapters import ConversationMemorySurfaceStore, ToolManagerExecutor
+from parrot.outputs.a2ui.runtime.dispatch import A2UIRuntime
+from parrot.outputs.a2ui.runtime.models import A2UICallContext
 
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
@@ -167,6 +175,7 @@ class A2AServer:
         self.base_path = base_path.rstrip("/")
         self.version = version
         self.capabilities = capabilities or AgentCapabilities(streaming=True)
+        register_a2ui_extension(self.capabilities, [DEFAULT_CATALOG_ID, BASIC_CATALOG_ID])
         self.extra_skills = extra_skills or []
         self.tags = tags or []
         self._output_mode: OutputMode = self._coerce_output_mode(output_mode)
@@ -440,6 +449,119 @@ class A2AServer:
         except Exception as e:
             self.logger.warning("Could not convert tool to skill: %s", e)
             return None
+
+    # ─────────────────────────────────────────────────────────────
+    # A2UI Agent Functions runtime over A2A (FEAT-469 TASK-2572)
+    # ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _find_a2ui_part(message: Message) -> Part | None:
+        """Return the first inbound ``Part`` carrying an A2UI envelope, if any.
+
+        Discriminated on ``Part.metadata["mimeType"] == A2UI_MEDIA_TYPE`` — there
+        is no dedicated ``DataPart`` class (spec §6 "Does NOT Exist").
+        """
+        for part in message.parts:
+            if part.data is not None and (part.metadata or {}).get("mimeType") == A2UI_MEDIA_TYPE:
+                return part
+        return None
+
+    def _build_a2ui_runtime(self, user_id: str | None) -> tuple[A2UIRuntime, ConversationMemorySurfaceStore]:
+        """Build a fresh ``A2UIRuntime`` bound to ``user_id`` for this request.
+
+        ``ConversationMemorySurfaceStore`` binds ``user_id`` at construction
+        time (TASK-2570 — ``ConversationMemory.get_history`` needs it
+        positionally; the store Protocols only carry ``session_id``), so a
+        transport must build one per request/user rather than share a single
+        instance across users.
+        """
+        store = ConversationMemorySurfaceStore(self.agent.conversation_memory, user_id=user_id or "anonymous")
+        executor = ToolManagerExecutor(self.agent.tool_manager)
+        runtime = A2UIRuntime(executor=executor, surfaces=store, pending=store)
+        return runtime, store
+
+    async def _dispatch_a2ui_message(self, message: Message, part: Part, *, streaming: bool) -> Task:
+        """Dispatch an inbound A2UI ``Part`` through ``A2UIRuntime`` and build the response ``Task``.
+
+        An A2UI envelope is an RPC, not a conversational turn: it is
+        dispatched synchronously (never spawned as a background task via
+        ``returnImmediately``) and the response artifact carries the
+        already-serialized A->R envelope(s) from
+        ``DispatchResult.messages`` — never the agent's normal text/markdown
+        response path.
+
+        Args:
+            message: The inbound A2A message.
+            part: The ``Part`` detected by :meth:`_find_a2ui_part`.
+            streaming: Whether this call originates from ``message/stream``
+                (informational — carried on ``A2UICallContext.streaming``).
+
+        Returns:
+            A ``COMPLETED`` :class:`Task` whose artifact (if any) carries the
+            A->R envelope(s) as A2UI ``Part``s.
+        """
+        from parrot.auth.permission import build_principal_context
+
+        user_id = self._extract_identity(message)
+        session_id = message.context_id or str(uuid.uuid4())
+        permission_context = build_principal_context(principal=user_id, channel="a2ui") if user_id else None
+
+        runtime, store = self._build_a2ui_runtime(user_id)
+        ctx = A2UICallContext(
+            agent_id=self.agent.name,
+            user_id=user_id,
+            session_id=session_id,
+            transport="a2a",
+            streaming=streaming,
+            permission_context=permission_context,
+        )
+
+        result = await runtime.dispatch(part.data, ctx)
+
+        task = Task.create(context_id=session_id)
+        task.history.append(message)
+        task.status = TaskStatus(state=TaskState.COMPLETED)
+
+        parts = [
+            Part(data=env, metadata={"mimeType": A2UI_MEDIA_TYPE, "extensionUri": A2UI_EXTENSION_URI})
+            for env in result.messages
+        ]
+        # Dual delivery (spec §8 resolved OQ): a `callRendererFunction` queued
+        # by an EARLIER `call_renderer()` (e.g. registered during a prior
+        # streaming turn that closed before the renderer could be reached)
+        # rides the NEXT message/send response instead — drained here so the
+        # SAME PendingCallRegistry entry is never delivered twice.
+        parts.extend(await self._drain_queued_renderer_calls(store, session_id))
+
+        if parts:
+            task.artifacts.append(Artifact(artifact_id=str(uuid.uuid4()), name="a2ui-response", parts=parts))
+        return task
+
+    async def _drain_queued_renderer_calls(
+        self, store: ConversationMemorySurfaceStore, session_id: str
+    ) -> list[Part]:
+        """Attach any not-yet-delivered ``callRendererFunction`` calls for ``session_id``.
+
+        Uses the SAME ``ConversationMemorySurfaceStore`` (the single source
+        of truth for correlation, per spec §8) — never a second in-memory
+        queue on ``A2AServer``. Each drained record is reconstructed into its
+        wire envelope and marked delivered (not resolved/removed — resolution
+        only happens when the matching ``rendererFunctionResponse`` arrives).
+        """
+        from parrot.outputs.a2ui.models import CallRendererFunction, FunctionCall
+        from parrot.outputs.a2ui.serialization import serialize
+
+        parts: list[Part] = []
+        for record in await store.list_undelivered(session_id):
+            envelope = serialize(
+                CallRendererFunction(
+                    functionCallId=record.function_call_id,
+                    callFunction=FunctionCall(call=record.call, args=record.args, catalogId=record.catalog_id),
+                )
+            )
+            parts.append(Part(data=envelope, metadata={"mimeType": A2UI_MEDIA_TYPE, "extensionUri": A2UI_EXTENSION_URI}))
+            await store.mark_delivered(session_id, record.function_call_id)
+        return parts
 
     # ─────────────────────────────────────────────────────────────
     # Per-user identity extraction (FEAT-260 / TASK-1643)
@@ -1097,6 +1219,19 @@ class A2AServer:
             message = Message.from_dict(data.get("message", {}))
             config = SendMessageConfiguration.from_dict(data.get("configuration") or {})
 
+            # An A2UI envelope is an RPC, not a conversational turn — dispatch
+            # it synchronously and return, bypassing `returnImmediately`
+            # entirely (spec §3 Module 5: "must not be spawned as a
+            # background task").
+            a2ui_part = self._find_a2ui_part(message)
+            if a2ui_part is not None:
+                task = await self._dispatch_a2ui_message(message, a2ui_part, streaming=False)
+                result = task.to_dict(version)
+                if config.history_length is not None:
+                    n = config.history_length
+                    result["history"] = result["history"][-n:] if n > 0 else []
+                return self._versioned_response(result, version)
+
             if config.return_immediately:
                 # Create the task, store it, return SUBMITTED immediately, and
                 # process it in the background on the SAME task object.
@@ -1148,13 +1283,61 @@ class A2AServer:
         try:
             data = await request.json()
             message = Message.from_dict(data.get("message", {}))
-            await self._emit_message_stream(response, message, version)
+            a2ui_part = self._find_a2ui_part(message)
+            if a2ui_part is not None:
+                await self._emit_a2ui_stream(response, message, a2ui_part, version)
+            else:
+                await self._emit_message_stream(response, message, version)
         except Exception as e:
             self.logger.error("Error setting up stream: %s", e, exc_info=True)
             await self._send_sse(response, {"error": {"message": str(e)}})
 
         await response.write_eof()
         return response
+
+    async def _emit_a2ui_stream(
+        self,
+        response: web.StreamResponse,
+        message: Message,
+        part: Part,
+        version: str,
+    ) -> None:
+        """SSE variant of :meth:`_dispatch_a2ui_message` (spec §3 Module 5).
+
+        Emits the same ``task``/``artifactUpdate``/``statusUpdate`` frame
+        sequence as the normal streaming path, but the artifact carries
+        A2UI A->R envelopes instead of the agent's text response — an A2UI
+        RPC is dispatched synchronously, never streamed token-by-token.
+        """
+        task = await self._dispatch_a2ui_message(message, part, streaming=True)
+        self._tasks[task.id] = task
+
+        await self._send_sse(response, {"task": task.to_dict(version)})
+
+        for artifact in task.artifacts:
+            await self._send_sse(
+                response,
+                {
+                    "artifactUpdate": {
+                        "taskId": task.id,
+                        "contextId": task.context_id,
+                        "artifact": artifact.to_dict(version),
+                        "lastChunk": True,
+                    }
+                },
+            )
+
+        await self._send_sse(
+            response,
+            {
+                "statusUpdate": {
+                    "taskId": task.id,
+                    "contextId": task.context_id,
+                    "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
+                    "final": True,
+                }
+            },
+        )
 
     async def _emit_message_stream(
         self,
