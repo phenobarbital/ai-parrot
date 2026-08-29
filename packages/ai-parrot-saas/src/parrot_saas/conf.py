@@ -113,7 +113,8 @@ SAAS_CM_NODE_TIMEOUT: float = float(
 #: Default models used when a tenant does not override them in its settings
 #: (``settings["triage_model"]`` / ``settings["reply_model"]``).
 SAAS_CM_TRIAGE_MODEL: str = config.get(
-    "SAAS_CM_TRIAGE_MODEL", fallback="gemini-2.5-flash"
+    "SAAS_CM_TRIAGE_MODEL",
+    "SAAS_ENABLE_DEDICATED", fallback="gemini-2.5-flash"
 )
 #: Sonnet rather than Opus because this is the high-volume path — one call per
 #: review — and a tenant that wants more can raise it in its own settings.
@@ -131,6 +132,15 @@ SAAS_WEBHOOK_MAX_BODY: int = int(
 # ---------------------------------------------------------------------------
 # Provisioning (Pulumi)
 # ---------------------------------------------------------------------------
+#: Whether the dedicated-tenancy deployer is wired in. Off by default: it
+#: shells out to the Pulumi CLI and talks to a Docker daemon, and a
+#: shared-only deployment has no reason to require either. With it off, a
+#: dedicated tenant's provision request answers 503 naming the modes that are
+#: configured, rather than failing somewhere inside a subprocess.
+SAAS_ENABLE_DEDICATED: bool = str(
+    config.get("SAAS_ENABLE_DEDICATED", fallback="false")
+).strip().lower() in ("1", "true", "yes", "on")
+
 #: Path to the ``pulumi`` CLI on the host. The toolkit's Docker mode cannot
 #: drive the Docker provider (it never mounts the Docker socket), so the
 #: deployer always runs the CLI directly.
@@ -167,6 +177,7 @@ __all__ = (
     "SAAS_CM_NODE_TIMEOUT",
     "SAAS_CM_REPLY_MODEL",
     "SAAS_CM_TRIAGE_MODEL",
+    "SAAS_ENABLE_DEDICATED",
     "SAAS_EXECUTIONS_COLLECTION",
     "SAAS_PG_DSN",
     "SAAS_PG_SCHEMA",

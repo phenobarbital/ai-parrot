@@ -340,6 +340,35 @@ def _statements(schema: str) -> Sequence[str]:
             ON {schema}.runs (tenant_id, status)
             WHERE finished_at IS NULL
         """,
+        # -- deployments ---------------------------------------------------
+        # One row per tenant, describing the infrastructure serving it.
+        #
+        # ``outputs`` is public by construction: the stack's connection string
+        # is a credential and goes to the secret store under
+        # ``deployment:<stack>:dsn``, leaving only a reference here. A DSN in a
+        # jsonb column would be a plaintext password in a table the control
+        # plane reads freely, and it would survive in every backup of it.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.deployments (
+            tenant_id   text        PRIMARY KEY
+                                    REFERENCES {schema}.tenants (tenant_id)
+                                    ON DELETE CASCADE,
+            mode        text        NOT NULL DEFAULT 'shared',
+            status      text        NOT NULL DEFAULT 'pending',
+            stack       text        NOT NULL DEFAULT '',
+            outputs     jsonb       NOT NULL DEFAULT '{{}}'::jsonb,
+            last_error  text        NOT NULL DEFAULT '',
+            job_id      text        NOT NULL DEFAULT '',
+            created_at  timestamptz NOT NULL DEFAULT now(),
+            updated_at  timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        # "Which tenants are mid-provision?" and "which failed?" are the two
+        # questions an operator asks of this table.
+        f"""
+        CREATE INDEX IF NOT EXISTS deployments_status_idx
+            ON {schema}.deployments (status, updated_at DESC)
+        """,
     )
 
 

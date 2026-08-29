@@ -17,6 +17,12 @@ version: "1.0"
 #   saas:secrets   — a tenant's own BYOK credentials
 #   saas:reviews   — review ingest and reply management
 #   saas:coupons   — offers, rules, issuance and redemption
+#   saas:runs      — flow execution records
+#
+# Provisioning reuses ``saas:control`` and ``saas:tenant:provision``: a
+# deployment is part of a tenant's lifecycle, and giving it a namespace of
+# its own would let the two drift — someone able to delete a tenant but not
+# to destroy its stack is not a coherent role.
 # ---------------------------------------------------------------------------
 
 defaults:

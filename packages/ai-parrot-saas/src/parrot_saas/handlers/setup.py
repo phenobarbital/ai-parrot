@@ -33,7 +33,21 @@ from ..tenancy.middleware import (
 )
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
-from .runs import APP_RUN_REPOSITORY, RunCollectionView, RunItemView, setup_run_routes
+from .deployments import (
+    APP_DEPLOYERS,
+    APP_DEPLOYMENT_REPOSITORY,
+    DeploymentApplyView,
+    DeploymentPlanView,
+    DeploymentView,
+    default_deployers,
+    setup_deployment_routes,
+)
+from .runs import (
+    APP_RUN_REPOSITORY,
+    RunCollectionView,
+    RunItemView,
+    setup_run_routes,
+)
 from .coupons import (
     APP_COUPON_DELIVERY,
     APP_COUPON_ISSUER,
@@ -196,6 +210,29 @@ def _make_runtime_builder(
     return _build
 
 
+class _LazyStore:
+    """Resolve the secret store on use rather than at wiring time.
+
+    ``setup_saas_api`` deliberately defers building the encrypted store —
+    ``EnvelopeCipher.from_environment()`` raises with no master key, and that
+    must not stop the application booting. Anything holding the store therefore
+    has to hold the factory instead.
+    """
+
+    __slots__ = ("_factory",)
+
+    def __init__(self, factory: Any) -> None:
+        self._factory = factory
+
+    async def put(self, tenant_id: str, key: str, value: str) -> Any:
+        """Store a secret, resolving the backing store on first use."""
+        return await self._factory().put(tenant_id, key, value)
+
+    async def delete(self, tenant_id: str, key: str) -> bool:
+        """Remove a secret."""
+        return await self._factory().delete(tenant_id, key)
+
+
 def _apply_auth(*views: type) -> None:
     """Apply navigator-auth's decorators to the control-plane views.
 
@@ -226,6 +263,7 @@ def setup_saas_api(
     durable_runs: bool = False,
     durable_store: Optional[Any] = None,
     result_storage: Optional[Any] = None,
+    deployers: Optional[dict] = None,
     strategies: Sequence[str] = DEFAULT_STRATEGIES,
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
     exempt_patterns: Iterable[str] = (),
@@ -264,6 +302,9 @@ def setup_saas_api(
         durable_store: The durable store (name or instance).
         result_storage: ``ResultStorage`` for the execution audit rows.
             Defaults to Postgres on the SaaS DSN.
+        deployers: Mapping of tenancy mode to :class:`TenantDeployer`.
+            Defaults to a shared deployer only; add ``dedicated`` to enable
+            Pulumi provisioning.
         strategies: Tenant resolution strategies, in order.
         exempt_prefixes: Path prefixes skipping tenant resolution.
         exempt_patterns: Glob patterns skipping tenant resolution — for
@@ -365,6 +406,38 @@ def setup_saas_api(
     run_repository = RunRepository(resolved_dsn, schema=resolved_schema)
     _app[APP_RUN_REPOSITORY] = run_repository
 
+    from ..provisioning.repository import DeploymentRepository
+    from ..provisioning.shared import SharedDeployer
+
+    deployment_repository = DeploymentRepository(
+        resolved_dsn, schema=resolved_schema
+    )
+    _app[APP_DEPLOYMENT_REPOSITORY] = deployment_repository
+    # The dedicated deployer is opt-in: it shells out to the Pulumi CLI and
+    # talks to a Docker daemon, neither of which a shared-only deployment has
+    # any reason to require. Absent, a dedicated tenant's provision request is
+    # a 503 naming the modes that *are* configured — which is a wiring mistake
+    # someone can read, rather than a stack trace.
+    if deployers is None:
+        dedicated = None
+        if conf.SAAS_ENABLE_DEDICATED:
+            from ..provisioning.pulumi_deployer import PulumiDeployer
+
+            # The secret store is passed as the *factory*'s product rather than
+            # the factory: the deployer only touches it after a stack is up, by
+            # which point a missing vault key is a real failure to report — not
+            # something to defer past, as it is on the request path.
+            dedicated = PulumiDeployer(secret_store=_LazyStore(_secret_store))
+        deployers = default_deployers(
+            shared=SharedDeployer(
+                rules=rule_repository,
+                coupons=coupon_repository,
+                runtimes=runtimes,
+            ),
+            dedicated=dedicated,
+        )
+    _app[APP_DEPLOYERS] = deployers
+
     if run_launcher is None:
         # Without this the ingest path stores reviews and warns that nothing
         # ran. Building the runner here rather than leaving that default in
@@ -424,6 +497,9 @@ def setup_saas_api(
             CouponRedeemView,
             RunCollectionView,
             RunItemView,
+            DeploymentView,
+            DeploymentPlanView,
+            DeploymentApplyView,
         )
 
     if install_middleware:
@@ -443,6 +519,7 @@ def setup_saas_api(
     setup_rule_routes(_app)
     setup_coupon_routes(_app)
     setup_run_routes(_app)
+    setup_deployment_routes(_app)
 
     async def _on_startup(application: web.Application) -> None:
         """Create the SaaS schema if it does not exist."""
@@ -460,6 +537,7 @@ def setup_saas_api(
         await rule_repository.aclose()
         await coupon_repository.aclose()
         await run_repository.aclose()
+        await deployment_repository.aclose()
         store = application.get(APP_SECRET_STORE)
         if store is not None and hasattr(store, "aclose"):
             await store.aclose()
@@ -478,6 +556,8 @@ def setup_saas_api(
 
 __all__ = (
     "APP_COUPON_DELIVERY",
+    "APP_DEPLOYERS",
+    "APP_DEPLOYMENT_REPOSITORY",
     "APP_COUPON_ISSUER",
     "APP_COUPON_REPOSITORY",
     "APP_INGEST_SERVICE",

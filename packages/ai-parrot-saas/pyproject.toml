@@ -78,7 +78,13 @@ include = ["parrot_saas*"]
 
 [tool.setuptools.package-data]
 "parrot_saas" = ["py.typed"]
-"parrot_saas.provisioning.programs.docker" = ["Pulumi.yaml", "requirements.txt"]
+# The Pulumi programs are data, not modules: they run under Pulumi's own
+# interpreter and import a SDK this distribution does not depend on. They are
+# keyed under ``parrot_saas.provisioning`` — with a glob covering the .py file
+# too — because ``packages.find`` will not discover ``programs/docker`` as a
+# package (it has no ``__init__.py``, deliberately), so a key naming it as one
+# would silently match nothing and ship an empty directory.
+"parrot_saas.provisioning" = ["programs/*/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
