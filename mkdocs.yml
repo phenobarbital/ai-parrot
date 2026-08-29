@@ -271,6 +271,7 @@ nav:
       - Job Manager: jobmanager.md
       - Outputs: outputs.md
       - A2UI v1.0 Wire: outputs/a2ui-v1.md
+      - A2UI Agent Functions (FEAT-469): outputs/a2ui-agent-functions.md
       - AWS Deployment: aws_deployment.md
       - 2026 Roadmap: parrot_roadmap_2026.md
       - PR Review Setup: pr-review-setup.md

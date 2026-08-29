@@ -218,13 +218,16 @@ The Microsoft Teams wrapper (`parrot.integrations.msteams.wrapper`) routes
 as a deep-link resume — the bot sees `{"type": "a2ui_action", "action": <the
 action envelope>, "values": {...remaining submitted fields...}}`.
 
-**What's NOT here yet**: the runtime RPC loop this submit flow ultimately
-feeds — `callAgentFunction` dispatch to tools, `agentFunctionResponse`
-correlation, `agent_capabilities` on the Agent Card — is **FEAT-469**
-(`a2ui-agent-functions`), which depends on this feature. Until then, an
-Adaptive Card submit is received as a structured bot turn through the
-existing deep-link-resume machinery, not as a live A2UI `callAgentFunction`
-round-trip.
+The runtime RPC loop this submit flow ultimately feeds — `callAgentFunction`
+dispatch to tools, `agentFunctionResponse` correlation, `agent_capabilities`
+on the Agent Card — now ships as **FEAT-469**
+(`a2ui-agent-functions`); see
+[`docs/outputs/a2ui-agent-functions.md`](a2ui-agent-functions.md). The Teams/
+Telegram/deep-link-resume paths described above are unchanged by it — an
+Adaptive Card submit is still received as a structured bot turn through
+that same machinery, now additionally routed through
+`A2UIRuntime.dispatch(..., transport="deeplink")` so it persists surface
+state identically to a live A2UI RPC round-trip.
 
 ## A2A transport
 
@@ -237,6 +240,9 @@ response shapes.
 
 ## See also
 
+- [`a2ui-agent-functions.md`](a2ui-agent-functions.md) (FEAT-469) — the RPC
+  leg: `callAgentFunction`/`callRendererFunction` dispatch, `sendDataModel`,
+  and the HTTP/A2A/deep-link transports built on this wire.
 - `docs/migration/feat-273-a2ui-deprecations.md` — dialect → v1.0 migration,
   legacy `OutputMode` deprecations, recipe schema bump.
 - `sdd/specs/a2ui-v1-dialect.spec.md` (FEAT-470) — the full design spec this
