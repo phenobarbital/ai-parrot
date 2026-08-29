@@ -34,6 +34,7 @@ __all__ = [
     "build_datatable",
     "build_infographic",
     "build_kpicard",
+    "build_map",
     "build_surface",
 ]
 
@@ -53,16 +54,22 @@ def build_surface(
     surface_id: str,
     component_id: str = _ROOT_COMPONENT_ID,
     data_model: dict[str, Any] | None = None,
+    origin: ProducerOrigin = ProducerOrigin.LLM,
 ) -> CreateSurface:
     """Build and validate a single-component display ``CreateSurface``.
 
-    Display-only: the envelope is validated with LLM-origin semantics so any
-    ``requires_actions``/``action``-bearing component (and any unknown
-    component) is rejected. ``component_id`` defaults to ``"root"`` so the
-    envelope satisfies the v1.0 wire's root requirement (spec G6) out of the box.
+    Display-only by default (``origin=LLM``): the envelope is validated with
+    LLM-origin semantics so any ``requires_actions``/``action``-bearing
+    component, any unknown component, and (FEAT-473 G8) any inlined ``data``/
+    ``datasets`` row list on a Chart/DataTable/Map is rejected. Pass
+    ``origin=ProducerOrigin.TOOL`` for deterministic tool-built surfaces
+    (e.g. the FEAT-473 structured-output adapter), which MAY inline rows
+    directly. ``component_id`` defaults to ``"root"`` so the envelope
+    satisfies the v1.0 wire's root requirement (spec G6) out of the box.
 
     Raises:
-        CatalogValidationError: If the component is unknown or action-bearing.
+        CatalogValidationError: If the component is unknown, action-bearing
+            (LLM origin), or inlines rows on a structured component (LLM origin).
     """
     envelope = CreateSurface(
         surfaceId=surface_id,
@@ -70,8 +77,7 @@ def build_surface(
         components=[Component(id=component_id, component=component, **properties)],
         dataModel=data_model or {},
     )
-    # Display-only guard (rejects action-bearing + unknown components).
-    validate_envelope(envelope, origin=ProducerOrigin.LLM)
+    validate_envelope(envelope, origin=origin)
     return envelope
 
 
@@ -84,6 +90,7 @@ def build_chart(
     data_binding: str | None = None,
     show_legend: bool = True,
     surface_id: str = "chart",
+    data_model: dict[str, Any] | None = None,
 ) -> CreateSurface:
     """Build a display envelope carrying a single Chart component."""
     props: dict[str, Any] = {"type": chart_type, "x": x, "y": list(y), "showLegend": show_legend}
@@ -92,7 +99,7 @@ def build_chart(
     binding = _binding(data_binding)
     if binding is not None:
         props["data"] = binding
-    return build_surface("Chart", props, surface_id=surface_id)
+    return build_surface("Chart", props, surface_id=surface_id, data_model=data_model)
 
 
 def build_kpicard(
@@ -145,6 +152,7 @@ def build_datatable(
     total_rows: int | None = None,
     truncated: bool = False,
     surface_id: str = "table",
+    data_model: dict[str, Any] | None = None,
 ) -> CreateSurface:
     """Build a display envelope carrying a single DataTable component."""
     props: dict[str, Any] = {"columns": [dict(c) for c in columns]}
@@ -157,7 +165,39 @@ def build_datatable(
     binding = _binding(data_binding)
     if binding is not None:
         props["data"] = binding
-    return build_surface("DataTable", props, surface_id=surface_id)
+    return build_surface("DataTable", props, surface_id=surface_id, data_model=data_model)
+
+
+def build_map(
+    *,
+    layers: Sequence[dict[str, Any]],
+    viewport: dict[str, Any] | None = None,
+    base_layer: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+    query: dict[str, Any] | None = None,
+    data_model: dict[str, Any] | None = None,
+    surface_id: str = "map",
+) -> CreateSurface:
+    """Build a display envelope carrying a single Map component.
+
+    Mirrors :func:`build_chart`/:func:`build_datatable`. ``layers`` is a
+    sequence of ``MapLayer``-shaped dicts (camelCase props: ``layer``,
+    ``columns``, ``tooltipTemplate``, ``labelField``, ``dataShape``,
+    ``totalCount``, ``capped``, ``geodesic``, ``markerColor``).
+    """
+    props: dict[str, Any] = {"layers": [dict(layer) for layer in layers]}
+    if viewport is not None:
+        props["viewport"] = dict(viewport)
+    if base_layer is not None:
+        props["baseLayer"] = base_layer
+    if title is not None:
+        props["title"] = title
+    if description is not None:
+        props["description"] = description
+    if query is not None:
+        props["query"] = dict(query)
+    return build_surface("Map", props, surface_id=surface_id, data_model=data_model)
 
 
 def build_infographic(
