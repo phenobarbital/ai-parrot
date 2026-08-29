@@ -3,6 +3,7 @@
 Inherits from BasicAgent, delegates all database operations to toolkits,
 and uses QueryResponse structured output for every ask() call.
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,6 @@ from .retries import QueryRetryConfig, RetryContext
 from .router import SchemaQueryRouter
 from .toolkits import DatabaseAgentToolkit
 from .toolkits.base import DatabaseToolkit
-
 
 # Matches the schema part of a ``schema.table`` reference. Conservative:
 # unicode-aware via ``\w`` would be too permissive (matches Spanish accents
@@ -142,9 +142,7 @@ class DatabaseAgent(BasicAgent):
         self.default_user_role = default_user_role
         self.retry_config = retry_config
         self._cache_ttl_by_completeness = cache_ttl_by_completeness
-        self.cache_manager = CacheManager(
-            redis_url=redis_url, vector_store=vector_store
-        )
+        self.cache_manager = CacheManager(redis_url=redis_url, vector_store=vector_store)
         self.query_router: Optional[SchemaQueryRouter] = None
         self._toolkit_map: Dict[str, DatabaseToolkit] = {}
         self._internal_toolkit: Optional[DatabaseAgentToolkit] = None
@@ -220,9 +218,7 @@ class DatabaseAgent(BasicAgent):
                 }
                 if self._cache_ttl_by_completeness is not None:
                     config_kwargs["ttl_by_completeness"] = self._cache_ttl_by_completeness
-                partition = self.cache_manager.create_partition(
-                    CachePartitionConfig(**config_kwargs)
-                )
+                partition = self.cache_manager.create_partition(CachePartitionConfig(**config_kwargs))
                 tk.cache_partition = partition
 
             self.query_router.register_database(tk.database_type, tk_id)
@@ -240,7 +236,7 @@ class DatabaseAgent(BasicAgent):
                 raise ValueError(
                     f"DatabaseToolkit subclasses must declare a non-empty "
                     f"tool_prefix; {type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
-                    f"Set `tool_prefix` on the toolkit class (e.g. \"db\", \"bq\")."
+                    f'Set `tool_prefix` on the toolkit class (e.g. "db", "bq").'
                 )
 
         # --- FEAT-172 Pass B: identifier-safe prefix shape ---
@@ -466,11 +462,7 @@ class DatabaseAgent(BasicAgent):
         # short / common names like ``hr``, ``next``, ``apple``); when no
         # qualified ref is present the frontend is expected to surface the
         # list explicitly inside ``context`` (the LLM reads that block).
-        allowed = (
-            list(target_toolkit.allowed_schemas)
-            if target_toolkit is not None
-            else []
-        )
+        allowed = list(target_toolkit.allowed_schemas) if target_toolkit is not None else []
         active_schemas = self._infer_active_schemas(query, context, allowed)
 
         # Build schema_summary. When the frontend pipes its own schema
@@ -487,12 +479,8 @@ class DatabaseAgent(BasicAgent):
         )
 
         # Build system prompt via PromptBuilder layers
-        db_name = route.target_database or (
-            self.toolkits[0].database_type if self.toolkits else "unknown"
-        )
-        intent_str = (
-            route.intent.value if hasattr(route.intent, "value") else str(route.intent)
-        )
+        db_name = route.target_database or (self.toolkits[0].database_type if self.toolkits else "unknown")
+        intent_str = route.intent.value if hasattr(route.intent, "value") else str(route.intent)
         system_prompt = await self.create_system_prompt(
             database=db_name,
             intent=intent_str,
@@ -521,9 +509,7 @@ class DatabaseAgent(BasicAgent):
         if structured_output is not None:
             llm_kwargs["structured_output"] = structured_output
         else:
-            llm_kwargs["structured_output"] = StructuredOutputConfig(
-                output_type=QueryResponse
-            )
+            llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=QueryResponse)
 
         # Invoke LLM with retry loop — re-ask up to retry_config.max_retries times
         # when the toolkit returns a RetryContext (retryable query failure).
@@ -547,21 +533,14 @@ class DatabaseAgent(BasicAgent):
 
             response = await self._llm.ask(**call_kwargs)
 
-            qr_check: Optional[QueryResponse] = (
-                response.output if isinstance(response.output, QueryResponse) else None
-            )
+            qr_check: Optional[QueryResponse] = response.output if isinstance(response.output, QueryResponse) else None
             # Skip execution when the LLM returned no SQL — this is the
             # legitimate "meta-question" path (e.g. "do we have a table
             # called X?" → answer is just prose). The previous check only
             # caught ``None``; an empty/whitespace string fell through to
             # ``execute_query`` and tripped the "Empty query" safety rule,
             # emitting a misleading warning.
-            if (
-                qr_check is None
-                or qr_check.query is None
-                or not qr_check.query.strip()
-                or target_toolkit is None
-            ):
+            if qr_check is None or qr_check.query is None or not qr_check.query.strip() or target_toolkit is None:
                 break
 
             try:
@@ -571,14 +550,9 @@ class DatabaseAgent(BasicAgent):
                 # ``retry_config`` is set. Surface as a failure
                 # QueryResponse so the caller cannot mistake it for a
                 # successful run.
-                self.logger.error(
-                    "Query execution raised non-retryable error: %s", exec_exc
-                )
+                self.logger.error("Query execution raised non-retryable error: %s", exec_exc)
                 response.output = QueryResponse(
-                    explanation=(
-                        f"Query execution failed with a non-retryable error: "
-                        f"{exec_exc}"
-                    ),
+                    explanation=(f"Query execution failed with a non-retryable error: " f"{exec_exc}"),
                     query=qr_check.query,
                     data=None,
                 )
@@ -591,9 +565,7 @@ class DatabaseAgent(BasicAgent):
             attempt += 1
 
         if last_retry_ctx is not None and attempt >= max_attempts:
-            self.logger.warning(
-                "Retry exhausted after %s attempts; surfacing last error.", attempt
-            )
+            self.logger.warning("Retry exhausted after %s attempts; surfacing last error.", attempt)
 
         # Unpack structured output into AIMessage fields.
         # The while loop always runs at least once (max_attempts >= 1), so
@@ -601,12 +573,8 @@ class DatabaseAgent(BasicAgent):
         # here rather than ``assert`` because production deployments may
         # run with -O, which strips assertions.
         if response is None:  # pragma: no cover — defensive
-            raise RuntimeError(
-                "LLM response not generated (retry loop must run at least once)"
-            )
-        qr: Optional[QueryResponse] = (
-            response.output if isinstance(response.output, QueryResponse) else None
-        )
+            raise RuntimeError("LLM response not generated (retry loop must run at least once)")
+        qr: Optional[QueryResponse] = response.output if isinstance(response.output, QueryResponse) else None
         if qr is not None:
             response.is_structured = True
             response.response = qr.explanation
@@ -718,6 +686,7 @@ class DatabaseAgent(BasicAgent):
         # Local import keeps pandas out of the import-time cost on agents
         # that never produce tabular data.
         import pandas as pd
+
         return pd.DataFrame(rows or [], columns=columns or [])
 
     def _make_structured_message(
@@ -733,9 +702,7 @@ class DatabaseAgent(BasicAgent):
             response=qr.explanation,
             model="database-agent",
             provider="parrot",
-            usage=CompletionUsage(
-                prompt_tokens=0, completion_tokens=0, total_tokens=0
-            ),
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             is_structured=True,
             session_id=session_id or None,
         )
@@ -761,9 +728,7 @@ class DatabaseAgent(BasicAgent):
             return components_from_string(output_components)
         return None
 
-    def _select_toolkit(
-        self, target_database: Optional[str]
-    ) -> Optional[DatabaseToolkit]:
+    def _select_toolkit(self, target_database: Optional[str]) -> Optional[DatabaseToolkit]:
         """Select the toolkit to handle the request.
 
         Args:
@@ -874,11 +839,7 @@ class DatabaseAgent(BasicAgent):
                             )
                         full_name = logical_name
                     else:
-                        full_name = (
-                            f"{tk.tool_prefix}"
-                            f"{tk.prefix_separator}"
-                            f"{logical_name}"
-                        )
+                        full_name = f"{tk.tool_prefix}" f"{tk.prefix_separator}" f"{logical_name}"
 
                     tk_tool = get_tool(full_name)
                     if tk_tool is None:

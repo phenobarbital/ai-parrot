@@ -37,11 +37,23 @@ async def test_structured_map_e2e_a2ui():
     from parrot.tools.dataset_manager.spatial import SpatialLayerResult, SpatialResult
 
     school_features = [
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.0, 40.7]}, "properties": {"name": "PS 1"}},
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.01, 40.72]}, "properties": {"name": "PS 2"}},
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-74.0, 40.7]},
+            "properties": {"name": "PS 1"},
+        },
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-74.01, 40.72]},
+            "properties": {"name": "PS 2"},
+        },
     ]
     mall_features = [
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-73.99, 40.70]}, "properties": {"name": "Mall A"}},
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-73.99, 40.70]},
+            "properties": {"name": "Mall A"},
+        },
     ]
     spatial_result = SpatialResult(
         layers={

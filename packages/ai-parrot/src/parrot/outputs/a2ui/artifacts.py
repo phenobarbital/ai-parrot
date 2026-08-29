@@ -164,7 +164,5 @@ def attach_structured_artifact(response: Any, output_mode: Any) -> str | None:
         response.artifact_id = art_id
         return art_id
     except Exception:
-        logger.warning(
-            "attach_structured_artifact: failed to mint artifact for mode=%s", mode_str, exc_info=True
-        )
+        logger.warning("attach_structured_artifact: failed to mint artifact for mode=%s", mode_str, exc_info=True)
         return None

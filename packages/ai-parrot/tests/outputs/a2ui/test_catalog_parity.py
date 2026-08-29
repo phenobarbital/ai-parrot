@@ -21,29 +21,21 @@ from parrot.outputs.a2ui.models import Component, CreateSurface
 
 def test_derived_chart_schema_has_all_config_fields():
     """Every StructuredChartConfig alias except `data` is a CHART_SCHEMA property."""
-    aliases = {
-        field.alias or name for name, field in StructuredChartConfig.model_fields.items()
-    } - {"data"}
+    aliases = {field.alias or name for name, field in StructuredChartConfig.model_fields.items()} - {"data"}
     assert aliases <= set(chart_mod.CHART_SCHEMA["properties"])
 
 
 def test_derived_table_schema_has_all_config_fields():
     """Every StructuredTableConfig alias except `data` is a DATATABLE_SCHEMA property."""
-    aliases = {
-        field.alias or name for name, field in StructuredTableConfig.model_fields.items()
-    } - {"data"}
+    aliases = {field.alias or name for name, field in StructuredTableConfig.model_fields.items()} - {"data"}
     # total_rows/truncated have no pydantic alias — derive_schema camelCases them.
-    camel_aliases = {
-        "".join(part.title() if i else part for i, part in enumerate(a.split("_"))) for a in aliases
-    }
+    camel_aliases = {"".join(part.title() if i else part for i, part in enumerate(a.split("_"))) for a in aliases}
     assert camel_aliases <= set(datatable_mod.DATATABLE_SCHEMA["properties"])
 
 
 def test_derived_map_schema_keeps_defs_and_validates_export():
     """MAP_SCHEMA has $defs; export_catalog_definition() validates against the vendored spec."""
-    aliases = {
-        field.alias or name for name, field in StructuredMapConfig.model_fields.items()
-    } - {"data", "datasets"}
+    aliases = {field.alias or name for name, field in StructuredMapConfig.model_fields.items()} - {"data", "datasets"}
     assert aliases <= set(map_mod.MAP_SCHEMA["properties"])
     assert "$defs" in map_mod.MAP_SCHEMA
     assert {"MapLayer", "MapViewport", "MapQuery", "MapColumn"} <= set(map_mod.MAP_SCHEMA["$defs"])
@@ -146,8 +138,7 @@ def test_map_lower_renders_layer_fields():
     tree = map_mod.MapComponent().lower(comp, {})
     texts = _all_texts(tree)
     assert any(
-        "stores" in t and "label=name" in t and "color=red" in t and "total=100" in t and "capped" in t
-        for t in texts
+        "stores" in t and "label=name" in t and "color=red" in t and "total=100" in t and "capped" in t for t in texts
     )
 
 

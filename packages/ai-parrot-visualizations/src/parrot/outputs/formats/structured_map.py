@@ -22,6 +22,7 @@ Key design decisions (mirroring StructuredTableRenderer):
 - Empty layer (zero features) is still emitted as a ``MapLayer`` with an empty payload.
 - Both ``data_shape="geojson"`` and ``data_shape="rows"`` are supported per-layer.
 """
+
 from __future__ import annotations
 
 import json
@@ -52,19 +53,41 @@ logger = logging.getLogger(__name__)
 _HARD_TYPES: frozenset[str] = frozenset({"number", "datetime", "boolean"})
 
 #: Allowed finer format hints the LLM may add to ambiguous columns.
-_ALLOWED_FORMATS: frozenset[str] = frozenset(
-    {"currency", "percent", "email", "uri", "enum", "id", "code"}
-)
+_ALLOWED_FORMATS: frozenset[str] = frozenset({"currency", "percent", "email", "uri", "enum", "id", "code"})
 
 #: Closed set of canonical marker color names accepted from the LLM (FEAT-221
 #: piggyback). Anything outside this set (or a valid hex string) is dropped —
 #: the frontend then falls back to its default marker color (fail-open).
 _NAMED_COLORS: frozenset[str] = frozenset(
     {
-        "red", "blue", "green", "orange", "purple", "yellow", "pink", "brown",
-        "black", "white", "gray", "grey", "cyan", "magenta", "teal", "navy",
-        "lime", "olive", "maroon", "gold", "violet", "indigo", "turquoise",
-        "darkred", "darkblue", "darkgreen", "lightblue", "lightgreen",
+        "red",
+        "blue",
+        "green",
+        "orange",
+        "purple",
+        "yellow",
+        "pink",
+        "brown",
+        "black",
+        "white",
+        "gray",
+        "grey",
+        "cyan",
+        "magenta",
+        "teal",
+        "navy",
+        "lime",
+        "olive",
+        "maroon",
+        "gold",
+        "violet",
+        "indigo",
+        "turquoise",
+        "darkred",
+        "darkblue",
+        "darkgreen",
+        "lightblue",
+        "lightgreen",
     }
 )
 
@@ -287,6 +310,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                 from ...tools.dataset_manager.spatial.registry import (
                     get_spatial_profile,
                 )
+
                 _profiles_available = True
             except ImportError:
                 _profiles_available = False
@@ -357,16 +381,12 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                 tooltip_template: str | None = None
                 label_field: str | None = None
                 if profile is not None:
-                    tooltip_template = (
-                        profile.tooltip_template or profile.description_template or None
-                    )
+                    tooltip_template = profile.tooltip_template or profile.description_template or None
                     label_field = profile.label_col
 
                 # Resolve the per-layer marker color from the LLM-supplied mapping
                 # (matches by dataset name, layer id, or a "default"/"all"/"*" key).
-                marker_color = self._resolve_layer_color(
-                    marker_colors, dataset_name, layer_result.layer
-                )
+                marker_color = self._resolve_layer_color(marker_colors, dataset_name, layer_result.layer)
 
                 map_layer = MapLayer(
                     layer=layer_result.layer,
@@ -423,7 +443,8 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             )
             if spatial_result.layers:
                 response.data = self._build_tabular_rows(
-                    spatial_result, row_limit=effective_row_limit,
+                    spatial_result,
+                    row_limit=effective_row_limit,
                 )
             return out, wrapped
 
@@ -474,10 +495,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             prop_cols = list(first_props.keys())
 
         # Build a DataFrame from properties for type inference
-        rows = [
-            feat.get("properties") or {}
-            for feat in features[:row_limit]
-        ]
+        rows = [feat.get("properties") or {} for feat in features[:row_limit]]
         if rows and prop_cols:
             try:
                 df = pd.DataFrame(rows)[prop_cols]
@@ -489,7 +507,8 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                 logger.warning(
                     "StructuredMapRenderer: profile columns %s absent from feature properties "
                     "for dataset — falling back to available columns %s",
-                    exc, available_cols,
+                    exc,
+                    available_cols,
                 )
                 if available_cols:
                     df = pd.DataFrame(rows)[available_cols]
@@ -544,9 +563,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             # Always include _geometry — None when geometry is null (frontend must handle)
             props["_geometry"] = geometry
             if geometry is None:
-                logger.debug(
-                    "StructuredMapRenderer: feature with null geometry included in rows payload"
-                )
+                logger.debug("StructuredMapRenderer: feature with null geometry included in rows payload")
             rows.append(props)
         return {
             "rows": rows,
@@ -694,9 +711,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     # ── Marker color extraction (piggyback) ──────────────────────────────────────
 
-    def _extract_marker_colors(
-        self, explanation: str | None
-    ) -> tuple[dict[str, str], str | None]:
+    def _extract_marker_colors(self, explanation: str | None) -> tuple[dict[str, str], str | None]:
         """Extract LLM-supplied marker colors from the explanation text.
 
         The map system prompt instructs the LLM to append a single fenced
@@ -748,9 +763,9 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                 colors[str(key)] = normalized
             else:
                 logger.debug(
-                    "StructuredMapRenderer: dropped unsupported marker color %r "
-                    "for key %r",
-                    value, key,
+                    "StructuredMapRenderer: dropped unsupported marker color %r " "for key %r",
+                    value,
+                    key,
                 )
         return colors, cleaned
 
@@ -886,14 +901,15 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                 logger.debug(
                     "StructuredMapRenderer: LLM tried to annotate hard-typed "
                     "column %r (type=%r) — ignored (deterministic wins)",
-                    col_name, col.type,
+                    col_name,
+                    col.type,
                 )
                 continue
             if fmt not in _ALLOWED_FORMATS:
                 logger.debug(
-                    "StructuredMapRenderer: LLM suggested unknown format %r "
-                    "for column %r — ignored",
-                    fmt, col_name,
+                    "StructuredMapRenderer: LLM suggested unknown format %r " "for column %r — ignored",
+                    fmt,
+                    col_name,
                 )
                 continue
             col_map[col_name] = MapColumn(

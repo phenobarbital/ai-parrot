@@ -18,6 +18,7 @@ existing ``response.output``/``response.data`` contract. This never changes
 try/except and any error is logged at ``warning``, leaving
 ``response.a2ui_envelope`` unset (``None``).
 """
+
 from __future__ import annotations
 
 import logging
@@ -74,9 +75,7 @@ class StructuredOutputBase:
             A non-empty :class:`~pandas.DataFrame` on success, ``None`` otherwise.
         """
         try:
-            table_renderer: TableRenderer = (
-                getattr(self, "_table_renderer", None) or TableRenderer()
-            )
+            table_renderer: TableRenderer = getattr(self, "_table_renderer", None) or TableRenderer()
             df: pd.DataFrame | None = table_renderer._extract_data(response)
             if df is None or df.empty:
                 return None
@@ -170,8 +169,8 @@ class StructuredOutputBase:
             row_limit: Row/feature cap override (see :meth:`_route_envelope`).
         """
         try:
-            effective_row_limit = row_limit if row_limit is not None else (
-                getattr(self, "row_limit", None) or _A2UI_DEFAULT_ROW_LIMIT
+            effective_row_limit = (
+                row_limit if row_limit is not None else (getattr(self, "row_limit", None) or _A2UI_DEFAULT_ROW_LIMIT)
             )
 
             surface = None

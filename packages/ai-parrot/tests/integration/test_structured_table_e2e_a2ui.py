@@ -78,9 +78,7 @@ async def test_structured_table_e2e_a2ui():
     lowered_surface = surface.model_copy(update={"components": lowered})
     baked = bake_envelope(lowered_surface)
 
-    row_nodes = [
-        c for c in baked if c.get("metadata", {}).get("extensions", {}).get("parrot_role") == "row"
-    ]
+    row_nodes = [c for c in baked if c.get("metadata", {}).get("extensions", {}).get("parrot_role") == "row"]
     data_model_rows = surface.data_model["rows"]
     assert len(row_nodes) == len(data_model_rows) == 3
 

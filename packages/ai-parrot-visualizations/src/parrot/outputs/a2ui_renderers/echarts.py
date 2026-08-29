@@ -202,8 +202,7 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 n = len(series)
                 option["grid"] = [{"top": f"{int(i * 100 / n)}%", "height": f"{int(100 / n) - 5}%"} for i in range(n)]
                 option["xAxis"] = [
-                    {"type": "category", "data": categories, "gridIndex": i, "name": x_axis_label}
-                    for i in range(n)
+                    {"type": "category", "data": categories, "gridIndex": i, "name": x_axis_label} for i in range(n)
                 ]
                 option["yAxis"] = [{"type": "value", "gridIndex": i, "name": y_axis_label} for i in range(n)]
                 for i, series_entry in enumerate(series):

@@ -35,9 +35,7 @@ async def test_structured_chart_e2e_a2ui():
 
     df = pd.DataFrame({"month": ["Jan", "Feb"], "sales": [100, 120]})
     cfg = StructuredChartConfig(type="bar", x="month", y=["sales"], data=[])
-    resp = SimpleNamespace(
-        code=None, data=df, output=cfg, response=None, a2ui_envelope=None, artifact_id=None
-    )
+    resp = SimpleNamespace(code=None, data=df, output=cfg, response=None, a2ui_envelope=None, artifact_id=None)
 
     renderer = get_renderer(OutputMode.STRUCTURED_CHART)()
     out, _explanation = await renderer.render(resp)

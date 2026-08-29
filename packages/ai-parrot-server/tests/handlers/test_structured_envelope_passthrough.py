@@ -21,7 +21,7 @@ class TestNonStreamEnvelopePassthrough:
         # includes a2ui_envelope whenever the response carries one — not only
         # for output_mode == A2UI.
         assert '_a2ui_envelope = getattr(response, "a2ui_envelope", None)' in _SRC
-        assert 'if _a2ui_envelope is not None:' in _SRC
+        assert "if _a2ui_envelope is not None:" in _SRC
         assert 'obj_response["a2ui_envelope"] = _a2ui_envelope' in _SRC
 
     def test_a2ui_mode_body_shape_unchanged(self):
@@ -33,7 +33,7 @@ class TestNonStreamEnvelopePassthrough:
     def test_stream_handler_unchanged(self):
         # Stream path (already ungated pre-FEAT-473) must not be touched.
         assert 'a2ui_envelope = getattr(ai_message, "a2ui_envelope", None)' in _SRC
-        assert 'if a2ui_envelope is not None:' in _SRC
+        assert "if a2ui_envelope is not None:" in _SRC
         assert 'envelope["a2ui_envelope"] = a2ui_envelope' in _SRC
 
     def test_handler_importable_if_built(self):

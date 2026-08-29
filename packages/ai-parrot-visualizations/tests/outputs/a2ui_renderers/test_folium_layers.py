@@ -48,11 +48,7 @@ def _multi_layer_envelope() -> CreateSurface:
                         }
                     ]
                 },
-                {
-                    "features": [
-                        {"name": "Mall A", "_geometry": {"type": "Point", "coordinates": [-73.99, 40.70]}}
-                    ]
-                },
+                {"features": [{"name": "Mall A", "_geometry": {"type": "Point", "coordinates": [-73.99, 40.70]}}]},
             ]
         },
     )
