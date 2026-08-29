@@ -835,6 +835,39 @@ class ToolManager(MCPToolManagerMixin):
             )
 
 
+    def _log_enforcement(
+        self,
+        tool_name: str,
+        tool_kind: str,
+        layer: str,
+        decision: str,
+        permission_context: Optional["PermissionContext"],
+        reason: Optional[str] = None,
+    ) -> None:
+        """Emit one uniform structured enforcement log record.
+
+        Called from every allow/deny decision point on BOTH the
+        ``ToolDefinition`` and ``AbstractTool`` execution paths of
+        ``execute_tool()`` (FEAT-474 G6/AC-9), so operators get consistent,
+        greppable enforcement telemetry regardless of tool kind. Fail-open
+        skips (no guard/resolver configured) are never logged here — only
+        actual decisions are.
+
+        Args:
+            tool_name: Name of the tool being executed.
+            tool_kind: ``"tool_definition"`` or ``"abstract_tool"``.
+            layer: Enforcement layer — ``"guardrail"``, ``"grant"``,
+                ``"confirmation"``, or ``"resolver"``.
+            decision: ``"allow"`` or ``"deny"``.
+            permission_context: The caller's permission context, if any.
+            reason: Optional human-readable reason for the decision.
+        """
+        user_id = getattr(permission_context, "user_id", None)
+        self.logger.info(
+            "Tool enforcement: tool=%s kind=%s layer=%s decision=%s user_id=%s reason=%s",
+            tool_name, tool_kind, layer, decision, user_id, reason,
+        )
+
     def _warn_if_inert_grant(self, tool: ToolDefinition) -> None:
         """Warn when a registered ``ToolDefinition`` declares a grant it cannot enforce.
 
@@ -1558,9 +1591,14 @@ class ToolManager(MCPToolManagerMixin):
         Args:
             tool_name: Name of the tool to execute.
             parameters: Tool parameters/arguments.
-            permission_context: Optional permission context for Layer 2 enforcement.
-                If provided (and a resolver is set), permissions are checked
-                before execution. If not provided, no enforcement occurs.
+            permission_context: Optional permission context for enforcement.
+                If provided, the TOOL_CALL guardrail pipeline, the
+                configured ``ConfirmationGuard``, and (when a resolver is
+                also set) the Layer 2 permission check all run for BOTH
+                ``ToolDefinition`` and ``AbstractTool`` tools (FEAT-474 —
+                enforcement parity). If not provided, no new enforcement
+                occurs beyond what was already unconditional (e.g. an
+                unconditional guardrail pipeline).
 
         Returns:
             Tool execution result.
@@ -1577,9 +1615,122 @@ class ToolManager(MCPToolManagerMixin):
             )
         try:
             tool = self._tools[tool_name]
+            tool_kind = "tool_definition" if isinstance(tool, ToolDefinition) else "abstract_tool"
+
+            # === TOOL_CALL guardrail pipeline (FEAT-406) ===
+            # Policy-based pre-execution denial (e.g. PBAC). Runs FIRST —
+            # before GrantGuard/ConfirmationGuard/the manager-level resolver
+            # check — so a policy-doomed call never interrupts a human for
+            # confirmation or consumes a grant. Hoisted above the
+            # ToolDefinition/AbstractTool branch split (FEAT-474 G1/AC-2) so
+            # BOTH tool kinds are covered — GuardrailContext only carries
+            # tool_name/arguments/permission_context, nothing
+            # tool-instance-specific, so this block moves verbatim. Purely
+            # additive: without a pipeline (or an empty one) the path below
+            # is unchanged (regression-safe).
+            if self._tool_call_pipeline is not None and self._tool_call_pipeline.has_guardrails:
+                from ..bots.guardrails.base import GuardrailContext, GuardrailStage
+                tool_call_ctx = GuardrailContext(
+                    stage=GuardrailStage.TOOL_CALL,
+                    agent_name=tool_name,
+                    tool_name=tool_name,
+                    extras={
+                        "permission_context": permission_context,
+                        "tool_name": tool_name,
+                        "arguments": parameters,
+                    },
+                )
+                tool_call_outcome = await self._tool_call_pipeline.run(
+                    f"tool_call:{tool_name}", tool_call_ctx
+                )
+                if tool_call_outcome.blocked:
+                    # Prefer the blocking guardrail's human-readable report
+                    # message (e.g. PBACToolCallGuardrail's operator-authored
+                    # denial text) over the bare category-label `reason` —
+                    # this is what the LLM sees and verbalizes to the user.
+                    error_message = tool_call_outcome.reason or "Policy denied"
+                    for report in tool_call_outcome.flag_reports.values():
+                        if isinstance(report, dict) and report.get("message"):
+                            error_message = report["message"]
+                            break
+                    self._log_enforcement(
+                        tool_name, tool_kind, "guardrail", "deny",
+                        permission_context, error_message,
+                    )
+                    return ToolResult(
+                        success=False,
+                        status="forbidden",
+                        error=error_message,
+                        result=None,
+                    )
+            # === End TOOL_CALL guardrail pipeline ===
+
             if isinstance(tool, ToolDefinition):
-                # ToolDefinition does not support permission enforcement
-                # (it's a simple function wrapper)
+                # === Confirmation guard check (FEAT-235) ===
+                # Honors the @tool(requires_confirmation=True) API (FEAT-474
+                # G2) — previously silently inert because routing_meta was
+                # dropped at registration (fixed by TASK-2579). Purely
+                # additive: without a configured guard the path is unchanged.
+                if self._confirmation_guard is not None:
+                    confirm_decision = await self._confirmation_guard.confirm(
+                        tool=tool,
+                        parameters=parameters,
+                        permission_context=permission_context,
+                    )
+                    if not confirm_decision.allowed:
+                        self._log_enforcement(
+                            tool_name, tool_kind, "confirmation", "deny",
+                            permission_context, confirm_decision.reason,
+                        )
+                        return ToolResult(
+                            success=False,
+                            status=confirm_decision.status,  # "cancelled" | "timeout"
+                            error=f"Confirmation {confirm_decision.status}: {confirm_decision.reason}",
+                            result=None,
+                        )
+                    self._log_enforcement(
+                        tool_name, tool_kind, "confirmation", "allow",
+                        permission_context, confirm_decision.reason,
+                    )
+                    if confirm_decision.parameters is not None:
+                        # Use the (possibly edited and re-validated) parameters
+                        parameters = confirm_decision.parameters
+                # === End confirmation guard ===
+
+                # === Manager-level Layer 2 resolver check (FEAT-474 G1/G3) ===
+                # Plain @tool functions cannot receive the `_permission_context`/
+                # `_resolver` kwargs the way AbstractTool.execute() does, so
+                # the check runs here instead. Fail-open gate mirrors
+                # abstract.py:875 byte-for-byte: no context OR no resolver ⇒
+                # zero new behaviour (AC-4). Resolver exceptions propagate —
+                # no silent fail-open (spec §7 gotcha).
+                if permission_context is not None and self._resolver is not None:
+                    required = getattr(tool, "required_permissions", set()) or set()
+                    allowed = await self._resolver.can_execute(
+                        permission_context, tool.name, required
+                    )
+                    if not allowed:
+                        self._log_enforcement(
+                            tool_name, tool_kind, "resolver", "deny",
+                            permission_context, "permission denied",
+                        )
+                        return ToolResult(
+                            success=False,
+                            status="forbidden",
+                            result=None,
+                            error=f"Permission denied: '{tool.name}' requires {required}",
+                            metadata={
+                                "tool_name": tool.name,
+                                "user_id": getattr(permission_context, "user_id", None),
+                                "required_permissions": list(required),
+                            },
+                        )
+                    self._log_enforcement(
+                        tool_name, tool_kind, "resolver", "allow",
+                        permission_context, None,
+                    )
+                # === End manager-level Layer 2 resolver check ===
+
                 if asyncio.iscoroutinefunction(tool.function):
                     result = await tool.function(**parameters)
                 else:
@@ -1601,45 +1752,6 @@ class ToolManager(MCPToolManagerMixin):
                 if getattr(tool, '_tool_output_pipeline', None) is not self._tool_output_pipeline:
                     tool._tool_output_pipeline = self._tool_output_pipeline
 
-                # === TOOL_CALL guardrail pipeline (FEAT-406) ===
-                # Policy-based pre-execution denial (e.g. PBAC). Runs FIRST —
-                # before GrantGuard/ConfirmationGuard — so a policy-doomed
-                # call never interrupts a human for confirmation or consumes
-                # a grant. Purely additive: without a pipeline (or an empty
-                # one) the path below is unchanged (regression-safe).
-                if self._tool_call_pipeline is not None and self._tool_call_pipeline.has_guardrails:
-                    from ..bots.guardrails.base import GuardrailContext, GuardrailStage
-                    tool_call_ctx = GuardrailContext(
-                        stage=GuardrailStage.TOOL_CALL,
-                        agent_name=tool_name,
-                        tool_name=tool_name,
-                        extras={
-                            "permission_context": permission_context,
-                            "tool_name": tool_name,
-                            "arguments": parameters,
-                        },
-                    )
-                    tool_call_outcome = await self._tool_call_pipeline.run(
-                        f"tool_call:{tool_name}", tool_call_ctx
-                    )
-                    if tool_call_outcome.blocked:
-                        # Prefer the blocking guardrail's human-readable report
-                        # message (e.g. PBACToolCallGuardrail's operator-authored
-                        # denial text) over the bare category-label `reason` —
-                        # this is what the LLM sees and verbalizes to the user.
-                        error_message = tool_call_outcome.reason or "Policy denied"
-                        for report in tool_call_outcome.flag_reports.values():
-                            if isinstance(report, dict) and report.get("message"):
-                                error_message = report["message"]
-                                break
-                        return ToolResult(
-                            success=False,
-                            status="forbidden",
-                            error=error_message,
-                            result=None,
-                        )
-                # === End TOOL_CALL guardrail pipeline ===
-
                 # === Grant guard check (FEAT-211) ===
                 # If a GrantGuard is configured and the tool requires a grant,
                 # authorize before dispatching to tool.execute().
@@ -1651,6 +1763,10 @@ class ToolManager(MCPToolManagerMixin):
                         permission_context=permission_context,
                     )
                     if not decision.allowed:
+                        self._log_enforcement(
+                            tool_name, tool_kind, "grant", "deny",
+                            permission_context, decision.reason,
+                        )
                         return ToolResult(
                             success=False,
                             status="forbidden",
@@ -1671,12 +1787,20 @@ class ToolManager(MCPToolManagerMixin):
                         permission_context=permission_context,
                     )
                     if not confirm_decision.allowed:
+                        self._log_enforcement(
+                            tool_name, tool_kind, "confirmation", "deny",
+                            permission_context, confirm_decision.reason,
+                        )
                         return ToolResult(
                             success=False,
                             status=confirm_decision.status,  # "cancelled" | "timeout"
                             error=f"Confirmation {confirm_decision.status}: {confirm_decision.reason}",
                             result=None,
                         )
+                    self._log_enforcement(
+                        tool_name, tool_kind, "confirmation", "allow",
+                        permission_context, confirm_decision.reason,
+                    )
                     if confirm_decision.parameters is not None:
                         # Use the (possibly edited and re-validated) parameters
                         parameters = confirm_decision.parameters
@@ -1899,15 +2023,26 @@ class ToolManager(MCPToolManagerMixin):
 
     async def execute_tool_call(
         self,
-        content_block: Dict[str, Any]
+        content_block: Dict[str, Any],
+        permission_context: Optional["PermissionContext"] = None,
     ) -> Dict[str, Any]:
-        """Execute a single tool call and return the result."""
+        """Execute a single tool call and return the result.
+
+        Args:
+            content_block: Tool-use content block with ``name``, ``input``,
+                and ``id`` keys.
+            permission_context: Optional permission context, forwarded to
+                ``execute_tool()`` for enforcement (FEAT-474 G7). Fail-open
+                default preserved when omitted.
+        """
         tool_name = content_block["name"]
         tool_input = content_block["input"]
         tool_id = content_block["id"]
 
         try:
-            tool_result = await self.execute_tool(tool_name, tool_input)
+            tool_result = await self.execute_tool(
+                tool_name, tool_input, permission_context=permission_context
+            )
             return {
                 "type": "tool_result",
                 "tool_use_id": tool_id,

@@ -3,11 +3,27 @@
 This module holds the shared unit-test surface for the feature (Modules
 1-3): ToolDefinition model defaults, @tool decorator metadata, registration
 metadata preservation, and execute_tool() enforcement parity. Tests are
-added incrementally as each task lands; this task (TASK-2578) covers the
-model + decorator foundation only.
+added incrementally as each task lands; TASK-2578 covers the model +
+decorator foundation, TASK-2579 registration metadata preservation, and
+TASK-2580 (this addition) the core execute_tool() enforcement parity —
+guardrail hoist, ConfirmationGuard, manager-level resolver gate, and the
+uniform enforcement logger.
 """
 import logging
+from typing import ClassVar
 
+import pytest
+from parrot.auth.confirmation import ConfirmationGuard, InMemoryConfirmationWindowStore
+from parrot.auth.resolver import AbstractPermissionResolver
+from parrot.bots.guardrails.base import (
+    Guardrail,
+    GuardrailAction,
+    GuardrailContext,
+    GuardrailResult,
+    GuardrailStage,
+)
+from parrot.bots.guardrails.pipeline import GuardrailPipeline
+from parrot.tools.abstract import AbstractTool, ToolResult
 from parrot.tools.decorators import tool
 from parrot.tools.manager import ToolDefinition, ToolManager
 
@@ -119,3 +135,241 @@ class TestRegistrationMetadata:
         td = harness.tool_manager.get_tool("i")
         assert td.routing_meta["requires_confirmation"] is True
         assert td.required_permissions == {"p"}
+
+
+# ── Core enforcement parity (TASK-2580) ─────────────────────────────────────
+
+
+class _AllowAllResolver(AbstractPermissionResolver):
+    async def can_execute(self, context, tool_name, required_permissions):
+        return True
+
+
+class _DenyAllResolver(AbstractPermissionResolver):
+    async def can_execute(self, context, tool_name, required_permissions):
+        return False
+
+
+class _BoomResolver(AbstractPermissionResolver):
+    async def can_execute(self, context, tool_name, required_permissions):
+        raise RuntimeError("resolver boom")
+
+
+class _BlockGuardrail(Guardrail):
+    name = "blocker"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_CALL}
+    priority = 10
+    on_error = "fail_closed"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(
+            action=GuardrailAction.BLOCK,
+            reason="policy:blocked",
+            report={"message": "Denied by policy."},
+        )
+
+
+class _PassGuardrail(Guardrail):
+    name = "pass_through"
+    stages: ClassVar[set] = {GuardrailStage.TOOL_CALL}
+    priority = 10
+    on_error = "fail_closed"
+
+    async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+        return GuardrailResult(action=GuardrailAction.PASS)
+
+
+class _RecordingAbstractTool(AbstractTool):
+    """Minimal AbstractTool used to prove branch-parity/order preservation."""
+
+    name = "recording_abstract_tool"
+    description = "Records execution for order-preservation assertions."
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._exec_count = 0
+
+    async def _execute(self, **kwargs) -> ToolResult:
+        self._exec_count += 1
+        return ToolResult(success=True, status="success", result="executed")
+
+
+def _pipeline_with(*guardrails: Guardrail) -> GuardrailPipeline:
+    pipeline = GuardrailPipeline()
+    for g in guardrails:
+        pipeline.add(g)
+    return pipeline
+
+
+class TestToolDefinitionEnforcement:
+    """execute_tool() enforcement parity for the ToolDefinition branch
+    (FEAT-474 G1/G4/G6/G7 — AC-1/AC-2/AC-3/AC-4/AC-5/AC-8/AC-9)."""
+
+    @pytest.mark.asyncio
+    async def test_resolver_denies_tooldef(self):
+        tm = ToolManager(resolver=_DenyAllResolver())
+        calls = []
+
+        @tool
+        def f(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return str(x)
+        tm.register_tool(f)
+
+        res = await tm.execute_tool("f", {"x": 1}, permission_context=object())
+        assert res.status == "forbidden"
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_fail_open_without_pctx(self):
+        tm = ToolManager(resolver=_DenyAllResolver())
+
+        @tool
+        def g(x: int) -> str:
+            """Doc."""
+            return str(x)
+        tm.register_tool(g)
+
+        assert await tm.execute_tool("g", {"x": 2}) == "2"  # RAW value
+
+    @pytest.mark.asyncio
+    async def test_raw_return_on_allow(self):
+        tm = ToolManager(resolver=_AllowAllResolver())
+
+        @tool
+        def h(x: int) -> str:
+            """Doc."""
+            return str(x)
+        tm.register_tool(h)
+
+        result = await tm.execute_tool("h", {"x": 3}, permission_context=object())
+        assert result == "3"  # RAW value, not a ToolResult
+
+    @pytest.mark.asyncio
+    async def test_resolver_exception_propagates(self):
+        tm = ToolManager(resolver=_BoomResolver())
+
+        @tool
+        def i(x: int) -> str:
+            """Doc."""
+            return str(x)
+        tm.register_tool(i)
+
+        with pytest.raises(RuntimeError, match="resolver boom"):
+            await tm.execute_tool("i", {"x": 1}, permission_context=object())
+
+    @pytest.mark.asyncio
+    async def test_guardrail_blocks_tooldef(self):
+        tm = ToolManager()
+        tm._tool_call_pipeline = _pipeline_with(_BlockGuardrail())
+        calls = []
+
+        @tool
+        def j(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return str(x)
+        tm.register_tool(j)
+
+        result = await tm.execute_tool("j", {"x": 1})
+        assert isinstance(result, ToolResult)
+        assert result.status == "forbidden"
+        assert result.error == "Denied by policy."
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_confirmation_cancelled_no_hitl(self):
+        """requires_confirmation + no human_manager ⇒ fail-closed cancelled."""
+        tm = ToolManager()
+        guard = ConfirmationGuard(store=InMemoryConfirmationWindowStore())
+        tm.set_confirmation_guard(guard)
+        calls = []
+
+        @tool(requires_confirmation=True)
+        def k(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return str(x)
+        tm.register_tool(k)
+
+        result = await tm.execute_tool("k", {"x": 1})
+        assert isinstance(result, ToolResult)
+        assert result.status == "cancelled"
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_no_confirmation_required_executes(self):
+        """A @tool without requires_confirmation passes the guard untouched."""
+        tm = ToolManager()
+        guard = ConfirmationGuard(store=InMemoryConfirmationWindowStore())
+        tm.set_confirmation_guard(guard)
+
+        @tool
+        def m(x: int) -> str:
+            """Doc."""
+            return str(x)
+        tm.register_tool(m)
+
+        assert await tm.execute_tool("m", {"x": 5}) == "5"
+
+    @pytest.mark.asyncio
+    async def test_abstracttool_order_unchanged(self):
+        """AbstractTool branch order (pipeline -> grant -> confirm -> execute)
+        is byte-for-byte preserved after hoisting the guardrail block."""
+        from parrot.auth.confirmation import ConfirmationDecision
+        from parrot.auth.grants import GuardDecision
+
+        tm = ToolManager()
+        rtool = _RecordingAbstractTool()
+        tm._tools[rtool.name] = rtool
+        tm._tool_call_pipeline = _pipeline_with(_PassGuardrail())
+
+        call_order: list[str] = []
+
+        class _OrderGrant:
+            async def authorize(self, *, tool, parameters, permission_context=None):
+                call_order.append("grant")
+                return GuardDecision(allowed=True, reason="ok")
+
+        class _OrderConfirm:
+            async def confirm(self, *, tool, parameters, permission_context=None):
+                call_order.append("confirm")
+                return ConfirmationDecision(
+                    allowed=True, status="confirmed", reason="ok", parameters=parameters
+                )
+
+        original_run = tm._tool_call_pipeline.run
+
+        async def _tracking_run(content, ctx):
+            call_order.append("tool_call")
+            return await original_run(content, ctx)
+        tm._tool_call_pipeline.run = _tracking_run
+        tm._grant_guard = _OrderGrant()
+        tm._confirmation_guard = _OrderConfirm()
+
+        await tm.execute_tool(rtool.name, {})
+
+        assert call_order == ["tool_call", "grant", "confirm"]
+        assert rtool._exec_count == 1
+
+    @pytest.mark.asyncio
+    async def test_enforcement_log_uniform(self, caplog):
+        """Allow/deny decisions on both branches emit the shared structured
+        record via ToolManager._log_enforcement() (FEAT-474 G6/AC-9)."""
+        tm = ToolManager(resolver=_DenyAllResolver())
+
+        @tool
+        def n(x: int) -> str:
+            """Doc."""
+            return str(x)
+        tm.register_tool(n)
+
+        with caplog.at_level(logging.INFO):
+            await tm.execute_tool("n", {"x": 1}, permission_context=object())
+
+        records = [r.getMessage() for r in caplog.records]
+        assert any(
+            "layer=resolver" in m and "decision=deny" in m and "kind=tool_definition" in m
+            for m in records
+        )

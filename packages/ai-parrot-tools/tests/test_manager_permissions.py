@@ -7,15 +7,14 @@ Tests Module 7 of the granular permissions system:
 - Backward compatibility (no resolver = no enforcement)
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.tools.manager import ToolManager
+import pytest
+from parrot.auth.permission import PermissionContext, UserSession
+from parrot.auth.resolver import AbstractPermissionResolver, DefaultPermissionResolver
 from parrot.tools.abstract import AbstractTool, ToolResult
-from parrot.tools.decorators import requires_permission
-from parrot.auth.permission import UserSession, PermissionContext
-from parrot.auth.resolver import DefaultPermissionResolver
-
+from parrot.tools.decorators import requires_permission, tool
+from parrot.tools.manager import ToolManager
 
 # ── Test Fixtures ──────────────────────────────────────────────────────────────
 
@@ -370,3 +369,139 @@ class TestBackwardCompatibility:
         assert manager1.resolver is resolver
         # Manager2 still has no resolver
         assert manager2.resolver is None
+
+
+# ── Test: ToolDefinition (@tool) Enforcement Parity (FEAT-474) ─────────────────
+
+
+class TestToolDefinitionResolverParity:
+    """execute_tool()'s ToolDefinition branch now honors the same resolver
+    Layer 2 gate as the AbstractTool branch (FEAT-474 AC-1/AC-4/AC-5)."""
+
+    @pytest.mark.asyncio
+    async def test_tooldef_admin_allowed(self, resolver, admin_context):
+        """Admin can execute an admin-restricted @tool function."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool(
+            "admin_fn", {"x": 1}, permission_context=admin_context
+        )
+        assert result == "admin:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_reader_denied(self, resolver, reader_context):
+        """Reader cannot execute an admin-restricted @tool function."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+        calls = []
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool(
+            "admin_fn", {"x": 1}, permission_context=reader_context
+        )
+        assert isinstance(result, ToolResult)
+        assert result.success is False
+        assert result.status == "forbidden"
+        assert calls == []  # function never invoked
+
+    @pytest.mark.asyncio
+    async def test_tooldef_fail_open_without_context(self, resolver):
+        """No permission_context ⇒ ToolDefinition executes unrestricted
+        (identical to pre-FEAT-474 behaviour) even with a resolver set."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool("admin_fn", {"x": 1})
+        assert result == "admin:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_fail_open_without_resolver(self, admin_context):
+        """No resolver configured ⇒ ToolDefinition executes unrestricted
+        even with a permission_context provided."""
+        manager = ToolManager(include_search_tool=False)  # no resolver
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool(
+            "admin_fn", {"x": 1}, permission_context=admin_context
+        )
+        assert result == "admin:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_unrestricted_always_allowed(self, resolver, reader_context):
+        """A @tool function with no required_permissions is unrestricted."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+
+        @tool
+        def plain_fn(x: int) -> str:
+            """Doc."""
+            return f"plain:{x}"
+        manager.register_tool(plain_fn)
+
+        result = await manager.execute_tool(
+            "plain_fn", {"x": 1}, permission_context=reader_context
+        )
+        assert result == "plain:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_resolver_exception_propagates(self, admin_context):
+        """A resolver that raises must propagate — no silent fail-open."""
+
+        class BoomResolver(AbstractPermissionResolver):
+            async def can_execute(self, context, tool_name, required_permissions):
+                raise RuntimeError("resolver boom")
+
+        manager = ToolManager(resolver=BoomResolver(), include_search_tool=False)
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        with pytest.raises(RuntimeError, match="resolver boom"):
+            await manager.execute_tool(
+                "admin_fn", {"x": 1}, permission_context=admin_context
+            )
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_call_threads_permission_context(
+        self, resolver, reader_context
+    ):
+        """execute_tool_call() forwards permission_context to execute_tool()."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+        calls = []
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool_call(
+            {"name": "admin_fn", "input": {"x": 1}, "id": "call-1"},
+            permission_context=reader_context,
+        )
+        assert "forbidden" in result["content"].lower()
+        assert calls == []  # denied before the function ran
