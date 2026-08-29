@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T17:30:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2532-wire-models-v1.md"
+      "file": "sdd/tasks/completed/TASK-2532-wire-models-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2533",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T17:32:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2533-serialization-v1-and-compat.md"
+      "file": "sdd/tasks/completed/TASK-2533-serialization-v1-and-compat.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2534",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T17:38:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2534-vendor-spec-and-jsonschema-dep.md"
+      "file": "sdd/tasks/completed/TASK-2534-vendor-spec-and-jsonschema-dep.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2535",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T17:45:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2535-catalog-validation-v1.md"
+      "file": "sdd/tasks/completed/TASK-2535-catalog-validation-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2536",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T17:54:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2536-basic-catalog-primitives.md"
+      "file": "sdd/tasks/completed/TASK-2536-basic-catalog-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2537",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T18:02:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2537-function-evaluator.md"
+      "file": "sdd/tasks/completed/TASK-2537-function-evaluator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2538",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T18:11:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2538-bake-v1.md"
+      "file": "sdd/tasks/completed/TASK-2538-bake-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2539",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T18:37:44+00:00",
-      "file": "sdd/tasks/completed/TASK-2539-parrot-catalog-lowering-v1.md"
+      "file": "sdd/tasks/completed/TASK-2539-parrot-catalog-lowering-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2540",
@@ -185,7 +193,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T18:50:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2540-build-form-export-builders-root.md"
+      "file": "sdd/tasks/completed/TASK-2540-build-form-export-builders-root.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2541",
@@ -205,7 +214,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T19:06:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2541-infographic-adapter-remap.md"
+      "file": "sdd/tasks/completed/TASK-2541-infographic-adapter-remap.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2542",
@@ -225,7 +235,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T19:45:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2542-recipes-layoutspec-v2-migrate.md"
+      "file": "sdd/tasks/completed/TASK-2542-recipes-layoutspec-v2-migrate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2543",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T20:05:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2543-renderer-capabilities-ssr-pdf.md"
+      "file": "sdd/tasks/completed/TASK-2543-renderer-capabilities-ssr-pdf.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2544",
@@ -265,7 +277,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T21:53:50+00:00",
-      "file": "sdd/tasks/completed/TASK-2544-interactive-html-echarts-folium-v1.md"
+      "file": "sdd/tasks/completed/TASK-2544-interactive-html-echarts-folium-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2545",
@@ -285,7 +298,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T22:14:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2545-adaptive-cards-native-inputs-teams-submit.md"
+      "file": "sdd/tasks/completed/TASK-2545-adaptive-cards-native-inputs-teams-submit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2546",
@@ -306,7 +320,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T22:34:41+00:00",
-      "file": "sdd/tasks/completed/TASK-2546-transport-a2a-handlers-deeplinks-v1.md"
+      "file": "sdd/tasks/completed/TASK-2546-transport-a2a-handlers-deeplinks-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2547",
@@ -326,7 +341,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T22:57:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2547-producer-emission-toolkits-v1.md"
+      "file": "sdd/tasks/completed/TASK-2547-producer-emission-toolkits-v1.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2548",
@@ -351,7 +367,8 @@
       "assigned_to": "Claude (Sonnet 5)",
       "started_at": "2026-08-28T17:07:44+00:00",
       "completed_at": "2026-08-28T23:43:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2548-conformance-docs-deprecations.md"
+      "file": "sdd/tasks/completed/TASK-2548-conformance-docs-deprecations.md",
+      "verification": "verified"
     }
   ]
 }
