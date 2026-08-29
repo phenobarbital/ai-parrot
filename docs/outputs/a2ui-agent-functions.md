@@ -112,7 +112,7 @@ reserves no fixed code list for generic errors.
 | HTTP | `POST /api/v1/agents/{agent_id}/a2ui` | Same resolution as AgentTalk (`_resolve_bot`/`_get_user_session`); **401 without an authenticated user** | One envelope or JSONL/list body → `{"messages": [...]}`; a single envelope uses `Content-Type: application/a2ui+json` |
 | HTTP (stream) | `GET /api/v1/agents/{agent_id}/a2ui` | Same as above | `text/event-stream` SSE, one event per envelope — **not** AgentTalk's `b'\n\x00'` chunked-AIMessage framing |
 | HTTP (capabilities) | `GET /api/v1/agents/{agent_id}/a2ui/capabilities` | None | The same `agent_capabilities()` document published on the Agent Card |
-| A2A | `message:send` / `message:stream`, a `Part` with `metadata.mimeType == "application/a2ui+json"` | A2A's own identity extraction | Dispatched synchronously — never spawned as a background task even with `returnImmediately` |
+| A2A | `message:send` / `message:stream`, a `Part` with `metadata.mimeType == "application/a2ui+json"` | A2A's own identity extraction (`_extract_identity`); **fails closed** (`FAILED` task, no dispatch) without a verifiable identity — the same posture as the HTTP transport's 401 | Dispatched synchronously — never spawned as a background task even with `returnImmediately` |
 | Deep link | `POST /api/v1/a2ui/resume/web?token=...` | Single-use token | `GET` renders a confirm page (no state change — safe for link prescanners); only `POST` consumes |
 
 `callRendererFunction` is delivered **both ways** on the A2A/HTTP-stream
@@ -186,16 +186,18 @@ A turn that came from `A2UIRuntime.dispatch` (any transport) carries its
 call as `AbstractBot.ask(..., a2ui_surface_state=result.surface_state)`.
 Inside that call's tool loop, any tool receives it via the reserved
 `_a2ui_surface_state` kwarg — `AbstractTool.execute()` pops it (never
-forwarded to the LLM, never appears in a generated tool schema), storing it
-on `self._current_a2ui_surface_state` for `_execute()` to read, mirroring
-the existing `_permission_context`/`self._current_pctx` convention:
+forwarded to the LLM, never appears in a generated tool schema) and applies
+it to a `ContextVar` for the duration of the call; `_execute()` reads it via
+`current_a2ui_surface_state()`:
 
 ```python
+from parrot.tools.abstract import AbstractTool, current_a2ui_surface_state
+
 class ChartRefreshTool(AbstractTool):
     name = "refresh_chart"
 
     async def _execute(self, **kwargs):
-        state = self._current_a2ui_surface_state
+        state = current_a2ui_surface_state()
         if state is not None:
             current_rows = state.data_model.get("rows", [])
             ...
@@ -206,7 +208,12 @@ class ChartRefreshTool(AbstractTool):
 changes to `tools/manager.py` and every LLM client (out of this feature's
 scope), whereas a `ContextVar` set in `bots/base.py` and read in
 `tools/abstract.py` gets the same tool-visible, LLM-invisible result from
-only those two files.
+only those two files. Unlike the neighboring `_permission_context`/
+`self._current_pctx` convention (an unguarded instance attribute, safe only
+because that state is never awaited concurrently on the same instance in
+practice), `_a2ui_surface_state` is read exclusively via the ContextVar —
+never stashed on `self` — because FEAT-469 specifically increases
+concurrent multi-session invocation of a shared tool instance.
 
 ## 7. Operational limits
 

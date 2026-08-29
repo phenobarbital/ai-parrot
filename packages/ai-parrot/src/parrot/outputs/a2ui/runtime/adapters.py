@@ -115,6 +115,17 @@ class ToolManagerExecutor:
         are read defensively via ``getattr`` (default ``False``) since
         TASK-2571 is what actually adds those ``AbstractTool`` attributes —
         until then this is a no-op, and no tool is ever excluded here.
+
+        Deliberately does NOT exclude the ``ToolDefinition`` (``@tool``)
+        path here — spec G7's resolved Open Question is "every
+        ``ToolManager`` tool is invocable, no opt-in", proven end-to-end by
+        `test_e2e_http_call_agent_function` against a real ``@tool``
+        function. ``ToolManager.execute_tool()`` bypassing
+        ``permission_context`` on that path is a known, logged, pre-existing
+        gap in ``ToolManager`` itself (see :meth:`call`), not something this
+        adapter can silently narrow without contradicting the spec's own
+        resolved design — see TASK-2570's completion note and this feature's
+        docs (§4 Security posture) for the escalation.
         """
         definitions: list[FunctionDefinition] = []
         for schema in self._tool_manager.get_tool_schemas():

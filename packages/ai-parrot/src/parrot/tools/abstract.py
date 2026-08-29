@@ -62,10 +62,35 @@ def current_credential() -> Optional[Any]:
 # achieves the same "reserved kwarg" observable behavior (a tool receives it,
 # the LLM never sees it) without touching either of those files. `execute()`
 # still accepts an explicit `_a2ui_surface_state` kwarg first (e.g. direct/
-# test callers), falling back to this ContextVar.
+# test callers); when given, it is applied to THIS ContextVar for the
+# duration of the call (set/reset, mirroring `_CREDENTIAL_VAR`) rather than
+# stashed on `self` — a `ToolkitTool`/toolkit-shared instance can be awaited
+# concurrently by different sessions, and an unguarded instance attribute
+# would let one session's surface state leak into another's concurrent call
+# (code review finding on this feature; `_current_pctx` below accepts this
+# same risk deliberately for a narrower, already-audited convention — do not
+# extend that pattern to new state without the same review).
 _A2UI_SURFACE_STATE_VAR: ContextVar[Optional[Any]] = ContextVar(
     "_parrot_a2ui_surface_state", default=None
 )
+
+
+def current_a2ui_surface_state() -> Optional[Any]:
+    """Return the per-call A2UI ``SurfaceState`` for this turn, or ``None``.
+
+    Tools can call this inside ``_execute()`` to read the ``SurfaceState``
+    (FEAT-469 spec §3 Module 8) associated with the turn that triggered this
+    call, set either by ``AbstractBot.ask(a2ui_surface_state=...)`` (ambient,
+    the common case) or by an explicit ``execute(_a2ui_surface_state=...)``
+    kwarg (direct/test callers). Reads a ``ContextVar`` — safe under
+    concurrent invocations of the same shared tool instance, unlike an
+    instance attribute.
+
+    Returns:
+        The resolved ``SurfaceState``, or ``None`` outside an A2UI-triggered
+        turn.
+    """
+    return _A2UI_SURFACE_STATE_VAR.get()
 
 
 # FEAT-252 (TASK-1612) — lazy import to avoid circular deps at module level
@@ -833,9 +858,11 @@ class AbstractTool(EventEmitterMixin, ABC):
                 - _resolver: AbstractPermissionResolver for permission checks
                 - _a2ui_surface_state: The A2UI SurfaceState for the turn that
                   triggered this call, if any (FEAT-469 spec §3 Module 8).
-                  Falls back to the per-call ``_A2UI_SURFACE_STATE_VAR``
-                  ContextVar (set by ``AbstractBot.ask()``) when not passed
-                  explicitly. Never forwarded to the LLM.
+                  When given, applied to the per-call ``_A2UI_SURFACE_STATE_VAR``
+                  ContextVar for the duration of this call; otherwise the
+                  ambient value (set by ``AbstractBot.ask()``) is used as-is.
+                  A tool's ``_execute()`` reads it via
+                  ``current_a2ui_surface_state()``. Never forwarded to the LLM.
 
         Returns:
             Standardized ToolResult. Returns status='forbidden' if permission denied.
@@ -846,10 +873,12 @@ class AbstractTool(EventEmitterMixin, ABC):
         pctx = kwargs.pop('_permission_context', None)
         resolver = kwargs.pop('_resolver', None)
 
-        # FEAT-469: surface state for the triggering A2UI turn, if any.
-        # Stored for the tool's own _execute() to read via self — mirrors the
-        # _current_pctx convention below, never forwarded as a kwarg.
-        self._current_a2ui_surface_state = kwargs.pop('_a2ui_surface_state', _A2UI_SURFACE_STATE_VAR.get())
+        # FEAT-469: an explicit override for the triggering A2UI turn's
+        # surface state, if any. Applied to `_A2UI_SURFACE_STATE_VAR` for the
+        # duration of the call below (set/reset) rather than stashed on
+        # `self` — see the ContextVar's own module-level comment for why an
+        # instance attribute is unsafe here.
+        _a2ui_surface_state_explicit = kwargs.pop('_a2ui_surface_state', None)
 
         # FEAT-264: credential broker kwargs (never enter LLM-visible args_schema)
         _broker: Optional["CredentialBroker"] = kwargs.pop('_broker', None)
@@ -933,6 +962,11 @@ class AbstractTool(EventEmitterMixin, ABC):
             # AND a broker is available.  Tools without credential_provider
             # (the vast majority) are unaffected — this branch is never entered.
             _cred_token = _CREDENTIAL_VAR.set(None)  # establish reset point
+            _a2ui_token = (
+                _A2UI_SURFACE_STATE_VAR.set(_a2ui_surface_state_explicit)
+                if _a2ui_surface_state_explicit is not None
+                else None
+            )
             try:
                 if self.credential_provider and _broker is not None:
                     from ..auth.credentials import NeedsAuth, CredentialRequired
@@ -987,6 +1021,8 @@ class AbstractTool(EventEmitterMixin, ABC):
                 # Always reset the ContextVar so the credential never leaks
                 # to other concurrent tasks sharing the same context.
                 _CREDENTIAL_VAR.reset(_cred_token)
+                if _a2ui_token is not None:
+                    _A2UI_SURFACE_STATE_VAR.reset(_a2ui_token)
 
             # Normalise to ToolResult
             if isinstance(raw_result, ToolResult):

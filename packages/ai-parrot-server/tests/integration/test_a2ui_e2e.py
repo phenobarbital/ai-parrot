@@ -191,6 +191,10 @@ class TestE2E:
             metadata={"mimeType": A2UI_MEDIA_TYPE},
         )
         message = Message.user([a2ui_part])
+        # A2A fails closed without a verifiable identity (security fix, code
+        # review CRITICAL finding on this feature) — mirror the identity
+        # claim shape `_extract_identity` reads from `message.metadata`.
+        message.metadata = {"user_id": "u-1"}
         payload = {"message": message.to_dict()}
         resp = await client.post(f"{server.base_path}/message:send", json=payload)
         assert resp.status == 200

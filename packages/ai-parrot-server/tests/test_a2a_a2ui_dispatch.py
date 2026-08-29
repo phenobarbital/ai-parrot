@@ -41,7 +41,7 @@ async def a2a_client(aiohttp_client, tmp_path):
     return client, server
 
 
-def _call_agent_function_payload(session_id="sess-1", function_call_id="fc-1"):
+def _call_agent_function_payload(session_id="sess-1", function_call_id="fc-1", user_id="user-1"):
     envelope = {
         "version": "v1.0",
         "callAgentFunction": {
@@ -50,14 +50,15 @@ def _call_agent_function_payload(session_id="sess-1", function_call_id="fc-1"):
             "callFunction": {"call": "echo", "args": {"value": "hi"}, "catalogId": DEFAULT_CATALOG_ID},
         },
     }
-    return {
-        "message": {
-            "messageId": "m-1",
-            "role": "user",
-            "contextId": session_id,
-            "parts": [{"data": envelope, "metadata": {"mimeType": A2UI_MEDIA_TYPE}}],
-        }
+    message = {
+        "messageId": "m-1",
+        "role": "user",
+        "contextId": session_id,
+        "parts": [{"data": envelope, "metadata": {"mimeType": A2UI_MEDIA_TYPE}}],
     }
+    if user_id is not None:
+        message["metadata"] = {"user_id": user_id}
+    return {"message": message}
 
 
 class TestInboundDataPart:
@@ -107,12 +108,27 @@ class TestInboundDataPart:
         assert body["status"]["state"] in ("TASK_STATE_COMPLETED", "completed")
         assert body["artifacts"]
 
+    async def test_dispatch_fails_closed_without_identity(self, a2a_client):
+        """No verifiable identity => FAILED task, dispatch never reaches the tool.
+
+        Security fix (code review CRITICAL finding on FEAT-469): the A2A
+        transport must gate on identity the same way ``A2UIHandler``'s HTTP
+        transport returns 401 — never build a ``PermissionContext`` and
+        dispatch anyway when ``user_id`` is unresolvable.
+        """
+        client, _server = a2a_client
+        resp = await client.post("/a2a/message:send", json=_call_agent_function_payload(user_id=None))
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["status"]["state"] in ("TASK_STATE_FAILED", "failed")
+        assert not body.get("artifacts")
+
 
 class TestQueuedRendererCalls:
     async def test_stream_emits_call_renderer_function(self, a2a_client):
         client, server = a2a_client
         session_id = "sess-stream"
-        runtime, _store = server._build_a2ui_runtime(user_id=None)
+        runtime, _store = server._build_a2ui_runtime(user_id="user-1")
         function_call_id, _ = await runtime.call_renderer(session_id, "s-1", "openUrl", {"url": "https://x"})
 
         # A response to an unrelated rendererFunctionResponse over the SAME
@@ -122,6 +138,7 @@ class TestQueuedRendererCalls:
                 "messageId": "m-3",
                 "role": "user",
                 "contextId": session_id,
+                "metadata": {"user_id": "user-1"},
                 "parts": [
                     {
                         "data": {
@@ -143,7 +160,7 @@ class TestQueuedRendererCalls:
     async def test_next_send_drains_queued_call(self, a2a_client):
         client, server = a2a_client
         session_id = "sess-drain"
-        runtime, _store = server._build_a2ui_runtime(user_id=None)
+        runtime, _store = server._build_a2ui_runtime(user_id="user-1")
         await runtime.call_renderer(session_id, "s-1", "openUrl", {"url": "https://x"})
 
         payload = _call_agent_function_payload(session_id=session_id, function_call_id="fc-2")
@@ -156,7 +173,7 @@ class TestQueuedRendererCalls:
     async def test_call_never_delivered_twice(self, a2a_client):
         client, server = a2a_client
         session_id = "sess-once"
-        runtime, _store = server._build_a2ui_runtime(user_id=None)
+        runtime, _store = server._build_a2ui_runtime(user_id="user-1")
         await runtime.call_renderer(session_id, "s-1", "openUrl", {"url": "https://x"})
 
         payload = _call_agent_function_payload(session_id=session_id, function_call_id="fc-3")

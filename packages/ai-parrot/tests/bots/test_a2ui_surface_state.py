@@ -12,11 +12,16 @@ client construction unrelated to this task's mechanism.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
 from parrot.outputs.a2ui.runtime.models import SurfaceState
-from parrot.tools.abstract import _A2UI_SURFACE_STATE_VAR, AbstractTool
+from parrot.tools.abstract import (
+    _A2UI_SURFACE_STATE_VAR,
+    AbstractTool,
+    current_a2ui_surface_state,
+)
 
 _BASE_SRC = Path(__file__).resolve().parents[2] / "src" / "parrot" / "bots" / "base.py"
 _SRC = _BASE_SRC.read_text(encoding="utf-8")
@@ -32,7 +37,7 @@ def _surface_state() -> SurfaceState:
 
 
 class _SpyTool(AbstractTool):
-    """Records the surface state instance attribute set by execute()."""
+    """Records the surface state seen by its own execution."""
 
     name = "spy_tool"
     description = "Records the surface state it received."
@@ -40,9 +45,18 @@ class _SpyTool(AbstractTool):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.last_surface_state = "UNSET"
+        self.observed: list = []
 
     async def _execute(self, **kwargs):
-        self.last_surface_state = self._current_a2ui_surface_state
+        # Yield before AND after reading, so two concurrent calls on the
+        # SAME shared instance genuinely interleave (regression coverage
+        # for the instance-attribute race the ContextVar-only design
+        # closes — see `test_concurrent_calls_on_shared_instance_do_not_leak_state`).
+        await asyncio.sleep(0)
+        state = current_a2ui_surface_state()
+        await asyncio.sleep(0)
+        self.last_surface_state = state
+        self.observed.append(state)
         return "ok"
 
 
@@ -91,6 +105,38 @@ class TestToolReceivesSurfaceState:
         result = await tool.execute(_a2ui_surface_state=_surface_state())
         assert result.success is True
         assert result.result == "ok"
+
+    async def test_concurrent_calls_on_shared_instance_do_not_leak_state(self):
+        """Two concurrent execute() calls on the SAME shared instance must
+        each observe only their own explicit surface state — regression test
+        for the race a plain instance attribute would reintroduce (code
+        review finding on this feature; a ToolkitTool instance is commonly
+        shared and can be awaited concurrently by different sessions).
+
+        Relies on asyncio's per-Task context isolation: `ContextVar.set()`
+        inside one Task is never visible to another concurrently-running
+        Task, only to code awaited within the SAME Task — which is exactly
+        why `current_a2ui_surface_state()` reads a ContextVar instead of a
+        `self` attribute shared by both calls.
+        """
+        tool = _SpyTool()
+        state_a = _surface_state()
+        state_b = SurfaceState(
+            surface_id="s-2",
+            catalog_id="https://parrot.dev/catalogs/v1",
+            data_model={"count": 99},
+            updated_at=datetime.now(UTC),
+        )
+
+        results = await asyncio.gather(
+            tool.execute(_a2ui_surface_state=state_a),
+            tool.execute(_a2ui_surface_state=state_b),
+        )
+        assert {r.success for r in results} == {True}
+        # Each call's _execute() observed exactly its OWN state — neither
+        # saw the other's (would fail intermittently pre-fix, when both
+        # calls raced to overwrite the same `self` attribute).
+        assert {id(s) for s in tool.observed} == {id(state_a), id(state_b)}
 
 
 class TestSchemaHygiene:

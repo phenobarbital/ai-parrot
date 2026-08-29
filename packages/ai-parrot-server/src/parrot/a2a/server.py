@@ -498,13 +498,37 @@ class A2AServer:
 
         Returns:
             A ``COMPLETED`` :class:`Task` whose artifact (if any) carries the
-            A->R envelope(s) as A2UI ``Part``s.
+            A->R envelope(s) as A2UI ``Part``s. A ``FAILED`` :class:`Task`
+            carrying a ``FORBIDDEN`` A2UI error envelope if no verifiable
+            identity could be extracted (fail-closed — mirrors
+            ``A2UIHandler._authenticate``'s 401, the HTTP transport's
+            equivalent gate).
         """
         from parrot.auth.permission import build_principal_context
 
         user_id = self._extract_identity(message)
         session_id = message.context_id or str(uuid.uuid4())
-        permission_context = build_principal_context(principal=user_id, channel="a2ui") if user_id else None
+
+        if user_id is None:
+            # Fail closed (spec §8 threat model): every transport must
+            # refuse to dispatch an A2UI RPC without a verifiable identity —
+            # there is no service-identity fallback here, matching
+            # `A2UIHandler._authenticate`'s 401 on the HTTP transport. No
+            # `surfaceId`/`functionCallId` is guaranteed to exist on the
+            # inbound envelope at this point, so a schema-valid A2UI
+            # `error` envelope (which requires exactly one of the two) is
+            # not constructible here — the A2A-level ``FAILED`` task status
+            # carries the reason instead.
+            self.logger.warning(
+                "a2ui_audit agent_id=%s user_id=None call=dispatch status=forbidden reason=no_identity",
+                self.agent.name,
+            )
+            task = Task.create(context_id=session_id)
+            task.history.append(message)
+            task.fail("A2UI dispatch requires a verifiable identity.")
+            return task
+
+        permission_context = build_principal_context(principal=user_id, channel="a2ui")
 
         runtime, store = self._build_a2ui_runtime(user_id)
         ctx = A2UICallContext(
