@@ -293,10 +293,70 @@ def test_subclass_can_override():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added `a2ui_requires_user_activation: bool = False` and
+`a2ui_hidden: bool = False` as plain class attributes on `AbstractTool` (no
+`__init__` signature change). Extended `catalog/export.py` (did not rewrite
+it) with `export_functions(executor)`, `agent_capabilities(catalog_ids)`, and
+an `executor: FunctionExecutor | None = None` parameter on
+`export_catalog_definition()` that merges `export_functions()`'s output into
+the same `functions` map, raising `ValueError` on any collision with an
+existing Basic Catalog or parrot-catalog name. UAX #31 sanitization
+(`_sanitize_uax31_name`) replaces every non-conformant character (leading
+char checked against XID_Start via `ch.isidentifier()`, continuation chars
+via a `"a" + ch` probe for XID_Continue), logs a `WARNING` per sanitized
+name, and raises on a post-sanitization collision between two tools. All 13
+new tests pass (`test_export_functions.py` + `test_tool_a2ui_attributes.py`);
+full `tests/outputs/a2ui/` suite (544 tests) has zero regressions; a
+broader `tests/tools/` sweep confirms the exact same 51 pre-existing
+failures before and after this change (unrelated to A2UI — DDL guard/dataset
+manager tests), i.e. zero regressions. `ruff check` clean on `export.py` and
+both new test files; `abstract.py` has 66 PRE-EXISTING ruff errors
+(confirmed via `git stash` — identical count before and after this change),
+none introduced by the two-attribute addition — out of scope to fix (massive
+unrelated legacy-style file).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: One evidence-based correction to the task's own
+example code (not the AC or scope — the flattening shape). The task's
+Implementation Notes showed `functions[sanitized] = {**definition.args_schema,
+"returnType": ..., ...}` (spreading the tool's raw parameter schema directly
+at the top level) — this does **not** validate: `catalog_definition.json#/
+$defs/FunctionDefinition`'s first `allOf` branch is `FunctionCallValidationSchema`,
+a META-schema requiring the flattened dict to describe a wire-level
+`{"type":"object","properties":{"call":{"const": <name>},"args": <schema>},
+"required":["call"],...}` FunctionCall object — confirmed against both the
+schema definition directly and the Basic Catalog's own `openUrl` function
+(which wraps its args identically). A bare params schema (e.g.
+`{"type":"object","properties":{"location":...}}`) fails the `oneOf` outright
+— caught by `test_merged_definition_validates`, which is exactly the AC this
+task lists ("The merged export_catalog_definition() output still validates").
+Fixed by wrapping `args_schema` in the `{call, args}` shape inside
+`export_functions()` — entirely within this task's own file, no change to
+TASK-2570's `ToolManagerExecutor.list_functions()` (which correctly stores
+the tool's raw params schema; the wire-shape wrapping is `export_functions()`'s
+job, not the executor's).
 
-**Deviations from spec**: none | describe if any
+Also discovered and handled (not a deviation, a schema constraint the task
+didn't spell out at this granularity): `FunctionDefinition`'s third `allOf`
+branch forces `allowedCallers` to `"rendererOnly"` whenever
+`requiresUserActivation: true` — verified against the schema's `if/then` and
+independently against the Basic Catalog's own `openUrl` (sets
+`requiresUserActivation: true`, omits `allowedCallers`, defaulting to
+`"rendererOnly"`). `export_functions()` now computes `allowedCallers`
+conditionally (`"rendererOnly"` if `requires_user_activation` else
+`"rendererOrAgent"`) rather than hardcoding `"rendererOrAgent"` for every
+tool, per the schema. **Flagged for the team**: TASK-2570's
+`ToolManagerExecutor.list_functions()` (already committed) hardcodes
+`allowed_callers="rendererOrAgent"` unconditionally — it does NOT apply this
+same conditional rule, so if a future tool sets
+`a2ui_requires_user_activation=True`, the EXPORTED catalog document would
+correctly advertise `"rendererOnly"` (via this task's fix) while
+TASK-2569's dispatch gate (which reads `list_functions()` directly, not the
+exported document) would still incorrectly treat it as
+`"rendererOrAgent"`-callable. No tool sets this flag yet (it's brand new,
+introduced by this task), so there is zero live impact today — but this is a
+real latent advertise/enforce mismatch a fast-follow should close in
+`runtime/adapters.py`. Not fixed here: `runtime/adapters.py` is outside this
+task's declared file list (TASK-2570's file), and touching it would be scope
+creep for a currently-inert edge case.

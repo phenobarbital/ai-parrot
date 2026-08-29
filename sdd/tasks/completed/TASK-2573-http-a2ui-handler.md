@@ -286,10 +286,55 @@ class TestPermissionContext:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: `A2UIHandler` inherits `AgentTalk` — NOT `BaseView` directly — purely
+to reuse its bound `_resolve_bot`/`_get_user_session` instance methods (they
+close over `self.request`/`self.error`/`self.json_response`, so calling them
+requires a real inheritance relationship, not composition); `post`/`get` are
+fully overridden with A2UI's own request/response shape, so nothing else of
+AgentTalk's behavior leaks through. `post()` parses the raw body via
+`iter_jsonl` first (handles JSONL and single-envelope bodies uniformly, since
+both already-deserialized `A2UIRendererMessage` objects and dicts are valid
+`dispatch()` input); a `(ValueError, TypeError, JSONDecodeError)` fallback
+handles a genuine top-level JSON array (which `iter_jsonl`/`deserialize`
+cannot parse — `deserialize` rejects non-dict top-level payloads) by handing
+raw dicts to `dispatch()`, whose own guard produces the `error` envelope
+uniformly. `get()` branches on `self.request.path` to serve either the SSE
+stream or `/capabilities` from the SAME registered view class (matching the
+spec's route table, which maps both paths to `A2UIHandler`). The SSE loop
+sends `: keepalive\n\n` when nothing is pending, uses standard
+`text/event-stream` framing (never AgentTalk's `b'\n\x00'` separator), and
+only calls `store.mark_delivered()` AFTER a successful `write()` — a
+mid-write disconnect leaves the record undelivered for a later stream to
+pick up. Routes registered in `manager.py` right after `AgentTalk`'s, with
+`/a2ui/capabilities` registered before the bare `/a2ui` pattern, mirroring
+the existing knowledge-router literal-before-pattern precedent one block
+below. 9 new handler tests + a route-shadowing test pass; full
+`ai-parrot-server/tests/handlers` (412 passed) and
+`ai-parrot/tests/outputs/a2ui`+`tests/a2a`+`tests/tools/test_tool_a2ui_attributes.py`
+(557 passed) show zero regressions — the 2 pre-existing failures in
+`test_agent_a2ui_stream.py` are confirmed unrelated via `git stash` (they
+fail identically on the baseline, asserting on `AgentTalk`'s own unrelated
+source text). `ruff check`: fully clean on both new files (no pre-existing
+debt to inherit); zero new violations introduced in `manager.py` (diffed
+per-rule counts before/after).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One necessary adaptation, not a design change:
+the task's Implementation Notes reuse `_get_user_session(data)`/
+`_resolve_bot(data)` with `data` implied to be "the request body" (as in
+AgentTalk's own POST, which parses `data = await self.request.json()`
+first). That does not work here — the A2UI request body is a
+protocol-strict envelope (`A2UIRendererMessage`/`A2UIAgentMessage` are
+`extra="forbid"`), so it has no room for `user_id`/`session_id`/
+`agent_name` keys the way AgentTalk's free-form JSON body does. Added
+`_resolution_data()`, which builds that dict from the QUERY STRING instead
+(`?user_id=...&session_id=...`) — feeding the exact same
+priority-ordered resolution methods unmodified (`_get_agent_name` already
+checks `request.match_info` first regardless; `_get_user_session` falls
+back to the authenticated request/session context when neither query
+param is supplied). This is the only way for a client to address a stable
+session across multiple POSTs and a correlated GET stream, since the body
+itself structurally cannot carry that information. No change to
+`AgentTalk` itself — `_resolution_data()` lives entirely in the new
+`a2ui.py` file.

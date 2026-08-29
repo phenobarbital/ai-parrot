@@ -32,6 +32,7 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
+from ..handlers.a2ui import A2UIHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
 from ..handlers.agents.data import DataAnalystHandler
@@ -112,8 +113,10 @@ from ..handlers.mcp_helper import setup_mcp_helper_routes
 
 # Thales research flow handler (FEAT-425): POST + polling + artifact listing
 from ..handlers.thales import setup_thales_routes
+
 # Embedded Admin UI (FEAT-468): serves the compiled Svelte 5 SPA when present
 from ..server.ui import setup_admin_ui
+
 # FEAT-146: Web HITL response endpoint + bootstrap
 from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 
@@ -1607,6 +1610,61 @@ class BotManager:
             REDIS_URL,
         )
 
+    async def _a2ui_deeplink_invoker(self, *, agent_name: str, query: str, session_id: str, user_id: str):
+        """``ResumeInvoker`` for the A2UI deep-link web route (FEAT-469 TASK-2574).
+
+        Resolves the agent via ``get_bot`` and injects the structured
+        ``a2ui_action`` turn through the same ``bot.ask()`` path AgentTalk's
+        POST flow uses.
+        """
+        agent = await self.get_bot(agent_name)
+        return await agent.ask(question=query, session_id=session_id, user_id=user_id)
+
+    async def _a2ui_deeplink_runtime_factory(self, agent_id: str, user_id: str):
+        """``RuntimeFactory`` for the A2UI deep-link web route (FEAT-469 TASK-2574).
+
+        Builds a fresh ``A2UIRuntime`` bound to ``(agent_id, user_id)`` so a
+        deep-link resume persists surface state exactly like the HTTP/A2A
+        transports (TASK-2570's adapters bind ``user_id`` at construction
+        time; a shared/cached runtime would leak state across users).
+        """
+        from parrot.outputs.a2ui.runtime.adapters import (
+            ConversationMemorySurfaceStore,
+            ToolManagerExecutor,
+        )
+        from parrot.outputs.a2ui.runtime.dispatch import A2UIRuntime
+
+        agent = await self.get_bot(agent_id)
+        store = ConversationMemorySurfaceStore(agent.conversation_memory, user_id=user_id)
+        executor = ToolManagerExecutor(agent.tool_manager)
+        return A2UIRuntime(executor=executor, surfaces=store, pending=store)
+
+    def _register_a2ui_deeplink_routes(self) -> None:
+        """Mount the A2UI deep-link web resume route (FEAT-469 TASK-2574).
+
+        Guards against a missing Redis client (spec §7: a deployment without
+        Redis must not crash on startup — deep links simply degrade, the
+        resume link itself is minted lazily elsewhere and never used).
+        ``setup_deeplink_routes`` itself guards against double registration.
+        """
+        redis = self.app.get("redis")
+        if redis is None:
+            self.logger.warning(
+                "A2UI deep-link web resume route not mounted: no Redis client " "available at app['redis']."
+            )
+            return
+
+        from parrot.handlers.deeplink import setup_deeplink_routes
+        from parrot.outputs.a2ui.deeplink import DeepLinkService
+
+        service = DeepLinkService(redis)
+        setup_deeplink_routes(
+            self.app,
+            service,
+            self._a2ui_deeplink_invoker,
+            runtime_factory=self._a2ui_deeplink_runtime_factory,
+        )
+
     async def _cleanup_all_bots(self, app: web.Application) -> None:
         """aiohttp on_cleanup callback: clean every registered bot concurrently.
 
@@ -1932,6 +1990,18 @@ class BotManager:
         # Talk with agents:
         router.add_view("/api/v1/agents/chat/{agent_id}", AgentTalk)
         router.add_view("/api/v1/agents/chat/{agent_id}/{method_name}", AgentTalk)
+        # A2UI Agent Functions runtime (FEAT-469 TASK-2573, spec §3 Module 6, G6) —
+        # a DEDICATED endpoint for renderer->agent envelopes, deliberately NOT
+        # routed through the AgentTalk POST above (spec §8). The literal
+        # "/capabilities" sub-route is registered first so aiohttp resolves it
+        # before matching it as part of the bare "{agent_id}/a2ui" pattern,
+        # mirroring the knowledge-router precedent below.
+        router.add_view("/api/v1/agents/{agent_id}/a2ui/capabilities", A2UIHandler)
+        router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
+        # A2UI deep-link web resume route (FEAT-469 TASK-2574, spec §3 Module 7) —
+        # still unmounted before this task; guards internally on Redis
+        # availability and on double registration.
+        self._register_a2ui_deeplink_routes()
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask

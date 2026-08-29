@@ -375,6 +375,7 @@ class Artifact:
         *,
         name: str = "a2ui-surface",
         artifact_id: Optional[str] = None,
+        allow_actions: bool = False,
     ) -> "Artifact":
         """Wrap a display A2UI v1.0 ``createSurface`` envelope into an A2A Artifact.
 
@@ -390,14 +391,22 @@ class Artifact:
             envelope: The serialized v1.0 (or legacy) envelope dict.
             name: Artifact name.
             artifact_id: Optional explicit id (a UUID4 is generated when omitted).
+            allow_actions: When ``True``, skip :func:`_reject_action_components` —
+                the surface's components may declare a top-level ``action``
+                (FEAT-469 G5: interactive A2UI over A2A). Defaults to ``False``
+                (unchanged behaviour: FEAT-273/470's display-only restriction),
+                and MUST only be passed ``True`` from a caller that has already
+                confirmed the Agent Card declares the A2UI extension (spec §7 —
+                otherwise the client has no way to handle the action).
 
         Returns:
             An :class:`Artifact` carrying the envelope per the A2UI-A2A extension.
 
         Raises:
             TypeError: If ``envelope`` is not a dict.
-            ValueError: If the envelope is not a display ``createSurface`` or contains
-                action-bearing components (display-only in v1).
+            ValueError: If the envelope is not a display ``createSurface``, or
+                (when ``allow_actions`` is ``False``) contains action-bearing
+                components.
         """
         if not isinstance(envelope, dict):
             raise TypeError(f"A2UI envelope must be a dict, got {type(envelope)!r}.")
@@ -410,7 +419,8 @@ class Artifact:
             raise ValueError(
                 "Only display 'createSurface' envelopes may be emitted over A2A in v1; " f"got envelope={envelope!r}."
             )
-        _reject_action_components(message.create_surface.components)
+        if not allow_actions:
+            _reject_action_components(message.create_surface.components)
         part = Part(
             data=envelope,
             metadata={"mimeType": A2UI_MEDIA_TYPE, "extensionUri": A2UI_EXTENSION_URI},
@@ -523,6 +533,45 @@ class AgentExtension:
         if self.params is not None:
             data["params"] = self.params
         return data
+
+
+def a2ui_agent_extension(catalog_ids: list[str]) -> "AgentExtension":
+    """Build the A2UI v1.0 ``AgentExtension`` declaration (spec §2/G5, FEAT-469).
+
+    Args:
+        catalog_ids: The catalog ids this agent supports (passed straight to
+            :func:`parrot.outputs.a2ui.catalog.export.agent_capabilities`).
+
+    Returns:
+        An :class:`AgentExtension` whose ``params.a2uiAgentCapabilities`` is
+        the agent's :func:`~parrot.outputs.a2ui.catalog.export.agent_capabilities`
+        document.
+    """
+    from parrot.outputs.a2ui.catalog.export import agent_capabilities
+
+    return AgentExtension(
+        uri=A2UI_EXTENSION_URI,
+        description="A2UI v1.0 — interactive surfaces and agent/renderer function calls.",
+        required=False,
+        params={"a2uiAgentCapabilities": agent_capabilities(catalog_ids)},
+    )
+
+
+def register_a2ui_extension(capabilities: "AgentCapabilities", catalog_ids: list[str]) -> None:
+    """Idempotently append the A2UI extension to ``capabilities.extensions`` (FEAT-469).
+
+    Appends, never replaces — other extensions may already be registered.
+    Safe to call more than once (e.g. a shared ``AgentCapabilities`` instance
+    reused across servers, or a re-``setup()``): a URI already present is
+    left untouched rather than duplicated.
+
+    Args:
+        capabilities: The ``AgentCapabilities`` to mutate in place.
+        catalog_ids: The catalog ids this agent supports.
+    """
+    if any(ext.uri == A2UI_EXTENSION_URI for ext in capabilities.extensions):
+        return
+    capabilities.extensions.append(a2ui_agent_extension(catalog_ids))
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AgentExtension":

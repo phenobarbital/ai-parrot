@@ -311,10 +311,64 @@ class TestQueuedRendererCalls:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added `a2ui_agent_extension(catalog_ids)`/`register_a2ui_extension(capabilities,
+catalog_ids)` to CORE `a2a/models.py` (the task's own file table calls for
+"A2UI extension helper" in `models.py`, not just server-side logic) — this
+lets the Agent Card test suite (`packages/ai-parrot/tests/a2a/`) exercise
+idempotency/preservation directly against `AgentCapabilities`, without
+depending on `A2AServer`/ai-parrot-server at all. `A2AServer.__init__` now
+just calls `register_a2ui_extension(self.capabilities, [DEFAULT_CATALOG_ID,
+BASIC_CATALOG_ID])` right after `self.capabilities` is set. Added
+`allow_actions: bool = False` to `Artifact.from_a2ui_envelope` — default
+unchanged behavior, `True` skips `_reject_action_components`. Inbound A2UI
+`Part` detection (`_find_a2ui_part`, discriminated on
+`Part.metadata["mimeType"] == A2UI_MEDIA_TYPE`) is wired into BOTH
+`_handle_send_message` (bypasses `returnImmediately` entirely — dispatched
+synchronously, never as a background task) and `_handle_stream_message`
+(new `_emit_a2ui_stream`, mirrors the existing `task`/`artifactUpdate`/
+`statusUpdate` SSE frame sequence). `_dispatch_a2ui_message` builds a fresh
+`A2UIRuntime`/`ConversationMemorySurfaceStore` per request (bound to the
+request's `user_id` via `_extract_identity`), builds a `PermissionContext`
+via `build_principal_context` when a user_id is known, dispatches, and wraps
+`DispatchResult.messages` into `Part`s inside a `COMPLETED` `Task`'s
+`Artifact` — mirroring `from_a2ui_envelope`'s Part/Artifact metadata shape
+exactly, without reusing that method itself (it is hardcoded to
+`createSurface`-only envelopes; RPC response types are a different, new code
+path). 12 new tests pass (5 in `test_a2ui_agent_functions.py`, 7 in
+`test_a2a_a2ui_dispatch.py`); full `tests/outputs/a2ui`+`tests/a2a` (554
+tests, ai-parrot) and the `-k a2a` slice of ai-parrot-server's suite (139
+passed) show zero regressions — the only failures present (3 vertical-integration
+broker tests, `test_hitl_web_suspend_resume.py`/`test_suspended_store.py`
+missing `fakeredis`) are confirmed pre-existing via `git stash`. `ruff check`:
+zero NEW violations in any of the three pre-existing files touched
+(`models.py`, `server.py`, `adapters.py`) — verified by diffing
+`ruff check`'s per-rule counts before/after this change; both files carry
+large amounts of pre-existing legacy-style debt (96 baseline errors in
+`server.py`, dozens in `models.py`) intentionally left untouched (out of
+scope, would be massive unrelated scope creep).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: **One cross-task file addition**, fully necessary
+and documented: extended `runtime/adapters.py`'s `ConversationMemorySurfaceStore`
+(TASK-2570's file, not in TASK-2572's declared list) with two NEW methods —
+`list_undelivered(session_id)` (non-destructive peek at pending calls not yet
+delivered) and `mark_delivered(session_id, function_call_id)`. Root cause:
+the frozen `PendingCallRegistry` Protocol (TASK-2568/2569) only exposes
+`add`/`resolve`, and `resolve()` DELETES the record on match — correct for
+*correlation* (matching a LATER `rendererFunctionResponse`) but destructive
+if reused as a "mark delivered" operation, which would make the SAME record
+permanently unresolvable once "delivered". There is no way to implement the
+AC "`callRendererFunction` ... attached to the next `message/send` response
+... never both for the same `functionCallId`" without a non-destructive
+delivery marker somewhere. Implemented as a NEW `_delivered` key alongside
+the existing `FunctionCallRecord` fields in the SAME `a2ui_pending_calls`
+metadata map (not a new store, not a new Protocol member — `A2AServer`
+depends on the CONCRETE `ConversationMemorySurfaceStore` class directly
+already, to construct it in the first place, so calling two more of its
+methods is not a new coupling). `pydantic.BaseModel`'s v2 default
+`extra="ignore"` means `FunctionCallRecord.model_validate()` on a dict
+carrying the extra `_delivered` key round-trips safely without touching the
+model itself. Documented at length in `adapters.py`'s own code comment for
+the next reader. No other design changes: the runtime's dispatch control
+flow, error taxonomy, and A2A wire shapes are exactly as specified.

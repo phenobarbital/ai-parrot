@@ -314,10 +314,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added `ActionMessage.data_model: dict[str, Any] | None = Field(default=None, alias="dataModel")`
+mirroring `CreateSurface`'s alias style, with a docstring note explaining why it
+defaults to `None` (not `{}`) unlike `CreateSurface.data_model`. Fixed the two
+swapped docstrings on `AgentFunctionResponse`/`RendererFunctionResponse` (prose
+only — no class moves/renames). Added the two acceptance-test classes
+(`TestActionDataModel`, `TestFunctionResponseDocstrings`) to `test_models.py`
+and `TestActionDataModelRoundTrip` to `test_serialization.py`, matching the
+task's Test Specification verbatim. Verified `CallAgentFunction` still rejects
+`dataModel` (schema `additionalProperties: false`) and that an `action`
+envelope with `dataModel` validates against the vendored
+`renderer_to_agent.json` via `catalog.validate_message`. All 36 tests in the
+two files pass; `ruff check` clean on `models.py` and both test files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

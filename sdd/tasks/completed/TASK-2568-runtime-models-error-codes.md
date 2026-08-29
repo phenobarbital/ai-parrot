@@ -174,7 +174,18 @@ logs the real cause with `logger.exception`.
 - [ ] `from parrot.outputs.a2ui.runtime.models import A2UICallContext, FunctionCallRecord, SurfaceState, DispatchResult, A2UIErrorCode, error_envelope` works.
 - [ ] `error_envelope(A2UIErrorCode.INTERNAL, "boom", function_call_id="fc-1")` → `{"version": "v1.0", "error": {"code": "INTERNAL", "message": "boom", "functionCallId": "fc-1"}}`.
 - [ ] `error_envelope` raises `ValueError` when given a validation code without `surface_id`+`path`, or a generic code with both/neither of `surface_id`/`function_call_id`.
-- [ ] Every emitted envelope validates against the vendored `agent_to_renderer.json`.
+- [ ] Every emitted envelope validates against the vendored `renderer_to_agent.json`
+      (**contract correction, verified 2026-08-29**: the task file originally said
+      `agent_to_renderer.json`, which is stale — `A2UIAgentMessage` has no `error`
+      field at all (`models.py:695-720`); `ErrorMessage`/the `"error"` wire key is
+      only reachable through `A2UIRendererMessage.error` (`models.py:740-758`), so
+      `validate_message()` can only ever pick `renderer_to_agent.json`'s schema for
+      it — confirmed structurally: `agent_to_renderer.json`'s `oneOf` has no `error`
+      variant at all, `renderer_to_agent.json`'s does, described as "Reports a
+      renderer-side error" but schema-permissive enough (`additionalProperties:
+      true`, no `code` enum outside the 3 validation codes) to also carry a
+      parrot-extension agent-emitted error keyed by `functionCallId`, which is
+      exactly how spec §2's dispatch flow uses it).
 - [ ] `A2UICallContext.permission_context` is typed `Any`; `runtime/models.py` imports nothing from `parrot.auth`.
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/outputs/a2ui/runtime -v`
 - [ ] No linting errors: `ruff check packages/ai-parrot/src/parrot/outputs/a2ui/runtime`
@@ -254,10 +265,31 @@ def test_runtime_models_do_not_import_agent_stack():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Created `parrot/outputs/a2ui/runtime/{__init__.py,models.py}` with
+`A2UICallContext`, `FunctionCallRecord`, `SurfaceState`, `DispatchResult`
+(Pydantic v2, field-for-field per spec §2) and `A2UIErrorCode(str, Enum)`
+matching the spec's own code sample exactly. `error_envelope()` builds via
+`ErrorMessage` + `serialize()` and delegates ALL shape validation to
+`ErrorMessage`'s own `_check_shape` model_validator (a `pydantic.ValidationError`,
+which is a `ValueError` subclass) rather than duplicating the validation-vs-
+generic-shape logic — avoids drift between two copies of the same rule.
+12 tests in `tests/outputs/a2ui/runtime/test_models.py` pass; `ruff check`
+clean on both the source and test files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: **Contract correction** (documented inline in this
+task's Acceptance Criteria above and verified with direct code inspection):
+the task's `error_envelope` conformance AC originally cited
+`agent_to_renderer.json`, but that schema has no top-level `error` message at
+all — `A2UIAgentMessage` (`models.py:695-720`) carries no `error` field, so
+`validate_message()` can never select `agent_to_renderer.json`'s schema for
+an `ErrorMessage`. `ErrorMessage` is only reachable via
+`A2UIRendererMessage.error` (`models.py:740-758`), which resolves to
+`renderer_to_agent.json`. Corrected the AC and added
+`test_error_envelope_validates_against_renderer_to_agent_schema` to prove
+conformance against the schema that actually defines the message. No design
+change — the runtime's error-envelope shape and error-code semantics are
+exactly as specified; only the conformance test's target schema file
+changed. This does not block downstream tasks (TASK-2569's dispatch logic
+still emits the same `error_envelope()` output).
