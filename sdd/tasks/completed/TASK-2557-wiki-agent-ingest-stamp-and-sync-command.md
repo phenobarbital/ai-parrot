@@ -134,8 +134,36 @@ def test_sync_command_metadata(): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: `sync_meetings_to_wiki` gained `force_refetch: bool = False`
+(forwarded to `sync_fireflies_transcripts`) and a fourth step after a
+successful ingest: when `self.registry is not None and self.registry.available`,
+`stamped = await self.registry.mark_wiki_ingested()` and
+`report["wiki"]["stamped"] = stamped` (key absent entirely when the stamp
+never ran — no wiki plane, ingest failed, or registry unavailable). Added
+`@telegram_command("sync", description="Sync Fireflies meetings now",
+parse_mode="keyword") async def sync_now(self, force_refetch: str = "false",
+limit: str = "")`: parses `force_refetch` case-insensitively
+(`true`/`1`/`yes`), parses `limit` as an int falling back to `None` (→
+`sync_meetings_to_wiki`'s own `FIREFLIES_WIKI_SYNC_LIMIT` default) on an
+empty or unparsable value, calls `sync_meetings_to_wiki(limit=..., force_refetch=...)`,
+and replies with one line: `✅ synced N · revised R · skipped S · analysed A
+· wiki: ok/skipped` with `· errors N` appended when sync+analysis errors are
+non-zero. Updated the ordering test to also assert `mark_wiki_ingested` runs
+LAST (after ingest) and stamps the report; added
+`test_sync_meetings_to_wiki_no_wiki_no_mark`,
+`test_sync_meetings_to_wiki_registry_unavailable_no_mark`,
+`test_sync_meetings_to_wiki_forwards_force_refetch`, and a
+`TestSyncNowCommand` class (flag parsing, defaults, error-count reporting,
+unparsable-limit fallback, and `_telegram_command`/`discover_telegram_commands`
+metadata). Also added `inst.registry = None` to the shared `agent` fixture
+so `sync_meetings_to_wiki` doesn't need a registry attribute to exist by
+default. 68 tests in `tests/test_fireflies_wiki_agent.py` (all, including
+pre-existing) pass; `ruff check` on the diff introduces exactly one new
+finding (`UP045 Optional[int]` in the new `sync_now` body), matching this
+file's own dominant `Optional[X]` convention used throughout every other
+signature — left as-is for consistency, not a regression in kind.
+Committed with `git add -f agents/fireflies_wiki.py` (gitignored path).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

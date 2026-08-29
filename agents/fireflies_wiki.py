@@ -158,9 +158,19 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 to ``AUDIO_NOTES_FOLDER``.
             **kwargs: Forwarded to :class:`FirefliesObsidianAgent`. ``llm``
                 defaults to Claude Haiku 4.5 when the caller does not pin one.
+                FEAT-472: ``registry_dir`` (also forwarded) defaults to
+                ``wiki_storage_dir`` here when the caller overrides the
+                latter without also passing the former explicitly —
+                otherwise `FirefliesObsidianAgent`'s own default
+                (``FIREFLIES_REGISTRY_DIR``, independent of this
+                subclass's wiki storage dir) would silently open a
+                DIFFERENT ``wiki.db`` than the wiki toolkit, breaking the
+                "one shared row" design (spec §2 G5).
         """
         kwargs.setdefault("llm", FIREFLIES_WIKI_LLM)
         kwargs.setdefault("instructions", _AUDIO_NOTE_TOOL_GUIDANCE)
+        if wiki_storage_dir is not None:
+            kwargs.setdefault("registry_dir", wiki_storage_dir)
         super().__init__(name=name, **kwargs)
 
         self.wiki_name: str = wiki_name or FIREFLIES_WIKI_NAME
@@ -507,6 +517,54 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             return None
 
     # ------------------------------------------------------------------
+    # `/sync` on-demand command (FEAT-472)
+    # ------------------------------------------------------------------
+
+    @telegram_command("sync", description="Sync Fireflies meetings now", parse_mode="keyword")
+    async def sync_now(self, force_refetch: str = "false", limit: str = "") -> str:
+        """Run :meth:`sync_meetings_to_wiki` on demand from Telegram.
+
+        Keyword-mode Telegram args always arrive as ``str`` — parsed here
+        rather than typed on the signature itself.
+
+        Args:
+            force_refetch: ``"true"``/``"1"``/``"yes"`` (case-insensitive)
+                bypasses the registry's cheap-skip path, re-fetching and
+                re-fingerprinting every known meeting. Any other value is
+                treated as ``False``.
+            limit: Max transcripts to fetch, as a string. Empty or
+                unparsable falls back to `sync_meetings_to_wiki`'s own
+                default (``FIREFLIES_WIKI_SYNC_LIMIT``).
+
+        Returns:
+            A single-line summary: synced/revised/skipped/analysed counts,
+            the wiki ingest outcome, and an error count when non-zero.
+        """
+        force = force_refetch.strip().lower() in ("true", "1", "yes")
+        parsed_limit: Optional[int] = None
+        if limit.strip():
+            try:
+                parsed_limit = int(limit.strip())
+            except ValueError:
+                self.logger.warning("/sync: ignoring unparsable limit=%r", limit)
+
+        report = await self.sync_meetings_to_wiki(limit=parsed_limit, force_refetch=force)
+
+        sync = report.get("sync") or {}
+        analysis = report.get("analysis") or {}
+        wiki = report.get("wiki") or {}
+        errors = len(sync.get("errors") or []) + len(analysis.get("errors") or [])
+
+        line = (
+            f"✅ synced {sync.get('synced', 0)} · revised {sync.get('revised', 0)} · "
+            f"skipped {sync.get('skipped', 0)} · analysed {len(analysis.get('analyzed') or [])} · "
+            f"wiki: {'ok' if wiki.get('ingested') else 'skipped'}"
+        )
+        if errors:
+            line += f" · errors {errors}"
+        return line
+
+    # ------------------------------------------------------------------
     # Scheduled operation 1 — daily 07:00
     # ------------------------------------------------------------------
 
@@ -520,6 +578,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         self,
         limit: Optional[int] = None,
         analysis_limit: Optional[int] = None,
+        force_refetch: bool = False,
     ) -> Dict[str, Any]:
         """Sync the latest transcripts, summarize them, and publish to the wiki.
 
@@ -533,6 +592,13 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
         the transcript **and** its summary in one pass, and guarantees the
         08:00 digest finds its input already written.
 
+        FEAT-472: after a successful ingest, stamps ``wiki_ingested_at`` on
+        every up-to-date fireflies row via
+        :meth:`~parrot.agents.meeting_registry.MeetingRegistry.mark_wiki_ingested`
+        — closing the registry's full lifecycle (synced → analysed →
+        wiki-ingested). Skipped when the registry is unavailable or the
+        ingest itself did not run.
+
         Never raises — a scheduled job that throws produces noise and no
         diagnosis.
 
@@ -541,10 +607,15 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 ``FIREFLIES_WIKI_SYNC_LIMIT``.
             analysis_limit: Max notes to summarize. Defaults to
                 ``FIREFLIES_WIKI_ANALYSIS_LIMIT``.
+            force_refetch: FEAT-472. Forwarded to
+                :meth:`~parrot.agents.obsidian.FirefliesObsidianAgent.sync_fireflies_transcripts`
+                — bypasses the registry's cheap-skip path so every known
+                meeting is re-fetched and re-fingerprinted.
 
         Returns:
             Dict with ``status``, ``sync``, ``analysis``, ``wiki`` and
-            ``timestamp`` keys.
+            ``timestamp`` keys. ``wiki["stamped"]`` is the number of rows
+            `mark_wiki_ingested` stamped (present only when it ran).
         """
         report: Dict[str, Any] = {
             "status": "ok",
@@ -559,6 +630,7 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
             report["sync"] = await self.sync_fireflies_transcripts(
                 limit=limit if limit is not None else FIREFLIES_WIKI_SYNC_LIMIT,
                 skip_existing=True,
+                force_refetch=force_refetch,
             )
 
             # --- Step 2: per-meeting LLM analysis ---------------------------
@@ -569,6 +641,10 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
 
             # --- Step 3: Obsidian → GraphIndex LLM Wiki ---------------------
             report["wiki"] = await self._ingest_vault_into_wiki()
+
+            # --- Step 4: FEAT-472 registry lifecycle close-out --------------
+            if report["wiki"].get("ingested") and self.registry is not None and self.registry.available:
+                report["wiki"]["stamped"] = await self.registry.mark_wiki_ingested()
 
             if report["sync"].get("status") == "error":
                 report["status"] = "partial"

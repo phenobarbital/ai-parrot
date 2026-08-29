@@ -190,6 +190,11 @@ class SourceManifestEntry(BaseModel):
         loader: FEAT-451 name of the loader used to extract this document
             (e.g. ``"MarkdownLoader"``, or ``"plaintext"``). ``None`` when
             not applicable.
+        external_id: FEAT-472 immutable external identity for the source,
+            in ``"<source>:<id>"`` form (e.g. ``"fireflies:abc123"``) —
+            distinct from ``source_id``/``source_uri``, which are
+            path-derived and may change when a source is renamed or
+            moved. ``None`` for sources without an external identity.
     """
 
     source_id: str = Field(..., description="Stable source identifier")
@@ -239,6 +244,14 @@ class SourceManifestEntry(BaseModel):
     loader: str | None = Field(
         default=None,
         description="FEAT-451: name of the loader used to extract this document.",
+    )
+    external_id: str | None = Field(
+        default=None,
+        description=(
+            "FEAT-472: immutable external identity in '<source>:<id>' form "
+            "(e.g. 'fireflies:abc123'). None when the source has no "
+            "external identity."
+        ),
     )
 
 

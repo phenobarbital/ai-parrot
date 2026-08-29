@@ -130,8 +130,69 @@ async def test_existing_vault_upgrade_no_duplicates(tmp_path, fake_fireflies): .
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: Created `tests/integration/test_fireflies_meeting_registry.py`
+(marked `pytest.mark.integration`, matching the existing convention in
+`tests/integration/test_navigator_toolkit_refactor.py`) with local,
+self-contained fixtures (`fake_fireflies`, `_build_agent`, `_mock_pi`,
+`_write_note`) rather than importing `tests/knowledge/wiki/conftest.py`'s
+fixtures directly — pytest fixture scoping doesn't cross sibling test
+directories, so the patterns were replicated locally instead (same
+`fake_fireflies`/`_call_fireflies_tool` stub shape as TASK-2556's
+`tests/test_fireflies_obsidian_sync.py`, same `mock_pi` contract as
+`tests/knowledge/wiki/conftest.py`).
 
-**Deviations from spec**: none
+Three tests, all real (no mocking of the modules under test):
+`test_registry_shared_with_wiki_toolkit` (sync one transcript, ingest the
+same vault via a real `LLMWikiToolkit` on the SAME `wiki.db`, assert one
+row has `external_id` + `doc_metadata.fireflies` + non-empty
+`pages_generated`, `mark_wiki_ingested() == 1`, then a rename + content
+change + re-sync + re-ingest still leaves exactly one row);
+`test_end_to_end_create_revise_analyse` (v1 create → v2 revise via
+`force_refetch=True` → `summarize_pending_transcripts` marks analysed with
+the v2 fingerprint → a third sync of unchanged v2 content cheap-skips,
+`fireflies_get_transcript` never called); `test_existing_vault_upgrade_no_duplicates`
+(5-note fixture vault, one duplicated id, no prior `wiki.db` →
+`registry.backfill_from_vault(...)` — the same call `configure()` makes —
+seeds 4 rows/merges the duplicate pair to 4 files, then syncing the same
+4 ids creates no new files). All three complete in ~1s combined; full
+`tests/knowledge/wiki/` suite (1162 tests) still passes (1 pre-existing,
+unrelated failure in `test_claude_code.py`, confirmed via `git stash`
+before TASK-2553).
+
+**Deviations from spec**: None from the task's own scope — but two
+genuine production defects were surfaced and fixed in their owning
+modules, exactly as the task explicitly licensed ("If a test exposes a
+defect, fix it in the owning module and note it in the Completion Note"):
+
+1. **`SourceCollectionManager.add_source` (`sources.py`)** — re-adding an
+   already-tracked URI reconstructed the entry from only seven fields,
+   silently wiping `external_id` and every FEAT-402/451 column back to
+   `None`/defaults. Exposed because the wiki's OWN incremental ingest
+   loader calls `add_source` on every file it scans, including ones
+   MeetingRegistry already registered — the very "shared row" the G5
+   test verifies. This is the SAME bug class TASK-2553 fixed on
+   `mark_ingested`/`mark_ingested_many`, just not caught in `add_source`
+   itself at the time (only those two methods were in that task's
+   explicit scope). Fixed minimally: `add_source` now reads the existing
+   entry first (when the URI is already tracked) and carries forward
+   `external_id` (unless the caller explicitly overrides it),
+   `destination`, `decision_source`, `charter_version`,
+   `composite_score`, `doc_metadata`, `content_type`, and `loader`.
+   `ingested_at`/`pages_generated`/`status` reset behavior is unchanged
+   (matches existing tests; the wiki loader always calls `mark_ingested`
+   immediately afterward to set the real `pages_generated`).
+2. **`ObsidianVaultLoader.incremental_update` (`loaders/obsidian/loader.py`)** —
+   used "row exists and is not stale (hash/mtime unchanged)" as its sole
+   proxy for "already has PageIndex pages". That was safe before FEAT-472,
+   when this loader was the only writer of a `sources` row; it broke once
+   `MeetingRegistry.record_synced` also registers the row (with a
+   necessarily fresh hash/mtime) for its own id-keyed bookkeeping,
+   independent of any wiki ingest — the loader would then see "not stale"
+   and skip the file forever, leaving `pages_generated` permanently empty.
+   Fixed by additionally checking `pages_generated` on the existing entry:
+   a row with no pages yet is always (re-)ingested regardless of
+   staleness. No prior test coverage existed for this loader at all
+   (`grep` confirmed) — the two new assertions in
+   `test_registry_shared_with_wiki_toolkit` are its first.
