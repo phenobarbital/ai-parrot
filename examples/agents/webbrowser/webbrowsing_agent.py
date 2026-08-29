@@ -120,8 +120,8 @@ async def main() -> None:
     )
     await agent.configure()
     try:
-        answer, _response = await agent.invoke(question)
-        print(answer)
+        answer = await agent.ask(question)
+        print(answer.response)
     finally:
         await agent.close()
 
