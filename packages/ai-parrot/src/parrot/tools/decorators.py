@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Dict, Any, Type, Union, get_args, get_origin, get_type_hints
+from typing import Callable, Optional, Dict, Any, Set, Type, Union, get_args, get_origin, get_type_hints
 from functools import wraps
 import inspect
 import re
@@ -63,6 +63,7 @@ def tool(
     confirm_template: Optional[str] = None,
     confirm_window_seconds: int = 0,
     allow_edit: bool = False,
+    required_permissions: Optional[Set[str]] = None,
 ):
     """
     Decorator to mark a function as a tool with automatic schema generation.
@@ -89,6 +90,11 @@ def tool(
         allow_edit: When True, the human is offered a FORM interaction to edit the
             parameter values before approving.  Edited values are re-validated against
             the tool's ``args_schema``.
+        required_permissions: Optional set of permission strings the caller's
+            ``PermissionContext`` must satisfy (via the configured
+            ``AbstractPermissionResolver``) before the tool executes — checked by
+            ``ToolManager.execute_tool()``'s manager-level Layer 2 gate
+            (FEAT-474). Defaults to an empty set (unrestricted).
 
     Usage:
         @tool
@@ -139,6 +145,7 @@ def tool(
             'function': func,
             'auto_register': auto_register,
             'routing_meta': confirmation_routing,
+            'required_permissions': set(required_permissions or ()),
         }
 
         # Mark as a tool

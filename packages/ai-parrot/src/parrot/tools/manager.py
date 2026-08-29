@@ -1,8 +1,8 @@
 from __future__ import annotations
-from typing import Dict, List, Any, Optional, Union, Callable, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, Set, Union, Callable, TYPE_CHECKING
 from collections.abc import Generator
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from enum import Enum
 import aiohttp
@@ -23,15 +23,16 @@ if TYPE_CHECKING:
     from ..auth.confirmation import ConfirmationGuard
 
 
-@dataclass
+@dataclass(slots=True)
 class ToolDefinition:
     """Data structure for tool definition."""
     """Defines a tool with its name, description, input schema, and function."""
-    __slots__ = ('name', 'description', 'input_schema', 'function')
     name: str
     description: str
     input_schema: Dict[str, Any]
     function: Callable
+    routing_meta: Dict[str, Any] = field(default_factory=dict)
+    required_permissions: Set[str] = field(default_factory=set)
 
 
 class ToolNameCollisionError(ValueError):
