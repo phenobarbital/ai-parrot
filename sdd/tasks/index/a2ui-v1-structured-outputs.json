@@ -113,7 +113,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Touches bots/data.py, database/agent.py and server handlers/agent.py — disjoint from TASK-2563/2564.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2565-agents-and-transport.md"
+      "completed_at": "2026-08-29T01:26:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2565-agents-and-transport.md"
     },
     {
       "id": "TASK-2566",
