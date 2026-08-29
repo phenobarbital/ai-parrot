@@ -153,7 +153,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Serialised after 2573 because both edit manager.py route registration. Scope is much smaller than the spec implies — FEAT-470 already migrated the payload to v1.0.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2574-deeplink-dispatch-and-mount.md"
+      "completed_at": "2026-08-29T02:29:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2574-deeplink-dispatch-and-mount.md"
     },
     {
       "id": "TASK-2575",

@@ -268,10 +268,70 @@ async def test_missing_redis_skips_gracefully(app_without_redis, caplog): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Did NOT touch `ResumePayload`, its `field_validator`, `build_structured_message`,
+or the `a2ui_action` tag/payload shape — confirmed all three already v1.0
+per the spec's own "CORRECCIÓN" note, and Teams/Telegram tests (6 passed)
+prove they still work unmodified. Added `DeepLinkResumeHandler.__init__`'s
+new optional `runtime_factory` param (`RuntimeFactory = Callable[[str, str],
+Awaitable[A2UIRuntime]]`) and a `_dispatch()` helper: when set, `handle()`
+now dispatches `payload.action_payload` (handed to `dispatch` directly, per
+instruction — never re-wrapped) through `A2UIRuntime` with
+`transport="deeplink"` and a `build_principal_context`-built
+`PermissionContext`, BEFORE the existing `build_structured_message`+
+`invoker` call (both kept, complementary as instructed — dispatch persists
+surface state, the invoker still injects the conversational turn).
+`_dispatch()` catches and logs any exception rather than raising: a
+single-use token is already consumed by the time dispatch runs, so a
+dispatch failure must not swallow the turn injection. `runtime_factory`
+defaults to `None` (dispatch skipped, turn injection unaffected) — kept
+every EXISTING call site (`DeepLinkResumeHandler(service, invoker)`, no
+third arg) working byte-for-byte; all 5 original tests in
+`test_deeplink_resume_web.py` pass unmodified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+`setup_deeplink_routes` gained a `runtime_factory` param and a
+duplicate-registration guard (`{route.resource.canonical for route in
+app.router.routes()}` before adding — verified this correctly detects an
+existing path via a real aiohttp `Application`) — returns `None` and logs a
+warning instead of letting aiohttp raise on the second `add_get`/`add_post`.
+Mounted via a new `BotManager._register_a2ui_deeplink_routes()` (checks
+`app.get("redis")` first — `None` logs and returns without calling
+`setup_deeplink_routes` at all, so a Redis-less deployment never even
+constructs a `DeepLinkService`), called from `setup()` right after the
+A2UIHandler HTTP routes (TASK-2573). Two new `BotManager` methods
+(`_a2ui_deeplink_invoker`, `_a2ui_deeplink_runtime_factory`) resolve the
+agent via the manager's own `get_bot()` and build a fresh
+`ToolManagerExecutor`/`ConversationMemorySurfaceStore`/`A2UIRuntime` per
+call — same per-request-construction pattern as TASK-2572/2573, since
+`ConversationMemorySurfaceStore` binds `user_id` at construction time.
 
-**Deviations from spec**: none | describe if any
+Added `TestDispatchPath` (6 tests: dispatch call shape/transport, real
+surface-state persistence via a `dataModel`-carrying action + a real
+`FileConversationMemory`-backed store, `build_structured_message`
+byte-shape unchanged, 410-on-expired skips dispatch entirely, landing GET
+doesn't trigger dispatch, `runtime_factory=None` still resumes) to the
+existing `test_deeplink_resume_web.py`, plus a new
+`tests/manager/test_deeplink_routes_mounted.py` (mounted / duplicate-warns
+/ missing-Redis-skips, exercising `_register_a2ui_deeplink_routes()`
+directly against a real `aiohttp.web.Application` rather than the full
+`BotManager.setup()` pipeline — lighter and more targeted). All 11 + 3 new
+tests pass; full `ai-parrot-server` handlers+manager+a2a+deeplink slice
+(433 passed) plus Teams/Telegram deep-link suites (6 passed) show zero
+regressions — the only failures are the same 2 pre-existing
+`test_agent_a2ui_stream.py` cases already confirmed unrelated in TASK-2573.
+`ruff check`: zero new violations across all three pre-existing files
+(`deeplink.py`, `manager.py`, `test_deeplink_resume_web.py` — diffed
+per-rule counts against `git stash` baselines); the two brand-new test
+files are fully clean.
+
+**Deviations from spec**: none beyond what the task itself already flagged
+as a scope correction (spec §3 Module 7's "CORRECCIÓN" — this task file
+already narrowed the scope for me; I did not need to further correct
+anything new). One implementation decision the task didn't fully specify:
+`runtime_factory`'s exact type/injection mechanism. Modeled it as an async
+`(agent_id, user_id) -> A2UIRuntime` factory rather than, e.g., passing a
+`BotManager` reference into `handlers/deeplink.py` directly — keeps that
+module free of any `BotManager`/agent-resolution import (pure
+dependency-injection, consistent with the file's existing "thin transport"
+design and its complete lack of agent-stack imports today).
