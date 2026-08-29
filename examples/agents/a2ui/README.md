@@ -24,6 +24,7 @@ python examples/agents/a2ui/a2ui_dashboard_walkthrough.py --live    # let the LL
 | File | What it is |
 |---|---|
 | `a2ui_dashboard_walkthrough.py` | The walkthrough. Read it top to bottom. |
+| `deterministic_refresh_dashboard.py` | The companion sample: deterministic recipe replay + FEAT-469 inline filtering/refresh (see below). |
 | `synthetic_data.py` | Seeded synthetic SaaS revenue-ops data (`numpy` + `pandas` only). |
 
 Output lands in `artifacts/a2ui_dashboard/`:
@@ -109,6 +110,33 @@ you the render:
   `{"ok": false, "code": "BLOCK_SCHEMA_INVALID", "detail": {...}}` naming the
   offending field, which the model can retry against — it used to escape as a
   raw pydantic `ValidationError` that failed the tool call outright.
+
+## The companion sample: deterministic refresh + inline filtering
+
+`deterministic_refresh_dashboard.py` picks up where this walkthrough stops:
+instead of a display-only surface, it publishes a **deterministic recipe**
+(FEAT-324/326 — the lane that grew out of the standalone
+`documents/flex_program_report.html` report) and then drives the **FEAT-469
+RPC leg** against it:
+
+```bash
+python examples/agents/a2ui/deterministic_refresh_dashboard.py           # all lanes
+python examples/agents/a2ui/deterministic_refresh_dashboard.py --serve   # + open in browser
+```
+
+Its seven lanes: (1) `publish_recipe` maps sections onto registered
+`@infographic_transformer`s and declares the `window`/`plan` filter params;
+(2) `RecipeRunner.run()` replays twice — identical content (the deterministic-
+refresh guarantee, with undeclared-override typo protection); (3) an `action`
+envelope pushes the surface's inline filter state as `dataModel`; (4)
+`callAgentFunction` invokes the agent's `refresh_dashboard` tool for a
+filtered re-render; (5) the same tool refreshes *from the persisted surface
+state* via `current_a2ui_surface_state()`; (6) `callRendererFunction` /
+`rendererFunctionResponse` round-trips an agent-initiated call; (7)
+`export_functions` / `agent_capabilities` show the discovery documents,
+including the `a2ui_hidden = True` opt-out.
+
+Output lands in `artifacts/a2ui_deterministic_refresh/`.
 
 ## See also
 
