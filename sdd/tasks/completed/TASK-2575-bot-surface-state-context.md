@@ -208,12 +208,75 @@ class TestSchemaHygiene:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added `AbstractTool.execute()`'s `_a2ui_surface_state` pop (falls
+back to a new `_A2UI_SURFACE_STATE_VAR` ContextVar when not passed
+explicitly), stored on `self._current_a2ui_surface_state` — mirroring the
+existing `self._current_pctx` convention exactly (never forwarded to
+`_execute()` as a kwarg either way, so it structurally cannot leak into a
+generated tool schema — confirmed by test, not just by inspection). Added
+`a2ui_surface_state: Optional[Any] = None` to `AbstractBot.ask()`'s
+signature, next to `permission_context`, and one line setting the
+ContextVar unconditionally (including to `None`, so a stale value from a
+prior `ask()` call on the same task/coroutine never leaks forward) right
+where `client._permission_context = permission_context` already lives.
+Updated the reserved-kwargs docstrings at both the `execute()` docstring and
+`_summarize_args`'s `Args:` block. 8 new tests pass (tool-side mechanism
+fully exercised with real `AbstractTool` instances; bot-side wiring verified
+via source inspection — driving a full `ask()` call needs RAG-retrieval/
+prompt-building/LLM-client mocking unrelated to this task's mechanism, and
+this codebase already has an established precedent for this exact technique,
+`ai-parrot-server/tests/handlers/test_agent_a2ui_stream.py`). Zero
+regressions: `tests/tools` (890 passed, same 51 pre-existing unrelated
+DDL-guard/dataset-manager failures as TASK-2571 confirmed), and a
+representative `tests/bots` slice — `test_abstractbot_routing.py`,
+`test_intent_router.py`, `prompts/` (302 passed, same 48 pre-existing
+YAML-prompt-config failures on baseline, confirmed via `git stash`). `ruff
+check`: `abstract.py`/`base.py` each show exactly 1 new `UP045` ("use `X |
+None`") — both left as-is, deliberately matching the `Optional[Any]` style
+of the IMMEDIATELY ADJACENT pre-existing line (`_CREDENTIAL_VAR: ContextVar[
+Optional[Any]]` and `permission_context: Optional[Any] = None`
+respectively) rather than introducing a locally-inconsistent style; the new
+test file is fully clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Route chosen for threading surface state**: **ContextVar** (`_A2UI_SURFACE_STATE_VAR`
+in `tools/abstract.py`), NOT the client-attribute route the task's own
+Implementation Notes suggested ("Prefer the client-attribute route already
+used for permission_context"). Traced the ACTUAL hop before implementing,
+per the task's own instruction #3: `client._permission_context = ...`
+(bots/base.py) is only HALF the story — the client itself (in
+`clients/base.py`, `clients/google/client.py`, `clients/claude_agent.py`,
+`clients/codex_agent.py`, each independently) reads
+`getattr(self, '_permission_context', None)` and passes it to
+`ToolManager.execute_tool(permission_context=...)`, which THEN builds
+`exec_kwargs['_permission_context'] = permission_context` before calling
+`tool.execute(**exec_kwargs)` — three files, none of which
+(`tools/manager.py`, any client) are in this task's declared scope. A
+ContextVar set in `bots/base.py` and read in `tools/abstract.py` achieves
+the identical externally-observable contract (a tool receives
+`_a2ui_surface_state`, the LLM never sees it) using ONLY the two files this
+task actually lists.
 
-**Route chosen for threading surface state**: (client attribute / other — describe)
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: (1) The ContextVar mechanism above — a necessary,
+evidence-based correction to the task's suggested implementation approach,
+not a scope or behavior change (documented at length in `tools/abstract.py`'s
+own module-level comment for the next reader). (2) One cross-task
+completion, in the same spirit as prior tasks' necessary forward-fixes:
+wired `result.surface_state` into the ONE existing `agent.ask(...)` call
+site that already injects `DispatchResult.user_turn` (TASK-2573's
+`handlers/a2ui.py`, `A2UIHandler.post()`) — without this, TASK-2575's
+mechanism would exist but nothing in the codebase would actually USE it,
+leaving G3 "storage with no reader" in practice for the ONE transport that
+already had the wiring in place to fill it trivially. **Not done**, flagged
+as a known gap for a fast-follow: TASK-2572's A2A `_dispatch_a2ui_message`
+never checks/uses `DispatchResult.user_turn` at all (confirmed — `grep
+user_turn a2a/server.py` returns nothing), so an `action` message dispatched
+over A2A does not inject a bot turn today, unlike the HTTP path — this is a
+pre-existing gap in TASK-2572 (its own ACs never tested the `action`
+branch specifically), out of scope to fix here since it is a materially
+larger change than this task's own file list. Similarly, TASK-2574's
+deep-link `_dispatch()` discards `A2UIRuntime.dispatch()`'s return value
+entirely (only used for its persistence side effect), so a deep-link resume
+also does not thread `surface_state` into its `invoker` call — same
+category of gap, same reason for not fixing here.

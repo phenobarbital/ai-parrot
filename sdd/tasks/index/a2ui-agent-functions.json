@@ -173,7 +173,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "PARALLEL with 2571/2572/2573. Only needs the SurfaceState model and the store from 2570; touches bots/base.py and tools/abstract.py, which no transport task edits.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2575-bot-surface-state-context.md"
+      "completed_at": "2026-08-29T02:42:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2575-bot-surface-state-context.md"
     },
     {
       "id": "TASK-2576",
