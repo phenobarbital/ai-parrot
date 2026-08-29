@@ -32,7 +32,7 @@
       "feature_id": "FEAT-474",
       "feature": "toolmanager-tooldefinition-enforcement",
       "spec": "sdd/specs/toolmanager-tooldefinition-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies manager.py registration internals — shares the file with TASK-2578/2580; sequential in the per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2579-registration-metadata-preservation.md"
+      "completed_at": "2026-08-29T17:21:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2579-registration-metadata-preservation.md"
     },
     {
       "id": "TASK-2580",

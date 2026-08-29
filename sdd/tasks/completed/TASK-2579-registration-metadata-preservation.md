@@ -229,10 +229,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-29
+**Notes**: Both `@tool`-function → `ToolDefinition` conversion sites now
+copy `routing_meta`/`required_permissions` (deep-copied via `dict(...)`/
+`set(...)`, never aliased) — `manager.py:register_tool()`'s `@tool`-function
+branch (~783-790) and `interfaces/tools.py`'s `_initialize_tools()` @tool
+branch (~77-84). The dict-registration path also now reads optional
+`routing_meta`/`required_permissions` keys with safe defaults; the
+explicit-params path needed no change since `ToolDefinition`'s own
+dataclass defaults already cover it. Added `ToolManager._warn_if_inert_grant()`
+helper (`self.logger.warning`, lazy `%s` formatting, names FEAT-211 +
+AbstractTool remediation) called from both `ToolDefinition` accept-paths
+(`add_tool()` and `register_tool()`) — fires only on
+`routing_meta["requires_grant"]` truthy, never on `requires_confirmation`.
+Extended `test_tooldefinition_enforcement.py` with 4 new tests (manager
+path preserves routing_meta, inert-grant warning fires, no warning for
+confirmation-only, and the `interfaces/tools.py` path preserves metadata
+identically) — all pass (11/11 total in the file). Regression sweep
+`pytest packages/ai-parrot/tests/tools/` shows the same 51 pre-existing
+failures as the `dev` baseline (907 passed here vs 900 on `dev` in that
+dir — the +7 diff is this feature's own new tests); zero new failures.
+`test_toolmanager_confirmation.py` + `test_knowledge_index_flags.py` (the
+existing `ToolInterface` harness pattern, reused for the new test) both
+pass clean. `ruff check` on the fresh test file is clean (fixed its one
+import-order nit); `manager.py`/`interfaces/tools.py` findings are 100%
+pre-existing debt untouched by this task's edits (same file-wide style
+convention as TASK-2578).
 
 **Deviations from spec**: none
