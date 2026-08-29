@@ -61,6 +61,38 @@ class TestNormalizeLegacyComponent:
         normalized = compat.normalize_legacy_component(comp)
         assert normalized["children"] == ["a", "b"]
 
+    def test_role_hoisted_to_parrot_role_extension(self):
+        """A legacy `role` prop must NOT leak as a bare v1.0 top-level prop.
+
+        It must be hoisted into `metadata.extensions.parrot_role` — the same
+        extension key the catalog (InfoCard) and renderers already read.
+        """
+        comp = {
+            "id": "t1",
+            "component": "Text",
+            "properties": {"role": "title", "text": "Hello"},
+        }
+        normalized = compat.normalize_legacy_component(comp)
+        assert "role" not in normalized
+        assert normalized["text"] == "Hello"
+        assert normalized["metadata"]["extensions"]["parrot_role"] == "title"
+
+    def test_role_and_optional_bind_coexist_in_extensions(self):
+        """Both `parrot_role` and `parrot_optional` can be hoisted together."""
+        comp = {
+            "id": "t1",
+            "component": "Text",
+            "properties": {
+                "role": "title",
+                "text": {"$bind": "/a/b", "optional": True},
+            },
+        }
+        normalized = compat.normalize_legacy_component(comp)
+        assert "role" not in normalized
+        extensions = normalized["metadata"]["extensions"]
+        assert extensions["parrot_role"] == "title"
+        assert extensions["parrot_optional"] == ["/a/b"]
+
 
 class TestNormalizeLegacyCreateSurface:
     def test_create_surface_normalizes(self):

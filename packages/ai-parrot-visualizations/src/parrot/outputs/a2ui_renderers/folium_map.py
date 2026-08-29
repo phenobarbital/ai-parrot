@@ -19,12 +19,14 @@ import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
+from parrot.outputs.a2ui.catalog.base import BasicNode
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.renderers.degrade import degradation_record
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,10 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
             bake: Bindings are always resolved (static output).
 
         Returns:
-            A ``RenderedArtifact`` with ``mime_type="text/html"``.
+            A ``RenderedArtifact`` with ``mime_type="text/html"``; any sibling
+            component this renderer does not render is recorded in
+            ``metadata["degraded"]`` (AC-G3 — degradation must be visible,
+            never silent).
 
         Raises:
             ValueError: If the envelope contains no ``Map`` component.
@@ -86,6 +91,15 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
         map_comp = next((c for c in baked if c["component"] == "Map"), None)
         if map_comp is None:
             raise ValueError("folium_map renderer requires a 'Map' component in the envelope.")
+
+        degradations = [
+            degradation_record(
+                BasicNode(id=item["id"], component=item["component"]),
+                f"{_SURFACE_NAME} renderer only renders a single Map component per surface",
+            )
+            for item in baked
+            if item is not map_comp
+        ]
 
         props = map_comp
         viewport = props.get("viewport") or {}
@@ -111,6 +125,7 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
             filename=f"{envelope.surface_id}.html",
             title=props.get("title") or envelope.surface_id,
             surface=_SURFACE_NAME,
+            metadata={"degraded": degradations} if degradations else {},
         )
 
     @staticmethod

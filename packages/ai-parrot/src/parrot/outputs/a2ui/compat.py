@@ -106,7 +106,8 @@ def normalize_legacy_component(comp: dict[str, Any]) -> dict[str, Any]:
     Returns:
         The equivalent v1.0 component dict (top-level props, ``Card`` ->
         ``InfoCard``, ``$bind``/``optional`` -> ``path``/
-        ``metadata.extensions.parrot_optional``).
+        ``metadata.extensions.parrot_optional``, legacy ``role`` ->
+        ``metadata.extensions.parrot_role``).
     """
     if "properties" not in comp:
         return dict(comp)
@@ -126,8 +127,20 @@ def normalize_legacy_component(comp: dict[str, Any]) -> dict[str, Any]:
     if children:
         new_comp["children"] = children
 
+    # Legacy `role` is a presentation-only hint, never a v1.0 top-level
+    # prop — hoist it into `metadata.extensions.parrot_role`, the same
+    # extension key the catalog (e.g. InfoCard) and renderers already use
+    # (see catalog/parrot/infocard.py, renderers/ssr_html.py).
+    role = new_comp.pop("role", None)
+
+    extensions: dict[str, Any] = {}
     if optional_paths:
-        new_comp["metadata"] = {"extensions": {"parrot_optional": optional_paths}}
+        extensions["parrot_optional"] = optional_paths
+    if role is not None:
+        extensions["parrot_role"] = role
+
+    if extensions:
+        new_comp["metadata"] = {"extensions": extensions}
 
     return new_comp
 

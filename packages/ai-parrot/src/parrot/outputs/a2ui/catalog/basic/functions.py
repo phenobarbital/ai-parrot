@@ -57,6 +57,21 @@ _DATE_TOKENS: list[tuple[str, str]] = [
     ("a", "%p"),
 ]
 
+#: ``_DATE_TOKENS`` as a lookup dict for the single-pass substitution below.
+_DATE_TOKEN_MAP: dict[str, str] = dict(_DATE_TOKENS)
+
+#: One compiled alternation over every token, longest-first, so e.g. ``MMM``
+#: is matched whole rather than as ``MM`` + ``M`` and ``EEEE`` whole rather
+#: than as four ``E`` tokens. Longest-first ordering makes regex alternation
+#: (which tries branches left-to-right at each position) pick the longest
+#: applicable token at every position — a correct, order-independent
+#: tokenizer. Doing this in ONE pass over the original string (instead of N
+#: sequential whole-string ``.replace()`` calls) is what prevents an
+#: earlier replacement's OUTPUT (e.g. the literal ``a`` inside ``E`` ->
+#: ``%a``) from being re-matched and corrupted by a later token's replace
+#: (e.g. ``a`` -> ``%p``, which would turn ``%a`` into ``%p``).
+_DATE_TOKEN_RE = re.compile("|".join(re.escape(token) for token, _ in sorted(_DATE_TOKENS, key=lambda t: -len(t[0]))))
+
 
 class FunctionEvaluator:
     """Pure, deterministic evaluator for the Basic Catalog's 14 functions.
@@ -534,9 +549,7 @@ class FunctionEvaluator:
                 f"formatDate: unsupported value type {type(value)!r}.",
                 code=INVALID_FUNCTION_CALL,
             )
-        strftime_fmt = fmt
-        for token, directive in _DATE_TOKENS:
-            strftime_fmt = strftime_fmt.replace(token, directive)
+        strftime_fmt = _DATE_TOKEN_RE.sub(lambda m: _DATE_TOKEN_MAP[m.group(0)], fmt)
         return dt.strftime(strftime_fmt)
 
     @staticmethod

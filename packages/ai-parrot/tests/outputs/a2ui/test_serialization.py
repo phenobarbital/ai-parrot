@@ -117,6 +117,33 @@ class TestLegacyBindOptionalToExtensions:
         assert card.metadata.extensions.root["parrot_optional"] == ["/subtitle"]
 
 
+class TestLegacyRoleToExtensions:
+    def test_legacy_role_does_not_leak_as_bare_prop(self):
+        """A legacy `role` prop must not leak as a bare v1.0 top-level prop.
+
+        It must round-trip through deserialize() into
+        `metadata.extensions.parrot_role`, mirroring the same extension key
+        the catalog (InfoCard) and renderers already read (AC-G5: same
+        CreateSurface as the v1.0-native equivalent).
+        """
+        legacy = {
+            "messageType": "createSurface",
+            "surfaceId": "main",
+            "components": [
+                {
+                    "id": "t1",
+                    "component": "Text",
+                    "properties": {"role": "title", "text": "Hello"},
+                },
+            ],
+            "dataModel": {},
+        }
+        restored = deserialize(legacy)
+        text = next(c for c in restored.create_surface.components if c.id == "t1")
+        assert "role" not in (text.model_extra or {})
+        assert text.metadata.extensions.root["parrot_role"] == "title"
+
+
 class TestJsonlRoundtrip:
     def test_jsonl_roundtrip(self):
         surface = make_create_surface()

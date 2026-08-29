@@ -87,3 +87,39 @@ class TestTASK2544:
         option = json.loads((await EChartsRenderer().render(env)).content)
         assert option["title"]["text"] == "Sales"
         assert option["series"][0]["name"] == "rev"
+
+
+class TestSiblingDegradationRecorded:
+    """Post-review fix: non-Chart siblings must not be silently dropped."""
+
+    def _multi_component_envelope(self) -> CreateSurface:
+        return CreateSurface(
+            surfaceId="main",
+            catalogId="https://parrot.dev/catalogs/v1",
+            components=[
+                Component(
+                    id="chart-1",
+                    component="Chart",
+                    type="bar",
+                    x="month",
+                    y=["rev"],
+                    title="Sales",
+                    data=[{"month": "Jan", "rev": 10}],
+                ),
+                Component(id="note-1", component="Text", text="a sibling note"),
+            ],
+        )
+
+    async def test_sibling_recorded_in_degraded_metadata(self):
+        art = await EChartsRenderer().render(self._multi_component_envelope())
+        degraded = art.metadata.get("degraded", [])
+        assert any(d["id"] == "note-1" and d["component"] == "Text" for d in degraded)
+
+    async def test_html_wrap_also_records_sibling_degradation(self):
+        art = await EChartsRenderer().render(self._multi_component_envelope(), wrap_html=True)
+        degraded = art.metadata.get("degraded", [])
+        assert any(d["id"] == "note-1" for d in degraded)
+
+    async def test_single_chart_no_degradations(self):
+        art = await EChartsRenderer().render(_chart_envelope())
+        assert art.metadata.get("degraded", []) == []

@@ -69,6 +69,12 @@ dependencies = [
     # (G8: jsonschema>=4.20 for Draft 2020-12 + `referencing`-based $ref
     # resolution between the vendored spec/*.json documents).
     "jsonschema>=4.20",
+    # `_unicode_aware_jsonschema` (parrot.outputs.a2ui.catalog.__init__)
+    # monkeypatches jsonschema's format-checker internals to evaluate the
+    # `\p{XID_Start}`-style Unicode property escape used by a vendored A2UI
+    # schema — Python's stdlib `re` doesn't support `\p{...}`. Declared
+    # explicitly (was previously only present via transitive resolution).
+    "regex>=2023.0",
     # Navigator stack (core)
     "navconfig[default]>=2.2.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the

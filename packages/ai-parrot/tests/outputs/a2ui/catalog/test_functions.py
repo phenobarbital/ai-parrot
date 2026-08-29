@@ -47,6 +47,31 @@ class TestFormatStringFunctionNamedArgs:
         assert out == "3.1"
 
 
+class TestFormatDateTokenOrderingDoesNotCorrupt:
+    """Post-review fix: sequential .replace() let `a` (-> %p) re-match and
+    corrupt the literal `a` inside `E`'s own `%a` replacement output.
+    A single-pass tokenizer must not exhibit this cross-token corruption.
+    """
+
+    def test_e_token_survives_alongside_a_token(self, evaluator):
+        """`E` (-> %a, weekday) must not be corrupted by the `a` (-> %p) token."""
+        call = FunctionCall(
+            call="formatDate",
+            args={"value": "2026-01-16T15:30:00", "format": "E, MMM dd"},
+        )
+        result = evaluator.evaluate(call, data_model={})
+        assert result == "Fri, Jan 16"
+
+    def test_e_and_a_tokens_together(self, evaluator):
+        """Both `E` and a real `a` (AM/PM) token in the same format, unmangled."""
+        call = FunctionCall(
+            call="formatDate",
+            args={"value": "2026-01-16T15:30:00", "format": "E hh:mm a"},
+        )
+        result = evaluator.evaluate(call, data_model={})
+        assert result == "Fri 03:30 PM"
+
+
 class TestIndexOnlyInTemplateScope:
     def test_index_in_template_scope(self, evaluator):
         out = evaluator.format_string("Row ${@index}", data_model={}, index=2)

@@ -79,3 +79,33 @@ class TestTASK2544:
     async def test_folium_capabilities(self):
         caps = fm.FoliumMapRenderer.capabilities
         assert caps.supported_components == {"Map"}
+
+
+class TestSiblingDegradationRecorded:
+    """Post-review fix: non-Map siblings must not be silently dropped."""
+
+    def _multi_component_envelope(self) -> CreateSurface:
+        return CreateSurface(
+            surfaceId="main",
+            catalogId="https://parrot.dev/catalogs/v1",
+            components=[
+                Component(
+                    id="map-1",
+                    component="Map",
+                    title="Stores",
+                    layers=[{"name": "stores"}],
+                    viewport={"center": [40.4, -3.7], "zoom": 6},
+                    data=[{"lat": 40.4, "lon": -3.7, "popup": "Madrid"}],
+                ),
+                Component(id="note-1", component="Text", text="a sibling note"),
+            ],
+        )
+
+    async def test_sibling_recorded_in_degraded_metadata(self):
+        art = await fm.FoliumMapRenderer().render(self._multi_component_envelope())
+        degraded = art.metadata.get("degraded", [])
+        assert any(d["id"] == "note-1" and d["component"] == "Text" for d in degraded)
+
+    async def test_single_map_no_degradations(self):
+        art = await fm.FoliumMapRenderer().render(_map_envelope())
+        assert art.metadata.get("degraded", []) == []

@@ -21,12 +21,14 @@ import parrot.outputs.a2ui.catalog.basic
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
+from parrot.outputs.a2ui.catalog.base import BasicNode
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.renderers.degrade import degradation_record
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +76,10 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 vendored ECharts bundle instead of raw option JSON.
 
         Returns:
-            A ``RenderedArtifact`` (``application/json`` or ``text/html``).
+            A ``RenderedArtifact`` (``application/json`` or ``text/html``); any
+            sibling component this renderer does not render is recorded in
+            ``metadata["degraded"]`` (AC-G3 — degradation must be visible,
+            never silent).
 
         Raises:
             ValueError: If the envelope contains no ``Chart`` component.
@@ -83,6 +88,15 @@ class EChartsRenderer(AbstractA2UIRenderer):
         chart = next((c for c in baked if c["component"] == "Chart"), None)
         if chart is None:
             raise ValueError("echarts renderer requires a 'Chart' component in the envelope.")
+
+        degradations = [
+            degradation_record(
+                BasicNode(id=item["id"], component=item["component"]),
+                f"{_SURFACE_NAME} renderer only renders a single Chart component per surface",
+            )
+            for item in baked
+            if item is not chart
+        ]
 
         option = self._build_option(chart)
 
@@ -95,6 +109,7 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 filename=f"{envelope.surface_id}.html",
                 title=envelope.surface_id,
                 surface=_SURFACE_NAME,
+                metadata={"degraded": degradations} if degradations else {},
             )
 
         content = json.dumps(option, sort_keys=True).encode("utf-8")
@@ -105,6 +120,7 @@ class EChartsRenderer(AbstractA2UIRenderer):
             filename=f"{envelope.surface_id}.json",
             title=envelope.surface_id,
             surface=_SURFACE_NAME,
+            metadata={"degraded": degradations} if degradations else {},
         )
 
     # -- internal -----------------------------------------------------------
