@@ -217,10 +217,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-29
+**Notes**: Migrated `ToolDefinition` to `@dataclass(slots=True)`, deleted the
+manual `__slots__` line, and added `routing_meta`/`required_permissions`
+defaulted fields exactly per spec §2 Data Models. Added `Set` to the
+`typing` import in `manager.py`. Extended `@tool` with
+`required_permissions: Optional[Set[str]] = None`, storing
+`set(required_permissions or ())` in `func._tool_metadata`, and documented
+it in the decorator docstring. Created
+`packages/ai-parrot/tests/tools/test_tooldefinition_enforcement.py` with
+the 7 tests from the task's Test Specification — all pass. Verified no
+regressions: `pytest packages/ai-parrot/tests/tools/
+packages/ai-parrot/tests/test_toolmanager_confirmation.py` shows the same
+51 pre-existing failures (unrelated `databasequery`/`test_auto_registration_hooks`
+suites) present on `dev` baseline before this change (904 passed baseline
+vs 911 passed here — the +7 are this task's new tests); zero new failures.
+`ruff check` on the two modified files shows only 3 new findings
+(`UP035`/`UP045`/`UP006` on the new `Set`/`Optional` typing usage), which
+match the file's pre-existing style convention (`Dict`/`Optional` imported
+from `typing` throughout, 156 pre-existing findings on `dev` baseline) and
+mirror the exact `Set[str]` snippet mandated by spec §2 — not a regression,
+left as-is per task scope (no unrelated style modernization).
 
 **Deviations from spec**: none
