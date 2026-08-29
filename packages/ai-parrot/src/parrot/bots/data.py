@@ -2,6 +2,7 @@
 PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
+
 from __future__ import annotations
 from typing import Any, List, Dict, Tuple, Union, Optional
 import ast
@@ -30,6 +31,7 @@ from ..registry.capabilities.models import IntentRouterConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
+from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
@@ -56,6 +58,7 @@ def _get_infographic_result_class() -> Optional[type]:
     """
     try:
         from ..tools.infographic_toolkit import InfographicRenderResult as _cls
+
         return _cls
     except ImportError:
         return None
@@ -71,9 +74,8 @@ except Exception:
 
 class PandasTable(BaseModel):
     """Tabular data structure for PandasAgent responses."""
-    columns: List[str] = Field(
-        description="Column names, in order"
-    )
+
+    columns: List[str] = Field(description="Column names, in order")
     rows: List[List[Scalar]] = Field(
         description=(
             "Rows as lists of scalar values, aligned with `columns`. "
@@ -84,12 +86,12 @@ class PandasTable(BaseModel):
         )
     )
 
-    @field_validator('rows')
+    @field_validator("rows")
     @classmethod
     def validate_rows_alignment(cls, v, info):
         """Ensure rows align with columns."""
-        if 'columns' in info.data:
-            num_cols = len(info.data['columns'])
+        if "columns" in info.data:
+            num_cols = len(info.data["columns"])
             if num_cols == 0:
                 return v
             fixed_rows = []
@@ -109,7 +111,7 @@ class PandasTable(BaseModel):
                 logger.warning(
                     "PandasTable rows misaligned with columns: %d row(s) adjusted to %d columns.",
                     mismatch_count,
-                    num_cols
+                    num_cols,
                 )
             return fixed_rows
         return v
@@ -134,39 +136,32 @@ class DatasetResult(BaseModel):
 
 class SummaryStat(BaseModel):
     """Single summary statistic for a DataFrame column."""
-    metric: str = Field(
-        description="Name of the metric, e.g. 'mean', 'max', 'min', 'std'"
-    )
-    value: float = Field(
-        description="Numeric value of this metric"
-    )
+
+    metric: str = Field(description="Name of the metric, e.g. 'mean', 'max', 'min', 'std'")
+    value: float = Field(description="Numeric value of this metric")
+
 
 class PandasMetadata(BaseModel):
     """Metadata information for PandasAgent responses."""
+
     model_config = ConfigDict(
-        extra='allow',
+        extra="allow",
     )
-    shape: Optional[List[int]] = Field(
-        default=None,
-        description="(rows, columns) of the DataFrame"
-    )
-    columns: Optional[List[str]] = Field(
-        default=None,
-        description="List of DataFrame column names"
-    )
+    shape: Optional[List[int]] = Field(default=None, description="(rows, columns) of the DataFrame")
+    columns: Optional[List[str]] = Field(default=None, description="List of DataFrame column names")
     summary_stats: Optional[List[SummaryStat]] = Field(
         default=None,
         description=(
-            "Summary statistics as a list of metric/value pairs. "
-            "Example: [{'metric': 'mean', 'value': 12.3}, ...]"
-        )
+            "Summary statistics as a list of metric/value pairs. " "Example: [{'metric': 'mean', 'value': 12.3}, ...]"
+        ),
     )
 
 
 class PandasAgentResponse(BaseModel):
     """Structured response for PandasAgent operations."""
+
     model_config = ConfigDict(
-        extra='allow',
+        extra="allow",
         json_schema_extra={
             "example": {
                 "explanation": (
@@ -174,21 +169,15 @@ class PandasAgentResponse(BaseModel):
                     "the $100 threshold. Product C leads with $150 in sales."
                     " Product A and D also perform well."
                 ),
-                "data": {
-                    "columns": ["store_id", "revenue"],
-                    "rows": [
-                        ["TCTX", 801467.93],
-                        ["OMNE", 587654.26]
-                    ]
-                },
+                "data": {"columns": ["store_id", "revenue"], "rows": [["TCTX", 801467.93], ["OMNE", 587654.26]]},
                 "metadata": {
                     "shape": [2, 2],
                     "columns": ["id", "value"],
                     "summary_stats": [
                         {"metric": "mean", "value": 550000},
                         {"metric": "max", "value": 1000000},
-                        {"metric": "min", "value": 100000}
-                    ]
+                        {"metric": "min", "value": 100000},
+                    ],
                 },
                 "data_variable": None,
                 "data_variables": None,
@@ -216,7 +205,7 @@ class PandasAgentResponse(BaseModel):
             "NEVER include currency symbols ($, €, £), percent signs (%), "
             "thousands separators (commas), or any other formatting. "
             "Return 764539.74 NOT '$764,539.74'. Return 85.3 NOT '85.3%'."
-        )
+        ),
     )
     data_variable: Optional[str] = Field(
         default=None,
@@ -227,7 +216,7 @@ class PandasAgentResponse(BaseModel):
             "result DataFrame this turn, regardless of its size — the system "
             "retrieves the full DataFrame from memory automatically. Only "
             "declare variables your executed code actually created."
-        )
+        ),
     )
     data_variables: Optional[List[str]] = Field(
         default=None,
@@ -240,10 +229,10 @@ class PandasAgentResponse(BaseModel):
     )
     code: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
-        description="The Python code used for analysis OR the Code generated under request (e.g. JSON definition for a Altair/Vega Chart)."
+        description="The Python code used for analysis OR the Code generated under request (e.g. JSON definition for a Altair/Vega Chart).",
     )
 
-    @field_validator('data', mode='before')
+    @field_validator("data", mode="before")
     @classmethod
     def parse_data(cls, v):
         """Handle cases where LLM returns stringified JSON for data."""
@@ -251,19 +240,13 @@ class PandasAgentResponse(BaseModel):
             with contextlib.suppress(Exception):
                 v = json_decoder(v)
         if isinstance(v, pd.DataFrame):
-            return PandasTable(
-                columns=[str(c) for c in v.columns.tolist()],
-                rows=v.values.tolist()
-            )
+            return PandasTable(columns=[str(c) for c in v.columns.tolist()], rows=v.values.tolist())
         return v
 
     def to_dataframe(self) -> Optional[pd.DataFrame]:
         if not self.data:
             return pd.DataFrame()
-        return pd.DataFrame(
-            self.data.rows,
-            columns=self.data.columns
-        )
+        return pd.DataFrame(self.data.rows, columns=self.data.columns)
 
 
 # backward-compat alias — canonical definition lives in domain_layers.py
@@ -286,24 +269,45 @@ def _build_pandas_prompt_builder() -> PromptBuilder:
 # so it survives intervening adjectives ("create a really cool map") without
 # crossing sentence boundaries.
 _MAP_PHRASES: Tuple[re.Pattern, ...] = tuple(
-    re.compile(p, re.IGNORECASE) for p in (
-        r"\b(create|show|draw|plot|render|visualize|display|generate|build|make)"
-        r"\b[^.?!]{0,40}\bmap\b",
+    re.compile(p, re.IGNORECASE)
+    for p in (
+        r"\b(create|show|draw|plot|render|visualize|display|generate|build|make)" r"\b[^.?!]{0,40}\bmap\b",
         r"\b(on|in)\s+(a\s+|an\s+|the\s+)?map\b",
     )
 )
 
 # Direct columns guarantee point-marker maps work without inference.
-_DIRECT_GEO_COLS: frozenset[str] = frozenset({
-    "lat", "latitude", "lon", "lng", "long", "longitude", "geometry", "geom",
-})
+_DIRECT_GEO_COLS: frozenset[str] = frozenset(
+    {
+        "lat",
+        "latitude",
+        "lon",
+        "lng",
+        "long",
+        "longitude",
+        "geometry",
+        "geom",
+    }
+)
 
 # Indirect columns require >=2 hits to disambiguate from generic IDs.
-_INDIRECT_GEO_COLS: frozenset[str] = frozenset({
-    "country", "state", "region", "province", "county",
-    "city", "town", "address", "street",
-    "zip", "zipcode", "postal_code", "postcode",
-})
+_INDIRECT_GEO_COLS: frozenset[str] = frozenset(
+    {
+        "country",
+        "state",
+        "region",
+        "province",
+        "county",
+        "city",
+        "town",
+        "address",
+        "street",
+        "zip",
+        "zipcode",
+        "postal_code",
+        "postcode",
+    }
+)
 
 
 def _detect_map_intent(question: str, df: Optional[pd.DataFrame]) -> bool:
@@ -333,22 +337,41 @@ def _detect_map_intent(question: str, df: Optional[pd.DataFrame]) -> bool:
 # ``_detect_map_intent`` heuristic whenever the router is active.
 DEFAULT_OUTPUT_MODE_ROUTES: Dict[str, List[str]] = {
     OutputMode.STRUCTURED_CHART.value: [
-        "create a chart", "make a bar chart", "draw a line chart",
-        "plot a pie chart", "show this as a graph", "visualize the trend",
-        "haz una gráfica", "crea un gráfico de barras", "dibuja una gráfica de líneas",
-        "muéstrame un gráfico de pastel", "grafica la tendencia",
+        "create a chart",
+        "make a bar chart",
+        "draw a line chart",
+        "plot a pie chart",
+        "show this as a graph",
+        "visualize the trend",
+        "haz una gráfica",
+        "crea un gráfico de barras",
+        "dibuja una gráfica de líneas",
+        "muéstrame un gráfico de pastel",
+        "grafica la tendencia",
     ],
     OutputMode.STRUCTURED_TABLE.value: [
-        "show as a table", "display this in a table", "give me a table",
-        "list the rows in a table", "tabular view",
-        "muéstrame una tabla", "ponlo en una tabla", "dame una tabla",
-        "lista los datos en una tabla", "vista tabular",
+        "show as a table",
+        "display this in a table",
+        "give me a table",
+        "list the rows in a table",
+        "tabular view",
+        "muéstrame una tabla",
+        "ponlo en una tabla",
+        "dame una tabla",
+        "lista los datos en una tabla",
+        "vista tabular",
     ],
     OutputMode.STRUCTURED_MAP.value: [
-        "show on a map", "plot these locations on a map", "map the results",
-        "render a map", "display geographically",
-        "muéstralo en un mapa", "ubica estos puntos en un mapa", "dibuja un mapa",
-        "renderiza un mapa", "muéstralo geográficamente",
+        "show on a map",
+        "plot these locations on a map",
+        "map the results",
+        "render a map",
+        "display geographically",
+        "muéstralo en un mapa",
+        "ubica estos puntos en un mapa",
+        "dibuja un mapa",
+        "renderiza un mapa",
+        "muéstralo geográficamente",
     ],
 }
 
@@ -382,15 +405,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
     def __init__(
         self,
-        name: str = 'Pandas Agent',
+        name: str = "Pandas Agent",
         enable_scenarios: bool = False,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         df: Union[
-            List[pd.DataFrame],
-            Dict[str, Union[pd.DataFrame, pd.Series, Dict[str, Any]]],
-            pd.DataFrame,
-            pd.Series
+            List[pd.DataFrame], Dict[str, Union[pd.DataFrame, pd.Series, Dict[str, Any]]], pd.DataFrame, pd.Series
         ] = None,
         query: Union[List[str], dict] = None,
         capabilities: str = None,
@@ -400,7 +420,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         max_iterations: Optional[int] = None,
         output_routing: bool = False,
         output_routing_config: Optional[IntentRouterConfig] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize PandasAgent.
@@ -433,11 +453,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         self._generate_eda = generate_eda
         self._cache_expiration = cache_expiration
         self._enable_scenarios = enable_scenarios
-        self._max_iterations = (
-            max_iterations
-            if max_iterations is not None
-            else self.DEFAULT_MAX_ITERATIONS
-        )
+        self._max_iterations = max_iterations if max_iterations is not None else self.DEFAULT_MAX_ITERATIONS
 
         # Initialize DatasetManager (always create one)
         self._dataset_manager = DatasetManager()
@@ -449,35 +465,29 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             normalized_dfs, normalized_meta = self._define_dataframe(df)
             for df_name, dataframe in normalized_dfs.items():
                 self._dataset_manager.add_dataframe(
-                    df_name,
-                    dataframe,
-                    metadata=normalized_meta.get(df_name),
-                    is_active=True  # Active by default
+                    df_name, dataframe, metadata=normalized_meta.get(df_name), is_active=True  # Active by default
                 )
 
         # Set references for backward compatibility
         self.dataframes = self._dataset_manager.get_active_dataframes()
         self.df_metadata = {
-            name: self._build_metadata_entry(name, dataframe)
-            for name, dataframe in self.dataframes.items()
+            name: self._build_metadata_entry(name, dataframe) for name, dataframe in self.dataframes.items()
         }
 
         self.logger = logging.getLogger(__name__)
-        self.logger.info(
-            'PandasAgent initialized with DataFrames: %s', list(self.dataframes.keys())
-        )
+        self.logger.info("PandasAgent initialized with DataFrames: %s", list(self.dataframes.keys()))
         # Initialize base agent (AbstractBot will set chatbot_id).
         # prompt_builder is created per-instance to avoid the mutable
         # class-attribute pitfall (see note above).
-        if 'prompt_builder' not in kwargs:
-            kwargs['prompt_builder'] = _build_pandas_prompt_builder()
+        if "prompt_builder" not in kwargs:
+            kwargs["prompt_builder"] = _build_pandas_prompt_builder()
         super().__init__(
             name=name,
             system_prompt=system_prompt,
             tools=tools,
             temperature=temperature,
             dataframes=self.dataframes,
-            **kwargs
+            **kwargs,
         )
         self.description = "A specialized agent for data analysis using pandas DataFrames"
 
@@ -510,10 +520,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # the logs instead of silently misleading the LLM.
         if self.logger.isEnabledFor(logging.DEBUG):
             _alias = self._dataset_manager._get_alias_map()
-            _summary = ", ".join(
-                f"{name}(alias={_alias.get(name, '?')}, shape={df.shape})"
-                for name, df in active_dfs.items()
-            ) or "<none loaded>"
+            _summary = (
+                ", ".join(f"{name}(alias={_alias.get(name, '?')}, shape={df.shape})" for name, df in active_dfs.items())
+                or "<none loaded>"
+            )
             self.logger.debug("Syncing %d active DataFrame(s) to REPL: %s", len(active_dfs), _summary)
             # Warn on loaded-but-empty frames — the prime suspect for the LLM
             # running pandas that returns nothing.
@@ -522,17 +532,16 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     self.logger.warning(
                         "Loaded dataset '%s' (alias=%s) is EMPTY (shape=%s) — "
                         "the LLM will get no data from it via the pandas tool.",
-                        name, _alias.get(name, "?"), df.shape,
+                        name,
+                        _alias.get(name, "?"),
+                        df.shape,
                     )
 
         # Update agent's dataframes reference
         self.dataframes = active_dfs
 
         # Rebuild metadata for active datasets
-        self.df_metadata = {
-            name: self._build_metadata_entry(name, df)
-            for name, df in active_dfs.items()
-        }
+        self.df_metadata = {name: self._build_metadata_entry(name, df) for name, df in active_dfs.items()}
 
         # Get stable alias map from DatasetManager so REPL aliases
         # match what list_datasets advertises (based on registration
@@ -555,7 +564,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         """Return Agent-specific tools."""
         if not self._SAFE_ID.match(self.agent_id):
             raise ValueError(f"Unsafe agent_id for path construction: {self.agent_id!r}")
-        report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents').resolve()
+        report_dir = STATIC_DIR.joinpath(self.agent_id, "documents").resolve()
         # Security: verify resolved path stays within STATIC_DIR
         _static_base = Path(STATIC_DIR).resolve()
         if not str(report_dir).startswith(str(_static_base) + os.sep):
@@ -571,7 +580,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             include_summary_stats=False,
             include_sample_data=False,
             sample_rows=2,
-            report_dir=report_dir
+            report_dir=report_dir,
         )
 
         # Prophet forecasting tool
@@ -591,11 +600,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             self.system_prompt_template += WHATIF_SYSTEM_PROMPT
 
         # Add core tools
-        tools.extend([
-            pandas_tool,
-            prophet_tool,
-            ToJsonTool()
-        ])
+        tools.extend([pandas_tool, prophet_tool, ToJsonTool()])
 
         # Add DatasetManager tools (replaces MetadataTool)
         if self._dataset_manager:
@@ -607,11 +612,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
     def _define_dataframe(
         self,
         df: Union[
-            List[pd.DataFrame],
-            Dict[str, Union[pd.DataFrame, pd.Series, Dict[str, Any]]],
-            pd.DataFrame,
-            pd.Series
-        ]
+            List[pd.DataFrame], Dict[str, Union[pd.DataFrame, pd.Series, Dict[str, Any]]], pd.DataFrame, pd.Series
+        ],
     ) -> tuple[Dict[str, pd.DataFrame], Dict[str, Dict[str, Any]]]:
         """
         Normalize dataframe input to dictionary format and build metadata.
@@ -625,12 +627,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         metadata: Dict[str, Dict[str, Any]] = {}
 
         if isinstance(df, pd.DataFrame):
-            dataframes['df1'] = df
-            metadata['df1'] = self._build_metadata_entry('df1', df)
+            dataframes["df1"] = df
+            metadata["df1"] = self._build_metadata_entry("df1", df)
         elif isinstance(df, pd.Series):
             dataframe = pd.DataFrame(df)
-            dataframes['df1'] = dataframe
-            metadata['df1'] = self._build_metadata_entry('df1', dataframe)
+            dataframes["df1"] = dataframe
+            metadata["df1"] = self._build_metadata_entry("df1", dataframe)
         elif isinstance(df, list):
             for i, dataframe in enumerate(df):
                 dataframe = self._ensure_dataframe(dataframe)
@@ -648,15 +650,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         return dataframes, metadata
 
     def _extract_dataframe_payload(
-        self,
-        payload: Union[pd.DataFrame, pd.Series, Dict[str, Any]]
+        self, payload: Union[pd.DataFrame, pd.Series, Dict[str, Any]]
     ) -> tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
         """Extract dataframe and optional metadata from payload."""
         metadata = None
 
-        if isinstance(payload, dict) and 'data' in payload:
-            dataframe = self._ensure_dataframe(payload['data'])
-            metadata = payload.get('metadata')
+        if isinstance(payload, dict) and "data" in payload:
+            dataframe = self._ensure_dataframe(payload["data"])
+            metadata = payload.get("metadata")
         else:
             dataframe = self._ensure_dataframe(payload)
 
@@ -671,10 +672,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(value)}")
 
     def _build_metadata_entry(
-        self,
-        name: str,
-        df: pd.DataFrame,
-        metadata: Optional[Dict[str, Any]] = None
+        self, name: str, df: pd.DataFrame, metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Build normalized metadata entry for a dataframe.
@@ -686,17 +684,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         # Basic metadata structure - EDA removed
         entry: Dict[str, Any] = {
-            'name': name,
-            'description': '',
-            'shape': {
-                'rows': int(row_count),
-                'columns': int(column_count)
-            },
-            'row_count': int(row_count),
-            'column_count': int(column_count),
-            'memory_usage_mb': float(df.memory_usage(deep=True).sum() / 1024 / 1024),
-            'columns': {},
-            'sample_data': self._build_sample_rows(df)
+            "name": name,
+            "description": "",
+            "shape": {"rows": int(row_count), "columns": int(column_count)},
+            "row_count": int(row_count),
+            "column_count": int(column_count),
+            "memory_usage_mb": float(df.memory_usage(deep=True).sum() / 1024 / 1024),
+            "columns": {},
+            "sample_data": self._build_sample_rows(df),
         }
 
         # Extract user-provided metadata
@@ -705,58 +700,48 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         column_metadata: Dict[str, Any] = {}
 
         if isinstance(metadata, dict):
-            provided_description = metadata.get('description')
-            if isinstance(metadata.get('sample_data'), list):
-                provided_sample_data = metadata['sample_data']
+            provided_description = metadata.get("description")
+            if isinstance(metadata.get("sample_data"), list):
+                provided_sample_data = metadata["sample_data"]
 
-            if isinstance(metadata.get('columns'), dict):
-                column_metadata = metadata['columns']
+            if isinstance(metadata.get("columns"), dict):
+                column_metadata = metadata["columns"]
             else:
-                column_metadata = {
-                    key: value
-                    for key, value in metadata.items()
-                    if key in df.columns
-                }
+                column_metadata = {key: value for key, value in metadata.items() if key in df.columns}
 
         # Build column metadata
         for column in df.columns:
             column_info = column_metadata.get(column)
-            entry['columns'][column] = self._build_column_metadata(
-                column,
-                df[column],
-                column_info
-            )
+            entry["columns"][column] = self._build_column_metadata(column, df[column], column_info)
 
         # Set description and samples
-        entry['description'] = provided_description or f"Columns available in '{name}'"
+        entry["description"] = provided_description or f"Columns available in '{name}'"
         if provided_sample_data is not None:
-            entry['sample_data'] = provided_sample_data
+            entry["sample_data"] = provided_sample_data
 
         return entry
 
     @staticmethod
     def _build_column_metadata(
-        column_name: str,
-        series: pd.Series,
-        metadata: Optional[Union[str, Dict[str, Any]]] = None
+        column_name: str, series: pd.Series, metadata: Optional[Union[str, Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """Normalize metadata for a single column."""
         if isinstance(metadata, str):
-            column_meta: Dict[str, Any] = {'description': metadata}
+            column_meta: Dict[str, Any] = {"description": metadata}
         elif isinstance(metadata, dict):
             column_meta = metadata.copy()
         else:
             column_meta = {}
 
-        column_meta.setdefault('description', column_name.replace('_', ' ').title())
-        column_meta.setdefault('dtype', str(series.dtype))
+        column_meta.setdefault("description", column_name.replace("_", " ").title())
+        column_meta.setdefault("dtype", str(series.dtype))
 
         return column_meta
 
     def _build_sample_rows(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
         """Return sample rows for metadata responses."""
         try:
-            return df.head(self.METADATA_SAMPLE_ROWS).to_dict(orient='records')
+            return df.head(self.METADATA_SAMPLE_ROWS).to_dict(orient="records")
         except Exception:
             return []
 
@@ -791,28 +776,24 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     if entry.description:
                         desc = f" — {entry.description}"
                 col_names = ", ".join(df.columns)
-                df_info_parts.append(
-                    f"- `{df_name}`{alias_tag} ({df.shape[0]:,}×{df.shape[1]}){desc}: {col_names}"
-                )
+                df_info_parts.append(f"- `{df_name}`{alias_tag} ({df.shape[0]:,}×{df.shape[1]}){desc}: {col_names}")
 
         # ── Unloaded datasets (compact: name, row estimate, columns) ──
         if self._dataset_manager:
-            unloaded = [
-                (name, entry)
-                for name, entry in self._dataset_manager._datasets.items()
-                if not entry.loaded
-            ]
+            unloaded = [(name, entry) for name, entry in self._dataset_manager._datasets.items() if not entry.loaded]
             if unloaded:
                 df_info_parts.append(f"**Unloaded ({len(unloaded)}) — call `fetch_dataset` to load:**")
                 for name, entry in unloaded:
                     desc = f" — {entry.description}" if entry.description else ""
-                    row_est = getattr(entry.source, '_row_count_estimate', None)
+                    row_est = getattr(entry.source, "_row_count_estimate", None)
                     size_hint = f"~{row_est:,} rows" if row_est else "?"
                     cols = entry.columns
-                    schema = getattr(entry.source, '_schema', {})
-                    col_names = ", ".join(schema.keys()) if schema else (
-                        ", ".join(cols[:10]) + (", ..." if len(cols) > 10 else "")
-                    ) if cols else ""
+                    schema = getattr(entry.source, "_schema", {})
+                    col_names = (
+                        ", ".join(schema.keys())
+                        if schema
+                        else (", ".join(cols[:10]) + (", ..." if len(cols) > 10 else "")) if cols else ""
+                    )
                     col_part = f": {col_names}" if col_names else ""
                     df_info_parts.append(f"- `{name}` ({size_hint}){desc}{col_part}")
 
@@ -824,14 +805,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 alias_tag = f" (alias: `{alias}`)" if alias else ""
                 df_info_parts.append(f"- `{df_name}`{alias_tag}: 0×{df.shape[1]}")
 
-        if not self.dataframes and not (self._dataset_manager and any(
-            not e.loaded for e in self._dataset_manager._datasets.values()
-        )):
+        if not self.dataframes and not (
+            self._dataset_manager and any(not e.loaded for e in self._dataset_manager._datasets.values())
+        ):
             return "No DataFrames loaded. Use `add_dataframe` to register data."
 
-        df_info_parts.append(
-            "Call `get_metadata(name)` for column types, unique values, and EDA details."
-        )
+        df_info_parts.append("Call `get_metadata(name)` for column types, unique values, and EDA details.")
 
         return "\n".join(df_info_parts)
 
@@ -841,21 +820,15 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             kwargs["dataframe_schemas"] = self._build_dataframe_info()
         result = await super().create_system_prompt(**kwargs)
         if self._prompt_builder and self.logger.isEnabledFor(logging.DEBUG):
-            total = len(result) if isinstance(result, str) else sum(
-                len(s.text) for s in result
-            )
+            total = len(result) if isinstance(result, str) else sum(len(s.text) for s in result)
             sorted_layers = sorted(
                 self._prompt_builder._layers.values(),
                 key=lambda l: l.priority,
             )
             breakdown = ", ".join(
-                f"{l.name}={len(r)}"
-                for l in sorted_layers
-                if (r := (l.render(kwargs) or "").strip())
+                f"{l.name}={len(r)}" for l in sorted_layers if (r := (l.render(kwargs) or "").strip())
             )
-            self.logger.debug(
-                "System prompt: %d chars | %s", total, breakdown
-            )
+            self.logger.debug("System prompt: %d chars | %s", total, breakdown)
         return result
 
     def _define_prompt(self, prompt: str = None, **kwargs):
@@ -884,11 +857,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         # Build prompt using string.Template
         tmpl = Template(self.system_prompt_template)
-        pre_context = ''
+        pre_context = ""
         if self.pre_instructions:
-            pre_context = "## IMPORTANT PRE-INSTRUCTIONS: \n" + "\n".join(
-                f"- {a}." for a in self.pre_instructions
-            )
+            pre_context = "## IMPORTANT PRE-INSTRUCTIONS: \n" + "\n".join(f"- {a}." for a in self.pre_instructions)
         self.system_prompt_template = tmpl.safe_substitute(
             name=self.name,
             description=self.description,
@@ -897,7 +868,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             today_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             backstory=backstory,
             pre_context=pre_context,
-            **kwargs
+            **kwargs,
         )
 
     async def configure(
@@ -921,9 +892,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # Delegate loading to DatasetManager (handles caching + resilience)
             # dataframes are automatically added to DM by load_data
             await self._dataset_manager.load_data(
-                query=self._queries,
-                agent_name=self.chatbot_id,
-                cache_expiration=self._cache_expiration
+                query=self._queries, agent_name=self.chatbot_id, cache_expiration=self._cache_expiration
             )
 
         # Sync datasets from DatasetManager to tools
@@ -946,20 +915,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         # Cache data after configuration
 
-
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
 
-        self.logger.info(
-            f"PandasAgent '{self.name}' configured with {len(self.dataframes)} DataFrame(s)"
-        )
+        self.logger.info(f"PandasAgent '{self.name}' configured with {len(self.dataframes)} DataFrame(s)")
 
-    async def invoke(
-        self,
-        question: str,
-        response_model: type[BaseModel] | None = None,
-        **kwargs
-    ) -> AgentResponse:
+    async def invoke(self, question: str, response_model: type[BaseModel] | None = None, **kwargs) -> AgentResponse:
         """
         Ask the agent a question about the data.
 
@@ -970,10 +931,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         Returns:
             AgentResponse with answer and metadata
         """
-        response = await self.ask(
-            question=question,
-            **kwargs
-        )
+        response = await self.ask(question=question, **kwargs)
         if isinstance(response, AgentResponse):
             return response
 
@@ -982,19 +940,20 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return self._agent_response(
                 agent_id=self.agent_id,
                 agent_name=self.agent_name,
-                status='success',
+                status="success",
                 response=response,  # original AIMessage
                 question=question,
                 data=response.content,
                 output=response.output,
                 metadata=response.metadata,
-                turn_id=response.turn_id
+                turn_id=response.turn_id,
             )
 
         return response
 
     def _extract_last_infographic_result(
-        self, tool_calls: Optional[List[Any]],
+        self,
+        tool_calls: Optional[List[Any]],
     ) -> Optional[Any]:
         """Return the last ``InfographicRenderResult`` from the tool calls list.
 
@@ -1020,7 +979,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         return None
 
     def _finalize_infographic_response(
-        self, response: Any, envelope: Any,
+        self,
+        response: Any,
+        envelope: Any,
     ) -> Optional[str]:
         """Apply an ``InfographicRenderResult`` to the agent response in place.
 
@@ -1057,21 +1018,24 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             response.response = explanation
 
         meta = dict(getattr(response, "metadata", None) or {})
-        meta.update({
-            "html_url": envelope.html_url,
-            "html_inline_omitted": envelope.html_inline is None,
-            "enhanced": envelope.enhanced,
-            "template_name": envelope.template_name,
-            "theme": envelope.theme,
-            "explanation": explanation,
-        })
+        meta.update(
+            {
+                "html_url": envelope.html_url,
+                "html_inline_omitted": envelope.html_inline is None,
+                "enhanced": envelope.enhanced,
+                "template_name": envelope.template_name,
+                "theme": envelope.theme,
+                "explanation": explanation,
+            }
+        )
         if hasattr(response, "metadata"):
             response.metadata = meta
 
         return explanation
 
     def _spatial_result_from_dataframe(
-        self, df: pd.DataFrame,
+        self,
+        df: pd.DataFrame,
     ) -> Optional[Any]:
         """Convert a result DataFrame into a ``SpatialResult`` for STRUCTURED_MAP.
 
@@ -1091,9 +1055,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         try:
             from ..tools.dataset_manager.spatial.contracts import SpatialResult
         except ImportError:
-            self.logger.debug(
-                "SpatialResult unavailable; skipping STRUCTURED_MAP conversion."
-            )
+            self.logger.debug("SpatialResult unavailable; skipping STRUCTURED_MAP conversion.")
             return None
         try:
             result = SpatialResult.from_dataframe(df)
@@ -1105,7 +1067,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         return result
 
     def _spatial_result_from_datasets(
-        self, datasets: List[Dict[str, Any]],
+        self,
+        datasets: List[Dict[str, Any]],
     ) -> Optional[Any]:
         """Build a MULTI-layer ``SpatialResult`` from a multi-dataset payload.
 
@@ -1134,10 +1097,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         try:
             from ..tools.dataset_manager.spatial.contracts import SpatialResult
         except ImportError:
-            self.logger.debug(
-                "SpatialResult unavailable; skipping multi-dataset STRUCTURED_MAP "
-                "conversion."
-            )
+            self.logger.debug("SpatialResult unavailable; skipping multi-dataset STRUCTURED_MAP " "conversion.")
             return None
 
         if not datasets:
@@ -1145,9 +1105,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
         # Dataset-shaped entries carry a nested ``data`` list; a flat list of row
         # dicts does not. Treat the latter as a single anonymous layer.
-        dataset_shaped = [
-            e for e in datasets if isinstance(e, dict) and isinstance(e.get("data"), list)
-        ]
+        dataset_shaped = [e for e in datasets if isinstance(e, dict) and isinstance(e.get("data"), list)]
         if not dataset_shaped:
             if all(isinstance(e, dict) for e in datasets):
                 return self._spatial_result_from_dataframe(pd.DataFrame(datasets))
@@ -1158,9 +1116,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             rows = entry.get("data")
             if not rows:
                 continue
-            name = str(
-                entry.get("name") or entry.get("variable") or f"layer_{len(merged_layers)}"
-            )
+            name = str(entry.get("name") or entry.get("variable") or f"layer_{len(merged_layers)}")
             try:
                 df = pd.DataFrame(rows)
             except Exception:  # noqa: BLE001
@@ -1169,22 +1125,21 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 continue
             try:
                 layer_result = SpatialResult.from_dataframe(
-                    df, dataset=name, layer=name,
+                    df,
+                    dataset=name,
+                    layer=name,
                 )
             except ValueError:
                 # This dataset has no geometry/lat-lon pair — skip its layer.
                 self.logger.debug(
                     "Multi-dataset STRUCTURED_MAP: dataset '%s' has no resolvable "
-                    "coordinates/geometry — skipping layer.", name,
+                    "coordinates/geometry — skipping layer.",
+                    name,
                 )
                 continue
             for layer_key, layer_val in layer_result.layers.items():
                 # Guard against key collisions across datasets.
-                key = (
-                    layer_key
-                    if layer_key not in merged_layers
-                    else f"{layer_key}_{len(merged_layers)}"
-                )
+                key = layer_key if layer_key not in merged_layers else f"{layer_key}_{len(merged_layers)}"
                 merged_layers[key] = layer_val
 
         if not merged_layers:
@@ -1210,7 +1165,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         structured output in a single call and do not benefit from the
         in-band JSON hint.
         """
-        return client.__class__.__name__ == 'GoogleGenAIClient'
+        return client.__class__.__name__ == "GoogleGenAIClient"
 
     @staticmethod
     def _build_fast_path_json_addendum(output_type: type) -> Optional[str]:
@@ -1226,14 +1181,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         """
         skeleton: Optional[Dict[str, Any]] = None
 
-        cfg = getattr(output_type, 'model_config', None)
+        cfg = getattr(output_type, "model_config", None)
         if isinstance(cfg, dict):
-            example = (cfg.get('json_schema_extra') or {}).get('example')
+            example = (cfg.get("json_schema_extra") or {}).get("example")
             if isinstance(example, dict):
                 skeleton = example
 
         if skeleton is None:
-            fields = getattr(output_type, 'model_fields', None)
+            fields = getattr(output_type, "model_fields", None)
             if not fields:
                 return None
             skeleton = {name: None for name in fields}
@@ -1260,7 +1215,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             "Python variable name holding the DataFrame and leave "
             "`data` as null. NEVER inline large tables.\n"
             "- For results with ≤ 10 rows, populate `data` with "
-            "`{\"columns\": [...], \"rows\": [[...], ...]}` and leave "
+            '`{"columns": [...], "rows": [[...], ...]}` and leave '
             "`data_variable` null.\n"
             "- Numeric values in `rows` MUST be raw numbers — no "
             "currency symbols, no percent signs, no thousands "
@@ -1293,8 +1248,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         re.IGNORECASE | re.VERBOSE,
     )
     _GREETING_PATTERNS = re.compile(
-        r"^\s*(?:hi|hello|hey|hola|buenas|buenos\s+d[ií]as|good\s+morning|"
-        r"help|ayuda|ping|test)\b[\s!.?]*$",
+        r"^\s*(?:hi|hello|hey|hola|buenas|buenos\s+d[ií]as|good\s+morning|" r"help|ayuda|ping|test)\b[\s!.?]*$",
         re.IGNORECASE,
     )
 
@@ -1331,7 +1285,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         output_mode: Any = None,
         format_kwargs: dict = None,
         return_structured: bool = True,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Override ask() method to ensure PythonPandasTool is always used.
@@ -1364,8 +1318,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         turn_id = str(uuid.uuid4())
 
         # Use default temperature of 0 if not specified
-        if 'temperature' not in kwargs:
-            kwargs['temperature'] = 0.0
+        if "temperature" not in kwargs:
+            kwargs["temperature"] = 0.0
 
         try:
             # Get conversation history (no vector search for PandasAgent)
@@ -1374,7 +1328,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(user_id, session_id) or await self.create_conversation_history(user_id, session_id)
+                conversation_history = await self.get_conversation_history(
+                    user_id, session_id
+                ) or await self.create_conversation_history(user_id, session_id)
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Determine output mode
@@ -1398,7 +1354,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             output_mode = self._apply_default_output_mode(output_mode)
 
             # Build context from different sources (no vector context for PandasAgent)
-            vector_metadata = {'activated_kbs': []}
+            vector_metadata = {"activated_kbs": []}
 
             # Get vector context (method handles use_vectors check internally)
             vector_context, vector_meta = await self._build_vector_context(
@@ -1406,7 +1362,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 use_vectors=False,  # NO vector context for PandasAgent
             )
             if vector_meta:
-                vector_metadata['vector'] = vector_meta
+                vector_metadata["vector"] = vector_meta
 
             # Get user-specific context
             user_context = await self._build_user_context(
@@ -1421,8 +1377,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 session_id=session_id,
                 ctx=ctx,
             )
-            if kb_meta.get('activated_kbs'):
-                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
             # Pre-LLM: episodic / mixin-provided context
             episodic_context = ""
@@ -1436,10 +1392,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 self.logger.debug("_on_pre_ask hook failed: %s", _pre_exc)
 
             if episodic_context:
-                user_context = (
-                    f"{user_context}\n\n{episodic_context}"
-                    if user_context else episodic_context
-                )
+                user_context = f"{user_context}\n\n{episodic_context}" if user_context else episodic_context
 
             # Build system prompt with DataFrame context (no vector context)
             # Create system prompt
@@ -1449,11 +1402,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
-                **kwargs
+                **kwargs,
             )
             # Handle output mode in system prompt
             if output_mode != OutputMode.DEFAULT:
-                _mode = output_mode if isinstance(output_mode, str) else getattr(output_mode, 'value', 'default')
+                _mode = output_mode if isinstance(output_mode, str) else getattr(output_mode, "value", "default")
                 system_prompt += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
                 # Get the Output Mode Prompt
                 # For TABLE output, do NOT append GridJS system prompt (it conflicts with structured output).
@@ -1484,8 +1437,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     )
 
             # Configure LLM if needed
-            if (new_llm := kwargs.pop('llm', None)):
-                self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
+            if new_llm := kwargs.pop("llm", None):
+                self.configure_llm(llm=new_llm, **kwargs.pop("llm_config", {}))
 
             # print(' :::: System Prompt:\n')
             # print(system_prompt)
@@ -1495,8 +1448,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 llm_kwargs = {
                     "prompt": question,
                     "system_prompt": system_prompt,
-                    "model": kwargs.get('model', self._llm_model),
-                    "temperature": kwargs.get('temperature', 0.0),
+                    "model": kwargs.get("model", self._llm_model),
+                    "temperature": kwargs.get("temperature", 0.0),
                     "user_id": user_id,
                     "session_id": session_id,
                     "use_tools": True,  # ALWAYS use tools for PandasAgent
@@ -1510,17 +1463,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     ask_params = inspect.signature(client.ask).parameters
                 except (TypeError, ValueError):
                     ask_params = {}
-                if 'max_iterations' in ask_params:
-                    llm_kwargs["max_iterations"] = kwargs.get(
-                        'max_iterations', self._max_iterations
-                    )
-                if 'stop_tools' in ask_params:
-                    llm_kwargs["stop_tools"] = kwargs.get(
-                        'stop_tools', {"to_json"}
-                    )
+                if "max_iterations" in ask_params:
+                    llm_kwargs["max_iterations"] = kwargs.get("max_iterations", self._max_iterations)
+                if "stop_tools" in ask_params:
+                    llm_kwargs["stop_tools"] = kwargs.get("stop_tools", {"to_json"})
 
                 # Add max_tokens if specified
-                max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
+                max_tokens = kwargs.get("max_tokens", self._llm_kwargs.get("max_tokens"))
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
 
@@ -1531,14 +1480,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # spiralling in a tool loop. Skip forced structured output so
                 # the model replies naturally; the grounding layer's
                 # descriptive-question carve-out keeps it from inventing data.
-                if (
-                    return_structured
-                    and structured_output is None
-                    and self._is_conversational_query(question)
-                ):
+                if return_structured and structured_output is None and self._is_conversational_query(question):
                     self.logger.info(
-                        "Conversational/meta query detected — skipping forced "
-                        "structured output for: %r",
+                        "Conversational/meta query detected — skipping forced " "structured output for: %r",
                         question[:80],
                     )
                     return_structured = False
@@ -1546,9 +1490,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # Handle structured output
                 if structured_output:
                     if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
-                        llm_kwargs["structured_output"] = StructuredOutputConfig(
-                            output_type=structured_output
-                        )
+                        llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
                 elif return_structured:
@@ -1560,13 +1502,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     # fast-path JSON addendum below) makes it reliably emit the
                     # config + embedded data rows.
                     _forced_output_type = (
-                        StructuredChartConfig
-                        if output_mode == OutputMode.STRUCTURED_CHART
-                        else PandasAgentResponse
+                        StructuredChartConfig if output_mode == OutputMode.STRUCTURED_CHART else PandasAgentResponse
                     )
-                    llm_kwargs["structured_output"] = StructuredOutputConfig(
-                        output_type=_forced_output_type
-                    )
+                    llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=_forced_output_type)
 
                 # Fast-path optimization for clients that split tools +
                 # structured_output into two LLM calls (currently only
@@ -1574,15 +1512,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # structured JSON inline lets the client's fast-path
                 # parser skip the second reformat call.
                 structured_cfg = llm_kwargs.get("structured_output")
-                if (
-                    structured_cfg is not None
-                    and self._client_uses_split_structured_with_tools(client)
-                ):
-                    output_type = getattr(structured_cfg, 'output_type', None)
-                    if (
-                        isinstance(output_type, type)
-                        and issubclass(output_type, BaseModel)
-                    ):
+                if structured_cfg is not None and self._client_uses_split_structured_with_tools(client):
+                    output_type = getattr(structured_cfg, "output_type", None)
+                    if isinstance(output_type, type) and issubclass(output_type, BaseModel):
                         addendum = self._build_fast_path_json_addendum(output_type)
                         if addendum:
                             llm_kwargs["system_prompt"] += addendum
@@ -1593,20 +1525,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(
                     used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0
+                    context_length=len(conversation_context) if conversation_context else 0,
                 )
 
                 # Transfer artifacts accumulated by DatasetManager
                 # (e.g. executed SQL queries) onto the AIMessage.
                 if self._dataset_manager:
-                    response.artifacts.extend(
-                        self._dataset_manager.drain_artifacts()
-                    )
+                    response.artifacts.extend(self._dataset_manager.drain_artifacts())
 
                 response.session_id = session_id
-                response.turn_id = getattr(response, 'turn_id', None) or turn_id
-                data_response: Optional[PandasAgentResponse] = response.output \
-                    if isinstance(response.output, PandasAgentResponse) else None
+                response.turn_id = getattr(response, "turn_id", None) or turn_id
+                data_response: Optional[PandasAgentResponse] = (
+                    response.output if isinstance(response.output, PandasAgentResponse) else None
+                )
 
                 # FEAT-221: in STRUCTURED_MAP mode the agent calls the spatial_filter
                 # tool which returns a SpatialResult. Route the SpatialResult to
@@ -1616,9 +1547,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # calls the tool; the renderer builds the config.
                 if output_mode == OutputMode.STRUCTURED_MAP:
                     # Look for a SpatialResult in tool call results
-                    spatial_result = self._extract_spatial_result_from_tools(
-                        response.tool_calls
-                    )
+                    spatial_result = self._extract_spatial_result_from_tools(response.tool_calls)
                     if spatial_result is not None:
                         response.data = spatial_result
                         self.logger.info(
@@ -1651,18 +1580,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         _chart_data_var = _cfg_out.data_variable
                     elif isinstance(_cfg_out, dict):
                         # response.code no longer set here (FEAT-224 G3)
-                        _chart_data_var = (
-                            _cfg_out.get("data_variable")
-                            or _cfg_out.get("dataVariable")
-                        )
+                        _chart_data_var = _cfg_out.get("data_variable") or _cfg_out.get("dataVariable")
                     # The chart config may name the DataFrame variable to chart.
                     # Inject it explicitly: this disambiguates turns that produced
                     # multiple DataFrames, where blind inference refuses to guess
                     # (see _infer_data_variable_from_tools).
                     if _chart_data_var:
-                        await self._inject_data_from_variable(
-                            response, _chart_data_var
-                        )
+                        await self._inject_data_from_variable(response, _chart_data_var)
 
                 missing_data_variables: List[str] = []
                 if data_response:
@@ -1671,7 +1595,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     # Extract the textual explanation
                     response.response = data_response.explanation
                     # requested code:
-                    response.code = data_response.code if hasattr(data_response, 'code') else None
+                    response.code = data_response.code if hasattr(data_response, "code") else None
                     # declared as "is_structured" response
                     response.is_structured = True
                     # Anti-stale guard (cross-turn contamination): the REPL
@@ -1686,8 +1610,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     )
                     if stale_multi:
                         self.logger.warning(
-                            "Ignoring stale/cross-turn data_variables not produced "
-                            "this turn: %s (declared=%s)",
+                            "Ignoring stale/cross-turn data_variables not produced " "this turn: %s (declared=%s)",
                             stale_multi,
                             data_response.data_variables,
                         )
@@ -1698,8 +1621,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         )
                         if _stale_single:
                             self.logger.warning(
-                                "Ignoring stale/cross-turn data_variable '%s' not "
-                                "produced this turn.",
+                                "Ignoring stale/cross-turn data_variable '%s' not " "produced this turn.",
                                 allowed_single,
                             )
                         allowed_single = _ok_single[0] if _ok_single else None
@@ -1712,28 +1634,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         )
                     elif len(allowed_multi) == 1:
                         # Single surviving entry — treat same as data_variable
-                        if (
-                            response.data is None
-                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
-                        ):
+                        if response.data is None or (isinstance(response.data, pd.DataFrame) and response.data.empty):
                             await self._inject_data_from_variable(
                                 response,
                                 allowed_multi[0],
                             )
                     elif allowed_single:
-                        if (
-                            response.data is None
-                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
-                        ):
+                        if response.data is None or (isinstance(response.data, pd.DataFrame) and response.data.empty):
                             await self._inject_data_from_variable(
                                 response,
                                 allowed_single,
                             )
                 elif isinstance(response.output, dict) and response.output.get("data_variable"):
-                    await self._inject_data_from_variable(
-                        response,
-                        response.output.get("data_variable")
-                    )
+                    await self._inject_data_from_variable(response, response.output.get("data_variable"))
                 # If we still don't have data, try to infer the variable
                 # name from the current turn's tool calls.  Strict-mode
                 # inference only populates data when the turn produced an
@@ -1749,19 +1662,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # turn produced exactly one live DataFrame candidate whose
                 # shape disagrees with ``response.data``, we trust the
                 # tool-local DataFrame and override.
-                inferred_var = self._extract_saved_variable_from_tool_calls(
-                    response.tool_calls
-                )
+                inferred_var = self._extract_saved_variable_from_tool_calls(response.tool_calls)
                 if not inferred_var:
                     # FEAT-215: in STRUCTURED_CHART mode the prompt asks the
                     # agent to place the final chart rows in a conventionally
                     # named DataFrame (`chart_data`). Prefer it when present so a
                     # multi-DataFrame turn still resolves instead of refusing.
-                    _prefer = (
-                        ("chart_data", "chart_df")
-                        if output_mode == OutputMode.STRUCTURED_CHART
-                        else ()
-                    )
+                    _prefer = ("chart_data", "chart_df") if output_mode == OutputMode.STRUCTURED_CHART else ()
                     self._current_response_data_columns = (
                         list(response.data.columns)
                         if isinstance(response.data, pd.DataFrame) and not response.data.empty
@@ -1773,17 +1680,15 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     )
                     self._current_response_data_columns = None
 
-                response_data_is_empty = (
-                    response.data is None
-                    or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                response_data_is_empty = response.data is None or (
+                    isinstance(response.data, pd.DataFrame) and response.data.empty
                 )
 
                 if inferred_var and response_data_is_empty:
                     self.logger.info(
-                        "Injecting data from inferred variable '%s' "
-                        "(response.data was %s)",
+                        "Injecting data from inferred variable '%s' " "(response.data was %s)",
                         inferred_var,
-                        'None' if response.data is None else 'empty',
+                        "None" if response.data is None else "empty",
                     )
                     await self._inject_data_from_variable(response, inferred_var)
                 elif (
@@ -1817,16 +1722,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         # FEAT-380 (TASK-1944): namespace API — the worker
                         # owns the live namespace now, not `.locals`.
                         await pandas_tool.get_var(inferred_var)
-                        if pandas_tool and hasattr(pandas_tool, 'get_var')
+                        if pandas_tool and hasattr(pandas_tool, "get_var")
                         else None
                     )
                     if (
                         isinstance(live_df, pd.DataFrame)
                         and not live_df.empty
-                        and (
-                            len(live_df) != len(response.data)
-                            or list(live_df.columns) != list(response.data.columns)
-                        )
+                        and (len(live_df) != len(response.data) or list(live_df.columns) != list(response.data.columns))
                     ):
                         self.logger.warning(
                             "Overriding response.data (%d rows, cols=%s) with "
@@ -1847,12 +1749,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # DataFrame here — the LLM is responsible for declaring
                 # the result variable in its structured response.
                 if (
-                    (
-                        response.data is None
-                        or (isinstance(response.data, pd.DataFrame) and response.data.empty)
-                    )
-                    and self._turn_has_data_operations(response.tool_calls)
-                ):
+                    response.data is None or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                ) and self._turn_has_data_operations(response.tool_calls):
                     self.logger.warning(
                         "PandasAgent response has no `data` and no "
                         "resolvable `data_variable`, but the turn "
@@ -1860,10 +1758,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         "set `data_variable` in the structured response "
                         "to deliver the full DataFrame to the caller. "
                         "Hallucinated/missing data_variables: %s",
-                        [
-                            getattr(tc, 'name', '?')
-                            for tc in (response.tool_calls or [])
-                        ],
+                        [getattr(tc, "name", "?") for tc in (response.tool_calls or [])],
                         missing_data_variables or "none",
                     )
 
@@ -1889,17 +1784,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     and isinstance(response.data, pd.DataFrame)
                     and _detect_map_intent(question, response.data)
                 ):
-                    spatial_result = self._spatial_result_from_dataframe(
-                        response.data
-                    )
+                    spatial_result = self._spatial_result_from_dataframe(response.data)
                     if spatial_result is not None:
-                        feature_count = sum(
-                            len(lyr.features)
-                            for lyr in spatial_result.layers.values()
-                        )
+                        feature_count = sum(len(lyr.features) for lyr in spatial_result.layers.values())
                         self.logger.info(
-                            "Map intent detected — emitting STRUCTURED_MAP "
-                            "config (%d feature(s))",
+                            "Map intent detected — emitting STRUCTURED_MAP " "config (%d feature(s))",
                             feature_count,
                         )
                         output_mode = OutputMode.STRUCTURED_MAP
@@ -1920,18 +1809,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # must be a SpatialResult"). Convert the result rows here — the
                 # same df->SpatialResult path the DEFAULT auto-switch uses — so the
                 # map renders instead of surfacing a renderer error to the user.
-                if (
-                    output_mode == OutputMode.STRUCTURED_MAP
-                    and isinstance(response.data, pd.DataFrame)
-                ):
-                    spatial_result = self._spatial_result_from_dataframe(
-                        response.data
-                    )
+                if output_mode == OutputMode.STRUCTURED_MAP and isinstance(response.data, pd.DataFrame):
+                    spatial_result = self._spatial_result_from_dataframe(response.data)
                     if spatial_result is not None:
-                        feature_count = sum(
-                            len(lyr.features)
-                            for lyr in spatial_result.layers.values()
-                        )
+                        feature_count = sum(len(lyr.features) for lyr in spatial_result.layers.values())
                         self.logger.info(
                             "STRUCTURED_MAP: converted result DataFrame to "
                             "SpatialResult (%d feature(s)) — agent returned rows "
@@ -1950,19 +1831,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # _inject_multi_data_from_variables. Merge them into one
                 # multi-layer SpatialResult so the renderer accepts it instead of
                 # rejecting the list ("response.data must be a SpatialResult").
-                elif (
-                    output_mode == OutputMode.STRUCTURED_MAP
-                    and isinstance(response.data, list)
-                    and response.data
-                ):
-                    spatial_result = self._spatial_result_from_datasets(
-                        response.data
-                    )
+                elif output_mode == OutputMode.STRUCTURED_MAP and isinstance(response.data, list) and response.data:
+                    spatial_result = self._spatial_result_from_datasets(response.data)
                     if spatial_result is not None:
-                        feature_count = sum(
-                            len(lyr.features)
-                            for lyr in spatial_result.layers.values()
-                        )
+                        feature_count = sum(len(lyr.features) for lyr in spatial_result.layers.values())
                         self.logger.info(
                             "STRUCTURED_MAP: converted %d dataset(s) to a "
                             "multi-layer SpatialResult (%d layer(s), %d feature(s)) "
@@ -1983,12 +1855,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 # isinstance check on the last tool result → mutate response in
                 # place → return early, bypassing the formatter and
                 # structured-output reformat.
-                infographic_envelope = self._extract_last_infographic_result(
-                    response.tool_calls
-                )
+                infographic_envelope = self._extract_last_infographic_result(response.tool_calls)
                 if infographic_envelope is not None:
                     await self._inject_multi_data_from_variables(
-                        response, infographic_envelope.data_variables,
+                        response,
+                        infographic_envelope.data_variables,
                     )
                     # FEAT-273/470: when the toolkit ran with emit_a2ui=True the
                     # render carries a declarative surface — route it the way
@@ -2005,7 +1876,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         )
                         return response
                     explanation = self._finalize_infographic_response(
-                        response, infographic_envelope,
+                        response,
+                        infographic_envelope,
                     )
                     self.logger.info(
                         "InfographicRenderResult detected — bypassing formatter: "
@@ -2014,12 +1886,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         infographic_envelope.enhanced,
                         len(explanation or ""),
                     )
-                    return response   # skip formatter + structured reformat
+                    return response  # skip formatter + structured reformat
 
                 # Interactive artifact: same early-return pattern, no data_variables.
-                interactive_envelope = self._extract_last_interactive_result(
-                    response.tool_calls
-                )
+                interactive_envelope = self._extract_last_interactive_result(response.tool_calls)
                 if interactive_envelope is not None:
                     if getattr(interactive_envelope, "a2ui_envelope", None) is not None:
                         response.a2ui_envelope = interactive_envelope.a2ui_envelope
@@ -2032,7 +1902,8 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         )
                         return response
                     explanation = self._finalize_interactive_response(
-                        response, interactive_envelope,
+                        response,
+                        interactive_envelope,
                     )
                     self.logger.info(
                         "InteractiveRenderResult detected — bypassing formatter: "
@@ -2041,7 +1912,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         interactive_envelope.enhanced,
                         len(explanation or ""),
                     )
-                    return response   # skip formatter + structured reformat
+                    return response  # skip formatter + structured reformat
 
                 # A2UI was requested but nothing rendered a surface this turn
                 # (toolkit not registered, or the LLM answered in prose). There
@@ -2060,11 +1931,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if output_mode != OutputMode.DEFAULT:
                     if pandas_tool := self._get_python_pandas_tool():
                         # Provide the tool for rendering if needed
-                        format_kwargs['pandas_tool'] = pandas_tool
+                        format_kwargs["pandas_tool"] = pandas_tool
                     else:
-                        self.logger.warning(
-                            "PythonPandasTool not available for non-default output mode rendering"
-                        )
+                        self.logger.warning("PythonPandasTool not available for non-default output mode rendering")
 
                 # Safe format handling
                 content = None
@@ -2073,15 +1942,13 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
                 # Check for empty response/content before formatting
                 if response and (response.content or response.output):
-                     if output_mode in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
-                         # Skip formatting for specific modes
-                         response.output_mode = output_mode
-                     else:
-                         try:
-                            content, wrapped = await self.formatter.format(
-                                output_mode, response, **format_kwargs
-                            )
-                         except Exception as e:
+                    if output_mode in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
+                        # Skip formatting for specific modes
+                        response.output_mode = output_mode
+                    else:
+                        try:
+                            content, wrapped = await self.formatter.format(output_mode, response, **format_kwargs)
+                        except Exception as e:
                             self.logger.error("Error extracting content on formatter: %s", e)
                             format_error = str(e)
                             content = f"Error extracting content: {e}"
@@ -2102,12 +1969,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     OutputMode.STRUCTURED_MAP,
                     OutputMode.STRUCTURED_TABLE,
                 )
-                if output_mode in _structured_modes and (
-                    content is None or format_error is not None
-                ):
+                if output_mode in _structured_modes and (content is None or format_error is not None):
                     self.logger.warning(
-                        "%s renderer failed (%s) — falling back to DEFAULT "
-                        "text response",
+                        "%s renderer failed (%s) — falling back to DEFAULT " "text response",
                         output_mode.value if hasattr(output_mode, "value") else output_mode,
                         format_error or wrapped,
                     )
@@ -2125,55 +1989,30 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if output_mode == OutputMode.TEXT and data_response is not None:
                     if data_response.explanation:
                         from ..outputs.formats.text import markdown_to_plain
-                        data_response.explanation = markdown_to_plain(
-                            data_response.explanation
-                        )
 
-                # FEAT-224 (G1): Build the canonical artifacts[] envelope for the
-                # three structured output modes.  A typed artifact entry is appended to
-                # response.artifacts and response.artifact_id is set to the minted id.
-                # response.output is kept as a deprecated mirror (G6) so existing
-                # consumers keep working during the migration window.
-                _STRUCTURED_ARTIFACT_TYPE = {
-                    OutputMode.STRUCTURED_CHART: "chart",
-                    OutputMode.STRUCTURED_MAP:   "map",
-                    OutputMode.STRUCTURED_TABLE: "table",
-                }
-                _art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
-                if _art_type and isinstance(content, dict) and content:
-                    # output_mode may arrive as a plain str (not an OutputMode
-                    # enum) — mirror the hasattr guard used in the log line below.
-                    _mode_str = (
-                        output_mode.value
-                        if hasattr(output_mode, "value")
-                        else output_mode
-                    )
-                    _art_id = f"{_mode_str}-{uuid.uuid4().hex[:8]}"
-                    # G2 safety net: the renderer already excludes rows, but strip
-                    # any stray `data` key defensively so the envelope definition
-                    # never carries rows (rows live in response.data only).
-                    # `datasets` (STRUCTURED_MAP per-layer GeoJSON payloads) is
-                    # also stripped to keep the stored artifact lean.
-                    _definition = {
-                        _k: _v for _k, _v in content.items()
-                        if _k not in ("data", "datasets")
-                    }
-                    response.artifacts.append({
-                        "type": _art_type,
-                        "artifactId": _art_id,
-                        "definition": _definition,   # camelCase config, data excluded
-                    })
-                    response.artifact_id = _art_id
+                        data_response.explanation = markdown_to_plain(data_response.explanation)
+
+                # FEAT-224 (G1) / FEAT-473 (G5/G6): Build the canonical
+                # artifacts[] envelope for the three structured output modes,
+                # via the reusable core helper (also used by DatabaseAgent's
+                # STRUCTURED_TABLE path). With response.a2ui_envelope present
+                # (dual-emit, TASK-2563) mints a v2 entry
+                # ({type, artifactId, surfaceId, schemaVersion: 2, definition});
+                # without one, reproduces the exact FEAT-224 v1 shape
+                # (camelCase config dict, data/datasets stripped). Either way,
+                # response.output is kept as a deprecated mirror (G6) so
+                # existing consumers keep working during the migration window.
+                _art_id = attach_structured_artifact(response, output_mode)
+                if _art_id:
                     self.logger.info(
-                        "FEAT-224: structured artifact envelope minted — mode=%s artifact_id=%s",
+                        "FEAT-224/FEAT-473: structured artifact envelope minted — mode=%s artifact_id=%s",
                         output_mode.value if hasattr(output_mode, "value") else output_mode,
                         _art_id,
                     )
 
                 if output_mode == OutputMode.MSTEAMS:
-                     # Suppress code output for MS Teams to avoid clutter in Adaptive Card
-                     response.code = None
-
+                    # Suppress code output for MS Teams to avoid clutter in Adaptive Card
+                    response.code = None
 
                 # Return the final AIMessage response — serialize response.data for JSON output.
                 if isinstance(response.data, pd.DataFrame):
@@ -2182,9 +2021,10 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         response.data = response.data.head(self.MAX_RESPONSE_ROWS)
                         self.logger.info(
                             "Capped response.data from %d to %d rows",
-                            total_rows, self.MAX_RESPONSE_ROWS,
+                            total_rows,
+                            self.MAX_RESPONSE_ROWS,
                         )
-                    response.data = response.data.to_dict(orient='records')
+                    response.data = response.data.to_dict(orient="records")
                 elif isinstance(response.data, list):
                     # Already serialized — either:
                     # - Multi-dataset: list of DatasetResult dicts (from _inject_multi_data_from_variables)
@@ -2202,18 +2042,18 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         "PandasAgent response.data unexpected type: %s",
                         type(response.data),
                     )
-                answer_text = getattr(response, 'response', None) or response.content
+                answer_text = getattr(response, "response", None) or response.content
 
                 # Ensures markdown table syntax: add double newline before tables if missing
                 if answer_text:
                     answer_text = self._repair_markdown_table(str(answer_text))
 
-                    if hasattr(response, 'response'):
+                    if hasattr(response, "response"):
                         response.response = answer_text
-                    if hasattr(response, 'content'):
+                    if hasattr(response, "content"):
                         # Ensure content is also updated if it matches response
-                        if response.content == getattr(response, 'response', None) or not response.content:
-                             response.content = answer_text
+                        if response.content == getattr(response, "response", None) or not response.content:
+                            response.content = answer_text
 
                 await self.answer_memory.store_interaction(
                     response.turn_id,
@@ -2233,14 +2073,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             user_id=user_id,
                             user_message=question,
                             assistant_response=answer_text or "",
-                            tools_used=[
-                                t.name for t in (response.tool_calls or [])
-                            ],
+                            tools_used=[t.name for t in (response.tool_calls or [])],
                             metadata={
-                                'model': getattr(response, 'model', None),
-                                'response_time': getattr(response, 'response_time', None),
-                                'usage': getattr(response, 'usage', None),
-                                'finish_reason': getattr(response, 'finish_reason', None),
+                                "model": getattr(response, "model", None),
+                                "response_time": getattr(response, "response_time", None),
+                                "usage": getattr(response, "usage", None),
+                                "finish_reason": getattr(response, "finish_reason", None),
                             },
                         )
                         await memory.add_turn(user_id, session_id, turn)
@@ -2257,32 +2095,25 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 async def _fire_post_ask() -> None:
                     try:
                         await self._on_post_ask(
-                            _post_q, _post_resp,
+                            _post_q,
+                            _post_resp,
                             user_id=_post_uid,
                             session_id=_post_sid,
                         )
                     except Exception as _post_exc:
-                        self.logger.debug(
-                            "_on_post_ask hook failed: %s", _post_exc
-                        )
+                        self.logger.debug("_on_post_ask hook failed: %s", _post_exc)
 
                 asyncio.create_task(_fire_post_ask())
 
                 return response
 
         except Exception as e:
-            self.logger.error(
-                f"Error in PandasAgent.ask(): {e}"
-            )
+            self.logger.error(f"Error in PandasAgent.ask(): {e}")
             # Return error response
             raise
 
     def add_dataframe(
-        self,
-        name: str,
-        df: pd.DataFrame,
-        metadata: Optional[Dict[str, Any]] = None,
-        regenerate_guide: bool = True
+        self, name: str, df: pd.DataFrame, metadata: Optional[Dict[str, Any]] = None, regenerate_guide: bool = True
     ) -> str:
         """Add a new DataFrame to the agent's context via DatasetManager.
 
@@ -2298,9 +2129,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Object must be a pandas DataFrame")
 
-        self._dataset_manager.add_dataframe(
-            name, df, metadata=metadata, is_active=True
-        )
+        self._dataset_manager.add_dataframe(name, df, metadata=metadata, is_active=True)
         self._sync_dataframes_from_dm()
         return f"DataFrame '{name}' added successfully"
 
@@ -2322,15 +2151,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 return {}
             self._queries.append(query)
         else:
-            raise ValueError(
-                "add_query only supports simple query slugs configured as strings or lists"
-            )
+            raise ValueError("add_query only supports simple query slugs configured as strings or lists")
 
-        new_dataframes = await self._dataset_manager.load_data(
-            query=[query],
-            agent_name=self.chatbot_id,
-            refresh=True
-        )
+        new_dataframes = await self._dataset_manager.load_data(query=[query], agent_name=self.chatbot_id, refresh=True)
         self._sync_dataframes_from_dm()
         return new_dataframes
 
@@ -2367,11 +2190,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
     def _get_python_pandas_tool(self) -> Optional[PythonPandasTool]:
         """Get the registered PythonPandasTool instance if available."""
         return next(
-            (
-                tool
-                for tool in self.tool_manager.get_tools()
-                if isinstance(tool, PythonPandasTool)
-            ),
+            (tool for tool in self.tool_manager.get_tools() if isinstance(tool, PythonPandasTool)),
             None,
         )
 
@@ -2402,14 +2221,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         if not tool_calls:
             return False
         data_tools = {
-            'python_repl_pandas',
-            'fetch_dataset',
-            'database_query',
+            "python_repl_pandas",
+            "fetch_dataset",
+            "database_query",
         }
-        return any(
-            (getattr(tc, 'name', '') or '') in data_tools
-            for tc in tool_calls
-        )
+        return any((getattr(tc, "name", "") or "") in data_tools for tc in tool_calls)
 
     def _extract_saved_variable_from_tool_calls(self, tool_calls: List[Any]) -> Optional[str]:
         """Extract a saved variable name from python_repl_pandas tool output."""
@@ -2421,19 +2237,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 if result is None:
                     continue
                 text = result if isinstance(result, str) else str(result)
-                match = re.search(
-                    r"(?:VARIABLE SAVED|RESULT READY):\s*['\"]([^'\"]+)['\"]",
-                    text
-                )
+                match = re.search(r"(?:VARIABLE SAVED|RESULT READY):\s*['\"]([^'\"]+)['\"]", text)
                 if match:
                     return match.group(1)
             except Exception:
                 continue
         return None
 
-    def _extract_spatial_result_from_tools(
-        self, tool_calls: Optional[List[Any]]
-    ) -> Optional[Any]:
+    def _extract_spatial_result_from_tools(self, tool_calls: Optional[List[Any]]) -> Optional[Any]:
         """Extract a ``SpatialResult`` from tool call results (FEAT-221).
 
         Iterates the current turn's tool calls in reverse order, looking for
@@ -2473,9 +2284,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 continue
         return None
 
-    def _extract_spatial_filter_spec_from_tools(
-        self, tool_calls: Optional[List[Any]]
-    ) -> Optional[Any]:
+    def _extract_spatial_filter_spec_from_tools(self, tool_calls: Optional[List[Any]]) -> Optional[Any]:
         """Extract a ``SpatialFilterSpec`` from tool call arguments (FEAT-221).
 
         Iterates the current turn's tool calls in reverse order, looking for a
@@ -2538,18 +2347,18 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         if not tool_calls:
             return candidates
         for tc in tool_calls:
-            tc_name = getattr(tc, 'name', '') or ''
-            if tc_name == 'fetch_dataset':
-                result = getattr(tc, 'result', None)
+            tc_name = getattr(tc, "name", "") or ""
+            if tc_name == "fetch_dataset":
+                result = getattr(tc, "result", None)
                 if result is not None:
-                    data = result if isinstance(result, dict) else getattr(result, 'result', None)
+                    data = result if isinstance(result, dict) else getattr(result, "result", None)
                     if isinstance(data, dict):
-                        var = data.get('python_variable') or data.get('dataset')
+                        var = data.get("python_variable") or data.get("dataset")
                         if var:
                             candidates.add(var)
-            elif tc_name == 'python_repl_pandas':
-                args = getattr(tc, 'arguments', {}) or {}
-                code = args.get('code', '') if isinstance(args, dict) else ''
+            elif tc_name == "python_repl_pandas":
+                args = getattr(tc, "arguments", {}) or {}
+                code = args.get("code", "") if isinstance(args, dict) else ""
                 if not code:
                     continue
                 try:
@@ -2571,12 +2380,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     elif (
                         isinstance(node, ast.Call)
                         and isinstance(node.func, ast.Name)
-                        and node.func.id == 'store_result'
+                        and node.func.id == "store_result"
                     ):
                         # store_result("key", value) binds `key` in the REPL
                         # namespace — treat it as produced this turn.
-                        key_arg = node.args[0] if node.args else next(
-                            (kw.value for kw in node.keywords if kw.arg == 'key'), None
+                        key_arg = (
+                            node.args[0]
+                            if node.args
+                            else next((kw.value for kw in node.keywords if kw.arg == "key"), None)
                         )
                         if isinstance(key_arg, ast.Constant) and isinstance(key_arg.value, str):
                             candidates.add(key_arg.value)
@@ -2600,9 +2411,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             names.update(PandasAgent._assignment_target_names(target.value))
         return names
 
-    def _filter_declared_variables(
-        self, declared: Optional[List[str]], tool_calls: Optional[List[Any]]
-    ) -> tuple:
+    def _filter_declared_variables(self, declared: Optional[List[str]], tool_calls: Optional[List[Any]]) -> tuple:
         """Reject LLM-declared result variables that leak across turns.
 
         The ``PythonPandasTool`` REPL namespace is shared across all turns of
@@ -2646,9 +2455,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 rejected.append(var)
         return allowed, rejected
 
-    async def _infer_data_variable_from_tools(
-        self, tool_calls: List[Any], prefer_names: tuple = ()
-    ) -> Optional[str]:
+    async def _infer_data_variable_from_tools(self, tool_calls: List[Any], prefer_names: tuple = ()) -> Optional[str]:
         """Strict-mode inference of a ``data_variable`` from the current turn.
 
         Returns a variable name **only** when the current turn's tool
@@ -2681,7 +2488,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             return None
 
         pandas_tool = self._get_python_pandas_tool()
-        if not pandas_tool or not hasattr(pandas_tool, 'get_var'):
+        if not pandas_tool or not hasattr(pandas_tool, "get_var"):
             return None
 
         # Collect candidate variable names produced by this turn's tool
@@ -2713,20 +2520,14 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             # Column-match tiebreaker: when response.data is already
             # populated (truncated by the LLM), pick the candidate whose
             # columns match — it's the DataFrame the LLM intended.
-            if (
-                hasattr(self, '_current_response_data_columns')
-                and self._current_response_data_columns is not None
-            ):
+            if hasattr(self, "_current_response_data_columns") and self._current_response_data_columns is not None:
                 ref_cols = self._current_response_data_columns
-                col_matches = [
-                    var for var in live_dataframes
-                    if list(candidate_values[var].columns) == ref_cols
-                ]
+                col_matches = [var for var in live_dataframes if list(candidate_values[var].columns) == ref_cols]
                 if len(col_matches) == 1:
                     self.logger.info(
-                        "Disambiguated `data_variable` by column match: "
-                        "'%s' (from %d candidates)",
-                        col_matches[0], len(live_dataframes),
+                        "Disambiguated `data_variable` by column match: " "'%s' (from %d candidates)",
+                        col_matches[0],
+                        len(live_dataframes),
                     )
                     return col_matches[0]
 
@@ -2759,19 +2560,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # We capture the preceding char to check for newline
 
         # Fix: Text\n| Table | -> Text\n\n| Table |
-        text = re.sub(r'([^\n])\n(\|.*\|.*\|)', r'\1\n\n\2', text)
+        text = re.sub(r"([^\n])\n(\|.*\|.*\|)", r"\1\n\n\2", text)
         # Fix: Text | Table | (inline) -> Text\n\n| Table |
         # Ensure we don't split an existing row by ensuring the line does not start with pipe
-        text = re.sub(r'(?m)^([^|].*?)\s+(\|.+?\|.+?\|)', r'\1\n\n\2', text)
+        text = re.sub(r"(?m)^([^|].*?)\s+(\|.+?\|.+?\|)", r"\1\n\n\2", text)
 
         # 2. Fix flattened rows: "| Header | |---| | Row |"
         # 2a. Split Header and Separator (looks for "| |-|" or "| |:|")
         # Pattern: pipe, optional whitespace, pipe, dashes/colons, pipe
-        text = re.sub(r'(\|)\s*(\|[:\s-]+\|)', r'\1\n\2', text)
+        text = re.sub(r"(\|)\s*(\|[:\s-]+\|)", r"\1\n\2", text)
 
         # 2b. Split Separator and First Row
         # Pattern: separator row, optional whitespace, pipe
-        text = re.sub(r'(\|[:\s-]+\|)\s*(\|)', r'\1\n\2', text)
+        text = re.sub(r"(\|[:\s-]+\|)\s*(\|)", r"\1\n\2", text)
 
         # 2c. Split Body Rows (The missing part)
         # Fix: "| Row 1 | Val 1 | | Row 2 | Val 2 |" -> "| Row 1 | Val 1 |\n| Row 2 | Val 2 |"
@@ -2789,7 +2590,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         # Matches: "| | R" -> "|\n| R"
 
         # This handles the specific case: "|...| | Column Count |" -> "|...|\n| Column Count |"
-        text = re.sub(r'(\|)\s*(\|\s*[A-Z])', r'\1\n\2', text)
+        text = re.sub(r"(\|)\s*(\|\s*[A-Z])", r"\1\n\2", text)
 
         return text
 
@@ -2813,7 +2614,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
             # 2. Check inside execution_results (common pattern for LLM outputs)
             if df is None:
-                exec_results = await pandas_tool.get_var('execution_results')
+                exec_results = await pandas_tool.get_var("execution_results")
                 if isinstance(exec_results, dict) and data_variable in exec_results:
                     df = exec_results.get(data_variable)
 
@@ -2823,7 +2624,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         if isinstance(df, pd.DataFrame):
             # Ensure columns are strings for JSON serialization compatibility
             # (Fixes ParserError when columns are Timestamps)
-            df = df.copy() # Avoid modifying cached dataframe
+            df = df.copy()  # Avoid modifying cached dataframe
 
             # Reset index to ensure index columns (often grouping keys) are included in output
             # This is critical for MultiIndex dataframes where meaningful labels are in the index.
@@ -2832,9 +2633,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             df.columns = df.columns.astype(str)
             response.data = df
         else:
-            self.logger.warning(
-                f"Data variable '{data_variable}' not found or is not a DataFrame"
-            )
+            self.logger.warning(f"Data variable '{data_variable}' not found or is not a DataFrame")
 
     async def _inject_multi_data_from_variables(
         self,
@@ -2864,9 +2663,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         """
         pandas_tool = self._get_python_pandas_tool()
         if not pandas_tool:
-            self.logger.warning(
-                "PythonPandasTool not available for multi-dataset injection"
-            )
+            self.logger.warning("PythonPandasTool not available for multi-dataset injection")
             return list(data_variables)
 
         results: List[Dict[str, Any]] = []
@@ -2901,8 +2698,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
             else:
                 missing.append(var_name)
                 self.logger.warning(
-                    "Multi-dataset injection: variable '%s' not found or not a DataFrame "
-                    "— skipping.",
+                    "Multi-dataset injection: variable '%s' not found or not a DataFrame " "— skipping.",
                     var_name,
                 )
 
@@ -2924,11 +2720,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
     def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:
         """Get the ProphetForecastTool instance if registered."""
         return next(
-            (
-                tool
-                for tool in self.tool_manager.get_tools()
-                if isinstance(tool, ProphetForecastTool)
-            ),
+            (tool for tool in self.tool_manager.get_tools() if isinstance(tool, ProphetForecastTool)),
             None,
         )
 
@@ -2936,10 +2728,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         """Return mapping of dataframe names to standardized dfN aliases."""
         if self._dataset_manager:
             return self._dataset_manager._get_alias_map()
-        return {
-            name: f"df{i + 1}"
-            for i, name in enumerate(self.dataframes.keys())
-        }
+        return {name: f"df{i + 1}" for i, name in enumerate(self.dataframes.keys())}
 
     def _sync_prophet_tool(self) -> None:
         """Synchronize ProphetForecastTool with current dataframes and aliases."""
@@ -2949,13 +2738,9 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 dataframes=self.dataframes,
                 alias_map=self._get_dataframe_alias_map(),
             )
-            self.logger.debug(
-                f"Synced ProphetForecastTool with {len(self.dataframes)} DataFrames"
-            )
+            self.logger.debug(f"Synced ProphetForecastTool with {len(self.dataframes)} DataFrames")
         else:
-            self.logger.warning(
-                "ProphetForecastTool not found - skipping sync"
-            )
+            self.logger.warning("ProphetForecastTool not found - skipping sync")
 
     def list_dataframes(self) -> Dict[str, Dict[str, Any]]:
         """
@@ -2987,12 +2772,12 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
         for i, (df_name, df) in enumerate(self.dataframes.items()):
             df_key = f"df{i + 1}"
             result[df_key] = {
-                'original_name': df_name,
-                'standardized_key': df_key,
-                'shape': df.shape,
-                'columns': df.columns.tolist(),
-                'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
-                'null_count': df.isnull().sum().sum(),
+                "original_name": df_name,
+                "standardized_key": df_key,
+                "shape": df.shape,
+                "columns": df.columns.tolist(),
+                "memory_usage_mb": df.memory_usage(deep=True).sum() / 1024 / 1024,
+                "null_count": df.isnull().sum().sum(),
             }
         return result
 
@@ -3012,9 +2797,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
 
     @classmethod
     async def load_from_files(
-        cls,
-        files: Union[str, Path, List[Union[str, Path]]],
-        **kwargs
+        cls, files: Union[str, Path, List[Union[str, Path]]], **kwargs
     ) -> Dict[str, pd.DataFrame]:
         """
         Load DataFrames from CSV or Excel files.
@@ -3037,11 +2820,11 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                 raise FileNotFoundError(f"File not found: {path}")
 
             # Determine file type and load
-            if path.suffix.lower() in {'.csv', '.txt'}:
+            if path.suffix.lower() in {".csv", ".txt"}:
                 df = pd.read_csv(path, **kwargs)
                 dfs[path.stem] = df
 
-            elif path.suffix.lower() in {'.xlsx', '.xls'}:
+            elif path.suffix.lower() in {".xlsx", ".xls"}:
                 # Load all sheets
                 excel_file = pd.ExcelFile(path)
                 for sheet_name in excel_file.sheet_names:
@@ -3049,9 +2832,7 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     dfs[f"{path.stem}_{sheet_name}"] = df
 
             else:
-                raise ValueError(
-                    f"Unsupported file type: {path.suffix}"
-                )
+                raise ValueError(f"Unsupported file type: {path.suffix}")
 
         return dfs
 

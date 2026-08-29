@@ -92,13 +92,20 @@ external renderer; no re-shaping at the boundary. Step 5 asserts exactly that.
 ## If the LLM gets the blocks wrong
 
 The template contract (step 2) declares block *types* and counts, but not each
-block model's *fields*. An unguided LLM reliably invents `chart.data` instead of
-`chart.labels` + `chart.series[].values`. Two things help:
+block model's *fields*. A model handed a DataFrame writes **row records**, not
+the column-oriented `labels` + `series[].values` / `columns` + `rows` that
+`ChartBlock` and `TableBlock` declare. Three things now keep that from costing
+you the render:
 
-- **Use `infographic_build_block`.** It derives chart and table blocks from a
-  DataFrame in the REPL (`label_column`, `value_columns`, `table_columns`), so
-  the field names cannot be wrong. `--live`'s prompt spells out all six calls.
-- **Read the error.** A bad block now comes back as a structured
+- **Record shapes are accepted.** `ChartBlock` and `TableBlock` normalize
+  `data`/`rows` records into their canonical form (`ChartBlock` also accepts
+  `series[].data` for `series[].values`, and honours an explicit `x_field`).
+  So `{"type": "chart", "data": [{"month": "Dec", "mrr": 1.2}]}` just works.
+- **`infographic_build_block` is still the reliable path.** It derives chart and
+  table blocks from a DataFrame in the REPL (`label_column`, `value_columns`,
+  `table_columns`), so the field names cannot be wrong at all. `--live`'s prompt
+  spells out all six calls.
+- **Errors are actionable.** A block that is genuinely unusable comes back as
   `{"ok": false, "code": "BLOCK_SCHEMA_INVALID", "detail": {...}}` naming the
   offending field, which the model can retry against — it used to escape as a
   raw pydantic `ValidationError` that failed the tool call outright.

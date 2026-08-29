@@ -1,8 +1,11 @@
 """A2UI ``DataTable`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
-Schema vocabulary is adapted from ``StructuredTableConfig``/``TableColumn``
-(``parrot.models.outputs``): ``columns`` (name/type/title/format), ``totalRows``,
-``truncated``. The INPUT-ONLY ``data`` array is replaced by a data-model binding.
+Schema vocabulary is derived from ``StructuredTableConfig``/``TableColumn``
+(``parrot.models.outputs``) via :func:`derive_schema` (FEAT-473 G2): ``columns``
+(name/type/title/format), ``totalRows``, ``truncated``, ``explanation``. The
+INPUT-ONLY ``data`` array is replaced by a data-model binding. (Parity note:
+the derived schema was already a superset of the prior hand-written one — no
+new props to surface in ``lower()``/``INSTRUCTIONS`` for this component.)
 
 v1.0 rows are a ``ChildTemplate`` (spec §2/§5): a single row-pattern
 :class:`~parrot.outputs.a2ui.catalog.base.BasicNode` (one ``Text`` cell per
@@ -15,35 +18,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from parrot.models.outputs import StructuredTableConfig
 from parrot.outputs.a2ui.catalog import register_component
 from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree
+from parrot.outputs.a2ui.catalog.parrot._derive import derive_schema
 from parrot.outputs.a2ui.models import ChildTemplate, Component
 
-DATATABLE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "title": {"type": "string"},
-        "columns": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "type": {"type": "string"},
-                    "title": {"type": "string"},
-                    "format": {"type": "string"},
-                },
-                "required": ["name"],
-            },
-        },
-        "totalRows": {"type": "integer"},
-        "truncated": {"type": "boolean", "default": False},
-        "data": {
-            "description": "Data-model binding ({'path': '/pointer'}) to the rows.",
-        },
-    },
-    "required": ["columns"],
-}
+DATATABLE_SCHEMA: dict[str, Any] = derive_schema(
+    StructuredTableConfig,
+    binding_fields=("data",),
+    required=("columns",),
+)
 
 DATATABLE_INSTRUCTIONS = (
     "Use DataTable to present tabular rows. Declare `columns` (each with `name` and "

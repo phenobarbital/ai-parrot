@@ -131,10 +131,39 @@ def test_folium_geodesic_polyline(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: `echarts.py::_build_option` now honours `stacked` (`series.stack`),
+`splitSeries` (multi-grid layout, one grid/xAxis/yAxis per y series —
+`xAxis`/`yAxis` become lists only when `splitSeries` + >1 series),
+`trendline` (an extra linear-regression series over the first y column),
+`colorBySign`+`negativeColor`/`positiveColor` (a piecewise `visualMap`,
+JSON-serializable — no JS callback needed), `xAxisLabel`/`yAxisLabel` (axis
+`name`), `palette` (top-level `color`). Every new prop read is defaulted so
+the option shape is byte-identical to before when absent (verified: 12
+pre-existing `test_echarts.py` tests unchanged).
 
-**Completed by**:
-**Date**:
-**Notes**:
+`folium_map.py`: added a multi-layer path gated on `any(layer.get("data")
+for layer in layers)` — critical because OLD envelopes ALSO carry a
+`layers` list (`{"name": "stores", "type": "markers"}`, FEAT-470 shape) but
+with NO per-layer `data` binding; without this exact gate the new path
+would have silently swallowed every legacy single-binding map's points
+(caught before committing, fixed by gating on `"data" in layer` rather than
+just `layers` truthiness). New per-layer support: `markerColor` →
+`folium.CircleMarker` (chosen over `folium.Icon` — `Icon.color` only accepts
+a closed Leaflet colour-name enum and would raise on a hex string;
+`CircleMarker` accepts arbitrary CSS/hex, with a defensive try/except
+fallback to a plain `Marker` regardless), `tooltipTemplate` (`str.format_map`
+over feature properties, malformed template caught+logged), `labelField`
+(fallback label when no template), `geodesic` (GeoJSON `LineString` →
+`folium.PolyLine` — documented as a straight-line approximation, no
+great-circle plugin vendored). Feature coordinates read from the FEAT-473
+`_geometry` GeoJSON `Point`/`LineString` shape (structured_map.py's
+`_build_rows_payload` output), never `SpatialResult`.
 
-**Deviations from spec**: none
+New `test_echarts_props.py` (2 tests) and `test_folium_layers.py` (3 tests,
+incl. an explicit legacy-single-layer regression check) all pass. Full
+`ai-parrot-visualizations` suite: 92 passed (0 regressions vs. TASK-2563's
+87). ruff clean.
+
+**Deviations from spec**: none.

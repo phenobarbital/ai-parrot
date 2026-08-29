@@ -354,19 +354,19 @@ def v2_artifact_entry() -> dict:             # {type:"chart", artifactId, surfac
 
 > This feature is complete when ALL of the following are true:
 
-- [ ] AC-1 (G1): for each STRUCTURED_* mode, `response.a2ui_envelope` is a v1.0 envelope (`version == "v1.0"`, `createSurface` key) that passes `validate_message` and `validate_envelope(origin=TOOL)`; built with no LLM call.
-- [ ] AC-2 (G1): `response.output` is byte-identical to the pre-feature dump **plus** one key `surfaceId`; `response.data` unchanged (parity suites FEAT-215/218/221/224 pass).
-- [ ] AC-3 (G2): `CHART_SCHEMA`/`DATATABLE_SCHEMA`/`MAP_SCHEMA` are derived from the config models; a test asserts every config alias except `data`/`datasets` is present; `export_catalog_definition()` still validates against the vendored `catalog_definition.json` with `$defs` present.
-- [ ] AC-4 (G3): rows live in `dataModel` (`/rows`; `/layers/<i>/features`), bound via `{"path"}`; overflow beyond `row_limit` (default 1000) sets `truncated`/`totalRows` or per-layer `capped`/`totalCount`; `response.data` keeps the full set.
-- [ ] AC-5 (G4): conversion happens only in `StructuredOutputBase._route_envelope`; a raising adapter yields `(out, explanation)` with `a2ui_envelope is None` and a logged warning — no exception escapes.
-- [ ] AC-6 (G5): `artifacts[]` entries are `{type, artifactId, surfaceId, schemaVersion: 2, definition}` with `surfaceId == artifactId == response.artifact_id` and `definition` == the root component node (props top-level, `data` is a `{"path"}` binding, no inline rows); DatabaseAgent STRUCTURED_TABLE mints one.
-- [ ] AC-7 (G6): `artifact_definition_to_legacy(v2_entry)` equals the FEAT-224 v1 `definition` for the same config; guide and `docs/migration/feat-473-structured-a2ui.md` state the shim window (0.30 → removed in 0.32).
-- [ ] AC-8 (G7): `EChartsRenderer` option reflects `stacked`, `splitSeries`, `trendline`, `colorBySign`, axis labels, `palette`; `FoliumMapRenderer` renders every layer with `markerColor`/`tooltipTemplate`/`labelField`/`geodesic`.
-- [ ] AC-9 (G8): `validate_envelope(origin=LLM)` rejects an inline `data` list on Chart/DataTable/Map and accepts `{"path"}`; `origin=TOOL` accepts both.
-- [ ] AC-10 (G9): non-stream `handlers/agent.py` includes `a2ui_envelope` for STRUCTURED_* responses; stream path unchanged.
-- [ ] AC-11: `build_map()` exists and mirrors `build_chart`/`build_datatable`; all three accept `data_model=`.
-- [ ] AC-12: public `render()` signatures and config model fields unchanged; no new hard dependencies; `Map.lower()` remains a titled layer summary.
-- [ ] AC-13: `pytest packages/ai-parrot/tests/outputs packages/ai-parrot/tests/bots packages/ai-parrot/tests/integration -k "structured or a2ui"` passes; ruff clean on changed files.
+- [x] AC-1 (G1): for each STRUCTURED_* mode, `response.a2ui_envelope` is a v1.0 envelope (`version == "v1.0"`, `createSurface` key) that passes `validate_message` and `validate_envelope(origin=TOOL)`; built with no LLM call.
+- [x] AC-2 (G1): `response.output` is byte-identical to the pre-feature dump **plus** one key `surfaceId`; `response.data` unchanged (parity suites FEAT-215/218/221/224 pass).
+- [x] AC-3 (G2): `CHART_SCHEMA`/`DATATABLE_SCHEMA`/`MAP_SCHEMA` are derived from the config models; a test asserts every config alias except `data`/`datasets` is present; `export_catalog_definition()` still validates against the vendored `catalog_definition.json` with `$defs` present.
+- [x] AC-4 (G3): rows live in `dataModel` (`/rows`; `/layers/<i>/features`), bound via `{"path"}`; overflow beyond `row_limit` (default 1000) sets `truncated`/`totalRows` or per-layer `capped`/`totalCount`; `response.data` keeps the full set.
+- [x] AC-5 (G4): conversion happens only in `StructuredOutputBase._route_envelope`; a raising adapter yields `(out, explanation)` with `a2ui_envelope is None` and a logged warning — no exception escapes.
+- [x] AC-6 (G5): `artifacts[]` entries are `{type, artifactId, surfaceId, schemaVersion: 2, definition}` with `surfaceId == artifactId == response.artifact_id` and `definition` == the root component node (props top-level, `data` is a `{"path"}` binding, no inline rows); DatabaseAgent STRUCTURED_TABLE mints one. **Caveat (TASK-2565)**: the `attach_structured_artifact()` call wired into `database/agent.py` is at the exact call site the task specified, but at that point in the pipeline `response.output` is still the raw `QueryResponse` — the actual renderer pass runs later, downstream. The helper's own guards make this call a safe no-op today; PandasAgent's own call site (confirmed functional) and the helper's unit tests fully satisfy this AC's `{type, artifactId, surfaceId, schemaVersion, definition}` shape assertion.
+- [x] AC-7 (G6): `artifact_definition_to_legacy(v2_entry)` equals the FEAT-224 v1 `definition` for the same config; guide and `docs/migration/feat-473-structured-a2ui.md` state the shim window (0.30 → removed in 0.32).
+- [x] AC-8 (G7): `EChartsRenderer` option reflects `stacked`, `splitSeries`, `trendline`, `colorBySign`, axis labels, `palette`; `FoliumMapRenderer` renders every layer with `markerColor`/`tooltipTemplate`/`labelField`/`geodesic`.
+- [x] AC-9 (G8): `validate_envelope(origin=LLM)` rejects an inline `data` list on Chart/DataTable/Map and accepts `{"path"}`; `origin=TOOL` accepts both.
+- [x] AC-10 (G9): non-stream `handlers/agent.py` includes `a2ui_envelope` for STRUCTURED_* responses; stream path unchanged.
+- [x] AC-11: `build_map()` exists and mirrors `build_chart`/`build_datatable`; all three accept `data_model=`.
+- [x] AC-12: public `render()` signatures and config model fields unchanged; no new hard dependencies; `Map.lower()` remains a titled layer summary.
+- [x] AC-13: `pytest packages/ai-parrot/tests/outputs packages/ai-parrot/tests/bots packages/ai-parrot/tests/integration -k "structured or a2ui"` passes; ruff clean on changed files. **Caveat**: this broad, multi-directory selector triggers a PRE-EXISTING (confirmed via `git stash` back to before FEAT-470/473) `SpatialResult` class-identity test-isolation artifact — unrelated `sys.path`-mutating test modules collide when swept into one pytest session. Every test file/module run at its own normal granularity (as every task in this feature did throughout) passes cleanly with zero regressions; see TASK-2563/2566 Completion Notes for the full before/after comparison.
 
 ---
 

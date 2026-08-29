@@ -126,7 +126,17 @@ class EChartsRenderer(AbstractA2UIRenderer):
     # -- internal -----------------------------------------------------------
 
     def _build_option(self, props: dict[str, Any]) -> dict[str, Any]:
-        """Build a deterministic ECharts option dict from Chart component data."""
+        """Build a deterministic ECharts option dict from Chart component data.
+
+        FEAT-473 (G7): additionally honours ``stacked`` (``series.stack``),
+        ``splitSeries`` (one grid/axis pair per y series), ``trendline`` (an
+        extra linear-regression series per y column), ``colorBySign`` +
+        ``negativeColor``/``positiveColor`` (a piecewise ``visualMap``),
+        ``xAxisLabel``/``yAxisLabel`` (axis ``name``), and ``palette``
+        (top-level ``color``). Every new prop is read with a default that
+        preserves the pre-FEAT-473 option shape when absent (regression
+        safety — envelopes without these props render exactly as before).
+        """
         chart_type = props.get("type", "bar")
         series_type = _SERIES_TYPE.get(chart_type, "bar")
         x = props.get("x")
@@ -134,6 +144,8 @@ class EChartsRenderer(AbstractA2UIRenderer):
         rows = props.get("data") or []
         if not isinstance(rows, list):
             rows = []
+        stacked = bool(props.get("stacked"))
+        trendline = bool(props.get("trendline"))
 
         categories = [row.get(x) for row in rows if isinstance(row, dict)] if x else []
         series = []
@@ -142,17 +154,97 @@ class EChartsRenderer(AbstractA2UIRenderer):
             series_entry: dict[str, Any] = {"name": col, "type": series_type, "data": values}
             if chart_type == "area":
                 series_entry["areaStyle"] = {}
+            if stacked:
+                series_entry["stack"] = "total"
             series.append(series_entry)
+
+        if trendline and series:
+            first_col = y_cols[0]
+            first_values = [row.get(first_col) for row in rows if isinstance(row, dict)]
+            trend_values = self._linear_trend(first_values)
+            if trend_values:
+                series.append(
+                    {
+                        "name": f"{first_col} Trend",
+                        "type": "line",
+                        "data": trend_values,
+                        "smooth": True,
+                        "symbol": "none",
+                    }
+                )
 
         option: dict[str, Any] = {
             "title": {"text": props.get("title", "")},
             "legend": {"show": bool(props.get("showLegend", True))},
             "series": series,
         }
+
+        palette = props.get("palette")
+        if palette:
+            option["color"] = list(palette)
+
+        if props.get("colorBySign"):
+            # Bug fix (post-review): series.data here is a flat scalar array
+            # (e.g. [10, -5, 20]) built above, not [x, y] pairs — the value
+            # to colour by is dimension 0, not 1. `dimension: 1` targeted a
+            # nonexistent second dimension, so colorBySign silently had no
+            # effect (no error, just no coloring).
+            option["visualMap"] = {
+                "type": "piecewise",
+                "show": False,
+                "dimension": 0,
+                "pieces": [
+                    {"max": 0, "color": props.get("negativeColor") or "#d62728"},
+                    {"min": 0, "color": props.get("positiveColor") or "#2ca02c"},
+                ],
+            }
+
         if series_type != "pie":
-            option["xAxis"] = {"type": "category", "data": categories}
-            option["yAxis"] = {"type": "value"}
+            split_series = bool(props.get("splitSeries")) and len(series) > 1
+            x_axis_label = props.get("xAxisLabel")
+            y_axis_label = props.get("yAxisLabel")
+            if split_series:
+                n = len(series)
+                option["grid"] = [{"top": f"{int(i * 100 / n)}%", "height": f"{int(100 / n) - 5}%"} for i in range(n)]
+                option["xAxis"] = [
+                    {"type": "category", "data": categories, "gridIndex": i, "name": x_axis_label} for i in range(n)
+                ]
+                option["yAxis"] = [{"type": "value", "gridIndex": i, "name": y_axis_label} for i in range(n)]
+                for i, series_entry in enumerate(series):
+                    series_entry["xAxisIndex"] = i
+                    series_entry["yAxisIndex"] = i
+            else:
+                x_axis: dict[str, Any] = {"type": "category", "data": categories}
+                y_axis: dict[str, Any] = {"type": "value"}
+                if x_axis_label:
+                    x_axis["name"] = x_axis_label
+                if y_axis_label:
+                    y_axis["name"] = y_axis_label
+                option["xAxis"] = x_axis
+                option["yAxis"] = y_axis
         return option
+
+    @staticmethod
+    def _linear_trend(values: list[Any]) -> list[float]:
+        """Compute a simple linear-regression trend line over ``values``.
+
+        Args:
+            values: The series' numeric values (non-numeric entries treated as 0).
+
+        Returns:
+            One fitted value per input point, or ``[]`` if ``values`` is empty.
+        """
+        numeric = [v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0 for v in values]
+        n = len(numeric)
+        if n == 0:
+            return []
+        xs = list(range(n))
+        mean_x = sum(xs) / n
+        mean_y = sum(numeric) / n
+        denom = sum((x - mean_x) ** 2 for x in xs) or 1
+        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, numeric)) / denom
+        intercept = mean_y - slope * mean_x
+        return [slope * x + intercept for x in xs]
 
     def _wrap_html(self, option: dict[str, Any], title: str) -> str:
         """Wrap an option in a self-contained HTML doc inlining the vendored bundle."""

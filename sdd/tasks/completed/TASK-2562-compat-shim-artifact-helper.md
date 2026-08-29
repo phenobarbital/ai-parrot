@@ -148,10 +148,25 @@ def test_attach_ignores_non_structured_modes(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added `is_legacy_artifact`/`artifact_definition_to_legacy` to
+`compat.py` (new "FEAT-473 G6" section, existing legacy-wire-dialect helpers
+untouched). Appended `attach_structured_artifact` to the EXISTING
+`artifacts.py` (confirmed the contract's warning: the module already held
+`DeepLink`/`RenderedArtifact` from FEAT-470 — extended, did not overwrite).
+With `response.a2ui_envelope` present, mints a v2 entry via
+`adapters.structured.root_component`/`SCHEMA_VERSION`
+(`surfaceId == artifactId == response.artifact_id`); without one, falls back
+to the exact FEAT-224 v1 shape (`bots/data.py:2095-2135`, verified against
+merged `dev`). Non-structured `output_mode` and malformed/empty
+`response.output` (no-envelope path) both return `None` without mutating
+`response`; any unexpected exception is caught and logged at `warning`
+(never raises). All 6 new tests in `test_structured_artifacts.py` pass,
+including the byte-for-byte `artifact_definition_to_legacy` ↔ v1-fallback
+equivalence (AC-7) and confirming `DeepLink`/`RenderedArtifact` are
+unaffected. Full `tests/outputs/a2ui/` suite: 498 passed, 1 skipped (0
+regressions vs. TASK-2561's 492); `test_import_rule.py`'s
+`test_compat_has_no_forbidden_imports` still green. ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none.

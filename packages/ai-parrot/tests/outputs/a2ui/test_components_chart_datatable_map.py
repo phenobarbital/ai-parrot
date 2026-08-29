@@ -61,7 +61,17 @@ def _map_component() -> Component:
         component="Map",
         title="Stores",
         description="Store locations",
-        layers=[{"name": "stores", "type": "markers"}],
+        # FEAT-473: MAP_SCHEMA is now derived from StructuredMapConfig/MapLayer —
+        # layer items carry the full MapLayer vocabulary (`layer` id, not `name`/`type`).
+        layers=[
+            {
+                "layer": "stores",
+                "labelField": "name",
+                "markerColor": "blue",
+                "totalCount": 12,
+                "capped": False,
+            }
+        ],
         viewport={"center": [40.0, -3.0], "zoom": 5},
         data={"path": "/maps/blk-002"},
     )

@@ -40,6 +40,7 @@ from parrot.outputs.a2ui.catalog.base import (
     DANGLING_CHILD,
     DEFAULT_CATALOG_ID,
     DUPLICATE_ID,
+    INLINE_DATA_NOT_ALLOWED_FOR_LLM,
     MISSING_ROOT,
     UNALLOWED_CHILD,
     UNALLOWED_PARENT,
@@ -94,6 +95,13 @@ _CATALOG: dict[str, RegisteredComponent] = {}
 
 #: Global function allowlist, keyed by function name.
 _FUNCTIONS: dict[str, FunctionDefinition] = {}
+
+#: Structured-output components whose ``data``/``datasets`` prop MUST be a
+#: ``{"path": ...}`` data-model binding — never an inline list — when the
+#: envelope originates from the LLM producer (FEAT-473 G8). TOOL-origin
+#: surfaces (the FEAT-473 core adapter) are exempt; they inline rows directly.
+_STRUCTURED_INLINE_DATA_COMPONENTS = frozenset({"Chart", "DataTable", "Map"})
+_STRUCTURED_INLINE_DATA_FIELDS = ("data", "datasets")
 
 
 def register_component(
@@ -399,6 +407,11 @@ def validate_envelope(
     * For ``origin=LLM``, no component carries a non-null ``action`` OR is
       registered with ``requires_actions=True``
       (``ACTION_NOT_ALLOWED_FOR_LLM`` — G2/D10b gate).
+    * For ``origin=LLM``, ``Chart``/``DataTable``/``Map`` components do not
+      inline a ``data``/``datasets`` row list — only a ``{"path": ...}``
+      data-model binding is allowed (``INLINE_DATA_NOT_ALLOWED_FOR_LLM`` —
+      FEAT-473 G8 gate; ``origin=TOOL`` surfaces, e.g. the structured-output
+      adapter, are exempt and may inline rows directly).
 
     Args:
         envelope: The :class:`CreateSurface`/:class:`UpdateComponents` envelope.
@@ -488,6 +501,42 @@ def validate_envelope(
                     "path": comp.id,
                 }
             )
+
+        if origin is ProducerOrigin.LLM and comp.component in _STRUCTURED_INLINE_DATA_COMPONENTS:
+            extra = comp.model_extra or {}
+            for field in _STRUCTURED_INLINE_DATA_FIELDS:
+                if isinstance(extra.get(field), list):
+                    issues.append(
+                        {
+                            "code": INLINE_DATA_NOT_ALLOWED_FOR_LLM,
+                            "message": (
+                                f"LLM-produced envelopes may not inline '{field}' rows on "
+                                f"{comp.component!r} (id={comp.id!r}); use a "
+                                '{"path": "/pointer"} data-model binding instead.'
+                            ),
+                            "path": comp.id,
+                        }
+                    )
+            # Bug fix (post-review): a Map's OWN top-level `data`/`datasets`
+            # is rarely used — the real per-component row binding for Map
+            # lives PER-LAYER at `layers[i].data` (spec §2, /layers/<i>/features).
+            # The top-level-only check above never inspected this nested
+            # binding, so an LLM-origin envelope inlining rows under
+            # `layers[i].data` was never rejected. Check it explicitly.
+            if comp.component == "Map":
+                for i, layer in enumerate(extra.get("layers") or []):
+                    if isinstance(layer, dict) and isinstance(layer.get("data"), list):
+                        issues.append(
+                            {
+                                "code": INLINE_DATA_NOT_ALLOWED_FOR_LLM,
+                                "message": (
+                                    f"LLM-produced envelopes may not inline 'data' rows on "
+                                    f"Map layer {i} (id={comp.id!r}); use a "
+                                    '{"path": "/pointer"} data-model binding instead.'
+                                ),
+                                "path": comp.id,
+                            }
+                        )
 
     by_id = {c.id: c for c in components}
     for comp in components:

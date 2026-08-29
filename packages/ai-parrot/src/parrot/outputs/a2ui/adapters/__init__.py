@@ -13,5 +13,28 @@ from parrot.outputs.a2ui.adapters.infographic import (
     CHART_TYPE_MAP,
     infographic_response_to_envelope,
 )
+from parrot.outputs.a2ui.adapters.structured import (
+    DEFAULT_ROW_LIMIT,
+    LAYER_FEATURES_PATH,
+    ROWS_PATH,
+    SCHEMA_VERSION,
+    chart_to_surface,
+    config_to_component_props,
+    map_to_surface,
+    root_component,
+    table_to_surface,
+)
 
-__all__ = ["CHART_TYPE_MAP", "infographic_response_to_envelope"]
+__all__ = [
+    "CHART_TYPE_MAP",
+    "DEFAULT_ROW_LIMIT",
+    "LAYER_FEATURES_PATH",
+    "ROWS_PATH",
+    "SCHEMA_VERSION",
+    "chart_to_surface",
+    "config_to_component_props",
+    "infographic_response_to_envelope",
+    "map_to_surface",
+    "root_component",
+    "table_to_surface",
+]
