@@ -179,11 +179,15 @@ class TestQueuedRendererCalls:
         payload = _call_agent_function_payload(session_id=session_id, function_call_id="fc-3")
         resp1 = await client.post("/a2a/message:send", json=payload)
         body1 = await resp1.json()
-        first_call_parts = [p for p in body1["artifacts"][0]["parts"] if "callRendererFunction" in p.get("data", {}).get("data", {})]
+        first_call_parts = [
+            p for p in body1["artifacts"][0]["parts"] if "callRendererFunction" in p.get("data", {}).get("data", {})
+        ]
         assert len(first_call_parts) == 1
 
         payload2 = _call_agent_function_payload(session_id=session_id, function_call_id="fc-4")
         resp2 = await client.post("/a2a/message:send", json=payload2)
         body2 = await resp2.json()
-        second_call_parts = [p for p in body2["artifacts"][0]["parts"] if "callRendererFunction" in p.get("data", {}).get("data", {})]
+        second_call_parts = [
+            p for p in body2["artifacts"][0]["parts"] if "callRendererFunction" in p.get("data", {}).get("data", {})
+        ]
         assert len(second_call_parts) == 0

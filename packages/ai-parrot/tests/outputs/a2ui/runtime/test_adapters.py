@@ -131,9 +131,7 @@ class TestToolManagerExecutor:
 
 class TestConversationMemorySurfaceStore:
     async def test_surface_roundtrip(self, memory_store):
-        st = SurfaceState(
-            surface_id="s-1", catalog_id="c", data_model={"a": 1}, updated_at=datetime.now(UTC)
-        )
+        st = SurfaceState(surface_id="s-1", catalog_id="c", data_model={"a": 1}, updated_at=datetime.now(UTC))
         await memory_store.put("sess-1", st)
         fetched = await memory_store.get("sess-1", "s-1")
         assert fetched is not None
@@ -173,13 +171,9 @@ class TestConversationMemorySurfaceStore:
         assert await memory_store.resolve("sess-1", "does-not-exist", None, None) is None
 
     async def test_delete_surface_keeps_pending_calls(self, memory_store):
-        st = SurfaceState(
-            surface_id="s-1", catalog_id="c", data_model={}, updated_at=datetime.now(UTC)
-        )
+        st = SurfaceState(surface_id="s-1", catalog_id="c", data_model={}, updated_at=datetime.now(UTC))
         await memory_store.put("sess-1", st)
-        record = FunctionCallRecord(
-            function_call_id="fc-1", call="refreshChart", created_at=datetime.now(UTC)
-        )
+        record = FunctionCallRecord(function_call_id="fc-1", call="refreshChart", created_at=datetime.now(UTC))
         await memory_store.add("sess-1", record)
 
         await memory_store.delete("sess-1", "s-1")

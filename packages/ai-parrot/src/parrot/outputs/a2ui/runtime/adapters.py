@@ -284,9 +284,7 @@ class ConversationMemorySurfaceStore:
             pending = self._sweep_expired(dict(history.metadata.get(_PENDING_KEY, {})))
             history.metadata[_PENDING_KEY] = pending
             await self._memory.update_history(history)
-        return [
-            FunctionCallRecord.model_validate(raw) for raw in pending.values() if not raw.get("_delivered", False)
-        ]
+        return [FunctionCallRecord.model_validate(raw) for raw in pending.values() if not raw.get("_delivered", False)]
 
     async def mark_delivered(self, session_id: str, function_call_id: str) -> None:
         """Mark a pending call as delivered, without resolving/removing it."""

@@ -58,7 +58,11 @@ AGENT_TO_RENDERER_ENVELOPES = [
             "version": "v1.0",
             "callRendererFunction": {
                 "functionCallId": "fc-2",
-                "callFunction": {"call": "openUrl", "args": {"url": "https://x"}, "catalogId": "https://a2ui.org/specification/v1_0/catalog.json"},
+                "callFunction": {
+                    "call": "openUrl",
+                    "args": {"url": "https://x"},
+                    "catalogId": "https://a2ui.org/specification/v1_0/catalog.json",
+                },
             },
         },
         id="callRendererFunction-with-catalogId",
@@ -287,7 +291,10 @@ class TestRuntimeProducedEnvelopesConformance:
 
         store = _Store()
         runtime = A2UIRuntime(
-            executor=_Executor(), surfaces=store, pending=store, catalog_id="https://a2ui.org/specification/v1_0/catalog.json"
+            executor=_Executor(),
+            surfaces=store,
+            pending=store,
+            catalog_id="https://a2ui.org/specification/v1_0/catalog.json",
         )
         ctx = A2UICallContext(agent_id="a", session_id="s", transport="http", permission_context=None)
         env = {

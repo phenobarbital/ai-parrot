@@ -4,6 +4,7 @@ BaseBot - Concrete implementation of AbstractBot.
 This module provides BaseBot, a concrete implementation of the AbstractBot
 abstract base class. It implements all required abstract methods.
 """
+
 from typing import Optional, Union, Type, AsyncIterator, Any, List
 from collections.abc import Callable
 import inspect
@@ -13,16 +14,12 @@ import asyncio
 import time
 import warnings
 from pydantic import BaseModel
-from ..memory import (
-    ConversationTurn
-)
+from ..memory import ConversationTurn
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
 from ..utils.helpers import RequestContext, _current_ctx
-from .prompts import (
-    OUTPUT_SYSTEM_PROMPT
-)
+from .prompts import OUTPUT_SYSTEM_PROMPT
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
 
@@ -31,6 +28,7 @@ def _get_interactive_result_class() -> Optional[type]:
     """Lazy import of ``InteractiveRenderResult`` (avoids circular deps)."""
     try:
         from ..models.interactive import InteractiveRenderResult as _cls
+
         return _cls
     except ImportError:
         return None
@@ -40,9 +38,12 @@ def _get_infographic_result_class() -> Optional[type]:
     """Lazy import of ``InfographicRenderResult`` (avoids circular deps)."""
     try:
         from ..tools.infographic_toolkit import InfographicRenderResult as _cls
+
         return _cls
     except ImportError:
         return None
+
+
 # FEAT-176: Lifecycle Events
 # FEAT-317: TraceContext moved to navigator_eventbus.lifecycle; imported here
 # via the parrot.core.events.lifecycle re-export facade.
@@ -52,6 +53,7 @@ from parrot.core.events.lifecycle.events import (
     AfterInvokeEvent,
     InvokeFailedEvent,
 )
+
 # FEAT-228: Per-agent cost & usage metrics — bind agent identity around each invocation
 # user_id/session_id ContextVars: per-user usage attribution in OTEL span attributes
 from parrot.observability.context import (
@@ -97,10 +99,10 @@ class BaseBot(AbstractBot):
         """
         if metric_type:
             return metric_type
-        cfg = getattr(self, '_vector_store', None) or {}
-        if isinstance(cfg, dict) and cfg.get('metric_type'):
-            return cfg['metric_type']
-        return getattr(self, '_metric_type', None) or 'COSINE'
+        cfg = getattr(self, "_vector_store", None) or {}
+        if isinstance(cfg, dict) and cfg.get("metric_type"):
+            return cfg["metric_type"]
+        return getattr(self, "_metric_type", None) or "COSINE"
 
     def _debug_prompt_dump(
         self,
@@ -129,9 +131,9 @@ class BaseBot(AbstractBot):
         if self._prompt_builder is not None:
             layer_names = self._prompt_builder.layer_names
 
-        vec_meta = (vector_metadata or {}).get('vector', {}) or {}
-        search_results = vec_meta.get('search_results_count', 0)
-        sources = vec_meta.get('sources', [])
+        vec_meta = (vector_metadata or {}).get("vector", {}) or {}
+        search_results = vec_meta.get("search_results_count", 0)
+        sources = vec_meta.get("sources", [])
 
         # self.logger.debug(
         #     "[%s] %s() prompt builder layers: %s",
@@ -156,7 +158,7 @@ class BaseBot(AbstractBot):
         question: str,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        search_type: str = 'similarity',
+        search_type: str = "similarity",
         search_kwargs: dict = None,
         metric_type: Optional[str] = None,
         use_vector_context: bool = True,
@@ -171,7 +173,7 @@ class BaseBot(AbstractBot):
         format_kwargs: dict = None,
         system_prompt: Optional[str] = None,
         trace_context=None,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Conversation method with vector store and history integration.
@@ -236,7 +238,7 @@ class BaseBot(AbstractBot):
         question: str,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        search_type: str = 'similarity',
+        search_type: str = "similarity",
         search_kwargs: dict = None,
         metric_type: Optional[str] = None,
         use_vector_context: bool = True,
@@ -251,7 +253,7 @@ class BaseBot(AbstractBot):
         format_kwargs: dict = None,
         system_prompt: Optional[str] = None,
         trace_context=None,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """Internal implementation of conversation(); called inside agent_identity scope."""
         if ctx is None:
@@ -285,28 +287,27 @@ class BaseBot(AbstractBot):
         _trace_ctx_conv = trace_context or TraceContext.new_root()
         self._current_trace_context = _trace_ctx_conv
         _conv_started_ms = time.perf_counter()
-        await self.events.emit(BeforeInvokeEvent(
-            trace_context=_trace_ctx_conv,
-            agent_name=self.name,
-            method="conversation",
-            question=question[:512],
-            user_id=user_id,
-            session_id=session_id,
-            source_type="agent",
-            source_name=self.name,
-        ))
+        await self.events.emit(
+            BeforeInvokeEvent(
+                trace_context=_trace_ctx_conv,
+                agent_name=self.name,
+                method="conversation",
+                question=question[:512],
+                user_id=user_id,
+                session_id=session_id,
+                source_type="agent",
+                source_name=self.name,
+            )
+        )
 
-        limit = kwargs.get(
-            'limit',
-            self.context_search_limit
-        )
-        score_threshold = kwargs.get(
-            'score_threshold', self.context_score_threshold
-        )
+        limit = kwargs.get("limit", self.context_search_limit)
+        score_threshold = kwargs.get("score_threshold", self.context_score_threshold)
         metric_type = self._resolve_metric_type(metric_type)
         self.logger.debug(
             "[%s] conversation() resolved metric_type=%s, score_threshold=%s",
-            self.name, metric_type, score_threshold,
+            self.name,
+            metric_type,
+            score_threshold,
         )
 
         # ── Intent Router: pop routing kwargs before any downstream processing ──
@@ -322,15 +323,13 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(
-                    user_id, session_id
-                ) or await memory.create_history(
+                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Build context from different sources
-            vector_metadata = {'activated_kbs': []}
+            vector_metadata = {"activated_kbs": []}
 
             if injected_context:
                 # IntentRouterMixin pre-fetched context — skip RAG retrieval.
@@ -350,7 +349,7 @@ class BaseBot(AbstractBot):
                     return_sources=return_sources,
                 )
             if vector_meta:
-                vector_metadata['vector'] = vector_meta
+                vector_metadata["vector"] = vector_meta
 
             # Get user-specific context
             user_context = await self._build_user_context(
@@ -365,8 +364,8 @@ class BaseBot(AbstractBot):
                 session_id=session_id,
                 ctx=ctx,
             )
-            if kb_meta.get('activated_kbs'):
-                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
             # Determine if tools should be used
             use_tools = self._use_tools(question)
@@ -390,16 +389,14 @@ class BaseBot(AbstractBot):
             if output_mode != OutputMode.DEFAULT:
                 # Append output mode system prompt
                 if system_prompt_addon := self.formatter.get_system_prompt(output_mode):
-                    if 'system_prompt' in kwargs:
-                        kwargs['system_prompt'] += f"\n\n{system_prompt_addon}"
+                    if "system_prompt" in kwargs:
+                        kwargs["system_prompt"] += f"\n\n{system_prompt_addon}"
                     else:
                         # added to the user_context
                         user_context += system_prompt_addon
                 else:
                     # Using default Output prompt:
-                    user_context += OUTPUT_SYSTEM_PROMPT.format(
-                        output_mode=_mode
-                    )
+                    user_context += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
             # Create system prompt
             system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
@@ -410,8 +407,8 @@ class BaseBot(AbstractBot):
                 user_context=user_context,
                 user_id=user_id,
                 session_id=session_id,
-                **kwargs
-            ) + (system_prompt_addition or '')
+                **kwargs,
+            ) + (system_prompt_addition or "")
 
             self._debug_prompt_dump(
                 method="conversation",
@@ -426,57 +423,53 @@ class BaseBot(AbstractBot):
 
             # Configure LLM if needed
             llm = self.get_client()
-            if (new_llm := kwargs.pop('llm', None)):
-                llm = self.configure_llm(
-                    llm=new_llm,
-                    model=kwargs.get('model', None),
-                    **kwargs.pop('llm_config', {})
-                )
+            if new_llm := kwargs.pop("llm", None):
+                llm = self.configure_llm(llm=new_llm, model=kwargs.get("model", None), **kwargs.pop("llm_config", {}))
 
             # Ensure model is set, falling back to client default if needed
             try:
-                if not kwargs.get('model'):
-                    if hasattr(llm, 'default_model') and llm.default_model:
-                        kwargs['model'] = llm.default_model
-                    elif llm.client_type == 'google':
-                        kwargs['model'] = 'gemini-2.5-flash'
+                if not kwargs.get("model"):
+                    if hasattr(llm, "default_model") and llm.default_model:
+                        kwargs["model"] = llm.default_model
+                    elif llm.client_type == "google":
+                        kwargs["model"] = "gemini-2.5-flash"
             except Exception:
-                kwargs['model'] = 'gemini-2.5-flash'
+                kwargs["model"] = "gemini-2.5-flash"
             # Make the LLM call — retries and fallback are handled at the client level
             try:
                 async with llm as client:
                     llm_kwargs = {
                         "prompt": question,
                         "system_prompt": system_prompt,
-                        "temperature": kwargs.get('temperature', None),
+                        "temperature": kwargs.get("temperature", None),
                         "user_id": user_id,
                         "session_id": session_id,
                         "use_tools": use_tools,
                     }
 
-                    if (_model := kwargs.get('model', None)):
+                    if _model := kwargs.get("model", None):
                         llm_kwargs["model"] = _model
 
-                    max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
+                    max_tokens = kwargs.get("max_tokens", self._llm_kwargs.get("max_tokens"))
                     if max_tokens is not None:
                         llm_kwargs["max_tokens"] = max_tokens
 
                     response = await self.execute_llm_call(client, "ask", **llm_kwargs)
 
                     # Extract the vector-specific metadata
-                    vector_info = vector_metadata.get('vector', {})
+                    vector_info = vector_metadata.get("vector", {})
                     response.set_vector_context_info(
                         used=bool(vector_context),
                         context_length=len(vector_context) if vector_context else 0,
-                        search_results_count=vector_info.get('search_results_count', 0),
-                        search_type=vector_info.get('search_type', search_type) if vector_context else None,
-                        score_threshold=vector_info.get('score_threshold', score_threshold),
-                        sources=vector_info.get('sources', []),
-                        source_documents=vector_info.get('source_documents', [])
+                        search_results_count=vector_info.get("search_results_count", 0),
+                        search_type=vector_info.get("search_type", search_type) if vector_context else None,
+                        score_threshold=vector_info.get("score_threshold", score_threshold),
+                        sources=vector_info.get("sources", []),
+                        source_documents=vector_info.get("source_documents", []),
                     )
                     response.set_conversation_context_info(
                         used=bool(conversation_context),
-                        context_length=len(conversation_context) if conversation_context else 0
+                        context_length=len(conversation_context) if conversation_context else 0,
                     )
 
                     # Set additional metadata
@@ -504,9 +497,7 @@ class BaseBot(AbstractBot):
                         if not response.data:
                             extracted_data = self.formatter.extract_data(response)
 
-                        content, wrapped = await self.formatter.format(
-                            output_mode, response, **format_kwargs
-                        )
+                        content, wrapped = await self.formatter.format(output_mode, response, **format_kwargs)
                         response.output = content
                         response.response = wrapped
                         response.output_mode = output_mode
@@ -525,30 +516,28 @@ class BaseBot(AbstractBot):
                             context_used=vector_context if use_vector_context else None,
                             tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
                             metadata={
-                                'response_time': response.response_time,
-                                'model': response.model,
-                                'usage': response.usage,
-                                'finish_reason': response.finish_reason
-                            }
+                                "response_time": response.response_time,
+                                "model": response.model,
+                                "usage": response.usage,
+                                "finish_reason": response.finish_reason,
+                            },
                         )
                         await memory.add_turn(user_id, session_id, turn)
 
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
-                    await self.events.emit(AfterInvokeEvent(
-                        trace_context=_trace_ctx_conv,
-                        agent_name=self.name,
-                        method="conversation",
-                        duration_ms=_conv_duration_ms,
-                        source_type="agent",
-                        source_name=self.name,
-                    ))
-                    # return the response Object:
-                    return await self.get_response(
-                        response,
-                        return_sources,
-                        return_context
+                    await self.events.emit(
+                        AfterInvokeEvent(
+                            trace_context=_trace_ctx_conv,
+                            agent_name=self.name,
+                            method="conversation",
+                            duration_ms=_conv_duration_ms,
+                            source_type="agent",
+                            source_name=self.name,
+                        )
                     )
+                    # return the response Object:
+                    return await self.get_response(response, return_sources, return_context)
             finally:
                 await self._llm.close()
 
@@ -556,33 +545,35 @@ class BaseBot(AbstractBot):
             self.logger.info("Conversation task was cancelled.")
             # FEAT-176: emit InvokeFailedEvent on cancellation.
             _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
-            await self.events.emit(InvokeFailedEvent(
-                trace_context=_trace_ctx_conv,
-                agent_name=self.name,
-                method="conversation",
-                duration_ms=_conv_duration_ms,
-                error_type="CancelledError",
-                error_message="Cancelled",
-                source_type="agent",
-                source_name=self.name,
-            ))
+            await self.events.emit(
+                InvokeFailedEvent(
+                    trace_context=_trace_ctx_conv,
+                    agent_name=self.name,
+                    method="conversation",
+                    duration_ms=_conv_duration_ms,
+                    error_type="CancelledError",
+                    error_message="Cancelled",
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
             raise
         except Exception as e:
-            self.logger.error(
-                f"Error in conversation: {e}"
-            )
+            self.logger.error(f"Error in conversation: {e}")
             # FEAT-176: emit InvokeFailedEvent on exception.
             _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
-            await self.events.emit(InvokeFailedEvent(
-                trace_context=_trace_ctx_conv,
-                agent_name=self.name,
-                method="conversation",
-                duration_ms=_conv_duration_ms,
-                error_type=type(e).__name__,
-                error_message=str(e),
-                source_type="agent",
-                source_name=self.name,
-            ))
+            await self.events.emit(
+                InvokeFailedEvent(
+                    trace_context=_trace_ctx_conv,
+                    agent_name=self.name,
+                    method="conversation",
+                    duration_ms=_conv_duration_ms,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
             raise
         finally:
             self._current_trace_context = None
@@ -601,7 +592,7 @@ class BaseBot(AbstractBot):
         memory: Optional[Callable] = None,
         ctx: Optional[RequestContext] = None,
         response_model: Optional[Type[BaseModel]] = None,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Simplified conversation method with adaptive mode and conversation history.
@@ -640,7 +631,7 @@ class BaseBot(AbstractBot):
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
-                method='invoke',
+                method="invoke",
                 _trusted_source=_trusted_source,
             )
             if _input_outcome.blocked:
@@ -658,21 +649,16 @@ class BaseBot(AbstractBot):
                 return AIMessage(
                     input=question,
                     output="Your request could not be processed due to security concerns.",
-                    model='',
-                    provider='',
+                    model="",
+                    provider="",
                     usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-                    metadata={'error': 'security_block'}
+                    metadata={"error": "security_block"},
                 )
             prompt_for_llm = _input_outcome.content
 
             # Update status and trigger start event
             self.status = AgentStatus.WORKING
-            self._trigger_event(
-                self.EVENT_TASK_STARTED,
-                agent_name=self.name,
-                task=question,
-                session_id=session_id
-            )
+            self._trigger_event(self.EVENT_TASK_STARTED, agent_name=self.name, task=question, session_id=session_id)
 
             # Get conversation history using unified memory
             conversation_history = None
@@ -681,54 +667,47 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(user_id, session_id)  # noqa
+                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
+                    user_id, session_id
+                )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(
-                conversation_context=conversation_context,
-                user_id=user_id,
-                session_id=session_id,
-                **kwargs
+                conversation_context=conversation_context, user_id=user_id, session_id=session_id, **kwargs
             )
 
             # Configure LLM if needed
             llm = self.get_client()
-            if (new_llm := kwargs.pop('llm', None)):
-                llm = self.configure_llm(
-                    llm=new_llm,
-                    model=kwargs.get('model', None),
-                    **kwargs.pop('llm_config', {})
-                )
+            if new_llm := kwargs.pop("llm", None):
+                llm = self.configure_llm(llm=new_llm, model=kwargs.get("model", None), **kwargs.pop("llm_config", {}))
 
             # Make the LLM call using the Claude client
             async with llm as client:
                 llm_kwargs = {
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
-                    "temperature": kwargs.get('temperature', None),
+                    "temperature": kwargs.get("temperature", None),
                     "user_id": user_id,
                     "session_id": session_id,
                 }
 
-                if 'tool_type' in kwargs:
-                    llm_kwargs['tool_type'] = kwargs['tool_type']
+                if "tool_type" in kwargs:
+                    llm_kwargs["tool_type"] = kwargs["tool_type"]
 
-                max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
+                max_tokens = kwargs.get("max_tokens", self._llm_kwargs.get("max_tokens"))
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
 
                 if response_model:
-                    llm_kwargs["structured_output"] = StructuredOutputConfig(
-                        output_type=response_model
-                    )
+                    llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=response_model)
 
                 response = await self.execute_llm_call(client, "ask", **llm_kwargs)
 
                 # Set conversation context info
                 response.set_conversation_context_info(
                     used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0
+                    context_length=len(conversation_context) if conversation_context else 0,
                 )
 
                 # Set additional metadata
@@ -752,49 +731,32 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         user_message=question,
                         assistant_response=response.content,
-                        context_used=None, # invoke does not use vector context usually
+                        context_used=None,  # invoke does not use vector context usually
                         tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
                         metadata={
-                            'response_time': response.response_time,
-                            'model': response.model,
-                            'usage': response.usage,
-                            'finish_reason': response.finish_reason
-                        }
+                            "response_time": response.response_time,
+                            "model": response.model,
+                            "usage": response.usage,
+                            "finish_reason": response.finish_reason,
+                        },
                     )
                     await memory.add_turn(user_id, session_id, turn)
 
                 self._trigger_event(
-                    self.EVENT_TASK_COMPLETED,
-                    agent_name=self.name,
-                    session_id=session_id,
-                    result=response.output
+                    self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
                 )
 
-                return await self.get_response(
-                    response,
-                    return_sources=False,
-                    return_context=False
-                )
+                return await self.get_response(response, return_sources=False, return_context=False)
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
             self.status = AgentStatus.FAILED
-            self._trigger_event(
-                self.EVENT_TASK_FAILED,
-                agent_name=self.name,
-                error="Cancelled",
-                session_id=session_id
-            )
+            self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error="Cancelled", session_id=session_id)
             raise
         except Exception as e:
             self.logger.error(f"Error in conversation: {e}")
             self.status = AgentStatus.FAILED
-            self._trigger_event(
-                self.EVENT_TASK_FAILED,
-                agent_name=self.name,
-                error=str(e),
-                session_id=session_id
-            )
+            self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
             self.status = AgentStatus.IDLE
@@ -837,7 +799,8 @@ class BaseBot(AbstractBot):
         """
 
     def _extract_last_interactive_result(
-        self, tool_calls: Optional[List[Any]],
+        self,
+        tool_calls: Optional[List[Any]],
     ) -> Optional[Any]:
         """Return the last ``InteractiveRenderResult`` from the tool calls list."""
         if not tool_calls:
@@ -852,7 +815,9 @@ class BaseBot(AbstractBot):
         return None
 
     def _finalize_interactive_response(
-        self, response: Any, envelope: Any,
+        self,
+        response: Any,
+        envelope: Any,
     ) -> Optional[str]:
         """Apply an ``InteractiveRenderResult`` to the agent response in place.
 
@@ -871,22 +836,25 @@ class BaseBot(AbstractBot):
             response.response = explanation
 
         meta = dict(getattr(response, "metadata", None) or {})
-        meta.update({
-            "html_url": envelope.html_url,
-            "html_inline_omitted": envelope.html_inline is None,
-            "enhanced": envelope.enhanced,
-            "template_name": envelope.template_name,
-            "theme": envelope.theme,
-            "libraries_used": getattr(envelope, "libraries_used", []),
-            "explanation": explanation,
-        })
+        meta.update(
+            {
+                "html_url": envelope.html_url,
+                "html_inline_omitted": envelope.html_inline is None,
+                "enhanced": envelope.enhanced,
+                "template_name": envelope.template_name,
+                "theme": envelope.theme,
+                "libraries_used": getattr(envelope, "libraries_used", []),
+                "explanation": explanation,
+            }
+        )
         if hasattr(response, "metadata"):
             response.metadata = meta
 
         return explanation
 
     def _extract_last_infographic_result(
-        self, tool_calls: Optional[List[Any]],
+        self,
+        tool_calls: Optional[List[Any]],
     ) -> Optional[Any]:
         """Return the last ``InfographicRenderResult`` from the tool calls list.
 
@@ -908,7 +876,9 @@ class BaseBot(AbstractBot):
         return None
 
     def _finalize_infographic_response(
-        self, response: Any, envelope: Any,
+        self,
+        response: Any,
+        envelope: Any,
     ) -> Optional[str]:
         """Apply an ``InfographicRenderResult`` to the agent response in place.
 
@@ -930,14 +900,16 @@ class BaseBot(AbstractBot):
             response.response = explanation
 
         meta = dict(getattr(response, "metadata", None) or {})
-        meta.update({
-            "html_url": envelope.html_url,
-            "html_inline_omitted": envelope.html_inline is None,
-            "enhanced": envelope.enhanced,
-            "template_name": envelope.template_name,
-            "theme": envelope.theme,
-            "explanation": explanation,
-        })
+        meta.update(
+            {
+                "html_url": envelope.html_url,
+                "html_inline_omitted": envelope.html_inline is None,
+                "enhanced": envelope.enhanced,
+                "template_name": envelope.template_name,
+                "theme": envelope.theme,
+                "explanation": explanation,
+            }
+        )
         if hasattr(response, "metadata"):
             response.metadata = meta
 
@@ -948,7 +920,7 @@ class BaseBot(AbstractBot):
         question: str,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        search_type: str = 'similarity',
+        search_type: str = "similarity",
         search_kwargs: dict = None,
         metric_type: Optional[str] = None,
         use_vector_context: bool = True,
@@ -965,7 +937,7 @@ class BaseBot(AbstractBot):
         format_kwargs: dict = None,
         use_tools: bool = True,
         trace_context=None,
-        **kwargs
+        **kwargs,
     ) -> AIMessage:
         """
         Ask method with tools always enabled and output formatting support.
@@ -1041,7 +1013,7 @@ class BaseBot(AbstractBot):
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
-                method='ask',
+                method="ask",
                 _trusted_source=_trusted_source,
             )
             if _input_outcome.blocked:
@@ -1052,59 +1024,54 @@ class BaseBot(AbstractBot):
                 # why this uses `input=`/`output=`/`model=`/`provider=`/
                 # `usage=` instead of the invalid `content=` kwarg the
                 # pre-migration code used here.
-                _threats_detected = _input_outcome.flag_reports.get(
-                    'prompt_injection', {}
-                ).get('threats_detected', 0)
+                _threats_detected = _input_outcome.flag_reports.get("prompt_injection", {}).get("threats_detected", 0)
                 return AIMessage(
                     input=question,
                     output="Your request could not be processed due to security concerns. Please rephrase your question.",
-                    model='',
-                    provider='',
+                    model="",
+                    provider="",
                     usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-                    metadata={
-                        'error': 'security_block',
-                        'threats_detected': _threats_detected
-                    }
+                    metadata={"error": "security_block", "threats_detected": _threats_detected},
                 )
             prompt_for_llm = _input_outcome.content
 
             # FEAT-176: publish the trace context resolved above and emit
             # BeforeInvokeEvent.
             self._current_trace_context = _trace_ctx
-            await self.events.emit(BeforeInvokeEvent(
-                trace_context=_trace_ctx,
-                agent_name=self.name,
-                method="ask",
-                question=question[:512],
-                user_id=user_id,
-                session_id=session_id,
-                source_type="agent",
-                source_name=self.name,
-            ))
+            await self.events.emit(
+                BeforeInvokeEvent(
+                    trace_context=_trace_ctx,
+                    agent_name=self.name,
+                    method="ask",
+                    question=question[:512],
+                    user_id=user_id,
+                    session_id=session_id,
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
 
             # Update status and trigger start event
             self.status = AgentStatus.WORKING
-            self._trigger_event(
-                self.EVENT_TASK_STARTED,
-                agent_name=self.name,
-                task=question,
-                session_id=session_id
-            )
+            self._trigger_event(self.EVENT_TASK_STARTED, agent_name=self.name, task=question, session_id=session_id)
 
             # Set max_tokens using bot default when provided
-            default_max_tokens = self._llm_kwargs.get('max_tokens', None)
-            max_tokens = kwargs.get('max_tokens', default_max_tokens)
-            limit = kwargs.get('limit', self.context_search_limit)
+            default_max_tokens = self._llm_kwargs.get("max_tokens", None)
+            max_tokens = kwargs.get("max_tokens", default_max_tokens)
+            limit = kwargs.get("limit", self.context_search_limit)
             if limit <= 5:
                 self.logger.warning(
                     f"Context search limit is set to {limit}, which may result in insufficient context for the LLM. Consider increasing the limit for better responses."
                 )
                 limit = 10  # enforce a minimum limit to ensure some context is retrieved
-            score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+            score_threshold = kwargs.get("score_threshold", self.context_score_threshold)
             metric_type = self._resolve_metric_type(metric_type)
             self.logger.debug(
                 "[%s] ask() resolved metric_type=%s, score_threshold=%s, limit=%s",
-                self.name, metric_type, score_threshold, limit,
+                self.name,
+                metric_type,
+                score_threshold,
+                limit,
             )
             ask_started = time.perf_counter()
 
@@ -1115,9 +1082,7 @@ class BaseBot(AbstractBot):
 
             phase_started = time.perf_counter()
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(
-                    user_id, session_id
-                ) or await memory.create_history(
+                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
@@ -1128,7 +1093,7 @@ class BaseBot(AbstractBot):
             )
 
             # Build context from different sources
-            vector_metadata = {'activated_kbs': []}
+            vector_metadata = {"activated_kbs": []}
 
             # Get vector context (method handles use_vectors check internally)
             phase_started = time.perf_counter()
@@ -1144,7 +1109,7 @@ class BaseBot(AbstractBot):
                 return_sources=return_sources,
             )
             if vector_meta:
-                vector_metadata['vector'] = vector_meta
+                vector_metadata["vector"] = vector_meta
             self.logger.debug(
                 "[%s] ask timing: vector_context_ms=%.1f context_chars=%d",
                 self.name,
@@ -1173,8 +1138,8 @@ class BaseBot(AbstractBot):
                 session_id=session_id,
                 ctx=ctx,
             )
-            if kb_meta.get('activated_kbs'):
-                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
             self.logger.debug(
                 "[%s] ask timing: kb_context_ms=%.1f context_chars=%d",
                 self.name,
@@ -1185,19 +1150,11 @@ class BaseBot(AbstractBot):
             # Pre-LLM: retrieve long-term memory context if mixin is active
             memory_context = ""
             phase_started = time.perf_counter()
-            if (
-                hasattr(self, 'get_memory_context')
-                and hasattr(self, '_memory_manager')
-                and self._memory_manager
-            ):
+            if hasattr(self, "get_memory_context") and hasattr(self, "_memory_manager") and self._memory_manager:
                 try:
-                    memory_context = await self.get_memory_context(
-                        question, user_id, session_id
-                    )
+                    memory_context = await self.get_memory_context(question, user_id, session_id)
                 except Exception as _mem_exc:
-                    self.logger.warning(
-                        "Failed to get long-term memory context: %s", _mem_exc
-                    )
+                    self.logger.warning("Failed to get long-term memory context: %s", _mem_exc)
                     memory_context = ""
             self.logger.debug(
                 "[%s] ask timing: long_term_memory_ms=%.1f context_chars=%d",
@@ -1216,15 +1173,10 @@ class BaseBot(AbstractBot):
                     session_id=session_id,
                 )
             except Exception as _pre_exc:
-                self.logger.debug(
-                    "_on_pre_ask hook failed: %s", _pre_exc
-                )
+                self.logger.debug("_on_pre_ask hook failed: %s", _pre_exc)
 
             if episodic_context:
-                memory_context = (
-                    f"{memory_context}\n\n{episodic_context}"
-                    if memory_context else episodic_context
-                )
+                memory_context = f"{memory_context}\n\n{episodic_context}" if memory_context else episodic_context
             self.logger.debug(
                 "[%s] ask timing: pre_ask_hook_ms=%.1f episodic_chars=%d",
                 self.name,
@@ -1238,16 +1190,14 @@ class BaseBot(AbstractBot):
             if output_mode != OutputMode.DEFAULT:
                 # Append output mode system prompt
                 if system_prompt_addon := self.formatter.get_system_prompt(output_mode):
-                    if 'system_prompt' in kwargs:
-                        kwargs['system_prompt'] += f"\n\n{system_prompt_addon}"
+                    if "system_prompt" in kwargs:
+                        kwargs["system_prompt"] += f"\n\n{system_prompt_addon}"
                     else:
                         # added to the user_context
                         user_context += system_prompt_addon
                 else:
                     # Using default Output prompt:
-                    user_context += OUTPUT_SYSTEM_PROMPT.format(
-                        output_mode=_mode
-                    )
+                    user_context += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
             # Create system prompt
             system_prompt_addition = system_prompt
             phase_started = time.perf_counter()
@@ -1260,8 +1210,8 @@ class BaseBot(AbstractBot):
                 memory_context=memory_context or None,
                 user_id=user_id,
                 session_id=session_id,
-                **kwargs
-            ) + (system_prompt_addition or '')
+                **kwargs,
+            ) + (system_prompt_addition or "")
             self.logger.debug(
                 "[%s] ask timing: create_system_prompt_ms=%.1f system_prompt_chars=%d",
                 self.name,
@@ -1283,12 +1233,8 @@ class BaseBot(AbstractBot):
 
             # Configure LLM if needed
             llm = self.get_client()
-            if (new_llm := kwargs.pop('llm', None)):
-                llm = self.configure_llm(
-                    llm=new_llm,
-                    model=kwargs.get('model', None),
-                    **kwargs.pop('llm_config', {})
-                )
+            if new_llm := kwargs.pop("llm", None):
+                llm = self.configure_llm(llm=new_llm, model=kwargs.get("model", None), **kwargs.pop("llm_config", {}))
 
             # Make the LLM call — retries and fallback are handled at the client level
             async with llm as client:
@@ -1315,19 +1261,20 @@ class BaseBot(AbstractBot):
                 # a PRIOR ask() on the same task/coroutine never leaks
                 # forward — see AbstractTool.execute()'s docstring.
                 from ..tools.abstract import _A2UI_SURFACE_STATE_VAR
+
                 _A2UI_SURFACE_STATE_VAR.set(a2ui_surface_state)
 
                 llm_kwargs = {
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
-                    "temperature": kwargs.get('temperature', None),
+                    "temperature": kwargs.get("temperature", None),
                     "user_id": user_id,
                     "session_id": session_id,
                     "use_tools": use_tools,
                 }
 
-                if 'tool_type' in kwargs:
-                    llm_kwargs['tool_type'] = kwargs['tool_type']
+                if "tool_type" in kwargs:
+                    llm_kwargs["tool_type"] = kwargs["tool_type"]
 
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
@@ -1338,19 +1285,17 @@ class BaseBot(AbstractBot):
                 # on ask(), so blindly forwarding would raise TypeError.
                 # FEAT-182: this is the primary enforcement path for the
                 # GitHubReviewer tool-call cap (max_review_tool_calls).
-                if 'max_iterations' in kwargs:
+                if "max_iterations" in kwargs:
                     try:
                         ask_params = inspect.signature(client.ask).parameters
                     except (TypeError, ValueError):
                         ask_params = {}
-                    if 'max_iterations' in ask_params:
-                        llm_kwargs["max_iterations"] = kwargs['max_iterations']
+                    if "max_iterations" in ask_params:
+                        llm_kwargs["max_iterations"] = kwargs["max_iterations"]
 
                 if structured_output:
                     if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
-                        llm_kwargs["structured_output"] = StructuredOutputConfig(
-                            output_type=structured_output
-                        )
+                        llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
 
@@ -1381,11 +1326,11 @@ class BaseBot(AbstractBot):
                         context_used=vector_context if use_vector_context else None,
                         tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
                         metadata={
-                            'response_time': response.response_time,
-                            'model': response.model,
-                            'usage': response.usage,
-                            'finish_reason': response.finish_reason
-                        }
+                            "response_time": response.response_time,
+                            "model": response.model,
+                            "usage": response.usage,
+                            "finish_reason": response.finish_reason,
+                        },
                     )
                     await memory.add_turn(user_id, session_id, turn)
                 self.logger.debug(
@@ -1395,25 +1340,25 @@ class BaseBot(AbstractBot):
                 )
 
                 # Enhance response with metadata
-                vector_info = vector_metadata.get('vector', {})
+                vector_info = vector_metadata.get("vector", {})
                 response.set_vector_context_info(
                     used=bool(vector_context),
                     context_length=len(vector_context) if vector_context else 0,
-                    search_results_count=vector_info.get('search_results_count', 0),
-                    search_type=vector_info.get('search_type', search_type) if vector_context else None,
-                    score_threshold=vector_info.get('score_threshold', score_threshold),
-                    sources=vector_info.get('sources', []),
-                    source_documents=vector_info.get('source_documents', [])
+                    search_results_count=vector_info.get("search_results_count", 0),
+                    search_type=vector_info.get("search_type", search_type) if vector_context else None,
+                    score_threshold=vector_info.get("score_threshold", score_threshold),
+                    sources=vector_info.get("sources", []),
+                    source_documents=vector_info.get("source_documents", []),
                 )
 
                 response.set_conversation_context_info(
                     used=bool(conversation_context),
-                    context_length=len(conversation_context) if conversation_context else 0
+                    context_length=len(conversation_context) if conversation_context else 0,
                 )
 
-                if return_sources and vector_info.get('source_documents'):
-                    response.source_documents = vector_info['source_documents']
-                    response.context_sources = vector_info.get('context_sources', [])
+                if return_sources and vector_info.get("source_documents"):
+                    response.source_documents = vector_info["source_documents"]
+                    response.context_sources = vector_info.get("context_sources", [])
 
                 response.session_id = session_id
                 response.turn_id = turn_id
@@ -1433,9 +1378,7 @@ class BaseBot(AbstractBot):
                 # finalize it to an HTML artifact and bypass the renderer dispatch
                 # entirely. There is NO ``interactive`` renderer — the mode is a
                 # request-side signal handled by the ``interactive_*`` tools.
-                interactive_envelope = self._extract_last_interactive_result(
-                    getattr(response, "tool_calls", None)
-                )
+                interactive_envelope = self._extract_last_interactive_result(getattr(response, "tool_calls", None))
                 if interactive_envelope is not None:
                     if getattr(interactive_envelope, "a2ui_envelope", None) is not None:
                         response.a2ui_envelope = interactive_envelope.a2ui_envelope
@@ -1443,8 +1386,7 @@ class BaseBot(AbstractBot):
                     else:
                         self._finalize_interactive_response(response, interactive_envelope)
                     self.logger.info(
-                        "InteractiveRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s enhanced=%s a2ui=%s",
+                        "InteractiveRenderResult detected — bypassing formatter: " "artifact_id=%s enhanced=%s a2ui=%s",
                         interactive_envelope.artifact_id,
                         interactive_envelope.enhanced,
                         interactive_envelope.a2ui_envelope is not None,
@@ -1467,9 +1409,7 @@ class BaseBot(AbstractBot):
                 # ``InfographicRenderResult``, finalize it to an HTML artifact and
                 # bypass the formatter — the same contract ``PandasAgent`` uses,
                 # now available to every ``Agent``.
-                infographic_envelope = self._extract_last_infographic_result(
-                    getattr(response, "tool_calls", None)
-                )
+                infographic_envelope = self._extract_last_infographic_result(getattr(response, "tool_calls", None))
                 if infographic_envelope is not None:
                     if getattr(infographic_envelope, "a2ui_envelope", None) is not None:
                         response.a2ui_envelope = infographic_envelope.a2ui_envelope
@@ -1477,8 +1417,7 @@ class BaseBot(AbstractBot):
                     else:
                         self._finalize_infographic_response(response, infographic_envelope)
                     self.logger.info(
-                        "InfographicRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s a2ui=%s",
+                        "InfographicRenderResult detected — bypassing formatter: " "artifact_id=%s a2ui=%s",
                         infographic_envelope.artifact_id,
                         infographic_envelope.a2ui_envelope is not None,
                     )
@@ -1518,9 +1457,7 @@ class BaseBot(AbstractBot):
                     if not response.data:
                         extracted_data = self.formatter.extract_data(response)
 
-                    content, wrapped = await self.formatter.format(
-                        output_mode, response, **format_kwargs
-                    )
+                    content, wrapped = await self.formatter.format(output_mode, response, **format_kwargs)
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
@@ -1532,19 +1469,16 @@ class BaseBot(AbstractBot):
                 # FEAT-396 (TASK-2029): unified OUTPUT guardrail pipeline —
                 # runs for every output_mode (supersedes the old 4-chat-mode-only
                 # channel-egress scrub branch above).
-                response = await self._run_output_pipeline(response, method='ask')
+                response = await self._run_output_pipeline(response, method="ask")
 
                 self._trigger_event(
-                    self.EVENT_TASK_COMPLETED,
-                    agent_name=self.name,
-                    session_id=session_id,
-                    result=response.output
+                    self.EVENT_TASK_COMPLETED, agent_name=self.name, session_id=session_id, result=response.output
                 )
 
                 # Post-response: fire-and-forget long-term memory recording
                 if (
-                    hasattr(self, '_post_response_memory_hook')
-                    and hasattr(self, '_memory_manager')
+                    hasattr(self, "_post_response_memory_hook")
+                    and hasattr(self, "_memory_manager")
                     and self._memory_manager
                 ):
                     _resp = response
@@ -1552,9 +1486,7 @@ class BaseBot(AbstractBot):
 
                     async def _fire_memory_hook() -> None:
                         try:
-                            await self._post_response_memory_hook(
-                                _q, _resp, _uid, _sid
-                            )
+                            await self._post_response_memory_hook(_q, _resp, _uid, _sid)
                         except Exception as _hook_exc:
                             self.logger.warning(
                                 "post_response_memory_hook failed: %s",
@@ -1570,14 +1502,13 @@ class BaseBot(AbstractBot):
                 async def _fire_post_ask() -> None:
                     try:
                         await self._on_post_ask(
-                            _post_q, _post_resp,
+                            _post_q,
+                            _post_resp,
                             user_id=_post_uid,
                             session_id=_post_sid,
                         )
                     except Exception as _post_exc:
-                        self.logger.debug(
-                            "_on_post_ask hook failed: %s", _post_exc
-                        )
+                        self.logger.debug("_on_post_ask hook failed: %s", _post_exc)
 
                 asyncio.create_task(_fire_post_ask())
 
@@ -1588,62 +1519,58 @@ class BaseBot(AbstractBot):
                 )
                 # FEAT-176: emit AfterInvokeEvent on success.
                 _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
-                _usage = getattr(response, 'usage', None)
-                await self.events.emit(AfterInvokeEvent(
-                    trace_context=_trace_ctx,
-                    agent_name=self.name,
-                    method="ask",
-                    duration_ms=_ask_duration_ms,
-                    input_tokens=getattr(_usage, 'prompt_tokens', None) if _usage else None,
-                    output_tokens=getattr(_usage, 'completion_tokens', None) if _usage else None,
-                    source_type="agent",
-                    source_name=self.name,
-                ))
+                _usage = getattr(response, "usage", None)
+                await self.events.emit(
+                    AfterInvokeEvent(
+                        trace_context=_trace_ctx,
+                        agent_name=self.name,
+                        method="ask",
+                        duration_ms=_ask_duration_ms,
+                        input_tokens=getattr(_usage, "prompt_tokens", None) if _usage else None,
+                        output_tokens=getattr(_usage, "completion_tokens", None) if _usage else None,
+                        source_type="agent",
+                        source_name=self.name,
+                    )
+                )
                 return response
 
         except asyncio.CancelledError:
             self.logger.info("Ask task was cancelled.")
             # FEAT-176: emit InvokeFailedEvent on cancellation.
             _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
-            await self.events.emit(InvokeFailedEvent(
-                trace_context=_trace_ctx,
-                agent_name=self.name,
-                method="ask",
-                duration_ms=_ask_duration_ms,
-                error_type="CancelledError",
-                error_message="Cancelled",
-                source_type="agent",
-                source_name=self.name,
-            ))
-            self.status = AgentStatus.FAILED
-            self._trigger_event(
-                self.EVENT_TASK_FAILED,
-                agent_name=self.name,
-                error="Cancelled",
-                session_id=session_id
+            await self.events.emit(
+                InvokeFailedEvent(
+                    trace_context=_trace_ctx,
+                    agent_name=self.name,
+                    method="ask",
+                    duration_ms=_ask_duration_ms,
+                    error_type="CancelledError",
+                    error_message="Cancelled",
+                    source_type="agent",
+                    source_name=self.name,
+                )
             )
+            self.status = AgentStatus.FAILED
+            self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error="Cancelled", session_id=session_id)
             raise
         except Exception as e:
             self.logger.error(f"Error in ask: {e}")
             # FEAT-176: emit InvokeFailedEvent on exception.
             _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
-            await self.events.emit(InvokeFailedEvent(
-                trace_context=_trace_ctx,
-                agent_name=self.name,
-                method="ask",
-                duration_ms=_ask_duration_ms,
-                error_type=type(e).__name__,
-                error_message=str(e),
-                source_type="agent",
-                source_name=self.name,
-            ))
-            self.status = AgentStatus.FAILED
-            self._trigger_event(
-                self.EVENT_TASK_FAILED,
-                agent_name=self.name,
-                error=str(e),
-                session_id=session_id
+            await self.events.emit(
+                InvokeFailedEvent(
+                    trace_context=_trace_ctx,
+                    agent_name=self.name,
+                    method="ask",
+                    duration_ms=_ask_duration_ms,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    source_type="agent",
+                    source_name=self.name,
+                )
             )
+            self.status = AgentStatus.FAILED
+            self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
             self.status = AgentStatus.IDLE
@@ -1657,7 +1584,7 @@ class BaseBot(AbstractBot):
         question: str,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
-        search_type: str = 'similarity',
+        search_type: str = "similarity",
         search_kwargs: dict = None,
         metric_type: Optional[str] = None,
         use_vector_context: bool = True,
@@ -1671,7 +1598,7 @@ class BaseBot(AbstractBot):
         output_mode: OutputMode = OutputMode.DEFAULT,
         system_prompt: Optional[str] = None,
         trace_context=None,
-        **kwargs
+        **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
@@ -1696,16 +1623,18 @@ class BaseBot(AbstractBot):
             _trace_ctx_stream = trace_context or TraceContext.new_root()
             self._current_trace_context = _trace_ctx_stream
             _stream_started_ms = time.perf_counter()
-            await self.events.emit(BeforeInvokeEvent(
-                trace_context=_trace_ctx_stream,
-                agent_name=self.name,
-                method="ask_stream",
-                question=question[:512],
-                user_id=user_id,
-                session_id=session_id,
-                source_type="agent",
-                source_name=self.name,
-            ))
+            await self.events.emit(
+                BeforeInvokeEvent(
+                    trace_context=_trace_ctx_stream,
+                    agent_name=self.name,
+                    method="ask_stream",
+                    question=question[:512],
+                    user_id=user_id,
+                    session_id=session_id,
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
 
             # SECURITY (FEAT-396): run the unified INPUT guardrail pipeline
             # (prompt-injection detection + legacy PromptPipeline
@@ -1715,25 +1644,26 @@ class BaseBot(AbstractBot):
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
-                method='ask_stream',
+                method="ask_stream",
                 _trusted_source=_trusted_source,
             )
             if _input_outcome.blocked:
                 yield (
-                    "Your request could not be processed due to security concerns. "
-                    "Please rephrase your question."
+                    "Your request could not be processed due to security concerns. " "Please rephrase your question."
                 )
                 return
             prompt_for_llm = _input_outcome.content
 
-            default_max_tokens = self._llm_kwargs.get('max_tokens', None)
-            max_tokens = kwargs.get('max_tokens', default_max_tokens)
-            limit = kwargs.get('limit', self.context_search_limit)
-            score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+            default_max_tokens = self._llm_kwargs.get("max_tokens", None)
+            max_tokens = kwargs.get("max_tokens", default_max_tokens)
+            limit = kwargs.get("limit", self.context_search_limit)
+            score_threshold = kwargs.get("score_threshold", self.context_score_threshold)
             metric_type = self._resolve_metric_type(metric_type)
             self.logger.debug(
                 "[%s] ask_stream() resolved metric_type=%s, score_threshold=%s",
-                self.name, metric_type, score_threshold,
+                self.name,
+                metric_type,
+                score_threshold,
             )
 
             search_kwargs = search_kwargs or {}
@@ -1742,11 +1672,13 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(user_id, session_id)  # noqa
+                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(
+                    user_id, session_id
+                )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Build context from different sources
-            vector_metadata = {'activated_kbs': []}
+            vector_metadata = {"activated_kbs": []}
 
             # Get vector context (method handles use_vectors check internally)
             vector_context, vector_meta = await self._build_vector_context(
@@ -1761,7 +1693,7 @@ class BaseBot(AbstractBot):
                 return_sources=return_sources,
             )
             if vector_meta:
-                vector_metadata['vector'] = vector_meta
+                vector_metadata["vector"] = vector_meta
 
             # Get user-specific context
             user_context = await self._build_user_context(
@@ -1776,20 +1708,16 @@ class BaseBot(AbstractBot):
                 session_id=session_id,
                 ctx=ctx,
             )
-            if kb_meta.get('activated_kbs'):
-                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+            if kb_meta.get("activated_kbs"):
+                vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
             if output_mode != OutputMode.DEFAULT:
-                if 'system_prompt' in kwargs:
-                    kwargs['system_prompt'] += OUTPUT_SYSTEM_PROMPT.format(
-                        output_mode=_mode
-                    )
+                if "system_prompt" in kwargs:
+                    kwargs["system_prompt"] += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
                 else:
-                    user_context += OUTPUT_SYSTEM_PROMPT.format(
-                        output_mode=_mode
-                    )
+                    user_context += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
 
             system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
@@ -1798,8 +1726,8 @@ class BaseBot(AbstractBot):
                 conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
-                **kwargs
-            ) + (system_prompt_addition or '')
+                **kwargs,
+            ) + (system_prompt_addition or "")
 
             self._debug_prompt_dump(
                 method="ask_stream",
@@ -1813,8 +1741,8 @@ class BaseBot(AbstractBot):
             )
 
             llm = self._llm
-            if (new_llm := kwargs.pop('llm', None)):
-                llm = self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
+            if new_llm := kwargs.pop("llm", None):
+                llm = self.configure_llm(llm=new_llm, **kwargs.pop("llm_config", {}))
 
             async with llm as client:
                 # FEAT-266: forward caller identity to the tool manager so
@@ -1828,23 +1756,21 @@ class BaseBot(AbstractBot):
                 llm_kwargs = {
                     "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
-                    "model": kwargs.get('model', self._llm_model),
-                    "temperature": kwargs.get('temperature', 0),
+                    "model": kwargs.get("model", self._llm_model),
+                    "temperature": kwargs.get("temperature", 0),
                     "user_id": user_id,
                     "session_id": session_id,
                 }
 
-                if 'tool_type' in kwargs:
-                    llm_kwargs['tool_type'] = kwargs['tool_type']
+                if "tool_type" in kwargs:
+                    llm_kwargs["tool_type"] = kwargs["tool_type"]
 
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
 
                 if structured_output:
                     if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
-                        llm_kwargs["structured_output"] = StructuredOutputConfig(
-                            output_type=structured_output
-                        )
+                        llm_kwargs["structured_output"] = StructuredOutputConfig(output_type=structured_output)
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
 
@@ -1868,8 +1794,8 @@ class BaseBot(AbstractBot):
                             # OUTPUT_STREAM GuardrailPipeline (both empty by
                             # default today — zero-overhead passthrough; see
                             # `_feed_streaming_guardrails`).
-                            transformed_chunk, _stream_blocked, _chunk_flags = (
-                                await self._feed_streaming_guardrails(chunk)
+                            transformed_chunk, _stream_blocked, _chunk_flags = await self._feed_streaming_guardrails(
+                                chunk
                             )
                             if _chunk_flags:
                                 _stream_flag_reports.update(_chunk_flags)
@@ -1891,9 +1817,9 @@ class BaseBot(AbstractBot):
                     # is preserved as a fallback AIMessage instead of being lost.
                     stream_error = exc
                     self.logger.error(
-                        "ask_stream: client stream raised after %d chars; "
-                        "synthesizing fallback AIMessage: %s",
-                        len(full_response), exc,
+                        "ask_stream: client stream raised after %d chars; " "synthesizing fallback AIMessage: %s",
+                        len(full_response),
+                        exc,
                     )
 
                 # Save conversation turn — also runs on partial/error so the
@@ -1906,9 +1832,7 @@ class BaseBot(AbstractBot):
                         assistant_response=full_response,
                         context_used=vector_context if use_vector_context else None,
                         tools_used=[],
-                        metadata={
-                            'model': kwargs.get('model', self._llm_model)
-                        }
+                        metadata={"model": kwargs.get("model", self._llm_model)},
                     )
                     await memory.add_turn(user_id, session_id, turn)
 
@@ -1925,8 +1849,8 @@ class BaseBot(AbstractBot):
                         input=prompt_for_llm,
                         output=full_response,
                         response=full_response,
-                        model=kwargs.get('model', self._llm_model) or '',
-                        provider=getattr(client, 'provider', '') or type(client).__name__,
+                        model=kwargs.get("model", self._llm_model) or "",
+                        provider=getattr(client, "provider", "") or type(client).__name__,
                         usage=CompletionUsage(
                             prompt_tokens=0,
                             completion_tokens=0,
@@ -1937,9 +1861,9 @@ class BaseBot(AbstractBot):
                         turn_id=_turn_id,
                         finish_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
                         stop_reason="blocked" if _stream_blocked else ("error" if stream_error else "completed"),
-                        metadata={'error': 'security_block'} if _stream_blocked else {},
+                        metadata={"error": "security_block"} if _stream_blocked else {},
                     )
-                elif stream_error and not (ai_message.response or '').strip():
+                elif stream_error and not (ai_message.response or "").strip():
                     # Client yielded an AIMessage but it carries no text (e.g.
                     # validation built it before the chunks were attached).
                     # Patch the accumulated text in so the final envelope still
@@ -1959,49 +1883,55 @@ class BaseBot(AbstractBot):
                 # FEAT-396 (TASK-2029): run the OUTPUT guardrail pipeline on
                 # the final AIMessage at stream close (chunks were already
                 # covered by the StreamingGuardrail adapters above).
-                ai_message = await self._run_output_pipeline(ai_message, method='ask_stream')
+                ai_message = await self._run_output_pipeline(ai_message, method="ask_stream")
 
                 # FEAT-176: emit AfterInvokeEvent on success.
                 _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
-                await self.events.emit(AfterInvokeEvent(
-                    trace_context=_trace_ctx_stream,
-                    agent_name=self.name,
-                    method="ask_stream",
-                    duration_ms=_stream_duration_ms,
-                    source_type="agent",
-                    source_name=self.name,
-                ))
+                await self.events.emit(
+                    AfterInvokeEvent(
+                        trace_context=_trace_ctx_stream,
+                        agent_name=self.name,
+                        method="ask_stream",
+                        duration_ms=_stream_duration_ms,
+                        source_type="agent",
+                        source_name=self.name,
+                    )
+                )
                 yield ai_message
 
         except asyncio.CancelledError:
             self.logger.info("Ask stream task was cancelled.")
             # FEAT-176: emit InvokeFailedEvent on cancellation.
             _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
-            await self.events.emit(InvokeFailedEvent(
-                trace_context=_trace_ctx_stream,
-                agent_name=self.name,
-                method="ask_stream",
-                duration_ms=_stream_duration_ms,
-                error_type="CancelledError",
-                error_message="Cancelled",
-                source_type="agent",
-                source_name=self.name,
-            ))
+            await self.events.emit(
+                InvokeFailedEvent(
+                    trace_context=_trace_ctx_stream,
+                    agent_name=self.name,
+                    method="ask_stream",
+                    duration_ms=_stream_duration_ms,
+                    error_type="CancelledError",
+                    error_message="Cancelled",
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
             raise
         except Exception as e:
             self.logger.error(f"Error in ask_stream: {e}")
             # FEAT-176: emit InvokeFailedEvent on exception.
             _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
-            await self.events.emit(InvokeFailedEvent(
-                trace_context=_trace_ctx_stream,
-                agent_name=self.name,
-                method="ask_stream",
-                duration_ms=_stream_duration_ms,
-                error_type=type(e).__name__,
-                error_message=str(e),
-                source_type="agent",
-                source_name=self.name,
-            ))
+            await self.events.emit(
+                InvokeFailedEvent(
+                    trace_context=_trace_ctx_stream,
+                    agent_name=self.name,
+                    method="ask_stream",
+                    duration_ms=_stream_duration_ms,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    source_type="agent",
+                    source_name=self.name,
+                )
+            )
             raise
         finally:
             self._current_trace_context = None

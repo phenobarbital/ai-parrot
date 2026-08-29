@@ -99,9 +99,7 @@ class TestPost:
                 "userMessage": "clicked",
             },
         }
-        r = await client.post(
-            "/api/v1/agents/demo/a2ui", json=action_env, params=_auth_params(session_id="sess-2")
-        )
+        r = await client.post("/api/v1/agents/demo/a2ui", json=action_env, params=_auth_params(session_id="sess-2"))
         assert r.status == 200
 
     async def test_single_envelope_content_type(self, client):
@@ -131,7 +129,7 @@ class TestStream:
             assert resp.headers["Content-Type"].startswith("text/event-stream")
             line = await asyncio.wait_for(resp.content.readline(), timeout=5)
             assert line.startswith(b"data: ")
-            payload = _json.loads(line[len(b"data: "):])
+            payload = _json.loads(line[len(b"data: ") :])
             assert payload["callRendererFunction"]["functionCallId"] == function_call_id
         finally:
             resp.close()

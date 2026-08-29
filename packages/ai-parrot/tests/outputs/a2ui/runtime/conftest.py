@@ -20,13 +20,17 @@ class FakeExecutor:
     def __init__(self, mode="success", functions=None):
         self.mode = mode
         self.calls = []
-        self._functions = functions if functions is not None else [
-            FunctionDefinition(
-                name="get_weather",
-                catalog_id=DEFAULT_CATALOG_ID,
-                allowed_callers="rendererOrAgent",
-            )
-        ]
+        self._functions = (
+            functions
+            if functions is not None
+            else [
+                FunctionDefinition(
+                    name="get_weather",
+                    catalog_id=DEFAULT_CATALOG_ID,
+                    allowed_callers="rendererOrAgent",
+                )
+            ]
+        )
 
     async def call(self, name, args, ctx):
         self.calls.append((name, args, ctx))

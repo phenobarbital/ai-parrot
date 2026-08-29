@@ -43,7 +43,9 @@ async def test_duplicate_registration_warns_not_raises(caplog):
     assert any("already registered" in rec.message for rec in caplog.records)
     # Still exactly one GET/HEAD/POST route set for the path, not duplicated
     # (aiohttp auto-adds HEAD alongside GET).
-    matching = [r for r in app.router.routes() if r.resource is not None and r.resource.canonical == "/api/v1/a2ui/resume/web"]
+    matching = [
+        r for r in app.router.routes() if r.resource is not None and r.resource.canonical == "/api/v1/a2ui/resume/web"
+    ]
     assert len(matching) == 3  # GET + HEAD + POST
 
 

@@ -69,7 +69,12 @@ class _FakeAgent:
 
     async def ask(self, *, question, session_id=None, user_id=None, a2ui_surface_state=None, **kwargs):
         self.ask_calls.append(
-            {"question": question, "session_id": session_id, "user_id": user_id, "a2ui_surface_state": a2ui_surface_state}
+            {
+                "question": question,
+                "session_id": session_id,
+                "user_id": user_id,
+                "a2ui_surface_state": a2ui_surface_state,
+            }
         )
         reply = MagicMock()
         reply.a2ui_envelope = None
@@ -228,7 +233,7 @@ class TestE2E:
         try:
             assert resp.status == 200
             line = await asyncio.wait_for(resp.content.readline(), timeout=5)
-            payload = json.loads(line[len(b"data: "):])
+            payload = json.loads(line[len(b"data: ") :])
             assert payload["callRendererFunction"]["functionCallId"] == function_call_id
         finally:
             resp.close()

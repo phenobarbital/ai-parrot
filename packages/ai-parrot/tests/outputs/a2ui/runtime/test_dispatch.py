@@ -177,9 +177,7 @@ class TestRendererCalls:
         assert ("s-1", function_call_id) in fake_pending._store
 
     async def test_response_resolves_pending(self, runtime, fake_pending, a2ui_call_ctx):
-        function_call_id, _ = await runtime.call_renderer(
-            a2ui_call_ctx.session_id, "surface-1", "refreshChart", {}
-        )
+        function_call_id, _ = await runtime.call_renderer(a2ui_call_ctx.session_id, "surface-1", "refreshChart", {})
         env = {
             "version": "v1.0",
             "rendererFunctionResponse": {"functionCallId": function_call_id, "value": {"done": True}},

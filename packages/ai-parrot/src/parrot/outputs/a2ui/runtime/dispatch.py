@@ -154,7 +154,9 @@ class A2UIRuntime:
         # Unreachable: A2UIRendererMessage._exactly_one_key guarantees one of
         # the four branches above matched.
         return DispatchResult(  # pragma: no cover
-            messages=[error_envelope(A2UIErrorCode.INTERNAL, "Unrecognized renderer message.", function_call_id="unknown")]
+            messages=[
+                error_envelope(A2UIErrorCode.INTERNAL, "Unrecognized renderer message.", function_call_id="unknown")
+            ]
         )
 
     async def call_renderer(
@@ -321,7 +323,11 @@ class A2UIRuntime:
         status = getattr(result, "status", None)
         if status == "forbidden":
             return DispatchResult(
-                messages=[error_envelope(A2UIErrorCode.FORBIDDEN, "This function call was denied.", function_call_id=function_call_id)]
+                messages=[
+                    error_envelope(
+                        A2UIErrorCode.FORBIDDEN, "This function call was denied.", function_call_id=function_call_id
+                    )
+                ]
             )
         if status == "not_found":
             return DispatchResult(

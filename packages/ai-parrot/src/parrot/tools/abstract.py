@@ -1,6 +1,7 @@
 """
 Abstract Tool base class for all function-calling tools.in ai-parrot framework.
 """
+
 from typing import TYPE_CHECKING, ClassVar, Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
 from contextvars import ContextVar
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
+
 # FEAT-176: Lifecycle Events System
 # FEAT-317: EventEmitterMixin/TraceContext moved to navigator_eventbus.lifecycle;
 # imported here via the parrot.core.events.lifecycle re-export facade. (Not in
@@ -23,7 +25,9 @@ from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
 # because it blocks import of every AbstractTool subclass. See Completion Note.)
 from ..core.events.lifecycle import EventEmitterMixin, TraceContext
 from ..core.events.lifecycle.events import (
-    BeforeToolCallEvent, AfterToolCallEvent, ToolCallFailedEvent,
+    BeforeToolCallEvent,
+    AfterToolCallEvent,
+    ToolCallFailedEvent,
 )
 
 if TYPE_CHECKING:
@@ -34,9 +38,7 @@ if TYPE_CHECKING:
 # Set by AbstractTool.execute() when the tool declares credential_provider;
 # read by tool implementations via current_credential().
 # NEVER log or include in LLM-visible kwargs.
-_CREDENTIAL_VAR: ContextVar[Optional[Any]] = ContextVar(
-    "_parrot_credential", default=None
-)
+_CREDENTIAL_VAR: ContextVar[Optional[Any]] = ContextVar("_parrot_credential", default=None)
 
 
 def current_credential() -> Optional[Any]:
@@ -70,9 +72,7 @@ def current_credential() -> Optional[Any]:
 # (code review finding on this feature; `_current_pctx` below accepts this
 # same risk deliberately for a narrower, already-audited convention — do not
 # extend that pattern to new state without the same review).
-_A2UI_SURFACE_STATE_VAR: ContextVar[Optional[Any]] = ContextVar(
-    "_parrot_a2ui_surface_state", default=None
-)
+_A2UI_SURFACE_STATE_VAR: ContextVar[Optional[Any]] = ContextVar("_parrot_a2ui_surface_state", default=None)
 
 
 def current_a2ui_surface_state() -> Optional[Any]:
@@ -97,7 +97,9 @@ def current_a2ui_surface_state() -> Optional[Any]:
 def _get_output_scrubber():
     """Lazy import of OutputScrubber (avoids circular import at import-time)."""
     from ..security.redaction import OutputScrubber, ScrubPolicy  # noqa: PLC0415
+
     return OutputScrubber, ScrubPolicy
+
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +134,7 @@ def _default_secrets_guardrail():
     global _DEFAULT_SECRETS_GUARDRAIL  # noqa: PLW0603
     if _DEFAULT_SECRETS_GUARDRAIL is None:
         from ..bots.guardrails.builtin.secrets import SecretsGuardrail  # noqa: PLC0415
+
         _DEFAULT_SECRETS_GUARDRAIL = SecretsGuardrail()
     return _DEFAULT_SECRETS_GUARDRAIL
 
@@ -181,8 +184,11 @@ async def _run_tool_output_guardrails(
 
     if isinstance(value, str):
         from ..bots.guardrails.base import GuardrailContext, GuardrailStage  # noqa: PLC0415
+
         ctx = GuardrailContext(
-            stage=GuardrailStage.TOOL_OUTPUT, agent_name=tool_name, tool_name=tool_name,
+            stage=GuardrailStage.TOOL_OUTPUT,
+            agent_name=tool_name,
+            tool_name=tool_name,
         )
         outcome = await pipeline.run(value, ctx)
         if outcome.blocked:
@@ -200,7 +206,9 @@ async def _run_tool_output_guardrails(
                 logger.error(
                     "Guardrail '%s' raised %s while scrubbing non-string TOOL_OUTPUT "
                     "content for tool %s; on_error=fail_closed -> blocking",
-                    guardrail.name, type(exc).__name__, tool_name,
+                    guardrail.name,
+                    type(exc).__name__,
+                    tool_name,
                 )
                 placeholder = f"[content removed by guardrail: {guardrail.name}]"
                 if isinstance(value, dict):
@@ -211,17 +219,19 @@ async def _run_tool_output_guardrails(
             logger.warning(
                 "Guardrail '%s' raised %s while scrubbing non-string TOOL_OUTPUT "
                 "content for tool %s; on_error=fail_open -> leaving unchanged",
-                guardrail.name, type(exc).__name__, tool_name,
+                guardrail.name,
+                type(exc).__name__,
+                tool_name,
             )
             continue
     return value, {}
 
 
-logging.getLogger(name='matplotlib').setLevel(logging.INFO)
-logging.getLogger(name='h5py').setLevel(logging.INFO)
-logging.getLogger(name='datasets').setLevel(logging.WARNING)
-logging.getLogger(name='numexpr').setLevel(logging.WARNING)
-logging.getLogger(name='pymongo').setLevel(logging.WARNING)
+logging.getLogger(name="matplotlib").setLevel(logging.INFO)
+logging.getLogger(name="h5py").setLevel(logging.INFO)
+logging.getLogger(name="datasets").setLevel(logging.WARNING)
+logging.getLogger(name="numexpr").setLevel(logging.WARNING)
+logging.getLogger(name="pymongo").setLevel(logging.WARNING)
 
 
 class AbstractToolArgsSchema(BaseModel):
@@ -239,6 +249,7 @@ class AbstractToolArgsSchema(BaseModel):
 
 class ToolResult(BaseModel):
     """Standardized tool result format."""
+
     success: bool = Field(default=True, description="Indicates if the tool executed successfully")
     status: str = Field(default="success", description="Status of the operation")
     result: Any = Field(description="The actual result of the tool operation")
@@ -247,17 +258,12 @@ class ToolResult(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     # File output fields for tools that generate files/images
-    files: Optional[list] = Field(
-        default_factory=list, description="List of file paths generated by the tool"
-    )
-    images: Optional[list] = Field(
-        default_factory=list, description="List of image paths generated by the tool"
-    )
+    files: Optional[list] = Field(default_factory=list, description="List of file paths generated by the tool")
+    images: Optional[list] = Field(default_factory=list, description="List of image paths generated by the tool")
 
     # Voice-aware fields
     voice_text: Optional[str] = Field(default=None, description="Text optimized for speech")
     display_data: Optional[Dict[str, Any]] = Field(default=None, description="Visual content to display")
-
 
     @property
     def spoken_content(self) -> str:
@@ -337,7 +343,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         executor: Optional["AbstractToolExecutor"] = None,
         webhook_callback_url: Optional[str] = None,
         remote_timeout_seconds: int = 300,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the tool.
@@ -375,15 +381,15 @@ class AbstractTool(EventEmitterMixin, ABC):
         # instance is captured so clone() reuses the same transport;
         # ToolExecutionEnvelope serialization strips it before sending.
         self._init_kwargs = {
-            'name': name,
-            'description': description,
-            'output_dir': output_dir,
-            'base_url': base_url,
-            'static_dir': static_dir,
-            'executor': executor,
-            'webhook_callback_url': webhook_callback_url,
-            'remote_timeout_seconds': remote_timeout_seconds,
-            **kwargs
+            "name": name,
+            "description": description,
+            "output_dir": output_dir,
+            "base_url": base_url,
+            "static_dir": static_dir,
+            "executor": executor,
+            "webhook_callback_url": webhook_callback_url,
+            "remote_timeout_seconds": remote_timeout_seconds,
+            **kwargs,
         }
 
         # Set name and description
@@ -404,9 +410,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         self._open_lock: asyncio.Lock = asyncio.Lock()
 
         # Set up logging
-        self.logger = logging.getLogger(
-            f'{self.name}.Tool'
-        )
+        self.logger = logging.getLogger(f"{self.name}.Tool")
 
         # JSON encoders/decoders
         self._json_encoder = json_encoder
@@ -434,9 +438,7 @@ class AbstractTool(EventEmitterMixin, ABC):
                 base and (resolved_output == base or str(resolved_output).startswith(str(base) + os.sep))
                 for base in allowed_bases
             ):
-                raise ValueError(
-                    f"output_dir escapes allowed directories: {output_dir}"
-                )
+                raise ValueError(f"output_dir escapes allowed directories: {output_dir}")
             self.output_dir = resolved_output
         else:
             self.output_dir = self._default_output_dir()
@@ -598,12 +600,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         schema = {
             "name": self.name,
             "description": self.description,
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-                "additionalProperties": False
-            }
+            "parameters": {"type": "object", "properties": {}, "required": [], "additionalProperties": False},
         }
 
         # If args_schema is defined, use it to build the parameters
@@ -613,11 +610,9 @@ class AbstractTool(EventEmitterMixin, ABC):
             required = pydantic_schema.get("required", [])
 
             # Strip context fields (injected at runtime, not by the LLM)
-            ctx = getattr(self.args_schema, '_context_fields', frozenset())
+            ctx = getattr(self.args_schema, "_context_fields", frozenset())
             if ctx:
-                properties = {
-                    k: v for k, v in properties.items() if k not in ctx
-                }
+                properties = {k: v for k, v in properties.items() if k not in ctx}
                 required = [r for r in required if r not in ctx]
 
             schema["parameters"] = {
@@ -652,7 +647,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         if not self.args_schema or self.args_schema == AbstractToolArgsSchema:
             return kwargs
 
-        annotations = getattr(self.args_schema, '__annotations__', {})
+        annotations = getattr(self.args_schema, "__annotations__", {})
         if not annotations:
             return kwargs
 
@@ -664,11 +659,11 @@ class AbstractTool(EventEmitterMixin, ABC):
             if ann is None:
                 continue
             # Unwrap Optional[X] → X
-            origin = getattr(ann, '__origin__', None)
+            origin = getattr(ann, "__origin__", None)
             if origin is Union:
                 args = [a for a in ann.__args__ if a is not type(None)]
                 ann = args[0] if len(args) == 1 else ann
-                origin = getattr(ann, '__origin__', None)
+                origin = getattr(ann, "__origin__", None)
             # Check if the expected type is dict or list
             if ann is dict or origin is dict or ann is Dict:
                 try:
@@ -712,9 +707,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             return result
         except Exception as e:
             self.logger.error("Validation error in %s: %s", self.name, e)
-            raise ValueError(
-                f"Invalid arguments for {self.name}: {e}"
-            ) from e
+            raise ValueError(f"Invalid arguments for {self.name}: {e}") from e
 
     @staticmethod
     def _shallow_dump(validated: BaseModel) -> Dict[str, Any]:
@@ -739,10 +732,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             including any extra fields the schema allowed.
         """
         model_cls = type(validated)
-        data = {
-            name: getattr(validated, name)
-            for name in model_cls.model_fields
-        }
+        data = {name: getattr(validated, name) for name in model_cls.model_fields}
         # The two things model_dump() also included, kept for parity so this
         # stays a drop-in replacement: computed fields, and the unknown keys
         # that schemas declared with extra="allow" collect in model_extra.
@@ -767,10 +757,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         Keys whose names match common credential patterns are replaced with
         ``'***'`` so the dict is safe for logging without leaking secrets.
         """
-        return {
-            k: "***" if cls._REDACT_PATTERNS.search(k) else v
-            for k, v in kwargs.items()
-        }
+        return {k: "***" if cls._REDACT_PATTERNS.search(k) else v for k, v in kwargs.items()}
 
     # ── FEAT-176 lifecycle helpers ────────────────────────────────────────────
 
@@ -870,39 +857,36 @@ class AbstractTool(EventEmitterMixin, ABC):
         TODO: Use the Global Registry to share data between tools.
         """
         # ── Permission check (Layer 2 safety net) ────────────────────────────
-        pctx = kwargs.pop('_permission_context', None)
-        resolver = kwargs.pop('_resolver', None)
+        pctx = kwargs.pop("_permission_context", None)
+        resolver = kwargs.pop("_resolver", None)
 
         # FEAT-469: an explicit override for the triggering A2UI turn's
         # surface state, if any. Applied to `_A2UI_SURFACE_STATE_VAR` for the
         # duration of the call below (set/reset) rather than stashed on
         # `self` — see the ContextVar's own module-level comment for why an
         # instance attribute is unsafe here.
-        _a2ui_surface_state_explicit = kwargs.pop('_a2ui_surface_state', None)
+        _a2ui_surface_state_explicit = kwargs.pop("_a2ui_surface_state", None)
 
         # FEAT-264: credential broker kwargs (never enter LLM-visible args_schema)
-        _broker: Optional["CredentialBroker"] = kwargs.pop('_broker', None)
-        _cred_channel: str = kwargs.pop('_cred_channel', 'unknown')
-        _cred_user_id: Optional[str] = kwargs.pop('_cred_user_id', None)
+        _broker: Optional["CredentialBroker"] = kwargs.pop("_broker", None)
+        _cred_channel: str = kwargs.pop("_cred_channel", "unknown")
+        _cred_user_id: Optional[str] = kwargs.pop("_cred_user_id", None)
 
         if pctx is not None and resolver is not None:
-            required = getattr(self, '_required_permissions', set())
+            required = getattr(self, "_required_permissions", set())
             allowed = await resolver.can_execute(pctx, self.name, required)
             if not allowed:
-                self.logger.warning(
-                    "Permission denied: user=%s tool=%s required=%s",
-                    pctx.user_id, self.name, required
-                )
+                self.logger.warning("Permission denied: user=%s tool=%s required=%s", pctx.user_id, self.name, required)
                 return ToolResult(
                     success=False,
-                    status='forbidden',
+                    status="forbidden",
                     result=None,
                     error=f"Permission denied: '{self.name}' requires {required}",
                     metadata={
                         "tool_name": self.name,
                         "user_id": pctx.user_id,
                         "required_permissions": list(required),
-                    }
+                    },
                 )
 
         # Store for lifecycle hooks.  ToolkitTool._execute reads ``_current_pctx``
@@ -924,14 +908,16 @@ class AbstractTool(EventEmitterMixin, ABC):
             pctx.trace_context = tool_tc
 
         # Emit BeforeToolCallEvent (sync — low-overhead hot path)
-        self.events.emit_nowait(BeforeToolCallEvent(
-            trace_context=tool_tc,
-            tool_name=_tool_name,
-            tool_class=type(self).__name__,
-            args_summary=self._args_summary(kwargs),
-            source_type="tool",
-            source_name=_tool_name,
-        ))
+        self.events.emit_nowait(
+            BeforeToolCallEvent(
+                trace_context=tool_tc,
+                tool_name=_tool_name,
+                tool_class=type(self).__name__,
+                args_summary=self._args_summary(kwargs),
+                source_type="tool",
+                source_name=_tool_name,
+            )
+        )
         _lc_t0 = time.perf_counter()
 
         # ── Normal execution ─────────────────────────────────────────────────
@@ -952,7 +938,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             validated_args = self.validate_args(**kwargs)
 
             # Resolve the kwargs dict that the tool actually receives.
-            if hasattr(validated_args, 'model_dump'):
+            if hasattr(validated_args, "model_dump"):
                 resolved_kwargs = self._shallow_dump(validated_args)
             else:
                 resolved_kwargs = dict(kwargs)
@@ -1013,7 +999,7 @@ class AbstractTool(EventEmitterMixin, ABC):
                         webhook_callback_url=self.webhook_callback_url,
                     )
                     raw_result = await self.executor.execute(envelope)
-                elif hasattr(validated_args, 'model_dump'):
+                elif hasattr(validated_args, "model_dump"):
                     raw_result = await self._execute(*args, **resolved_kwargs)
                 else:
                     raw_result = await self._execute(*args, **kwargs)
@@ -1027,30 +1013,25 @@ class AbstractTool(EventEmitterMixin, ABC):
             # Normalise to ToolResult
             if isinstance(raw_result, ToolResult):
                 tool_result = raw_result
-            elif isinstance(raw_result, dict) and 'status' in raw_result and 'result' in raw_result:
+            elif isinstance(raw_result, dict) and "status" in raw_result and "result" in raw_result:
                 try:
                     tool_result = ToolResult(**raw_result)
                 except Exception as e:
                     self.logger.error("Error creating ToolResult from dict: %s", e)
                     tool_result = ToolResult(
                         status="done_with_errors",
-                        result=raw_result.get('result', []),
+                        result=raw_result.get("result", []),
                         error=f"Error creating ToolResult: {e}",
-                        metadata=raw_result.get('metadata', {})
+                        metadata=raw_result.get("metadata", {}),
                     )
             elif raw_result is None:
-                raise ValueError(
-                    "Tool execution returned None, expected a result."
-                )
+                raise ValueError("Tool execution returned None, expected a result.")
             else:
                 self.logger.info("Tool %s executed successfully", self.name)
                 tool_result = ToolResult(
                     status="success",
                     result=raw_result,
-                    metadata={
-                        "tool_name": self.name,
-                        "execution_time": datetime.now().isoformat()
-                    }
+                    metadata={"tool_name": self.name, "execution_time": datetime.now().isoformat()},
                 )
 
             # ── FEAT-252 (TASK-1612): single-seam OutputScrubber hook ─────────
@@ -1100,25 +1081,28 @@ class AbstractTool(EventEmitterMixin, ABC):
                         _tool_flag_reports.update(_reports)
                     if _tool_flag_reports:
                         _merged_metadata = dict(tool_result.metadata)
-                        _merged_metadata.setdefault('guardrails', {}).update(_tool_flag_reports)
+                        _merged_metadata.setdefault("guardrails", {}).update(_tool_flag_reports)
                         tool_result = tool_result.model_copy(update={"metadata": _merged_metadata})
                 except Exception as _scrub_exc:  # never let scrub errors break tool execution
                     self.logger.warning(
                         "OutputScrubber error in tool %s (non-fatal): %s",
-                        _tool_name, _scrub_exc,
+                        _tool_name,
+                        _scrub_exc,
                     )
 
             # ── FEAT-176: emit AfterToolCallEvent on success ──────────────────
             _lc_dur = (time.perf_counter() - _lc_t0) * 1000
-            await self.events.emit(AfterToolCallEvent(
-                trace_context=tool_tc,
-                tool_name=_tool_name,
-                duration_ms=_lc_dur,
-                result_status=tool_result.status,
-                result_size_bytes=self._result_size(tool_result),
-                source_type="tool",
-                source_name=_tool_name,
-            ))
+            await self.events.emit(
+                AfterToolCallEvent(
+                    trace_context=tool_tc,
+                    tool_name=_tool_name,
+                    duration_ms=_lc_dur,
+                    result_status=tool_result.status,
+                    result_size_bytes=self._result_size(tool_result),
+                    source_type="tool",
+                    source_name=_tool_name,
+                )
+            )
             return tool_result
 
         except Exception as e:
@@ -1127,6 +1111,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             # ToolResult (FEAT-107, TASK-748).  Imported lazily to avoid a
             # circular import with ``parrot.auth``.
             from ..auth.exceptions import AuthorizationRequired
+
             if isinstance(e, AuthorizationRequired):
                 raise
 
@@ -1134,20 +1119,23 @@ class AbstractTool(EventEmitterMixin, ABC):
             # can render the appropriate UX (A2A suspend+link, Adaptive Card,
             # CLI URL).  Imported lazily to match the pattern above.
             from ..auth.credentials import CredentialRequired as _CR
+
             if isinstance(e, _CR):
                 raise
 
             # ── FEAT-176: emit ToolCallFailedEvent before returning error ─────
             _lc_dur = (time.perf_counter() - _lc_t0) * 1000
-            await self.events.emit(ToolCallFailedEvent(
-                trace_context=tool_tc,
-                tool_name=_tool_name,
-                duration_ms=_lc_dur,
-                error_type=type(e).__name__,
-                error_message=str(e),
-                source_type="tool",
-                source_name=_tool_name,
-            ))
+            await self.events.emit(
+                ToolCallFailedEvent(
+                    trace_context=tool_tc,
+                    tool_name=_tool_name,
+                    duration_ms=_lc_dur,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    source_type="tool",
+                    source_name=_tool_name,
+                )
+            )
 
             error_msg = f"Error in {self.name}: {str(e)}"
             self.logger.error("%s", error_msg)
@@ -1155,9 +1143,7 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             if self.enable_redaction or self._has_tool_output_guardrails():
                 try:
-                    error_msg, _ = await _run_tool_output_guardrails(
-                        self._tool_output_pipeline, error_msg, _tool_name
-                    )
+                    error_msg, _ = await _run_tool_output_guardrails(self._tool_output_pipeline, error_msg, _tool_name)
                 except Exception:
                     pass
 
@@ -1165,10 +1151,7 @@ class AbstractTool(EventEmitterMixin, ABC):
                 status="error",
                 result=None,
                 error=error_msg,
-                metadata={
-                    "tool_name": self.name,
-                    "error_type": type(e).__name__
-                }
+                metadata={"tool_name": self.name, "error_type": type(e).__name__},
             )
         finally:
             # Always clear the per-call context so stale references don't linger.
@@ -1201,9 +1184,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             relative_path = file_path.relative_to(self.static_dir)
             return f"{self.static_url.rstrip('/')}/{relative_path}"
         except ValueError:
-            self.logger.warning(
-                "File %s is not within static directory %s", file_path, self.static_dir
-            )
+            self.logger.warning("File %s is not within static directory %s", file_path, self.static_dir)
             return str(file_path)
 
     def relative_url(self, url: str) -> str:
@@ -1221,17 +1202,10 @@ class AbstractTool(EventEmitterMixin, ABC):
             return url
 
         if (parts.scheme, parts.netloc) == self._base_scheme_netloc:
-            return urlunparse((
-                "", "", parts.path, parts.params, parts.query, parts.fragment
-            ))
+            return urlunparse(("", "", parts.path, parts.params, parts.query, parts.fragment))
         return url
 
-    def generate_filename(
-        self,
-        prefix: str = "output",
-        extension: str = "",
-        include_timestamp: bool = True
-    ) -> str:
+    def generate_filename(self, prefix: str = "output", extension: str = "", include_timestamp: bool = True) -> str:
         """
         Generate a unique filename with optional timestamp.
 
@@ -1250,7 +1224,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             filename = prefix
 
         if extension:
-            if not extension.startswith('.'):
+            if not extension.startswith("."):
                 extension = f".{extension}"
             filename += extension
 
@@ -1277,9 +1251,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         try:
             file_path.relative_to(self.static_dir.resolve())
         except ValueError as e:
-            raise ValueError(
-                f"Output path {file_path} must be within static directory {self.static_dir}"
-            ) from e
+            raise ValueError(f"Output path {file_path} must be within static directory {self.static_dir}") from e
 
         return file_path
 
@@ -1288,5 +1260,3 @@ class AbstractTool(EventEmitterMixin, ABC):
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}(name='{self.name}')>"
-
-
