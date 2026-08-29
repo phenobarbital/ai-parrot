@@ -113,7 +113,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "PARALLEL with TASK-2573. Touches only parrot/a2a/models.py and ai-parrot-server/a2a/server.py — no file overlap with the HTTP handler task. Both depend on 2571 and on nothing of each other's.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2572-a2a-agent-card-datapart.md"
+      "completed_at": "2026-08-29T02:06:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2572-a2a-agent-card-datapart.md"
     },
     {
       "id": "TASK-2573",
