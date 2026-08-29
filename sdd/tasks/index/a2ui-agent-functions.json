@@ -193,7 +193,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,8 @@
       "parallelism_notes": "Join point — needs every transport and the bot hook in place to exercise the full RPC leg.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2576-e2e-conformance-tests.md"
+      "completed_at": "2026-08-29T02:55:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2576-e2e-conformance-tests.md"
     },
     {
       "id": "TASK-2577",
