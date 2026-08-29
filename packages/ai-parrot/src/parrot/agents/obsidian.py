@@ -680,23 +680,42 @@ class FirefliesObsidianAgent(BasicAgent):
 
                 if classified.action == "skip":
                     report["skipped"] += 1
-                    if not skip_existing and classified.record is not None:
-                        # skip_existing=False still means "sync everything":
-                        # nothing changed so there is no note to (re)write,
-                        # but the row is touched so its freshness window
-                        # (FIREFLIES_RECHECK_DAYS) advances from now.
+                    if classified.record is not None:
                         record = classified.record
-                        await self.registry.record_synced(
-                            fireflies_id=record.fireflies_id,
-                            note_path=Path(record.note_path),
-                            title=record.title,
-                            meeting_date=record.meeting_date,
-                            participants=record.participants,
-                            duration_minutes=record.duration_minutes,
-                            fingerprint=record.fingerprint,
-                            summary_fingerprint=record.summary_fingerprint,
-                            reset_analysis=False,
-                        )
+                        # A real fetch happened whenever the cheap-skip path
+                        # did NOT apply (recheck window expired or
+                        # force_refetch) — classify() still confirmed the
+                        # content is unchanged (hence "skip"), but the fresh
+                        # fingerprint/summary_fingerprint it just computed
+                        # must be persisted: (1) synced_at has to advance or
+                        # the row falls permanently outside
+                        # FIREFLIES_RECHECK_DAYS and every future sync
+                        # re-fetches forever; (2) a summary-only change
+                        # (main transcript unchanged, so still "skip") would
+                        # otherwise never update summary_fingerprint at all.
+                        # skip_existing=False additionally touches a pure
+                        # cheap-skip (no fetch at all) to satisfy "sync
+                        # everything".
+                        if classified.fetched_text is not None or not skip_existing:
+                            await self.registry.record_synced(
+                                fireflies_id=record.fireflies_id,
+                                note_path=Path(record.note_path),
+                                title=record.title,
+                                meeting_date=record.meeting_date,
+                                participants=record.participants,
+                                duration_minutes=record.duration_minutes,
+                                fingerprint=(
+                                    classified.fingerprint
+                                    if classified.fingerprint is not None
+                                    else record.fingerprint
+                                ),
+                                summary_fingerprint=(
+                                    classified.summary_fingerprint
+                                    if classified.summary_fingerprint is not None
+                                    else record.summary_fingerprint
+                                ),
+                                reset_analysis=False,
+                            )
                     continue
 
                 canonical_title = self._make_note_title(date, title)
@@ -931,19 +950,18 @@ class FirefliesObsidianAgent(BasicAgent):
                 availability. When ``None`` and the registry is available,
                 candidates come from
                 :meth:`~parrot.agents.meeting_registry.MeetingRegistry.pending_analysis`
+                (or, with ``force=True``,
+                :meth:`~parrot.agents.meeting_registry.MeetingRegistry.all_records`)
                 instead of a folder scan.
             granularity: 'minimal' | 'standard' | 'detailed'.
             limit: Max notes to analyze in this run (None = no limit). Useful
                 to bound LLM cost when catching up on a backlog.
             force: Re-analyze notes that already carry an Analysis section.
-                FEAT-472 note: with the registry driving candidates (`
-                note_titles=None` and the registry available),
-                `pending_analysis()` already excludes done-and-current rows
-                by construction — `force` has no additional effect there
-                (there is no registry verb to list every row regardless of
-                status); it only changes behaviour for the
-                ``note_titles``-explicit and fallback (registry-unavailable)
-                paths, exactly as before this feature.
+                With the registry driving candidates (``note_titles=None``
+                and the registry available), ``force=True`` switches the
+                candidate set from `pending_analysis()` to `all_records()`
+                so every meeting is reachable, not just the ones already
+                flagged as needing analysis.
 
         Returns:
             Dict with:
@@ -969,7 +987,12 @@ class FirefliesObsidianAgent(BasicAgent):
             if note_titles is not None:
                 candidates = list(note_titles)
             elif registry_ok:
-                pending = await self.registry.pending_analysis()
+                # force=True must reach every meeting, not just the ones
+                # pending_analysis() already flags as needing it (that
+                # selection excludes done-and-current rows by
+                # construction, so force would otherwise have no effect
+                # once the registry is healthy).
+                pending = await self.registry.all_records() if force else await self.registry.pending_analysis()
                 candidates = []
                 for record in pending:
                     note_title = Path(record.note_path).stem

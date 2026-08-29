@@ -670,6 +670,22 @@ class TestBulkManifestOperations:
         assert second[0].pages_generated == ["page-0"]
         assert second[0].file_hash != first[0].file_hash
 
+    def test_add_sources_preserves_external_id_and_doc_metadata(self, sources_dir, files):
+        """FEAT-472 regression: re-registering an already-tracked, CHANGED
+        file through the batch path must not wipe external_id/doc_metadata
+        — the same class of bug fixed on mark_ingested/mark_ingested_many,
+        surfaced by ObsidianVaultLoader's own use of this batch method."""
+        mgr = SourceCollectionManager(sources_dir / "m")
+        first = mgr.add_sources(files)
+        mgr._upsert(first[0].model_copy(update={"external_id": "fireflies:abc", "doc_metadata": {"fireflies": {}}}))
+        files[0].write_text("# Doc 0\n\nCHANGED")
+
+        second = mgr.add_sources(files)
+
+        assert second[0].external_id == "fireflies:abc"
+        assert second[0].doc_metadata == {"fireflies": {}}
+        assert second[0].file_hash != first[0].file_hash  # hash still refreshed
+
     def test_add_sources_raises_on_a_missing_path(self, sources_dir, files):
         mgr = SourceCollectionManager(sources_dir / "m")
         with pytest.raises(FileNotFoundError, match="ghost.md"):

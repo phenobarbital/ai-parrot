@@ -1133,3 +1133,57 @@ class TestScheduleMetadata:
             cls.email_weekly_insights,
         ):
             assert "timezone" in method._schedule_config["schedule_config"]
+
+
+# ---------------------------------------------------------------------------
+# registry_dir / wiki_storage_dir (FEAT-472)
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryDirDefaulting:
+    """FirefliesObsidianAgent.registry_dir must not silently diverge from
+    this subclass's own wiki_storage_dir — otherwise the sync registry and
+    the wiki toolkit open two DIFFERENT wiki.db files, breaking the "one
+    shared row" design (spec §2 G5)."""
+
+    def test_registry_dir_defaults_from_wiki_storage_dir(self, agent_module, tmp_path, monkeypatch):
+        from parrot.bots.agent import BasicAgent
+
+        def _stub_init(self, name: str = "agent", **kwargs) -> None:
+            self.name = name
+
+        monkeypatch.setattr(BasicAgent, "__init__", _stub_init)
+
+        vault_path = tmp_path / "vault"
+        vault_path.mkdir()
+        custom_storage_dir = tmp_path / "custom-wiki-storage"
+
+        inst = agent_module.FirefliesWikiAgent(
+            vault_path=str(vault_path),
+            wiki_storage_dir=str(custom_storage_dir),
+        )
+
+        assert inst.registry_dir == inst.wiki_storage_dir == custom_storage_dir.expanduser()
+
+    def test_explicit_registry_dir_wins_over_wiki_storage_dir(self, agent_module, tmp_path, monkeypatch):
+        from parrot.bots.agent import BasicAgent
+
+        def _stub_init(self, name: str = "agent", **kwargs) -> None:
+            self.name = name
+
+        monkeypatch.setattr(BasicAgent, "__init__", _stub_init)
+
+        vault_path = tmp_path / "vault"
+        vault_path.mkdir()
+        custom_storage_dir = tmp_path / "custom-wiki-storage"
+        custom_registry_dir = tmp_path / "custom-registry"
+
+        inst = agent_module.FirefliesWikiAgent(
+            vault_path=str(vault_path),
+            wiki_storage_dir=str(custom_storage_dir),
+            registry_dir=str(custom_registry_dir),
+        )
+
+        assert inst.registry_dir == custom_registry_dir
+        assert inst.wiki_storage_dir == custom_storage_dir.expanduser()
+        assert inst.registry_dir != inst.wiki_storage_dir

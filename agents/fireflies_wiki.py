@@ -158,9 +158,19 @@ class FirefliesWikiAgent(FirefliesObsidianAgent):
                 to ``AUDIO_NOTES_FOLDER``.
             **kwargs: Forwarded to :class:`FirefliesObsidianAgent`. ``llm``
                 defaults to Claude Haiku 4.5 when the caller does not pin one.
+                FEAT-472: ``registry_dir`` (also forwarded) defaults to
+                ``wiki_storage_dir`` here when the caller overrides the
+                latter without also passing the former explicitly —
+                otherwise `FirefliesObsidianAgent`'s own default
+                (``FIREFLIES_REGISTRY_DIR``, independent of this
+                subclass's wiki storage dir) would silently open a
+                DIFFERENT ``wiki.db`` than the wiki toolkit, breaking the
+                "one shared row" design (spec §2 G5).
         """
         kwargs.setdefault("llm", FIREFLIES_WIKI_LLM)
         kwargs.setdefault("instructions", _AUDIO_NOTE_TOOL_GUIDANCE)
+        if wiki_storage_dir is not None:
+            kwargs.setdefault("registry_dir", wiki_storage_dir)
         super().__init__(name=name, **kwargs)
 
         self.wiki_name: str = wiki_name or FIREFLIES_WIKI_NAME

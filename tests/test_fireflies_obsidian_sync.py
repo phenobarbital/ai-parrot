@@ -177,6 +177,53 @@ class TestSyncCheapSkipAndForceRefetch:
         assert len(_tool_calls(fake_fireflies, "fireflies_get_transcript")) == 1
         assert forced["skipped"] == 1  # content unchanged -> still classified skip
 
+    async def test_sync_recheck_expiry_persists_fresh_synced_at(
+        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
+    ):
+        """A real fetch confirming unchanged content ("skip", not cheap-skip)
+        must still advance synced_at — otherwise the row falls permanently
+        outside FIREFLIES_RECHECK_DAYS and every future sync re-fetches
+        forever."""
+        agent.registry = MeetingRegistry(tmp_path / "registry")
+        agent.registry._recheck_days = 0  # every window is immediately expired
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}]
+        fake_fireflies["transcripts"] = {"abc": "same content"}
+
+        await agent.sync_fireflies_transcripts(limit=10)
+        record1 = await agent.registry.lookup("abc")
+        synced_at_1 = record1.synced_at
+
+        fake_fireflies["calls"].clear()
+        second = await agent.sync_fireflies_transcripts(limit=10)
+
+        assert second["skipped"] == 1
+        assert len(_tool_calls(fake_fireflies, "fireflies_get_transcript")) == 1  # a real fetch happened
+        record2 = await agent.registry.lookup("abc")
+        assert record2.synced_at > synced_at_1
+
+    async def test_sync_summary_only_change_updates_summary_fingerprint(
+        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
+    ):
+        """The main transcript fingerprint decides skip/revise; a
+        summary-only change must still update summary_fingerprint on a
+        "skip" outcome."""
+        agent.registry = MeetingRegistry(tmp_path / "registry")
+        agent.registry._recheck_days = 0
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 30}]
+        fake_fireflies["transcripts"] = {"abc": "same content"}
+        fake_fireflies["summaries"] = {"abc": "summary v1"}
+
+        await agent.sync_fireflies_transcripts(limit=10, include_summary=True)
+        record1 = await agent.registry.lookup("abc")
+        assert record1.summary_fingerprint is not None
+
+        fake_fireflies["summaries"] = {"abc": "summary v2, materially different"}
+        second = await agent.sync_fireflies_transcripts(limit=10, include_summary=True)
+
+        assert second["skipped"] == 1  # main transcript unchanged -> still "skip"
+        record2 = await agent.registry.lookup("abc")
+        assert record2.summary_fingerprint != record1.summary_fingerprint
+
 
 class TestSyncFromDate:
     async def test_sync_from_date_from_registry(self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path):
@@ -277,6 +324,32 @@ class TestSummarizePendingTranscripts:
         record = await agent.registry.lookup("abc")
         assert record.analysis_status == "failed"
         assert record.last_error is not None
+
+    async def test_summarize_force_true_reanalyses_done_current_row(
+        self, agent: FirefliesObsidianAgent, fake_fireflies, tmp_path: Path
+    ):
+        """Regression: pending_analysis() excludes done-and-current rows by
+        construction, so force=True must switch to all_records() to reach
+        them — otherwise force silently has no effect once the registry is
+        healthy."""
+        agent.registry = MeetingRegistry(tmp_path / "registry")
+        fake_fireflies["listing"] = [{"id": "abc", "title": "Standup", "date": "2026-08-01", "duration": 10}]
+        fake_fireflies["transcripts"] = {"abc": "Transcript content for analysis."}
+        await agent.sync_fireflies_transcripts(limit=10)
+
+        agent.client.complete = AsyncMock(return_value="##Summary\nFirst pass\n##Follow Ups\n1. q1\n##Insights\n- i1")
+        first_outcome = await agent.summarize_pending_transcripts()
+        assert first_outcome["analyzed"] == ["2026-08-01-standup"]
+
+        # Without force, the now-done-and-current row is no longer a
+        # pending_analysis() candidate.
+        second_outcome = await agent.summarize_pending_transcripts()
+        assert second_outcome["analyzed"] == []
+
+        # With force=True, it must be reachable again.
+        agent.client.complete = AsyncMock(return_value="##Summary\nSecond pass\n##Follow Ups\n1. q2\n##Insights\n- i2")
+        forced_outcome = await agent.summarize_pending_transcripts(force=True)
+        assert forced_outcome["analyzed"] == ["2026-08-01-standup"]
 
 
 class TestAllowedOperations:

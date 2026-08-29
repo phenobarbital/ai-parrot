@@ -424,17 +424,27 @@ class SourceCollectionManager:
         for path in resolved:
             source_uri = str(path)
             prior = existing.get(source_uri)
-            entries.append(
-                SourceManifestEntry(
-                    source_id=prior.source_id if prior else self._generate_source_id(source_uri),
-                    source_uri=source_uri,
-                    file_hash=self._compute_hash(path),
-                    mtime=path.stat().st_mtime,
-                    ingested_at=prior.ingested_at if prior else now,
-                    pages_generated=prior.pages_generated if prior else [],
-                    status="ingested",
+            file_hash = self._compute_hash(path)
+            mtime = path.stat().st_mtime
+            if prior is not None:
+                # FEAT-472 bugfix (same class as add_source/mark_ingested):
+                # model_copy preserves external_id/doc_metadata/destination/
+                # etc. instead of reconstructing from only six fields, which
+                # used to silently wipe them on every re-registration of an
+                # already-tracked, changed file.
+                entries.append(prior.model_copy(update={"file_hash": file_hash, "mtime": mtime}))
+            else:
+                entries.append(
+                    SourceManifestEntry(
+                        source_id=self._generate_source_id(source_uri),
+                        source_uri=source_uri,
+                        file_hash=file_hash,
+                        mtime=mtime,
+                        ingested_at=now,
+                        pages_generated=[],
+                        status="ingested",
+                    )
                 )
-            )
         self._upsert_many(entries)
         self.logger.debug("add_sources: registered %d source(s)", len(entries))
         return entries

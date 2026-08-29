@@ -342,6 +342,31 @@ class MeetingRegistry:
                 pending.append(record)
         return pending
 
+    async def all_records(self) -> list[MeetingRecord]:
+        """Every tracked meeting, regardless of analysis status.
+
+        Unlike :meth:`pending_analysis` (which excludes done-and-current
+        rows by construction), this is the full set — used by a
+        `force=True` re-analysis run that must reach every meeting, not
+        just the ones already flagged as needing it.
+
+        Returns:
+            Every non-rejected fireflies row as a :class:`MeetingRecord`.
+            Rejected rows (:meth:`forget` with ``reject=True``) are still
+            excluded — a permanently-skipped meeting has no content to
+            re-analyze. Empty when the registry is unavailable.
+        """
+        if not self.available:
+            return []
+        entries = await asyncio.to_thread(self._manager.list_by_external_prefix, EXTERNAL_ID_PREFIX)
+        records: list[MeetingRecord] = []
+        for entry in entries:
+            block = (entry.doc_metadata or {}).get(DOC_METADATA_KEY, {})
+            if block.get("rejected"):
+                continue
+            records.append(self._entry_to_record(entry))
+        return records
+
     async def suggest_from_date(self, *, overlap_days: int) -> str | None:
         """Suggest the Fireflies listing `fromDate` from registry history.
 
@@ -464,7 +489,19 @@ class MeetingRegistry:
         path = Path(note_path)
         existing_id = await asyncio.to_thread(self._manager.find_by_uri, str(path.resolve()))
         if existing_id is None:
-            entry = await asyncio.to_thread(self._manager.add_source, path, external_id=external_id)
+            # No row at this exact URI. Before inserting a new row, check
+            # for a STALE row already carrying this external_id — e.g.
+            # repair_path scanned meetings_folder, found nothing, and the
+            # caller just created a brand-new note at a different path.
+            # Without this check, `sources` would end up with two rows
+            # sharing one external_id (no UNIQUE constraint on that
+            # column), and find_by_external_id's `LIMIT 1` would then pick
+            # between them non-deterministically on every future lookup.
+            stale_entry = await asyncio.to_thread(self._manager.find_by_external_id, external_id)
+            if stale_entry is not None:
+                entry = await asyncio.to_thread(self._manager.update_source_uri, stale_entry.source_id, path)
+            else:
+                entry = await asyncio.to_thread(self._manager.add_source, path, external_id=external_id)
         else:
             entry = await asyncio.to_thread(self._manager.get_source, existing_id)
             if entry.external_id != external_id:
@@ -734,9 +771,11 @@ class MeetingRegistry:
         if not paths:
             return MergeResult(fireflies_id=fireflies_id, kept="", removed=[])
         for path in paths:
-            assert path.startswith(
-                f"{meetings_folder}/"
-            ), f"merge_duplicates: {path!r} is outside meetings_folder={meetings_folder!r}"
+            # `assert` is stripped under `python -O`/`PYTHONOPTIMIZE` — this
+            # guards a destructive move_note/delete_note call, so it must
+            # hold even on an optimized interpreter.
+            if not path.startswith(f"{meetings_folder}/"):
+                raise ValueError(f"merge_duplicates: {path!r} is outside meetings_folder={meetings_folder!r}")
 
         vault_root = self._vault_root(toolkit)
         notes: dict[str, dict[str, Any]] = {}
@@ -861,9 +900,8 @@ class MeetingRegistry:
         if found_path is None:
             return RepairResult(fireflies_id=fireflies_id, from_path=current_uri, to_path=None, moved=False)
 
-        assert found_path.startswith(
-            f"{meetings_folder}/"
-        ), f"repair_path: {found_path!r} is outside meetings_folder={meetings_folder!r}"
+        if not found_path.startswith(f"{meetings_folder}/"):
+            raise ValueError(f"repair_path: {found_path!r} is outside meetings_folder={meetings_folder!r}")
         canonical_rel = f"{meetings_folder}/{canonical_title}.md"
         final_rel = found_path
         moved = False

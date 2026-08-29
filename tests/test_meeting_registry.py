@@ -307,6 +307,31 @@ class TestPendingAnalysis:
         assert "done-stale-id" in pending_ids
         assert "done-current-id" not in pending_ids
 
+        # all_records() must include the done-and-current row too — the
+        # candidate set a force=True analysis run needs (pending_analysis()
+        # excludes it by construction).
+        all_ids = {r.fireflies_id for r in await registry.all_records()}
+        assert all_ids == {"pending-id", "done-current-id", "done-stale-id"}
+
+    async def test_all_records_excludes_rejected(self, registry: MeetingRegistry, tmp_path: Path):
+        note = tmp_path / "rejected.md"
+        note.write_text("body")
+        await registry.record_synced(
+            fireflies_id="rejected-id",
+            note_path=note,
+            title="t",
+            meeting_date="2026-08-01",
+            participants=[],
+            duration_minutes=1.0,
+            fingerprint="fp",
+            summary_fingerprint=None,
+            reset_analysis=True,
+        )
+        await registry.forget("rejected-id", reject=True)
+
+        assert await registry.all_records() == []
+        assert await registry.pending_analysis() == []
+
 
 class TestRecordSynced:
     async def test_record_synced_merges_doc_metadata(self, registry: MeetingRegistry, tmp_path: Path):
@@ -347,6 +372,50 @@ class TestRecordSynced:
         fetched = registry._manager.get_source(record.source_id)
         assert fetched.doc_metadata["author"] == "Someone"
         assert fetched.doc_metadata["fireflies"]["title"] == "Standup Updated"
+
+    async def test_record_synced_repoints_stale_row_instead_of_duplicating(
+        self, registry: MeetingRegistry, tmp_path: Path
+    ):
+        """Regression: when the original note is gone and repair_path
+        couldn't find it anywhere (to_path=None), the caller creates a
+        brand-new note at a DIFFERENT path and calls record_synced again.
+        That must repoint the existing row (same source_id) rather than
+        insert a second row sharing the same external_id — there is no
+        UNIQUE constraint on external_id, so a second row would make
+        find_by_external_id non-deterministic."""
+        original = tmp_path / "original.md"
+        original.write_text("body")
+        first = await registry.record_synced(
+            fireflies_id="abc",
+            note_path=original,
+            title="Standup",
+            meeting_date="2026-08-01",
+            participants=[],
+            duration_minutes=10.0,
+            fingerprint="fp1",
+            summary_fingerprint=None,
+            reset_analysis=True,
+        )
+        original.unlink()  # the note is gone; repair_path would find nothing
+
+        recreated = tmp_path / "recreated.md"
+        recreated.write_text("body v2")
+        second = await registry.record_synced(
+            fireflies_id="abc",
+            note_path=recreated,
+            title="Standup",
+            meeting_date="2026-08-01",
+            participants=[],
+            duration_minutes=10.0,
+            fingerprint="fp2",
+            summary_fingerprint=None,
+            reset_analysis=False,
+        )
+
+        assert second.source_id == first.source_id  # repointed, not duplicated
+        rows = registry._manager.list_by_external_prefix("fireflies:")
+        assert len(rows) == 1
+        assert rows[0].source_uri == str(recreated.resolve())
 
 
 class TestSuggestFromDate:
