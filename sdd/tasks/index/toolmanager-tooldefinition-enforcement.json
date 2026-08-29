@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
       "completed_at": "2026-08-29T17:17:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2578-tooldefinition-model-decorator.md"
+      "file": "sdd/tasks/completed/TASK-2578-tooldefinition-model-decorator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2579",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
       "completed_at": "2026-08-29T17:21:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2579-registration-metadata-preservation.md"
+      "file": "sdd/tasks/completed/TASK-2579-registration-metadata-preservation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2580",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
       "completed_at": "2026-08-29T17:33:02+00:00",
-      "file": "sdd/tasks/completed/TASK-2580-execute-tool-enforcement-parity.md"
+      "file": "sdd/tasks/completed/TASK-2580-execute-tool-enforcement-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2581",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
       "completed_at": "2026-08-29T17:36:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2581-a2ui-closure-docs-spec.md"
+      "file": "sdd/tasks/completed/TASK-2581-a2ui-closure-docs-spec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2582",
@@ -105,7 +109,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
       "completed_at": "2026-08-29T17:55:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2582-e2e-forbidden-parity-suite.md"
+      "file": "sdd/tasks/completed/TASK-2582-e2e-forbidden-parity-suite.md",
+      "verification": "verified"
     }
   ]
 }
