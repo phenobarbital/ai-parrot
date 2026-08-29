@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS sources (
     destination      TEXT,
     decision_source  TEXT,
     charter_version  TEXT,
-    composite_score  REAL
+    composite_score  REAL,
+    external_id      TEXT
 );
 -- destination/decision_source/charter_version/composite_score (FEAT-402,
 -- TASK-2073): supervised-ingestion triage decision provenance. All four
@@ -74,6 +75,16 @@ CREATE TABLE IF NOT EXISTS sources (
 -- no-op on already-existing pre-FEAT-402 databases — those get the same
 -- four columns via the idempotent ALTER TABLE migration in
 -- SourceCollectionManager._migrate_sources_columns (sources.py).
+-- external_id (FEAT-472): immutable external identity in "<source>:<id>"
+-- form (e.g. "fireflies:abc123"), nullable. Same additive-only contract:
+-- pre-FEAT-472 databases gain the column via the idempotent ALTER TABLE
+-- migration in _migrate_sources_columns. The idx_sources_external_id
+-- index is (idempotently) created THERE too, rather than here — a fresh
+-- CREATE TABLE always has the column already, but this script also runs
+-- (as a no-op CREATE TABLE IF NOT EXISTS) against pre-existing databases
+-- that do NOT have it yet, and _migrate_sources_columns always runs
+-- right after this script, so creating the index there covers both
+-- fresh and pre-existing databases from exactly one place.
 
 CREATE TABLE IF NOT EXISTS pages (
     concept_id  TEXT PRIMARY KEY,
