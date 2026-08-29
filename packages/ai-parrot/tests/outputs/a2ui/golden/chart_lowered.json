@@ -1,1 +1,72 @@
-{"children": [{"children": [], "component": "Text", "properties": {"role": "title", "text": "Revenue by Region"}}, {"children": [], "component": "Text", "properties": {"role": "caption", "text": "Chart (bar)"}}, {"children": [], "component": "Text", "properties": {"role": "axis", "text": "x: region | y: q1, q2"}}, {"children": [{"children": [], "component": "Text", "properties": {"role": "series", "text": "q1"}}, {"children": [], "component": "Text", "properties": {"role": "series", "text": "q2"}}], "component": "Column", "properties": {"data": {"$bind": "/charts/blk-000"}, "role": "series-list"}}], "component": "Card", "properties": {"componentId": "blk-000", "variant": "chart"}}
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Revenue by Region"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "caption"
+          }
+        },
+        "text": "Chart (bar)"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "axis"
+          }
+        },
+        "text": "x: region | y: q1, q2"
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "series"
+              }
+            },
+            "text": "q1"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "series"
+              }
+            },
+            "text": "q2"
+          }
+        ],
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "series-list",
+            "parrot_series_data": {
+              "path": "/charts/blk-000"
+            }
+          }
+        }
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-000",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "chart"
+    }
+  }
+}

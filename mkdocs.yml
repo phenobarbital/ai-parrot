@@ -149,6 +149,8 @@ nav:
       - UI Agent: uiagent.md
       - PandasAgent Capabilities (ES): pandas-agent-capabilities.md
       - SecurityAdvisor Agent: security-advisor.md
+      - WebAgent (Chrome DevTools): web-agent.md
+      - WebNavigatorAgent (Catalogued Browsing): web-navigator-agent.md
       - Multi-Party Conferencing: orchestrator-conferencing.md
       - HeartbeatManager: heartbeat_manager.md
       - Agent CLI Daemon: agentd.md
@@ -268,6 +270,7 @@ nav:
       - Jupyter Mode: jupyter_mode.md
       - Job Manager: jobmanager.md
       - Outputs: outputs.md
+      - A2UI v1.0 Wire: outputs/a2ui-v1.md
       - AWS Deployment: aws_deployment.md
       - 2026 Roadmap: parrot_roadmap_2026.md
       - PR Review Setup: pr-review-setup.md

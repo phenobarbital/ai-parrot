@@ -19,7 +19,7 @@
 # for the full load -> dry_run -> run walkthrough, and
 # docs/outputs/infographic-recipes.md for the annotated line-by-line guide.
 
-schema_version: 1
+schema_version: 2
 name: budget-variance-daily
 title: "Daily Budget Variance"
 description: >
@@ -117,61 +117,73 @@ transforms:
     output_key: chart_data
 
 # Layout: one Infographic with three sections (KPI row, chart, ledger).
+# v2 (FEAT-470 TASK-2542): catalog properties live TOP-LEVEL (mirroring the
+# A2UI v1.0 wire Component shape) — NOT nested under a "properties" key —
+# and data-model bindings use {"path": "/pointer"} (the wire's DataBinding
+# shape), never the legacy {"$bind": ...}. Nested Infographic
+# section-component descriptors (KPICard/Chart/DataTable below) keep their
+# OWN "properties" wrapper unchanged — that is the Infographic composite's
+# own authored-descriptor shape, not the wire Component shape this outer
+# layout mirrors. A v1 recipe (`schema_version: 1`, `layout: {component,
+# properties}`, legacy `{$bind, optional}`) migrates to exactly this shape
+# via `parrot.outputs.a2ui.recipes.migrate.migrate_layout`.
 layout:
   component: Infographic
-  properties:
-    title: "Daily Budget Variance"
-    subtitle: "In-month revenue & EBITDA projections vs budget"
-    sections:
-      - heading: "Snapshot"
-        # FEAT-420: optional narrative bind — `optional: true` means an
-        # absent/skipped narrator (no injected Narrator, or a figure-guard
-        # rejection) simply OMITS this text rather than aborting the replay
-        # (spec criterion G-E; Module 2's `_check_bind_drift_or_raise` and
-        # `_resolve_value` both honour the `optional` sibling key).
-        text: {$bind: "/narrative", optional: true}
-        components:
-          - component: KPICard
-            properties:
-              label: "Revenue (latest)"
-              value: {$bind: "/variance_analysis/last_totals/rev_actual"}
-              unit: USD
-          - component: KPICard
-            properties:
-              label: "Revenue Variance"
-              value: {$bind: "/variance_analysis/last_totals/rev_variance"}
-              trend: down
-          - component: KPICard
-            properties:
-              label: "EBITDA (latest)"
-              value: {$bind: "/variance_analysis/last_totals/ebitda_actual"}
-              unit: USD
-          - component: KPICard
-            properties:
-              label: "EBITDA Variance"
-              value: {$bind: "/variance_analysis/last_totals/ebitda_variance"}
-              trend: down
-      - heading: "Actual vs Budget by Day"
-        components:
-          - component: Chart
-            properties:
-              type: bar
-              x: snapshot
-              y: [rev_actual, rev_budget]
-              title: "Revenue — Actual vs Budget"
-              showLegend: true
-              data: {$bind: "/chart_data/rows"}
-      - heading: "Key Drivers — Watch List"
-        components:
-          - component: DataTable
-            properties:
-              title: "Worst EBITDA Variance (latest snapshot)"
-              columns:
-                - {name: division, title: Division}
-                - {name: project, title: Project}
-                - {name: ebitda_variance, title: "EBITDA Variance"}
-                - {name: trend, title: "Trend (day/day)"}
-              data: {$bind: "/top_movers/worst"}
+  title: "Daily Budget Variance"
+  subtitle: "In-month revenue & EBITDA projections vs budget"
+  sections:
+    - heading: "Snapshot"
+      # FEAT-420: optional narrative bind — listed in `metadata.extensions.
+      # parrot_optional` below means an absent/skipped narrator (no injected
+      # Narrator, or a figure-guard rejection) simply OMITS this text rather
+      # than aborting the replay (spec criterion G-E; RecipeRunner's
+      # `_check_bind_drift_or_raise` honours it via `_optional_paths`).
+      text: {path: "/narrative"}
+      components:
+        - component: KPICard
+          properties:
+            label: "Revenue (latest)"
+            value: {path: "/variance_analysis/last_totals/rev_actual"}
+            unit: USD
+        - component: KPICard
+          properties:
+            label: "Revenue Variance"
+            value: {path: "/variance_analysis/last_totals/rev_variance"}
+            trend: down
+        - component: KPICard
+          properties:
+            label: "EBITDA (latest)"
+            value: {path: "/variance_analysis/last_totals/ebitda_actual"}
+            unit: USD
+        - component: KPICard
+          properties:
+            label: "EBITDA Variance"
+            value: {path: "/variance_analysis/last_totals/ebitda_variance"}
+            trend: down
+    - heading: "Actual vs Budget by Day"
+      components:
+        - component: Chart
+          properties:
+            type: bar
+            x: snapshot
+            y: [rev_actual, rev_budget]
+            title: "Revenue — Actual vs Budget"
+            showLegend: true
+            data: {path: "/chart_data/rows"}
+    - heading: "Key Drivers — Watch List"
+      components:
+        - component: DataTable
+          properties:
+            title: "Worst EBITDA Variance (latest snapshot)"
+            columns:
+              - {name: division, title: Division}
+              - {name: project, title: Project}
+              - {name: ebitda_variance, title: "EBITDA Variance"}
+              - {name: trend, title: "Trend (day/day)"}
+            data: {path: "/top_movers/worst"}
+  metadata:
+    extensions:
+      parrot_optional: ["/narrative"]
 
 # Render profile: self-contained interactive HTML (Chart.js + day-tab/
 # metric-toggle/sort behaviors — Module 7). Static profiles (ssr_html, pdf)

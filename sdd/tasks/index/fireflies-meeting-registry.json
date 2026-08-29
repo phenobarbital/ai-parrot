@@ -1,0 +1,157 @@
+{
+  "feature": "fireflies-meeting-registry",
+  "feature_id": "FEAT-472",
+  "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-28T22:49:55Z",
+  "completed_at": "2026-08-29T00:43:01+00:00",
+  "tasks": [
+    {
+      "id": "TASK-2553",
+      "slug": "wiki-sources-external-id",
+      "title": "Add external_id to the wiki sources manifest",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation: every later task imports the new manager API. Touches core wiki files (sources.py/models.py/store.py) shared with completed FEAT-402/451.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2553-wiki-sources-external-id.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2554",
+      "slug": "meeting-registry-facade",
+      "title": "MeetingRegistry facade, models, fingerprint helpers, and conf constants",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2553"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports the external_id API from TASK-2553; could be developed against a stub but the gain does not justify a merge on sources.py.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:13:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2554-meeting-registry-facade.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2555",
+      "slug": "registry-backfill-merge-repair",
+      "title": "Registry backfill, duplicate merge, and path repair",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2554"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file as TASK-2554 (meeting_registry.py).",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:23:59+00:00",
+      "file": "sdd/tasks/completed/TASK-2555-registry-backfill-merge-repair.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2556",
+      "slug": "rewire-fireflies-obsidian-agent",
+      "title": "Rewire FirefliesObsidianAgent sync and analysis loops onto the registry",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2554",
+        "TASK-2555"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes every registry verb; the only task touching agents/obsidian.py.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:37:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2556-rewire-fireflies-obsidian-agent.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2557",
+      "slug": "wiki-agent-ingest-stamp-and-sync-command",
+      "title": "Wiki agent — mark_wiki_ingested stamp and Telegram /sync command",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2556"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the force_refetch parameter and self.registry from TASK-2556. agents/fireflies_wiki.py is gitignored — git add -f.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:41:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2557-wiki-agent-ingest-stamp-and-sync-command.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2558",
+      "slug": "registry-integration-tests",
+      "title": "Integration tests — shared wiki.db, create→revise→analyse, vault upgrade",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2557"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises the whole stack; must run after all production code lands.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:52:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2558-registry-integration-tests.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2559",
+      "slug": "registry-docs",
+      "title": "Documentation — id-keyed dedup, env vars, /sync, and the external_id convention",
+      "feature_id": "FEAT-472",
+      "feature": "fireflies-meeting-registry",
+      "spec": "sdd/specs/fireflies-meeting-registry.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2557"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Docs only — shares no files with TASK-2558 and can run in a separate worktree alongside it once TASK-2557 is done.",
+      "assigned_to": null,
+      "started_at": "2026-08-28T22:56:51+00:00",
+      "completed_at": "2026-08-28T23:56:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2559-registry-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

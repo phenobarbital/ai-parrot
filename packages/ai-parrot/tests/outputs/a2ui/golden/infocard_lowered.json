@@ -1,0 +1,54 @@
+{
+  "child": {
+    "children": [
+      {
+        "component": "Image",
+        "url": "https://example.com/x.png"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Summary"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "subtitle"
+          }
+        },
+        "text": "Q1"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "body"
+          }
+        },
+        "text": "All good."
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "footer"
+          }
+        },
+        "text": "footer"
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-000",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "card"
+    }
+  }
+}

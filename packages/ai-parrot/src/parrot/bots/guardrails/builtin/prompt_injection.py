@@ -25,7 +25,8 @@ engine — all imported lazily, only inside the engine-construction
 functions below, never at module import time.
 
 FEAT-439 (TASK-2309): ``warmup_injection_model()`` is the ONLY code path in
-this feature permitted to download the ~700 MB ONNX graph. There is no
+this feature permitted to download the ONNX graph (~560 MB fp32 for the
+default wolf-defender model, ~700 MB for DeBERTa v2). There is no
 generic "warm up all models" bot/host hook to attach this to (unlike
 embeddings' ``AbstractBot.warmup_embeddings``, which is embedding-specific
 and wired into exactly one call site) — long-lived hosts call
@@ -61,15 +62,39 @@ from ..base import (
 
 logger = logging.getLogger(__name__)
 
-#: Upstream v2 classifier — the primary model this feature moves to
-#: whenever a local ONNX graph or snapshot resolves (spec §1).
-_ONNX_MODEL_ID = "protectai/deberta-v3-base-prompt-injection-v2"
+#: Default ONNX classifier — `patronus-studio/wolf-defender-prompt-injection-small`
+#: (mmBERT-small base, multilingual, Apache-2.0). Replaces the DeBERTa v2
+#: default after `benchmarks/injection_guardrail_latency/compare_models.py`
+#: measured 0/10 Spanish benign false positives (DeBERTa v1/v2: 7-8/10) at
+#: ~12 ms p50 CPU (DeBERTa v2 ONNX: ~24 ms; pytector v1: ~86 ms).
+_DEFAULT_ONNX_MODEL_ID = "patronus-studio/wolf-defender-prompt-injection-small"
+
+#: Previous ONNX default, kept as the pytector fallback target and as a
+#: known graph-path entry so `PARROT_INJECTION_ONNX_MODEL` can point back
+#: at it without also setting `PARROT_INJECTION_ONNX_GRAPH`.
+_DEBERTA_V2_MODEL_ID = "protectai/deberta-v3-base-prompt-injection-v2"
+
+#: Known `repo id -> path of the ONNX graph inside the repo` for models the
+#: guardrail has been validated against.
+_KNOWN_ONNX_GRAPH_PATHS: dict[str, str] = {
+    _DEFAULT_ONNX_MODEL_ID: "onnx/onnx_fp32/model.onnx",
+    _DEBERTA_V2_MODEL_ID: "onnx/model.onnx",
+}
+
+#: HF repo id of the ONNX classifier. Overridable with
+#: `PARROT_INJECTION_ONNX_MODEL` (read once at import time).
+_ONNX_MODEL_ID = os.environ.get("PARROT_INJECTION_ONNX_MODEL") or _DEFAULT_ONNX_MODEL_ID
 
 #: Path of the published ONNX graph *inside* the HF repo (used only when
-#: probing an already-cached HF snapshot — NOT the flat layout produced by
+#: probing / downloading an HF snapshot — NOT the flat layout produced by
 #: `PARROT_INJECTION_ONNX_DIR` / `benchmarks/injection_guardrail_latency/export.py`,
-#: where `model.onnx` sits directly in the directory).
-_ONNX_GRAPH_REPO_PATH = "onnx/model.onnx"
+#: where `model.onnx` sits directly in the directory). Overridable with
+#: `PARROT_INJECTION_ONNX_GRAPH`; defaults per `_KNOWN_ONNX_GRAPH_PATHS`,
+#: else the conventional `onnx/model.onnx`.
+_ONNX_GRAPH_REPO_PATH = (
+    os.environ.get("PARROT_INJECTION_ONNX_GRAPH")
+    or _KNOWN_ONNX_GRAPH_PATHS.get(_ONNX_MODEL_ID, "onnx/model.onnx")
+)
 
 #: Tokenizer truncation length for the ONNX engine (spec §2 — resolved
 #: user decision: the model maximum, re-validated by the parity gate at
@@ -193,16 +218,13 @@ class _OnnxInjectionEngine:
                 never swallows errors itself.
         """
         import onnxruntime as ort
-        from transformers import AutoTokenizer
 
         self.model_id = model_id
         # `tokenizer_dir` is always a local directory in this module's usage
         # (an env dir or an already-resolved cached-snapshot path) — never a
         # bare HF repo id. `local_files_only=True` makes the "construction
         # never downloads" guarantee mechanical rather than incidental.
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            str(tokenizer_dir), local_files_only=True,
-        )
+        self._tokenizer = _load_tokenizer(tokenizer_dir)
 
         opts = ort.SessionOptions()
         # Cap ORT's CPU parallelism BEFORE session construction. Uncapped,
@@ -289,6 +311,56 @@ def _softmax(logits: Any) -> Any:
     return exps / np.sum(exps)
 
 
+def _load_tokenizer(tokenizer_dir: Path) -> Any:
+    """Load the classifier tokenizer from a local directory, never downloading.
+
+    Tries ``AutoTokenizer`` first. Some repos (e.g. wolf-defender) declare a
+    ``tokenizer_class`` that only newer ``transformers`` releases know
+    (``TokenizersBackend``); when ``AutoTokenizer`` rejects the config but a
+    ``tokenizer.json`` is present, fall back to loading that file directly
+    with ``PreTrainedTokenizerFast`` and the special tokens declared in
+    ``tokenizer_config.json``.
+
+    Args:
+        tokenizer_dir: Local directory holding the tokenizer files.
+
+    Returns:
+        A callable tokenizer accepting ``return_tensors="np"``.
+
+    Raises:
+        Exception: Whatever ``AutoTokenizer`` raised when no
+            ``tokenizer.json`` fallback is available.
+    """
+    from transformers import AutoTokenizer
+
+    try:
+        return AutoTokenizer.from_pretrained(str(tokenizer_dir), local_files_only=True)
+    except ValueError as exc:
+        tokenizer_file = tokenizer_dir / "tokenizer.json"
+        if not tokenizer_file.exists():
+            raise
+        logger.info(
+            "AutoTokenizer rejected %s (%s); loading tokenizer.json directly "
+            "via PreTrainedTokenizerFast.", tokenizer_dir, exc,
+        )
+        from transformers import PreTrainedTokenizerFast
+
+        special: dict[str, Any] = {}
+        config_file = tokenizer_dir / "tokenizer_config.json"
+        if config_file.exists():
+            try:
+                cfg = json.loads(config_file.read_text())
+            except (OSError, ValueError):
+                cfg = {}
+            for key in (
+                "pad_token", "cls_token", "sep_token", "unk_token", "mask_token",
+                "bos_token", "eos_token", "model_max_length",
+            ):
+                if key in cfg and not isinstance(cfg[key], dict):
+                    special[key] = cfg[key]
+        return PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_file), **special)
+
+
 def _resolve_injection_index(tokenizer_dir: Path) -> int:
     """Resolve the injection-class logit index from the model config.
 
@@ -338,8 +410,8 @@ def _probe_cached_onnx_snapshot() -> Path | None:
 
     Returns:
         The snapshot root directory (containing tokenizer files at its
-        root and the graph at ``onnx/model.onnx``), or ``None`` if the
-        graph is not locally cached.
+        root and the graph at ``_ONNX_GRAPH_REPO_PATH``), or ``None`` if
+        the graph is not locally cached.
     """
     try:
         from huggingface_hub import try_to_load_from_cache
@@ -348,9 +420,12 @@ def _probe_cached_onnx_snapshot() -> Path | None:
     cached_file = try_to_load_from_cache(_ONNX_MODEL_ID, _ONNX_GRAPH_REPO_PATH)
     if not isinstance(cached_file, str):
         return None
-    # cached_file: .../snapshots/<rev>/onnx/model.onnx -> snapshot root is
-    # two levels up from the graph file.
-    return Path(cached_file).parent.parent
+    # cached_file: .../snapshots/<rev>/<graph repo path> -> the snapshot
+    # root is as many levels up as the graph path has components.
+    root = Path(cached_file)
+    for _ in Path(_ONNX_GRAPH_REPO_PATH).parts:
+        root = root.parent
+    return root
 
 
 def _probe_cached_v2_snapshot_dir() -> Path | None:
@@ -369,8 +444,8 @@ def _probe_cached_v2_snapshot_dir() -> Path | None:
         from huggingface_hub import try_to_load_from_cache
     except ImportError:
         return None
-    config_file = try_to_load_from_cache(_ONNX_MODEL_ID, "config.json")
-    weights_file = try_to_load_from_cache(_ONNX_MODEL_ID, "model.safetensors")
+    config_file = try_to_load_from_cache(_DEBERTA_V2_MODEL_ID, "config.json")
+    weights_file = try_to_load_from_cache(_DEBERTA_V2_MODEL_ID, "model.safetensors")
     if isinstance(config_file, str) and isinstance(weights_file, str):
         return Path(config_file).parent
     return None
@@ -428,7 +503,7 @@ def _try_build_onnx_engine_from_cache() -> _OnnxInjectionEngine | None:
             "resolution step.", _ONNX_MODEL_ID,
         )
         return None
-    graph_path = snapshot_dir / "onnx" / "model.onnx"
+    graph_path = snapshot_dir / _ONNX_GRAPH_REPO_PATH
     try:
         return _OnnxInjectionEngine(
             tokenizer_dir=snapshot_dir, graph_path=graph_path, model_id=_ONNX_MODEL_ID,
@@ -788,9 +863,16 @@ class PromptInjectionGuardrail(Guardrail):
 
 #: Files fetched by warm-up's `snapshot_download` — the ONNX graph plus
 #: the tokenizer/config files the engine needs. Deliberately excludes the
-#: torch weights (`*.safetensors`/`*.bin`) so warm-up never pulls the
-#: ~440 MB duplicate the ONNX path doesn't use.
-_WARMUP_ALLOW_PATTERNS: list[str] = ["onnx/model.onnx", "*.json", "*.model"]
+#: torch weights (`*.safetensors`/`*.bin`) and any sibling ONNX variants
+#: (fp16/int8) so warm-up never pulls duplicates the ONNX path doesn't use.
+_WARMUP_ALLOW_PATTERNS: list[str] = [
+    _ONNX_GRAPH_REPO_PATH,
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "*.model",
+]
 
 _WARMUP_LOCK = asyncio.Lock()
 _WARMUP_DONE = False
@@ -806,7 +888,7 @@ def _env_dir_is_valid() -> bool:
 
 
 def _download_onnx_snapshot(force_download: bool) -> None:
-    """Fetch the v2 ONNX graph + tokenizer/config files, if needed.
+    """Fetch the ONNX graph + tokenizer/config files, if needed.
 
     The ONLY function in this module permitted to call
     ``huggingface_hub.snapshot_download``. A no-op when

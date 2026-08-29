@@ -1,0 +1,36 @@
+{
+  "mode": "investigation",
+  "overall_confidence": "high",
+  "summary": "rustworkx is not a transitive dependency: it is declared only in ai-parrot's optional `graphindex` extra (re-exported by `wiki`), so `uv pip install ai-parrot` never installs it and a bare `uv sync` (exact env, no extras) removes it. Yet the `wikitoolkit` console script ships in core and hard-imports rustworkx on every subcommand via graphindex/__init__ → signals. ai-parrot-tools also imports it unguarded without declaring it. Fix: promote `rustworkx>=0.15` to core `dependencies` (and declare it in ai-parrot-tools), optionally also promoting the other extra-only imports on the same chain.",
+  "localization": [
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "graphindex (optional-dependencies)", "lines": "210-220", "role": "Only declaration of rustworkx — extra, not core", "evidence": ["F001", "F002"], "confidence": "high"},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "dependencies", "lines": "36-80", "role": "Core dependency list where rustworkx must be added", "evidence": ["F004"], "confidence": "high"},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "wikitoolkit (project.scripts)", "lines": "147", "role": "Console script shipped by core that needs rustworkx", "evidence": ["F001", "F005"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/knowledge/graphindex/signals.py", "symbol": "import rustworkx", "lines": "30", "role": "First unguarded import hit on the wikitoolkit path", "evidence": ["F003", "F005"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/knowledge/graphindex/__init__.py", "symbol": "package init", "lines": "31", "role": "Eagerly imports signals, dragging rustworkx into any graphindex import", "evidence": ["F005"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/documents.py", "symbol": "PLAIN_TEXT_EXTENSIONS import", "lines": "31", "role": "Link from wiki CLI into graphindex package", "evidence": ["F005"], "confidence": "high"},
+    {"path": "pyproject.toml", "symbol": "project.optional-dependencies / tool.uv", "lines": "27-70", "role": "Workspace root — no default extras, so `uv sync` prunes rustworkx", "evidence": ["F004"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/graphindex/toolkit.py", "symbol": "import rustworkx", "lines": "52", "role": "Satellite unguarded import, undeclared dependency", "evidence": ["F003", "F007"], "confidence": "high"}
+  ],
+  "constraints": [
+    {"statement": "rustworkx requires only numpy (already core-adjacent) and ships abi3 manylinux wheels; promoting it to core adds ~2.4 MB and no new C build.", "evidence": ["F002"], "confidence": "high"},
+    {"statement": "graphindex extra also holds aiosqlite, orjson, pathspec, tree-sitter*, networkx — some of which (aiosqlite, orjson) are imported on the same sqlite_reader path; promoting rustworkx alone may leave a second ImportError behind it.", "evidence": ["F001", "F003"], "confidence": "medium"},
+    {"statement": "Precedent: e7f1dfccf fixed a similar gap by editing the extras, not core — extras are the project's chosen lean-install boundary.", "evidence": ["F006"], "confidence": "high"}
+  ],
+  "hypotheses": [
+    {"rank": 1, "statement": "rustworkx is extra-only (`graphindex`), while the core-shipped `wikitoolkit` script hard-imports it on every subcommand; bare install/sync therefore lacks it.", "confidence": "high", "supporting": ["F001", "F002", "F004", "F005"], "contradicting": [], "reasoning": "Direct read of pyproject + lock + a runtime import probe reproducing the ModuleNotFoundError through the exact chain."}
+  ],
+  "confidence_map": [
+    {"id": "C1", "claim": "rustworkx is declared only under the `graphindex` extra of ai-parrot", "evidence": ["F001", "F002"], "confidence": "high", "reasoning": "single grep hit + lock marker extra=='graphindex'"},
+    {"id": "C2", "claim": "No package in the lock depends on rustworkx outside that extra (it is NOT transitive)", "evidence": ["F002"], "confidence": "high", "reasoning": "uv.lock dependents + `uv pip show` Required-by empty"},
+    {"id": "C3", "claim": "`uv sync` without `--extra wiki` removes rustworkx because the workspace root declares no default extras", "evidence": ["F004"], "confidence": "high", "reasoning": "uv sync is exact by default; root has no default-groups/extras"},
+    {"id": "C4", "claim": "Every wikitoolkit subcommand fails without rustworkx (not only `build`)", "evidence": ["F005"], "confidence": "high", "reasoning": "runtime probe: cli import fails at graphindex/__init__ → signals"},
+    {"id": "C5", "claim": "ai-parrot-tools has an undeclared rustworkx dependency", "evidence": ["F007"], "confidence": "high", "reasoning": "unguarded import, no pyproject entry"},
+    {"id": "C6", "claim": "Promoting rustworkx alone is sufficient for wikitoolkit query/page/related to work on a bare install", "evidence": ["F003", "F005"], "confidence": "medium", "reasoning": "aiosqlite/orjson on sqlite_reader path are also extra-only; not probed whether they are already pulled transitively by core"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "Should rustworkx become a core dependency of ai-parrot (wikitoolkit works on bare install), or should the wiki CLI guard the import and instruct `pip install ai-parrot[wiki]` (keeps core lean)?", "resolves": ["C6"], "plausible_answers": ["a) core dependency (recommended — CLI ships in core, wheel is small, numpy-only)", "b) guarded import + helpful error, keep extra", "c) both: core dep for rustworkx, guard the rest"], "user_answer": null},
+    {"id": "U2", "question": "Should the workspace root also default `uv sync` to include the `wiki` extra (e.g. via `[tool.uv] default-groups` / dev group) so developer envs keep tree-sitter/leiden after sync?", "resolves": ["C3"], "plausible_answers": ["a) yes — add to the `dev` dependency group", "b) no — document `uv sync --extra wiki`"], "user_answer": null}
+  ],
+  "recommended_next_command": {"command": "sdd-spec", "rationale": "Localization is high-confidence and fully reproduced; the change is a small, bounded dependency-metadata fix (pyproject edits + lock refresh + import-guard hygiene). No architectural fork."}
+}

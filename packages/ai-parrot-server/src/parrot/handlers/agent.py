@@ -4,6 +4,7 @@ AgentTalk - HTTP Handler for Agent Conversations
 Provides a flexible HTTP interface for talking with agents/bots using the ask() method
 with support for multiple output modes and MCP server integration.
 """
+
 from __future__ import annotations
 import contextlib
 import json
@@ -22,9 +23,11 @@ from rich.panel import Panel
 from navconfig.logging import logging
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
+
 try:
     from navigator_auth.abac.decorators import requires_permission
     from navigator_auth.abac.policies.resources import ResourceType
+
     _PBAC_DECORATORS_AVAILABLE = True
 except ImportError:
     _PBAC_DECORATORS_AVAILABLE = False
@@ -45,16 +48,18 @@ from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
+
 # FEAT-204: HumanInteractionInterrupt lives in core.exceptions (no parrot.human dependency)
 from parrot.core.exceptions import HumanInteractionInterrupt
+
 if TYPE_CHECKING:
     from ..manager import BotManager
 
 # FEAT-146: Web HITL ContextVar helpers
 from .web_hitl import set_current_web_session, reset_current_web_session
-
 
 # ---------------------------------------------------------------------------
 # FEAT-204: PausedEnvelope — structured HTTP-200 reply for HITL suspend
@@ -64,6 +69,7 @@ from .web_hitl import set_current_web_session, reset_current_web_session
 #: HITL manager nor the interaction object is available.
 #: 7200s = HumanToolInput default timeout (2h) + 60s buffer.
 _DEFAULT_HITL_SUSPEND_TTL: int = 7260
+
 
 class PausedEnvelope(BaseModel):
     """HTTP-200 structured reply returned by AgentTalk when a SUSPEND tool raises
@@ -119,6 +125,7 @@ class AgentTalk(BaseView):
     - Leverages OutputMode for consistent formatting
     - Session-based conversation management
     """
+
     _logger_name: str = "Parrot.AgentTalk"
     _user_objects_handler: UserObjectsHandler = None
 
@@ -126,7 +133,7 @@ class AgentTalk(BaseView):
     def user_objects_handler(self) -> UserObjectsHandler:
         """Lazy-initialized UserObjectsHandler for session-scoped managers."""
         if self._user_objects_handler is None:
-            logger = getattr(self, 'logger', None)
+            logger = getattr(self, "logger", None)
             self._user_objects_handler = UserObjectsHandler(logger=logger)
         return self._user_objects_handler
 
@@ -153,16 +160,16 @@ class AgentTalk(BaseView):
             ``None`` if access is allowed, or a :class:`web.Response` with
             HTTP 403 status if access is denied.
         """
-        guardian = self.request.app.get('security')
+        guardian = self.request.app.get("security")
         if guardian is None:
             # PBAC not configured — allow access (backward compatible)
             return None
 
         try:
-            pdp = self.request.app.get('abac')
+            pdp = self.request.app.get("abac")
             if pdp is None:
                 return None
-            evaluator = getattr(pdp, '_evaluator', None)
+            evaluator = getattr(pdp, "_evaluator", None)
             if evaluator is None:
                 return None
 
@@ -174,6 +181,7 @@ class AgentTalk(BaseView):
                 return None
 
             from navigator_auth.abac.policies.environment import Environment
+
             result = evaluator.check_access(
                 ctx=eval_ctx,
                 resource_type=ResourceType.AGENT,
@@ -182,12 +190,10 @@ class AgentTalk(BaseView):
                 env=Environment(),
             )
             if not result.allowed:
-                userinfo = eval_ctx.store.get('userinfo', {}) or {}
-                username = (
-                    userinfo.get('username', '')
-                    if isinstance(userinfo, dict)
-                    else ''
-                ) or getattr(eval_ctx.store.get('user'), 'username', '')
+                userinfo = eval_ctx.store.get("userinfo", {}) or {}
+                username = (userinfo.get("username", "") if isinstance(userinfo, dict) else "") or getattr(
+                    eval_ctx.store.get("user"), "username", ""
+                )
                 self.logger.warning(
                     "PBAC agent access DENIED: agent=%s user=%s action=%s policy=%s reason=%s",
                     agent_id,
@@ -204,9 +210,7 @@ class AgentTalk(BaseView):
                     status=403,
                 )
         except Exception as exc:
-            self.logger.warning(
-                "PBAC agent access check failed (fail-open): %s", exc
-            )
+            self.logger.warning("PBAC agent access check failed (fail-open): %s", exc)
         return None
 
     async def _filter_tools_for_user(self, tool_manager: "ToolManager") -> None:
@@ -221,7 +225,7 @@ class AgentTalk(BaseView):
         Args:
             tool_manager: Session-scoped ToolManager to filter in-place.
         """
-        guardian = self.request.app.get('security')
+        guardian = self.request.app.get("security")
         if guardian is None:
             return  # PBAC not configured, skip filtering
 
@@ -230,7 +234,7 @@ class AgentTalk(BaseView):
             return
 
         try:
-            if hasattr(guardian, 'filter_resources') and _PBAC_DECORATORS_AVAILABLE:
+            if hasattr(guardian, "filter_resources") and _PBAC_DECORATORS_AVAILABLE:
                 # navigator-auth >= 0.19.0 with Guardian.filter_resources()
                 filtered = await guardian.filter_resources(
                     resources=tool_names,
@@ -240,13 +244,14 @@ class AgentTalk(BaseView):
                 )
             else:
                 # Fallback: use PolicyEvaluator.filter_resources() directly
-                pdp = self.request.app.get('abac')
+                pdp = self.request.app.get("abac")
                 if pdp is None:
                     return
-                evaluator = getattr(pdp, '_evaluator', None)
+                evaluator = getattr(pdp, "_evaluator", None)
                 if evaluator is None:
                     return
                 from navigator_auth.abac.policies.environment import Environment
+
                 eval_ctx = await self._build_eval_context()
                 if eval_ctx is None:
                     return
@@ -278,7 +283,7 @@ class AgentTalk(BaseView):
         Args:
             dataset_manager: DatasetManager instance to filter in-place.
         """
-        guardian = self.request.app.get('security')
+        guardian = self.request.app.get("security")
         if guardian is None:
             return  # PBAC not configured
 
@@ -287,14 +292,12 @@ class AgentTalk(BaseView):
 
         # ResourceType.DATASET requires navigator-auth >= 0.19.0
         try:
-            dataset_resource_type = ResourceType.__members__.get('DATASET')
+            dataset_resource_type = ResourceType.__members__.get("DATASET")
         except Exception:
             dataset_resource_type = None
 
         if dataset_resource_type is None:
-            self.logger.debug(
-                "PBAC: ResourceType.DATASET not available — skipping dataset filtering."
-            )
+            self.logger.debug("PBAC: ResourceType.DATASET not available — skipping dataset filtering.")
             return
 
         dataset_names = list(dataset_manager.list_dataframes().keys())
@@ -302,7 +305,7 @@ class AgentTalk(BaseView):
             return
 
         try:
-            if hasattr(guardian, 'filter_resources'):
+            if hasattr(guardian, "filter_resources"):
                 filtered = await guardian.filter_resources(
                     resources=dataset_names,
                     request=self.request,
@@ -310,13 +313,14 @@ class AgentTalk(BaseView):
                     action="dataset:query",
                 )
             else:
-                pdp = self.request.app.get('abac')
+                pdp = self.request.app.get("abac")
                 if pdp is None:
                     return
-                evaluator = getattr(pdp, '_evaluator', None)
+                evaluator = getattr(pdp, "_evaluator", None)
                 if evaluator is None:
                     return
                 from navigator_auth.abac.policies.environment import Environment
+
                 eval_ctx = await self._build_eval_context()
                 if eval_ctx is None:
                     return
@@ -359,20 +363,17 @@ class AgentTalk(BaseView):
         Returns:
             Filtered list containing only allowed MCP server configs.
         """
-        guardian = self.request.app.get('security')
+        guardian = self.request.app.get("security")
         if guardian is None:
             return mcp_server_configs  # PBAC not configured, allow all
 
         if not mcp_server_configs or not _PBAC_DECORATORS_AVAILABLE:
             return mcp_server_configs
 
-        server_names = [
-            cfg.name if hasattr(cfg, 'name') else cfg.get('name', '')
-            for cfg in mcp_server_configs
-        ]
+        server_names = [cfg.name if hasattr(cfg, "name") else cfg.get("name", "") for cfg in mcp_server_configs]
 
         try:
-            if hasattr(guardian, 'filter_resources'):
+            if hasattr(guardian, "filter_resources"):
                 filtered = await guardian.filter_resources(
                     resources=server_names,
                     request=self.request,
@@ -380,13 +381,14 @@ class AgentTalk(BaseView):
                     action="tool:execute",
                 )
             else:
-                pdp = self.request.app.get('abac')
+                pdp = self.request.app.get("abac")
                 if pdp is None:
                     return mcp_server_configs
-                evaluator = getattr(pdp, '_evaluator', None)
+                evaluator = getattr(pdp, "_evaluator", None)
                 if evaluator is None:
                     return mcp_server_configs
                 from navigator_auth.abac.policies.environment import Environment
+
                 eval_ctx = await self._build_eval_context()
                 if eval_ctx is None:
                     return mcp_server_configs
@@ -405,13 +407,12 @@ class AgentTalk(BaseView):
                 self.logger.debug("PBAC denied MCP servers: %s", filtered.denied)
             allowed_names = set(filtered.allowed)
             return [
-                cfg for cfg in mcp_server_configs
-                if (cfg.name if hasattr(cfg, 'name') else cfg.get('name', '')) in allowed_names
+                cfg
+                for cfg in mcp_server_configs
+                if (cfg.name if hasattr(cfg, "name") else cfg.get("name", "")) in allowed_names
             ]
         except Exception as exc:
-            self.logger.error(
-                "PBAC MCP server filtering failed (fail-open): %s", exc
-            )
+            self.logger.error("PBAC MCP server filtering failed (fail-open): %s", exc)
             return mcp_server_configs
 
     async def _build_eval_context(self) -> Any:
@@ -426,11 +427,7 @@ class AgentTalk(BaseView):
         """
         return await _core_build_eval_context(self.request)
 
-    def _get_output_format(
-        self,
-        data: Dict[str, Any],
-        qs: Dict[str, Any]
-    ) -> str:
+    def _get_output_format(self, data: Dict[str, Any], qs: Dict[str, Any]) -> str:
         """
         Determine the output format from request.
 
@@ -447,22 +444,22 @@ class AgentTalk(BaseView):
             Output format string: 'json', 'html', 'markdown', or 'text'
         """
         # Check explicit output_format parameter
-        if output_format := data.pop('output_format', None) or qs.get('output_format'):
+        if output_format := data.pop("output_format", None) or qs.get("output_format"):
             return output_format.lower()
 
         # Check Accept header - prioritize JSON
-        accept_header = self.request.headers.get('Accept', 'application/json')
+        accept_header = self.request.headers.get("Accept", "application/json")
 
-        if 'application/json' in accept_header:
-            return 'json'
-        elif 'text/html' in accept_header:
-            return 'html'
-        elif 'text/markdown' in accept_header:
-            return 'markdown'
-        elif 'text/plain' in accept_header:
-            return 'text'
+        if "application/json" in accept_header:
+            return "json"
+        elif "text/html" in accept_header:
+            return "html"
+        elif "text/markdown" in accept_header:
+            return "markdown"
+        elif "text/plain" in accept_header:
+            return "text"
         else:
-            return 'json'
+            return "json"
 
     def _get_output_mode(self, request: web.Request) -> OutputMode:
         """
@@ -476,25 +473,25 @@ class AgentTalk(BaseView):
         """
         # Check query parameters first
         qs = self.query_parameters(request)
-        if 'output_mode' in qs:
-            mode = qs['output_mode'].lower()
-            if mode in ['json', 'html', 'terminal', 'markdown', 'default']:
-                return OutputMode(mode if mode != 'markdown' else 'default')
+        if "output_mode" in qs:
+            mode = qs["output_mode"].lower()
+            if mode in ["json", "html", "terminal", "markdown", "default"]:
+                return OutputMode(mode if mode != "markdown" else "default")
 
         # Check Content-Type header
-        content_type = request.headers.get('Content-Type', '').lower()
-        if 'application/json' in content_type:
+        content_type = request.headers.get("Content-Type", "").lower()
+        if "application/json" in content_type:
             return OutputMode.JSON
-        elif 'text/html' in content_type:
+        elif "text/html" in content_type:
             return OutputMode.HTML
 
         # Check Accept header
-        accept = request.headers.get('Accept', '').lower()
-        if 'application/json' in accept:
+        accept = request.headers.get("Accept", "").lower()
+        if "application/json" in accept:
             return OutputMode.JSON
-        elif 'text/html' in accept:
+        elif "text/html" in accept:
             return OutputMode.HTML
-        elif 'text/plain' in accept:
+        elif "text/plain" in accept:
             return OutputMode.DEFAULT
 
         return OutputMode.DEFAULT
@@ -510,21 +507,16 @@ class AgentTalk(BaseView):
             OutputMode enum value
         """
         format_map = {
-            'json': OutputMode.JSON,
-            'html': OutputMode.HTML,
-            'markdown': OutputMode.DEFAULT,
-            'text': OutputMode.DEFAULT,
-            'terminal': OutputMode.TERMINAL,
-            'default': OutputMode.DEFAULT
+            "json": OutputMode.JSON,
+            "html": OutputMode.HTML,
+            "markdown": OutputMode.DEFAULT,
+            "text": OutputMode.DEFAULT,
+            "terminal": OutputMode.TERMINAL,
+            "default": OutputMode.DEFAULT,
         }
         return format_map.get(format_str.lower(), OutputMode.DEFAULT)
 
-    def _prepare_response(
-        self,
-        ai_message: AIMessage,
-        output_mode: OutputMode,
-        format_kwargs: Dict[str, Any] = None
-    ):
+    def _prepare_response(self, ai_message: AIMessage, output_mode: OutputMode, format_kwargs: Dict[str, Any] = None):
         """
         Format and return the response based on output mode.
 
@@ -536,37 +528,33 @@ class AgentTalk(BaseView):
         formatter = OutputFormatter()
 
         if output_mode == OutputMode.JSON:
-            usage = getattr(ai_message, 'usage', None)
+            usage = getattr(ai_message, "usage", None)
             response_data = {
                 "content": ai_message.content,
                 "metadata": {
-                    "session_id": getattr(ai_message, 'session_id', None),
-                    "user_id": getattr(ai_message, 'user_id', None),
-                    "timestamp": getattr(ai_message, 'timestamp', None),
-                    "model": getattr(ai_message, 'model', None),
-                    "provider": getattr(ai_message, 'provider', None),
+                    "session_id": getattr(ai_message, "session_id", None),
+                    "user_id": getattr(ai_message, "user_id", None),
+                    "timestamp": getattr(ai_message, "timestamp", None),
+                    "model": getattr(ai_message, "model", None),
+                    "provider": getattr(ai_message, "provider", None),
                     "usage": usage.model_dump() if usage is not None else None,
-                    "response_time": getattr(ai_message, 'response_time', None),
-                    "finish_reason": getattr(ai_message, 'finish_reason', None),
-                    "stop_reason": getattr(ai_message, 'stop_reason', None),
+                    "response_time": getattr(ai_message, "response_time", None),
+                    "finish_reason": getattr(ai_message, "finish_reason", None),
+                    "stop_reason": getattr(ai_message, "stop_reason", None),
                 },
-                "tool_calls": getattr(ai_message, 'tool_calls', []),
-                "sources": getattr(ai_message, 'documents', []) if hasattr(ai_message, 'documents') else []
+                "tool_calls": getattr(ai_message, "tool_calls", []),
+                "sources": getattr(ai_message, "documents", []) if hasattr(ai_message, "documents") else [],
             }
 
-            if hasattr(ai_message, 'error') and ai_message.error:
-                response_data['error'] = ai_message.error
+            if hasattr(ai_message, "error") and ai_message.error:
+                response_data["error"] = ai_message.error
                 return self.json_response(response_data, status=400)
 
             return self.json_response(response_data)
 
         elif output_mode == OutputMode.HTML:
             # Return formatted HTML
-            formatted_content = formatter.format(
-                mode=output_mode,
-                data=ai_message,
-                **(format_kwargs or {})
-            )
+            formatted_content = formatter.format(mode=output_mode, data=ai_message, **(format_kwargs or {}))
 
             # Create complete HTML page
             html_template = f"""
@@ -633,20 +621,12 @@ class AgentTalk(BaseView):
 </body>
 </html>
             """
-            return web.Response(
-                text=html_template,
-                content_type='text/html',
-                charset='utf-8'
-            )
+            return web.Response(text=html_template, content_type="text/html", charset="utf-8")
 
         else:
             # Return markdown/plain text
             formatted_content = formatter.format(ai_message, **(format_kwargs or {}))
-            return web.Response(
-                text=str(formatted_content),
-                content_type='text/plain',
-                charset='utf-8'
-            )
+            return web.Response(text=str(formatted_content), content_type="text/plain", charset="utf-8")
 
     async def _add_mcp_servers(self, agent: AbstractBot, mcp_configs: list):
         """
@@ -656,10 +636,9 @@ class AgentTalk(BaseView):
             agent: The agent instance
             mcp_configs: List of MCP server configurations
         """
-        if not hasattr(agent, 'add_mcp_server'):
+        if not hasattr(agent, "add_mcp_server"):
             self.logger.warning(
-                f"Agent {agent.name} does not support MCP servers. "
-                "Ensure BasicAgent has MCPEnabledMixin."
+                f"Agent {agent.name} does not support MCP servers. " "Ensure BasicAgent has MCPEnabledMixin."
             )
             return
 
@@ -667,27 +646,21 @@ class AgentTalk(BaseView):
             try:
                 # Create MCPServerConfig from dict
                 config = MCPServerConfig(
-                    name=config_dict.get('name'),
-                    url=config_dict.get('url'),
-                    auth_type=config_dict.get('auth_type'),
-                    auth_config=config_dict.get('auth_config', {}),
-                    headers=config_dict.get('headers', {}),
-                    allowed_tools=config_dict.get('allowed_tools'),
-                    blocked_tools=config_dict.get('blocked_tools'),
+                    name=config_dict.get("name"),
+                    url=config_dict.get("url"),
+                    auth_type=config_dict.get("auth_type"),
+                    auth_config=config_dict.get("auth_config", {}),
+                    headers=config_dict.get("headers", {}),
+                    allowed_tools=config_dict.get("allowed_tools"),
+                    blocked_tools=config_dict.get("blocked_tools"),
                 )
 
                 tools = await agent.add_mcp_server(config)
-                self.logger.info(
-                    f"Added MCP server '{config.name}' with {len(tools)} tools to agent {agent.name}"
-                )
+                self.logger.info(f"Added MCP server '{config.name}' with {len(tools)} tools to agent {agent.name}")
             except Exception as e:
                 self.logger.error("Failed to add MCP server: %s", e)
 
-    async def _add_mcp_servers_to_tool_manager(
-        self,
-        tool_manager: ToolManager,
-        mcp_configs: list
-    ) -> None:
+    async def _add_mcp_servers_to_tool_manager(self, tool_manager: ToolManager, mcp_configs: list) -> None:
         """
         Add MCP servers directly to a ToolManager instance.
 
@@ -698,28 +671,21 @@ class AgentTalk(BaseView):
         for config_dict in mcp_configs:
             try:
                 config = MCPServerConfig(
-                    name=config_dict.get('name'),
-                    url=config_dict.get('url'),
-                    auth_type=config_dict.get('auth_type'),
-                    auth_config=config_dict.get('auth_config', {}),
-                    headers=config_dict.get('headers', {}),
-                    allowed_tools=config_dict.get('allowed_tools'),
-                    blocked_tools=config_dict.get('blocked_tools'),
+                    name=config_dict.get("name"),
+                    url=config_dict.get("url"),
+                    auth_type=config_dict.get("auth_type"),
+                    auth_config=config_dict.get("auth_config", {}),
+                    headers=config_dict.get("headers", {}),
+                    allowed_tools=config_dict.get("allowed_tools"),
+                    blocked_tools=config_dict.get("blocked_tools"),
                 )
                 tools = await tool_manager.add_mcp_server(config)
-                self.logger.info(
-                    "Added MCP server '%s' with %s tools to ToolManager",
-                    config.name,
-                    len(tools)
-                )
+                self.logger.info("Added MCP server '%s' with %s tools to ToolManager", config.name, len(tools))
             except Exception as e:
                 self.logger.error("Failed to add MCP server to ToolManager: %s", e)
 
     async def _configure_tool_manager(
-        self,
-        data: Dict[str, Any],
-        request_session: Any,
-        agent_name: str = None
+        self, data: Dict[str, Any], request_session: Any, agent_name: str = None
     ) -> tuple[Union[ToolManager, None], List[Dict[str, Any]]]:
         """
         Configure a ToolManager from request payload or session.
@@ -734,33 +700,38 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (ToolManager or None, remaining mcp_servers list)
         """
-        return await self.user_objects_handler.configure_tool_manager(
-            data, request_session, agent_name
-        )
+        return await self.user_objects_handler.configure_tool_manager(data, request_session, agent_name)
 
     def _check_methods(self, bot: AbstractBot, method_name: str):
         """Check if the method exists in the bot and is callable."""
         forbidden_methods = {
-            '__init__', '__del__', '__getattribute__', '__setattr__',
-            'configure', '_setup_database_tools', 'save', 'delete',
-            'update', 'insert', '__dict__', '__class__', 'retrieval',
-            '_define_prompt', 'configure_llm', 'configure_store', 'default_tools'
+            "__init__",
+            "__del__",
+            "__getattribute__",
+            "__setattr__",
+            "configure",
+            "_setup_database_tools",
+            "save",
+            "delete",
+            "update",
+            "insert",
+            "__dict__",
+            "__class__",
+            "retrieval",
+            "_define_prompt",
+            "configure_llm",
+            "configure_store",
+            "default_tools",
         }
         if not method_name:
             return None
-        if method_name.startswith('_') or method_name in forbidden_methods:
-            raise AttributeError(
-                f"Method {method_name} error, not found or forbidden."
-            )
+        if method_name.startswith("_") or method_name in forbidden_methods:
+            raise AttributeError(f"Method {method_name} error, not found or forbidden.")
         if not hasattr(bot, method_name):
-            raise AttributeError(
-                f"Method {method_name} error, not found or forbidden."
-            )
+            raise AttributeError(f"Method {method_name} error, not found or forbidden.")
         method = getattr(bot, method_name)
         if not callable(method):
-            raise TypeError(
-                f"Attribute {method_name} is not callable in bot {bot.name}."
-            )
+            raise TypeError(f"Attribute {method_name} is not callable in bot {bot.name}.")
         return method
 
     @staticmethod
@@ -771,10 +742,7 @@ class AgentTalk(BaseView):
         session_tool.register_dataframes(active_dfs, alias_map=alias_map)
         # Also update agent-level state for ProphetForecastTool etc.
         agent.dataframes = active_dfs
-        agent.df_metadata = {
-            name: agent._build_metadata_entry(name, df)
-            for name, df in active_dfs.items()
-        }
+        agent.df_metadata = {name: agent._build_metadata_entry(name, df) for name, df in active_dfs.items()}
         agent._sync_prophet_tool()
         agent._define_prompt()
 
@@ -802,7 +770,7 @@ class AgentTalk(BaseView):
         remaining_kwargs = dict(data)
 
         for param_name, param in sig.parameters.items():
-            if param_name in ['self', 'kwargs']:
+            if param_name in ["self", "kwargs"]:
                 continue
 
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
@@ -822,13 +790,8 @@ class AgentTalk(BaseView):
         if missing_required:
             return self.json_response(
                 {
-                    "message": (
-                        "Required parameters missing: "
-                        f"{', '.join(missing_required)}"
-                    ),
-                    "required_params": [
-                        p for p in sig.parameters.keys() if p != 'self'
-                    ],
+                    "message": ("Required parameters missing: " f"{', '.join(missing_required)}"),
+                    "required_params": [p for p in sig.parameters.keys() if p != "self"],
                 },
                 status=400,
             )
@@ -837,9 +800,7 @@ class AgentTalk(BaseView):
         try:
             if use_background:
                 self.request.app.loop.create_task(method(**final_kwargs))
-                return self.json_response(
-                    {"message": "Request is being processed in the background."}
-                )
+                return self.json_response({"message": "Request is being processed in the background."})
 
             response = await method(**final_kwargs)
             if isinstance(response, web.Response):
@@ -847,9 +808,7 @@ class AgentTalk(BaseView):
 
             return self.json_response(
                 {
-                    "message": (
-                        f"Method {method_name} was executed successfully."
-                    ),
+                    "message": (f"Method {method_name} was executed successfully."),
                     "response": str(response),
                 }
             )
@@ -878,33 +837,29 @@ class AgentTalk(BaseView):
         Returns:
             agent_name or None
         """
-        agent_name = self.request.match_info.get('agent_id', None)
+        agent_name = self.request.match_info.get("agent_id", None)
         if not agent_name:
-            agent_name = data.pop('agent_name', None)
+            agent_name = data.pop("agent_name", None)
         if not agent_name:
             qs = self.query_parameters(self.request)
-            agent_name = qs.get('agent_name')
+            agent_name = qs.get("agent_name")
         return agent_name
 
-    async def _notify_ws_channel(
-        self,
-        channel_id: str,
-        message_id: Union[str, None],
-        session_id: str
-    ):
+    async def _notify_ws_channel(self, channel_id: str, message_id: Union[str, None], session_id: str):
         """Notify WebSocket channel that answer is ready."""
         try:
-            ws_manager = self.request.app.get('user_socket_manager')
+            ws_manager = self.request.app.get("user_socket_manager")
             if ws_manager:
                 from datetime import datetime, timezone
+
                 await ws_manager.notify_channel(
                     channel_id,
                     {
-                        'type': 'answer_ready',
-                        'session_id': session_id,
-                        'message_id': message_id,
-                        'timestamp': datetime.now(timezone.utc).isoformat()
-                    }
+                        "type": "answer_ready",
+                        "session_id": session_id,
+                        "message_id": message_id,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
         except Exception as e:
             self.logger.error("Error notifying WebSocket channel: %s", e)
@@ -928,13 +883,13 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (user_id, session_id)
         """
-        user_id = data.pop('user_id', None) or self.request.get('user_id', None)
-        session_id = data.pop('session_id', None)
+        user_id = data.pop("user_id", None) or self.request.get("user_id", None)
+        session_id = data.pop("session_id", None)
         # Try to get user_id from request session if not provided
         with contextlib.suppress(AttributeError):
             request_session = self.request.session or await get_session(self.request)
             if not user_id:
-                user_id = request_session.get('user_id')
+                user_id = request_session.get("user_id")
         # Generate new session_id if not provided by client (never use browser session)
         if not session_id:
             session_id = uuid.uuid4().hex
@@ -971,11 +926,15 @@ class AgentTalk(BaseView):
         Returns ``(bot, is_user_bot)``.  ``bot`` may also be a ``web.Response``
         when an early-return error condition is hit (e.g. BotManager missing).
         """
-        manager: BotManager = self.request.app.get('bot_manager')
+        manager: BotManager = self.request.app.get("bot_manager")
         if not manager:
-            return self.json_response(
-                {"error": "BotManager is not installed."}, status=500,
-            ), False
+            return (
+                self.json_response(
+                    {"error": "BotManager is not installed."},
+                    status=500,
+                ),
+                False,
+            )
 
         agent_name = self._get_agent_name(data)
         if not agent_name:
@@ -998,10 +957,7 @@ class AgentTalk(BaseView):
         return agent, False
 
     async def _setup_agent_tools(
-        self,
-        agent: AbstractBot,
-        data: Dict[str, Any],
-        request_session: Any
+        self, agent: AbstractBot, data: Dict[str, Any], request_session: Any
     ) -> Union[web.Response, None]:
         """
         Configure tool manager and MCP servers from request data.
@@ -1010,11 +966,7 @@ class AgentTalk(BaseView):
         The resulting ToolManager is saved under '{agent_name}_tool_manager'.
         """
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(
-                data,
-                request_session,
-                agent_name=agent.name
-            )
+            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=agent.name)
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
@@ -1023,7 +975,7 @@ class AgentTalk(BaseView):
                 self.logger.info(
                     "Configured ToolManager for agent '%s' with %d tools (session-scoped).",
                     agent.name,
-                    tool_manager.tool_count()
+                    tool_manager.tool_count(),
                 )
 
         # Add MCP servers directly to the agent if provided standalone
@@ -1094,12 +1046,15 @@ class AgentTalk(BaseView):
                 channel="agentalk",
                 user_id=str(user_id),
                 build_full_toolkit=getattr(
-                    agent, "jira_toolkit_factory", None,
+                    agent,
+                    "jira_toolkit_factory",
+                    None,
                 ),
             )
         except Exception:  # noqa: BLE001 - must never break session setup
             self.logger.exception(
-                "Failed to bootstrap Jira OAuth session for user %s", user_id,
+                "Failed to bootstrap Jira OAuth session for user %s",
+                user_id,
             )
 
     async def _restore_user_mcp_servers(
@@ -1171,11 +1126,10 @@ class AgentTalk(BaseView):
         # Load vault keys once for all secrets retrieval
         try:
             from navigator_session.vault.config import load_master_keys
+
             master_keys = load_master_keys()
         except Exception as exc:
-            self.logger.warning(
-                "MCP restore: vault unavailable, skipping restore: %s", exc
-            )
+            self.logger.warning("MCP restore: vault unavailable, skipping restore: %s", exc)
             return
 
         for config in saved_configs:
@@ -1202,8 +1156,7 @@ class AgentTalk(BaseView):
                             )
                         if doc is None:
                             self.logger.warning(
-                                "MCP restore: Vault credential '%s' missing "
-                                "for server '%s', skipping",
+                                "MCP restore: Vault credential '%s' missing " "for server '%s', skipping",
                                 config.vault_credential_name,
                                 config.server_name,
                             )
@@ -1211,8 +1164,7 @@ class AgentTalk(BaseView):
                         secret_params = _decrypt_credential(doc["credential"], master_keys)
                     except Exception as exc:
                         self.logger.warning(
-                            "MCP restore: failed to decrypt Vault credential "
-                            "'%s' for server '%s': %s",
+                            "MCP restore: failed to decrypt Vault credential " "'%s' for server '%s': %s",
                             config.vault_credential_name,
                             config.server_name,
                             exc,
@@ -1240,10 +1192,7 @@ class AgentTalk(BaseView):
                 # Continue with remaining servers — never fail the PATCH
 
     async def _handle_attachments(
-        self,
-        bot: AbstractBot,
-        agent: AbstractBot,
-        attachments: Dict[str, Any]
+        self, bot: AbstractBot, agent: AbstractBot, attachments: Dict[str, Any]
     ) -> web.Response:
         """
         Manage file uploaded into a internal private method.
@@ -1252,21 +1201,13 @@ class AgentTalk(BaseView):
             # Handle file uploads without a query
             try:
                 added_files = await bot.handle_files(attachments)
-                return self.json_response({
-                    "message": "Files uploaded successfully",
-                    "added_files": added_files,
-                    "agent": agent.name
-                })
+                return self.json_response(
+                    {"message": "Files uploaded successfully", "added_files": added_files, "agent": agent.name}
+                )
             except Exception as e:
                 self.logger.error("Error handling files: %s", e, exc_info=True)
-                return self.json_response(
-                    {"error": f"Error handling files: {str(e)}"},
-                    status=500
-                )
-        return self.json_response(
-            {"error": "query is required"},
-            status=400
-        )
+                return self.json_response({"error": f"Error handling files: {str(e)}"}, status=500)
+        return self.json_response({"error": "query is required"}, status=400)
 
     async def _handle_hitl_resume(
         self,
@@ -1406,9 +1347,7 @@ class AgentTalk(BaseView):
             )
 
         # ── 6. Record the response in the HITL ledger ─────────────────────
-        response_type: "InteractionType" = (
-            interaction_alive.interaction_type
-        )
+        response_type: "InteractionType" = interaction_alive.interaction_type
         if response_type_raw:
             try:
                 response_type = InteractionType(response_type_raw)
@@ -1434,8 +1373,7 @@ class AgentTalk(BaseView):
         suspended = await sus_store.load(interaction_id)
         if suspended is None:
             self.logger.error(
-                "AgentTalk resume: SuspendedExecution missing for %s — "
-                "cannot resume tool-loop",
+                "AgentTalk resume: SuspendedExecution missing for %s — " "cannot resume tool-loop",
                 interaction_id,
             )
             return web.json_response(
@@ -1451,8 +1389,7 @@ class AgentTalk(BaseView):
         }
 
         self.logger.info(
-            "AgentTalk resume: calling agent.resume for session %s "
-            "(interaction=%s, tool_call_id=%s)",
+            "AgentTalk resume: calling agent.resume for session %s " "(interaction=%s, tool_call_id=%s)",
             suspended.session_id,
             interaction_id,
             suspended.tool_call_id,
@@ -1546,10 +1483,10 @@ class AgentTalk(BaseView):
         """
         qs = self.query_parameters(self.request)
         app = self.request.app
-        method_name = self.request.match_info.get('method_name', None)
+        method_name = self.request.match_info.get("method_name", None)
 
         # PBAC agent access guard — real-time policy evaluation (agent:chat)
-        agent_id_param = self.request.match_info.get('agent_id', '*')
+        agent_id_param = self.request.match_info.get("agent_id", "*")
         pbac_denied = await self._check_pbac_agent_access(
             agent_id=agent_id_param,
             action="agent:chat",
@@ -1575,9 +1512,7 @@ class AgentTalk(BaseView):
         # Support method invocation via body or query parameter in addition to the
         # /{agent_id}/{method_name} route so clients don't need to construct a
         # different URL for maintenance operations like refresh_data.
-        method_name = (
-            method_name or data.pop('method_name', None) or qs.get('method_name')
-        )
+        method_name = method_name or data.pop("method_name", None) or qs.get("method_name")
         # Get the agent — user bots win over system bots when both could match.
         agent_or_response, is_user_bot = await self._resolve_bot(data)
         if isinstance(agent_or_response, web.Response):
@@ -1603,7 +1538,7 @@ class AgentTalk(BaseView):
 
         # Deprecation: strip inline tool config from POST body to prevent
         # leaking into **kwargs, but warn that PATCH should be used instead.
-        for _dep_key in ('tools', 'mcp_servers', 'tool_config'):
+        for _dep_key in ("tools", "mcp_servers", "tool_config"):
             if _dep_key in data:
                 data.pop(_dep_key)
                 self.logger.warning(
@@ -1613,11 +1548,11 @@ class AgentTalk(BaseView):
                     agent.name,
                 )
 
-        query = data.pop('query', None)
+        query = data.pop("query", None)
         # task background:
-        use_background = data.pop('background', False)
+        use_background = data.pop("background", False)
         # Chunked HTTP streaming (no SSE/WS/NDJSON):
-        use_stream = data.pop('stream', False)
+        use_stream = data.pop("stream", False)
 
         # Determine output mode
         # output_mode = self._get_output_mode(self.request)
@@ -1627,7 +1562,7 @@ class AgentTalk(BaseView):
         # Unknown values (e.g. a frontend mode the backend doesn't implement)
         # fall back to DEFAULT instead of leaking a raw string into bot.ask(),
         # which would crash the renderer dispatch with "No renderer registered".
-        output_mode = data.pop('output_mode', OutputMode.DEFAULT)
+        output_mode = data.pop("output_mode", OutputMode.DEFAULT)
         if isinstance(output_mode, str):
             try:
                 output_mode = OutputMode(output_mode.lower())
@@ -1639,27 +1574,27 @@ class AgentTalk(BaseView):
                 output_mode = OutputMode.DEFAULT
 
         # Extract parameters for ask()
-        search_type = data.pop('search_type', 'similarity')
-        return_sources = data.pop('return_sources', True)
-        use_vector_context = data.pop('use_vector_context', True)
-        use_conversation_history = data.pop('use_conversation_history', True)
+        search_type = data.pop("search_type", "similarity")
+        return_sources = data.pop("return_sources", True)
+        use_vector_context = data.pop("use_vector_context", True)
+        use_conversation_history = data.pop("use_conversation_history", True)
         # Client-generated message ID — used as turn_id in ChatStorage
         # so frontend and backend share the same identifier for dedup.
-        client_message_id = data.pop('message_id', None)
-        followup_turn_id = data.pop('turn_id', None)
-        followup_data = data.pop('data', None)
+        client_message_id = data.pop("message_id", None)
+        followup_turn_id = data.pop("turn_id", None)
+        followup_data = data.pop("data", None)
         # FEAT-249 Mode B: opt-in backend bifurcation.  When True and a FULL
         # mode session is active, structured outputs are published via the Redis
         # transport to the /ws/userinfo channel keyed by session_id.  Default
         # False — frontend-driven path is unchanged when this flag is absent.
-        avatar_bifurcate: bool = bool(data.pop('avatar_bifurcate', False))
+        avatar_bifurcate: bool = bool(data.pop("avatar_bifurcate", False))
 
         # FEAT-204: HITL resume branch — detect hitl_response tag in the body.
         # Shape: {"hitl_response": {"turn_id": "<interaction_id>", "value": ...,
         #                           "response_type": "<optional>"}}
         # Handled BEFORE bot.ask() so the resume can run to a success reply
         # on the same request that carries the human's answer.
-        hitl_response = data.pop('hitl_response', None)
+        hitl_response = data.pop("hitl_response", None)
         if hitl_response is not None:
             return await self._handle_hitl_resume(
                 hitl_response=hitl_response,
@@ -1677,16 +1612,16 @@ class AgentTalk(BaseView):
             use_stream = False  # force-disable streaming for these modes
 
         # Prepare ask() parameters
-        format_kwargs = data.pop('format_kwargs', {})
+        format_kwargs = data.pop("format_kwargs", {})
         response = None
 
         # Extract Custom LLM
-        if llm := data.pop('llm', None):
+        if llm := data.pop("llm", None):
             # TODO: check if is a supported LLM and configure it for the agent
             pass
 
         # Extract ws_channel_id for notification
-        ws_channel_id = data.pop('ws_channel_id', None)
+        ws_channel_id = data.pop("ws_channel_id", None)
 
         # FEAT-146: Set the current_web_session ContextVar so WebHumanTool can
         # resolve the active WebSocket channel without being passed it explicitly.
@@ -1698,10 +1633,10 @@ class AgentTalk(BaseView):
         _ws_originals = {}  # saved originals for restore
         if isinstance(agent, WebSearchAgent):
             _ws_flag_keys = {
-                'contrastive_search': bool,
-                'contrastive_prompt': str,
-                'synthesize': bool,
-                'synthesize_prompt': str,
+                "contrastive_search": bool,
+                "contrastive_prompt": str,
+                "synthesize": bool,
+                "synthesize_prompt": str,
             }
             for key, expected_type in _ws_flag_keys.items():
                 if key in data:
@@ -1721,9 +1656,7 @@ class AgentTalk(BaseView):
             try:
                 memory = RedisConversation()
             except Exception as ex:
-                self.logger.warning(
-                    f"Failed to initialize RedisConversation: {ex}"
-                )
+                self.logger.warning(f"Failed to initialize RedisConversation: {ex}")
 
         # Temporarily swap in user's ToolManager if configured via PATCH
         original_tool_manager = agent.tool_manager
@@ -1745,12 +1678,11 @@ class AgentTalk(BaseView):
         user_dataset_manager = None
         # Import PandasAgent here to avoid circular imports
         from ..bots.data import PandasAgent
+
         if isinstance(agent, PandasAgent):
-            original_dataset_manager = getattr(agent, '_dataset_manager', None)
+            original_dataset_manager = getattr(agent, "_dataset_manager", None)
             user_dataset_manager = await self.user_objects_handler.configure_dataset_manager(
-                request_session,
-                agent,
-                agent_name=agent.name
+                request_session, agent, agent_name=agent.name
             )
             if user_dataset_manager:
                 # PBAC dataset filtering — remove denied datasets before agent receives them
@@ -1762,8 +1694,7 @@ class AgentTalk(BaseView):
                 # fresh SQL appropriate to the new question.
                 evicted = user_dataset_manager.evict_table_sources()
                 self.logger.debug(
-                    "Attached session DatasetManager to agent '%s' "
-                    "(%d datasets, evicted %d stale table sources).",
+                    "Attached session DatasetManager to agent '%s' " "(%d datasets, evicted %d stale table sources).",
                     agent.name,
                     len(user_dataset_manager.list_dataframes()),
                     evicted,
@@ -1776,7 +1707,7 @@ class AgentTalk(BaseView):
         if isinstance(agent, PandasAgent):
             original_pandas_tool = agent._get_python_pandas_tool()
             if original_pandas_tool:
-                dm = user_dataset_manager or getattr(agent, '_dataset_manager', None)
+                dm = user_dataset_manager or getattr(agent, "_dataset_manager", None)
                 session_pandas_tool = original_pandas_tool.create_session_clone(
                     dataset_manager=dm,
                 )
@@ -1784,9 +1715,7 @@ class AgentTalk(BaseView):
                 agent.tool_manager._tools[session_pandas_tool.name] = session_pandas_tool
                 # Point the sync callback and repl_locals at the session tool
                 if dm:
-                    dm.set_on_change(
-                        lambda: self._sync_session_pandas(agent, session_pandas_tool, dm)
-                    )
+                    dm.set_on_change(lambda: self._sync_session_pandas(agent, session_pandas_tool, dm))
                     dm.set_repl_locals_getter(lambda: session_pandas_tool.locals)
                 self.logger.debug(
                     "Created session-isolated PythonPandasTool for agent '%s'.",
@@ -1896,9 +1825,8 @@ class AgentTalk(BaseView):
                 # (which would prevent agent.py from loading in environments
                 # where the worktree parrot.human is not first on sys.path).
                 from parrot.human import get_default_human_manager as _get_manager  # noqa: PLC0415
-                from parrot.human.suspended_store import (  # noqa: PLC0415
-                    SuspendedExecution, SuspendedExecutionStore
-                )
+                from parrot.human.suspended_store import SuspendedExecution, SuspendedExecutionStore  # noqa: PLC0415
+
                 hitl_manager = _get_manager()
                 if hitl_manager is not None and interaction_id:
                     # 1. Build and persist the SuspendedExecution blob.
@@ -1922,19 +1850,16 @@ class AgentTalk(BaseView):
                         context = interaction_obj.context
                         if interaction_obj.options:
                             options = [
-                                o.model_dump() if hasattr(o, "model_dump") else dict(o)
-                                for o in interaction_obj.options
+                                o.model_dump() if hasattr(o, "model_dump") else dict(o) for o in interaction_obj.options
                             ]
                         form_schema = interaction_obj.form_schema
                         default_response = interaction_obj.default_response
                         import datetime as _dt
+
                         # Use the same TTL value already computed for Redis
                         # (which includes the 60s buffer and policy-chain logic)
                         # so the deadline is aligned with actual key expiry.
-                        deadline = (
-                            _dt.datetime.now(_dt.timezone.utc)
-                            + _dt.timedelta(seconds=ttl)
-                        ).isoformat()
+                        deadline = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=ttl)).isoformat()
                     await sus_store.save(suspended, ttl=ttl)
                     self.logger.info(
                         "AgentTalk: persisted SuspendedExecution %s (ttl=%ds)",
@@ -1943,13 +1868,11 @@ class AgentTalk(BaseView):
                     )
                 else:
                     self.logger.warning(
-                        "AgentTalk: no HITL manager or interaction_id — "
-                        "PausedEnvelope will have minimal data"
+                        "AgentTalk: no HITL manager or interaction_id — " "PausedEnvelope will have minimal data"
                     )
             except Exception as inner_exc:
                 self.logger.exception(
-                    "AgentTalk: error persisting/rehydrating suspend state "
-                    "for interaction %s: %s",
+                    "AgentTalk: error persisting/rehydrating suspend state " "for interaction %s: %s",
                     interaction_id,
                     inner_exc,
                 )
@@ -1960,8 +1883,7 @@ class AgentTalk(BaseView):
                     {
                         "status": "error",
                         "message": (
-                            f"Failed to persist suspend state for interaction "
-                            f"{interaction_id}: {inner_exc}"
+                            f"Failed to persist suspend state for interaction " f"{interaction_id}: {inner_exc}"
                         ),
                     },
                     status=500,
@@ -2017,8 +1939,8 @@ class AgentTalk(BaseView):
         if ws_channel_id:
             await self._notify_ws_channel(
                 ws_channel_id,
-                message_id=getattr(response, 'turn_id', None) if response else None,
-                session_id=session_id or getattr(response, 'session_id', None)
+                message_id=getattr(response, "turn_id", None) if response else None,
+                session_id=session_id or getattr(response, "session_id", None),
             )
 
         # FEAT-242: non-streaming path — speak the full reply through an active
@@ -2026,9 +1948,7 @@ class AgentTalk(BaseView):
         # per-sentence in _handle_stream_response). Best-effort; never blocks
         # or fails the text reply.
         if response is not None:
-            await self._speak_text_to_avatar(
-                session_id, getattr(response, 'response', None) or ''
-            )
+            await self._speak_text_to_avatar(session_id, getattr(response, "response", None) or "")
 
         # Return formatted response
         return self._format_response(
@@ -2074,7 +1994,7 @@ class AgentTalk(BaseView):
         If no tool/MCP configuration keys are present, falls through to
         the existing ``refresh_data`` logic.
         """
-        agent_name = self.request.match_info.get('agent_id', None)
+        agent_name = self.request.match_info.get("agent_id", None)
         if not agent_name:
             return self.error("Missing Agent Name.", status=400)
 
@@ -2086,12 +2006,9 @@ class AgentTalk(BaseView):
         if pbac_denied is not None:
             return pbac_denied
 
-        manager: BotManager = self.request.app.get('bot_manager')
+        manager: BotManager = self.request.app.get("bot_manager")
         if not manager:
-            return self.json_response(
-                {"error": "BotManager is not installed."},
-                status=500
-            )
+            return self.json_response({"error": "BotManager is not installed."}, status=500)
 
         try:
             data = await self.request.json()
@@ -2107,9 +2024,7 @@ class AgentTalk(BaseView):
             return self.error(f"Error retrieving agent: {e}", status=500)
 
         # --- Tool / MCP configuration branch ---
-        has_tool_config = any(
-            key in data for key in ('tools', 'mcp_servers', 'tool_config')
-        )
+        has_tool_config = any(key in data for key in ("tools", "mcp_servers", "tool_config"))
         if has_tool_config:
             request_session = None
             with contextlib.suppress(AttributeError):
@@ -2134,11 +2049,8 @@ class AgentTalk(BaseView):
 
         # --- Refresh data branch (original behaviour) ---
         try:
-            if not hasattr(agent, 'refresh_data') or not callable(agent.refresh_data):
-                return self.json_response(
-                    {"message": "Agent doesn't have 'Refresh' method."},
-                    status=200
-                )
+            if not hasattr(agent, "refresh_data") or not callable(agent.refresh_data):
+                return self.json_response({"message": "Agent doesn't have 'Refresh' method."}, status=200)
 
             result = await agent.refresh_data()
 
@@ -2148,20 +2060,13 @@ class AgentTalk(BaseView):
             response_data = {}
             if isinstance(result, dict):
                 for name, df in result.items():
-                    if hasattr(df, 'shape'):
-                        response_data[name] = {
-                            "rows": df.shape[0],
-                            "columns": df.shape[1]
-                        }
+                    if hasattr(df, "shape"):
+                        response_data[name] = {"rows": df.shape[0], "columns": df.shape[1]}
                     else:
                         response_data[name] = "Refreshed"
 
             return self.json_response(
-                {
-                    "message": "Agent data refreshed successfully.",
-                    "refreshed_data": response_data
-                },
-                status=200
+                {"message": "Agent data refreshed successfully.", "refreshed_data": response_data}, status=200
             )
         except Exception as e:
             self.logger.error("Error refreshing agent %s: %s", agent_name, e)
@@ -2173,16 +2078,13 @@ class AgentTalk(BaseView):
 
         Uploads data (Excel) or adds queries (slug) to the agent.
         """
-        agent_name = self.request.match_info.get('agent_id', None)
+        agent_name = self.request.match_info.get("agent_id", None)
         if not agent_name:
             return self.error("Missing Agent Name.", status=400)
 
-        manager: BotManager = self.request.app.get('bot_manager')
+        manager: BotManager = self.request.app.get("bot_manager")
         if not manager:
-            return self.json_response(
-                {"error": "BotManager is not installed."},
-                status=500
-            )
+            return self.json_response({"error": "BotManager is not installed."}, status=500)
 
         try:
             agent: AbstractBot = await manager.get_bot(agent_name)
@@ -2190,7 +2092,7 @@ class AgentTalk(BaseView):
                 return self.error(f"Agent '{agent_name}' not found.", status=404)
 
             # Check if request is multipart (file upload)
-            if self.request.content_type.startswith('multipart/'):
+            if self.request.content_type.startswith("multipart/"):
                 reader = await self.request.multipart()
                 file_field = await reader.next()
 
@@ -2198,11 +2100,8 @@ class AgentTalk(BaseView):
                     return self.error("No file provided.", status=400)
 
                 filename = file_field.filename
-                if not filename.endswith(('.xlsx', '.xls')):
-                    return self.error(
-                        "Only Excel files (.xlsx, .xls) are allowed.",
-                        status=400
-                    )
+                if not filename.endswith((".xlsx", ".xls")):
+                    return self.error("Only Excel files (.xlsx, .xls) are allowed.", status=400)
 
                 # Save temp file
                 with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
@@ -2218,18 +2117,14 @@ class AgentTalk(BaseView):
                     df = pd.read_excel(tmp_path)
 
                     # Check method
-                    if not hasattr(agent, 'add_dataframe') or not callable(agent.add_dataframe):
-                        return self.error(
-                            "Agent does not support adding dataframes.",
-                            status=400
-                        )
+                    if not hasattr(agent, "add_dataframe") or not callable(agent.add_dataframe):
+                        return self.error("Agent does not support adding dataframes.", status=400)
 
                     # Add to agent
                     await agent.add_dataframe(df)
 
                     return self.json_response(
-                        {"message": f"Successfully uploaded {filename}", "rows": len(df)},
-                        status=202
+                        {"message": f"Successfully uploaded {filename}", "rows": len(df)}, status=202
                     )
                 except Exception as e:
                     self.logger.error("Error processing excel upload: %s", e)
@@ -2245,25 +2140,19 @@ class AgentTalk(BaseView):
                 except Exception:
                     data = await self.request.post()
 
-                slug = data.get('slug')
+                slug = data.get("slug")
                 if not slug:
                     return self.error("Missing 'slug' in payload.", status=400)
 
-                if not hasattr(agent, 'add_query') or not callable(agent.add_query):
+                if not hasattr(agent, "add_query") or not callable(agent.add_query):
                     return self.error("Agent does not support adding queries.", status=400)
 
                 await agent.add_query(slug)
-                return self.json_response(
-                    {"message": f"Successfully added query slug: {slug}"},
-                    status=202
-                )
+                return self.json_response({"message": f"Successfully added query slug: {slug}"}, status=202)
 
         except Exception as e:
             self.logger.error("Error in PUT %s: %s", agent_name, e, exc_info=True)
-            return self.error(
-                f"Operation failed: {str(e)}",
-                status=400
-            )
+            return self.error(f"Operation failed: {str(e)}", status=400)
 
     async def get(self):
         """
@@ -2271,38 +2160,26 @@ class AgentTalk(BaseView):
 
         Returns information about the AgentTalk endpoint.
         """
-        method_name = self.request.match_info.get('method_name', None)
-        if method_name == 'debug':
-            agent_name = self.request.match_info.get('agent_id', None)
+        method_name = self.request.match_info.get("method_name", None)
+        if method_name == "debug":
+            agent_name = self.request.match_info.get("agent_id", None)
             if not agent_name:
-                return self.error(
-                    "Missing Agent Name for debug.",
-                    status=400
-                )
-            manager = self.request.app.get('bot_manager')
+                return self.error("Missing Agent Name for debug.", status=400)
+            manager = self.request.app.get("bot_manager")
             if not manager:
-                return self.json_response(
-                    {"error": "BotManager is not installed."},
-                    status=500
-                )
+                return self.json_response({"error": "BotManager is not installed."}, status=500)
             try:
                 agent: AbstractBot = await manager.get_bot(agent_name)
                 if not agent:
-                    return self.error(
-                        f"Agent '{agent_name}' not found.",
-                        status=404
-                    )
+                    return self.error(f"Agent '{agent_name}' not found.", status=404)
             except Exception as e:
                 self.logger.error("Error retrieving agent %s: %s", agent_name, e)
-                return self.error(
-                    f"Error retrieving agent: {e}",
-                    status=500
-                )
+                return self.error(f"Error retrieving agent: {e}", status=500)
             debug_info = await self.debug_agent(agent)
             return self.json_response(debug_info)
 
-        if method_name == 'mcp_servers':
-            agent_name = self.request.match_info.get('agent_id', None)
+        if method_name == "mcp_servers":
+            agent_name = self.request.match_info.get("agent_id", None)
             if not agent_name:
                 return self.error("Missing Agent Name.", status=400)
 
@@ -2317,54 +2194,56 @@ class AgentTalk(BaseView):
                 tool_manager = request_session.get(session_key)
                 if tool_manager and isinstance(tool_manager, ToolManager):
                     # Build serializable list from _mcp_configs
-                    for name, config in getattr(tool_manager, '_mcp_configs', {}).items():
+                    for name, config in getattr(tool_manager, "_mcp_configs", {}).items():
                         entry = {
                             "name": name,
-                            "url": getattr(config, 'url', None),
-                            "transport": getattr(config, 'transport', 'auto'),
-                            "auth_type": getattr(config, 'auth_type', None),
-                            "headers": getattr(config, 'headers', {}),
-                            "allowed_tools": getattr(config, 'allowed_tools', None),
-                            "blocked_tools": getattr(config, 'blocked_tools', None),
-                            "description": getattr(config, 'description', None),
+                            "url": getattr(config, "url", None),
+                            "transport": getattr(config, "transport", "auto"),
+                            "auth_type": getattr(config, "auth_type", None),
+                            "headers": getattr(config, "headers", {}),
+                            "allowed_tools": getattr(config, "allowed_tools", None),
+                            "blocked_tools": getattr(config, "blocked_tools", None),
+                            "description": getattr(config, "description", None),
                         }
                         # Add runtime info if available
                         client = tool_manager.get_mcp_client(name)
                         if client:
-                            entry["connected"] = getattr(client, '_connected', False)
+                            entry["connected"] = getattr(client, "_connected", False)
                             entry["tool_count"] = len(tool_manager.get_mcp_tools(name))
                         else:
                             entry["connected"] = False
                             entry["tool_count"] = 0
                         mcp_servers_list.append(entry)
 
-            return self.json_response({
-                "agent": agent_name,
-                "mcp_servers": mcp_servers_list,
-            })
+            return self.json_response(
+                {
+                    "agent": agent_name,
+                    "mcp_servers": mcp_servers_list,
+                }
+            )
 
-        return self.json_response({
-            "message": "AgentTalk - Universal Agent Conversation Interface",
-            "version": "1.0",
-            "usage": {
-                "method": "POST",
-                "endpoint": "/api/v1/agents/chat/",
-                "required_fields": ["agent_name", "query"],
-                "optional_fields": [
-                    "session_id",
-                    "user_id",
-                    "output_mode",
-                    "format_kwargs",
-                    "mcp_servers",
-                    "ask_kwargs"
-                ],
-                "output_modes": ["json", "html", "markdown", "terminal", "default"]
+        return self.json_response(
+            {
+                "message": "AgentTalk - Universal Agent Conversation Interface",
+                "version": "1.0",
+                "usage": {
+                    "method": "POST",
+                    "endpoint": "/api/v1/agents/chat/",
+                    "required_fields": ["agent_name", "query"],
+                    "optional_fields": [
+                        "session_id",
+                        "user_id",
+                        "output_mode",
+                        "format_kwargs",
+                        "mcp_servers",
+                        "ask_kwargs",
+                    ],
+                    "output_modes": ["json", "html", "markdown", "terminal", "default"],
+                },
             }
-        })
+        )
 
-    async def _maybe_start_avatar_speaker(
-        self, session_id: Optional[str]
-    ) -> Optional[Any]:
+    async def _maybe_start_avatar_speaker(self, session_id: Optional[str]) -> Optional[Any]:
         """Return an entered ``AvatarTurnSpeaker`` if an avatar session is live.
 
         Looks up an active avatar session (created by
@@ -2387,23 +2266,21 @@ class AgentTalk(BaseView):
         if not session_id:
             return None
         app = self.request.app
-        record = (app.get('avatar_sessions') or {}).get(session_id)
+        record = (app.get("avatar_sessions") or {}).get(session_id)
         if not record:
             return None
-        provider = app.get('avatar_voice_provider')
-        handle = record.get('handle') if isinstance(record, dict) else None
+        provider = app.get("avatar_voice_provider")
+        handle = record.get("handle") if isinstance(record, dict) else None
         # FEAT-256 avatar-OFF sessions store a direct-audio RoomAudioPublisher
         # under "publisher" (no LiveAvatar handle) — route the reply into the
         # LiveKit room track instead of the LiveAvatar WS.
-        publisher = record.get('publisher') if isinstance(record, dict) else None
+        publisher = record.get("publisher") if isinstance(record, dict) else None
         if provider is None or (handle is None and publisher is None):
             return None
         try:
             from parrot.integrations.liveavatar import AvatarTurnSpeaker
 
-            speaker = AvatarTurnSpeaker(
-                handle, provider.synthesize_pcm, room_publisher=publisher
-            )
+            speaker = AvatarTurnSpeaker(handle, provider.synthesize_pcm, room_publisher=publisher)
             await speaker.__aenter__()
             self.logger.info(
                 "AgentTalk: streaming reply to active avatar session %s",
@@ -2412,16 +2289,13 @@ class AgentTalk(BaseView):
             return speaker
         except Exception:  # noqa: BLE001 - avatar speech is best-effort
             self.logger.warning(
-                "AgentTalk: could not start avatar speaker for session %s; "
-                "continuing text-only.",
+                "AgentTalk: could not start avatar speaker for session %s; " "continuing text-only.",
                 session_id,
                 exc_info=True,
             )
             return None
 
-    async def _speak_text_to_avatar(
-        self, session_id: Optional[str], text: str
-    ) -> None:
+    async def _speak_text_to_avatar(self, session_id: Optional[str], text: str) -> None:
         """Speak a full reply through an active avatar session (non-stream path).
 
         Opens an :class:`AvatarTurnSpeaker` for an active session, feeds the
@@ -2446,7 +2320,8 @@ class AgentTalk(BaseView):
             except Exception:  # noqa: BLE001 - avatar speech is best-effort
                 self.logger.warning(
                     "Avatar full-text speak failed for session %s",
-                    session_id, exc_info=True,
+                    session_id,
+                    exc_info=True,
                 )
             finally:
                 await speaker.aclose()
@@ -2454,15 +2329,18 @@ class AgentTalk(BaseView):
         task = asyncio.get_running_loop().create_task(_run())
         # Surface unexpected failures instead of swallowing them on GC.
         task.add_done_callback(
-            lambda t: self.logger.warning(
-                "Avatar speak task errored for session %s: %s",
-                session_id, t.exception(),
-            ) if not t.cancelled() and t.exception() else None
+            lambda t: (
+                self.logger.warning(
+                    "Avatar speak task errored for session %s: %s",
+                    session_id,
+                    t.exception(),
+                )
+                if not t.cancelled() and t.exception()
+                else None
+            )
         )
 
-    async def _push_voice_answer_audio(
-        self, session_id: Optional[str], speaker: Any
-    ) -> None:
+    async def _push_voice_answer_audio(self, session_id: Optional[str], speaker: Any) -> None:
         """Push the turn's synthesized audio to the front for replay (play button).
 
         Reuses the exact PCM the speaker already generated for the room/avatar
@@ -2475,22 +2353,22 @@ class AgentTalk(BaseView):
             pcm = speaker.collected_pcm()
             if not pcm:
                 self.logger.info(
-                    "voice_answer_audio: no PCM collected for session %s "
-                    "(nothing to replay)", session_id,
+                    "voice_answer_audio: no PCM collected for session %s " "(nothing to replay)",
+                    session_id,
                 )
                 return
-            ws_manager = self.request.app.get('user_socket_manager')
+            ws_manager = self.request.app.get("user_socket_manager")
             if ws_manager is None:
                 self.logger.warning(
-                    "voice_answer_audio: no user_socket_manager — cannot push "
-                    "replay audio for session %s", session_id,
+                    "voice_answer_audio: no user_socket_manager — cannot push " "replay audio for session %s",
+                    session_id,
                 )
                 return
             import io
             import wave
 
             buf = io.BytesIO()
-            with wave.open(buf, 'wb') as wf:
+            with wave.open(buf, "wb") as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
                 wf.setframerate(24000)
@@ -2499,27 +2377,27 @@ class AgentTalk(BaseView):
             # A multi-MB WAV is far too large for a single WebSocket frame, so
             # store it on the session and let the browser fetch it over HTTP
             # (GET .../voice-answer). The WS only carries a tiny "ready" ping.
-            sessions = self.request.app.get('avatar_sessions') or {}
+            sessions = self.request.app.get("avatar_sessions") or {}
             rec = sessions.get(session_id)
             if isinstance(rec, dict):
-                rec['last_answer_wav'] = wav_bytes
+                rec["last_answer_wav"] = wav_bytes
             self.logger.info(
                 "voice_answer_audio: stored %d-byte WAV for session %s; notifying",
-                len(wav_bytes), session_id,
+                len(wav_bytes),
+                session_id,
             )
             await ws_manager.notify_channel(
                 session_id,
-                {'type': 'voice_answer_audio', 'session_id': session_id},
+                {"type": "voice_answer_audio", "session_id": session_id},
             )
         except Exception:  # noqa: BLE001 - replay audio is best-effort
             self.logger.warning(
                 "Could not push voice answer audio for session %s",
-                session_id, exc_info=True,
+                session_id,
+                exc_info=True,
             )
 
-    def _detach_avatar_finish(
-        self, speaker: Any, agent_name: str, session_id: Optional[str] = None
-    ) -> None:
+    def _detach_avatar_finish(self, speaker: Any, agent_name: str, session_id: Optional[str] = None) -> None:
         """Drain + close an avatar speaker in the background (FEAT-242).
 
         The text + metadata are already on the wire by the time the stream
@@ -2534,6 +2412,7 @@ class AgentTalk(BaseView):
             speaker: The entered ``AvatarTurnSpeaker`` to flush and close.
             agent_name: Agent name, for log context only.
         """
+
         async def _run() -> None:
             try:
                 await speaker.finish()
@@ -2542,17 +2421,23 @@ class AgentTalk(BaseView):
             except Exception:  # noqa: BLE001 - avatar speech is best-effort
                 self.logger.warning(
                     "Avatar speak finish failed for agent '%s'",
-                    agent_name, exc_info=True,
+                    agent_name,
+                    exc_info=True,
                 )
             finally:
                 await speaker.aclose()
 
         task = asyncio.get_running_loop().create_task(_run())
         task.add_done_callback(
-            lambda t: self.logger.warning(
-                "Avatar finish task errored for agent '%s': %s",
-                agent_name, t.exception(),
-            ) if not t.cancelled() and t.exception() else None
+            lambda t: (
+                self.logger.warning(
+                    "Avatar finish task errored for agent '%s': %s",
+                    agent_name,
+                    t.exception(),
+                )
+                if not t.cancelled() and t.exception()
+                else None
+            )
         )
 
     async def _maybe_publish_bifurcated_output(
@@ -2583,7 +2468,11 @@ class AgentTalk(BaseView):
         from parrot.handlers.avatar_fullmode import publish_bifurcated_output
 
         await publish_bifurcated_output(
-            self.request, self.logger, ai_message, session_id, turn_id,
+            self.request,
+            self.logger,
+            ai_message,
+            session_id,
+            turn_id,
         )
 
     async def _handle_stream_response(
@@ -2600,7 +2489,7 @@ class AgentTalk(BaseView):
         format_kwargs: Dict[str, Any],
         memory: Optional[Any],
         llm: Optional[Any],
-        agent_name: str = '',
+        agent_name: str = "",
         client_message_id: Optional[str] = None,
         avatar_bifurcate: bool = False,
         **kwargs,
@@ -2622,14 +2511,14 @@ class AgentTalk(BaseView):
         """
         stream_resp = web.StreamResponse(
             status=200,
-            reason='OK',
+            reason="OK",
             headers={
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Transfer-Encoding': 'chunked',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'X-Parrot-Stream': 'chunked-aimessage',
-                'X-Accel-Buffering': 'no',
+                "Content-Type": "text/plain; charset=utf-8",
+                "Transfer-Encoding": "chunked",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Parrot-Stream": "chunked-aimessage",
+                "X-Accel-Buffering": "no",
             },
         )
         await stream_resp.prepare(self.request)
@@ -2657,7 +2546,7 @@ class AgentTalk(BaseView):
                 if isinstance(chunk, AIMessage):
                     ai_message = chunk
                 else:
-                    await stream_resp.write(chunk.encode('utf-8'))
+                    await stream_resp.write(chunk.encode("utf-8"))
                     await stream_resp.drain()
                     if avatar_speaker is not None:
                         avatar_speaker.feed(chunk)
@@ -2666,52 +2555,54 @@ class AgentTalk(BaseView):
 
             if ai_message is not None:
                 envelope = {
-                    'input': ai_message.input,
-                    'output': ai_message.response or str(ai_message.output),
-                    'metadata': {
-                        'model': getattr(ai_message, 'model', None),
-                        'provider': getattr(ai_message, 'provider', None),
-                        'session_id': str(getattr(ai_message, 'session_id', '') or ''),
-                        'turn_id': str(getattr(ai_message, 'turn_id', '') or ''),
-                        'user_id': (
-                            str(ai_message.user_id) if ai_message.user_id is not None else None
-                        ),
-                        'response_time': response_time_ms,
-                        'usage': (
-                            ai_message.usage.model_dump()
-                            if ai_message.usage is not None else None
-                        ),
-                        'finish_reason': getattr(ai_message, 'finish_reason', None),
-                        'stop_reason': getattr(ai_message, 'stop_reason', None),
+                    "input": ai_message.input,
+                    "output": ai_message.response or str(ai_message.output),
+                    "metadata": {
+                        "model": getattr(ai_message, "model", None),
+                        "provider": getattr(ai_message, "provider", None),
+                        "session_id": str(getattr(ai_message, "session_id", "") or ""),
+                        "turn_id": str(getattr(ai_message, "turn_id", "") or ""),
+                        "user_id": (str(ai_message.user_id) if ai_message.user_id is not None else None),
+                        "response_time": response_time_ms,
+                        "usage": (ai_message.usage.model_dump() if ai_message.usage is not None else None),
+                        "finish_reason": getattr(ai_message, "finish_reason", None),
+                        "stop_reason": getattr(ai_message, "stop_reason", None),
                     },
-                    'sources': [
-                        s if isinstance(s, dict) else s.to_dict()
-                        for s in getattr(ai_message, 'source_documents', [])
-                    ] if format_kwargs.get('include_sources', True) else [],
-                    'tool_calls': [
-                        {
-                            'name': getattr(t, 'name', 'unknown'),
-                            'status': getattr(t, 'status', 'completed'),
-                            'output': getattr(t, 'output', None),
-                            'arguments': getattr(t, 'arguments', None),
-                        }
-                        for t in getattr(ai_message, 'tool_calls', [])
-                    ] if format_kwargs.get('include_tool_calls', True) else [],
+                    "sources": (
+                        [s if isinstance(s, dict) else s.to_dict() for s in getattr(ai_message, "source_documents", [])]
+                        if format_kwargs.get("include_sources", True)
+                        else []
+                    ),
+                    "tool_calls": (
+                        [
+                            {
+                                "name": getattr(t, "name", "unknown"),
+                                "status": getattr(t, "status", "completed"),
+                                "output": getattr(t, "output", None),
+                                "arguments": getattr(t, "arguments", None),
+                            }
+                            for t in getattr(ai_message, "tool_calls", [])
+                        ]
+                        if format_kwargs.get("include_tool_calls", True)
+                        else []
+                    ),
                 }
                 # FEAT-273: envelope-complete per output — carry the A2UI envelope in
                 # the final stream dict only (defensive getattr for legacy messages).
-                a2ui_envelope = getattr(ai_message, 'a2ui_envelope', None)
+                # FEAT-470: the envelope is the v1.0 sobre (dict, e.g.
+                # {"version": "v1.0", "createSurface": {...}}) or a list of sobres;
+                # this handler is envelope-agnostic and forwards it verbatim — v1.0-ness
+                # is guaranteed upstream by parrot.outputs.a2ui.emission.finalize_a2ui_response.
+                a2ui_envelope = getattr(ai_message, "a2ui_envelope", None)
                 if a2ui_envelope is not None:
-                    envelope['a2ui_envelope'] = a2ui_envelope
-                separator = b'\n\x00'
-                await stream_resp.write(
-                    separator + json_encoder(envelope).encode('utf-8')
-                )
+                    envelope["a2ui_envelope"] = a2ui_envelope
+                separator = b"\n\x00"
+                await stream_resp.write(separator + json_encoder(envelope).encode("utf-8"))
                 await stream_resp.drain()
 
             # Persist chat turn via ChatStorage
             try:
-                chat_storage = self.request.app.get('chat_storage')
+                chat_storage = self.request.app.get("chat_storage")
                 if chat_storage and user_id and session_id and ai_message:
                     loop = asyncio.get_running_loop()
                     _task = loop.create_task(
@@ -2720,37 +2611,42 @@ class AgentTalk(BaseView):
                             user_id=user_id,
                             session_id=session_id,
                             agent_id=agent_name,
-                            user_message=ai_message.input or '',
-                            assistant_response=ai_message.response or '',
+                            user_message=ai_message.input or "",
+                            assistant_response=ai_message.response or "",
                             output=ai_message.response or str(ai_message.output),
                             output_mode=str(output_mode),
                             data=ai_message.data,
                             code=str(ai_message.code) if ai_message.code else None,
-                            model=getattr(ai_message, 'model', None),
-                            provider=getattr(ai_message, 'provider', None),
+                            model=getattr(ai_message, "model", None),
+                            provider=getattr(ai_message, "provider", None),
                             response_time_ms=response_time_ms,
                             tool_calls=[
                                 {
-                                    'name': getattr(t, 'name', 'unknown'),
-                                    'status': getattr(t, 'status', 'completed'),
-                                    'output': getattr(t, 'output', None),
-                                    'arguments': getattr(t, 'arguments', None),
+                                    "name": getattr(t, "name", "unknown"),
+                                    "status": getattr(t, "status", "completed"),
+                                    "output": getattr(t, "output", None),
+                                    "arguments": getattr(t, "arguments", None),
                                 }
-                                for t in getattr(ai_message, 'tool_calls', [])
+                                for t in getattr(ai_message, "tool_calls", [])
                             ],
                             sources=[
                                 s if isinstance(s, dict) else s.to_dict()
-                                for s in getattr(ai_message, 'source_documents', [])
+                                for s in getattr(ai_message, "source_documents", [])
                             ],
                         )
                     )
                     # Log any exception raised inside the background save so it is
                     # not silently swallowed when the task is garbage-collected.
                     _task.add_done_callback(
-                        lambda t: self.logger.warning(
-                            "Streamed chat-turn save failed for agent '%s': %s",
-                            agent_name, t.exception(),
-                        ) if not t.cancelled() and t.exception() else None
+                        lambda t: (
+                            self.logger.warning(
+                                "Streamed chat-turn save failed for agent '%s': %s",
+                                agent_name,
+                                t.exception(),
+                            )
+                            if not t.cancelled() and t.exception()
+                            else None
+                        )
                     )
             except Exception as ex:
                 self.logger.warning("Error scheduling streamed chat turn save: %s", ex)
@@ -2777,10 +2673,8 @@ class AgentTalk(BaseView):
         except asyncio.CancelledError:
             self.logger.info("Stream cancelled by client for agent '%s'.", agent_name)
         except Exception as e:
-            error_payload = json_encoder({'error': str(e)})
-            await stream_resp.write(
-                f'\n\x00{error_payload}'.encode('utf-8')
-            )
+            error_payload = json_encoder({"error": str(e)})
+            await stream_resp.write(f"\n\x00{error_payload}".encode("utf-8"))
             self.logger.error("Error in stream response for agent '%s': %s", agent_name, e)
         finally:
             if avatar_speaker is not None:
@@ -2817,6 +2711,9 @@ class AgentTalk(BaseView):
             response = response.response
 
         # FEAT-273: A2UI mode — surface the declarative envelope in the JSON response.
+        # FEAT-470: "a2ui_envelope" here is the v1.0 sobre (dict) or a list of sobres,
+        # forwarded verbatim (envelope-agnostic) — v1.0-ness is guaranteed upstream by
+        # parrot.outputs.a2ui.emission.finalize_a2ui_response.
         if getattr(response, "output_mode", None) == OutputMode.A2UI:
             return self.json_response(
                 {
@@ -2842,20 +2739,20 @@ class AgentTalk(BaseView):
             )
 
         output = response.output
-        if output_format == 'json':
+        if output_format == "json":
             # Return structured JSON response
             if isinstance(output, pd.DataFrame):
                 # Convert DataFrame to dict
-                output = output.to_dict(orient='records')
+                output = output.to_dict(orient="records")
             elif isinstance(output, Panel):
                 # Extract text from Panel or stringify it to avoid serialization error
                 # Ideally we want the raw content, but output might be just the visual container
                 try:
                     # Try to get the renderable content if it's Syntax (JSON)
-                    if hasattr(output.renderable, 'code'):
+                    if hasattr(output.renderable, "code"):
                         output = output.renderable.code
                     else:
-                        output = str(output.renderable) if hasattr(output, 'renderable') else str(output)
+                        output = str(output.renderable) if hasattr(output, "renderable") else str(output)
                 except Exception:
                     output = str(output)
             elif isinstance(output, BaseModel):
@@ -2864,15 +2761,15 @@ class AgentTalk(BaseView):
                 # Previously this branch collapsed the model to ``.explanation``
                 # alone, throwing away ``.query``, ``.data``, etc.
                 output = output.model_dump(mode="json")
-            elif hasattr(output, 'explanation'):
+            elif hasattr(output, "explanation"):
                 output = output.explanation
             # Safety net: ensure output is JSON-serializable
             if not isinstance(output, (str, dict, list, int, float, bool, type(None))):
                 # Use response.response (already serialized HTML) if available
                 output = response.response if isinstance(response.response, str) else str(output)
-            output_mode = response.output_mode or 'json'
-            usage = getattr(response, 'usage', None)
-            created_at = getattr(response, 'created_at', None)
+            output_mode = response.output_mode or "json"
+            usage = getattr(response, "usage", None)
+            created_at = getattr(response, "created_at", None)
             obj_response = {
                 "input": response.input,
                 "output": output,
@@ -2881,39 +2778,48 @@ class AgentTalk(BaseView):
                 "output_mode": output_mode,
                 "code": str(response.code) if response.code else None,
                 "metadata": {
-                    "model": getattr(response, 'model', None),
-                    "provider": getattr(response, 'provider', None),
-                    "session_id": str(getattr(response, 'session_id', '')),
-                    "turn_id": str(getattr(response, 'turn_id', '')),
+                    "model": getattr(response, "model", None),
+                    "provider": getattr(response, "provider", None),
+                    "session_id": str(getattr(response, "session_id", "")),
+                    "turn_id": str(getattr(response, "turn_id", "")),
                     "user_id": (
-                        str(getattr(response, 'user_id', ''))
-                        if getattr(response, 'user_id', None) is not None else None
+                        str(getattr(response, "user_id", ""))
+                        if getattr(response, "user_id", None) is not None
+                        else None
                     ),
                     "response_time": response_time_ms,
                     "usage": usage.model_dump() if usage is not None else None,
-                    "finish_reason": getattr(response, 'finish_reason', None),
-                    "stop_reason": getattr(response, 'stop_reason', None),
+                    "finish_reason": getattr(response, "finish_reason", None),
+                    "stop_reason": getattr(response, "stop_reason", None),
                     "created_at": created_at.isoformat() if created_at is not None else None,
                 },
-                "sources": [
-                    source if isinstance(source, dict) else source.to_dict()
-                    for source in getattr(response, 'source_documents', [])
-                ] if format_kwargs.get('include_sources', True) else [],
-                "tool_calls": [
-                    {
-                        "name": getattr(tool, 'name', 'unknown'),
-                        "status": getattr(tool, 'status', 'completed'),
-                        "output": getattr(tool, 'output', None),
-                        'arguments': getattr(tool, 'arguments', None)
-                    }
-                    for tool in getattr(response, 'tool_calls', [])
-                ] if format_kwargs.get('include_tool_calls', True) else []
+                "sources": (
+                    [
+                        source if isinstance(source, dict) else source.to_dict()
+                        for source in getattr(response, "source_documents", [])
+                    ]
+                    if format_kwargs.get("include_sources", True)
+                    else []
+                ),
+                "tool_calls": (
+                    [
+                        {
+                            "name": getattr(tool, "name", "unknown"),
+                            "status": getattr(tool, "status", "completed"),
+                            "output": getattr(tool, "output", None),
+                            "arguments": getattr(tool, "arguments", None),
+                        }
+                        for tool in getattr(response, "tool_calls", [])
+                    ]
+                    if format_kwargs.get("include_tool_calls", True)
+                    else []
+                ),
             }
             # self.logger.debug('Agent response: %s', obj_response)
 
             # Persist chat turn via ChatStorage (hot + cold)
             try:
-                chat_storage = self.request.app.get('chat_storage')
+                chat_storage = self.request.app.get("chat_storage")
                 if chat_storage and user_id and session_id:
                     loop = asyncio.get_running_loop()
                     loop.create_task(
@@ -2921,28 +2827,28 @@ class AgentTalk(BaseView):
                             turn_id=client_message_id,
                             user_id=user_id,
                             session_id=session_id,
-                            agent_id=agent_name or '',
-                            user_message=response.input or '',
-                            assistant_response=response.response or '',
+                            agent_id=agent_name or "",
+                            user_message=response.input or "",
+                            assistant_response=response.response or "",
                             output=output,
                             output_mode=output_mode,
                             data=response.data,
                             code=str(response.code) if response.code else None,
-                            model=getattr(response, 'model', None),
-                            provider=getattr(response, 'provider', None),
+                            model=getattr(response, "model", None),
+                            provider=getattr(response, "provider", None),
                             response_time_ms=response_time_ms,
                             tool_calls=[
                                 {
-                                    'name': getattr(t, 'name', 'unknown'),
-                                    'status': getattr(t, 'status', 'completed'),
-                                    'output': getattr(t, 'output', None),
-                                    'arguments': getattr(t, 'arguments', None),
+                                    "name": getattr(t, "name", "unknown"),
+                                    "status": getattr(t, "status", "completed"),
+                                    "output": getattr(t, "output", None),
+                                    "arguments": getattr(t, "arguments", None),
                                 }
-                                for t in getattr(response, 'tool_calls', [])
+                                for t in getattr(response, "tool_calls", [])
                             ],
                             sources=[
                                 s if isinstance(s, dict) else s.to_dict()
-                                for s in getattr(response, 'source_documents', [])
+                                for s in getattr(response, "source_documents", [])
                             ],
                         )
                     )
@@ -2953,7 +2859,7 @@ class AgentTalk(BaseView):
             # FEAT-224 (G5): Extended to recognise structured_* modes and persist the
             # artifact definition (the presentation config), not response.data (the rows).
             try:
-                artifact_store = self.request.app.get('artifact_store')
+                artifact_store = self.request.app.get("artifact_store")
                 if artifact_store and user_id and session_id:
                     from datetime import datetime as _dt, timezone as _tz
                     from parrot.storage.models import (  # noqa: E501 pylint: disable=import-outside-toplevel
@@ -2965,25 +2871,22 @@ class AgentTalk(BaseView):
 
                     # Legacy type map (chart / dataframe / export — rows path).
                     _legacy_type_map = {
-                        'chart': ArtifactType.CHART,
-                        'dataframe': ArtifactType.DATAFRAME,
-                        'export': ArtifactType.EXPORT,
+                        "chart": ArtifactType.CHART,
+                        "dataframe": ArtifactType.DATAFRAME,
+                        "export": ArtifactType.EXPORT,
                     }
                     # FEAT-224: structured_* type map (config path).
                     _structured_type_map = {
-                        'structured_chart': ArtifactType.CHART,
-                        'structured_map':   ArtifactType.MAP,
-                        'structured_table': ArtifactType.TABLE,
+                        "structured_chart": ArtifactType.CHART,
+                        "structured_map": ArtifactType.MAP,
+                        "structured_table": ArtifactType.TABLE,
                     }
                     _type_map = {**_legacy_type_map, **_structured_type_map}
 
                     _is_structured = output_mode in _structured_type_map
-                    _is_legacy = (
-                        output_mode in _legacy_type_map
-                        and response.data is not None
-                    )
+                    _is_legacy = output_mode in _legacy_type_map and response.data is not None
 
-                    if _is_structured and getattr(response, 'artifacts', None):
+                    if _is_structured and getattr(response, "artifacts", None):
                         # FEAT-224 path: persist the envelope definition (config),
                         # not response.data (rows), and reuse the agent-minted id.
                         _env = next(
@@ -2995,7 +2898,7 @@ class AgentTalk(BaseView):
                             # Prefer the id the agent already minted (stable across
                             # envelope + persistence; avoids double id divergence).
                             _art_id = (
-                                getattr(response, 'artifact_id', None)
+                                getattr(response, "artifact_id", None)
                                 or _env.get("artifactId")
                                 or f"{output_mode}-{_uuid.uuid4().hex[:8]}"
                             )
@@ -3014,7 +2917,7 @@ class AgentTalk(BaseView):
                             asyncio.get_running_loop().create_task(
                                 artifact_store.save_artifact(
                                     user_id=user_id,
-                                    agent_id=agent_name or '',
+                                    agent_id=agent_name or "",
                                     session_id=session_id,
                                     artifact=_artifact,
                                 )
@@ -3025,8 +2928,7 @@ class AgentTalk(BaseView):
                         _now = _dt.now(_tz.utc)
                         _art_id = f"{output_mode}-{_uuid.uuid4().hex[:8]}"
                         _definition = (
-                            response.data if isinstance(response.data, dict)
-                            else {"raw": str(response.data)[:10000]}
+                            response.data if isinstance(response.data, dict) else {"raw": str(response.data)[:10000]}
                         )
                         _artifact = Artifact(
                             artifact_id=_art_id,
@@ -3041,7 +2943,7 @@ class AgentTalk(BaseView):
                         asyncio.get_running_loop().create_task(
                             artifact_store.save_artifact(
                                 user_id=user_id,
-                                agent_id=agent_name or '',
+                                agent_id=agent_name or "",
                                 session_id=session_id,
                                 artifact=_artifact,
                             )
@@ -3049,12 +2951,10 @@ class AgentTalk(BaseView):
             except Exception as ex:
                 self.logger.warning("Error scheduling artifact auto-save: %s", ex)
 
-            return web.json_response(
-                obj_response, dumps=json_encoder, content_type='application/json'
-            )
+            return web.json_response(obj_response, dumps=json_encoder, content_type="application/json")
 
-        elif output_format == 'html':
-            interactive = format_kwargs.get('interactive', False)
+        elif output_format == "html":
+            interactive = format_kwargs.get("interactive", False)
             if interactive:
                 return self._serve_panel_dashboard(response)
 
@@ -3062,20 +2962,16 @@ class AgentTalk(BaseView):
             html_content = response.response
             if isinstance(html_content, str):
                 html_str = html_content
-            elif hasattr(html_content, '_repr_html_'):
+            elif hasattr(html_content, "_repr_html_"):
                 # Panel/IPython displayable object (for HTML mode)
                 html_str = html_content._repr_html_()
-            elif hasattr(html_content, '__str__'):
+            elif hasattr(html_content, "__str__"):
                 # Other objects with string representation
                 html_str = str(html_content)
             else:
                 html_str = str(html_content)
 
-            return web.Response(
-                text=html_str,
-                content_type='text/html',
-                charset='utf-8'
-            )
+            return web.Response(text=html_str, content_type="text/html", charset="utf-8")
 
         else:  # markdown or text
             # Return plain text/markdown response
@@ -3086,16 +2982,16 @@ class AgentTalk(BaseView):
                 content = str(content)
 
             # Optionally append sources
-            if format_kwargs.get('include_sources', False) and getattr(response, 'source_documents', []):
+            if format_kwargs.get("include_sources", False) and getattr(response, "source_documents", []):
                 content += "\n\n## Sources\n"
                 for idx, source in enumerate(response.source_documents, 1):
-                    src_content = source.get('source', '') if isinstance(source, dict) else getattr(source, 'source', '')
+                    src_content = (
+                        source.get("source", "") if isinstance(source, dict) else getattr(source, "source", "")
+                    )
                     content += f"\n{idx}. {src_content[:200]}...\n"
 
             return web.Response(
-                text=content,
-                content_type='text/plain' if output_format == 'text' else 'text/markdown',
-                charset='utf-8'
+                text=content, content_type="text/plain" if output_format == "text" else "text/markdown", charset="utf-8"
             )
 
         return output
@@ -3170,13 +3066,10 @@ class AgentTalk(BaseView):
 
         if want_html:
             # Serve the artifact HTML directly.
-            html_body = (
-                response.output
-                if isinstance(response.output, str)
-                else str(response.output or "")
-            )
+            html_body = response.output if isinstance(response.output, str) else str(response.output or "")
             from parrot.handlers.csp import build_csp_headers, frame_ancestors_from_env
             from parrot.models.infographic import JSBundle
+
             meta = dict(getattr(response, "metadata", None) or {})
             raw_bundles = meta.get("js_bundles", [])
             bundles = [JSBundle.model_validate(b) if isinstance(b, dict) else b for b in raw_bundles]
@@ -3218,7 +3111,9 @@ class AgentTalk(BaseView):
             "tool_calls": [],
         }
         return web.json_response(
-            obj_response, dumps=json_encoder, content_type="application/json",
+            obj_response,
+            dumps=json_encoder,
+            content_type="application/json",
         )
 
     def _serve_panel_dashboard(self, response: AIMessage) -> web.Response:
@@ -3237,11 +3132,7 @@ class AgentTalk(BaseView):
         try:
             panel_obj = response.response
             # Create temporary file for the Panel HTML
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix='.html',
-                delete=False
-            ) as tmp:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as tmp:
                 tmp_path = tmp.name
 
             try:
@@ -3250,19 +3141,15 @@ class AgentTalk(BaseView):
                     tmp_path,
                     embed=True,  # Embed all JS/CSS resources
                     title=f"AI Agent Response - {response.session_id[:8] if response.session_id else 'interactive'}",
-                    resources='inline'  # Inline all resources
+                    resources="inline",  # Inline all resources
                 )
 
                 # Read the HTML content
-                with open(tmp_path, 'r', encoding='utf-8') as f:
+                with open(tmp_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
 
                 # Return as HTML response
-                return web.Response(
-                    text=html_content,
-                    content_type='text/html',
-                    charset='utf-8'
-                )
+                return web.Response(text=html_content, content_type="text/html", charset="utf-8")
 
             finally:
                 # Clean up temporary file
@@ -3273,55 +3160,46 @@ class AgentTalk(BaseView):
                         self.logger.warning("Failed to delete temp file %s: %s", tmp_path, e)
 
         except ImportError:
-            self.logger.error(
-                "Panel library not available for interactive dashboards"
-            )
+            self.logger.error("Panel library not available for interactive dashboards")
             # Fallback to static HTML
-            return web.Response(
-                text=str(response.content),
-                content_type='text/html',
-                charset='utf-8'
-            )
+            return web.Response(text=str(response.content), content_type="text/html", charset="utf-8")
         except Exception as e:
             self.logger.error("Error serving Panel dashboard: %s", e, exc_info=True)
             # Fallback to error response
-            return self.error(
-                f"Error rendering interactive dashboard: {e}",
-                status=500
-            )
+            return self.error(f"Error rendering interactive dashboard: {e}", status=500)
 
     async def debug_agent(self, agent):
         debug_info = {}
 
         # Safely get dataframes if available
-        if hasattr(agent, 'dataframes') and agent.dataframes:
+        if hasattr(agent, "dataframes") and agent.dataframes:
             debug_info["dataframes"] = list(agent.dataframes.keys())
         else:
             debug_info["dataframes"] = []
 
         # Safely get df_metadata if available
-        if hasattr(agent, 'df_metadata') and agent.df_metadata:
-            debug_info["df_metadata"] = {k: v['shape'] for k, v in agent.df_metadata.items()}
+        if hasattr(agent, "df_metadata") and agent.df_metadata:
+            debug_info["df_metadata"] = {k: v["shape"] for k, v in agent.df_metadata.items()}
         else:
             debug_info["df_metadata"] = {}
 
         # Safely get pandas_tool if available
-        if hasattr(agent, '_get_python_pandas_tool'):
+        if hasattr(agent, "_get_python_pandas_tool"):
             pandas_tool = agent._get_python_pandas_tool()
             debug_info["pandas_tool"] = {
                 "exists": pandas_tool is not None,
-                "dataframes": list(pandas_tool.dataframes.keys()) if pandas_tool else []
+                "dataframes": list(pandas_tool.dataframes.keys()) if pandas_tool else [],
             }
         else:
             debug_info["pandas_tool"] = {"exists": False, "dataframes": []}
 
         # Safely get metadata_tool if available
-        if hasattr(agent, '_get_metadata_tool'):
+        if hasattr(agent, "_get_metadata_tool"):
             metadata_tool = agent._get_metadata_tool()
             debug_info["metadata_tool"] = {
                 "exists": metadata_tool is not None,
                 "dataframes": list(metadata_tool.dataframes.keys()) if metadata_tool else [],
-                "metadata": list(metadata_tool.metadata.keys()) if metadata_tool else []
+                "metadata": list(metadata_tool.metadata.keys()) if metadata_tool else [],
             }
         else:
             debug_info["metadata_tool"] = {"exists": False, "dataframes": [], "metadata": []}

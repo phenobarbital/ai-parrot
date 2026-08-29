@@ -3004,6 +3004,9 @@ def sync() -> None:
 
     The local identity used to attribute writes and filter `pull` is
     always ``human:<local-user>`` in v1 — there is no override flag yet.
+
+    `sync obsidian` is the third direction: a one-way mirror of wiki
+    planes into an Obsidian vault, configured by page category/folder.
     """
 
 
@@ -3087,6 +3090,90 @@ def sync_pull_cmd(path_: str | None, target_env: str, dry_run: bool, include_own
         f"pulled: created={report.created} updated={report.updated} "
         f"skipped-older={report.skipped_older} skipped-own={report.skipped_own}"
     )
+
+
+@sync.command("obsidian")
+@path_option
+@click.option(
+    "--vault",
+    "vault_opt",
+    default=None,
+    help="Obsidian vault root to sync into (default: obsidian_sync.vault_dir, then the project vault_dir).",
+)
+@click.option(
+    "--ns",
+    "ns_opt",
+    default=None,
+    help=(
+        "Comma-separated planes to sync: 'local', declared namespace "
+        "names, or 'all' (default: obsidian_sync.namespaces, else 'local')."
+    ),
+)
+@click.option(
+    "--category",
+    "category_opt",
+    multiple=True,
+    help="Sync only these page categories (repeatable; overrides obsidian_sync.categories).",
+)
+@click.option(
+    "--prune/--no-prune",
+    "prune_opt",
+    default=None,
+    help=(
+        "Also delete previously synced notes whose page vanished or is no "
+        "longer selected. Only notes carrying the wiki_sync frontmatter "
+        "marker are ever deleted (default: obsidian_sync.prune)."
+    ),
+)
+@click.option("--dry-run", is_flag=True, help="Compute and print the report; write nothing.")
+@click.option("--verbose", "-v", "verbose_", is_flag=True, help="Print one line per note.")
+def sync_obsidian_cmd(
+    path_: str | None,
+    vault_opt: str | None,
+    ns_opt: str | None,
+    category_opt: tuple[str, ...],
+    prune_opt: bool | None,
+    dry_run: bool,
+    verbose_: bool,
+) -> None:
+    """Mirror wiki planes into an Obsidian vault as markdown notes.
+
+    Which categories sync and which vault folder each one maps onto is
+    driven by the ``obsidian_sync`` section of ``.parrot/wiki.json``
+    (categories/folders/root_folder/namespaces); flags override per run.
+    One-way wiki -> vault: notes land under the configured root folder
+    with a ``wiki_sync`` frontmatter marker, and edges between synced
+    pages become ``[[wikilinks]]`` in a Related section.
+    """
+    from parrot.knowledge.wiki.obsidian_sync import ObsidianSyncError, sync_obsidian
+
+    root, _config = _resolve_project(path_)
+    namespaces = [part.strip() for part in ns_opt.split(",") if part.strip()] if ns_opt else None
+    try:
+        report = _run(
+            sync_obsidian(
+                root,
+                vault=vault_opt,
+                namespaces=namespaces,
+                categories=list(category_opt) or None,
+                prune=prune_opt,
+                dry_run=dry_run,
+            )
+        )
+    except ObsidianSyncError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if report.dry_run:
+        click.echo("DRY RUN — nothing applied")
+    planes = ",".join(report.namespaces) or "(none)"
+    click.echo(
+        f"synced {planes} -> {report.vault}: created={report.created} "
+        f"updated={report.updated} unchanged={report.unchanged} pruned={report.pruned}"
+    )
+    for line in report.skipped_namespaces:
+        click.echo(f"(namespace skipped: {line})")
+    if verbose_:
+        for line in report.details:
+            click.echo(line)
 
 
 # --------------------------------------------------------------------------

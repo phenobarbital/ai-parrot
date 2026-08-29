@@ -16,15 +16,12 @@ import asyncio
 import html
 import logging
 
-import parrot.outputs.a2ui.catalog.components  # noqa: F401 — ensure registration
+import parrot.outputs.a2ui.catalog.basic
+import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
 from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.models import CreateSurface
-from parrot.outputs.a2ui.renderers import (
-    AbstractA2UIRenderer,
-    RendererCapabilities,
-    register_a2ui_renderer,
-)
+from parrot.outputs.a2ui.renderers import RendererCapabilities, register_a2ui_renderer
 from parrot.outputs.a2ui_renderers.ssr_html import SSRHTMLRenderer
 
 logger = logging.getLogger(__name__)
@@ -35,7 +32,7 @@ _PDF_EXTRA = "ai-parrot-visualizations[a2ui-pdf]"
 
 def _import_weasyprint():
     """Import weasyprint's ``HTML`` (indirection point so tests can force failure)."""
-    from weasyprint import HTML  # noqa: PLC0415 — lazy by design
+    from weasyprint import HTML
 
     return HTML
 
@@ -46,8 +43,7 @@ def _load_weasyprint():
         return _import_weasyprint()
     except ImportError as exc:
         raise ImportError(
-            "The A2UI pdf renderer requires weasyprint. "
-            f"Install it with: pip install {_PDF_EXTRA}"
+            "The A2UI pdf renderer requires weasyprint. " f"Install it with: pip install {_PDF_EXTRA}"
         ) from exc
 
 
@@ -94,10 +90,25 @@ def _chart_svg(props: dict) -> str:
         supports_actions=False,
         supports_updates=False,
         output="application/pdf",
+        # Inherits SSR's 18-primitive set minus Video/AudioPlayer — a static
+        # rasterized PDF cannot play media; both degrade to a link (spec
+        # Scope: "declara supported_components sin Video/Audio").
+        supported_components=SSRHTMLRenderer.capabilities.supported_components - {"Video", "AudioPlayer"},
     ),
 )
-class PDFRenderer(AbstractA2UIRenderer):
-    """weasyprint-backed PDF renderer (SSR-HTML → static SVG charts → PDF)."""
+class PDFRenderer(SSRHTMLRenderer):
+    """weasyprint-backed PDF renderer (SSR-HTML → static SVG charts → PDF).
+
+    Inherits :class:`SSRHTMLRenderer`'s v1.0 dispatch/reconstruction wholesale
+    (spec Scope: "hereda del SSR") — only ``_UNSUPPORTED`` is overridden so
+    Video/AudioPlayer always degrade to a visible notice (weasyprint runs no
+    JS/media playback), and ``render()`` additionally rasterizes the
+    resulting HTML to PDF via weasyprint, with Chart components pre-rendered
+    to static SVG first (weasyprint runs no JS, so Chart's lowered
+    text-only form gets a visual alongside it).
+    """
+
+    _UNSUPPORTED: frozenset[str] = frozenset({"Video", "AudioPlayer"})
 
     async def render(
         self,
@@ -107,7 +118,7 @@ class PDFRenderer(AbstractA2UIRenderer):
         deep_links=None,
     ) -> RenderedArtifact:
         """Render an envelope to a PDF ``RenderedArtifact`` (weasyprint)."""
-        document = await self._build_intermediate_html(envelope, deep_links=deep_links)
+        document, degraded = await self._build_intermediate_html(envelope, deep_links=deep_links)
         # weasyprint's write_pdf is blocking — run it off the event loop.
         pdf_bytes = await asyncio.to_thread(self._rasterize, document)
         return RenderedArtifact(
@@ -118,21 +129,22 @@ class PDFRenderer(AbstractA2UIRenderer):
             title=envelope.surface_id,
             surface=_SURFACE_NAME,
             deep_links=list(deep_links or []),
+            metadata={"degraded": degraded} if degraded else {},
         )
 
-    async def _build_intermediate_html(self, envelope: CreateSurface, *, deep_links=None) -> str:
+    async def _build_intermediate_html(self, envelope: CreateSurface, *, deep_links=None) -> tuple[str, list[dict]]:
         """Produce the baked, self-contained HTML fed to weasyprint (charts as SVG)."""
-        ssr_artifact = await SSRHTMLRenderer().render(envelope, deep_links=deep_links)
+        ssr_artifact = await super().render(envelope, deep_links=deep_links)
         document = ssr_artifact.content.decode("utf-8")
 
         # Pre-render Chart components to static SVG (weasyprint runs no JS).
+        # `Chart` is a Parrot composite: its baked dict carries its own
+        # top-level props (v1.0 — never nested under "properties").
         baked = bake_envelope(envelope)
-        svgs = "".join(
-            _chart_svg(bc["properties"]) for bc in baked if bc["component"] == "Chart"
-        )
+        svgs = "".join(_chart_svg(bc) for bc in baked if bc["component"] == "Chart")
         if svgs:
             document = document.replace("</body>", f'<div class="a2ui-charts">{svgs}</div></body>')
-        return document
+        return document, ssr_artifact.metadata.get("degraded", [])
 
     def _rasterize(self, document: str) -> bytes:
         """Rasterize an HTML document to PDF bytes with weasyprint (blocking)."""

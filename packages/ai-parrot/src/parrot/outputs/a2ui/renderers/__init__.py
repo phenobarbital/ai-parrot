@@ -18,8 +18,10 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
 from parrot.outputs.a2ui.models import CreateSurface
 
 __all__ = [
@@ -36,6 +38,7 @@ _RENDERER_NAMESPACE = "parrot.outputs.a2ui_renderers"
 
 #: Pip extra that ships the renderers.
 _A2UI_EXTRA = "ai-parrot-visualizations[a2ui]"
+
 
 def _extra_for(name: str) -> str:
     """Return the pip extra that ships the renderer ``name``.
@@ -54,12 +57,22 @@ class RendererCapabilities(BaseModel):
         supports_updates: Whether the renderer supports incremental updates.
         output: The output mime type (e.g. ``"text/html"``, ``"application/pdf"``)
             or the literal ``"live"`` for interactive live surfaces.
+        supported_catalog_ids: Catalog ids this renderer can resolve
+            components against (FEAT-470 TASK-2543). Defaults to the two
+            catalogs every renderer in this codebase currently understands
+            (the official Basic Catalog + the Parrot custom catalog).
+        supported_components: Component names this renderer natively
+            renders. A component name absent from this set degrades (spec:
+            "nunca excepción silenciosa") — see
+            :mod:`parrot.outputs.a2ui.renderers.degrade`.
     """
 
     interactive: bool
     supports_actions: bool
     supports_updates: bool
     output: str
+    supported_catalog_ids: list[str] = Field(default_factory=lambda: [BASIC_CATALOG_ID, DEFAULT_CATALOG_ID])
+    supported_components: set[str] = Field(default_factory=set)
 
 
 class AbstractA2UIRenderer(ABC):
@@ -73,9 +86,7 @@ class AbstractA2UIRenderer(ABC):
     capabilities: RendererCapabilities
 
     @abstractmethod
-    async def render(
-        self, envelope: CreateSurface, *, bake: bool = True
-    ) -> "Any | str":
+    async def render(self, envelope: CreateSurface, *, bake: bool = True) -> "Any | str":
         """Render an envelope to a ``RenderedArtifact`` (baked) or a string.
 
         Args:

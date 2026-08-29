@@ -64,6 +64,17 @@ dependencies = [
     # chunking used by AbstractLoader. Moved here from ai-parrot-loaders to
     # break the circular import (loaders depends on core).
     "semantic-text-splitter>=0.30,<1.0",
+    # A2UI v1.0 catalog/envelope validation against the vendored official
+    # JSON Schemas (parrot.outputs.a2ui.catalog) — FEAT-470 hard dependency
+    # (G8: jsonschema>=4.20 for Draft 2020-12 + `referencing`-based $ref
+    # resolution between the vendored spec/*.json documents).
+    "jsonschema>=4.20",
+    # `_unicode_aware_jsonschema` (parrot.outputs.a2ui.catalog.__init__)
+    # monkeypatches jsonschema's format-checker internals to evaluate the
+    # `\p{XID_Start}`-style Unicode property escape used by a vendored A2UI
+    # schema — Python's stdlib `re` doesn't support `\p{...}`. Declared
+    # explicitly (was previously only present via transitive resolution).
+    "regex>=2023.0",
     # Navigator stack (core)
     "navconfig[default]>=2.2.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
@@ -137,6 +148,15 @@ dependencies = [
     # enables episodic memory without an explicit pgvector DSN.
     "faiss-cpu>=1.9.0",
     "navigator-eventbus>=0.2.1",
+    # wikitoolkit ships in core (project.scripts) and its import chain
+    # (wiki/cli.py → graphindex/__init__.py → signals.py / communities.py /
+    # builder.py / sqlite_reader.py) imports these unconditionally at module
+    # level, so a bare install must carry them (FEAT-471).
+    "rustworkx>=0.15",
+    "networkx>=3.0",
+    "pathspec>=0.12",
+    "aiosqlite>=0.17",
+    "orjson>=3.9",
 ]
 
 [project.scripts]
@@ -209,14 +229,11 @@ flowtask = [
 
 # GraphIndex knowledge graph indexing (FEAT-187)
 # Note: faiss-cpu is already in core dependencies — not included here
+# Note: rustworkx, networkx, pathspec, aiosqlite, orjson moved to core
+# dependencies (FEAT-471) — wikitoolkit imports them unconditionally.
 graphindex = [
-    "rustworkx>=0.15",
-    "networkx>=3.0",
     "tree-sitter>=0.23",
     "tree-sitter-languages>=1.10",
-    "pathspec>=0.12",
-    "aiosqlite>=0.17",
-    "orjson>=3.9",
 ]
 
 # LLM Wiki pluggable per-language scanners (FEAT-394) — accurate
@@ -768,6 +785,9 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.pipelines" = ["*.sql"]
 # Core default compressor manifest (FEAT-380), loaded by CompressorRegistry.
 "parrot.tools.compression" = ["*.toml"]
+# Vendored official A2UI v1.0 JSON Schemas, pinned by SHA (FEAT-470),
+# loaded at runtime by parrot.outputs.a2ui.catalog.basic.load_spec.
+"parrot.outputs.a2ui.catalog.basic" = ["spec/*.json"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extensions) — TASK-1955 (FEAT-380) investigation note:
@@ -807,6 +827,7 @@ features = ["pyo3/extension-module"]
 asyncio_mode = "auto"
 markers = [
     "real_llm: mark a test as requiring a live LLM provider",
+    "network: mark a test as requiring live network access (e.g. spec drift checks)",
 ]
 
 [tool.cibuildwheel]

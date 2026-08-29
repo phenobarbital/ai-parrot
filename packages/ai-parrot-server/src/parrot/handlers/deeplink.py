@@ -52,10 +52,13 @@ def build_structured_message(payload: ResumePayload) -> str:
     """Serialize a resumed action into a structured user-message query string.
 
     The message is tagged so downstream can recognize it as an A2UI action resume
-    rather than free-form user text.
+    rather than free-form user text. Uses the same ``"a2ui_action"`` tag (and
+    v1.0 ``action`` envelope shape, FEAT-470 G6) as the Adaptive Cards native-input
+    submit path (``parrot.integrations.msteams.wrapper``, TASK-2545) so both ends
+    of the pipe agree on one wire contract.
     """
     return json.dumps(
-        {"type": "a2ui_action_resume", "action": payload.action_payload},
+        {"type": "a2ui_action", "action": payload.action_payload},
         sort_keys=True,
     )
 
@@ -124,7 +127,7 @@ def setup_deeplink_routes(
     the AgentTalk POST flow (``agent_name``/``query``/``session_id``/``user_id``).
     """
     handler = DeepLinkResumeHandler(service, invoker)
-    app.router.add_get(path, handler.landing)   # confirm page — safe for prescanners
-    app.router.add_post(path, handler.resume)   # consumes the single-use token
+    app.router.add_get(path, handler.landing)  # confirm page — safe for prescanners
+    app.router.add_post(path, handler.resume)  # consumes the single-use token
     logger.info("Registered A2UI deep-link web resume routes (GET landing + POST) at %s", path)
     return handler

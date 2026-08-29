@@ -29,6 +29,9 @@ dependencies = [
     "ai-parrot>=0.28.0",
     "PyGithub>=2.1",
     "ddgs>=9.5.2",
+    # parrot_tools.graphindex.toolkit imports rustworkx unconditionally at
+    # module level (FEAT-471).
+    "rustworkx>=0.15",
 ]
 
 [project.optional-dependencies]

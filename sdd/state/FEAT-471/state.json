@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-471",
+  "feature_slug": "add-rustworkx-dependency",
+  "phase": "committed",
+  "started_at": "2026-08-28T20:10:00Z",
+  "updated_at": "2026-08-28T20:20:00Z",
+  "mode": "auto",
+  "detected_mode": "investigation",
+  "budget": {"profile": "default", "files_read": 40, "grep_calls": 25, "git_calls": 10, "depth": 2, "wall_seconds": 300},
+  "consumed": {"files_read": 6, "grep_calls": 9, "git_calls": 1, "depth_reached": 1, "wall_seconds": 240},
+  "source": {"kind": "inline", "jira_key": null, "summary": "wikitoolkit needs rustworkx but it is not installed by `uv pip install ai-parrot` and `uv sync` removes it"},
+  "wiki_available": false,
+  "phases": {
+    "source": {"status": "complete"},
+    "plan": {"status": "complete", "approved_by_user": false, "note": "autonomous run — plan executed without interactive gate"},
+    "research": {"status": "complete", "completed_at": "2026-08-28T20:16:00Z", "findings_count": 7, "files_read": 6, "grep_calls": 9, "git_calls": 1},
+    "synthesis": {"status": "complete", "overall_confidence": "high", "claims_high": 5, "claims_medium": 1, "claims_low": 0},
+    "review_gate": {"status": "skipped", "reason": "autonomous run — summary printed for user review"},
+    "qa": {"status": "skipped", "reason": "autonomous run — 2 unknowns left open in proposal §5", "questions_total": 2, "questions_answered": 0},
+    "output": {"status": "complete", "proposal_path": "sdd/proposals/add-rustworkx-dependency.proposal.md", "commit_sha": "a55f6d764"}
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "errors": [],
+  "resume_hint": {"next_phase": "committed", "next_action": "commit proposal + state"}
+}

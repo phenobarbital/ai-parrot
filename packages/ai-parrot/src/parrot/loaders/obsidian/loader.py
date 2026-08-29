@@ -12,6 +12,7 @@ Two entry points:
   yields one :class:`Document` per note with canonical metadata, so a
   vault can also feed the generic RAG loader pipeline.
 """
+
 import asyncio
 import logging
 import time
@@ -68,9 +69,7 @@ class ObsidianVaultLoader:
         """
         notes = await self.vault.load_notes()
         canvases: list[ObsidianCanvas] = []
-        for info in await self.vault.list_files(
-            suffixes=frozenset({CANVAS_SUFFIX})
-        ):
+        for info in await self.vault.list_files(suffixes=frozenset({CANVAS_SUFFIX})):
             try:
                 canvases.append(await self.vault.get_canvas(info.path))
             except (ValueError, FileNotFoundError, UnicodeDecodeError) as exc:
@@ -80,9 +79,7 @@ class ObsidianVaultLoader:
     # ------------------------------------------------------------------ #
     # Embed-cycle detection (spec §7 gotcha)
     # ------------------------------------------------------------------ #
-    def _detect_embed_cycles(
-        self, notes: list[ObsidianNote], index: VaultIndex, depth_limit: int
-    ) -> list[str]:
+    def _detect_embed_cycles(self, notes: list[ObsidianNote], index: VaultIndex, depth_limit: int) -> list[str]:
         """Detect circular ``![[embeds]]`` beyond the depth limit.
 
         Returns:
@@ -104,18 +101,14 @@ class ObsidianVaultLoader:
 
         def _walk(start: str, node: str, depth: int, seen: set[str]) -> None:
             if depth > depth_limit:
-                message = (
-                    f"Embed depth limit ({depth_limit}) exceeded from "
-                    f"'{start}' — stopping recursion"
-                )
+                message = f"Embed depth limit ({depth_limit}) exceeded from " f"'{start}' — stopping recursion"
                 if message not in warnings:
                     warnings.append(message)
                 return
             for target in embed_graph.get(node, []):
                 if target in seen:
                     message = (
-                        f"Circular embed detected: '{target}' re-embedded "
-                        f"along the chain starting at '{start}'"
+                        f"Circular embed detected: '{target}' re-embedded " f"along the chain starting at '{start}'"
                     )
                     if message not in warnings:
                         warnings.append(message)
@@ -167,16 +160,12 @@ class ObsidianVaultLoader:
 
         notes, canvases = await self.discover()
         index = await self.vault.build_index()
-        report.errors.extend(
-            self._detect_embed_cycles(notes, index, config.embed_depth_limit)
-        )
+        report.errors.extend(self._detect_embed_cycles(notes, index, config.embed_depth_limit))
 
         try:
             await pageindex_toolkit.get_tree(tree_name)
         except (KeyError, FileNotFoundError, ValueError):
-            await pageindex_toolkit.create_tree(
-                tree_name, doc_name=self.vault.vault_name
-            )
+            await pageindex_toolkit.create_tree(tree_name, doc_name=self.vault.vault_name)
 
         semaphore = asyncio.Semaphore(config.concurrency)
 
@@ -193,9 +182,7 @@ class ObsidianVaultLoader:
                         metadata=self._node_metadata(note),
                     )
                     node_id = result.get("node_id")
-                    self._register_source(
-                        source_manager, rel, [node_id] if node_id else []
-                    )
+                    self._register_source(source_manager, rel, [node_id] if node_id else [])
                     report.notes_processed += 1
                     report.nodes_created += 1
                     report.files_added += 1
@@ -209,10 +196,7 @@ class ObsidianVaultLoader:
         for canvas in canvases:
             rel = canvas.path.as_posix()
             try:
-                card_titles = [
-                    card.text or card.file_path or card.url or card.card_id
-                    for card in canvas.cards
-                ]
+                card_titles = [card.text or card.file_path or card.url or card.card_id for card in canvas.cards]
                 result = await pageindex_toolkit.add_node(
                     tree_name,
                     title=canvas.title,
@@ -220,9 +204,7 @@ class ObsidianVaultLoader:
                     metadata={"obsidian_type": "canvas", "obsidian_path": rel},
                 )
                 node_id = result.get("node_id")
-                self._register_source(
-                    source_manager, rel, [node_id] if node_id else []
-                )
+                self._register_source(source_manager, rel, [node_id] if node_id else [])
                 report.canvas_processed += 1
                 report.nodes_created += 1
                 report.files_added += 1
@@ -269,9 +251,7 @@ class ObsidianVaultLoader:
             )
         started = time.monotonic()
         vault_root: Path = self.vault.vault_path
-        config = config or VaultIngestConfig(
-            vault_path=vault_root, tree_name=tree_name
-        )
+        config = config or VaultIngestConfig(vault_path=vault_root, tree_name=tree_name)
         report = VaultIngestReport(
             vault_path=str(vault_root),
             tree_name=tree_name,
@@ -306,16 +286,25 @@ class ObsidianVaultLoader:
                 full = vault_root / rel
                 source_id = source_manager.find_by_uri(str(full))
                 is_new = source_id is None
-                if not is_new and not source_manager.is_stale(source_id):
+                entry = None if is_new else source_manager.get_source(source_id)
+                # FEAT-472: a row can exist and be hash/mtime-fresh without
+                # this loader ever having ingested it — MeetingRegistry
+                # (parrot.agents.meeting_registry) registers the SAME
+                # sources row via add_source() for its own id-keyed dedup,
+                # independently of any wiki ingest. "not stale" used to be
+                # a reliable proxy for "already has PageIndex nodes"
+                # because this loader was the row's only writer; that
+                # assumption no longer holds, so an entry with no
+                # pages_generated yet is always (re-)ingested regardless
+                # of staleness.
+                never_ingested = entry is not None and not (entry.pages_generated or [])
+                if not is_new and not never_ingested and not source_manager.is_stale(source_id):
                     return
-                # Stale: drop the previous nodes, then re-ingest.
-                if not is_new:
-                    entry = source_manager.get_source(source_id)
+                # Stale (or never ingested): drop any previous nodes, then re-ingest.
+                if entry is not None:
                     for node_id in getattr(entry, "pages_generated", None) or []:
                         try:
-                            await pageindex_toolkit.delete_node(
-                                tree_name, node_id
-                            )
+                            await pageindex_toolkit.delete_node(tree_name, node_id)
                         except Exception as exc:  # noqa: BLE001
                             report.errors.append(f"delete {node_id}: {exc}")
                 try:
@@ -342,9 +331,7 @@ class ObsidianVaultLoader:
                         )
                         report.canvas_processed += 1
                     node_id = result.get("node_id")
-                    self._register_source(
-                        source_manager, rel, [node_id] if node_id else []
-                    )
+                    self._register_source(source_manager, rel, [node_id] if node_id else [])
                     report.nodes_created += 1
                     if is_new:
                         report.files_added += 1
@@ -378,14 +365,10 @@ class ObsidianVaultLoader:
             metadata["dataview_queries"] = list(note.dataview_queries)
         if note.frontmatter:
             # Keep only JSON-safe scalars to avoid store surprises.
-            metadata["frontmatter_keys"] = sorted(
-                str(key) for key in note.frontmatter
-            )
+            metadata["frontmatter_keys"] = sorted(str(key) for key in note.frontmatter)
         return metadata
 
-    def _register_source(
-        self, source_manager: Any, rel: str, node_ids: list[str]
-    ) -> None:
+    def _register_source(self, source_manager: Any, rel: str, node_ids: list[str]) -> None:
         """Register a vault file in the source manifest (best-effort)."""
         vault_root = getattr(self.vault, "vault_path", None)
         if source_manager is None or vault_root is None:
@@ -457,7 +440,5 @@ class ObsidianLoader(AbstractLoader):
                 links=[link.target for link in note.links],
                 dataview_queries=list(note.dataview_queries),
             )
-            documents.append(
-                self.create_document(content=note.content, path=path, metadata=metadata)
-            )
+            documents.append(self.create_document(content=note.content, path=path, metadata=metadata))
         return documents

@@ -1,61 +1,58 @@
-"""Golden + composition tests for Infographic/Report (TASK-1726)."""
+"""Golden + composition tests for Infographic/Report (FEAT-470 TASK-2539, v1.0)."""
 
 import json
 from pathlib import Path
 
 import pytest
-
 from parrot.outputs.a2ui.catalog import (
     CatalogValidationError,
-    ProducerOrigin,
     get_component,
     validate_envelope,
 )
-from parrot.outputs.a2ui.catalog.components import infographic, report
 
 # Ensure nested children (KPICard/Chart/DataTable) are registered for delegation.
-from parrot.outputs.a2ui.catalog import components as _all_components  # noqa: F401
+from parrot.outputs.a2ui.catalog import parrot as _all_parrot_components  # noqa: F401
+from parrot.outputs.a2ui.catalog.base import to_components
+from parrot.outputs.a2ui.catalog.parrot import infographic, report
 from parrot.outputs.a2ui.models import Component, CreateSurface
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
 def _dump(tree) -> bytes:
-    return json.dumps(tree.model_dump(), sort_keys=True).encode()
+    return json.dumps(tree.model_dump(mode="json", exclude_none=True), sort_keys=True, indent=2).encode() + b"\n"
 
 
 def _infographic() -> Component:
     return Component(
         id="blk-000",
         component="Infographic",
-        properties={
-            "title": "Q1 Overview",
-            "subtitle": "Financials",
-            "theme": "ocean",
-            "sections": [
-                {
-                    "heading": "Highlights",
-                    "components": [
-                        {"component": "KPICard", "properties": {"label": "Revenue", "value": 100}},
-                    ],
-                },
-                {
-                    "heading": "Trend",
-                    "text": "Growth continues.",
-                    "components": [
-                        {
-                            "component": "Chart",
-                            "properties": {
-                                "type": "line",
-                                "x": "month",
-                                "y": ["revenue"],
-                                "data": {"$bind": "/charts/blk-000"},
-                            },
+        title="Q1 Overview",
+        subtitle="Financials",
+        theme="ocean",
+        sections=[
+            {
+                "heading": "Highlights",
+                "components": [
+                    {"component": "KPICard", "properties": {"label": "Revenue", "value": 100}},
+                ],
+            },
+            {
+                "heading": "Trend",
+                "text": "Growth continues.",
+                "components": [
+                    {
+                        "component": "Chart",
+                        "properties": {
+                            "type": "line",
+                            "x": "month",
+                            "y": ["revenue"],
+                            "data": {"path": "/charts/blk-000"},
                         },
-                    ],
-                },
-            ],
-        },
+                    },
+                ],
+            },
+        ],
     )
 
 
@@ -63,15 +60,13 @@ def _report() -> Component:
     return Component(
         id="blk-010",
         component="Report",
-        properties={
-            "title": "Annual Report",
-            "metadata": {"year": 2026},
-            "summary": "A good year.",
-            "sections": [
-                {"heading": "Intro", "text": "Welcome."},
-                {"heading": "Results", "text": "Numbers up."},
-            ],
-        },
+        title="Annual Report",
+        reportMetadata={"year": 2026},
+        summary="A good year.",
+        sections=[
+            {"heading": "Intro", "text": "Welcome."},
+            {"heading": "Results", "text": "Numbers up."},
+        ],
     )
 
 
@@ -87,11 +82,18 @@ class TestInfographicComponent:
         two = _dump(infographic.InfographicComponent().lower(_infographic(), {}))
         assert one == two == (GOLDEN_DIR / "infographic_lowered.json").read_bytes()
 
-    def test_infographic_lowering_preserves_section_order(self):
+    def test_infographic_lowering_preserves_section_order_as_tabs(self):
         tree = infographic.InfographicComponent().lower(_infographic(), {})
-        sections = [c for c in tree.children if c.properties.get("role") == "section"]
-        headings = [s.children[0].properties["text"] for s in sections]
-        assert headings == ["Highlights", "Trend"]
+        tabs_node = next(c for c in tree.child.children if c.component == "Tabs")
+        titles = [tab.title for tab in tabs_node.tabs]
+        assert titles == ["Highlights", "Trend"]
+
+    def test_infographic_emits_v1_primitives(self):
+        tree = infographic.InfographicComponent().lower(_infographic(), {})
+        flat = to_components(tree)
+        root = Component(id="root", component="Column", children=[c.id for c in flat])
+        surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat])
+        validate_envelope(surface)
 
 
 class TestReportComponent:
@@ -105,59 +107,45 @@ class TestReportComponent:
 
     def test_report_lowering_no_silent_drops(self):
         tree = report.ReportComponent().lower(_report(), {})
-        blob = json.dumps(tree.model_dump())
+        blob = json.dumps(tree.model_dump(mode="json"))
         for survivor in ("Intro", "Welcome.", "Results", "Numbers up.", "A good year."):
             assert survivor in blob
 
 
-class TestNestedComponentValidation:
-    def _surface_with_nested(self, nested_component: str) -> CreateSurface:
-        return CreateSurface(
-            surfaceId="main",
-            catalogId="https://parrot.dev/catalogs/v1",
-            components=[
-                Component(
-                    id="blk-0",
-                    component="Infographic",
-                    properties={
-                        "title": "T",
-                        "sections": [
-                            {"heading": "H", "components": [
-                                {"component": nested_component, "properties": {}}
-                            ]}
-                        ],
-                    },
-                )
-            ],
+class TestNestedComponentDelegation:
+    """Nested composite children (Infographic/Report `sections[].components[]`) are
+    parrot-internal authoring data — validated by delegation at LOWER time (via
+    the registry), not by the generic wire-level `validate_envelope` (which only
+    understands the flat top-level adjacency list, spec §2)."""
+
+    def _infographic_with_nested(self, nested_component: str) -> Component:
+        return Component(
+            id="blk-0",
+            component="Infographic",
+            title="T",
+            sections=[{"heading": "H", "components": [{"component": nested_component, "properties": {}}]}],
         )
 
-    def test_nested_unknown_component_rejected(self):
-        with pytest.raises(CatalogValidationError) as exc:
-            validate_envelope(self._surface_with_nested("TotallyBogus"))
-        assert "TotallyBogus" in exc.value.unknown_components
-
-    def test_nested_requires_actions_rejected_for_llm(self):
-        with pytest.raises(CatalogValidationError) as exc:
-            validate_envelope(self._surface_with_nested("Form"), origin=ProducerOrigin.LLM)
-        assert "Form" in exc.value.action_components
-
-    def test_nested_known_display_component_passes(self):
-        validate_envelope(self._surface_with_nested("KPICard"), origin=ProducerOrigin.LLM)
-
     def test_lower_child_raises_structured_error_on_unknown(self):
-        comp = self._surface_with_nested("NopeComponent").components[0]
-        with pytest.raises(CatalogValidationError):
+        comp = self._infographic_with_nested("NopeComponent")
+        with pytest.raises(CatalogValidationError) as exc:
             infographic.InfographicComponent().lower(comp, {})
+        assert "NopeComponent" in exc.value.unknown_components
+
+    def test_lower_child_succeeds_for_known_component(self):
+        comp = self._infographic_with_nested("KPICard")
+        tree = infographic.InfographicComponent().lower(comp, {})
+        assert tree.component == "Card"
 
 
 class TestCompositeDelegation:
     def test_nested_child_lowered_via_registry(self):
         tree = infographic.InfographicComponent().lower(_infographic(), {})
-        blob = json.dumps(tree.model_dump())
+        blob = json.dumps(tree.model_dump(mode="json"))
         # KPICard lowers to a Card variant="kpi"; Chart to variant="chart".
         assert '"kpi"' in blob and '"chart"' in blob
 
     def test_lowering_preserves_data_bindings(self):
         tree = infographic.InfographicComponent().lower(_infographic(), {})
-        blob = json.dumps(tree.model_dump())
-        assert "/charts/blk-000" in blob and "$bind" in blob
+        blob = json.dumps(tree.model_dump(mode="json"))
+        assert "/charts/blk-000" in blob and '"path"' in blob

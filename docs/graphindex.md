@@ -404,21 +404,42 @@ federating and wiring it into coding assistants.
 
 ## Installation
 
-The graph stack is an opt-in extra:
+As of FEAT-471, `rustworkx`, `networkx`, `pathspec`, `aiosqlite` and
+`orjson` are core `ai-parrot` dependencies — `wikitoolkit` ships in core
+(`[project.scripts]`) and imports them unconditionally. That means a
+plain core install is already enough for the `wikitoolkit` retrieval
+commands (`status`, `query`, `page`, `related`) and the `wikitoolkit` MCP
+server:
+
+```bash
+pip install ai-parrot
+```
+
+`wikitoolkit build`'s *accuracy* features — tree-sitter grammars for
+PHP/JS/TS/Rust/Perl and Leiden community detection — still need the
+opt-in extras:
 
 ```bash
 pip install "ai-parrot[graphindex]"
 ```
 
-That pulls `rustworkx`, `tree-sitter`, `tree-sitter-languages`, `pathspec`,
-`aiosqlite` and `orjson`. `faiss-cpu` is already a core dependency.
+That now pulls only `tree-sitter` and `tree-sitter-languages`
+(`faiss-cpu`, `rustworkx`, `networkx`, `pathspec`, `aiosqlite`, `orjson`
+are all core already).
 
-For the full LLM Wiki stack — GraphIndex plus per-language scanners plus
-Leiden community detection — install the composite extra:
+For the full LLM Wiki stack — GraphIndex extras plus per-language
+scanners plus Leiden community detection — install the composite extra:
 
 ```bash
 pip install "ai-parrot[wiki]"
 ```
+
+In this uv workspace, use `uv sync --extra wiki` instead — a bare
+`uv sync` produces an *exact* environment with no default extras, so it
+will **uninstall** the tree-sitter grammars and Leiden packages from your
+dev venv if you had them. Retrieval/MCP usage keeps working either way
+(those deps are core); re-run `uv sync --extra wiki` when you need
+`wikitoolkit build`'s accuracy features back.
 
 ---
 

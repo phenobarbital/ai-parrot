@@ -1,4 +1,5 @@
-"""Tests for the ``InfographicResponse`` → A2UI ``CreateSurface`` adapter.
+"""Tests for the ``InfographicResponse`` → A2UI v1.0 ``CreateSurface`` adapter
+(FEAT-470 TASK-2541).
 
 Exercises the adapter against the REAL :class:`InfographicResponse` model (not
 hand-rolled dicts) so a drift in either contract fails here, plus the purity,
@@ -8,7 +9,6 @@ sectioning and lossy-degradation rules the module documents.
 import json
 
 import pytest
-
 from parrot.models.infographic import InfographicResponse
 from parrot.outputs.a2ui.adapters import (
     CHART_TYPE_MAP,
@@ -19,8 +19,9 @@ from parrot.outputs.a2ui.catalog import (
     get_component,
     validate_envelope,
 )
-from parrot.outputs.a2ui.catalog import components as _all_components  # noqa: F401
-from parrot.outputs.a2ui.models import Component
+from parrot.outputs.a2ui.catalog import parrot as _all_parrot_components  # noqa: F401
+from parrot.outputs.a2ui.catalog.base import to_components
+from parrot.outputs.a2ui.models import Component, CreateSurface
 
 
 def _response(**overrides) -> InfographicResponse:
@@ -30,8 +31,7 @@ def _response(**overrides) -> InfographicResponse:
         "blocks": [
             {"type": "title", "title": "Q1 Overview", "subtitle": "Financials"},
             {"type": "summary", "content": "Revenue grew across every region."},
-            {"type": "hero_card", "label": "Revenue", "value": "$1.2M",
-             "trend": "up", "trend_value": "+8%"},
+            {"type": "hero_card", "label": "Revenue", "value": "$1.2M", "trend": "up", "trend_value": "+8%"},
             {
                 "type": "chart",
                 "chart_type": "bar",
@@ -48,51 +48,62 @@ def _response(**overrides) -> InfographicResponse:
     return InfographicResponse(**payload)
 
 
-def _infographic_props(envelope) -> dict:
+def _root_component(envelope) -> Component:
     assert len(envelope.components) == 1
     component = envelope.components[0]
     assert component.component == "Infographic"
-    return component.properties
+    return component
 
 
 def _sections(envelope) -> list:
-    return _infographic_props(envelope)["sections"]
+    return _root_component(envelope).model_extra["sections"]
+
+
+def _validate_full_tree(envelope):
+    """Lower + flatten + validate the WHOLE tree (not just the top-level shell)."""
+    component = envelope.components[0]
+    tree = get_component("Infographic").component_cls().lower(component, envelope.data_model or {})
+    flat = to_components(tree)
+    root = Component(id="root2", component="Column", children=[c.id for c in flat])
+    surface = CreateSurface(surfaceId="s", catalogId="https://parrot.dev/catalogs/v1", components=[root, *flat])
+    validate_envelope(surface)
+    return flat
 
 
 class TestSurfaceShape:
     def test_emits_a_single_validated_infographic_component(self):
         envelope = infographic_response_to_envelope(_response())
-        props = _infographic_props(envelope)
-        assert props["title"] == "Q1 Overview"
-        assert props["subtitle"] == "Financials"
-        assert props["theme"] == "ocean"
+        component = _root_component(envelope)
+        assert component.model_extra["title"] == "Q1 Overview"
+        assert component.model_extra["subtitle"] == "Financials"
+        assert component.model_extra["theme"] == "ocean"
         # build_infographic validates; re-assert explicitly for the allowlist.
         validate_envelope(envelope, origin=ProducerOrigin.TOOL)
+
+    def test_adapter_emits_root_and_catalog_id(self):
+        envelope = infographic_response_to_envelope(_response())
+        assert envelope.components[0].id == "root"
+        assert envelope.catalog_id == "https://parrot.dev/catalogs/v1"
+
+    def test_adapter_output_validates(self):
+        _validate_full_tree(infographic_response_to_envelope(_response()))
 
     def test_first_title_block_does_not_become_a_section(self):
         sections = _sections(infographic_response_to_envelope(_response()))
         assert all(s.get("heading") != "Q1 Overview" for s in sections)
 
     def test_title_falls_back_to_template_then_constant(self):
-        no_title = InfographicResponse(
-            template="quarterly", blocks=[{"type": "summary", "content": "x"}]
-        )
-        assert _infographic_props(
-            infographic_response_to_envelope(no_title)
-        )["title"] == "quarterly"
+        no_title = InfographicResponse(template="quarterly", blocks=[{"type": "summary", "content": "x"}])
+        assert _root_component(infographic_response_to_envelope(no_title)).model_extra["title"] == "quarterly"
 
         bare = InfographicResponse(blocks=[{"type": "summary", "content": "x"}])
-        assert _infographic_props(
-            infographic_response_to_envelope(bare)
-        )["title"] == "Infographic"
+        assert _root_component(infographic_response_to_envelope(bare)).model_extra["title"] == "Infographic"
 
     def test_explicit_title_and_theme_override_the_response(self):
-        envelope = infographic_response_to_envelope(
-            _response(), title="Override", theme="petrol"
-        )
-        props = _infographic_props(envelope)
-        assert props["title"] == "Override"
-        assert props["theme"] == "petrol"
+        envelope = infographic_response_to_envelope(_response(), title="Override", theme="petrol")
+        component = _root_component(envelope)
+        assert component.model_extra["title"] == "Override"
+        assert component.model_extra["theme"] == "petrol"
 
     def test_accepts_a_plain_mapping(self):
         envelope = infographic_response_to_envelope(
@@ -162,7 +173,7 @@ class TestSectioning:
         )
         assert len(_sections(envelope)) == 1
 
-    def test_untitled_summary_fills_section_text_then_becomes_a_card(self):
+    def test_untitled_summary_fills_section_text_then_becomes_an_infocard(self):
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -174,10 +185,10 @@ class TestSectioning:
         section = _sections(envelope)[0]
         assert section["text"] == "First"
         card = section["components"][0]
-        assert card["component"] == "Card"
+        assert card["component"] == "InfoCard"
         assert card["properties"]["body"] == "Second"
 
-    def test_titled_summary_always_becomes_a_card(self):
+    def test_titled_summary_always_becomes_an_infocard(self):
         envelope = infographic_response_to_envelope(
             _response(blocks=[{"type": "summary", "title": "Notes", "content": "Body"}])
         )
@@ -191,7 +202,7 @@ class TestChartMapping:
         envelope = infographic_response_to_envelope(_response())
         chart = _sections(envelope)[0]["components"][-1]
         assert chart["component"] == "Chart"
-        assert chart["properties"]["data"] == {"$bind": "/charts/chart-0"}
+        assert chart["properties"]["data"] == {"path": "/charts/chart-0"}
         assert chart["properties"]["x"] == "label"
         assert chart["properties"]["y"] == ["2026", "2025"]
         assert envelope.data_model["charts"]["chart-0"] == [
@@ -203,9 +214,7 @@ class TestChartMapping:
         "source,expected",
         [("donut", "pie"), ("gauge", "bar"), ("radar", "line"), ("area", "area")],
     )
-    def test_unsupported_chart_types_degrade_to_the_nearest_neighbour(
-        self, source, expected
-    ):
+    def test_unsupported_chart_types_degrade_to_the_nearest_neighbour(self, source, expected):
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -221,9 +230,7 @@ class TestChartMapping:
         assert _sections(envelope)[0]["components"][0]["properties"]["type"] == expected
 
     def test_every_mapped_type_is_in_the_a2ui_chart_enum(self):
-        allowed = set(
-            get_component("Chart").definition.schema_["properties"]["type"]["enum"]
-        )
+        allowed = set(get_component("Chart").definition.schema_["properties"]["type"]["enum"])
         assert set(CHART_TYPE_MAP.values()) <= allowed
 
     def test_series_named_label_does_not_collide_with_the_x_column(self):
@@ -241,9 +248,7 @@ class TestChartMapping:
         )
         chart = _sections(envelope)[0]["components"][0]["properties"]
         assert chart["y"] == ["label (2)"]
-        assert envelope.data_model["charts"]["chart-0"] == [
-            {"label": "Jan", "label (2)": 7}
-        ]
+        assert envelope.data_model["charts"]["chart-0"] == [{"label": "Jan", "label (2)": 7}]
 
     def test_short_series_pad_with_none(self):
         envelope = infographic_response_to_envelope(
@@ -294,7 +299,7 @@ class TestTableMapping:
             {"name": "Total", "title": "Total"},
         ]
         assert props["totalRows"] == 2
-        assert props["data"] == {"$bind": "/tables/table-0"}
+        assert props["data"] == {"path": "/tables/table-0"}
         assert envelope.data_model["tables"]["table-0"] == [
             {"Region": "North", "Total": 10},
             {"Region": "South", "Total": 20},
@@ -327,12 +332,13 @@ class TestTableMapping:
                 ]
             )
         )
-        assert envelope.data_model["tables"]["table-0"] == [
-            {"A": "only-a", "B": None, "C": None}
-        ]
+        assert envelope.data_model["tables"]["table-0"] == [{"A": "only-a", "B": None, "C": None}]
 
 
-class TestBlockMappings:
+class TestBlockTypeRemap:
+    """FEAT-470 TASK-2541: bullet_list/checklist/image/card_grid/accordion/tab_view
+    remap to Basic Catalog primitives instead of the legacy ``Card``-everything shape."""
+
     def test_hero_card_carries_trend_and_delta(self):
         envelope = infographic_response_to_envelope(_response())
         kpi = _sections(envelope)[0]["components"][0]
@@ -351,17 +357,13 @@ class TestBlockMappings:
                     {
                         "type": "timeline",
                         "title": "Roadmap",
-                        "events": [
-                            {"date": "2026-01", "title": "Kickoff", "description": "Go"}
-                        ],
+                        "events": [{"date": "2026-01", "title": "Kickoff", "description": "Go"}],
                     }
                 ]
             )
         )
         props = _sections(envelope)[0]["components"][0]["properties"]
-        assert props["events"] == [
-            {"timestamp": "2026-01", "title": "Kickoff", "description": "Go"}
-        ]
+        assert props["events"] == [{"timestamp": "2026-01", "title": "Kickoff", "description": "Go"}]
 
     def test_progress_expands_to_one_kpicard_per_item(self):
         envelope = infographic_response_to_envelope(
@@ -381,20 +383,18 @@ class TestBlockMappings:
         assert [c["component"] for c in components] == ["KPICard", "KPICard"]
         assert components[0]["properties"]["label"] == "Onboarding"
 
-    def test_bullet_list_ordered_and_unordered_bodies(self):
+    def test_bullet_list_maps_to_list_of_text(self):
         envelope = infographic_response_to_envelope(
-            _response(
-                blocks=[
-                    {"type": "bullet_list", "items": ["one", "two"]},
-                    {"type": "bullet_list", "items": ["one"], "ordered": True},
-                ]
-            )
+            _response(blocks=[{"type": "bullet_list", "items": ["one", "two"]}])
         )
-        components = _sections(envelope)[0]["components"]
-        assert components[0]["properties"]["body"] == "• one\n• two"
-        assert components[1]["properties"]["body"] == "1. one"
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "List"
+        assert node["properties"]["direction"] == "vertical"
+        children = node["properties"]["children"]
+        assert [c["component"] for c in children] == ["Text", "Text"]
+        assert [c["properties"]["text"] for c in children] == ["one", "two"]
 
-    def test_checklist_marks_checked_items(self):
+    def test_checklist_maps_to_list_of_checkbox(self):
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -408,34 +408,35 @@ class TestBlockMappings:
                 ]
             )
         )
-        body = _sections(envelope)[0]["components"][0]["properties"]["body"]
-        assert body == "[x] Done\n[ ] Pending"
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "List"
+        children = node["properties"]["children"]
+        assert [c["component"] for c in children] == ["CheckBox", "CheckBox"]
+        assert [c["properties"]["value"] for c in children] == [True, False]
+        assert [c["properties"]["label"] for c in children] == ["Done", "Pending"]
 
     def test_callout_level_becomes_a_badge(self):
         envelope = infographic_response_to_envelope(
-            _response(
-                blocks=[{"type": "callout", "level": "warning", "content": "Careful"}]
-            )
+            _response(blocks=[{"type": "callout", "level": "warning", "content": "Careful"}])
         )
-        props = _sections(envelope)[0]["components"][0]["properties"]
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "InfoCard"
+        props = node["properties"]
         assert props["badge"] == "warning"
         assert props["body"] == "Careful"
 
     def test_quote_attribution_lands_in_the_footer(self):
         envelope = infographic_response_to_envelope(
-            _response(
-                blocks=[
-                    {"type": "quote", "text": "Ship it", "author": "Ana",
-                     "source": "Retro"}
-                ]
-            )
+            _response(blocks=[{"type": "quote", "text": "Ship it", "author": "Ana", "source": "Retro"}])
         )
-        props = _sections(envelope)[0]["components"][0]["properties"]
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "InfoCard"
+        props = node["properties"]
         assert props["body"] == "Ship it"
         assert props["footer"] == "Ana — Retro"
         assert "title" not in props
 
-    def test_image_maps_url_alt_and_caption(self):
+    def test_image_maps_to_image_primitive(self):
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -448,89 +449,108 @@ class TestBlockMappings:
                 ]
             )
         )
-        props = _sections(envelope)[0]["components"][0]["properties"]
-        assert props == {
-            "title": "Chart",
-            "image": "https://example.test/a.png",
-            "footer": "Fig 1",
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "Image"
+        assert node["properties"] == {
+            "url": "https://example.test/a.png",
+            "fit": "contain",
+            "description": "Chart",
         }
+
+    def test_card_grid_maps_to_row_of_infocard(self):
+        envelope = infographic_response_to_envelope(
+            _response(
+                blocks=[
+                    {
+                        "type": "card_grid",
+                        "columns": 2,
+                        "cards": [
+                            {"title": "C1", "body": "b1"},
+                            {"title": "C2", "body": "b2"},
+                        ],
+                    },
+                ]
+            )
+        )
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "Row"
+        children = node["properties"]["children"]
+        assert [c["component"] for c in children] == ["InfoCard", "InfoCard"]
+        assert [c["properties"]["title"] for c in children] == ["C1", "C2"]
 
 
 class TestNewBlockConverters:
-    """Tests for the explicit chain/steps/code/card_grid converters (FEAT-301 / TASK-2257)."""
+    """Tests for the explicit chain/steps/code converters (FEAT-301/2257, FEAT-470)."""
 
-    def test_a2ui_chain_to_card(self):
+    def test_a2ui_chain_to_infocard(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "chain", "title": "Flow",
-                 "nodes": [{"label": "A"}, {"label": "B"}]},
-            ])
+            _response(
+                blocks=[
+                    {"type": "chain", "title": "Flow", "nodes": [{"label": "A"}, {"label": "B"}]},
+                ]
+            )
         )
-        props = _sections(envelope)[0]["components"][0]["properties"]
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "InfoCard"
+        props = node["properties"]
         assert props["body"] == "A → B"
         assert props["title"] == "Flow"
 
     def test_a2ui_chain_vertical_direction_in_subtitle(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "chain", "nodes": [{"label": "A"}], "direction": "vertical"},
-            ])
+            _response(
+                blocks=[
+                    {"type": "chain", "nodes": [{"label": "A"}], "direction": "vertical"},
+                ]
+            )
         )
         props = _sections(envelope)[0]["components"][0]["properties"]
         assert props["subtitle"] == "vertical"
 
     def test_a2ui_chain_horizontal_omits_subtitle(self):
-        envelope = infographic_response_to_envelope(
-            _response(blocks=[{"type": "chain", "nodes": [{"label": "A"}]}])
-        )
+        envelope = infographic_response_to_envelope(_response(blocks=[{"type": "chain", "nodes": [{"label": "A"}]}]))
         props = _sections(envelope)[0]["components"][0]["properties"]
         assert "subtitle" not in props
 
-    def test_a2ui_steps_to_card(self):
+    def test_a2ui_steps_to_list_of_text(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "steps",
-                 "steps": [{"label": "One", "description": "do it"}]},
-            ])
+            _response(
+                blocks=[
+                    {"type": "steps", "steps": [{"label": "One", "description": "do it"}]},
+                ]
+            )
         )
-        props = _sections(envelope)[0]["components"][0]["properties"]
-        assert props["body"] == "1. One — do it"
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "List"
+        texts = [c["properties"]["text"] for c in node["properties"]["children"]]
+        assert texts == ["1. One — do it"]
 
-    def test_a2ui_code_to_card(self):
+    def test_a2ui_code_to_infocard(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "code", "code": "print(1)", "language": "python"},
-            ])
+            _response(
+                blocks=[
+                    {"type": "code", "code": "print(1)", "language": "python"},
+                ]
+            )
         )
-        props = _sections(envelope)[0]["components"][0]["properties"]
+        node = _sections(envelope)[0]["components"][0]
+        assert node["component"] == "InfoCard"
+        props = node["properties"]
         assert props["body"] == "print(1)"
         assert props["badge"] == "python"
 
     def test_a2ui_code_omits_badge_without_language(self):
-        envelope = infographic_response_to_envelope(
-            _response(blocks=[{"type": "code", "code": "x"}])
-        )
+        envelope = infographic_response_to_envelope(_response(blocks=[{"type": "code", "code": "x"}]))
         props = _sections(envelope)[0]["components"][0]["properties"]
         assert "badge" not in props
 
-    def test_a2ui_card_grid_to_cards(self):
+    def test_only_known_infocard_properties(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "card_grid", "columns": 2, "cards": [
-                    {"title": "C1", "body": "b1"}, {"title": "C2", "body": "b2"},
-                ]},
-            ])
-        )
-        components = _sections(envelope)[0]["components"]
-        assert [c["properties"]["title"] for c in components] == ["C1", "C2"]
-        assert [c["component"] for c in components] == ["Card", "Card"]
-
-    def test_only_known_card_properties(self):
-        envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "code", "code": "x", "language": "py",
-                 "highlight_lines": [1]},
-            ])
+            _response(
+                blocks=[
+                    {"type": "code", "code": "x", "language": "py", "highlight_lines": [1]},
+                ]
+            )
         )
         props = _sections(envelope)[0]["components"][0]["properties"]
         allowed = {"title", "subtitle", "body", "image", "badge", "footer"}
@@ -538,151 +558,207 @@ class TestNewBlockConverters:
 
     def test_i18n_title_flattened(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "code", "code": "x",
-                 "title": {"en": "Title", "es": "Titulo"}},
-            ])
+            _response(
+                blocks=[
+                    {"type": "code", "code": "x", "title": {"en": "Title", "es": "Titulo"}},
+                ]
+            )
         )
         props = _sections(envelope)[0]["components"][0]["properties"]
         assert props["title"] == "Title"
 
     def test_deterministic(self):
-        payload = _response(blocks=[
-            {"type": "chain", "nodes": [{"label": "A"}]},
-        ])
+        payload = _response(
+            blocks=[
+                {"type": "chain", "nodes": [{"label": "A"}]},
+            ]
+        )
         a = infographic_response_to_envelope(payload)
         b = infographic_response_to_envelope(payload)
         assert a.model_dump() == b.model_dump()
 
 
 class TestMalformedNestedItemsDegradeGracefully:
-    """Malformed nested items (raw-dict input path) are skipped, not fatal.
-
-    ``infographic_response_to_envelope`` also accepts a plain mapping (not
-    just a validated ``InfographicResponse``), so a plausible LLM
-    hallucination — a flat string where a mapping was expected inside
-    ``steps``/``nodes``/``cards``/``events``/items/tabs — must degrade by
-    skipping that entry rather than raising ``TypeError`` and aborting the
-    whole envelope build (FEAT-301 / TASK-2257 code-review follow-up).
-    """
+    """Malformed nested items (raw-dict input path) are skipped, not fatal."""
 
     def test_steps_with_flat_string_items_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "steps", "steps": ["Do it", {"label": "Real"}]}],
-        })
-        props = _sections(envelope)[0]["components"][0]["properties"]
-        assert props["body"] == "1. Real"
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [{"type": "steps", "steps": ["Do it", {"label": "Real"}]}],
+            }
+        )
+        texts = [c["properties"]["text"] for c in _sections(envelope)[0]["components"][0]["properties"]["children"]]
+        assert texts == ["1. Real"]
 
     def test_chain_with_malformed_node_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "chain", "nodes": ["oops", {"label": "A"}]}],
-        })
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [{"type": "chain", "nodes": ["oops", {"label": "A"}]}],
+            }
+        )
         props = _sections(envelope)[0]["components"][0]["properties"]
         assert props["body"] == "A"
 
     def test_card_grid_with_malformed_card_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "card_grid", "cards": [42, {"title": "Real"}]}],
-        })
-        components = _sections(envelope)[0]["components"]
-        assert [c["properties"].get("title") for c in components] == ["Real"]
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [{"type": "card_grid", "cards": [42, {"title": "Real"}]}],
+            }
+        )
+        children = _sections(envelope)[0]["components"][0]["properties"]["children"]
+        assert [c["properties"].get("title") for c in children] == ["Real"]
 
     def test_timeline_with_malformed_event_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "timeline", "events": [
-                "oops", {"date": "2026-01", "title": "Real"},
-            ]}],
-        })
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [
+                    {
+                        "type": "timeline",
+                        "events": [
+                            "oops",
+                            {"date": "2026-01", "title": "Real"},
+                        ],
+                    }
+                ],
+            }
+        )
         props = _sections(envelope)[0]["components"][0]["properties"]
         assert props["events"] == [{"timestamp": "2026-01", "title": "Real"}]
 
     def test_progress_with_malformed_item_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "progress", "items": [
-                "oops", {"label": "Real", "value": 50},
-            ]}],
-        })
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [
+                    {
+                        "type": "progress",
+                        "items": [
+                            "oops",
+                            {"label": "Real", "value": 50},
+                        ],
+                    }
+                ],
+            }
+        )
         components = _sections(envelope)[0]["components"]
         assert [c["properties"]["label"] for c in components] == ["Real"]
 
     def test_checklist_with_malformed_item_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "checklist", "items": [
-                "oops", {"text": "Real", "checked": True},
-            ]}],
-        })
-        body = _sections(envelope)[0]["components"][0]["properties"]["body"]
-        assert body == "[x] Real"
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [
+                    {
+                        "type": "checklist",
+                        "items": [
+                            "oops",
+                            {"text": "Real", "checked": True},
+                        ],
+                    }
+                ],
+            }
+        )
+        children = _sections(envelope)[0]["components"][0]["properties"]["children"]
+        assert [c["properties"]["label"] for c in children] == ["Real"]
 
     def test_malformed_top_level_block_is_skipped(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": ["oops", {"type": "hero_card", "label": "Real", "value": "1"}],
-        })
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": ["oops", {"type": "hero_card", "label": "Real", "value": "1"}],
+            }
+        )
         components = _sections(envelope)[0]["components"]
         assert [c["properties"]["label"] for c in components] == ["Real"]
 
     def test_accordion_with_malformed_item_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "accordion", "items": [
-                "oops", {"title": "Real", "content_blocks": []},
-            ]}],
-        })
-        assert _sections(envelope)[0]["heading"] == "Real"
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [
+                    {
+                        "type": "accordion",
+                        "items": [
+                            "oops",
+                            {"title": "Real", "content_blocks": []},
+                        ],
+                    }
+                ],
+            }
+        )
+        tabs_node = _sections(envelope)[0]["components"][0]
+        assert tabs_node["component"] == "Tabs"
+        assert [t["title"] for t in tabs_node["properties"]["tabs"]] == ["Real"]
 
     def test_tab_view_with_malformed_pane_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "tab_view", "tabs": [
-                "oops", {"label": "Real", "blocks": []},
-            ]}],
-        })
-        assert _sections(envelope)[0]["heading"] == "Real"
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [
+                    {
+                        "type": "tab_view",
+                        "tabs": [
+                            "oops",
+                            {"label": "Real", "blocks": []},
+                        ],
+                    }
+                ],
+            }
+        )
+        tabs_node = _sections(envelope)[0]["components"][0]
+        assert [t["title"] for t in tabs_node["properties"]["tabs"]] == ["Real"]
 
     def test_table_with_malformed_column_does_not_raise(self):
-        envelope = infographic_response_to_envelope({
-            "blocks": [{"type": "table", "columns": [42, "Real"], "rows": [[1, 2]]}],
-        })
+        envelope = infographic_response_to_envelope(
+            {
+                "blocks": [{"type": "table", "columns": [42, "Real"], "rows": [[1, 2]]}],
+            }
+        )
         table = _sections(envelope)[0]["components"][0]
         assert [c["name"] for c in table["properties"]["columns"]] == ["column", "Real"]
 
 
 class TestAllBlocksEnvelope:
-    """Full 19-block-type payload lowers without error (FEAT-301 / TASK-2257)."""
+    """Full 19-block-type payload lowers without error (FEAT-301/2257, FEAT-470)."""
 
     def test_a2ui_envelope_new_blocks(self):
         envelope = infographic_response_to_envelope(
-            _response(blocks=[
-                {"type": "title", "title": "Test Infographic"},
-                {"type": "hero_card", "label": "Metric", "value": "42"},
-                {"type": "summary", "content": "Summary text"},
-                {"type": "chart", "chart_type": "bar", "labels": ["A"],
-                 "series": [{"name": "s", "values": [1]}]},
-                {"type": "bullet_list", "items": ["item 1"]},
-                {"type": "table", "columns": ["A"], "rows": [["1"]]},
-                {"type": "image", "url": "data:image/png;base64,AA==", "alt": "img"},
-                {"type": "quote", "text": "Quote", "author": "Author"},
-                {"type": "callout", "level": "info", "content": "Info"},
-                {"type": "divider"},
-                {"type": "timeline", "events": [{"date": "2026-01-01", "title": "Event"}]},
-                {"type": "progress", "items": [{"label": "Task", "value": "80"}]},
-                {"type": "accordion", "items": [{"title": "Section", "content_blocks": []}]},
-                {"type": "checklist", "items": [{"text": "Done", "checked": True}]},
-                {"type": "tab_view", "tabs": [
-                    {"id": "t1", "label": "Tab1", "blocks": []},
-                    {"id": "t2", "label": "Tab2", "blocks": []},
-                ]},
-                {"type": "chain", "nodes": [{"label": "A"}, {"label": "B"}]},
-                {"type": "steps", "steps": [{"label": "Step 1", "description": "Do thing"}]},
-                {"type": "code", "code": "print('hello')", "language": "python"},
-                {"type": "card_grid", "cards": [{"title": "Card 1", "body": "Content"}],
-                 "columns": 2},
-            ])
+            _response(
+                blocks=[
+                    {"type": "title", "title": "Test Infographic"},
+                    {"type": "hero_card", "label": "Metric", "value": "42"},
+                    {"type": "summary", "content": "Summary text"},
+                    {"type": "chart", "chart_type": "bar", "labels": ["A"], "series": [{"name": "s", "values": [1]}]},
+                    {"type": "bullet_list", "items": ["item 1"]},
+                    {"type": "table", "columns": ["A"], "rows": [["1"]]},
+                    {"type": "image", "url": "data:image/png;base64,AA==", "alt": "img"},
+                    {"type": "quote", "text": "Quote", "author": "Author"},
+                    {"type": "callout", "level": "info", "content": "Info"},
+                    {"type": "divider"},
+                    {"type": "timeline", "events": [{"date": "2026-01-01", "title": "Event"}]},
+                    {"type": "progress", "items": [{"label": "Task", "value": "80"}]},
+                    {"type": "accordion", "items": [{"title": "Section", "content_blocks": []}]},
+                    {"type": "checklist", "items": [{"text": "Done", "checked": True}]},
+                    {
+                        "type": "tab_view",
+                        "tabs": [
+                            {"id": "t1", "label": "Tab1", "blocks": []},
+                            {"id": "t2", "label": "Tab2", "blocks": []},
+                        ],
+                    },
+                    {"type": "chain", "nodes": [{"label": "A"}, {"label": "B"}]},
+                    {"type": "steps", "steps": [{"label": "Step 1", "description": "Do thing"}]},
+                    {"type": "code", "code": "print('hello')", "language": "python"},
+                    {"type": "card_grid", "cards": [{"title": "Card 1", "body": "Content"}], "columns": 2},
+                ]
+            )
         )
         assert envelope is not None
         validate_envelope(envelope, origin=ProducerOrigin.TOOL)
+        _validate_full_tree(envelope)
 
 
-class TestContainerFlattening:
-    def test_accordion_items_become_sibling_sections(self):
+class TestTabsNesting:
+    """FEAT-470 TASK-2541: accordion/tab_view nest as Tabs within the CURRENT
+    section (not flattened into sibling sections) — unless nesting exceeds
+    ``_MAX_NESTING_DEPTH``, which degrades to the legacy flatten behavior."""
+
+    def test_accordion_nests_as_tabs_in_current_section(self):
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -692,15 +768,11 @@ class TestContainerFlattening:
                         "items": [
                             {
                                 "title": "Phase 1",
-                                "content_blocks": [
-                                    {"type": "hero_card", "label": "A", "value": "1"}
-                                ],
+                                "content_blocks": [{"type": "hero_card", "label": "A", "value": "1"}],
                             },
                             {
                                 "title": "Phase 2",
-                                "content_blocks": [
-                                    {"type": "summary", "content": "Later"}
-                                ],
+                                "content_blocks": [{"type": "summary", "title": "x", "content": "Later"}],
                             },
                         ],
                     }
@@ -708,11 +780,16 @@ class TestContainerFlattening:
             )
         )
         sections = _sections(envelope)
-        assert [s["heading"] for s in sections] == ["Phases — Phase 1", "Phase 2"]
-        assert sections[0]["components"][0]["component"] == "KPICard"
-        assert sections[1]["text"] == "Later"
+        assert len(sections) == 1
+        tabs_node = sections[0]["components"][0]
+        assert tabs_node["component"] == "Tabs"
+        tabs = tabs_node["properties"]["tabs"]
+        assert [t["title"] for t in tabs] == ["Phase 1", "Phase 2"]
+        pane_one = tabs[0]["child"]
+        assert pane_one["component"] == "Column"
+        assert pane_one["properties"]["children"][0]["component"] == "KPICard"
 
-    def test_tab_panes_become_sibling_sections(self):
+    def test_tab_view_nests_as_tabs_in_current_section(self):
         envelope = infographic_response_to_envelope(
             _response(
                 blocks=[
@@ -722,9 +799,7 @@ class TestContainerFlattening:
                             {
                                 "id": "a",
                                 "label": "Overview",
-                                "blocks": [
-                                    {"type": "hero_card", "label": "A", "value": "1"}
-                                ],
+                                "blocks": [{"type": "hero_card", "label": "A", "value": "1"}],
                             },
                             {"id": "b", "label": "Detail", "blocks": []},
                         ],
@@ -732,8 +807,9 @@ class TestContainerFlattening:
                 ]
             )
         )
-        sections = _sections(envelope)
-        assert [s["heading"] for s in sections] == ["Overview", "Detail"]
+        tabs_node = _sections(envelope)[0]["components"][0]
+        assert tabs_node["component"] == "Tabs"
+        assert [t["title"] for t in tabs_node["properties"]["tabs"]] == ["Overview", "Detail"]
 
     def test_nested_title_block_inside_a_pane_does_not_hijack_the_surface_title(self):
         envelope = infographic_response_to_envelope(
@@ -754,22 +830,36 @@ class TestContainerFlattening:
                 ]
             )
         )
-        assert _infographic_props(envelope)["title"] == "Real Title"
+        assert _root_component(envelope).model_extra["title"] == "Real Title"
+
+    def test_deeply_nested_containers_degrade_to_sibling_sections(self):
+        """Beyond _MAX_NESTING_DEPTH, containers fall back to the legacy
+        flatten-into-sibling-sections behavior instead of nesting Tabs."""
+        # Build a chain of nested tab_view blocks deeper than the cap.
+        from parrot.outputs.a2ui.adapters.infographic import _MAX_NESTING_DEPTH
+
+        innermost = {"type": "hero_card", "label": "Deep", "value": "1"}
+        blocks = innermost
+        for i in range(_MAX_NESTING_DEPTH + 2):
+            blocks = {
+                "type": "tab_view",
+                "tabs": [
+                    {"id": f"t{i}a", "label": f"L{i}", "blocks": [blocks]},
+                    {"id": f"t{i}b", "label": "Empty", "blocks": []},
+                ],
+            }
+
+        envelope = infographic_response_to_envelope(_response(blocks=[blocks]))
+        # Should not raise, and should validate structurally.
+        validate_envelope(envelope, origin=ProducerOrigin.TOOL)
 
 
 class TestLowering:
     def test_adapted_envelope_lowers_to_a_basic_tree(self):
         envelope = infographic_response_to_envelope(_response())
         component = envelope.components[0]
-        tree = get_component("Infographic").component_cls().lower(
-            Component(
-                id=component.id,
-                component=component.component,
-                properties=component.properties,
-            ),
-            envelope.data_model or {},
-        )
+        tree = get_component("Infographic").component_cls().lower(component, envelope.data_model or {})
         assert tree.component == "Card"
         # Lowering is pure: the nested KPICard/Chart children resolved through
         # their own registered lower() without raising.
-        assert tree.children
+        assert tree.child is not None

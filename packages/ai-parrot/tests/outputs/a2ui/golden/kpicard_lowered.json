@@ -1,1 +1,43 @@
-{"children": [{"children": [], "component": "Text", "properties": {"role": "label", "text": "Revenue"}}, {"children": [], "component": "Text", "properties": {"role": "value", "text": 1200, "unit": "USD"}}, {"children": [], "component": "Text", "properties": {"role": "delta", "text": 5, "trend": "up"}}], "component": "Card", "properties": {"componentId": "blk-001", "variant": "kpi"}}
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "label"
+          }
+        },
+        "text": "Revenue"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "value",
+            "parrot_unit": "USD"
+          }
+        },
+        "text": "1200"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "delta",
+            "parrot_trend": "up"
+          }
+        },
+        "text": "5"
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-001",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "kpi"
+    }
+  }
+}

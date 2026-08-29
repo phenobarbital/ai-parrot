@@ -6,7 +6,7 @@
 		generate-registry check-registry build-codec-rs build-navrules-rs build-rust build-server-ui \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic docker-tool-worker docker-integrations docker-dev \
+		install-supertonic injection-model docker-tool-worker docker-integrations docker-dev \
 		apply-commcenter-ddl
 
 # Python version to use
@@ -26,6 +26,12 @@ HAS_FFMPEG := $(shell command -v ffmpeg 2> /dev/null)
 #   make install-supertonic SUPERTONIC_REPO=Supertone/supertonic-2 SUPERTONIC_DIR=models/supertonic-2
 SUPERTONIC_REPO ?= Supertone/supertonic-3
 SUPERTONIC_DIR ?= models/supertonic-3
+
+# Prompt-injection ONNX classifier (FEAT-439). Downloaded into the shared
+# Hugging Face cache (NOT a repo-local dir) by `make injection-model`, which
+# calls `warmup_injection_model()` - the only download site in the framework.
+INJECTION_MODEL_REPO ?= patronus-studio/wolf-defender-prompt-injection-small
+INJECTION_FORCE := $(if $(FORCE),True,False)
 
 # Experimental OpenAI Codex SDK source install.
 CODEX_SDK_VERSION ?= 0.1.11
@@ -293,6 +299,48 @@ install-supertonic:
 	@echo "   The 4-graph pipeline (text_encoder, duration_predictor, vector_estimator,"
 	@echo "   vocoder) is wired in SupertonicONNXBackend, so TTSConfig(backend='supertonic')"
 	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
+
+# ============================================================
+# Guardrail model assets
+# ============================================================
+
+# Download + warm the prompt-injection ONNX classifier (FEAT-439).
+#
+# `warmup_injection_model()` is the ONLY code path in the framework allowed to
+# download this graph: the request path resolves STRICTLY offline and just logs
+# a WARNING when the snapshot is missing. This target is that call, from the
+# shell, so a host can pre-seed the HF cache at provisioning time instead of
+# paying the ~700 MB download on the first real turn.
+#
+# Prints the engine that actually got selected. Anything other than `onnx`
+# (i.e. `pytector` = the older v1 model, or `regex` = the non-ML floor) means
+# the download or the ORT session did NOT come up — the warm-up degrades and
+# never raises, so read the line it prints.
+#
+#   make injection-model              # download if not cached, then warm
+#   make injection-model FORCE=1      # re-fetch (repairs a corrupt cache)
+#
+# Air-gapped hosts do NOT use this target: export a graph directory once on a
+# networked machine and point PARROT_INJECTION_ONNX_DIR at it — that path wins
+# over everything. See docs/security/onnx-injection-guardrail.md.
+injection-model:
+	@echo "Warming injection classifier '$(INJECTION_MODEL_REPO)'$(if $(FORCE), (FORCE=1: re-fetching),) ..."
+	@python -c "\
+import importlib.util, sys; \
+missing = [m for m in ('onnxruntime', 'huggingface_hub') if importlib.util.find_spec(m) is None]; \
+sys.exit(0) if not missing else (\
+    print('Missing: ' + ', '.join(missing)), \
+    print('Install the security extra first:'), \
+    print('  uv sync --package ai-parrot --extra security'), \
+    sys.exit(1))"
+	@PARROT_INJECTION_ONNX_MODEL=$(INJECTION_MODEL_REPO) python -c "\
+import asyncio, sys; \
+from parrot.bots.guardrails.builtin.prompt_injection import warmup_injection_model; \
+engine = asyncio.run(warmup_injection_model(force_download=$(INJECTION_FORCE))); \
+print(); \
+print(('OK  engine=onnx - the ONNX graph is cached and warm.') if engine == 'onnx' \
+      else ('WARN engine=' + engine + ' - the ONNX graph did NOT come up; see the log above.')); \
+sys.exit(0 if engine == 'onnx' else 1)" 2>&1
 
 # Build and publish all packages
 release: lint test clean check-registry build-rust build-server-ui

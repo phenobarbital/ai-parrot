@@ -483,8 +483,9 @@ class TestEngineResolution:
     def test_cached_snapshot_selects_onnx(self, tmp_path, monkeypatch, fake_ort_and_transformers):
         """Spec §4 `test_cached_snapshot_selects_onnx`: a cached HF snapshot
         (distinct from the env-dir path) is selected as the ONNX engine."""
-        (tmp_path / "onnx").mkdir()
-        (tmp_path / "onnx" / "model.onnx").write_bytes(b"fake-onnx-graph")
+        graph = tmp_path / pi_module._ONNX_GRAPH_REPO_PATH
+        graph.parent.mkdir(parents=True)
+        graph.write_bytes(b"fake-onnx-graph")
         (tmp_path / "config.json").write_text(
             '{"id2label": {"0": "SAFE", "1": "INJECTION"}}'
         )
@@ -554,7 +555,7 @@ class TestEngineResolution:
 
         assert engine is None
         # Only cache-index probes ran — never a download API.
-        assert "onnx/model.onnx" in calls
+        assert pi_module._ONNX_GRAPH_REPO_PATH in calls
         assert not hasattr(fake_hub, "snapshot_download")
 
     def test_full_resolution_with_no_hf_cache_touches_no_network(self, no_hf_cache, monkeypatch):
