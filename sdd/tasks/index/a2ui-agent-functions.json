@@ -53,7 +53,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "The core protocol engine. Every transport is a shell over it, so nothing else can start until its Protocols are fixed.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2569-runtime-dispatch.md"
+      "completed_at": "2026-08-29T01:31:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2569-runtime-dispatch.md"
     },
     {
       "id": "TASK-2570",

@@ -270,7 +270,22 @@ return means unknown.
 - [ ] `userMessage` present ⇒ visible user turn; absent ⇒ system turn; `dataModel` never in the turn text.
 - [ ] `call_renderer()` returns a unique `functionCallId`, always sets `catalogId`, and registers the pending record before returning.
 - [ ] `rendererFunctionResponse` with a known id resolves it; unknown/expired ⇒ `error{NOT_FOUND}`.
-- [ ] Every emitted envelope validates against `agent_to_renderer.json`.
+- [ ] Every emitted A→R message that has a real `agent_to_renderer.json`
+      counterpart (`agentFunctionResponse`, `callRendererFunction`) validates
+      against that schema; every `error{...}` envelope validates against
+      `renderer_to_agent.json` instead (**contract correction, carried over
+      from TASK-2568**: `agent_to_renderer.json` has no `error` message at
+      all — confirmed structurally, `A2UIAgentMessage` has no `error` field).
+      Additionally: full jsonschema conformance for a `FunctionCall`-bearing
+      message (`callRendererFunction`/`callAgentFunction`) is only provable
+      using a Basic-Catalog function name (e.g. `openUrl`) — the vendored
+      `common_types.json#/$defs/FunctionCall` constrains `call` via a
+      `oneOf` against `catalog.json#/$defs/anyFunction` (the ~14 Basic
+      Catalog functions), so a real custom tool name (`get_weather`,
+      `refreshChart`, ...) can never satisfy that schema. This is a
+      limitation of the vendored conformance file, not of this
+      implementation; functional behavior for custom tool names is proven
+      by the non-conformance tests instead.
 - [ ] Tests pass: `pytest packages/ai-parrot/tests/outputs/a2ui/runtime -v`
 - [ ] No linting errors: `ruff check packages/ai-parrot/src/parrot/outputs/a2ui/runtime`
 
@@ -368,10 +383,54 @@ class TestRendererCalls:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added the three `Protocol`s (`FunctionExecutor`, `SurfaceStateStore`,
+`PendingCallRegistry`) to `runtime/__init__.py` and implemented `A2UIRuntime`
+in the new `runtime/dispatch.py`, with `dispatch()` and `call_renderer()`
+exactly as scoped. Envelope guard uses `serialization.deserialize()` +
+an `isinstance(message, A2UIRendererMessage)` check (never `model_validate`
+directly). `callAgentFunction` resolves the catalog via
+`catalog.resolve_catalog()` (component `catalogId` > known surface's
+`catalogId` > error), looks the function up by `(name, catalog_id)` among
+`executor.list_functions()`, gates on `allowed_callers`, and maps
+`ToolResult` per the exhaustive table (checking `status` before `success`,
+matching the exact `'forbidden'`/`'not_found'` strings). `action` enforces
+the 1 MiB `A2UI_MAX_DATA_MODEL_BYTES` cap (env-overridable), persists via
+`SurfaceStateStore` only when `data_model is not None`, and builds the turn
+text per spec §8 (`user_message` present → visible plain text; absent →
+the same `{"type": "a2ui_action", "action": <envelope>}` tag already
+consumed by Teams/Telegram/`a2ui_resume.py`, with `dataModel` stripped so
+it never travels via turn text). `call_renderer()` always sets
+`callFunction.catalogId`, mints the id via `secrets.token_urlsafe(16)`, and
+registers the pending record before returning. 33 tests pass in
+`tests/outputs/a2ui/runtime/` (48 including TASK-2568's); full
+`tests/outputs/a2ui/` suite (516 tests) has zero regressions. `ruff check`
+clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Two documented, evidence-based contract
+corrections (both carried into this task file's AC section above):
+(1) the `error{...}` conformance AC now targets `renderer_to_agent.json`
+instead of `agent_to_renderer.json`, for the same structural reason found
+in TASK-2568 (`A2UIAgentMessage` has no `error` field at all); (2) full
+jsonschema conformance for a `FunctionCall`-bearing A→R message
+(`callRendererFunction`/`callAgentFunction`) is only achievable with a
+Basic-Catalog function name (`openUrl`) — the vendored
+`common_types.json#/$defs/FunctionCall` restricts `call` via `oneOf` to
+`catalog.json#/$defs/anyFunction`'s ~14 Basic Catalog functions, so no
+custom ToolManager tool name (`get_weather`, `refreshChart`, ...) can ever
+pass that schema. This is a limitation of the vendored conformance file
+scope, not of the implementation; `TestConformance` in `test_dispatch.py`
+proves envelope-shape conformance with a Basic Catalog name, while all
+other tests exercise the real custom-tool-name behavior directly (dict
+assertions, not jsonschema). No design changes beyond these two
+corrections — the runtime's control flow and error taxonomy are exactly as
+specified. Two additional implementation decisions filled a gap the task
+left unspecified: (a) `_fallback_identifiers()` best-effort extracts a
+`functionCallId`/`surfaceId` from a raw envelope that failed to parse, so a
+completely malformed/unidentifiable envelope (e.g. zero message keys) can
+still produce a schema-valid Generic Error (falls back to the literal
+placeholder `"unknown"` only when nothing at all is extractable); (b) the
+system-turn JSON tag strips `dataModel` before embedding the action
+envelope, since spec §7/§8 says the data model must never travel via turn
+text, only via `surface_state`.
