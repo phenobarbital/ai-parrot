@@ -155,3 +155,21 @@ class TestJsonlRoundtrip:
         assert len(parsed) == 2
         assert parsed[0].create_surface == surface
         assert parsed[1].update_data_model == udm
+
+
+class TestActionDataModelRoundTrip:
+    """TASK-2567 — `action.dataModel` must survive serialize/deserialize."""
+
+    def test_action_with_data_model_round_trips(self):
+        env = {
+            "version": "v1.0",
+            "action": {
+                "name": "submit",
+                "surfaceId": "s-1",
+                "sourceComponentId": "btn-1",
+                "timestamp": "2026-08-29T10:00:00Z",
+                "context": {},
+                "dataModel": {"rows": [1, 2, 3]},
+            },
+        }
+        assert serialize(deserialize(env)) == env
