@@ -273,6 +273,18 @@ class AbstractTool(EventEmitterMixin, ABC):
     # _execute(). Tools that don't manage external resources leave this
     # False (default) — fully backward compatible, no automatic I/O.
     auto_open: bool = False
+    # FEAT-469 (A2UI Agent Functions runtime, spec §3 Module 4): whether
+    # invoking this tool as an A2UI function requires a direct user gesture.
+    # Surfaced as FunctionDefinition.requiresUserActivation in the exported
+    # catalog; enforced by the RENDERER, never by the agent (spec §8).
+    a2ui_requires_user_activation: bool = False
+    # FEAT-469: opt-OUT escape hatch — exclude this tool from the exported
+    # A2UI function catalog and from callAgentFunction dispatch. Default
+    # False: every ToolManager tool is exposed by default (spec §8 resolved
+    # OQ — this stays opt-OUT, not opt-in). Use for destructive/return_direct
+    # tools an operator wants to hide from renderers without reverting the
+    # whole catalog to an opt-in model.
+    a2ui_hidden: bool = False
 
     def __init__(
         self,
