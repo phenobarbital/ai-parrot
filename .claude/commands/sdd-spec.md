@@ -276,7 +276,8 @@ This step prevents AI hallucinations during implementation. You MUST:
      document's identity line (`**Jira**: <KEY>` in place of `**Feature
      ID**: FEAT-<NNN>`). This is not an oversight to fix later: it is the
      whole point — the allocator's "current branch must equal
-     `--base-branch`" precondition (`reserve_ids.py:140`) would otherwise be
+     `--base-branch`" precondition (`reserve_ids.py`, `_assert_safe_to_reserve`)
+     would otherwise be
      unreachable for a hotfix that has to reserve on `main` while another
      worktree already has `main` checked out. Skipping reservation removes
      the problem rather than solving it.
@@ -289,11 +290,12 @@ This step prevents AI hallucinations during implementation. You MUST:
        --base-branch "$BASE_BRANCH" --label <feature-name>)
      ```
      On success this prints exactly one `FEAT-<NNN>` line; use it verbatim
-     as this spec's Feature ID. `reserve_ids.py` commits and pushes its own
-     ledger-only update to `origin/$BASE_BRANCH` as part of this call
-     (retrying internally on a non-fast-forward rejection) and refuses to
-     run if the working tree has uncommitted changes besides the ledger
-     file. If the command exits non-zero, **STOP** and report the error —
+     as this spec's Feature ID. `reserve_ids.py` pushes its own ledger-only
+     commit to `origin/$BASE_BRANCH` as part of this call (retrying
+     internally on a non-fast-forward rejection) and refuses to run if
+     tracked files have uncommitted changes besides the ledger file. It
+     builds that commit on `origin/$BASE_BRANCH` with git plumbing, so it
+     never publishes or discards local-only commits on your branch. If the command exits non-zero, **STOP** and report the error —
      do NOT fall back to hand-computing a number.
 
      **Escape hatch — intentional FEAT-ID reuse**: if this spec is a

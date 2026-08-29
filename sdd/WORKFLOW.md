@@ -298,11 +298,24 @@ undetected until `/sdd-done`'s closeout tooling stumbled on them.
   python -m scripts.sdd.reserve_ids --kind task --count 8 \
     --base-branch dev --label <feature-slug>
   ```
-  Reads the ledger, commits a *ledger-only* update, and pushes to
-  `origin/<base_branch>`; on a rejected (non-fast-forward) push it fetches,
-  re-reads the now-current ledger, recomputes, and retries (bounded, with
-  jittered backoff) instead of silently succeeding with a stale, already-
-  claimed number. Prints the reserved IDs one per line.
+  Reads the ledger **as of `origin/<base_branch>`**, builds a *ledger-only*
+  commit on that tip, and pushes it; on a rejected (non-fast-forward) push
+  it fetches, re-reads the now-current ledger, recomputes, and retries
+  (bounded, with jittered backoff) instead of silently succeeding with a
+  stale, already-claimed number. Prints the reserved IDs one per line.
+
+  **The reservation never touches local history.** The candidate commit is
+  assembled with git plumbing in a throwaway index, so no attempt mutates
+  the local branch, index or working tree, and the push carries that one
+  commit (`<sha>:refs/heads/<base>`) rather than `HEAD` — local-only
+  commits on the base branch are therefore neither published nor
+  destroyed. This is a fix for a real incident: the original implementation
+  committed on top of `HEAD`, pushed the whole branch, and ran
+  `git reset --hard origin/<base_branch>` on a lost race, silently eating
+  two unpushed commits and still exiting 0. After a successful push the
+  local branch is fast-forwarded onto the reservation as a convenience; if
+  it carries unpushed commits the fast-forward is skipped and a warning
+  tells you to reconcile with `git pull --no-rebase`.
 - **`scripts/sdd/check_id_collisions.py`** — an independent, read-only
   defense-in-depth backstop (no dependency on the ledger/allocator): scans
   `sdd/tasks/index/*.json`, `sdd/tasks/active/*.md`, and

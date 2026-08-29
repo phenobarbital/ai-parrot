@@ -131,10 +131,12 @@ explicit, verified code anchors.
    TASK-1969
    TASK-1970
    ```
-   `reserve_ids.py` commits and pushes its own ledger-only update to
-   `origin/<BASE>` as part of this call (retrying internally on a
-   non-fast-forward rejection); it refuses to run if the working tree has
-   any uncommitted changes besides the ledger file. If the command exits
+   `reserve_ids.py` pushes its own ledger-only commit to `origin/<BASE>` as
+   part of this call (retrying internally on a non-fast-forward rejection);
+   it refuses to run if tracked files have any uncommitted changes besides
+   the ledger file. The commit is built on `origin/<BASE>` with git
+   plumbing and pushed by sha, so local-only commits on `<BASE>` are
+   neither published nor discarded by a lost race. If the command exits
    non-zero (retries exhausted, or the working tree wasn't clean), **STOP**
    and report the error to the user — do NOT fall back to hand-computing a
    number.
