@@ -28,7 +28,7 @@
                 "parrot_role": "layer"
               }
             },
-            "text": "stores"
+            "text": "stores | label=name | color=blue | total=12"
           }
         ],
         "component": "Column",

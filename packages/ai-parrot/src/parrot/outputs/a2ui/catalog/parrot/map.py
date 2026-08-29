@@ -1,8 +1,12 @@
 """A2UI ``Map`` catalog component (Module 5, FEAT-470 TASK-2539 — v1.0 lowering).
 
-Schema vocabulary is adapted from ``StructuredMapConfig``/``MapLayer``/``MapViewport``
-(``parrot.models.outputs``): ``layers``, ``viewport``, ``baseLayer``, ``title``,
-``description``. The INPUT-ONLY ``data`` array is replaced by a data-model binding.
+Schema vocabulary is derived from ``StructuredMapConfig``/``MapLayer``/
+``MapViewport``/``MapQuery`` (``parrot.models.outputs``) via
+:func:`derive_schema` (FEAT-473 G2): ``layers`` (full ``MapLayer`` vocabulary —
+``layer``, ``columns``, ``tooltipTemplate``, ``labelField``, ``dataShape``,
+``totalCount``, ``capped``, ``geodesic``, ``markerColor``), ``viewport``,
+``query``, ``baseLayer``, ``title``, ``description``. The INPUT-ONLY ``data``/
+``datasets`` arrays are replaced by data-model bindings.
 
 ``lower()`` degrades a Map to a static-friendly Basic tree (title/description Text
 plus a layer-summary Column). Interactive tiles are the folium-map renderer's native
@@ -13,47 +17,55 @@ from __future__ import annotations
 
 from typing import Any
 
+from parrot.models.outputs import StructuredMapConfig
 from parrot.outputs.a2ui.catalog import register_component
 from parrot.outputs.a2ui.catalog.base import BasicNode, BasicTree
+from parrot.outputs.a2ui.catalog.parrot._derive import derive_schema
 from parrot.outputs.a2ui.models import Component
 
-MAP_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "title": {"type": "string"},
-        "description": {"type": "string"},
-        "baseLayer": {"type": "string", "description": "Base tile layer id."},
-        "viewport": {
-            "type": "object",
-            "properties": {
-                "center": {"type": "array", "items": {"type": "number"}},
-                "zoom": {"type": "number"},
-            },
-        },
-        "layers": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "type": {"type": "string"},
-                },
-                "required": ["name"],
-            },
-        },
-        "data": {
-            "description": "Data-model binding ({'path': '/pointer'}) to geo features.",
-        },
-    },
-    "required": ["layers"],
-}
+MAP_SCHEMA: dict[str, Any] = derive_schema(
+    StructuredMapConfig,
+    binding_fields=("data", "datasets"),
+    required=("layers",),
+)
 
 MAP_INSTRUCTIONS = (
-    "Use Map for geospatial data. Declare `layers` (each with `name`/`type`), an "
-    "optional `viewport` (center/zoom) and `baseLayer`. Bind features with "
-    '`data: {"path": "/pointer"}`. On static surfaces the map degrades to a '
-    "titled layer summary. Display-only."
+    "Use Map for geospatial data. Declare `layers`, each a full MapLayer: `layer` "
+    "(source id), `columns` (name/type/title/format), optional `tooltipTemplate` "
+    "(str.format_map template over feature properties), `labelField` (marker label "
+    "property key), `dataShape` ('geojson'/'rows'), `totalCount`/`capped` (true "
+    "count vs. truncation), `geodesic` (path type) and `markerColor`. Optional "
+    "`viewport` (bbox/center/zoom), `query` (echoed spatial filter: point/radius/"
+    "unit), `baseLayer`, `title`, `description`. Bind features with "
+    '`data: {"path": "/pointer"}` (per-layer geo features); `datasets` is '
+    "input-only and never appears on the wire. On static surfaces the map "
+    "degrades to a titled layer summary. Display-only."
 )
+
+
+def _layer_summary_text(layer: dict[str, Any]) -> str:
+    """Build a titled one-line summary for a single ``MapLayer`` dict.
+
+    Args:
+        layer: A ``MapLayer``-shaped dict (camelCase props: ``layer``,
+            ``labelField``, ``markerColor``, ``totalCount``, ``capped``, ...).
+
+    Returns:
+        A ``" | "``-joined summary: layer id, then any of
+        ``labelField``/``markerColor``/``totalCount``/``capped`` that are set.
+    """
+    parts = [str(layer.get("layer", ""))]
+    label_field = layer.get("labelField")
+    if label_field:
+        parts.append(f"label={label_field}")
+    marker_color = layer.get("markerColor")
+    if marker_color:
+        parts.append(f"color={marker_color}")
+    if "totalCount" in layer:
+        parts.append(f"total={layer['totalCount']}")
+    if layer.get("capped"):
+        parts.append("capped")
+    return " | ".join(parts)
 
 
 @register_component("Map")
@@ -84,7 +96,7 @@ class MapComponent:
         layer_items = [
             BasicNode(
                 component="Text",
-                text=layer.get("name", ""),
+                text=_layer_summary_text(layer),
                 metadata={"extensions": {"parrot_role": "layer"}},
             )
             for layer in (props.get("layers") or [])
