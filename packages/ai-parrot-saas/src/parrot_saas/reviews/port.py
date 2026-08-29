@@ -197,6 +197,27 @@ class ReviewSource(ABC):
         """
         return event.external_id
 
+    def admitted(self, tenant_id: str, event: ReviewEvent) -> None:
+        """Tell the source that a review of its was admitted into the system.
+
+        A no-op for a real platform: it already knows about the review, having
+        published it. It exists for stand-ins that hold their own corpus —
+        :class:`~parrot_saas.reviews.mock.MockReviewSource` most of all, whose
+        ``reply()`` refuses an ``external_id`` it has never seen because the
+        real platforms do too.
+
+        Without this hook the simulate endpoint could not complete a run: it
+        injects a payload straight into ``normalize()``, so the mock never
+        learns of the review it is later asked to reply to, and every demo run
+        fails at publication. Seeding at ingest is the honest fix — a platform
+        you can post a reply to is one that has the review.
+
+        Args:
+            tenant_id: The tenant the review was admitted for.
+            event: The normalised event, as stored.
+        """
+        return None
+
 
 __all__ = (
     "ReviewEvent",

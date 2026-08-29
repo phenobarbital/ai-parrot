@@ -104,6 +104,7 @@ policies:
       that decide who gets an offer.
     resources:
       - "saas:reviews"
+      - "saas:runs"
       - "saas:coupons"
       - "saas:rules"
     actions:

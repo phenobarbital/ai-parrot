@@ -42,6 +42,14 @@ APP_REVIEW_SOURCES = "saas_review_sources"
 #: Key under which ``setup_saas_api`` publishes the ingest service factory.
 APP_INGEST_SERVICE = "saas_review_ingest"
 
+#: Keys under which ``setup_saas_api`` publishes the two review-side
+#: repositories. The handlers here reach them through the ingest service, but
+#: the flow runner and the coupon delivery service need them directly, and a
+#: shared instance is what keeps one connection pool per process rather than
+#: one per consumer.
+APP_REVIEW_REPOSITORY = "saas_reviews"
+APP_GUEST_REPOSITORY = "saas_guests"
+
 #: PBAC resource these routes are gated by, under the shared ``saas`` type.
 PBAC_RESOURCE_NAME = "reviews"
 
@@ -387,7 +395,9 @@ def setup_review_routes(
 
 
 __all__ = (
+    "APP_GUEST_REPOSITORY",
     "APP_INGEST_SERVICE",
+    "APP_REVIEW_REPOSITORY",
     "APP_REVIEW_SOURCES",
     "ReviewCollectionView",
     "ReviewItemView",

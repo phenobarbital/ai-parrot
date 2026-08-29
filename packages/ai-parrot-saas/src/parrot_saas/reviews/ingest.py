@@ -186,6 +186,19 @@ class ReviewIngestService:
             )
             return IngestResult(review, created=False)
 
+        # Before the run, not after: the flow publishes a reply through this
+        # same source, and a stand-in that holds its own corpus has to know
+        # about the review by then. A real adapter ignores this.
+        try:
+            source.admitted(tenant.tenant_id, event)
+        except Exception as exc:  # noqa: BLE001 - the review is already stored
+            logger.warning(
+                "source %r could not record review %s: %s",
+                getattr(source, "name", source),
+                review.review_id,
+                exc,
+            )
+
         run_id = await self._queue_run(tenant, review)
         return IngestResult(review, created=True, run_id=run_id)
 

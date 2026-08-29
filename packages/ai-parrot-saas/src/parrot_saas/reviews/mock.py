@@ -141,6 +141,26 @@ class MockReviewSource(ReviewSource):
         """
         self._corpus(tenant_id).extend(events)
 
+    def admitted(self, tenant_id: str, event: ReviewEvent) -> None:
+        """Record an injected review so a later reply to it is accepted.
+
+        The simulate endpoint hands a payload to ``normalize()`` and stores
+        the result; without this the corpus would never hear about it and
+        ``reply()`` would refuse the very review the flow just answered.
+
+        Idempotent on ``external_id``: a duplicate delivery never reaches this
+        method, but a corpus that grew a second copy would make ``fetch``
+        return the review twice.
+
+        Args:
+            tenant_id: The tenant the review was admitted for.
+            event: The normalised event.
+        """
+        corpus = self._corpus(tenant_id)
+        if any(existing.external_id == event.external_id for existing in corpus):
+            return
+        corpus.append(event)
+
     def clear(self, tenant_id: Optional[str] = None) -> None:
         """Empty one tenant's corpus, or every tenant's.
 

@@ -292,6 +292,54 @@ def _statements(schema: str) -> Sequence[str]:
         CREATE INDEX IF NOT EXISTS coupon_events_coupon_idx
             ON {schema}.coupon_events (tenant_id, coupon_id, created_at)
         """,
+        # -- runs ----------------------------------------------------------
+        # One row per flow execution, owned by this plane.
+        #
+        # This is deliberately **not** the crew execution table that
+        # ``PersistenceMixin._save_result`` writes. That one is an audit and
+        # observability trail with a process-wide schema; this one is tenant
+        # state the API serves and a resume reads, so it lives where every
+        # other tenant table lives and inherits the same ``tenant_id``
+        # guard rails. ``run_id`` is supplied by the ingest path rather than
+        # minted here, so one identifier follows the work from the 202
+        # response through the job record into the flow's checkpoint key.
+        f"""
+        CREATE TABLE IF NOT EXISTS {schema}.runs (
+            run_id       uuid        PRIMARY KEY,
+            tenant_id    text        NOT NULL
+                                     REFERENCES {schema}.tenants (tenant_id)
+                                     ON DELETE CASCADE,
+            flow         text        NOT NULL DEFAULT 'community_manager',
+            review_id    uuid        REFERENCES {schema}.reviews (review_id)
+                                     ON DELETE SET NULL,
+            status       text        NOT NULL DEFAULT 'queued',
+            outcome      text        NOT NULL DEFAULT '',
+            replied      boolean     NOT NULL DEFAULT false,
+            coupon_code  text        NOT NULL DEFAULT '',
+            failed_node  text        NOT NULL DEFAULT '',
+            error        text        NOT NULL DEFAULT '',
+            usage        jsonb       NOT NULL DEFAULT '{{}}'::jsonb,
+            nodes        jsonb       NOT NULL DEFAULT '[]'::jsonb,
+            duration_ms  integer     NOT NULL DEFAULT 0,
+            started_at   timestamptz NOT NULL DEFAULT now(),
+            finished_at  timestamptz
+        )
+        """,
+        # The operator's list view is "this tenant's runs, newest first"; the
+        # review detail view is "every run for this review".
+        f"""
+        CREATE INDEX IF NOT EXISTS runs_tenant_idx
+            ON {schema}.runs (tenant_id, started_at DESC)
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS runs_review_idx
+            ON {schema}.runs (tenant_id, review_id)
+        """,
+        f"""
+        CREATE INDEX IF NOT EXISTS runs_unfinished_idx
+            ON {schema}.runs (tenant_id, status)
+            WHERE finished_at IS NULL
+        """,
     )
 
 

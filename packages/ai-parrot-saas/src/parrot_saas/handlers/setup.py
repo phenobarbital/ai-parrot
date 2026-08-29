@@ -33,6 +33,7 @@ from ..tenancy.middleware import (
 )
 from ..tenancy.repository import TenantRepository
 from ..tenancy.runtime import TenantRuntime, TenantRuntimeCache
+from .runs import APP_RUN_REPOSITORY, RunCollectionView, RunItemView, setup_run_routes
 from .coupons import (
     APP_COUPON_DELIVERY,
     APP_COUPON_ISSUER,
@@ -51,7 +52,9 @@ from .rules import (
     setup_rule_routes,
 )
 from .reviews import (
+    APP_GUEST_REPOSITORY,
     APP_INGEST_SERVICE,
+    APP_REVIEW_REPOSITORY,
     APP_REVIEW_SOURCES,
     ReviewCollectionView,
     ReviewItemView,
@@ -218,6 +221,11 @@ def setup_saas_api(
     review_sources: Optional[Any] = None,
     run_launcher: Optional[Any] = None,
     job_manager: Optional[Any] = None,
+    checkpoint_runs: bool = False,
+    checkpoint_store: Optional[Any] = None,
+    durable_runs: bool = False,
+    durable_store: Optional[Any] = None,
+    result_storage: Optional[Any] = None,
     strategies: Sequence[str] = DEFAULT_STRATEGIES,
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
     exempt_patterns: Iterable[str] = (),
@@ -248,6 +256,14 @@ def setup_saas_api(
         job_manager: Job manager used to run launches off the request. Defaults
             to ``app['job_manager']`` when the jobs subsystem is configured;
             without one the launcher is awaited inline.
+        checkpoint_runs: Checkpoint each node of a flow run. Off by default:
+            it costs a store round trip per node, and it only earns that back
+            once resume works for this graph's custom node types.
+        checkpoint_store: Ephemeral checkpoint store (name or instance).
+        durable_runs: Also write checkpoints through to a durable store.
+        durable_store: The durable store (name or instance).
+        result_storage: ``ResultStorage`` for the execution audit rows.
+            Defaults to Postgres on the SaaS DSN.
         strategies: Tenant resolution strategies, in order.
         exempt_prefixes: Path prefixes skipping tenant resolution.
         exempt_patterns: Glob patterns skipping tenant resolution — for
@@ -326,6 +342,8 @@ def setup_saas_api(
 
     review_repository = ReviewRepository(resolved_dsn, schema=resolved_schema)
     guest_repository = GuestRepository(resolved_dsn, schema=resolved_schema)
+    _app[APP_REVIEW_REPOSITORY] = review_repository
+    _app[APP_GUEST_REPOSITORY] = guest_repository
 
     # Built here rather than per run: it holds provider connection options
     # (SMTP credentials, an SMS token) that belong to the deployment, not to a
@@ -337,6 +355,41 @@ def setup_saas_api(
         guest_repository=guest_repository,
         coupon_repository=coupon_repository,
     )
+
+    from parrot.bots.flows.core.storage.backends.postgres import (
+        PostgresResultStorage,
+    )
+
+    from ..runs.repository import RunRepository
+
+    run_repository = RunRepository(resolved_dsn, schema=resolved_schema)
+    _app[APP_RUN_REPOSITORY] = run_repository
+
+    if run_launcher is None:
+        # Without this the ingest path stores reviews and warns that nothing
+        # ran. Building the runner here rather than leaving that default in
+        # place is what turns an admitted review into an answered one.
+        from ..flows.community_manager.runner import CommunityManagerRunner
+
+        run_launcher = CommunityManagerRunner(
+            runtimes=runtimes,
+            runs=run_repository,
+            reviews=review_repository,
+            guests=guest_repository,
+            coupons=coupon_repository,
+            issuer=coupon_issuer,
+            delivery=_app[APP_COUPON_DELIVERY],
+            review_sources=review_sources,
+            checkpoint=checkpoint_runs,
+            checkpoint_store=checkpoint_store,
+            durable=durable_runs,
+            durable_store=durable_store,
+            # AgentsFlow sets no result storage of its own — only AgentCrew
+            # does — so the execution audit rows would otherwise go to the
+            # process-wide default backend rather than this plane's database.
+            result_storage=result_storage
+            or PostgresResultStorage(resolved_dsn),
+        )
     _app[APP_INGEST_SERVICE] = ReviewIngestService(
         reviews=review_repository,
         guests=guest_repository,
@@ -369,6 +422,8 @@ def setup_saas_api(
             OfferItemView,
             CouponCollectionView,
             CouponRedeemView,
+            RunCollectionView,
+            RunItemView,
         )
 
     if install_middleware:
@@ -387,6 +442,7 @@ def setup_saas_api(
     setup_review_routes(_app)
     setup_rule_routes(_app)
     setup_coupon_routes(_app)
+    setup_run_routes(_app)
 
     async def _on_startup(application: web.Application) -> None:
         """Create the SaaS schema if it does not exist."""
@@ -403,6 +459,7 @@ def setup_saas_api(
         await guest_repository.aclose()
         await rule_repository.aclose()
         await coupon_repository.aclose()
+        await run_repository.aclose()
         store = application.get(APP_SECRET_STORE)
         if store is not None and hasattr(store, "aclose"):
             await store.aclose()
@@ -424,7 +481,10 @@ __all__ = (
     "APP_COUPON_ISSUER",
     "APP_COUPON_REPOSITORY",
     "APP_INGEST_SERVICE",
+    "APP_GUEST_REPOSITORY",
+    "APP_REVIEW_REPOSITORY",
     "APP_RULE_REPOSITORY",
+    "APP_RUN_REPOSITORY",
     "APP_REVIEW_SOURCES",
     "APP_SECRET_STORE",
     "APP_SECRET_STORE_FACTORY",

@@ -15,8 +15,11 @@ from aiohttp import web
 from asyncdb import AsyncDB
 
 from parrot_saas.handlers.reviews import APP_INGEST_SERVICE
+from parrot_saas.handlers.runs import APP_RUN_REPOSITORY
 from parrot_saas.handlers.setup import setup_saas_api
+from parrot_saas.reviews.models import Review
 from parrot_saas.reviews.webhook import SIGNATURE_HEADER, secret_key_for
+from parrot_saas.tenancy.context import TenantContext
 from parrot_saas.tenancy.middleware import TENANT_HEADER
 
 pytestmark = pytest.mark.integration
@@ -397,16 +400,22 @@ async def test_an_anonymous_review_resolves_no_guest(client) -> None:
     assert (await resp.json())["review"]["guest_id"] == ""
 
 
-async def test_without_a_launcher_the_review_is_stored_and_it_says_so(
-    aiohttp_client, test_dsn, unique_schema, secret_store, caplog
+async def test_the_default_wiring_actually_runs_the_flow(
+    aiohttp_client, test_dsn, unique_schema, secret_store
 ) -> None:
-    """The seam has a default, and the default is loud.
+    """``setup_saas_api`` wires a real runner, not the warning stub.
 
-    The runner arrives with its own feature. Until it does, a review is
-    admitted and nothing runs — which must appear in the log rather than look
-    like success.
+    This asserted the opposite until the runner existed: an admitted review
+    and a log line saying nothing ran. What matters now is that the seam has
+    a *working* default, because a deployment that has to remember to pass one
+    is a deployment where reviews pile up unanswered.
+
+    The run is expected to **fail** here, and that is the correct outcome
+    rather than a weak assertion: the review arrived through the generic
+    webhook adapter, which is inbound-only and refuses to publish replies. A
+    tenant answering real reviews configures the platform's own adapter. What
+    is being proved is that a run happened at all and was recorded.
     """
-    caplog.set_level(logging.WARNING)
     app = web.Application()
     setup_saas_api(
         app,
@@ -422,13 +431,39 @@ async def test_without_a_launcher_the_review_is_stored_and_it_says_so(
 
     try:
         resp = await http.post(f"{HOOK}/bar-pepe", data=raw, headers=signed(raw))
-
         assert resp.status == 202
-        assert any(
-            "no run launcher is configured" in r.getMessage()
-            for r in caplog.records
-        )
+        run_id = (await resp.json())["run_id"]
+
+        runs = app[APP_RUN_REPOSITORY]
+        record = await runs.get("bar-pepe", run_id)
+        assert record is not None, "the ingest path started no run"
+        assert record.failed_node == "publish_reply"
+        assert "cannot publish replies" in record.error
+        # And the run id the caller was handed is the one that was recorded.
+        assert record.run_id == run_id
     finally:
         conn = AsyncDB("pg", dsn=test_dsn)
         async with await conn.connection():
             await conn.execute(f"DROP SCHEMA IF EXISTS {unique_schema} CASCADE")
+
+
+async def test_a_service_without_a_launcher_says_so(caplog) -> None:
+    """The seam's own default is still loud, for anyone wiring by hand.
+
+    ``setup_saas_api`` no longer leaves it in place, but a caller constructing
+    the service directly gets it, and a silent no-op there would look like
+    success while every review went unanswered.
+    """
+    from parrot_saas.reviews.ingest import null_run_launcher
+
+    caplog.set_level(logging.WARNING)
+    tenant = TenantContext(tenant_id="bar-pepe", name="Bar Pepe")
+
+    result = await null_run_launcher(
+        tenant, Review(review_id="r-1", tenant_id="bar-pepe"), "run-1"
+    )
+
+    assert result["status"] == "not_started"
+    assert any(
+        "no run launcher is configured" in r.getMessage() for r in caplog.records
+    )
