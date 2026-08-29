@@ -201,8 +201,25 @@ def test_arango_doc_mapping_external_id(): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: Added `external_id` to `SourceManifestEntry` (models.py) and the
+`sources` DDL/index (store.py). In `sources.py`: `_SOURCES_EXTERNAL_COLUMNS`
+migration map (+ idempotent `CREATE INDEX IF NOT EXISTS` on the same
+migration path used for both fresh and pre-existing databases — the fresh
+DDL cannot safely create the index itself since it also runs unconditionally
+against old databases missing the column); grew `_SOURCES_UPSERT_SQL` to 15
+columns; updated `_entry_params`/`_row_to_entry`/`_entry_to_doc`/
+`_doc_to_entry`; added `add_source(..., external_id=)`,
+`record_decision(..., external_id=)`, `find_by_external_id`,
+`find_entries_by_external_ids` (chunked), `list_by_external_prefix`,
+`set_external_id`, `update_source_uri`; fixed `mark_ingested`/
+`mark_ingested_many` to `model_copy(update=...)` instead of reconstructing
+a 7-field entry (previously silently dropped FEAT-402/451 fields, and would
+have dropped `external_id` too). Arango backend: `_async_find_by_external_id`
++ AQL branches in the three new readers. Documented the `<source>:<id>`
+convention in the class docstring. Full `tests/knowledge/wiki/` suite passes
+(1 pre-existing unrelated failure in `test_claude_code.py`, confirmed via
+`git stash` to predate this change). `ruff check` clean on all changed files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

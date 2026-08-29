@@ -98,6 +98,101 @@ plane rather than silently degrading to retrieval-only.
 Every step is best-effort. On any failure `self._wiki` is set to `None`,
 a warning is logged, and the agent still boots and still syncs to Obsidian.
 
+### Meeting registry (FEAT-472)
+
+`sync_fireflies_transcripts` (inherited from `FirefliesObsidianAgent`) no
+longer dedupes meetings by note title. Identity is the immutable Fireflies
+transcript id, stored as `external_id = "fireflies:<id>"` on the shared
+wiki `sources` row (`parrot.knowledge.wiki.sources.SourceCollectionManager`
+— see its class docstring for the general `"<source>:<id>"` convention any
+future external-source ingest, e.g. Jira or audio notes, should follow).
+All meeting-specific state (transcript/summary fingerprints, analysis
+status + fingerprint, `wiki_ingested_at`, last error) lives in that row's
+`doc_metadata["fireflies"]` JSON block.
+
+`parrot.agents.meeting_registry.MeetingRegistry` is the facade over the
+manager:
+
+- `classify(item, fetch=..., fetch_summary=..., force_refetch=...)` →
+  `create` | `skip` | `revise`. `skip` is cheap (no transcript fetch) when
+  the listing's title/date/duration are unchanged and the row was synced
+  within `FIREFLIES_RECHECK_DAYS`; otherwise the transcript is fetched and
+  fingerprinted (SHA-256 of the normalised text — the Fireflies summary is
+  fingerprinted separately and never affects this decision).
+- `revise` never creates a second file for a known id: the body is
+  rebuilt from the fresh transcript and the note is updated in place
+  (`update_note(preserve_frontmatter=True)` for the body, then a
+  read-merge-rewrite for the `title`/`participants`/`synced_at`
+  frontmatter fields), analysis is reset to `pending`.
+- `repair_path(...)` runs ahead of every create/revise: if the row's note
+  file no longer exists, the meetings folder is scanned by frontmatter
+  for the id; found → moved back to the canonical
+  `{meetings_folder}/{YYYY-MM-DD-slug}.md` path when that path is free,
+  else the registry is updated to the found path only; not found → the
+  item falls through to `create`.
+- `backfill_from_vault(...)` runs once, inside `configure()`, only when
+  the registry has no `fireflies:*` rows yet (a pre-FEAT-472 vault):
+  every note's frontmatter is scanned, one row seeded per id
+  (`fingerprint=None` — nothing was fetched from Fireflies, so the next
+  sync always re-checks once), and `merge_duplicates(...)` collapses any
+  id with more than one note (keeps the analysed note, else the newest by
+  mtime; moves it to the canonical path when free; deletes the rest;
+  never deletes a note whose frontmatter failed to parse).
+- With the registry unavailable (construction or a later manager call
+  raised), every verb degrades to a neutral value and the sync/analysis
+  loops fall back to the pre-FEAT-472 title-based path for that run —
+  never raises.
+
+`summarize_pending_transcripts` sources its candidates from
+`registry.pending_analysis()` instead of scanning the folder for notes
+missing `## Analysis`, and calls `mark_analyzed(fireflies_id, fingerprint)`
+/ `mark_analysis_failed(fireflies_id, error)` afterward.
+
+`sync_meetings_to_wiki` gained a fourth step, after a successful wiki
+ingest: `stamped = await self.registry.mark_wiki_ingested()`, stamping
+`wiki_ingested_at` on every up-to-date fireflies row and closing the
+lifecycle (synced → analysed → wiki-ingested). Skipped when there is no
+wiki plane, the ingest itself did not run, or the registry is
+unavailable.
+
+An on-demand Telegram command complements the 07:00 schedule:
+
+```
+/sync force_refetch=true|false limit=<n>
+```
+
+`force_refetch` bypasses the cheap-skip path (case-insensitive
+`true`/`1`/`yes`; anything else is `False`). `limit` is parsed as an int;
+empty or unparsable falls back to `FIREFLIES_WIKI_SYNC_LIMIT`. The reply
+is one line:
+
+```
+✅ synced N · revised R · skipped S · analysed A · wiki: ok/skipped [· errors N]
+```
+
+`sync_meetings_to_wiki`'s report gains `wiki["stamped"]` (present only
+when `mark_wiki_ingested` ran); `sync_fireflies_transcripts`'s report
+(consumed as `report["sync"]`) gains `revised`, `repaired`,
+`probable_duplicates`, `from_date`, and `registry` (`"ok"` |
+`"unavailable"`) — see that method's own docstring for the full shape.
+`duplicates` is reserved on that report but always empty: duplicate
+merges are reported by `backfill_from_vault`'s own `BackfillReport`
+(logged in `configure()`), never surfaced through the sync report itself.
+
+Out of scope for this feature (see the operating contract,
+`sdd/proposals/brainstorm-obsidian-wiki-knowledgebase.md` §14/§25): the
+Review Queue / `Raw/Processed/Revisions` bundle layout, and the Markdown
+mirror `Wiki/Registry/processed-sources.md` — both belong to the future
+knowledgebase agent, which can consume this feature's `report["revised"]`
+as its trigger. This feature deliberately revises a changed transcript in
+place rather than routing it to a review queue — a documented divergence
+from the contract's default (spec §7 Known Risks), accepted because the
+vault *is* the raw layer for this agent and analysis is regenerated
+automatically.
+
+Full spec: `sdd/specs/fireflies-meeting-registry.spec.md`. Operator
+runbook: `docs/runbooks/fireflies-meeting-registry.md`.
+
 ### The three scheduled jobs
 
 | Method | Trigger | Responsibility |
@@ -108,21 +203,32 @@ a warning is logged, and the agent still boots and still syncs to Obsidian.
 
 #### 07:00 — `sync_meetings_to_wiki()`
 
-Runs three steps, in this order:
+Runs four steps, in this order (FEAT-472 added the fourth):
 
-1. `sync_fireflies_transcripts(limit=SYNC_LIMIT, skip_existing=True)`
+1. `sync_fireflies_transcripts(limit=SYNC_LIMIT, skip_existing=True, force_refetch=force_refetch)`
+   — id-keyed dedup via the meeting registry; see "Meeting registry
+   (FEAT-472)" above.
 2. `summarize_pending_transcripts(granularity="standard", limit=ANALYSIS_LIMIT)`
+   — candidates from the registry's `pending_analysis()` when available.
 3. `self._wiki.ingest_obsidian_vault(wiki_name, vault_path, incremental=True,
    extract_entities=EXTRACT_ENTITIES)`
+4. `await self.registry.mark_wiki_ingested()` when step 3 ingested
+   successfully and the registry is available — stamps `wiki_ingested_at`.
 
 The order is load-bearing. Summarizing **before** the wiki ingest means the
 page published to the wiki carries the transcript *and* its summary in a
 single ingest pass, which is the stated requirement. It also guarantees the
-08:00 digest finds its input already written into the vault.
+08:00 digest finds its input already written into the vault. Stamping
+`wiki_ingested_at` **after** the ingest (never before) means the stamp
+only ever reflects a wiki that genuinely contains the meeting.
 
 `incremental=True` uses the source manifest's staleness check, so the job is
 idempotent and self-healing: a run that failed yesterday is picked up today
 without special-casing.
+
+`force_refetch` (default `False`) is forwarded from `sync_meetings_to_wiki`'s
+own parameter — set by the `/sync force_refetch=true` Telegram command,
+never by the 07:00 schedule itself.
 
 #### 08:00 — `email_daily_meeting_digest()`
 
@@ -173,6 +279,9 @@ evaluates its arguments at decoration time (the same constraint that makes
 | `FIREFLIES_WIKI_ANALYSIS_LIMIT` | `20` | Max notes analyzed per run |
 | `FIREFLIES_WIKI_DAILY_WINDOW_DAYS` | `1` | Daily digest lookback |
 | `FIREFLIES_WIKI_EXTRACT_ENTITIES` | `false` | Phase-2 LLM entity extraction |
+| `FIREFLIES_REGISTRY_DIR` | `FIREFLIES_WIKI_STORAGE_DIR` | FEAT-472: directory whose `wiki.db` backs the `MeetingRegistry` — same file the wiki toolkit opens, so both share one row per meeting |
+| `FIREFLIES_SYNC_OVERLAP_DAYS` | `2` | FEAT-472: days subtracted from `max(synced_at)` to derive the sync window's `fromDate` when no explicit filter is given |
+| `FIREFLIES_RECHECK_DAYS` | `7` | FEAT-472: a row younger than this is eligible for `classify()`'s cheap-skip path (no transcript fetch) when the listing metadata is unchanged |
 
 The digest windows are computed in **the same timezone the triggers fire
 in**, resolved by `parrot.agents.conf.schedule_tzinfo()`
@@ -200,6 +309,11 @@ inherit the scheduler's default.
   `agents/security_advisor.py::_email`.
 - An empty window sends no email at all (logged), rather than mailing an
   empty bullet list.
+- FEAT-472: a `MeetingRegistry` that fails to construct (or raises on a
+  later call) degrades to `available=False` after one WARNING log; the
+  sync and analysis loops then fall back to the pre-FEAT-472 title-based
+  path for that run — never raises, and `report["registry"]` reflects the
+  degradation (`"ok"` | `"unavailable"`).
 
 ## Testing
 
@@ -210,15 +324,33 @@ pytest-asyncio, no network, no real LLM.
   prefixes ignored, notes outside the window excluded
 - `_collect_analyses` extracts only the Analysis block and tolerates notes
   that have none
-- 07:00 job calls sync → summarize → ingest **in that order** (ordering
-  assertion, not just call counts)
-- wiki is `None` → sync still succeeds, ingest reported as skipped
+- 07:00 job calls sync → summarize → ingest → `mark_wiki_ingested`
+  **in that order** (ordering assertion, not just call counts; FEAT-472
+  added the fourth step)
+- wiki is `None` → sync still succeeds, ingest reported as skipped,
+  `mark_wiki_ingested` never called; same when the registry is unavailable
+- `/sync` (`sync_now`) parses `force_refetch`/`limit`, forwards them to
+  `sync_meetings_to_wiki`, and replies with one line, including an error
+  count when non-zero
 - daily digest: empty window sends nothing; populated window calls
   `send_notification` with the daily recipients
 - weekly insights: uses the 7-day window and the weekly recipients
 - `_email` returns `False` when the provider reports `{"status": "error"}`
-- decorator metadata: all three methods carry `_schedule_config` with the
-  expected hour / minute / day_of_week / timezone
+- decorator metadata: all three scheduled methods carry `_schedule_config`
+  with the expected hour / minute / day_of_week / timezone; `sync_now`
+  carries `_telegram_command` with `command="sync"`
+
+FEAT-472 also added, in `packages/ai-parrot`'s own test tree (not this
+gitignored `agents/` file's sibling):
+
+- `tests/test_meeting_registry.py` — `MeetingRegistry` unit tests
+  (classify, backfill, merge, repair)
+- `tests/test_fireflies_obsidian_sync.py` — `FirefliesObsidianAgent`'s
+  registry-driven sync/analysis loops
+- `tests/integration/test_fireflies_meeting_registry.py` — the registry
+  and the wiki toolkit sharing one `wiki.db`; the full
+  create → revise → analyse → cheap-skip cycle; an existing vault
+  upgrading without duplicates
 
 ## Deliverables
 
@@ -228,6 +360,9 @@ pytest-asyncio, no network, no real LLM.
 - `examples/agents/fireflies_wiki_agent.py` — manual one-shot runner for
   each of the three methods, alongside the existing
   `examples/agents/fireflies_obsidian_sync.py`
+- `packages/ai-parrot/src/parrot/agents/meeting_registry.py` — the
+  FEAT-472 `MeetingRegistry` facade (see "Meeting registry (FEAT-472)"
+  above and `sdd/specs/fireflies-meeting-registry.spec.md`)
 
 ## Out of scope
 
