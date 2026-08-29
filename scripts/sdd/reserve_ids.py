@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from scripts.sdd.id_ledger import LEDGER_PATH, IdLedger, save_ledger
 
@@ -91,27 +91,46 @@ def _run_git(
         The completed subprocess result.
 
     Raises:
-        subprocess.TimeoutExpired: If the git command does not complete
-            within ``_GIT_TIMEOUT_SECONDS`` (e.g. a stalled network or an
-            interactive credential prompt) — bounded so a single allocator
-            instance can never hang forever.
+        IdReservationError: If the git command does not complete within
+            ``_GIT_TIMEOUT_SECONDS`` (e.g. a stalled network or an
+            interactive credential prompt). Bounded so a single allocator
+            instance can never hang forever — and surfaced as this
+            module's own error type so ``reserve_ids()`` keeps its
+            contract that every failure mode is an ``IdReservationError``.
+        subprocess.CalledProcessError: If ``check`` is ``True`` and git
+            exits non-zero; callers translate this into an
+            ``IdReservationError`` with context.
     """
     env = dict(os.environ)
     # Never let git block on an interactive credential prompt — fail fast
     # instead of hanging indefinitely.
     env["GIT_TERMINAL_PROMPT"] = "0"
+    # Two of this module's decisions read git's output (the porcelain
+    # status codes and the push ref-status line). Neither is translated by
+    # the git version in use — verified empirically under a fully
+    # installed es_ES.UTF-8 with LANGUAGE=es, where the surrounding advice
+    # text IS translated ("ayuda:") but `! [rejected] ... (fetch first)`
+    # stays English. Pinning the locale anyway costs nothing and removes
+    # the dependency on that observation holding in future git releases.
+    env["LC_ALL"] = "C"
     if env_extra:
         env.update(env_extra)
-    return subprocess.run(
-        ["git", *args],
-        cwd=repo_root,
-        check=check,
-        capture_output=True,
-        text=True,
-        env=env,
-        input=stdin,
-        timeout=_GIT_TIMEOUT_SECONDS,
-    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            check=check,
+            capture_output=True,
+            text=True,
+            env=env,
+            input=stdin,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise IdReservationError(
+            f"git {' '.join(args[:2])} timed out after "
+            f"{_GIT_TIMEOUT_SECONDS:.0f}s"
+        ) from exc
 
 
 def _porcelain_path(line: str) -> str:
@@ -216,9 +235,18 @@ def _resolve_base_sha(root: Path, base_branch: str, *, fetch: bool) -> str:
         if probe.returncode == 0 and probe.stdout.strip():
             return probe.stdout.strip()
 
+    # Fetch into the remote-tracking ref explicitly rather than reading
+    # FETCH_HEAD: FETCH_HEAD is a single per-worktree file, so a concurrent
+    # `git fetch` for a DIFFERENT branch in the same working directory (two
+    # SDD commands on one checkout is a documented hazard in this repo)
+    # could hand us an unrelated tip — which we would then push onto
+    # <base_branch>. The tracking ref is per-branch and cannot be confused.
+    tracking_ref = f"refs/remotes/origin/{base_branch}"
     try:
-        _run_git(["fetch", "origin", base_branch], root)
-        result = _run_git(["rev-parse", "--verify", "FETCH_HEAD^{commit}"], root)
+        _run_git(
+            ["fetch", "origin", f"+refs/heads/{base_branch}:{tracking_ref}"], root
+        )
+        result = _run_git(["rev-parse", "--verify", f"{tracking_ref}^{{commit}}"], root)
     except subprocess.CalledProcessError as exc:
         raise IdReservationError(
             f"could not resolve origin/{base_branch}: {exc.stderr or exc}"
@@ -249,7 +277,13 @@ def _read_ledger_at(root: Path, base_sha: str) -> IdLedger:
         raise IdReservationError(
             f"{LEDGER_PATH} not found in {base_sha}: {exc.stderr or exc}"
         ) from exc
-    return IdLedger.model_validate_json(result.stdout)
+
+    try:
+        return IdLedger.model_validate_json(result.stdout)
+    except ValidationError as exc:
+        raise IdReservationError(
+            f"{LEDGER_PATH} in {base_sha} is not a valid ledger: {exc}"
+        ) from exc
 
 
 def _build_ledger_commit(

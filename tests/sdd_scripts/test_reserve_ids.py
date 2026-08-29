@@ -78,6 +78,16 @@ class TestReserveIds:
         ledger = load_ledger(clone / LEDGER_PATH)
         assert ledger.next_task_id == 1003
 
+        # …and the reservation is only real if it landed on the remote.
+        remote_ledger = subprocess.run(
+            ["git", "show", "dev:" + str(LEDGER_PATH)],
+            cwd=remote,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert '"next_task_id": 1003' in remote_ledger
+
     def test_reserve_ids_retries_on_non_fast_forward(
         self, bare_remote_and_clone, tmp_path: Path
     ) -> None:
@@ -134,7 +144,8 @@ class TestReserveIds:
 
         monkeypatch.setattr(subprocess, "run", _fake_run)
 
-        with pytest.raises(IdReservationError):
+        sleeps: list[float] = []
+        with pytest.raises(IdReservationError, match="after 2 attempts"):
             reserve_ids(
                 "task",
                 1,
@@ -142,8 +153,12 @@ class TestReserveIds:
                 "feature-c",
                 repo_root=clone,
                 max_retries=2,
-                sleep_fn=lambda _seconds: None,
+                sleep_fn=sleeps.append,
             )
+        # Without the `match` and this assertion the test also passes when
+        # the rejection is misclassified as non-retryable and attempt 0
+        # raises immediately — i.e. when the retry loop is entirely broken.
+        assert len(sleeps) == 2
 
     def test_reserve_ids_commit_touches_only_ledger(
         self, bare_remote_and_clone
@@ -368,3 +383,162 @@ class TestReserveIdsNeverDestroysLocalWork:
         err = capsys.readouterr().err
         assert "could not be fast-forwarded" in err
         assert "your local commits are intact" in err.lower()
+
+    def test_reservation_works_without_a_remote_tracking_ref(
+        self, bare_remote_and_clone
+    ) -> None:
+        """A missing origin/<base> ref must be fetched, not guessed at."""
+        remote, clone = bare_remote_and_clone
+        _git(["update-ref", "-d", "refs/remotes/origin/dev"], clone)
+
+        reservation = reserve_ids("task", 1, "dev", "feature-k", repo_root=clone)
+
+        assert reservation.ids == ["TASK-1000"]
+        tracking = subprocess.run(
+            ["git", "rev-parse", "refs/remotes/origin/dev"],
+            cwd=clone,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        remote_tip = subprocess.run(
+            ["git", "rev-parse", "dev"],
+            cwd=remote,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert tracking == remote_tip
+
+
+class TestReserveIdsRobustness:
+    """Findings from an adversarial review of the plumbing rewrite."""
+
+    def test_second_allocation_in_same_clone_does_not_burn_a_retry(
+        self, bare_remote_and_clone
+    ) -> None:
+        """Back-to-back reservations must not each lose a race to themselves.
+
+        `git push <sha>:refs/heads/<base>` and `git merge --ff-only` leave
+        `refs/remotes/origin/<base>` where it was, so the next call's first
+        attempt would build on a tip the remote has already moved past —
+        wasting an attempt every time, and failing outright at
+        `max_retries=1`.
+        """
+        remote, clone = bare_remote_and_clone
+        reserve_ids("task", 1, "dev", "first", repo_root=clone)
+
+        sleeps: list[float] = []
+        second = reserve_ids(
+            "task", 1, "dev", "second", repo_root=clone, max_retries=1,
+            sleep_fn=sleeps.append,
+        )
+
+        assert second.ids == ["TASK-1001"]
+        assert sleeps == [], "the second allocation raced against its own push"
+
+    def test_non_retryable_push_failure_aborts_immediately(
+        self, bare_remote_and_clone, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An auth/hook failure must fail loudly, never burn the retry budget."""
+        remote, clone = bare_remote_and_clone
+        original_run = subprocess.run
+        pushes = 0
+
+        class _AuthFailure:
+            returncode = 128
+            stdout = ""
+            stderr = "remote: Permission to org/repo denied\nfatal: unable to access\n"
+
+        def _fake_run(args, *a, **kw):
+            nonlocal pushes
+            if args[:2] == ["git", "push"]:
+                pushes += 1
+                return _AuthFailure()
+            return original_run(args, *a, **kw)
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+
+        with pytest.raises(IdReservationError, match="other than a non-fast-forward"):
+            reserve_ids(
+                "task", 1, "dev", "feature-l", repo_root=clone,
+                max_retries=5, sleep_fn=lambda _s: None,
+            )
+
+        assert pushes == 1, "a non-retryable failure was retried"
+
+    def test_reservation_preserves_every_other_file_in_the_tree(
+        self, bare_remote_and_clone
+    ) -> None:
+        """The plumbing-built tree must carry the whole base tree, not just the ledger."""
+        remote, clone = bare_remote_and_clone
+        (clone / "keep_me.py").write_text("print('hi')\n", encoding="utf-8")
+        _git(["add", "keep_me.py"], clone)
+        _git(["commit", "-m", "add keep_me.py"], clone)
+        _git(["push", "origin", "dev"], clone)
+
+        reserve_ids("task", 1, "dev", "feature-m", repo_root=clone)
+
+        tree = subprocess.run(
+            ["git", "ls-tree", "-r", "--name-only", "dev"],
+            cwd=remote,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        assert "keep_me.py" in tree
+        assert str(LEDGER_PATH) in tree
+
+    def test_lost_race_is_detected_under_a_non_english_locale(
+        self, bare_remote_and_clone, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Retry detection parses git's output, so it must not depend on LANG."""
+        remote, clone_a = bare_remote_and_clone
+        clone_b = tmp_path / "clone_b"
+        subprocess.run(
+            ["git", "clone", str(remote), str(clone_b)],
+            check=True, capture_output=True, text=True,
+        )
+        _git(["config", "user.email", "test-b@example.com"], clone_b)
+        _git(["config", "user.name", "Test B"], clone_b)
+
+        monkeypatch.setenv("LC_ALL", "es_ES.UTF-8")
+        monkeypatch.setenv("LANG", "es_ES.UTF-8")
+        monkeypatch.setenv("LANGUAGE", "es")
+
+        reserve_ids("task", 1, "dev", "feature-a", repo_root=clone_a)
+
+        sleeps: list[float] = []
+        reservation = reserve_ids(
+            "task", 1, "dev", "feature-b", repo_root=clone_b, sleep_fn=sleeps.append,
+        )
+
+        assert reservation.ids == ["TASK-1001"]
+        assert len(sleeps) >= 1
+
+    def test_corrupt_remote_ledger_raises_a_clean_error(
+        self, bare_remote_and_clone
+    ) -> None:
+        """A malformed ledger must not surface as a Pydantic traceback."""
+        remote, clone = bare_remote_and_clone
+        (clone / LEDGER_PATH).write_text('{"next_task_id": "boom"}\n', encoding="utf-8")
+        _git(["add", str(LEDGER_PATH)], clone)
+        _git(["commit", "-m", "corrupt the ledger"], clone)
+        _git(["push", "origin", "dev"], clone)
+
+        with pytest.raises(IdReservationError, match="not a valid ledger"):
+            reserve_ids("task", 1, "dev", "feature-n", repo_root=clone)
+
+    def test_git_timeout_surfaces_as_a_reservation_error(
+        self, bare_remote_and_clone, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A stalled git call must raise this module's error, not TimeoutExpired."""
+        remote, clone = bare_remote_and_clone
+
+        def _timeout(args, *a, **kw):
+            raise subprocess.TimeoutExpired(cmd=args, timeout=30.0)
+
+        monkeypatch.setattr(subprocess, "run", _timeout)
+
+        with pytest.raises(IdReservationError, match="timed out"):
+            reserve_ids("task", 1, "dev", "feature-o", repo_root=clone)
