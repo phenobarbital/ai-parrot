@@ -165,10 +165,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-29
+**Notes**: Removed the known-gap `WARNING` block in
+`ToolManagerExecutor.call()` (the local `ToolDefinition` import and the now
+unused `tool = self._tool_manager.get_tool(name)` lookup went with it —
+verified nothing else in `call()` referenced `tool`); replaced the
+docstring's implicit gap description with a `Note:` section documenting
+FEAT-474's uniform enforcement. `a2ui_audit` INFO line and `_normalize()`
+untouched. Rewrote the §4 "Known limitation, not fixed by this feature"
+bullet in `docs/outputs/a2ui-agent-functions.md` into a
+"uniform enforcement" statement covering guardrails/confirmation/required_permissions
+parity plus the documented grants residual (FEAT-211 stays
+`AbstractTool`-only, registration warning). Added a dated
+`[2026-08-29] Cierre (FEAT-474)` note to the "Superficie de ataque" risk
+bullet in `sdd/specs/a2ui-agent-functions.spec.md` §7 (appended, did not
+touch G7/AC-G7 checkboxes or delete original risk text — spec history
+preserved per SDD convention). Grepped for tests asserting the removed
+warning (`rg "known G7 gap|does not enforce permission_context"`) and
+found exactly one:
+`test_adapters.py::TestToolManagerExecutor::test_tool_definition_path_logs_warning`
+— renamed to `test_tool_definition_path_logs_no_gap_warning` and inverted
+the assertion (proves the gap warning text is now absent). Full a2ui
+output test suite green: `pytest packages/ai-parrot/tests/outputs/a2ui/`
+(588 passed, 1 skipped) plus the import-rule + adapters suites run
+individually (21 passed). `ruff check` on both modified Python files: all
+checks passed, zero findings.
 
 **Deviations from spec**: none

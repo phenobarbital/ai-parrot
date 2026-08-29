@@ -73,7 +73,7 @@
       "feature_id": "FEAT-474",
       "feature": "toolmanager-tooldefinition-enforcement",
       "spec": "sdd/specs/toolmanager-tooldefinition-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Docs/spec/adapter cleanup is only truthful once TASK-2580's enforcement exists; touching adapters.py while its tests reference the warning would break FEAT-469 suites if run early.",
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2581-a2ui-closure-docs-spec.md"
+      "completed_at": "2026-08-29T17:36:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2581-a2ui-closure-docs-spec.md"
     },
     {
       "id": "TASK-2582",
