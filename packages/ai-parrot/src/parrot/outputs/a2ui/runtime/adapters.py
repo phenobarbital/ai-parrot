@@ -66,19 +66,16 @@ class ToolManagerExecutor:
             A normalized :class:`~parrot.tools.abstract.ToolResult` — even
             when ``ToolManager.execute_tool`` returned a raw, unwrapped value
             (the ``ToolDefinition``/``@tool`` path).
+
+        Note:
+            As of FEAT-474, ``ToolManager.execute_tool()`` enforces the
+            TOOL_CALL guardrail pipeline, ``ConfirmationGuard``, and a
+            manager-level Layer 2 resolver check uniformly for BOTH the
+            ``AbstractTool`` and ``ToolDefinition``/``@tool`` execution
+            paths — ``permission_context`` is honored regardless of tool
+            kind (formerly a known gap, closed by FEAT-474; see
+            ``sdd/specs/toolmanager-tooldefinition-enforcement.spec.md``).
         """
-        from parrot.tools.manager import ToolDefinition
-
-        tool = self._tool_manager.get_tool(name)
-        if isinstance(tool, ToolDefinition):
-            self.logger.warning(
-                "A2UI callAgentFunction %r targets a ToolDefinition (@tool-decorated) "
-                "function: ToolManager.execute_tool() does not enforce permission_context "
-                "on this path (manager.py ~1530-1535). This is a known G7 gap, not fixed "
-                "by this adapter — see FEAT-469 TASK-2570 completion note.",
-                name,
-            )
-
         raw = await self._tool_manager.execute_tool(name, args, permission_context=ctx.permission_context)
         result = self._normalize(raw)
 

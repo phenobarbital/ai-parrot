@@ -140,16 +140,20 @@ This is the section that matters most before you deploy this feature.
   threaded through your deployment's identity mapping — this is the safe
   direction for a newly renderer-invocable surface, but it means a
   role-gated tool will simply refuse until you wire real roles in.
-- **Known limitation, not fixed by this feature**: `ToolManager.execute_tool()`
-  bypasses `permission_context` entirely for the `ToolDefinition`
-  (`@tool`-decorated function) path — it calls the plain function directly
-  with no permission check at all. `ToolManagerExecutor.call()` detects
-  this (`isinstance(tool, ToolDefinition)`) and logs a `WARNING` naming the
-  gap on every such call; it does not — and structurally cannot, from this
-  feature's own file scope — enforce anything on that path. If you need a
-  `@tool` function gated the same way an `AbstractTool` subclass is, either
-  convert it to an `AbstractTool` subclass or file a fast-follow against
-  `ToolManager` itself.
+- **Enforcement is uniform across tool kinds (FEAT-474).**
+  `ToolManager.execute_tool()` runs the same TOOL_CALL guardrail pipeline,
+  `ConfirmationGuard`, and manager-level Layer 2 permission check for BOTH
+  the `AbstractTool` path and the `ToolDefinition` (`@tool`-decorated
+  function) path — `@tool` functions honor `permission_context` and
+  `required_permissions` (declarable on the decorator) exactly like an
+  `AbstractTool` subclass does; `@tool(requires_confirmation=True)` also
+  triggers HITL confirmation. The one residual: **grants (FEAT-211) remain
+  `AbstractTool`-only** — registering a `ToolDefinition` whose
+  `routing_meta` carries a truthy `requires_grant` logs a registration-time
+  `WARNING` that grant policies are inert on that path; if you need grant
+  enforcement, convert the tool to an `AbstractTool` subclass. See
+  `sdd/specs/toolmanager-tooldefinition-enforcement.spec.md` for the full
+  design (this closes the escalation originally flagged in PR #1270).
 - **Every invocation is audited.** `ToolManagerExecutor.call()` logs one
   `INFO` line per call: `a2ui_audit agent_id=... user_id=... call=... status=...`.
 - **Hide a destructive tool** with `a2ui_hidden = True` (§5) rather than
