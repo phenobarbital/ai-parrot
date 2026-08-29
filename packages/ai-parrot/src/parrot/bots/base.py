@@ -958,6 +958,7 @@ class BaseBot(AbstractBot):
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
         permission_context: Optional[Any] = None,
+        a2ui_surface_state: Optional[Any] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         system_prompt: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
@@ -986,6 +987,12 @@ class BaseBot(AbstractBot):
             output_mode: Output formatting mode ('default', 'terminal', 'html', 'json')
             structured_output: Structured output configuration or model
             format_kwargs: Additional kwargs for formatter (show_metadata, show_sources, etc.)
+            a2ui_surface_state: Optional ``SurfaceState`` for the A2UI turn
+                that produced ``question`` (FEAT-469 spec §3 Module 8, G3) —
+                e.g. from ``DispatchResult.surface_state`` when the turn came
+                from ``A2UIRuntime.dispatch``. Made available to tools during
+                this call via a reserved ``_a2ui_surface_state`` kwarg
+                (``AbstractTool.execute`` pops it); never sent to the LLM.
             **kwargs: Additional arguments for LLM
 
         Returns:
@@ -1297,6 +1304,18 @@ class BaseBot(AbstractBot):
                 # survives across tool-loop iterations inside the client.
                 if permission_context is not None:
                     client._permission_context = permission_context
+
+                # FEAT-469 (spec §3 Module 8): surface the A2UI SurfaceState
+                # to any tool invoked during this call's tool loop. Cannot
+                # reuse the client-attribute route above (that hop requires
+                # ToolManager.execute_tool()/each LLM client to read a NEW
+                # attribute — out of this feature's scope); a ContextVar
+                # achieves the same effect without touching either. Set
+                # unconditionally (including to None) so a stale value from
+                # a PRIOR ask() on the same task/coroutine never leaks
+                # forward — see AbstractTool.execute()'s docstring.
+                from ..tools.abstract import _A2UI_SURFACE_STATE_VAR
+                _A2UI_SURFACE_STATE_VAR.set(a2ui_surface_state)
 
                 llm_kwargs = {
                     "prompt": prompt_for_llm,

@@ -53,6 +53,21 @@ def current_credential() -> Optional[Any]:
     """
     return _CREDENTIAL_VAR.get()
 
+
+# FEAT-469 (A2UI Agent Functions runtime, spec §3 Module 8): per-call surface
+# state ContextVar. `_a2ui_surface_state` cannot be threaded through
+# `ToolManager.execute_tool()`'s keyword arguments the way `_permission_context`
+# is (that hop lives in tools/manager.py + every LLM client, out of this
+# feature's scope) — a ContextVar set by `AbstractBot.ask()` and read here
+# achieves the same "reserved kwarg" observable behavior (a tool receives it,
+# the LLM never sees it) without touching either of those files. `execute()`
+# still accepts an explicit `_a2ui_surface_state` kwarg first (e.g. direct/
+# test callers), falling back to this ContextVar.
+_A2UI_SURFACE_STATE_VAR: ContextVar[Optional[Any]] = ContextVar(
+    "_parrot_a2ui_surface_state", default=None
+)
+
+
 # FEAT-252 (TASK-1612) — lazy import to avoid circular deps at module level
 def _get_output_scrubber():
     """Lazy import of OutputScrubber (avoids circular import at import-time)."""
@@ -749,7 +764,8 @@ class AbstractTool(EventEmitterMixin, ABC):
 
         Args:
             kwargs: The tool keyword arguments (already stripped of
-                ``_permission_context`` and ``_resolver`` by ``execute()``).
+                ``_permission_context``, ``_resolver``, and
+                ``_a2ui_surface_state`` by ``execute()``).
 
         Returns:
             A JSON-serialisable dict suitable for
@@ -815,6 +831,11 @@ class AbstractTool(EventEmitterMixin, ABC):
             **kwargs: Tool arguments. Special kwargs are:
                 - _permission_context: PermissionContext for Layer 2 enforcement
                 - _resolver: AbstractPermissionResolver for permission checks
+                - _a2ui_surface_state: The A2UI SurfaceState for the turn that
+                  triggered this call, if any (FEAT-469 spec §3 Module 8).
+                  Falls back to the per-call ``_A2UI_SURFACE_STATE_VAR``
+                  ContextVar (set by ``AbstractBot.ask()``) when not passed
+                  explicitly. Never forwarded to the LLM.
 
         Returns:
             Standardized ToolResult. Returns status='forbidden' if permission denied.
@@ -824,6 +845,11 @@ class AbstractTool(EventEmitterMixin, ABC):
         # ── Permission check (Layer 2 safety net) ────────────────────────────
         pctx = kwargs.pop('_permission_context', None)
         resolver = kwargs.pop('_resolver', None)
+
+        # FEAT-469: surface state for the triggering A2UI turn, if any.
+        # Stored for the tool's own _execute() to read via self — mirrors the
+        # _current_pctx convention below, never forwarded as a kwarg.
+        self._current_a2ui_surface_state = kwargs.pop('_a2ui_surface_state', _A2UI_SURFACE_STATE_VAR.get())
 
         # FEAT-264: credential broker kwargs (never enter LLM-visible args_schema)
         _broker: Optional["CredentialBroker"] = kwargs.pop('_broker', None)

@@ -180,7 +180,15 @@ class A2UIHandler(AgentTalk):
             messages.extend(result.messages)
 
             if result.user_turn is not None:
-                response = await agent.ask(question=result.user_turn, session_id=session_id, user_id=user_id)
+                # FEAT-469 TASK-2575 (spec §3 Module 8, G3): thread the
+                # surface state into this turn so tools invoked during it
+                # receive it via the reserved `_a2ui_surface_state` kwarg.
+                response = await agent.ask(
+                    question=result.user_turn,
+                    session_id=session_id,
+                    user_id=user_id,
+                    a2ui_surface_state=result.surface_state,
+                )
                 turn_envelope = getattr(response, "a2ui_envelope", None)
                 if turn_envelope is not None:
                     messages.append(turn_envelope)
