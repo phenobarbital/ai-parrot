@@ -291,13 +291,74 @@ def test_runtime_import_rule():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Implemented both adapters in the new `runtime/adapters.py`.
+`ToolManagerExecutor.call()` always passes `permission_context=ctx.permission_context`
+to `execute_tool`, logs a `WARNING` before dispatching to a `ToolDefinition`
+(the `@tool`-decorated path that bypasses permission enforcement), normalizes
+`execute_tool`'s `Any` return into a `ToolResult` (pass-through if already
+one), and emits an `a2ui_audit` info log line with `agent_id`/`user_id`/
+`call`/`status` on every invocation. `list_functions()` derives
+catalog-shaped `FunctionDefinition`s mechanically from `get_tool_schemas()`
+(`name`, `parameters` -> `args_schema`, fixed `catalog_id=DEFAULT_CATALOG_ID`,
+`allowed_callers="rendererOrAgent"`), reading `a2ui_hidden`/
+`a2ui_requires_user_activation` defensively via `getattr(..., False)` since
+TASK-2571 is what actually adds those `AbstractTool` attributes — until then
+this is a no-op. `ConversationMemorySurfaceStore` implements both
+`SurfaceStateStore` and `PendingCallRegistry` over
+`ConversationHistory.metadata["a2ui_surfaces"]`/`["a2ui_pending_calls"]`,
+read-modify-write via `get_history()`/`create_history()`/`update_history()`
+(there is no metadata API), with lazy TTL sweep on every pending-call access
+and `delete()` scoped to only the named surface. `user_id` is bound at
+adapter-construction time (see Deviations) rather than passed per-call,
+since the frozen `SurfaceStateStore`/`PendingCallRegistry` Protocol
+signatures only carry `session_id`, while `ConversationMemory.get_history`
+requires `user_id` positionally. Extended
+`tests/outputs/a2ui/adapters/test_import_rule.py` with an AST-based checker
+(`_module_level_forbidden_offenders`) for `runtime/`, since the existing
+line-scanner would false-positive on every correctly-scoped lazy/
+TYPE_CHECKING-guarded import in `adapters.py` — it now recognizes `if
+TYPE_CHECKING:` blocks and function bodies as G8-exempt, checking only true
+module-level imports. All 21 new tests pass (13 in `test_adapters.py`, 2 new
++ 6 existing in `test_import_rule.py`); full `tests/outputs/a2ui/` suite
+(531 tests) has zero regressions. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Redis concurrency resolution**: **asyncio.Lock + documented limitation**.
+Verified `parrot/memory/redis.py` (`RedisConversation`) exposes no
+pipeline/WATCH/transaction primitive for a partial metadata update — only
+whole-history `get_history`/`update_history`. Implemented a per-`session_id`
+`asyncio.Lock` (`self._locks: dict[str, asyncio.Lock]`) inside the adapter,
+serializing every read-modify-write (`put`/`delete`/`add`/`resolve`). This is
+a **process-local** mitigation only — documented in the class docstring — it
+does not protect a multi-worker deployment where two processes race the same
+session concurrently. Not escalated further; out of this task's scope to fix
+`RedisConversation` itself.
 
-**Redis concurrency resolution**: (atomic primitive found / asyncio.Lock + limitation)
-**ToolDefinition permission gap**: (confirmed / mitigated / escalated)
+**ToolDefinition permission gap**: **confirmed, not fixed (out of scope), logged**.
+`ToolManager.execute_tool()` bypasses `permission_context` entirely for the
+`ToolDefinition`/`@tool`-decorated path (`manager.py` ~1530-1535, calls
+`tool.function(**parameters)` directly). `ToolManagerExecutor.call()` detects
+this via `isinstance(tool, ToolDefinition)` (checked with `self._tool_manager.get_tool(name)`
+before dispatch) and logs a `WARNING` naming the gap explicitly, per the
+task's instruction not to silently pretend it is enforced. This is a
+pre-existing `ToolManager` gap, not introduced by FEAT-469 — recommend a
+follow-up ticket to add permission enforcement to the `ToolDefinition` path
+if `@tool`-decorated functions need to be gated the same way `AbstractTool`
+subclasses are.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One necessary, documented implementation decision
+not spelled out in the task's Codebase Contract:
+`ConversationMemorySurfaceStore.__init__(memory, user_id, chatbot_id=None)`
+binds `user_id` at construction time rather than accepting it per-call.
+`ConversationMemory.get_history(user_id, session_id, chatbot_id=None)`
+requires `user_id` positionally to resolve the storage key
+(`FileConversationMemory._get_file_path` partitions by
+`base_path/user_id/[chatbot_id/]session_id.json` — verified, not a dummy
+value), but the `SurfaceStateStore`/`PendingCallRegistry` Protocol method
+signatures (frozen by TASK-2569) only carry `session_id`. Since
+`A2UICallContext.user_id` is known by the transport at the time it builds
+the call context, the transport (TASK-2572/2573) is expected to construct a
+fresh `ConversationMemorySurfaceStore` per request/user rather than share
+one instance across users — a lightweight adapter, cheap to construct. No
+other design changes.
