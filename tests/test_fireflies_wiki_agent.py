@@ -90,8 +90,19 @@ def agent(agent_module, tmp_path):
     inst.send_notification = AsyncMock(return_value={"status": "success"})
     inst._get_existing_meeting_titles = AsyncMock(return_value=set())
 
+    # FEAT-472: no registry by default — sync_meetings_to_wiki must not
+    # attempt mark_wiki_ingested() when self.registry is None.
+    inst.registry = None
+
     inst.sync_fireflies_transcripts = AsyncMock(
-        return_value={"status": "ok", "synced": 1, "skipped": 0, "notes": [], "errors": []}
+        return_value={
+            "status": "ok",
+            "synced": 1,
+            "revised": 0,
+            "skipped": 0,
+            "notes": [],
+            "errors": [],
+        }
     )
     inst.summarize_pending_transcripts = AsyncMock(
         return_value={"status": "ok", "analyzed": [], "skipped": [], "errors": []}
@@ -251,11 +262,15 @@ class TestSyncMeetingsToWiki:
 
     @pytest.mark.asyncio
     async def test_runs_steps_in_order(self, agent):
-        """Summarize must run before the wiki ingest, after the sync."""
+        """Summarize must run before the wiki ingest, after the sync.
+
+        FEAT-472: mark_wiki_ingested runs LAST, after a successful ingest.
+        """
         calls: List[str] = []
 
         agent.sync_fireflies_transcripts = AsyncMock(
-            side_effect=lambda **_: calls.append("sync") or {"status": "ok", "synced": 1, "notes": [], "errors": []}
+            side_effect=lambda **_: calls.append("sync")
+            or {"status": "ok", "synced": 1, "revised": 0, "notes": [], "errors": []}
         )
         agent.summarize_pending_transcripts = AsyncMock(
             side_effect=lambda **_: calls.append("summarize")
@@ -265,11 +280,17 @@ class TestSyncMeetingsToWiki:
         wiki.ingest_obsidian_vault = AsyncMock(side_effect=lambda *a, **k: calls.append("ingest") or {"raw_ingest": {}})
         agent._wiki = wiki
 
+        registry = MagicMock()
+        registry.available = True
+        registry.mark_wiki_ingested = AsyncMock(side_effect=lambda: calls.append("mark_wiki_ingested") or 3)
+        agent.registry = registry
+
         report = await agent.sync_meetings_to_wiki()
 
-        assert calls == ["sync", "summarize", "ingest"]
+        assert calls == ["sync", "summarize", "ingest", "mark_wiki_ingested"]
         assert report["status"] == "ok"
         assert report["wiki"]["ingested"] is True
+        assert report["wiki"]["stamped"] == 3
 
     @pytest.mark.asyncio
     async def test_ingest_is_incremental(self, agent):
@@ -317,6 +338,144 @@ class TestSyncMeetingsToWiki:
 
         assert report["status"] == "error"
         assert "fireflies down" in report["error"]
+
+    @pytest.mark.asyncio
+    async def test_sync_meetings_to_wiki_marks_ingested(self, agent):
+        """FEAT-472: a successful ingest with an available registry stamps
+        wiki_ingested_at, and the stamped count is on the report."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={"pages": 2})
+        agent._wiki = wiki
+
+        registry = MagicMock()
+        registry.available = True
+        registry.mark_wiki_ingested = AsyncMock(return_value=5)
+        agent.registry = registry
+
+        report = await agent.sync_meetings_to_wiki()
+
+        registry.mark_wiki_ingested.assert_awaited_once_with()
+        assert report["wiki"]["stamped"] == 5
+
+    @pytest.mark.asyncio
+    async def test_sync_meetings_to_wiki_no_wiki_no_mark(self, agent):
+        """No wiki plane -> the ingest never runs -> mark_wiki_ingested is
+        never called, even with an available registry."""
+        agent._wiki = None
+        registry = MagicMock()
+        registry.available = True
+        registry.mark_wiki_ingested = AsyncMock(return_value=0)
+        agent.registry = registry
+
+        report = await agent.sync_meetings_to_wiki()
+
+        registry.mark_wiki_ingested.assert_not_called()
+        assert "stamped" not in report["wiki"]
+
+    @pytest.mark.asyncio
+    async def test_sync_meetings_to_wiki_registry_unavailable_no_mark(self, agent):
+        """An unavailable registry is never asked to stamp anything."""
+        wiki = MagicMock()
+        wiki.ingest_obsidian_vault = AsyncMock(return_value={})
+        agent._wiki = wiki
+
+        registry = MagicMock()
+        registry.available = False
+        registry.mark_wiki_ingested = AsyncMock(return_value=0)
+        agent.registry = registry
+
+        report = await agent.sync_meetings_to_wiki()
+
+        registry.mark_wiki_ingested.assert_not_called()
+        assert "stamped" not in report["wiki"]
+
+    @pytest.mark.asyncio
+    async def test_sync_meetings_to_wiki_forwards_force_refetch(self, agent):
+        """force_refetch is forwarded to sync_fireflies_transcripts."""
+        await agent.sync_meetings_to_wiki(force_refetch=True)
+
+        _, kwargs = agent.sync_fireflies_transcripts.call_args
+        assert kwargs["force_refetch"] is True
+
+
+# ---------------------------------------------------------------------------
+# `/sync` on-demand command (FEAT-472)
+# ---------------------------------------------------------------------------
+
+
+class TestSyncNowCommand:
+    """The Telegram `/sync` command wrapping sync_meetings_to_wiki."""
+
+    @pytest.mark.asyncio
+    async def test_telegram_sync_command_parses_flags(self, agent):
+        agent.sync_meetings_to_wiki = AsyncMock(
+            return_value={
+                "sync": {"synced": 2, "revised": 1, "skipped": 0, "errors": []},
+                "analysis": {"analyzed": ["a", "b"], "errors": []},
+                "wiki": {"ingested": True},
+            }
+        )
+
+        reply = await agent.sync_now(force_refetch="true", limit="5")
+
+        agent.sync_meetings_to_wiki.assert_awaited_once_with(limit=5, force_refetch=True)
+        assert isinstance(reply, str)
+        assert "\n" not in reply
+        assert "synced 2" in reply
+        assert "revised 1" in reply
+        assert "analysed 2" in reply
+        assert "wiki: ok" in reply
+
+    @pytest.mark.asyncio
+    async def test_telegram_sync_command_defaults(self, agent):
+        agent.sync_meetings_to_wiki = AsyncMock(
+            return_value={
+                "sync": {"synced": 0, "revised": 0, "skipped": 0, "errors": []},
+                "analysis": {"analyzed": [], "errors": []},
+                "wiki": {"ingested": False},
+            }
+        )
+
+        reply = await agent.sync_now()
+
+        agent.sync_meetings_to_wiki.assert_awaited_once_with(limit=None, force_refetch=False)
+        assert "wiki: skipped" in reply
+
+    @pytest.mark.asyncio
+    async def test_telegram_sync_command_reports_errors(self, agent):
+        agent.sync_meetings_to_wiki = AsyncMock(
+            return_value={
+                "sync": {"synced": 1, "revised": 0, "skipped": 0, "errors": ["boom"]},
+                "analysis": {"analyzed": [], "errors": []},
+                "wiki": {"ingested": True},
+            }
+        )
+
+        reply = await agent.sync_now()
+
+        assert "errors 1" in reply
+
+    @pytest.mark.asyncio
+    async def test_telegram_sync_command_unparsable_limit_falls_back(self, agent):
+        agent.sync_meetings_to_wiki = AsyncMock(
+            return_value={
+                "sync": {"synced": 0, "revised": 0, "skipped": 0, "errors": []},
+                "analysis": {"analyzed": [], "errors": []},
+                "wiki": {"ingested": False},
+            }
+        )
+
+        await agent.sync_now(limit="not-a-number")
+
+        agent.sync_meetings_to_wiki.assert_awaited_once_with(limit=None, force_refetch=False)
+
+    def test_sync_command_metadata(self, agent):
+        """The @telegram_command decorator's metadata is present and discoverable."""
+        assert agent.sync_now._telegram_command["command"] == "sync"
+        assert agent.sync_now._telegram_command["parse_mode"] == "keyword"
+
+        cmds = discover_telegram_commands(agent)
+        assert any(c["command"] == "sync" for c in cmds)
 
 
 # ---------------------------------------------------------------------------
@@ -974,3 +1133,57 @@ class TestScheduleMetadata:
             cls.email_weekly_insights,
         ):
             assert "timezone" in method._schedule_config["schedule_config"]
+
+
+# ---------------------------------------------------------------------------
+# registry_dir / wiki_storage_dir (FEAT-472)
+# ---------------------------------------------------------------------------
+
+
+class TestRegistryDirDefaulting:
+    """FirefliesObsidianAgent.registry_dir must not silently diverge from
+    this subclass's own wiki_storage_dir — otherwise the sync registry and
+    the wiki toolkit open two DIFFERENT wiki.db files, breaking the "one
+    shared row" design (spec §2 G5)."""
+
+    def test_registry_dir_defaults_from_wiki_storage_dir(self, agent_module, tmp_path, monkeypatch):
+        from parrot.bots.agent import BasicAgent
+
+        def _stub_init(self, name: str = "agent", **kwargs) -> None:
+            self.name = name
+
+        monkeypatch.setattr(BasicAgent, "__init__", _stub_init)
+
+        vault_path = tmp_path / "vault"
+        vault_path.mkdir()
+        custom_storage_dir = tmp_path / "custom-wiki-storage"
+
+        inst = agent_module.FirefliesWikiAgent(
+            vault_path=str(vault_path),
+            wiki_storage_dir=str(custom_storage_dir),
+        )
+
+        assert inst.registry_dir == inst.wiki_storage_dir == custom_storage_dir.expanduser()
+
+    def test_explicit_registry_dir_wins_over_wiki_storage_dir(self, agent_module, tmp_path, monkeypatch):
+        from parrot.bots.agent import BasicAgent
+
+        def _stub_init(self, name: str = "agent", **kwargs) -> None:
+            self.name = name
+
+        monkeypatch.setattr(BasicAgent, "__init__", _stub_init)
+
+        vault_path = tmp_path / "vault"
+        vault_path.mkdir()
+        custom_storage_dir = tmp_path / "custom-wiki-storage"
+        custom_registry_dir = tmp_path / "custom-registry"
+
+        inst = agent_module.FirefliesWikiAgent(
+            vault_path=str(vault_path),
+            wiki_storage_dir=str(custom_storage_dir),
+            registry_dir=str(custom_registry_dir),
+        )
+
+        assert inst.registry_dir == custom_registry_dir
+        assert inst.wiki_storage_dir == custom_storage_dir.expanduser()
+        assert inst.registry_dir != inst.wiki_storage_dir

@@ -30,7 +30,7 @@ SUPERTONIC_DIR ?= models/supertonic-3
 # Prompt-injection ONNX classifier (FEAT-439). Downloaded into the shared
 # Hugging Face cache (NOT a repo-local dir) by `make injection-model`, which
 # calls `warmup_injection_model()` - the only download site in the framework.
-INJECTION_MODEL_REPO ?= protectai/deberta-v3-base-prompt-injection-v2
+INJECTION_MODEL_REPO ?= patronus-studio/wolf-defender-prompt-injection-small
 INJECTION_FORCE := $(if $(FORCE),True,False)
 
 # Experimental OpenAI Codex SDK source install.
@@ -333,7 +333,7 @@ sys.exit(0) if not missing else (\
     print('Install the security extra first:'), \
     print('  uv sync --package ai-parrot --extra security'), \
     sys.exit(1))"
-	@python -c "\
+	@PARROT_INJECTION_ONNX_MODEL=$(INJECTION_MODEL_REPO) python -c "\
 import asyncio, sys; \
 from parrot.bots.guardrails.builtin.prompt_injection import warmup_injection_model; \
 engine = asyncio.run(warmup_injection_model(force_download=$(INJECTION_FORCE))); \

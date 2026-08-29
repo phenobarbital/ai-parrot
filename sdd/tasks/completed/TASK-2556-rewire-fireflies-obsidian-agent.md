@@ -222,8 +222,72 @@ async def test_configure_runs_backfill_once(agent, monkeypatch): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude, Sonnet)
+**Date**: 2026-08-29
+**Notes**: `__init__` gained `registry_dir` (default `FIREFLIES_REGISTRY_DIR`),
+`self.registry: Optional[MeetingRegistry] = None`, and `"move"`/`"delete"`
+in `allowed_operations`. `configure()` opens `MeetingRegistry(self.registry_dir)`
+and runs `backfill_from_vault` once when available, logging the summary;
+any failure degrades to `self.registry = None` (never raises). The
+`MeetingRegistry` import is deferred inside `configure()` (behind a
+`TYPE_CHECKING`-only import at module top) since `meeting_registry.py`
+itself imports `FirefliesObsidianAgent` — a top-level import here would
+cycle. `sync_fireflies_transcripts` gained `force_refetch` and the new
+report fields (`revised`, `repaired`, `duplicates` (reserved, always
+empty — populated only by `configure()`'s own backfill/merge, never by
+this method), `probable_duplicates`, `from_date`, `registry`); the
+original per-item loop body was extracted verbatim into `_sync_via_titles`
+(byte-identical fallback for G10) and a new `_sync_via_registry` added for
+the id-keyed path: `classify()` per item (fetch/fetch_summary closures
+cache the raw transcript/summary text as a side effect, since `Classified`
+only returns fingerprints, not the text itself), `repair_path()` before
+create/revise (a `to_path=None` result funnels either outcome into
+create), `unique_slug()` for new notes, and a two-step frontmatter refresh
+for revise (`update_note(preserve_frontmatter=True)` for the body, then a
+new `_refresh_note_frontmatter` helper — read+merge+rewrite via
+`preserve_frontmatter=False` — for title/participants/synced_at, since
+`update_note` has no "patch these frontmatter keys" primitive).
+`summarize_pending_transcripts` sources candidates from
+`registry.pending_analysis()` when available (title = `Path(record.note_path).stem`),
+never calling `_has_analysis` for those, and calls `mark_analyzed`/
+`mark_analysis_failed` afterward; explicit `note_titles` or an unavailable
+registry keep the original `_has_analysis`-gated path unchanged. 12 new
+tests in `tests/test_fireflies_obsidian_sync.py` (real local
+`ObsidianToolkit` + real `MeetingRegistry` on tmp dirs, `_call_fireflies_tool`
+stubbed) plus the existing `tests/test_meeting_registry.py` (99 total) and
+`tests/test_fireflies_wiki_agent.py` (unchanged, still green) all pass.
+`ruff check` on the diff introduces only findings that match this file's
+own pre-existing, deliberate conventions (see Deviations).
 
-**Deviations from spec**: none
+**Deviations from spec**: Two judgment calls, both flagged for spec-author
+awareness:
+1. **`skip_existing=False` semantics** (scope: "still means sync
+   everything: bypass classify skip results but still record_synced").
+   Interpreted as: a `classify()` "skip" result still increments
+   `report["skipped"]` (nothing changed, so there is genuinely no note to
+   rewrite) but `record_synced` is still called to advance the row's
+   `synced_at` freshness window. Not explicitly covered by the task's own
+   test list; implemented conservatively rather than guessing a more
+   invasive behavior.
+2. **`force=True` with the registry driving candidates** (scope:
+   "`force=True` -> all registry rows"). No `MeetingRegistry` verb
+   returns "every row regardless of status" (only `pending_analysis()`,
+   which already excludes done-and-current rows by its own definition),
+   and `meeting_registry.py` is not in this task's file list to extend.
+   `force` therefore has its full original effect only on the
+   `note_titles`-explicit and registry-unavailable paths; with the
+   registry driving `note_titles=None`, candidates are always exactly
+   `pending_analysis()`'s result set. Documented in the method's own
+   docstring.
+
+**Ruff note**: the diff's new `BLE001`/`DTZ003`/`UP006`/`UP045` findings
+(broad `except Exception`, `datetime.utcnow()`, `Dict`/`List`/`Optional[X]`
+typing) all match this file's own dominant, pre-existing style (no
+`from __future__ import annotations`; every scheduled entry point uses
+`except Exception` deliberately so a report dict is always returned, per
+spec §7 "Reports never raise"). The file already carried 50 ruff findings
+before this task; introducing a different style in just the new code
+would be inconsistent, and a whole-file typing reformat is unrelated
+scope. Two easily-fixable NEW findings (a quoted forward-reference type
+annotation, one nested-if) were fixed since they cost nothing and are
+genuinely cleaner.

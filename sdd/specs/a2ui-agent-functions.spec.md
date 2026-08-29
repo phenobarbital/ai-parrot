@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-469
 **Date**: 2026-08-28
 **Author**: Jesus Lara (con Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 **Depends on**: `a2ui-v1-dialect` (brainstorm `sdd/proposals/a2ui-v1-dialect.brainstorm.md`, Option B) — esta feature asume el wire v1.0 y los modelos de mensajes definidos allí. No puede iniciarse hasta que el spec de `a2ui-v1-dialect` esté `approved` y su bloque de wire (modelos + serialización) esté mergeado en `dev`.
 
@@ -282,23 +282,25 @@ class AbstractTool:
 - **Depends on**: Module 2.
 
 ### Module 4: Export de funciones y `agent_capabilities`
-- **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/export.py` (extiende), `packages/ai-parrot/src/parrot/tools/abstract.py` (atributo `a2ui_requires_user_activation`)
-- **Responsibility**: `export_functions()` → mapa `functions` del `catalog_definition.json` (nombre UAX #31 — las tools con nombres no conformes se exponen con nombre saneado y se registra un warning); `agent_capabilities()`.
+- **Path**: `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/export.py` (extiende), `packages/ai-parrot/src/parrot/tools/abstract.py` (atributos `a2ui_requires_user_activation` y `a2ui_hidden`)
+- **Responsibility**: `export_functions()` → mapa `functions` del `catalog_definition.json` (nombre UAX #31 — las tools con nombres no conformes se exponen con nombre saneado y se registra un warning); omite las tools con `a2ui_hidden=True` (OQ resuelta §8); `agent_capabilities()`.
+- **Nota de integración (verificado 2026-08-29)**: `export_catalog_definition()` YA existe (`catalog/export.py`, FEAT-470 TASK-2540) y ya emite un bloque `functions` construido desde `list_functions()` del registro de catálogo. `export_functions(executor)` es una fuente **adicional** (las tools del `ToolManager`), y debe **fusionarse** con ese bloque sin pisar las funciones del Basic Catalog copiadas verbatim del schema oficial. Colisión de nombres tool↔catálogo ⇒ error explícito al exportar.
 - **Depends on**: Module 3; `catalog/export.py` de `a2ui-v1-dialect`.
 
 ### Module 5: A2A — Agent Card y `DataPart` inbound
 - **Path**: `packages/ai-parrot/src/parrot/a2a/models.py`, `packages/ai-parrot-server/src/parrot/a2a/server.py`
-- **Responsibility**: `AgentExtension` A2UI con `params.a2uiAgentCapabilities` en `AgentCapabilities.extensions`; en `_handle_send_message`/`_handle_stream_message`, si algún `Part.data` tiene `metadata.mimeType == "application/a2ui+json"` se construye `A2UICallContext(transport="a2a")` y se llama `A2UIRuntime.dispatch`; las respuestas A→R salen como `Part(data=..., metadata={"mimeType": "application/a2ui+json"})` dentro de un `Artifact`. `Artifact.from_a2ui_envelope` deja de rechazar componentes con `action` cuando `allow_actions=True`.
+- **Responsibility**: `AgentExtension` A2UI con `params.a2uiAgentCapabilities` en `AgentCapabilities.extensions`; en `_handle_send_message`/`_handle_stream_message`, si algún `Part.data` tiene `metadata.mimeType == "application/a2ui+json"` se construye `A2UICallContext(transport="a2a")` y se llama `A2UIRuntime.dispatch`; las respuestas A→R salen como `Part(data=..., metadata={"mimeType": "application/a2ui+json"})` dentro de un `Artifact`. `Artifact.from_a2ui_envelope` deja de rechazar componentes con `action` cuando `allow_actions=True`. `callRendererFunction` se entrega por DOS vías (OQ resuelta §8): en el SSE de `message/stream` y encolado en `PendingCallRegistry` para adjuntarse a la respuesta del siguiente `message/send`.
 - **Depends on**: Modules 2–4.
 
 ### Module 6: Endpoint HTTP dedicado
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/a2ui.py`, `packages/ai-parrot-server/src/parrot/manager/manager.py` (registro de ruta)
-- **Responsibility**: `A2UIHandler` en `/api/v1/agents/{agent_id}/a2ui`: POST recibe un sobre R→A (o lista JSONL), reutiliza la resolución de agente/usuario/sesión de `AgentTalk._get_user_session`, construye `PermissionContext`, llama `dispatch`, y responde `{"messages": [...]}` (`Content-Type: application/a2ui+json` cuando es un único sobre; JSON con lista en caso contrario). GET abre un stream (SSE, `text/event-stream`, un evento por sobre A→R) para entregar `callRendererFunction` pendientes de la sesión. Si el `DispatchResult` trae `user_turn`, el handler lo inyecta como turno del bot por el mismo camino que AgentTalk POST y añade la respuesta del bot (incluido su `a2ui_envelope`) a `messages`.
+- **Responsibility**: `A2UIHandler` en `/api/v1/agents/{agent_id}/a2ui`: POST recibe un sobre R→A (o lista JSONL), reutiliza la resolución de agente/usuario/sesión de `AgentTalk._get_user_session`, construye `PermissionContext`, llama `dispatch`, y responde `{"messages": [...]}` (`Content-Type: application/a2ui+json` cuando es un único sobre; JSON con lista en caso contrario). GET abre un stream (SSE, `text/event-stream`, un evento por sobre A→R) para entregar `callRendererFunction` pendientes de la sesión. `GET /api/v1/agents/{agent_id}/a2ui/capabilities` devuelve `agent_capabilities()` en JSON para descubrimiento no-A2A (OQ resuelta §8). Si el `DispatchResult` trae `user_turn`, el handler lo inyecta como turno del bot por el mismo camino que AgentTalk POST y añade la respuesta del bot (incluido su `a2ui_envelope`) a `messages`.
 - **Depends on**: Modules 2–4.
 
 ### Module 7: Deep links → `action` v1.0
 - **Path**: `packages/ai-parrot-server/src/parrot/handlers/deeplink.py`, `packages/ai-parrot-integrations/src/parrot/integrations/a2ui_resume.py`, `packages/ai-parrot/src/parrot/outputs/a2ui/deeplink.py`
-- **Responsibility**: `ResumePayload.action_payload` contiene un sobre `action` v1.0; `build_structured_message` → `dispatch(..., ctx.transport="deeplink")` en vez de JSON ad-hoc `a2ui_action_resume`. Se registra `setup_deeplink_routes` en `manager.py` (hoy definido pero no montado — ver §6 Does NOT Exist).
+- **Responsibility**: enrutar el resume por `dispatch(..., ctx.transport="deeplink")` y montar `setup_deeplink_routes` en `manager.py`.
+- **CORRECCIÓN (verificado 2026-08-29 — el spec original estaba desfasado)**: `ResumePayload.action_payload` **ya** es un sobre `action` v1.0 y lo valida en construcción (`outputs/a2ui/deeplink.py:53-90`, `field_validator` que hace `A2UIRendererMessage.model_validate` y exige `envelope.action is not None`). `build_structured_message` **ya no** emite `a2ui_action_resume`: emite `{"type": "a2ui_action", "action": payload.action_payload}` (`handlers/deeplink.py:51-63`), el mismo tag que ya consumen Teams (`integrations/msteams/wrapper.py:414-428`), Telegram (`integrations/telegram/wrapper.py:1564`) y `integrations/a2ui_resume.py:34`. Todo eso lo hizo FEAT-470 (G6/TASK-2545). **Por tanto el alcance real del Módulo 7 se reduce a dos cosas**: (a) hacer que `DeepLinkResumeHandler.handle` pase por `A2UIRuntime.dispatch` con `transport="deeplink"` en lugar de entregar el string JSON crudo al `invoker`; (b) montar `setup_deeplink_routes` en `manager.py` — **sigue sin montarse**, verificado: `grep -rn "setup_deeplink_routes" packages/*/src` sólo devuelve su definición (`handlers/deeplink.py:116`) y su propio docstring. NO reescribir el formato del payload ni el tag `a2ui_action`: romperías Teams y Telegram.
 - **Depends on**: Module 6.
 
 ### Module 8: Contexto de turno `a2ui_surface_state`
@@ -392,6 +394,12 @@ def call_agent_function_envelope() -> dict:
 - [ ] `runtime/` no importa `parrot.bots`/`parrot.clients` a nivel de módulo (test de import rule).
 - [ ] `setup_deeplink_routes` queda montado en el manager y el resume de deep link emite un `action` v1.0.
 - [ ] Sin cambios rompientes en la API pública de tools/agents; `a2ui_requires_user_activation` es opcional con default `False`.
+- [ ] AC-OQ1: `AbstractTool.a2ui_hidden=True` excluye la tool de `export_functions()` y de la invocación por `callAgentFunction`.
+- [ ] AC-OQ2: `GET /api/v1/agents/{agent_id}/a2ui/capabilities` devuelve el mismo documento `agent_capabilities()` que publica el Agent Card, y valida contra `agent_capabilities.json`.
+- [ ] AC-OQ3: `callRendererFunction` se entrega tanto por el SSE de `message/stream` como encolado en la respuesta del siguiente `message/send`.
+- [ ] AC-OQ4: un `action` con `userMessage` produce un turno de usuario visible; sin `userMessage`, un turno de sistema; en ninguno de los dos casos el `dataModel` aparece en el texto del turno.
+- [ ] AC-OQ5: un `dataModel` mayor que `A2UI_MAX_DATA_MODEL_BYTES` (1 MiB) produce `error{code:"INTERNAL"}` y conserva el estado previo de la superficie.
+- [ ] AC-F1: `ActionMessage` acepta `dataModel` (campo explícito, no `extra="allow"`) y sigue validando contra `renderer_to_agent.json`; `callAgentFunction` con `dataModel` se RECHAZA (el schema lo prohíbe con `additionalProperties: false`).
 - [ ] Documentación en `docs/outputs/a2ui-agent-functions.md`.
 - [ ] Rendimiento: `dispatch` de un `callAgentFunction` añade < 5 ms de overhead sobre `execute_tool` (medido en test con executor no-op).
 
@@ -518,6 +526,109 @@ class DeepLinkService: __init__(...) line 77; _resume_url(channel, token_id) lin
 | Deep link resume | `DeepLinkResumeHandler.handle` → `A2UIRuntime.dispatch` | reemplaza `build_structured_message` | `handlers/deeplink.py:55-80` |
 | `_a2ui_surface_state` kwarg | convención `_permission_context`/`_resolver` en `AbstractTool.execute` | kwargs reservados | `tools/abstract.py:797-812` |
 
+### Contract Refresh — 2026-08-29 (re-verified on `dev` @ `dd06d939c`)
+
+> The §6 block above was written on `dev` @ `a518fee03`, **before** FEAT-470
+> merged. FEAT-470 (`a2ui-v1-dialect`) is now merged (PR #1263). Everything it
+> was supposed to create **exists**; several line numbers drifted, and two
+> assumptions in the original contract are now WRONG. Use the values below —
+> they override §6 wherever they disagree.
+
+**Dependency satisfied.** Verified present on `dev`: the ten v1.0 message
+models in `outputs/a2ui/models.py`, `catalog/export.py`, and all four vendored
+schemas under `outputs/a2ui/catalog/basic/spec/` (`agent_to_renderer.json`,
+`renderer_to_agent.json`, `agent_capabilities.json`, `catalog_definition.json`).
+`A2UI_EXTENSION_URI` and `A2UI_MEDIA_TYPE` already carry their v1.0 values.
+
+**Corrected line numbers** (the §6 values are stale — do not trust them):
+
+| Symbol | File | §6 said | Actually |
+|---|---|---|---|
+| `A2UI_EXTENSION_URI` = `https://a2ui.org/a2a-extension/a2ui/v1.0` | `parrot/a2a/models.py` | 338 (old value) | **335** (already v1.0) |
+| `A2UI_MEDIA_TYPE` = `application/a2ui+json` | `parrot/a2a/models.py` | 339 (old value) | **336** (already v1.0) |
+| `_reject_action_components(components)` | `parrot/a2a/models.py` | 342 | **339** — signature takes `components`, NOT an `envelope` |
+| `Artifact.from_a2ui_envelope` | `parrot/a2a/models.py` | ~375 | **372** |
+| `class AgentExtension` | `parrot/a2a/models.py` | 518 | **511** (`to_dict` at 519) |
+| `class AgentCapabilities` | `parrot/a2a/models.py` | 930 | **928** (`extensions` field at **934**) |
+| `class AgentTalk` | `ai-parrot-server/.../handlers/agent.py` | 104 | **110** |
+| `AgentTalk._get_user_session` | `ai-parrot-server/.../handlers/agent.py` | 912 | **867** |
+| `AgentTalk.post` / `.put` / `.get` | `ai-parrot-server/.../handlers/agent.py` | 1504 / 2170 / 2268 | **1441** / **2075** / **2157** |
+| `build_structured_message` | `ai-parrot-server/.../handlers/deeplink.py` | ~55 | **51** |
+| `class DeepLinkResumeHandler` | `ai-parrot-server/.../handlers/deeplink.py` | ~66 | **66** ✓ |
+| `setup_deeplink_routes` | `ai-parrot-server/.../handlers/deeplink.py` | 113 | **116** |
+| `_DEFAULT_TTL_SECONDS` | `outputs/a2ui/deeplink.py` | 41-42 (`= 900`) | **42**, written `15 * 60` |
+| `class ResumePayload` | `outputs/a2ui/deeplink.py` | 53 | **53** ✓ (now has a `field_validator`) |
+
+**Still accurate** (spot-checked, unchanged): `ToolManager` class 233 /
+`execute_tool` **1519** / `get_tool_schemas` **1121** / `get_tool` 1215 /
+`list_tools` 1235 / `get_tools` 1239; `ToolResult` **200**; `AbstractTool`
+**235** with `execute` **797** popping `_permission_context` at **813** and
+`_resolver` at **814**; `ConversationTurn` 11 / `ConversationHistory` 51 /
+`ConversationMemory` 135 with `update_history` **167**; `A2AServer` 77 with
+`_handle_send_message` **1092** and `_handle_stream_message` **1132**;
+`DEFAULT_CATALOG_ID` = `"https://parrot.dev/catalogs/v1"` at
+`catalog/base.py:52`; manager routes at `manager.py:1933-1934`.
+
+**FINDING 1 — G3 needs a wire-model change (this was NOT anticipated).**
+The official v1.0 `action` message carries **no `dataModel` field**.
+`sendDataModel` is a boolean flag on `createSurface`
+(`outputs/a2ui/models.py:467`, `alias="sendDataModel"`), documented as "if true,
+the renderer sends the full data model back with every message". Checked
+against the vendored `renderer_to_agent.json`:
+
+- `properties.action` has **no** `additionalProperties` key ⇒ defaults to
+  `true` ⇒ attaching a `dataModel` key to `action` **is schema-legal**.
+- `properties.callAgentFunction` has **`additionalProperties: false`** ⇒
+  attaching `dataModel` to `callAgentFunction` is **schema-ILLEGAL**.
+- The envelope itself is `minProperties: 2, maxProperties: 2` with a `oneOf`
+  over `action` / `callAgentFunction` / `rendererFunctionResponse` / `error` —
+  so `dataModel` can never be a sibling key of the message at envelope level.
+
+But the merged `ActionMessage` Pydantic model is
+`model_config = ConfigDict(populate_by_name=True, extra="forbid")`
+(`outputs/a2ui/models.py:585-608`) with no `data_model` field — so **a
+`sendDataModel` payload is rejected today with a `ValidationError`**.
+G3 therefore requires adding an explicit optional
+`data_model: dict[str, Any] | None = Field(default=None, alias="dataModel")`
+to `ActionMessage` (preferred over relaxing to `extra="allow"`, which would
+silently swallow renderer typos). This touches
+`packages/ai-parrot/src/parrot/outputs/a2ui/models.py` — a file §6 assumed this
+feature would only *consume*. It is TASK-2567, deliberately sequenced first and
+kept surgical to minimise overlap with in-flight FEAT-473.
+
+**FINDING 2 — docstring defect in merged FEAT-470 code.** In
+`outputs/a2ui/models.py`, `AgentFunctionResponse` (**575**) and
+`RendererFunctionResponse` (**627**) have their pairings **swapped** in prose:
+`AgentFunctionResponse` says it answers a `callRendererFunction` and
+`RendererFunctionResponse` says it answers a `callAgentFunction` — both
+backwards. The class *placement* and wire directions are correct
+(`AgentFunctionResponse` is in the A→R block and answers `callAgentFunction`;
+`RendererFunctionResponse` is in the R→A block and answers
+`callRendererFunction`). Docs-only, but it is precisely the pairing this
+feature implements, so fix it in TASK-2567 before anyone reads it as truth.
+
+**FINDING 3 — `PermissionContext` is never built by AgentTalk.** See the
+resolved OQ in §8. Use `build_principal_context` (`parrot/auth/permission.py:166`,
+returning at :199); model the call on `knowledge/ontology/tool_dispatcher.py:195-214`.
+`UserSession` is at `auth/permission.py:21` (frozen/hashable: `user_id`,
+`tenant_id`, `roles: frozenset`, `metadata`); `PermissionContext` at **81**
+(`session`, `request_id`, `channel`, `trace_context`, `extra`).
+
+**FINDING 4 — `_reject_action_components` already anticipates this feature.**
+Its rejection message reads "interactive A2UI over A2A is FEAT-B"
+(`a2a/models.py:356-359`). FEAT-469 *is* that follow-up; the `allow_actions`
+flag added in Module 5 is what retires that error path.
+
+**FINDING 5 — `export_catalog_definition` already emits `functions`.**
+`catalog/export.py` builds `functions` from `list_functions()` plus the Basic
+Catalog's official definitions copied verbatim (a bare `$ref` does not satisfy
+`FunctionDefinition`'s inline `returnType` under `unevaluatedProperties: false`).
+`export_functions()` must MERGE into that, not replace it. Catalog-side
+`FunctionDefinition` lives at `catalog/base.py:246` with fields
+`name`, `catalog_id`, `args_schema`, `return_type`, `allowed_callers`
+(`Literal["rendererOnly","agentOnly","rendererOrAgent"]`, default
+`"rendererOnly"`), `requires_user_activation`.
+
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.outputs.a2ui.runtime`~~ (ni `A2UIRuntime`, `FunctionExecutor`, `SurfaceStateStore`, `PendingCallRegistry`, `A2UICallContext`) — todo nuevo en esta feature.
 - ~~`parrot.outputs.a2ui.models.CallAgentFunction` / `AgentFunctionResponse` / `CallRendererFunction` / `RendererFunctionResponse` / `ErrorMessage` / `DeleteSurface`~~ — no existen aún; los crea `a2ui-v1-dialect`. Hoy existen `Action`, `ActionResponse` (no spec) y `CallFunction` (nombre 0.9.1) en `models.py:220-267`.
@@ -573,12 +684,12 @@ class DeepLinkService: __init__(...) line 77; _resume_url(channel, token_id) lin
 - [x] ¿Autorización de funciones? — *Resolved in clarification*: **`PermissionContext` del usuario de la sesión** vía `execute_tool(permission_context=...)`; `requiresUserActivation` se verifica solo en el renderer.
 - [x] ¿Qué hacer con `sendDataModel`? — *Resolved in clarification*: **persistir el último `dataModel` por `surfaceId` en memoria de conversación** y exponerlo al agente/tools (`a2ui_surface_state`).
 - [x] Alcance de acciones en `a2ui-v1-dialect` — *Resolved in brainstorm a2ui-v1-dialect*: modelos + `Form` como composición + deep links; el runtime RPC es esta feature.
-- [ ] ¿Añadir `AbstractTool.a2ui_hidden: bool = False` para excluir tools puntuales del catálogo sin volver al modelo opt-in? — *Owner: Jesus Lara*
-- [ ] ¿Dónde se instancia hoy el `PermissionContext` para las llamadas de AgentTalk (no aparece en `handlers/agent.py`)? Necesario para reutilizar el mismo constructor en `A2UIHandler`. — *Owner: implementación (verificar)*
-- [ ] ¿Se emite `agent_capabilities` también en el endpoint HTTP (p. ej. `GET /api/v1/agents/{agent_id}/a2ui/capabilities`) o solo en el Agent Card A2A? — *Owner: Jesus Lara*
-- [ ] Límite `A2UI_MAX_DATA_MODEL_BYTES` (default propuesto 1 MiB) y si el estado de superficie debe tener TTL propio distinto del de la sesión. — *Owner: Jesus Lara*
-- [ ] `callRendererFunction` en A2A: ¿solo en `message/stream` (SSE) o también encolado para `message/send` siguiente? — *Owner: Jesus Lara*
-- [ ] ¿El turno estructurado de `action` debe guardarse en el historial de conversación como turno de usuario visible (`userMessage`) o como turno de sistema? — *Owner: Jesus Lara*
+- [x] ¿Añadir `AbstractTool.a2ui_hidden: bool = False` para excluir tools puntuales del catálogo sin volver al modelo opt-in? — *Resolved 2026-08-29 (Jesus Lara)*: **sí**. Se añaden DOS atributos de clase opcionales en `AbstractTool`: `a2ui_requires_user_activation: bool = False` y `a2ui_hidden: bool = False`. `export_functions()` omite toda tool con `a2ui_hidden=True`. Sigue siendo un modelo opt-OUT (todas las tools se exportan salvo las marcadas), no opt-in.
+- [x] ¿Dónde se instancia hoy el `PermissionContext` para las llamadas de AgentTalk (no aparece en `handlers/agent.py`)? — *Resolved 2026-08-29 (verificado en `dev`)*: **AgentTalk NO construye ninguno**. `grep -rn "PermissionContext(" packages/*/src` sólo da: `auth/permission.py:199` (dentro del factory `build_principal_context`, `permission.py:166`), `cli/identity.py:105`, `knowledge/ontology/tool_dispatcher.py:214`, y los tres wrappers de integrations (msagentsdk `agent.py:375`, `resume.py:298`, telegram `wrapper.py:1271`). El camino HTTP de AgentTalk pasa `permission_context=None` de facto. **Decisión**: `A2UIHandler` construye el suyo con `build_principal_context(principal=user_id, channel="a2ui", tenant_id=None, roles=None)` (`parrot/auth/permission.py:166`), siguiendo el patrón de `tool_dispatcher.py:195-214`. Nota de seguridad registrada en §7: `build_principal_context` deja `roles=frozenset()` por defecto, así que las políticas PBAC role-gated **deniegan por defecto** — es el comportamiento seguro para esta feature.
+- [x] ¿Se emite `agent_capabilities` también en el endpoint HTTP o solo en el Agent Card A2A? — *Resolved 2026-08-29 (Jesus Lara)*: **ambos**. Además del Agent Card, `GET /api/v1/agents/{agent_id}/a2ui/capabilities` devuelve `agent_capabilities()` para que un renderer no-A2A descubra `supportedCatalogIds` sin pedir el Agent Card. Va en el Módulo 6.
+- [x] Límite `A2UI_MAX_DATA_MODEL_BYTES` y TTL del estado de superficie. — *Resolved 2026-08-29 (default aceptado)*: límite **1 MiB** (`A2UI_MAX_DATA_MODEL_BYTES`, configurable por env). El estado de superficie **NO tiene TTL propio**: vive en `ConversationHistory.metadata["a2ui_surfaces"]` y por tanto hereda el ciclo de vida de la sesión. Sólo las llamadas pendientes (`a2ui_pending_calls`) tienen TTL (900 s), porque son correlaciones efímeras.
+- [x] `callRendererFunction` en A2A: ¿sólo `message/stream` o también encolado? — *Resolved 2026-08-29 (Jesus Lara)*: **ambos**. Se emite en el SSE de `message/stream` y además se encola en `PendingCallRegistry` para adjuntarse a la respuesta del siguiente `message/send`, igual que el comportamiento request-response de HTTP descrito en §2.
+- [x] ¿El turno estructurado de `action` es turno de usuario visible o de sistema? — *Resolved 2026-08-29 (default aceptado)*: **turno de usuario visible cuando `action.userMessage` está presente** (ese texto es exactamente lo que el protocolo define como "human-readable string describing the action performed by the user"); **turno de sistema** cuando no lo está (un `action` sin `userMessage` es telemetría de UI, no habla del usuario). El `dataModel`/`context` nunca va en el texto visible — viaja por `a2ui_surface_state`.
 
 ---
 
@@ -596,3 +707,4 @@ class DeepLinkService: __init__(...) line 77; _resume_url(channel, token_id) lin
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-28 | Jesus Lara / Claude | Initial draft (follow-up de a2ui-v1-dialect, FEAT-469) |
+| 1.0 | 2026-08-29 | Jesus Lara / Claude | Resueltas las 6 Open Questions pendientes (§8); status → `approved`. Refresco del Codebase Contract sobre `dev` @ `dd06d939c` tras el merge de FEAT-470 (PR #1263): tabla de line numbers corregidos + 5 findings. Hallazgos que cambian el alcance: G3 requiere añadir `dataModel` a `ActionMessage` (hoy `extra="forbid"` ⇒ rechaza `sendDataModel`); el Módulo 7 se reduce porque FEAT-470 ya migró `ResumePayload`/`build_structured_message` a v1.0 `a2ui_action`. ACs nuevas: AC-OQ1..5, AC-F1. |

@@ -800,3 +800,4 @@ No new third-party dependencies.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-29 | Jesus Lara / Claude | Initial draft from brainstorm (Option A, 12 resolved questions) |
+| 0.2 | 2026-08-29 | Jesus Lara / Claude | Implemented (TASK-2553–2559): `external_id` on the wiki sources manifest; `MeetingRegistry` facade + fingerprint helpers; backfill/merge/repair; `FirefliesObsidianAgent` rewired onto the registry; `mark_wiki_ingested` + `/sync`; integration tests (2 pre-existing cross-module defects fixed along the way — `SourceCollectionManager.add_source` and `ObsidianVaultLoader.incremental_update`, see TASK-2558's Completion Note); docs |

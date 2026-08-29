@@ -47,7 +47,9 @@ State flags:
 - `unpushed:n` — commits origin does not have. Per this repo's history, a
   concurrent SDD process can `reset --hard` a shared branch and eat local
   commits, so unpushed work in a worktree is genuinely at risk — push it
-  rather than discarding it.
+  rather than discarding it. (The worst offender, `reserve_ids.py`'s retry
+  path, no longer resets anything — but `/sdd-done` merges and release
+  tooling still move shared branches under you.)
 
 Add `--check-pr` to also resolve PR state via `gh` (slower).
 

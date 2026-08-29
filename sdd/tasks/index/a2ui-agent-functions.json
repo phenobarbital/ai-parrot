@@ -1,0 +1,233 @@
+{
+  "feature": "a2ui-agent-functions",
+  "feature_id": "FEAT-469",
+  "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-29T00:00:00+02:00",
+  "completed_at": null,
+  "start_gate": "FEAT-470 a2ui-v1-dialect merged into dev (PR #1263) — VERIFIED SATISFIED 2026-08-29. Coordinate TASK-2567 with in-flight FEAT-473, which may also touch outputs/a2ui/models.py.",
+  "tasks": [
+    {
+      "id": "TASK-2567",
+      "slug": "wire-model-action-datamodel",
+      "title": "Wire-model support for `action.dataModel` + fix swapped response docstrings",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches outputs/a2ui/models.py, shared with in-flight FEAT-473. Sequenced first and kept surgical to minimise the overlap window; everything downstream depends on the new field.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2567-wire-model-action-datamodel.md"
+    },
+    {
+      "id": "TASK-2568",
+      "slug": "runtime-models-error-codes",
+      "title": "Runtime models and A2UI error codes",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2567"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates the runtime/ package that every later task imports. Strictly sequential.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2568-runtime-models-error-codes.md"
+    },
+    {
+      "id": "TASK-2569",
+      "slug": "runtime-dispatch",
+      "title": "Protocols and `A2UIRuntime.dispatch`",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2568"
+      ],
+      "parallel": false,
+      "parallelism_notes": "The core protocol engine. Every transport is a shell over it, so nothing else can start until its Protocols are fixed.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2569-runtime-dispatch.md"
+    },
+    {
+      "id": "TASK-2570",
+      "slug": "runtime-adapters",
+      "title": "Adapters — ToolManagerExecutor and ConversationMemorySurfaceStore",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2569"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Implements the Protocols defined by TASK-2569; must follow it.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2570-runtime-adapters.md"
+    },
+    {
+      "id": "TASK-2571",
+      "slug": "catalog-export-functions",
+      "title": "`export_functions`, `agent_capabilities`, and the two AbstractTool A2UI attributes",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2570"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the executor Protocol from 2569/2570 to derive function definitions. Fan-out point: 2572 and 2573 both branch from here.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2571-catalog-export-functions.md"
+    },
+    {
+      "id": "TASK-2572",
+      "slug": "a2a-agent-card-datapart",
+      "title": "A2A — Agent Card extension, inbound DataPart dispatch, queued renderer calls",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2571"
+      ],
+      "parallel": true,
+      "parallelism_notes": "PARALLEL with TASK-2573. Touches only parrot/a2a/models.py and ai-parrot-server/a2a/server.py — no file overlap with the HTTP handler task. Both depend on 2571 and on nothing of each other's.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2572-a2a-agent-card-datapart.md"
+    },
+    {
+      "id": "TASK-2573",
+      "slug": "http-a2ui-handler",
+      "title": "HTTP endpoint — A2UIHandler (POST, SSE stream, capabilities)",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2571"
+      ],
+      "parallel": true,
+      "parallelism_notes": "PARALLEL with TASK-2572. Touches only ai-parrot-server handlers/a2ui.py plus a route registration in manager.py. The manager.py edit is the one shared file with TASK-2574, which is why 2574 depends on this one rather than running alongside it.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2573-http-a2ui-handler.md"
+    },
+    {
+      "id": "TASK-2574",
+      "slug": "deeplink-dispatch-and-mount",
+      "title": "Route deep-link resume through dispatch and mount the deep-link routes",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2573"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Serialised after 2573 because both edit manager.py route registration. Scope is much smaller than the spec implies — FEAT-470 already migrated the payload to v1.0.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2574-deeplink-dispatch-and-mount.md"
+    },
+    {
+      "id": "TASK-2575",
+      "slug": "bot-surface-state-context",
+      "title": "Expose `a2ui_surface_state` to the bot turn and tools",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2570"
+      ],
+      "parallel": true,
+      "parallelism_notes": "PARALLEL with 2571/2572/2573. Only needs the SurfaceState model and the store from 2570; touches bots/base.py and tools/abstract.py, which no transport task edits.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2575-bot-surface-state-context.md"
+    },
+    {
+      "id": "TASK-2576",
+      "slug": "e2e-conformance-tests",
+      "title": "End-to-end integration and conformance tests",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2572",
+        "TASK-2573",
+        "TASK-2574",
+        "TASK-2575"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Join point — needs every transport and the bot hook in place to exercise the full RPC leg.",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2576-e2e-conformance-tests.md"
+    },
+    {
+      "id": "TASK-2577",
+      "slug": "docs-and-migration",
+      "title": "Documentation and migration notes",
+      "feature_id": "FEAT-469",
+      "feature": "a2ui-agent-functions",
+      "spec": "sdd/specs/a2ui-agent-functions.spec.md",
+      "status": "in-progress",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2576"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Last: documents what actually shipped, using the completion notes of 2570 (permission gap, concurrency) and 2576 (measured overhead).",
+      "assigned_to": null,
+      "started_at": "2026-08-29T01:06:59+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2577-docs-and-migration.md"
+    }
+  ]
+}
