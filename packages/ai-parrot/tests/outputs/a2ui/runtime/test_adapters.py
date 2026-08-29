@@ -90,7 +90,10 @@ class TestToolManagerExecutor:
         res = await ToolManagerExecutor(tm).call("t", {}, a2ui_call_ctx)
         assert res is expected
 
-    async def test_tool_definition_path_logs_warning(self, a2ui_call_ctx, caplog):
+    async def test_tool_definition_path_logs_no_gap_warning(self, a2ui_call_ctx, caplog):
+        """FEAT-474 closure: ToolManager.execute_tool() now enforces
+        permission_context uniformly for the ToolDefinition (@tool) path, so
+        the adapter no longer needs (or emits) a known-gap WARNING for it."""
         from parrot.tools.manager import ToolDefinition
 
         tm = _fake_tool_manager(
@@ -99,7 +102,10 @@ class TestToolManagerExecutor:
         )
         with caplog.at_level("WARNING"):
             await ToolManagerExecutor(tm).call("legacy_tool", {}, a2ui_call_ctx)
-        assert any("ToolDefinition" in rec.message for rec in caplog.records)
+        assert not any(
+            "does not enforce permission_context" in rec.message or "known G7 gap" in rec.message
+            for rec in caplog.records
+        )
 
     def test_list_functions_derives_from_tool_schemas(self):
         from parrot.outputs.a2ui.catalog import DEFAULT_CATALOG_ID
