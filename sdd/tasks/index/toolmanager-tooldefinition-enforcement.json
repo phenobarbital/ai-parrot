@@ -52,7 +52,7 @@
       "feature_id": "FEAT-474",
       "feature": "toolmanager-tooldefinition-enforcement",
       "spec": "sdd/specs/toolmanager-tooldefinition-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Core security fix in manager.py's hottest method; depends on the model and registration metadata being in place.",
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2580-execute-tool-enforcement-parity.md"
+      "completed_at": "2026-08-29T17:33:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2580-execute-tool-enforcement-parity.md"
     },
     {
       "id": "TASK-2581",

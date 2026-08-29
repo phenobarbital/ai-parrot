@@ -310,10 +310,50 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-29
+**Notes**: Hoisted the TOOL_CALL guardrail pipeline block above the
+`ToolDefinition`/`AbstractTool` `isinstance` split (the `not_found`
+short-circuit stays before it, unchanged) so it runs for BOTH tool kinds;
+`AbstractTool` branch order (pipeline → grant → confirm → execute) proven
+byte-for-byte preserved via the reused `test_guardrails_tool_call_hook.py`
+suite (7/7 green) plus a new order-tracking test. Added the
+`ToolDefinition` pre-execution sequence exactly per spec: ConfirmationGuard
+(mirrors manager.py's existing cancelled/timeout shape + edited-parameter
+honoring) then the manager-level Layer 2 resolver gate (mirrors
+`abstract.py:875-890` byte-for-byte — same message/metadata shape,
+fail-open only when BOTH pctx and resolver are present, resolver
+exceptions propagate via the existing bare `raise`) then the unchanged
+raw-return dispatch. Added `ToolManager._log_enforcement()` — one shared
+structured-log helper called at every allow/deny decision point on both
+branches per spec (guardrail deny, grant deny, confirmation deny/allow,
+resolver deny/allow); fail-open skips are never logged. Extended
+`execute_tool_call()` with optional `permission_context`, forwarded to
+`execute_tool()`. Updated the `execute_tool()` docstring to drop the
+now-false "ToolDefinition does not support permission enforcement" claim.
+Added 9 new tests to `test_tooldefinition_enforcement.py`
+(`TestToolDefinitionEnforcement`, reusing the `_BlockGuardrail`/
+`_PassGuardrail`/`GuardrailPipeline` and `ConfirmationGuard`/
+`InMemoryConfirmationWindowStore` patterns from
+`test_guardrails_tool_call_hook.py`/`test_toolmanager_confirmation.py`) and
+7 new tests to `test_manager_permissions.py`
+(`TestToolDefinitionResolverParity`, extending the existing
+`DefaultPermissionResolver`/role-hierarchy fixtures with ToolDefinition
+cases) — all pass. Full regression: the two extended files plus
+`test_toolmanager_confirmation.py`, `test_grants.py` (64+25 = 89 tests) all
+green; the broader `packages/ai-parrot/tests/tools/` sweep plus
+`test_guardrails_tool_call_hook.py`/`test_guardrails_pipeline.py`/
+`test_guardrails_pbac.py`/`test_guardrails_core_models.py`/
+`test_guardrails_output.py`/`test_pbac_guardrails_e2e.py` (940+77 = 1017
+tests) show the same 51 pre-existing `dev`-baseline failures (unrelated
+`databasequery`/`test_auto_registration_hooks` suites) and zero new
+regressions. `ruff check` diff against `dev` baseline on `manager.py` shows
+only the two new `Optional["PermissionContext"]` parameters
+(`_log_enforcement`, `execute_tool_call`) triggering the same
+`UP045`/`UP037` findings the file already carries at its pre-existing
+`resolver: Optional["AbstractPermissionResolver"]` parameter (line 249) —
+matching, not deviating from, established convention; no new rule
+categories introduced. Test files' own `ruff check` is clean (auto-fixed
+import ordering).
 
 **Deviations from spec**: none
