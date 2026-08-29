@@ -66,7 +66,7 @@ class TestFinanceReporterDescriptors:
 
     @pytest.mark.parametrize("key", ["report", "dashboard"])
     def test_layout_satisfies_catalog_required_keys(self, descriptors, key):
-        props = descriptors[key].layout.properties
+        props = descriptors[key].layout.props
         assert "title" in props and "sections" in props
 
     def test_report_declares_narrative(self, descriptors):
@@ -77,19 +77,38 @@ class TestFinanceReporterDescriptors:
 
     @pytest.mark.parametrize("key", ["report", "dashboard"])
     def test_narrative_binds_are_optional(self, descriptors, key):
-        """G-E: a no-narrator replay must not abort at the drift check."""
+        """G-E: a no-narrator replay must not abort at the drift check.
+
+        v2 (FEAT-470 TASK-2542): a binding is a plain ``{"path": ...}`` — its
+        ``optional``-ness is declared by listing the pointer in the layout's
+        own ``metadata.extensions.parrot_optional``, not an inline sibling
+        key on the binding itself.
+        """
+        layout = descriptors[key].layout
+        optional_pointers = set(
+            (
+                layout.metadata.extensions.root.get("parrot_optional")
+                if layout.metadata and layout.metadata.extensions
+                else None
+            )
+            or []
+        )
+        found = []
 
         def walk(v):
             if isinstance(v, dict):
-                if "$bind" in v and "/narrative" in str(v["$bind"]):
-                    assert v.get("optional") is True, f"non-optional narrative bind: {v}"
+                if "path" in v and "/narrative" in str(v["path"]):
+                    found.append(v["path"])
                 for i in v.values():
                     walk(i)
             elif isinstance(v, list):
                 for i in v:
                     walk(i)
 
-        walk(descriptors[key].layout.properties)
+        walk(layout.props)
+        assert found, "expected at least one narrative binding"
+        for pointer in found:
+            assert pointer in optional_pointers, f"non-optional narrative bind: {pointer}"
 
     @pytest.mark.parametrize("key", ["report", "dashboard"])
     def test_narrative_facts_ordered_after_its_inputs(self, descriptors, key):

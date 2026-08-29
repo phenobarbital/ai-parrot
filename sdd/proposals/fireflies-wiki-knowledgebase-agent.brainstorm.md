@@ -16,7 +16,7 @@ base_branch: dev
 ## Problem Statement
 
 The user maintains a mature, Obsidian-based **LLM-Wiki Operating Contract**
-(`sdd/proposals/brainstorm-obsidian-wiki-knowledgebase.md` — a 36-section
+(`sdd/references/obsidian-wiki-operating-contract.md` — a 36-section
 governance document, NOT itself a brainstorm) that defines how meeting
 transcripts and summaries should be compiled into a trustworthy, provenance-
 preserving knowledge base: immutable raw sources, canonical normalized meeting
@@ -439,7 +439,7 @@ but are **off by default** behind a feature flag.
 | `parrot/registry`, `parrot/scheduler` | reuse | `@register_agent`, `@schedule` |
 | `parrot/mcp/integration.py` | reuse | `add_fireflies_mcp_server` |
 | **External Obsidian vault** (outside repo) | write target | path via config; no auto-commit |
-| `sdd/proposals/brainstorm-obsidian-wiki-knowledgebase.md` | reference oracle | later convertible to a proper brainstorm/spec |
+| `sdd/references/obsidian-wiki-operating-contract.md` | reference oracle | the authoritative Obsidian operating contract (not a brainstorm) |
 
 Related priors (not conflicts): `sdd/specs/fireflies-mcp-improvements.spec.md`,
 `sdd/specs/integrate-mcp-fireflies.spec.md`, and the `LLMWikiToolkit` FEAT-392

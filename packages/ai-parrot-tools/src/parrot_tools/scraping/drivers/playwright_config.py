@@ -41,6 +41,14 @@ class PlaywrightConfig:
         record_har_path: File path to record HAR network log.
         storage_state: Path to a JSON file with saved cookies and
             localStorage for session reuse.
+        user_data_dir: Path to a persistent browser profile directory
+            (e.g. a Google Chrome user-data dir). When set, the driver
+            launches a *persistent context* over that profile, exposing
+            its cookies, saved sessions and credential store.
+        channel: Browser distribution channel (e.g. ``"chrome"``,
+            ``"msedge"``). Required to open a real Google Chrome profile
+            with its keyring-encrypted data; only meaningful for
+            ``browser_type="chromium"``.
     """
 
     browser_type: str = "chromium"
@@ -61,6 +69,8 @@ class PlaywrightConfig:
     record_video_dir: Optional[str] = None
     record_har_path: Optional[str] = None
     storage_state: Optional[str] = None
+    user_data_dir: Optional[str] = None
+    channel: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""

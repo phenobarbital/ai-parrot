@@ -63,7 +63,7 @@ _None — documentation only._
 ```text
 docs/superpowers/specs/2026-08-23-fireflies-wiki-agent-design.md — sections: Problem / Solution / Architecture (Placement, LLM configuration, Wiki plane, The three scheduled jobs, Shared helpers) / Configuration (env-var table) / Error handling / Testing / Deliverables / Out of scope
 docs/runbooks/ — existing runbooks (e.g. docs/runbooks/jira-issues-namespace.md) set the house style: purpose, setup, daily operation, troubleshooting
-sdd/proposals/brainstorm-obsidian-wiki-knowledgebase.md — §14 (:530) Deduplication and Source Identity, §25 (:1163) Processed Source Registry
+sdd/references/obsidian-wiki-operating-contract.md — §14 (:530) Deduplication and Source Identity, §25 (:1163) Processed Source Registry
 ```
 Every command, env var, report field and method name documented MUST be
 copied from the implemented code (TASK-2553–2557), not from the spec — the

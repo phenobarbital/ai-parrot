@@ -13,7 +13,6 @@ skipped the same way ``test_toolkits_a2ui_migration.py`` does.
 import importlib
 
 import pytest
-
 from parrot.models.infographic import InfographicResponse
 
 
@@ -64,10 +63,16 @@ def _response() -> InfographicResponse:
 
 
 def _infographic(envelope: dict) -> dict:
+    """Return the root ``Infographic`` component's dict — A2UI v1.0 (FEAT-470):
+    catalog props live top-level on the ``Component``, not nested under a
+    legacy ``"properties"`` key (that shape survives only for the adapter's
+    OWN nested ``sections[].components[]`` descriptors, which are not wire
+    ``Component`` objects).
+    """
     components = envelope["components"]
     assert len(components) == 1
     assert components[0]["component"] == "Infographic"
-    return components[0]["properties"]
+    return components[0]
 
 
 class TestEnvelopeCarriesRealComponents:
@@ -132,6 +137,7 @@ class TestSurfaceMatchesTheRenderedResponse:
             r"_build_a2ui_envelope\(\s*infographic_response\b", source
         ), "render() must pass the InfographicResponse to _build_a2ui_envelope"
 
+
 class TestDataSpliceLane:
     """``render_data_template`` used to hardcode ``a2ui_envelope=None``."""
 
@@ -148,28 +154,31 @@ class TestDataSpliceLane:
         )
 
     def test_declared_layout_is_used_verbatim_against_the_payload(self, toolkit):
-        # The spliced payload IS the data model, so the layout's $bind pointers
-        # resolve against it — the same contract RecipeRunner honours.
+        # The spliced payload IS the data model, so the layout's binding
+        # pointers resolve against it — the same contract RecipeRunner
+        # honours. v2 (FEAT-470 TASK-2542): the OUTER layout's own props are
+        # top-level; the nested Infographic section-component descriptor
+        # (DataTable below) keeps its OWN "properties" wrapper — that is the
+        # composite's own authored-descriptor shape, not the wire Component
+        # shape the outer layout mirrors.
         descriptor = self._descriptor(
             {
                 "component": "Infographic",
-                "properties": {
-                    "title": "Budget Variance",
-                    "sections": [
-                        {
-                            "heading": "Detail",
-                            "components": [
-                                {
-                                    "component": "DataTable",
-                                    "properties": {
-                                        "columns": [{"name": "region"}],
-                                        "data": {"$bind": "/rows"},
-                                    },
-                                }
-                            ],
-                        }
-                    ],
-                },
+                "title": "Budget Variance",
+                "sections": [
+                    {
+                        "heading": "Detail",
+                        "components": [
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [{"name": "region"}],
+                                    "data": {"path": "/rows"},
+                                },
+                            }
+                        ],
+                    }
+                ],
             }
         )
         envelope = toolkit._build_a2ui_envelope_from_layout(
@@ -178,7 +187,7 @@ class TestDataSpliceLane:
         props = _infographic(envelope)
         assert props["title"] == "Budget Variance"
         table = props["sections"][0]["components"][0]
-        assert table["properties"]["data"] == {"$bind": "/rows"}
+        assert table["properties"]["data"] == {"path": "/rows"}
         assert envelope["data_model"] == {"rows": [{"region": "North"}]}
         assert envelope["surface_id"] == "infographic-art-5"
 
@@ -186,10 +195,8 @@ class TestDataSpliceLane:
         descriptor = self._descriptor(
             {
                 "component": "DataTable",
-                "properties": {
-                    "columns": [{"name": "region"}],
-                    "data": {"$bind": "/rows"},
-                },
+                "columns": [{"name": "region"}],
+                "data": {"path": "/rows"},
             }
         )
         envelope = toolkit._build_a2ui_envelope_from_layout(
@@ -208,27 +215,16 @@ class TestDataSpliceLane:
         assert props["sections"][0]["text"] == "Data: alpha, beta"
 
     def test_descriptor_without_layout_uses_the_same_fallback(self, toolkit):
-        envelope = toolkit._build_a2ui_envelope_from_layout(
-            self._descriptor(), {"a": 1}, "art-8", template_name="dash"
-        )
+        envelope = toolkit._build_a2ui_envelope_from_layout(self._descriptor(), {"a": 1}, "art-8", template_name="dash")
         assert _infographic(envelope)["title"] == "dash"
 
     def test_empty_payload_yields_no_data_model(self, toolkit):
-        envelope = toolkit._build_a2ui_envelope_from_layout(
-            None, {}, "art-9", title="Empty", template_name="dash"
-        )
+        envelope = toolkit._build_a2ui_envelope_from_layout(None, {}, "art-9", title="Empty", template_name="dash")
         assert not envelope.get("data_model")
 
     def test_invalid_layout_degrades_to_none(self, toolkit, caplog):
-        descriptor = self._descriptor(
-            {"component": "NotAnA2UIComponent", "properties": {}}
-        )
-        assert (
-            toolkit._build_a2ui_envelope_from_layout(
-                descriptor, {}, "art-10", template_name="dash"
-            )
-            is None
-        )
+        descriptor = self._descriptor({"component": "NotAnA2UIComponent"})
+        assert toolkit._build_a2ui_envelope_from_layout(descriptor, {}, "art-10", template_name="dash") is None
         assert "falling back to HTML-only result" in caplog.text
 
     def test_lane_is_wired_and_respects_the_flag(self, toolkit):

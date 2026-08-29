@@ -1,4 +1,5 @@
 """Recipe ``section_descriptor`` model + store round-trip (FEAT-326, TASK-1885)."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -23,7 +24,7 @@ def _recipe(**overrides):
     base = dict(
         name="r1",
         title="R1",
-        layout=LayoutSpec(component="Infographic", properties={}),
+        layout=LayoutSpec(component="Infographic"),
         updated_at=datetime.now(timezone.utc),
     )
     base.update(overrides)
@@ -34,8 +35,10 @@ class TestRecipeSchema:
     def test_section_descriptor_optional_default_none(self):
         recipe = _recipe()
         assert recipe.section_descriptor is None
-        # Additive change must NOT bump the schema version.
-        assert recipe.schema_version == SUPPORTED_SCHEMA_VERSION == 1
+        # Additive change (FEAT-326's `section_descriptor` field) must NOT
+        # itself bump the schema version — the schema_version bump to 2 is
+        # FEAT-470 TASK-2542's own (LayoutSpec v2), unrelated to this field.
+        assert recipe.schema_version == SUPPORTED_SCHEMA_VERSION == 2
 
     async def test_roundtrip_through_file_store(self, tmp_path):
         store = FileRecipeStore(tmp_path)
@@ -54,10 +57,7 @@ class TestRecipeSchema:
         yaml_text = legacy.to_yaml()
         assert "section_descriptor" in yaml_text  # dumped as null
         # Simulate a truly-legacy file: strip the field entirely.
-        stripped = "\n".join(
-            line for line in yaml_text.splitlines()
-            if not line.startswith("section_descriptor")
-        )
+        stripped = "\n".join(line for line in yaml_text.splitlines() if not line.startswith("section_descriptor"))
         path = tmp_path / "legacy.yaml"
         path.write_text(stripped, encoding="utf-8")
         loaded = await store.get("legacy")

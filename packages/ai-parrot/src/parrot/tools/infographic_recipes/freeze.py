@@ -55,10 +55,7 @@ class FreezeValidationError(ValueError):
 
     def __init__(self, errors: list[RecipeRunError]) -> None:
         self.errors = errors
-        super().__init__(
-            "Frozen recipe failed dry_run validation: "
-            f"{[e.detail for e in errors]!r}"
-        )
+        super().__init__("Frozen recipe failed dry_run validation: " f"{[e.detail for e in errors]!r}")
 
 
 async def freeze_session_envelope(
@@ -132,16 +129,14 @@ async def freeze_session_envelope(
             f"{len(envelope.components)} components. Freeze one surface at a time."
         )
 
-    normalized_steps = [
-        step if isinstance(step, TransformStep) else TransformStep(**step)
-        for step in transform_steps
-    ]
-    data_sources = [
-        DataSourceSpec(dataset=dataset_name, alias=alias)
-        for alias, dataset_name in dataset_names.items()
-    ]
+    normalized_steps = [step if isinstance(step, TransformStep) else TransformStep(**step) for step in transform_steps]
+    data_sources = [DataSourceSpec(dataset=dataset_name, alias=alias) for alias, dataset_name in dataset_names.items()]
     component = envelope.components[0]
-    layout = LayoutSpec(component=component.component, properties=dict(component.properties))
+    # v1.0 wire props are top-level (`extra="allow"` on `Component`, not a
+    # `properties` dict) — `LayoutSpec` v2 mirrors that shape exactly
+    # (FEAT-470 TASK-2542), so the session component's own extra props
+    # spread directly onto the layout unchanged.
+    layout = LayoutSpec(component=component.component, **dict(component.model_extra or {}))
 
     recipe = InfographicRecipe(
         name=name,

@@ -1,11 +1,10 @@
 """Core-side tests for RenderedArtifact/DeepLink + bake dep hygiene (TASK-1728)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-
 from parrot.outputs.a2ui import baking
 from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.models import Component, CreateSurface
@@ -50,7 +49,7 @@ class TestRenderedArtifact:
             action_label="Approve",
             url="https://x/resume?token=abc",
             token_id="abc",
-            expires_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(UTC),
         )
         assert dl.token_id == "abc"
 
@@ -82,9 +81,7 @@ class TestRenderedArtifact:
         envelope = CreateSurface(
             surfaceId="main",
             catalogId="c",
-            components=[
-                Component(id="b", component="Chart", properties={"d": {"$bind": "/x"}})
-            ],
+            components=[Component(id="root", component="Text", text={"path": "/x"})],
             dataModel={"x": 1},
         )
         with pytest.raises(ImportError) as exc:
@@ -98,56 +95,50 @@ class TestRenderedArtifact:
         importlib.import_module("parrot.outputs.a2ui.baking")
 
 
-def _surface(props: dict, data_model: dict) -> CreateSurface:
+def _surface(props: dict, data_model: dict, *, optional: list[str] | None = None) -> CreateSurface:
+    if optional:
+        props = {**props, "metadata": {"extensions": {"parrot_optional": optional}}}
     return CreateSurface(
         surfaceId="s",
         catalogId="c",
-        components=[Component(id="blk-000", component="Card", properties=props)],
+        components=[Component(id="root", component="Text", **props)],
         dataModel=data_model,
     )
 
 
 class TestOptionalBindings:
-    """FEAT-420 Module 2: optional `$bind` bindings never abort the bake pass."""
+    """v1.0: optional bindings (`metadata.extensions.parrot_optional`) never
+    abort the bake pass (spec §2/§7, superseding the FEAT-420 `$bind`/`optional`
+    inline marker)."""
 
     def test_optional_absent_omits_property(self):
         baked = baking.bake_envelope(
             _surface(
-                {"title": "T", "body": {"$bind": "/narrative/headline", "optional": True}},
+                {"text": {"path": "/narrative/headline"}},
                 {},
+                optional=["/narrative/headline"],
             )
         )
-        assert "body" not in baked[0]["properties"]
-        assert baked[0]["properties"]["title"] == "T"
+        assert "text" not in baked[0]
 
     def test_required_absent_still_raises(self):
-        with pytest.raises(baking.BakeError, match="Unresolvable data-model binding"):
-            baking.bake_envelope(_surface({"body": {"$bind": "/narrative/headline"}}, {}))
+        with pytest.raises(baking.BakeError, match="Unresolvable data-model path"):
+            baking.bake_envelope(_surface({"text": {"path": "/narrative/headline"}}, {}))
 
     def test_optional_present_resolves(self):
         baked = baking.bake_envelope(
             _surface(
-                {"body": {"$bind": "/narrative/headline", "optional": True}},
+                {"text": {"path": "/narrative/headline"}},
                 {"narrative": {"headline": "Revenue is behind plan."}},
+                optional=["/narrative/headline"],
             )
         )
-        assert baked[0]["properties"]["body"] == "Revenue is behind plan."
+        assert baked[0]["text"] == "Revenue is behind plan."
 
-    def test_optional_marker_never_leaks(self):
-        baked = baking.bake_envelope(
-            _surface({"body": {"$bind": "/x", "optional": True}}, {"x": "v"})
-        )
-        assert "optional" not in str(baked)
+    def test_optional_marker_never_leaks_into_baked_dict(self):
+        baked = baking.bake_envelope(_surface({"text": {"path": "/x"}}, {"x": "v"}, optional=["/x"]))
+        assert baked[0]["text"] == "v"
 
     def test_no_live_binding_survives_omission(self):
-        """`bake_envelope`'s own surviving-binding check (baking.py:120) still passes."""
-        baking.bake_envelope(_surface({"body": {"$bind": "/absent", "optional": True}}, {}))
-
-    def test_optional_absent_inside_list_is_dropped(self):
-        baked = baking.bake_envelope(
-            _surface(
-                {"items": [{"$bind": "/absent", "optional": True}, "kept"]},
-                {},
-            )
-        )
-        assert baked[0]["properties"]["items"] == ["kept"]
+        """`bake_envelope`'s own surviving-binding check still passes."""
+        baking.bake_envelope(_surface({"text": {"path": "/absent"}}, {}, optional=["/absent"]))

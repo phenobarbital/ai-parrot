@@ -1,1 +1,99 @@
-{"children": [{"children": [], "component": "Text", "properties": {"role": "title", "text": "Sales"}}, {"children": [{"children": [], "component": "Text", "properties": {"role": "column-header", "text": "Region"}}, {"children": [], "component": "Text", "properties": {"role": "column-header", "text": "total"}}], "component": "Row", "properties": {"role": "header"}}, {"children": [], "component": "Column", "properties": {"data": {"$bind": "/tables/blk-001"}, "role": "rows", "totalRows": 42, "truncated": true}}], "component": "Card", "properties": {"componentId": "blk-001", "variant": "table"}}
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Sales"
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "column-header"
+              }
+            },
+            "text": "Region"
+          },
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "column-header"
+              }
+            },
+            "text": "total"
+          }
+        ],
+        "component": "Row",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "header"
+          }
+        }
+      },
+      {
+        "children": {
+          "component_id": "blk-001-row",
+          "path": "/tables/blk-001"
+        },
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "rows",
+            "parrot_total_rows": 42,
+            "parrot_truncated": true
+          }
+        },
+        "template_source": {
+          "children": [
+            {
+              "component": "Text",
+              "metadata": {
+                "extensions": {
+                  "parrot_role": "cell"
+                }
+              },
+              "text": {
+                "path": "region"
+              }
+            },
+            {
+              "component": "Text",
+              "metadata": {
+                "extensions": {
+                  "parrot_role": "cell"
+                }
+              },
+              "text": {
+                "path": "total"
+              }
+            }
+          ],
+          "component": "Row",
+          "id": "blk-001-row",
+          "metadata": {
+            "extensions": {
+              "parrot_role": "row"
+            }
+          }
+        }
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-001",
+  "metadata": {
+    "extensions": {
+      "parrot_component_id": "blk-001",
+      "parrot_variant": "table"
+    }
+  }
+}

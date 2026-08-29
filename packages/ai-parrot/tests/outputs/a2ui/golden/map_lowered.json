@@ -1,1 +1,54 @@
-{"children": [{"children": [], "component": "Text", "properties": {"role": "title", "text": "Stores"}}, {"children": [], "component": "Text", "properties": {"role": "description", "text": "Store locations"}}, {"children": [{"children": [], "component": "Text", "properties": {"role": "layer", "text": "stores"}}], "component": "Column", "properties": {"data": {"$bind": "/maps/blk-002"}, "role": "layer-summary"}}], "component": "Card", "properties": {"componentId": "blk-002", "variant": "map"}}
+{
+  "child": {
+    "children": [
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "title"
+          }
+        },
+        "text": "Stores"
+      },
+      {
+        "component": "Text",
+        "metadata": {
+          "extensions": {
+            "parrot_role": "description"
+          }
+        },
+        "text": "Store locations"
+      },
+      {
+        "children": [
+          {
+            "component": "Text",
+            "metadata": {
+              "extensions": {
+                "parrot_role": "layer"
+              }
+            },
+            "text": "stores"
+          }
+        ],
+        "component": "Column",
+        "metadata": {
+          "extensions": {
+            "parrot_layer_data": {
+              "path": "/maps/blk-002"
+            },
+            "parrot_role": "layer-summary"
+          }
+        }
+      }
+    ],
+    "component": "Column"
+  },
+  "component": "Card",
+  "id": "blk-002",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "map"
+    }
+  }
+}

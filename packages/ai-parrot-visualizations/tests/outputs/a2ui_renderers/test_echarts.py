@@ -6,9 +6,9 @@ import pytest
 
 pytest.importorskip("jsonpointer")
 
-from parrot.outputs.a2ui.models import Component, CreateSurface  # noqa: E402
-from parrot.outputs.a2ui.renderers import get_a2ui_renderer  # noqa: E402
-from parrot.outputs.a2ui_renderers.echarts import EChartsRenderer  # noqa: E402
+from parrot.outputs.a2ui.models import Component, CreateSurface
+from parrot.outputs.a2ui.renderers import get_a2ui_renderer
+from parrot.outputs.a2ui_renderers.echarts import EChartsRenderer
 
 pytestmark = pytest.mark.asyncio
 
@@ -16,11 +16,11 @@ pytestmark = pytest.mark.asyncio
 def _chart_envelope(title="Sales", data_binding=True) -> CreateSurface:
     props = {"type": "bar", "x": "month", "y": ["rev"], "title": title}
     if data_binding:
-        props["data"] = {"$bind": "/rows"}
+        props["data"] = {"path": "/rows"}
     return CreateSurface(
         surfaceId="main",
         catalogId="https://parrot.dev/catalogs/v1",
-        components=[Component(id="b0", component="Chart", properties=props)],
+        components=[Component(id="root", component="Chart", **props)],
         dataModel={"rows": [{"month": "Jan", "rev": 10}, {"month": "Feb", "rev": 20}]},
     )
 
@@ -62,13 +62,64 @@ class TestEChartsRenderer:
 
     async def test_output_has_zero_live_bindings(self):
         doc = (await EChartsRenderer().render(_chart_envelope())).content.decode()
-        assert "$bind" not in doc
+        assert '"path"' not in doc
 
     async def test_no_chart_raises(self):
         env = CreateSurface(
             surfaceId="m",
             catalogId="https://parrot.dev/catalogs/v1",
-            components=[Component(id="b0", component="Card", properties={"title": "x"})],
+            components=[Component(id="root", component="InfoCard", title="x")],
         )
         with pytest.raises(ValueError):
             await EChartsRenderer().render(env)
+
+
+class TestTASK2544:
+    """FEAT-470 TASK-2544: echarts declares supported_components + reads top-level props."""
+
+    async def test_echarts_capabilities(self):
+        caps = EChartsRenderer.capabilities
+        assert caps.supported_components == {"Chart"}
+
+    async def test_echarts_reads_top_level_props(self):
+        """Chart props (v1.0) live top-level, not nested under "properties"."""
+        env = _chart_envelope()
+        option = json.loads((await EChartsRenderer().render(env)).content)
+        assert option["title"]["text"] == "Sales"
+        assert option["series"][0]["name"] == "rev"
+
+
+class TestSiblingDegradationRecorded:
+    """Post-review fix: non-Chart siblings must not be silently dropped."""
+
+    def _multi_component_envelope(self) -> CreateSurface:
+        return CreateSurface(
+            surfaceId="main",
+            catalogId="https://parrot.dev/catalogs/v1",
+            components=[
+                Component(
+                    id="chart-1",
+                    component="Chart",
+                    type="bar",
+                    x="month",
+                    y=["rev"],
+                    title="Sales",
+                    data=[{"month": "Jan", "rev": 10}],
+                ),
+                Component(id="note-1", component="Text", text="a sibling note"),
+            ],
+        )
+
+    async def test_sibling_recorded_in_degraded_metadata(self):
+        art = await EChartsRenderer().render(self._multi_component_envelope())
+        degraded = art.metadata.get("degraded", [])
+        assert any(d["id"] == "note-1" and d["component"] == "Text" for d in degraded)
+
+    async def test_html_wrap_also_records_sibling_degradation(self):
+        art = await EChartsRenderer().render(self._multi_component_envelope(), wrap_html=True)
+        degraded = art.metadata.get("degraded", [])
+        assert any(d["id"] == "note-1" for d in degraded)
+
+    async def test_single_chart_no_degradations(self):
+        art = await EChartsRenderer().render(_chart_envelope())
+        assert art.metadata.get("degraded", []) == []

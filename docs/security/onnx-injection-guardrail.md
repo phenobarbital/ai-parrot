@@ -84,6 +84,20 @@ from parrot.bots.guardrails.builtin.prompt_injection import (
 await warmup_injection_model()
 ```
 
+To pre-seed the cache from the shell instead — at image-build or
+provisioning time, so the first host that starts is already warm:
+
+```bash
+source .venv/bin/activate
+make injection-model            # download if not cached, then warm
+make injection-model FORCE=1    # re-fetch (repairs a corrupt cache)
+```
+
+The target is that same coroutine and prints the engine it ended up on;
+it exits non-zero on anything but `onnx`, so CI notices when the graph
+did not come up. It is not for air-gapped hosts — those use
+`PARROT_INJECTION_ONNX_DIR` (below).
+
 It resolves, downloads the graph if not already cached (skipped entirely
 when `PARROT_INJECTION_ONNX_DIR` already points at a valid local graph),
 constructs the ORT session, and runs one dummy inference — all off the

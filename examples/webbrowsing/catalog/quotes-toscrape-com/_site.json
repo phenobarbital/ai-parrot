@@ -1,0 +1,12 @@
+{
+  "site": "quotes-toscrape-com",
+  "base_url": "https://quotes.toscrape.com",
+  "title": "Quotes to Scrape",
+  "description": "Sandbox site with famous quotes, tags, authors and a demo login (any credentials are accepted).",
+  "aliases": [
+    "quotes",
+    "toscrape"
+  ],
+  "created_at": "2026-08-26T10:02:41.857699Z",
+  "updated_at": "2026-08-26T10:03:30.400046Z"
+}

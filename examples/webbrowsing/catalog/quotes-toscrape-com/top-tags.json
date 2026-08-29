@@ -1,0 +1,28 @@
+{
+  "site": "quotes-toscrape-com",
+  "name": "top-tags",
+  "title": "Etiquetas populares",
+  "description": "Read the 'Top Ten tags' sidebar from the home page.",
+  "kind": "operation",
+  "params": {},
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://quotes.toscrape.com/"
+    },
+    {
+      "action": "extract",
+      "selector": "span.tag-item a.tag",
+      "extract_type": "text",
+      "multiple": true,
+      "extract_name": "top_tags"
+    }
+  ],
+  "compose": [],
+  "requires": [],
+  "tags": [],
+  "version": "1.0",
+  "source": "llm",
+  "created_at": "2026-08-26T10:03:30.406581Z",
+  "updated_at": "2026-08-26T10:03:30.407014Z"
+}

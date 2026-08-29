@@ -1,1 +1,85 @@
-{"children": [{"children": [], "component": "Text", "properties": {"role": "title", "text": "History"}}, {"children": [{"children": [], "component": "Text", "properties": {"role": "timestamp", "text": "2026-01"}}, {"children": [], "component": "Text", "properties": {"role": "event-title", "text": "Kickoff"}}, {"children": [], "component": "Text", "properties": {"role": "event-description", "text": "start"}}], "component": "Row", "properties": {"role": "event"}}, {"children": [{"children": [], "component": "Text", "properties": {"role": "timestamp", "text": "2026-02"}}, {"children": [], "component": "Text", "properties": {"role": "event-title", "text": "Milestone"}}], "component": "Row", "properties": {"role": "event"}}], "component": "Column", "properties": {"componentId": "blk-002", "variant": "timeline"}}
+{
+  "children": [
+    {
+      "component": "Text",
+      "metadata": {
+        "extensions": {
+          "parrot_role": "title"
+        }
+      },
+      "text": "History"
+    },
+    {
+      "children": [
+        {
+          "component": "Text",
+          "metadata": {
+            "extensions": {
+              "parrot_role": "timestamp"
+            }
+          },
+          "text": "2026-01"
+        },
+        {
+          "component": "Text",
+          "metadata": {
+            "extensions": {
+              "parrot_role": "event-title"
+            }
+          },
+          "text": "Kickoff"
+        },
+        {
+          "component": "Text",
+          "metadata": {
+            "extensions": {
+              "parrot_role": "event-description"
+            }
+          },
+          "text": "start"
+        }
+      ],
+      "component": "Row",
+      "metadata": {
+        "extensions": {
+          "parrot_role": "event"
+        }
+      }
+    },
+    {
+      "children": [
+        {
+          "component": "Text",
+          "metadata": {
+            "extensions": {
+              "parrot_role": "timestamp"
+            }
+          },
+          "text": "2026-02"
+        },
+        {
+          "component": "Text",
+          "metadata": {
+            "extensions": {
+              "parrot_role": "event-title"
+            }
+          },
+          "text": "Milestone"
+        }
+      ],
+      "component": "Row",
+      "metadata": {
+        "extensions": {
+          "parrot_role": "event"
+        }
+      }
+    }
+  ],
+  "component": "Column",
+  "id": "blk-002",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "timeline"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-"""SSR-HTML renderer (Module 5, satellite).
+"""SSR-HTML renderer (Module 5/7, satellite).
 
 Turns a validated ``CreateSurface`` envelope into a single self-contained, baked HTML
 document. It is the backbone of static delivery (G5): the PDF renderer rasterizes its
@@ -10,6 +10,26 @@ Security invariants (spec G1):
   (which holds the arbitrary-code sink FEAT-273 exists to kill).
 * Every data value is HTML-escaped — envelope data is data, never markup/JS.
 * Output is self-contained — all CSS inline, no external CDN/script/style/font refs.
+
+v1.0 dispatch (FEAT-470 TASK-2543): :meth:`SSRHTMLRenderer.render` first
+LOWERS every non-primitive/Parrot composite component in the envelope via
+its own registered ``lower()`` + :func:`~parrot.outputs.a2ui.catalog.base.to_components`
+(flattening each composite's nested ``BasicNode`` tree into the envelope's
+own flat wire component list, in place of the composite — this is the ONLY
+correct order: a composite like ``DataTable`` lowers to a row
+``ChildTemplate``, and template/binding expansion is exclusively
+:func:`~parrot.outputs.a2ui.baking.bake_envelope`'s job, which must run
+AFTER lowering, never before — see ``test_datatable_row_materialization.py``
+for the pinned lowering -> bake contract). It THEN bakes the fully-lowered,
+flat envelope (resolving every binding and expanding every template),
+reconstructs a nested :class:`BasicNode` tree rooted at ``"root"`` from the
+baked flat dicts (pure id-reference resolution — every node is already a
+Basic Catalog primitive at this point), and dispatches each of the 18
+official primitives to a dedicated ``_render_<Name>`` method. A component
+this renderer does not know how to render natively degrades to a visible
+``Text`` placeholder (never a silent failure or an exception) via
+:func:`parrot.outputs.a2ui.renderers.degrade.degrade`; every degradation is
+recorded in ``RenderedArtifact.metadata["degraded"]``.
 """
 
 from __future__ import annotations
@@ -18,18 +38,21 @@ import html
 import logging
 from typing import Any, Optional
 
-# Ensure the core v1 catalog components are registered so lowering can resolve them.
-import parrot.outputs.a2ui.catalog.components  # noqa: F401
+# Ensure the v1.0 catalogs (Basic primitives + Parrot composites) are
+# registered so lowering/dispatch can resolve every component name.
+import parrot.outputs.a2ui.catalog.basic
+import parrot.outputs.a2ui.catalog.parrot  # noqa: F401 — ensure registration
 from parrot.outputs.a2ui.artifacts import DeepLink, RenderedArtifact
 from parrot.outputs.a2ui.baking import bake_envelope
 from parrot.outputs.a2ui.catalog import get_component
-from parrot.outputs.a2ui.catalog.base import BasicNode
+from parrot.outputs.a2ui.catalog.base import BasicNode, TabSpec, to_components
 from parrot.outputs.a2ui.models import Component, CreateSurface
 from parrot.outputs.a2ui.renderers import (
     AbstractA2UIRenderer,
     RendererCapabilities,
     register_a2ui_renderer,
 )
+from parrot.outputs.a2ui.renderers.degrade import degradation_record, degrade
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +62,30 @@ _STYLE = (
     "body{font-family:sans-serif;margin:1rem;color:#1a1a1a}"
     ".a2ui-card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:.5rem 0}"
     ".a2ui-row{display:flex;gap:1rem}.a2ui-col{display:flex;flex-direction:column}"
+    ".a2ui-list-vertical{display:flex;flex-direction:column;gap:.25rem}"
+    ".a2ui-list-horizontal{display:flex;flex-direction:row;gap:.5rem}"
     ".a2ui-text{margin:.25rem 0}.a2ui-title{font-size:1.4rem;font-weight:700}"
     ".a2ui-heading{font-size:1.15rem;font-weight:600}.a2ui-notice{color:#a00}"
     ".a2ui-deeplink{display:inline-block;margin:.25rem 0}"
+    ".a2ui-tabs{border:1px solid #ddd;border-radius:6px;margin:.5rem 0}"
+    ".a2ui-tab{border-top:1px solid #eee;padding:.5rem}"
+    ".a2ui-tab-title{font-weight:600;margin-bottom:.25rem}"
+    ".a2ui-divider-h{border:none;border-top:1px solid #ddd;margin:.5rem 0}"
+    ".a2ui-divider-v{border:none;border-left:1px solid #ddd;margin:0 .5rem;height:1em;display:inline-block}"
+    ".a2ui-field{margin:.25rem 0}.a2ui-field-label{font-weight:600;display:block}"
+    ".a2ui-field-value{color:#333}.a2ui-button{display:inline-block;padding:.25rem .5rem;"
+    "border:1px solid #999;border-radius:4px;background:#f5f5f5}"
+    ".a2ui-modal{border:2px dashed #999;padding:.5rem;margin:.5rem 0}"
 )
 
-_CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row", "Card": "a2ui-card"}
+#: Basic Catalog composite/container primitives whose children render
+#: recursively (the CSS class used for the wrapping ``<div>``).
+_CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row"}
+
+
+def _esc(value: Any) -> str:
+    """HTML-escape any baked (already-resolved) value as a display string."""
+    return html.escape("" if value is None else str(value))
 
 
 @register_a2ui_renderer(
@@ -54,10 +95,35 @@ _CONTAINER_COMPONENTS = {"Column": "a2ui-col", "Row": "a2ui-row", "Card": "a2ui-
         supports_actions=False,
         supports_updates=False,
         output="text/html",
+        supported_components={
+            "AudioPlayer",
+            "Button",
+            "Card",
+            "CheckBox",
+            "ChoicePicker",
+            "Column",
+            "DateTimeInput",
+            "Divider",
+            "Icon",
+            "Image",
+            "List",
+            "Modal",
+            "Row",
+            "Slider",
+            "Tabs",
+            "Text",
+            "TextField",
+            "Video",
+        },
     ),
 )
 class SSRHTMLRenderer(AbstractA2UIRenderer):
-    """Static, self-contained HTML renderer for A2UI envelopes."""
+    """Static, self-contained HTML renderer for A2UI v1.0 envelopes."""
+
+    #: Components this renderer forces to degrade regardless of its own
+    #: dispatch table (e.g. :class:`PDFRenderer` excludes Video/AudioPlayer —
+    #: weasyprint cannot play media in a rasterized PDF).
+    _UNSUPPORTED: frozenset[str] = frozenset()
 
     async def render(
         self,
@@ -75,11 +141,24 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             deep_links: Deep links to render as anchors for degraded actions.
 
         Returns:
-            A ``RenderedArtifact`` with ``mime_type="text/html"``.
+            A ``RenderedArtifact`` with ``mime_type="text/html"``; any
+            component this renderer degraded is recorded in
+            ``metadata["degraded"]``.
         """
+        # Lower every composite BEFORE baking — a composite (e.g. DataTable)
+        # may lower to a row `ChildTemplate`, and template/binding expansion
+        # is exclusively `bake_envelope`'s job, which must see the fully
+        # flattened wire graph (never a still-composite one).
+        lowered_envelope = self._lower_composites(envelope)
         # Static renderer: always bake so the document has zero live bindings.
-        baked_components = bake_envelope(envelope)
-        body_parts: list[str] = [self._render_component(bc) for bc in baked_components]
+        baked_components = bake_envelope(lowered_envelope)
+        by_id = {bc["id"]: bc for bc in baked_components}
+
+        degradations: list[dict[str, Any]] = []
+        body_parts: list[str] = []
+        if "root" in by_id:
+            root = self._reconstruct(by_id["root"]["id"], by_id)
+            body_parts.append(self._render_basic(root, degradations))
 
         for link in deep_links or []:
             body_parts.append(
@@ -102,48 +181,211 @@ class SSRHTMLRenderer(AbstractA2UIRenderer):
             title=envelope.surface_id,
             surface=_SURFACE_NAME,
             deep_links=list(deep_links or []),
+            metadata={"degraded": degradations} if degradations else {},
         )
 
-    # -- internal rendering -------------------------------------------------
+    # -- lowering (composites -> flat primitives, BEFORE baking) -------------
 
-    def _render_component(self, comp: dict[str, Any]) -> str:
-        """Lower a baked component to a Basic tree and render it to HTML."""
-        name = comp["component"]
-        try:
-            entry = get_component(name)
-        except KeyError:
-            # Already a Basic Catalog primitive — render directly.
-            node = BasicNode(**comp)
-            return self._render_basic(node)
-        lowered = entry.component_cls().lower(
-            Component(
-                id=comp.get("id", ""),
-                component=name,
-                properties=comp.get("properties", {}) or {},
-                children=comp.get("children", []) or [],
-            ),
-            {},
+    def _lower_composites(self, envelope: CreateSurface) -> CreateSurface:
+        """Replace every non-primitive (Parrot composite) component with its
+        lowered + flattened primitive equivalents, in place, in the envelope's
+        own flat component list.
+
+        A composite's own registered ``lower()`` preserves the composite's
+        original id on its own outermost node (see e.g.
+        ``catalog/parrot/datatable.py``), so any OTHER component's
+        ``child``/``children`` reference into that id remains valid after
+        lowering — no cross-reference rewriting is needed.
+        """
+        new_components: list[Component] = []
+        for comp in envelope.components:
+            try:
+                entry = get_component(comp.component)
+            except KeyError:
+                entry = None
+            if entry is not None and not entry.definition.is_primitive:
+                tree = entry.component_cls().lower(comp, envelope.data_model)
+                new_components.extend(to_components(tree, id_prefix=f"{comp.id}-lc"))
+            else:
+                new_components.append(comp)
+        return envelope.model_copy(update={"components": new_components})
+
+    # -- tree reconstruction -------------------------------------------------
+
+    def _reconstruct(self, node_id: str, by_id: dict[str, dict[str, Any]]) -> BasicNode:
+        """Reconstruct a nested :class:`BasicNode` from the flat baked dict list.
+
+        Every node reaching this point is already a Basic Catalog primitive
+        (composites were lowered+flattened by :meth:`_lower_composites`
+        BEFORE baking) — this is pure id-reference resolution, never a
+        ``lower()`` call.
+        """
+        data = dict(by_id[node_id])
+        name = data.pop("component")
+        data.pop("id", None)
+        child_id = data.pop("child", None)
+        children_ids = data.pop("children", None)
+        metadata = data.pop("metadata", None)
+
+        tabs: Optional[list[TabSpec]] = None
+        if "tabs" in data:
+            tabs = [
+                TabSpec(title=tab["title"], child=self._reconstruct(tab["child"], by_id)) for tab in data.pop("tabs")
+            ]
+
+        # Modal's `content`/`trigger` are prop-level id REFERENCES (not
+        # `child`/`children`) — resolve `content` here so `_render_Modal`
+        # can render it inline without needing `by_id` in scope (spec:
+        # "Modal→inline"). `trigger` (which opens the modal, meaningless
+        # without client-side interactivity) is left as a bare id.
+        if name == "Modal" and isinstance(data.get("content"), str):
+            data["content"] = self._reconstruct(data["content"], by_id)
+
+        child = self._reconstruct(child_id, by_id) if isinstance(child_id, str) else None
+        children = [self._reconstruct(cid, by_id) for cid in children_ids] if isinstance(children_ids, list) else None
+        return BasicNode(
+            id=node_id,
+            component=name,
+            child=child,
+            children=children,
+            tabs=tabs,
+            metadata=metadata,
+            **data,
         )
-        return self._render_basic(lowered)
 
-    def _render_basic(self, node: BasicNode) -> str:
-        """Recursively render a lowered Basic Catalog node to escaped HTML."""
+    # -- dispatch -------------------------------------------------------------
+
+    def _render_basic(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        """Dispatch a reconstructed :class:`BasicNode` to its ``_render_<Name>`` method."""
         component = node.component
-        props = node.properties or {}
+        if component in self._UNSUPPORTED:
+            degradations.append(degradation_record(node, f"{_SURFACE_NAME} does not support {component}"))
+            return self._render_Text(degrade(node, "unsupported here"), degradations)
 
-        if component == "Text":
-            role = props.get("role", "")
-            text = props.get("text")
-            cls = f"a2ui-text a2ui-{html.escape(str(role))}" if role else "a2ui-text"
-            return f'<p class="{cls}">{html.escape("" if text is None else str(text))}</p>'
+        method = getattr(self, f"_render_{component}", None)
+        if method is None:
+            degradations.append(degradation_record(node, f"{_SURFACE_NAME} has no renderer for {component}"))
+            return self._render_Text(degrade(node, "no renderer available"), degradations)
+        return method(node, degradations)
 
-        if component == "Image":
-            src = str(props.get("src", ""))
-            if src.startswith("data:"):
-                return f'<img src="{html.escape(src, quote=True)}" alt="">'
-            # Self-contained: never emit external src; keep URL in a data attribute.
-            return f'<div class="a2ui-image" data-image-url="{html.escape(src, quote=True)}">[image]</div>'
+    def _render_children(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        children = node.children if isinstance(node.children, list) else []
+        return "".join(self._render_basic(child, degradations) for child in children)
 
-        children_html = "".join(self._render_basic(child) for child in node.children)
-        css_class = _CONTAINER_COMPONENTS.get(component, f"a2ui-{html.escape(component.lower())}")
-        return f'<div class="{css_class}">{children_html}</div>'
+    # -- text/media -------------------------------------------------------
+
+    def _render_Text(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        role = None
+        if node.metadata is not None and node.metadata.extensions is not None:
+            role = node.metadata.extensions.root.get("parrot_role")
+        cls = f"a2ui-text a2ui-{_esc(role)}" if role else "a2ui-text"
+        return f'<p class="{cls}">{_esc(props.get("text"))}</p>'
+
+    def _render_Image(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        src = str(props.get("url", ""))
+        alt = _esc(props.get("description"))
+        if src.startswith("data:"):
+            return f'<img src="{html.escape(src, quote=True)}" alt="{alt}">'
+        # Self-contained: never emit external src; keep URL in a data attribute.
+        return f'<div class="a2ui-image" data-image-url="{html.escape(src, quote=True)}">{alt or "[image]"}</div>'
+
+    def _render_Icon(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        name = props.get("name")
+        if isinstance(name, dict) and "svgPath" in name:
+            return f'<span class="a2ui-icon" data-svg-path="{html.escape(str(name["svgPath"]), quote=True)}"></span>'
+        return f'<span class="a2ui-icon" data-icon="{_esc(name)}"></span>'
+
+    def _render_Video(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        url = str(props.get("url", ""))
+        poster = props.get("posterUrl")
+        poster_attr = f' poster="{html.escape(str(poster), quote=True)}"' if poster else ""
+        return f'<video controls{poster_attr} data-video-url="{html.escape(url, quote=True)}">' f"</video>"
+
+    def _render_AudioPlayer(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        url = str(props.get("url", ""))
+        description = props.get("description")
+        parts = [f'<audio controls data-audio-url="{html.escape(url, quote=True)}"></audio>']
+        if description:
+            parts.append(f'<span class="a2ui-audio-desc">{_esc(description)}</span>')
+        return "".join(parts)
+
+    # -- layout/containers --------------------------------------------------
+
+    def _render_Row(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        return f'<div class="a2ui-row">{self._render_children(node, degradations)}</div>'
+
+    def _render_Column(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        return f'<div class="a2ui-col">{self._render_children(node, degradations)}</div>'
+
+    def _render_List(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        direction = props.get("direction", "vertical")
+        cls = "a2ui-list-horizontal" if direction == "horizontal" else "a2ui-list-vertical"
+        return f'<div class="{cls}">{self._render_children(node, degradations)}</div>'
+
+    def _render_Card(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        inner = self._render_basic(node.child, degradations) if node.child is not None else ""
+        return f'<div class="a2ui-card">{inner}</div>'
+
+    def _render_Tabs(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        panes = []
+        for tab in node.tabs or []:
+            panes.append(
+                f'<div class="a2ui-tab"><div class="a2ui-tab-title">{_esc(tab.title)}</div>'
+                f"{self._render_basic(tab.child, degradations)}</div>"
+            )
+        return f'<div class="a2ui-tabs">{"".join(panes)}</div>'
+
+    def _render_Modal(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        # Static SSR has no client-side trigger/dialog behavior — the
+        # content renders inline (spec: "Modal→inline"); `content` was
+        # resolved to a nested BasicNode during `_reconstruct`.
+        props = node.model_extra or {}
+        content_node = props.get("content")
+        inner = self._render_basic(content_node, degradations) if isinstance(content_node, BasicNode) else ""
+        return f'<div class="a2ui-modal">{inner}</div>'
+
+    def _render_Divider(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        axis = props.get("axis", "horizontal")
+        if axis == "vertical":
+            return '<span class="a2ui-divider-v"></span>'
+        return '<hr class="a2ui-divider-h">'
+
+    # -- actionable/input (read-only presentation) --------------------------
+
+    def _render_Button(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        inner = self._render_basic(node.child, degradations) if node.child is not None else ""
+        return f'<span class="a2ui-button">{inner}</span>'
+
+    def _render_TextField(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        return self._render_labeled_value(props.get("label"), props.get("value"))
+
+    def _render_CheckBox(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        checked = "☑" if props.get("value") else "☐"
+        return self._render_labeled_value(props.get("label"), checked)
+
+    def _render_ChoicePicker(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        value = props.get("value")
+        display = ", ".join(str(v) for v in value) if isinstance(value, list) else value
+        return self._render_labeled_value(props.get("label"), display)
+
+    def _render_Slider(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        return self._render_labeled_value(props.get("label"), props.get("value"))
+
+    def _render_DateTimeInput(self, node: BasicNode, degradations: list[dict[str, Any]]) -> str:
+        props = node.model_extra or {}
+        return self._render_labeled_value(props.get("label"), props.get("value"))
+
+    def _render_labeled_value(self, label: Any, value: Any) -> str:
+        label_html = f'<span class="a2ui-field-label">{_esc(label)}</span>' if label else ""
+        return f'<div class="a2ui-field">{label_html}<span class="a2ui-field-value">{_esc(value)}</span></div>'

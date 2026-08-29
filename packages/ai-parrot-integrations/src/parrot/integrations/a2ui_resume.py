@@ -31,11 +31,12 @@ def build_structured_message(action_payload: dict[str, Any]) -> str:
     """Serialize a resumed action into a structured user-message query string.
 
     Mirrors the web route (TASK-1735): tagged so downstream recognizes it as an A2UI
-    action resume rather than free-form user text.
+    action resume rather than free-form user text. Uses the same ``"a2ui_action"``
+    tag (and v1.0 ``action`` envelope shape, FEAT-470 G6) as the Adaptive Cards
+    native-input submit path (``parrot.integrations.msteams.wrapper``, TASK-2545)
+    so both ends of the pipe agree on one wire contract.
     """
-    return json.dumps(
-        {"type": "a2ui_action_resume", "action": action_payload}, sort_keys=True
-    )
+    return json.dumps({"type": "a2ui_action", "action": action_payload}, sort_keys=True)
 
 
 class ChannelDeepLinkResume:
@@ -69,9 +70,7 @@ class ChannelDeepLinkResume:
         try:
             payload = await self.service.consume(token)
         except DeepLinkExpiredError:
-            self.logger.info(
-                "A2UI %s deep-link resume rejected (expired/replayed token).", self.channel
-            )
+            self.logger.info("A2UI %s deep-link resume rejected (expired/replayed token).", self.channel)
             return {"ok": False, "reply": EXPIRED_MESSAGE}
 
         query = build_structured_message(payload.action_payload)
@@ -81,7 +80,5 @@ class ChannelDeepLinkResume:
             agent_id=payload.agent_id,
             query=query,
         )
-        self.logger.info(
-            "A2UI %s deep-link resumed session %s.", self.channel, payload.session_id
-        )
+        self.logger.info("A2UI %s deep-link resumed session %s.", self.channel, payload.session_id)
         return {"ok": True, "session_id": payload.session_id, "result": result}

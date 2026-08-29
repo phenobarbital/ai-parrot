@@ -1,4 +1,4 @@
-"""Unit tests for the PDF renderer (TASK-1732)."""
+"""Unit tests for the PDF renderer (TASK-1732, rewritten to v1.0 by FEAT-470 TASK-2543)."""
 
 import threading
 
@@ -20,9 +20,13 @@ def _envelope() -> CreateSurface:
         catalogId="https://parrot.dev/catalogs/v1",
         components=[
             Component(
-                id="b0",
+                id="root",
                 component="Chart",
-                properties={"type": "bar", "x": "region", "y": ["rev"], "title": "Rev", "data": {"$bind": "/rows"}},
+                type="bar",
+                x="region",
+                y=["rev"],
+                title="Rev",
+                data={"path": "/rows"},
             )
         ],
         dataModel={"rows": [{"region": "EU", "rev": 5}, {"region": "NA", "rev": 3}]},
@@ -46,7 +50,7 @@ class TestPDFRenderer:
         assert art.content[:5] == b"%PDF-"
 
     async def test_charts_prerendered_to_svg_under_weasyprint(self):
-        doc = await pdf_mod.PDFRenderer()._build_intermediate_html(_envelope())
+        doc, _degraded = await pdf_mod.PDFRenderer()._build_intermediate_html(_envelope())
         assert "<svg" in doc
         assert "<script" not in doc  # no JS-dependent chart content
 
@@ -71,3 +75,25 @@ class TestPDFRenderer:
         assert art.content == b"%PDF-fake"
         # _rasterize ran off the main thread (via asyncio.to_thread).
         assert seen["thread"] != threading.main_thread().name
+
+
+class TestTASK2543:
+    """FEAT-470 TASK-2543: PDF declares supported_components sans Video/Audio."""
+
+    async def test_pdf_degrades_media_to_links(self):
+        caps = pdf_mod.PDFRenderer.capabilities
+        assert "Video" not in caps.supported_components
+        assert "AudioPlayer" not in caps.supported_components
+        assert "Text" in caps.supported_components
+
+    async def test_video_degrades_to_notice_under_pdf(self):
+        env = CreateSurface(
+            surfaceId="s",
+            catalogId="c",
+            components=[Component(id="root", component="Video", url="https://x/v.mp4")],
+            dataModel={},
+        )
+        doc, degraded = await pdf_mod.PDFRenderer()._build_intermediate_html(env)
+        assert "<video" not in doc
+        assert len(degraded) == 1
+        assert degraded[0]["component"] == "Video"

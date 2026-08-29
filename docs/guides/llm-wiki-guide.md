@@ -1261,6 +1261,65 @@ wikitoolkit sync push --env dev --dry-run
   `SYNC_PULL`); `--dry-run` computes and prints the report but applies
   and logs nothing.
 
+#### Sync — mirroring wiki planes into an Obsidian vault
+
+`wikitoolkit sync obsidian` is the third sync direction: a **one-way**
+projection of wiki planes into an Obsidian vault as markdown notes
+(the reverse of vault ingestion via `build --vault` or a `vault`-kind
+namespace). Which page **categories** sync and which vault **folder**
+each one maps onto is configuration, under `obsidian_sync` in
+`.parrot/wiki.json`:
+
+```jsonc
+{
+  "obsidian_sync": {
+    "vault_dir": "~/vaults/notes",        // target vault (falls back to vault_dir)
+    "root_folder": "LLM Wiki",            // subtree holding every synced note
+    "categories": ["concept", "entity"],  // empty = all categories
+    "folders": {"concept": "Concepts"},   // category -> folder override
+    "namespaces": ["local", "issues"],    // planes to mirror ('all' = local + every ns)
+    "prune": false                        // delete notes whose page vanished
+  }
+}
+```
+
+```bash
+# Mirror the configured planes/categories into the vault
+wikitoolkit sync obsidian
+
+# Ad-hoc overrides (flags win over config for this run)
+wikitoolkit sync obsidian --vault ~/vaults/notes --ns local,issues \
+  --category concept --category entity
+
+# Preview, then apply with pruning of vanished pages
+wikitoolkit sync obsidian --dry-run -v
+wikitoolkit sync obsidian --prune
+```
+
+- **Layout**: `<root_folder>/[<namespace>/]<category folder>/<page>.md` —
+  the local plane writes directly under the root folder; each foreign
+  namespace gets its own subtree. Category folders default to the OKF
+  export pluralization (`entity` → `entities/`) unless overridden via
+  `folders`.
+- **Frontmatter marker**: every synced note carries `wiki_sync:
+  <wiki_name>`, `wiki_scope: <wiki_name>@<repo-root digest>`, `wiki_id:
+  <concept_id>` and `namespace: <plane>` (plus `aliases`, `tags:
+  [wiki/<category>]`, `summary`, `updated`), so notes are searchable in
+  Obsidian and safely identifiable as managed.
+- **Edges become wikilinks**: edges between two synced pages render as a
+  `## Related` section of `[[wikilinks]]`, so the wiki graph shows up in
+  Obsidian's graph view.
+- **Idempotent**: rendering is deterministic — an unchanged page is
+  reported `unchanged` and never rewritten.
+- **Prune is marker-guarded**: `--prune` (or `"prune": true`) deletes
+  only notes whose `wiki_scope` matches THIS project exactly (name +
+  repo-root digest — two projects sharing a vault, even with the same
+  `wiki_name`, can never prune each other) and whose page vanished or is
+  no longer selected; hand-written notes are never touched, and a
+  namespace that was skipped this run is left alone.
+- Applied runs are logged to the bookkeeper as `SYNC_OBSIDIAN`;
+  `--dry-run` applies and logs nothing.
+
 ### Environment Variables
 
 | Variable | Default | Description |

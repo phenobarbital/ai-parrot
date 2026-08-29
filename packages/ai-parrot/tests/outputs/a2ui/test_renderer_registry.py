@@ -68,3 +68,32 @@ class TestRendererRegistry:
             class Bad(AbstractA2UIRenderer):
                 async def render(self, envelope, *, bake=True):
                     return "x"
+
+
+class TestTASK2543:
+    """FEAT-470 TASK-2543: RendererCapabilities.supported_catalog_ids/supported_components."""
+
+    def test_renderer_capabilities_declared(self):
+        caps = RendererCapabilities(
+            interactive=False,
+            supports_actions=False,
+            supports_updates=False,
+            output="text/html",
+        )
+        # Defaults to the two catalogs every renderer in this codebase
+        # currently understands (Basic Catalog + Parrot custom catalog).
+        assert "https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json" in caps.supported_catalog_ids
+        assert "https://parrot.dev/catalogs/v1" in caps.supported_catalog_ids
+        assert caps.supported_components == set()
+
+    def test_renderer_capabilities_accepts_explicit_components(self):
+        caps = RendererCapabilities(
+            interactive=False,
+            supports_actions=False,
+            supports_updates=False,
+            output="text/html",
+            supported_catalog_ids=["https://parrot.dev/catalogs/v1"],
+            supported_components={"Text", "Image"},
+        )
+        assert caps.supported_catalog_ids == ["https://parrot.dev/catalogs/v1"]
+        assert caps.supported_components == {"Text", "Image"}

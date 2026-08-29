@@ -102,6 +102,8 @@ class DriverFactory:
                 device_name=config.get("device_name"),
                 ignore_https_errors=config.get("ignore_https_errors", False),
                 storage_state=config.get("storage_state"),
+                user_data_dir=config.get("user_data_dir"),
+                channel=config.get("browser_channel") or config.get("channel"),
             )
             logger.info("Creating PlaywrightDriver (browser=%s)", pw_browser)
             return PlaywrightDriver(pw_config)
@@ -111,12 +113,22 @@ class DriverFactory:
                 SeleniumDriver,
             )
 
+            selenium_options: Dict[str, Any] = {}
+            if config.get("user_data_dir"):
+                selenium_options["user_data_dir"] = config["user_data_dir"]
+            if config.get("profile_directory"):
+                selenium_options["profile_directory"] = config["profile_directory"]
+            extra_kwargs: Dict[str, Any] = (
+                {"options": selenium_options} if selenium_options else {}
+            )
+
             logger.info("Creating SeleniumDriver (browser=%s)", browser)
             return SeleniumDriver(
                 browser=browser,
                 headless=headless,
                 auto_install=config.get("auto_install", True),
                 mobile=config.get("mobile", False),
+                **extra_kwargs,
             )
 
         raise ValueError(

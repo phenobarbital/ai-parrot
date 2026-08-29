@@ -1,9 +1,11 @@
-"""Typed deterministic A2UI envelope builders (Module 11, decision D1a).
+"""Typed deterministic A2UI v1.0 envelope builders (Module 5, decision D1a).
 
 Tools emit A2UI envelopes **deterministically from their own data — zero LLM tokens,
 zero HTML string assembly** (spec G2/D1a). These builders construct catalog-valid
 ``CreateSurface`` envelopes from structured Python data and validate them against the
 catalog allowlist (display-only: ``requires_actions`` components are rejected here).
+Every envelope carries a component with ``id="root"`` (spec G6) and top-level props
+(no ``properties`` nesting, no ``$bind`` — v1.0 wire throughout).
 
 Pure functions: same input → byte-identical envelope. No clocks, no uuids inside the
 component tree (artifact ids live outside the payload), no network, no LLM.
@@ -14,10 +16,11 @@ DatasetManager, LLM clients, or the satellite renderers.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
-# Ensure the v1 catalog is registered so allowlist validation resolves components.
-import parrot.outputs.a2ui.catalog.components  # noqa: F401
+# Ensure the v1 parrot catalog is registered so allowlist validation resolves components.
+import parrot.outputs.a2ui.catalog.parrot  # noqa: F401
 from parrot.outputs.a2ui.catalog import (
     DEFAULT_CATALOG_ID,
     ProducerOrigin,
@@ -34,11 +37,13 @@ __all__ = [
     "build_surface",
 ]
 
-_DEFAULT_COMPONENT_ID = "blk-000"
+#: Every builder emits its single top-level component under this id (spec G6:
+#: builders guarantee a component with id="root").
+_ROOT_COMPONENT_ID = "root"
 
 
-def _binding(pointer: Optional[str]) -> Optional[dict[str, str]]:
-    return {"$bind": pointer} if pointer else None
+def _binding(pointer: str | None) -> dict[str, str] | None:
+    return {"path": pointer} if pointer else None
 
 
 def build_surface(
@@ -46,13 +51,15 @@ def build_surface(
     properties: dict[str, Any],
     *,
     surface_id: str,
-    component_id: str = _DEFAULT_COMPONENT_ID,
-    data_model: Optional[dict[str, Any]] = None,
+    component_id: str = _ROOT_COMPONENT_ID,
+    data_model: dict[str, Any] | None = None,
 ) -> CreateSurface:
     """Build and validate a single-component display ``CreateSurface``.
 
     Display-only: the envelope is validated with LLM-origin semantics so any
-    ``requires_actions`` component (and any unknown component) is rejected.
+    ``requires_actions``/``action``-bearing component (and any unknown
+    component) is rejected. ``component_id`` defaults to ``"root"`` so the
+    envelope satisfies the v1.0 wire's root requirement (spec G6) out of the box.
 
     Raises:
         CatalogValidationError: If the component is unknown or action-bearing.
@@ -60,10 +67,10 @@ def build_surface(
     envelope = CreateSurface(
         surfaceId=surface_id,
         catalogId=DEFAULT_CATALOG_ID,
-        components=[Component(id=component_id, component=component, properties=properties)],
+        components=[Component(id=component_id, component=component, **properties)],
         dataModel=data_model or {},
     )
-    # Display-only guard (rejects requires_actions + unknown components).
+    # Display-only guard (rejects action-bearing + unknown components).
     validate_envelope(envelope, origin=ProducerOrigin.LLM)
     return envelope
 
@@ -73,8 +80,8 @@ def build_chart(
     chart_type: str,
     x: str,
     y: Sequence[str],
-    title: Optional[str] = None,
-    data_binding: Optional[str] = None,
+    title: str | None = None,
+    data_binding: str | None = None,
     show_legend: bool = True,
     surface_id: str = "chart",
 ) -> CreateSurface:
@@ -92,9 +99,9 @@ def build_kpicard(
     *,
     label: str,
     value: Any,
-    unit: Optional[str] = None,
+    unit: str | None = None,
     delta: Any = None,
-    trend: Optional[str] = None,
+    trend: str | None = None,
     surface_id: str = "kpi",
 ) -> CreateSurface:
     """Build a display envelope carrying a single KPICard component."""
@@ -111,26 +118,31 @@ def build_kpicard(
 def build_card(
     *,
     title: str,
-    subtitle: Optional[str] = None,
-    body: Optional[str] = None,
-    image: Optional[str] = None,
-    footer: Optional[str] = None,
+    subtitle: str | None = None,
+    body: str | None = None,
+    image: str | None = None,
+    footer: str | None = None,
     surface_id: str = "card",
 ) -> CreateSurface:
-    """Build a display envelope carrying a single Card component."""
+    """Build a display envelope carrying a single InfoCard component.
+
+    Public API name is kept as ``build_card`` (no breaking change to callers);
+    the emitted component type is ``InfoCard`` (spec G9 — ``Card`` is now the
+    official Basic Catalog primitive).
+    """
     props: dict[str, Any] = {"title": title}
     for key, val in (("subtitle", subtitle), ("body", body), ("image", image), ("footer", footer)):
         if val is not None:
             props[key] = val
-    return build_surface("Card", props, surface_id=surface_id)
+    return build_surface("InfoCard", props, surface_id=surface_id)
 
 
 def build_datatable(
     *,
     columns: Sequence[dict[str, Any]],
-    data_binding: Optional[str] = None,
-    title: Optional[str] = None,
-    total_rows: Optional[int] = None,
+    data_binding: str | None = None,
+    title: str | None = None,
+    total_rows: int | None = None,
     truncated: bool = False,
     surface_id: str = "table",
 ) -> CreateSurface:
@@ -152,10 +164,10 @@ def build_infographic(
     *,
     title: str,
     sections: Sequence[dict[str, Any]],
-    subtitle: Optional[str] = None,
-    theme: Optional[str] = None,
+    subtitle: str | None = None,
+    theme: str | None = None,
     surface_id: str = "infographic",
-    data_model: Optional[dict[str, Any]] = None,
+    data_model: dict[str, Any] | None = None,
 ) -> CreateSurface:
     """Build a display envelope carrying a single Infographic composite component.
 
