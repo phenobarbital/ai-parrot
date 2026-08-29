@@ -33,7 +33,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,8 +43,8 @@
       "parallelism_notes": "Imports the TASK-2560 catalog (validate_envelope guard, derived schemas); modifies builders.py.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2561-core-adapter-and-builders.md"
+      "completed_at": "2026-08-29T00:46:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2561-core-adapter-and-builders.md"
     },
     {
       "id": "TASK-2562",
