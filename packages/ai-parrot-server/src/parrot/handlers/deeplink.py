@@ -1,13 +1,21 @@
-"""A2UI deep-link web resume route (FEAT-273 Module 8, web channel).
+"""A2UI deep-link web resume route (FEAT-273 Module 8, web channel; FEAT-469
+TASK-2574 routes the resume through ``A2UIRuntime.dispatch``).
 
 Receives a deep-link click, consumes the single-use token via
-:class:`~parrot.outputs.a2ui.deeplink.DeepLinkService`, and injects the action as a
-**structured user message** into the original session through the AgentTalk POST flow.
+:class:`~parrot.outputs.a2ui.deeplink.DeepLinkService`, dispatches the already-
+validated v1.0 ``action`` envelope through :class:`~parrot.outputs.a2ui.runtime.dispatch.A2UIRuntime`
+(``transport="deeplink"``) so surface state persists exactly as the HTTP/A2A
+paths do, and injects the action as a **structured user message** into the
+original session through the AgentTalk POST flow (unchanged — the ``dispatch``
+call and the invoker call are complementary, not alternatives: ``dispatch``
+supplies surface-state persistence, the invoker supplies the conversational
+turn).
 
-The route is thin: token → ``consume()`` → structured message → resume invoker. Expired
-or replayed tokens map to a friendly "session expired" response (no payload echo, no
-stack trace). Registration is via :func:`setup_deeplink_routes` (call it wherever the
-app registers ``AgentTalk``; the web resume path is ``/api/v1/a2ui/resume/web``).
+The route is thin: token → ``consume()`` → dispatch → structured message →
+resume invoker. Expired or replayed tokens map to a friendly "session
+expired" response (no payload echo, no stack trace). Registration is via
+:func:`setup_deeplink_routes` (call it wherever the app registers
+``AgentTalk``; the web resume path is ``/api/v1/a2ui/resume/web``).
 """
 
 from __future__ import annotations
@@ -15,7 +23,7 @@ from __future__ import annotations
 import html
 import json
 import logging
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from aiohttp import web
 
@@ -25,11 +33,20 @@ from parrot.outputs.a2ui.deeplink import (
     ResumePayload,
 )
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from parrot.outputs.a2ui.runtime.dispatch import A2UIRuntime
+
 logger = logging.getLogger(__name__)
 
 #: An async callable that injects a resumed message into a session and returns a result.
 #: Signature: (agent_name, query, session_id, user_id) -> Awaitable[Any].
 ResumeInvoker = Callable[..., Awaitable[Any]]
+
+#: An async factory building the ``A2UIRuntime`` for a given ``(agent_id, user_id)``
+#: (FEAT-469 TASK-2574). ``None`` (the default) skips the ``dispatch`` step
+#: entirely — surface-state persistence is additive, never required for the
+#: resume's core behaviour (turn injection via ``invoker`` still happens).
+RuntimeFactory = Callable[[str, str], Awaitable["A2UIRuntime"]]
 
 _EXPIRED_MESSAGE = "This link has expired or was already used. Please request a new one."
 
@@ -64,15 +81,34 @@ def build_structured_message(payload: ResumePayload) -> str:
 
 
 class DeepLinkResumeHandler:
-    """Web resume handler for A2UI deep links."""
+    """Web resume handler for A2UI deep links.
 
-    def __init__(self, service: DeepLinkService, invoker: ResumeInvoker) -> None:
+    Args:
+        service: Consumes the single-use token.
+        invoker: Injects the structured turn into the session (AgentTalk POST flow).
+        runtime_factory: Optional async factory building an
+            :class:`~parrot.outputs.a2ui.runtime.dispatch.A2UIRuntime` for
+            ``(agent_id, user_id)`` (FEAT-469 TASK-2574). When given,
+            ``handle()`` dispatches the resumed ``action`` envelope through it
+            (``transport="deeplink"``) BEFORE injecting the turn, so surface
+            state persists exactly as the HTTP/A2A paths do. ``None`` (the
+            default) skips this step — the resume still works, it just does
+            not persist ``sendDataModel`` state.
+    """
+
+    def __init__(
+        self,
+        service: DeepLinkService,
+        invoker: ResumeInvoker,
+        runtime_factory: RuntimeFactory | None = None,
+    ) -> None:
         self.service = service
         self.invoker = invoker
+        self.runtime_factory = runtime_factory
         self.logger = logging.getLogger(__name__)
 
     async def handle(self, token: str) -> tuple[dict[str, Any], int]:
-        """Consume ``token`` and inject the action; return (body, http_status).
+        """Consume ``token``, dispatch, and inject the action; return (body, http_status).
 
         Returns a friendly body + 410 on expired/replayed tokens.
         """
@@ -84,6 +120,9 @@ class DeepLinkResumeHandler:
             self.logger.info("A2UI deep-link resume rejected (expired/replayed).")
             return {"status": "expired", "detail": _EXPIRED_MESSAGE}, 410
 
+        if self.runtime_factory is not None:
+            await self._dispatch(payload)
+
         query = build_structured_message(payload)
         result = await self.invoker(
             agent_name=payload.agent_id,
@@ -92,6 +131,32 @@ class DeepLinkResumeHandler:
             user_id=payload.user_id,
         )
         return {"status": "resumed", "session_id": payload.session_id, "result": result}, 200
+
+    async def _dispatch(self, payload: ResumePayload) -> None:
+        """Route the resumed ``action`` envelope through ``A2UIRuntime`` (spec §3 Module 7).
+
+        ``payload.action_payload`` is already a validated v1.0 ``action``
+        envelope (``ResumePayload``'s own ``field_validator``) — handed to
+        ``dispatch`` directly, never re-wrapped or re-serialized. Errors here
+        are logged, not raised: surface-state persistence is additive, and a
+        failure must not block the (already-consumed, single-use) resume's
+        turn injection.
+        """
+        from parrot.auth.permission import build_principal_context
+        from parrot.outputs.a2ui.runtime.models import A2UICallContext
+
+        try:
+            runtime = await self.runtime_factory(payload.agent_id, payload.user_id)
+            ctx = A2UICallContext(
+                agent_id=payload.agent_id,
+                user_id=payload.user_id,
+                session_id=payload.session_id,
+                transport="deeplink",
+                permission_context=build_principal_context(principal=payload.user_id, channel=payload.channel),
+            )
+            await runtime.dispatch(payload.action_payload, ctx)
+        except Exception:
+            self.logger.exception("A2UI deep-link dispatch failed; continuing with turn injection only.")
 
     def render_landing(self, token: str) -> str:
         """Return the confirm-before-consume landing HTML (does NOT touch state)."""
@@ -119,14 +184,37 @@ def setup_deeplink_routes(
     invoker: ResumeInvoker,
     *,
     path: str = "/api/v1/a2ui/resume/web",
-) -> DeepLinkResumeHandler:
+    runtime_factory: RuntimeFactory | None = None,
+) -> DeepLinkResumeHandler | None:
     """Register the web resume routes on ``app`` and return the handler.
 
     Registers ``GET`` (confirm landing, no consume) and ``POST`` (consume + inject) at the
     same path. Call this alongside the ``AgentTalk`` registration; ``invoker`` should wrap
     the AgentTalk POST flow (``agent_name``/``query``/``session_id``/``user_id``).
+
+    Guards against double registration (spec §7: "cualquier despliegue que ya
+    expusiera la ruta por otro medio podría duplicarla") — ``aiohttp`` raises
+    on a duplicate route, which would crash app startup for such a
+    deployment. If ``path`` is already registered, logs a warning and returns
+    ``None`` instead of raising.
+
+    Args:
+        app: The aiohttp application.
+        service: Consumes the single-use token.
+        invoker: Injects the structured turn into the session.
+        path: The web resume path.
+        runtime_factory: Optional async ``(agent_id, user_id) -> A2UIRuntime``
+            factory (FEAT-469 TASK-2574) — see :class:`DeepLinkResumeHandler`.
+
+    Returns:
+        The registered handler, or ``None`` if ``path`` was already mounted.
     """
-    handler = DeepLinkResumeHandler(service, invoker)
+    existing = {route.resource.canonical for route in app.router.routes() if route.resource is not None}
+    if path in existing:
+        logger.warning("A2UI deep-link web resume route %s is already registered; skipping.", path)
+        return None
+
+    handler = DeepLinkResumeHandler(service, invoker, runtime_factory=runtime_factory)
     app.router.add_get(path, handler.landing)  # confirm page — safe for prescanners
     app.router.add_post(path, handler.resume)  # consumes the single-use token
     logger.info("Registered A2UI deep-link web resume routes (GET landing + POST) at %s", path)
