@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-28T22:49:55Z",
-  "completed_at": "2026-08-28T23:56:42+00:00",
+  "completed_at": "2026-08-29T00:43:01+00:00",
   "tasks": [
     {
       "id": "TASK-2553",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:05:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2553-wiki-sources-external-id.md"
+      "file": "sdd/tasks/completed/TASK-2553-wiki-sources-external-id.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2554",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:13:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2554-meeting-registry-facade.md"
+      "file": "sdd/tasks/completed/TASK-2554-meeting-registry-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2555",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:23:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2555-registry-backfill-merge-repair.md"
+      "file": "sdd/tasks/completed/TASK-2555-registry-backfill-merge-repair.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2556",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:37:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2556-rewire-fireflies-obsidian-agent.md"
+      "file": "sdd/tasks/completed/TASK-2556-rewire-fireflies-obsidian-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2557",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:41:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2557-wiki-agent-ingest-stamp-and-sync-command.md"
+      "file": "sdd/tasks/completed/TASK-2557-wiki-agent-ingest-stamp-and-sync-command.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2558",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:52:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2558-registry-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2558-registry-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2559",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-08-28T22:56:51+00:00",
       "completed_at": "2026-08-28T23:56:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2559-registry-docs.md"
+      "file": "sdd/tasks/completed/TASK-2559-registry-docs.md",
+      "verification": "verified"
     }
   ]
 }
