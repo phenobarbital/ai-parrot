@@ -10,6 +10,7 @@ guardrail hoist, ConfirmationGuard, manager-level resolver gate, and the
 uniform enforcement logger.
 """
 import logging
+from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
@@ -110,6 +111,41 @@ class TestRegistrationMetadata:
         with caplog.at_level(logging.WARNING):
             tm.register_tool(td)
         assert not any("grant" in r.message.lower() for r in caplog.records)
+
+    def test_inert_grant_warning_dict_construction_path(self, caplog):
+        """The dict-based ToolDefinition construction site (register_tool's
+        `isinstance(tool, dict)` branch) also warns on requires_grant — not
+        just the direct-ToolDefinition accept-path (code-review finding)."""
+        tm = ToolManager()
+        with caplog.at_level(logging.WARNING):
+            tm.register_tool(
+                tool={
+                    "name": "dict_tool",
+                    "description": "d",
+                    "parameters": {},
+                    "_tool_instance": lambda: 1,
+                    "routing_meta": {"requires_grant": True},
+                }
+            )
+        assert any("grant" in r.message.lower() for r in caplog.records)
+
+    def test_inert_grant_warning_tool_function_conversion_path(self, caplog):
+        """The @tool-decorated-function conversion site (register_tool's
+        callable/_tool_metadata branch) also warns on requires_grant, even
+        though the @tool decorator itself has no requires_grant parameter —
+        defense in depth for hand-tampered _tool_metadata (code-review
+        finding)."""
+        tm = ToolManager()
+
+        @tool
+        def f(x: int) -> str:
+            """Doc."""
+            return str(x)
+        f._tool_metadata["routing_meta"]["requires_grant"] = True
+
+        with caplog.at_level(logging.WARNING):
+            tm.register_tool(f)
+        assert any("grant" in r.message.lower() for r in caplog.records)
 
     def test_interfaces_tools_preserves_routing_meta(self):
         """`ToolInterface._initialize_tools()`'s @tool conversion site (the
@@ -371,5 +407,38 @@ class TestToolDefinitionEnforcement:
         records = [r.getMessage() for r in caplog.records]
         assert any(
             "layer=resolver" in m and "decision=deny" in m and "kind=tool_definition" in m
+            for m in records
+        )
+
+    @pytest.mark.asyncio
+    async def test_enforcement_log_uniform_abstracttool_resolver_deny(self, caplog):
+        """The AbstractTool branch's Layer 2 resolver denial (computed inside
+        AbstractTool.execute(), abstract.py:875-890) is ALSO observed through
+        the shared _log_enforcement() helper when execute_tool() sees the
+        resulting forbidden ToolResult — closing the AC-9 asymmetry a
+        code-review pass found between the two branches (the check itself
+        intentionally stays inside AbstractTool; only the logging point
+        moved to be uniform)."""
+
+        class _GuardedAbstractTool(AbstractTool):
+            name = "guarded_abstract_tool"
+            description = "Requires admin."
+            _required_permissions = frozenset({"admin"})
+
+            async def _execute(self, **kwargs) -> ToolResult:
+                return ToolResult(success=True, status="success", result="ok")
+
+        tm = ToolManager(resolver=_DenyAllResolver())
+        tm.add_tool(_GuardedAbstractTool())
+
+        with caplog.at_level(logging.INFO):
+            await tm.execute_tool(
+                "guarded_abstract_tool", {},
+                permission_context=SimpleNamespace(user_id="u-1"),
+            )
+
+        records = [r.getMessage() for r in caplog.records]
+        assert any(
+            "layer=resolver" in m and "decision=deny" in m and "kind=abstract_tool" in m
             for m in records
         )

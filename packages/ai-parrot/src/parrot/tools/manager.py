@@ -793,6 +793,7 @@ class ToolManager(MCPToolManagerMixin):
                     routing_meta=dict(meta.get('routing_meta') or {}),
                     required_permissions=set(meta.get('required_permissions') or ()),
                 )
+                self._warn_if_inert_grant(self._tools[tool_name])
             elif isinstance(tool, dict):
                 tool_name = tool.get('name')
                 if tool_name in self._tools:
@@ -806,6 +807,7 @@ class ToolManager(MCPToolManagerMixin):
                     routing_meta=dict(tool.get('routing_meta') or {}),
                     required_permissions=set(tool.get('required_permissions') or ()),
                 )
+                self._warn_if_inert_grant(self._tools[tool_name])
             elif name and description and input_schema and function:
                 # Create a ToolDefinition from the provided parameters
                 self._tools[tool_name] = ToolDefinition(
@@ -1831,8 +1833,18 @@ class ToolManager(MCPToolManagerMixin):
 
                 # Handle ToolResult objects
                 if isinstance(result, ToolResult):
-                    # Return forbidden results directly without post-processing
+                    # Return forbidden results directly without post-processing.
+                    # This status is only ever produced by AbstractTool.execute()'s
+                    # own Layer 2 resolver check (abstract.py ~875-890) — log it
+                    # through the shared helper so resolver denials are uniformly
+                    # observable on BOTH branches (FEAT-474 G6/AC-9), even though
+                    # the check itself intentionally stays inside AbstractTool
+                    # (no duplicate manager-level check — see spec §6).
                     if result.status == 'forbidden':
+                        self._log_enforcement(
+                            tool_name, tool_kind, "resolver", "deny",
+                            permission_context, result.error,
+                        )
                         return result
                     if result.status == "error":
                         # FEAT-380 (TASK-1953): tee the discarded payload
