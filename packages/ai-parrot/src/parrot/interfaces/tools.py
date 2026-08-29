@@ -78,7 +78,9 @@ class ToolInterface:
                             name=metadata['name'],
                             description=metadata['description'],
                             input_schema=metadata['schema'],
-                            function=metadata['function']
+                            function=metadata['function'],
+                            routing_meta=dict(metadata.get('routing_meta') or {}),
+                            required_permissions=set(metadata.get('required_permissions') or ()),
                         )
                         self.tool_manager.register_tool(tool_def)
                         self.logger.info(f"Registered @tool function: {metadata['name']}")

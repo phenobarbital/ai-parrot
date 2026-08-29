@@ -706,6 +706,8 @@ class ToolManager(MCPToolManagerMixin):
                 # guardrails explicitly via `guardrails=[...]` without also
                 # setting the legacy enable_redaction flag.
                 tool._tool_output_pipeline = self._tool_output_pipeline
+            elif isinstance(tool, ToolDefinition):
+                self._warn_if_inert_grant(tool)
             self._tools[tool_name] = tool
             self._apply_execution_policy(tool)
             self.logger.debug(
@@ -772,6 +774,8 @@ class ToolManager(MCPToolManagerMixin):
                     # FEAT-396: see add_tool() for why this isn't gated on
                     # enable_redaction.
                     tool._tool_output_pipeline = self._tool_output_pipeline
+                elif isinstance(tool, ToolDefinition):
+                    self._warn_if_inert_grant(tool)
                 self._tools[tool_name] = tool
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
@@ -786,6 +790,8 @@ class ToolManager(MCPToolManagerMixin):
                     description=meta.get('description', ''),
                     input_schema=meta.get('schema', {}),
                     function=meta.get('function', tool),
+                    routing_meta=dict(meta.get('routing_meta') or {}),
+                    required_permissions=set(meta.get('required_permissions') or ()),
                 )
             elif isinstance(tool, dict):
                 tool_name = tool.get('name')
@@ -796,7 +802,9 @@ class ToolManager(MCPToolManagerMixin):
                     name=tool_name,
                     description=tool.get('description', ''),
                     input_schema=tool.get('parameters', {}),
-                    function=tool.get('_tool_instance')
+                    function=tool.get('_tool_instance'),
+                    routing_meta=dict(tool.get('routing_meta') or {}),
+                    required_permissions=set(tool.get('required_permissions') or ()),
                 )
             elif name and description and input_schema and function:
                 # Create a ToolDefinition from the provided parameters
@@ -826,6 +834,28 @@ class ToolManager(MCPToolManagerMixin):
                 "Error registering tool: %s", e
             )
 
+
+    def _warn_if_inert_grant(self, tool: ToolDefinition) -> None:
+        """Warn when a registered ``ToolDefinition`` declares a grant it cannot enforce.
+
+        GrantGuard (FEAT-211) only runs on the ``AbstractTool`` branch of
+        ``execute_tool()`` — a plain ``@tool`` function has no such
+        enforcement path (spec Non-Goal, FEAT-474 G5). This is purely
+        informational: it never blocks registration.
+
+        Args:
+            tool: The ``ToolDefinition`` being registered.
+        """
+        routing_meta = getattr(tool, 'routing_meta', {}) or {}
+        if routing_meta.get('requires_grant'):
+            self.logger.warning(
+                "Tool %s declares routing_meta['requires_grant'] but grant "
+                "policies (FEAT-211) are not enforced on the ToolDefinition "
+                "path — GrantGuard only runs for AbstractTool instances. "
+                "Convert this tool to an AbstractTool if grant enforcement "
+                "is required.",
+                tool.name,
+            )
 
     def _auto_wire_toolkit(self, tool: Union[AbstractTool, ToolDefinition]) -> None:
         """Auto-wire set_tool_manager on parent toolkit of ToolkitTool instances."""
