@@ -149,10 +149,45 @@ async def test_structured_map_multi_layer_envelope(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Extended `_route_envelope` with `layer_features`/`row_limit`
+keyword params (both optional, defaults preserve the exact prior call sites
+in `structured_chart.py`/`structured_table.py` — neither file touched, out
+of this task's scope) and split the a2ui dual-emit into its own
+`_emit_a2ui_envelope` helper wrapped in an independent try/except so a
+dual-emit failure NEVER affects the primary `(out, explanation)` return —
+verified via `monkeypatch`-forced failure. Dispatches to
+`chart_to_surface`/`table_to_surface`/`map_to_surface` by `isinstance(cfg,
+...)` (self-contained — doesn't depend on `response.output_mode` being set
+yet at this point in the pipeline). `structured_map.py`: added
+`all_layer_features` collection inside the existing per-dataset loop —
+reuses `_build_rows_payload`'s already-computed `rows` when
+`data_shape=="rows"`, computes it fresh (same helper) for `"geojson"`-shaped
+layers, since the a2ui data model always wants flat feature-property dicts
+regardless of the layer's own GeoJSON/rows presentation choice; passed
+`layer_features=all_layer_features, row_limit=effective_row_limit` to
+`_route_envelope`. New `packages/ai-parrot-visualizations/tests/formats/
+test_structured_envelope.py` (4 tests, new `tests/formats/` dir + `__init__.py`)
+covers the hook + never-raises + output-parity + multi-layer envelope ACs.
+Regression: 142 passed in `packages/ai-parrot/tests/outputs/formats -k
+structured`; 26 passed across the three `tests/integration/test_structured_*`
+files run explicitly; 87 passed in the full `ai-parrot-visualizations`
+suite; 498 passed/1 skipped in `tests/outputs/a2ui`. ruff clean on every
+line this task added (one PIE810 finding on an untouched pre-existing line
+in `structured_base.py`, and several pre-existing BLE001/S110 findings in
+`structured_map.py`, confirmed via `git stash` to predate this task — left
+alone, out of scope).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none. One item worth flagging for the record
+(not a deviation, a pre-existing environment fact): running the FULL
+`packages/ai-parrot/tests/integration -k structured` (or the even broader
+`tests/outputs + tests/integration -k "structured or a2ui"`) selector in a
+single pytest session produces ~6–29 failures from a `SpatialResult`
+class-identity mismatch ("must be a SpatialResult, got SpatialResult") —
+confirmed via `git stash` to occur byte-for-byte identically BEFORE this
+task's changes too (pre-existing test-isolation artifact of running many
+`sys.path`-mutating test modules in one session, unrelated to FEAT-473).
+Every test file/module run at its normal granularity (individually or
+grouped by directory without crossing into unrelated suites) passes clean,
+as shown above.

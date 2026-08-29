@@ -161,10 +161,33 @@ def test_surface_serializes_v1_envelope(chart_cfg): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Created `adapters/structured.py` with `chart_to_surface`/
+`table_to_surface`/`map_to_surface`, `config_to_component_props`,
+`root_component`, and the module constants (`SCHEMA_VERSION`, `ROWS_PATH`,
+`LAYER_FEATURES_PATH`, `DEFAULT_ROW_LIMIT`). Resolved spec §8's open
+question by adding an `origin: ProducerOrigin = ProducerOrigin.LLM` kwarg to
+`build_surface` (default unchanged) — the adapter calls it with
+`origin=ProducerOrigin.TOOL`. Discovered during implementation (not called
+out in the task's Codebase Contract): the vendored `agent_to_renderer.json`'s
+`Component`/`anyComponent` definition enumerates only the 18 official Basic
+Catalog primitives — a raw `Chart`/`DataTable`/`Map` component cannot
+validate against `validate_message` directly. Resolved by adding a private
+`_lower_to_basic_components`/`_validate_wire` pair inside `structured.py`
+that lowers the surface (via the public `get_component`/`to_components` API)
+before running `validate_message` — the exact "two-layer conformance"
+pattern already established by
+`tests/outputs/a2ui/conformance/test_all_emitters.py` for every other
+emitter in the codebase (confirmed by reading that suite's docstring/
+`_assert_conformant` helper). `build_map()` added mirroring `build_chart`/
+`build_datatable`; `data_model=` passthrough added to both. All 8 new tests
+in `test_structured_adapter.py` pass (round-trip, row cap, layer paths/caps,
+empty layers, serialization). Full `tests/outputs/a2ui/` suite: 492 passed,
+1 skipped (0 regressions vs. TASK-2560's 484). ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none beyond the `_lower_to_basic_components`/
+`_validate_wire` addition noted above, which is a direct, necessary
+consequence of making the task's own explicit "every surface passes ...
+validate_message" acceptance criterion actually achievable — not a
+redesign, just applying the codebase's existing lowering convention.

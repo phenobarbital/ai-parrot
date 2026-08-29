@@ -2815,6 +2815,13 @@ class AgentTalk(BaseView):
                     else []
                 ),
             }
+            # FEAT-473 (G9): widen the a2ui_envelope passthrough beyond the
+            # OutputMode.A2UI-only gate above — include it whenever the
+            # response carries one (e.g. STRUCTURED_CHART/TABLE/MAP dual-emit,
+            # TASK-2563), mirroring the stream path (already ungated).
+            _a2ui_envelope = getattr(response, "a2ui_envelope", None)
+            if _a2ui_envelope is not None:
+                obj_response["a2ui_envelope"] = _a2ui_envelope
             # self.logger.debug('Agent response: %s', obj_response)
 
             # Persist chat turn via ChatStorage (hot + cold)

@@ -144,10 +144,56 @@ async def test_stream_handler_unchanged(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: `bots/data.py` — replaced the FEAT-224 inline block (verified at
+`:2095-2135` against merged `dev` before editing, matching the contract)
+with a single call to `attach_structured_artifact(response, output_mode)`
+plus a preserved info-level log line. `bots/database/agent.py` — added
+the same call right after `response.output_mode = OutputMode.STRUCTURED_TABLE`
+(`:614-620`), exactly as specified. `handlers/agent.py` — widened the
+non-stream JSON body to include `a2ui_envelope` whenever
+`getattr(response, "a2ui_envelope", None) is not None`, leaving the
+`output_mode == A2UI` branch's own dedicated shape and the (already-ungated)
+stream path both untouched. **Process note**: my first pass ran a blanket
+`ruff check --fix` across these three large, lint-debt-heavy files and it
+auto-fixed hundreds of unrelated pre-existing findings (UP006/UP007 etc.)
+throughout each file — caught before committing via `git diff --stat`
+showing 100+ line diffs against a ~10-line intended change; reverted with
+`git checkout --` and reapplied only the exact intended edits via targeted
+`Edit` calls. Lesson for future tasks: never run `ruff --fix` (or any
+autofix) on a whole pre-existing file with known lint debt — scope it to
+new code only, or diff before/after.
 
-**Completed by**:
-**Date**:
-**Notes**:
+New `test_structured_artifact_v2.py` (5 tests: import-wiring checks for
+both agent modules + `attach_structured_artifact` v2/fallback/no-op
+scenarios matching each agent's exact response shape) and
+`test_structured_envelope_passthrough.py` (4 tests, source-inspection
+style matching `test_agent_a2ui_stream.py`'s own established convention for
+this Cython-adjacent handler file) all pass. Regression: 57 passed in
+`tests/bots -k "structured or artifact"`, 166 passed in
+`tests/bots/database`, 393 passed + the same 2 pre-existing failures
+(confirmed via `git stash`, unrelated — a stale single-vs-double-quote
+string-literal assertion in `test_agent_a2ui_stream.py` predating this
+task) in `tests/handlers`; 506 passed in `tests/outputs/a2ui` + this
+task's new bots test. ruff clean on every line added (verified via
+line-scoped `grep` against ruff's output, since the surrounding files
+carry substantial pre-existing lint debt left untouched).
 
-**Deviations from spec**: none
+**Deviations from spec**: none in the code changes themselves. One
+observation for the record: at the exact call site specified in
+`bots/database/agent.py` (`:614-620`, immediately after
+`response.output_mode = OutputMode.STRUCTURED_TABLE`), `response.output`
+is still the raw `QueryResponse` pydantic model (not yet the rendered
+config dict) — the actual `StructuredTableRenderer` pass runs later,
+downstream, as a separate explicit step (confirmed by the existing
+`test_db_agent_structured_table_via_renderer` test's own docstring:
+"Simulate what DatabaseAgent sets... then render separately"). The
+`attach_structured_artifact` call at this exact site is therefore a
+guaranteed no-op in the current pipeline (its own `isinstance(content,
+dict)` guard prevents any incorrect mint) — the wiring is correct and
+matches the task's literal instruction precisely, but closing the FEAT-224
+gap for DatabaseAgent functionally requires the renderer to have already
+run by the time some call site invokes the helper. Flagging this for the
+spec/PR reviewer rather than silently "fixing" it by relocating the call
+outside this task's specified scope.

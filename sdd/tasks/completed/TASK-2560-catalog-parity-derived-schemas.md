@@ -164,10 +164,34 @@ def test_chart_lower_renders_axis_labels_and_trendline(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: FEAT-470 confirmed merged into `dev` (PR #1263, `catalog/parrot/`
+present) before starting. Implemented `derive_schema()` in a new
+`catalog/parrot/_derive.py` (strips Pydantic `title` annotations, keeps
+`$defs`, replaces `data`/`datasets` with the binding descriptor, camelCases
+any remaining snake_case top-level property — needed because
+`StructuredTableConfig.total_rows`/`truncated` have no Pydantic alias).
+Rewired `CHART_SCHEMA`/`DATATABLE_SCHEMA`/`MAP_SCHEMA` to `derive_schema(...)`
+calls; extended `Chart.lower()` (axis-label/trendline caption Text) and
+`Map.lower()` (per-layer `labelField`/`markerColor`/`totalCount`/`capped`
+summary — reading the new `MapLayer.layer` id field, since the derived
+schema's layer shape supersedes the old hand-written `{name,type}` one).
+Extended `INSTRUCTIONS` for Chart/Map. Added `INLINE_DATA_NOT_ALLOWED_FOR_LLM`
+to `catalog/base.py` and wired the `origin=LLM` inline-`data`/`datasets`
+rejection into `catalog/__init__.py::validate_envelope` (TOOL-origin exempt).
+All 12 pre-existing `test_export.py`/`test_spec_vendored.py` tests confirm
+`export_catalog_definition()` still validates the derived schemas + `$defs`
+against the vendored `catalog_definition.json`. New
+`tests/outputs/a2ui/test_catalog_parity.py` (9 tests) covers derivation
+parity, the LLM/TOOL origin guard, and the extended `lower()` output. Full
+`tests/outputs/a2ui/` suite: 484 passed, 1 skipped (0 regressions). ruff
+clean on all changed files.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Updated the pre-existing FEAT-470 golden test
+`test_components_chart_datatable_map.py::TestMapComponent::test_map_lowering_golden`
+(+ its `golden/map_lowered.json` fixture) — not listed in this task's Files
+table, but a direct, necessary consequence of superseding the old
+hand-written `MapLayer` shape (`{name,type}` → full `MapLayer` vocabulary,
+`layer` id field) that this task's own scope required. No other out-of-scope
+files touched.
