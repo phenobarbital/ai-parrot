@@ -133,7 +133,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "PARALLEL with TASK-2572. Touches only ai-parrot-server handlers/a2ui.py plus a route registration in manager.py. The manager.py edit is the one shared file with TASK-2574, which is why 2574 depends on this one rather than running alongside it.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2573-http-a2ui-handler.md"
+      "completed_at": "2026-08-29T02:18:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2573-http-a2ui-handler.md"
     },
     {
       "id": "TASK-2574",
