@@ -24,7 +24,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T00:38:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2560-catalog-parity-derived-schemas.md"
+      "file": "sdd/tasks/completed/TASK-2560-catalog-parity-derived-schemas.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2561",
@@ -44,7 +45,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T00:46:36+00:00",
-      "file": "sdd/tasks/completed/TASK-2561-core-adapter-and-builders.md"
+      "file": "sdd/tasks/completed/TASK-2561-core-adapter-and-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2562",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T00:50:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2562-compat-shim-artifact-helper.md"
+      "file": "sdd/tasks/completed/TASK-2562-compat-shim-artifact-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2563",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T01:03:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2563-satellite-route-envelope-hook.md"
+      "file": "sdd/tasks/completed/TASK-2563-satellite-route-envelope-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2564",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T01:10:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2564-renderer-prop-fidelity.md"
+      "file": "sdd/tasks/completed/TASK-2564-renderer-prop-fidelity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2565",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T01:26:51+00:00",
-      "file": "sdd/tasks/completed/TASK-2565-agents-and-transport.md"
+      "file": "sdd/tasks/completed/TASK-2565-agents-and-transport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2566",
@@ -146,7 +152,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
       "completed_at": "2026-08-29T01:40:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2566-e2e-tests-docs-migration.md"
+      "file": "sdd/tasks/completed/TASK-2566-e2e-tests-docs-migration.md",
+      "verification": "verified"
     }
   ]
 }
