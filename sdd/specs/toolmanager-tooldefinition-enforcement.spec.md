@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-474
 **Date**: 2026-08-29
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 **Brainstorm**: `sdd/proposals/toolmanager-tooldefinition-enforcement.brainstorm.md` (Recommended Option A)
 
