@@ -8,7 +8,7 @@ ipython==9.15.0
 lint==1.2.1
 mypy==1.7.1
 pylint==3.2.6
-pyperf==2.6.2
+pyperf==2.10.0
 pytest>=6.0.0
 pytest-asyncio==1.4.0
 pytest-cov==4.0.0
