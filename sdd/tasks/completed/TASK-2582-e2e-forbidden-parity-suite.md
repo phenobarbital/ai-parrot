@@ -185,10 +185,61 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-08-29
+**Notes**: Added `test_e2e_http_call_agent_function_forbidden` to
+`test_a2ui_e2e.py`, modeled directly on the allow-path template at line
+110: registers a `@tool(required_permissions={"secret:read"})` function on
+the agent's real `ToolManager`, sets a plain `DefaultPermissionResolver()`
+(no hierarchy — `build_principal_context`'s default empty-roles deny
+direction, per docs §4, is sufficient to deny without any custom
+PBAC/resolver config), POSTs a `callAgentFunction` envelope through the
+real HTTP surface (`A2UIHandler`), and asserts `resp.status == 400` +
+`body["error"]["code"] == "FORBIDDEN"` + the side-effect probe list stayed
+empty (function never executed). Verified the FORBIDDEN mapping site first
+(`dispatch.py::_map_tool_result`: `status == "forbidden"` →
+`A2UIErrorCode.FORBIDDEN`). The existing allow-path
+`test_e2e_http_call_agent_function` passes untouched — both run together
+(6/6 in the file). Added `TestBranchParityDenial` to
+`test_manager_permissions.py`: under one identical
+`DefaultPermissionResolver`+reader-role config, an `AdminTool`
+(`AbstractTool`, `@requires_permission('admin')`) and a
+`@tool(required_permissions={"admin"})` function are both denied with
+status `"forbidden"`, the same `"Permission denied: '<name>' requires
+..."` message template, and identical metadata key sets
+(`tool_name`/`user_id`/`required_permissions`) — locking the
+`abstract.py:880-890` mirroring per AC-2. Fail-open and raw-return
+regressions were already fully covered by TASK-2580's own unit tests
+(`test_fail_open_without_pctx`/`test_raw_return_on_allow` in
+`test_tooldefinition_enforcement.py`; `test_tooldef_fail_open_without_context`/
+`test_tooldef_fail_open_without_resolver` in `test_manager_permissions.py`)
+— extended nothing further there per the task's own "don't duplicate"
+instruction; `test_tooldefinition_enforcement.py` needed no changes this
+task. Feature-owned suites green:
+`test_tooldefinition_enforcement.py` (20 passed),
+`test_manager_permissions.py` (26 passed, run separately from the a2ui
+suite due to a pre-existing pytest workspace quirk — two packages both
+name their test root package `tests`, causing an `ImportPathMismatchError`
+when both are passed to one `pytest` invocation; unrelated to this
+feature), `test_a2ui_e2e.py` (6 passed). `ruff check` on all three files:
+all checks passed. Full-repo sanity: a literal whole-`packages/ai-parrot/tests/`
+sweep timed out at 550s (~13% progress) — that tree is thousands of tests
+including slow/external-dependent integration and benchmark suites,
+impractical to run to completion in this session; instead ran a scoped
+sanity sweep over `tests/auth`, `tests/tools`, and `tests/outputs` (2141
+tests, the subsystems this feature could plausibly affect) both on this
+worktree and on a fresh `dev` checkout: **74 pre-existing failures
+identical on both** (unrelated `jinja2`/pep420-satellite-discovery/
+renderer-registry/template-report suites), 2067 passed here vs 2047 on
+`dev` (the +20 diff is exactly this feature's own new tests) — zero new
+regressions. Evidence saved to `artifacts/logs/feat-474-sanity-*.log`
+(gitignored, per project convention).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: The task's own Acceptance Criteria asks for a
+literal "full-repo sanity pass" with "zero new regressions outside this
+feature's file scope" — delivered as a scoped-but-honest sanity pass (see
+above) rather than a literal whole-monorepo run, because the latter is
+infeasible within a single session's time budget and was not achieved even
+as a baseline comparison. The narrower sweep still covers every subsystem
+this feature touches or interacts with (auth, tools, a2ui outputs) at 2000+
+tests, which is the practical evidence the AC is asking for.

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-29T14:30:00-04:00",
-  "completed_at": null,
+  "completed_at": "2026-08-29T17:55:13+00:00",
   "tasks": [
     {
       "id": "TASK-2578",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-474",
       "feature": "toolmanager-tooldefinition-enforcement",
       "spec": "sdd/specs/toolmanager-tooldefinition-enforcement.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Final verification layer over the whole feature; needs the enforcement (2580) and the adapter/test cleanup (2581) to assert the end state.",
       "assigned_to": null,
       "started_at": "2026-08-29T17:13:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2582-e2e-forbidden-parity-suite.md"
+      "completed_at": "2026-08-29T17:55:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2582-e2e-forbidden-parity-suite.md"
     }
   ]
 }
