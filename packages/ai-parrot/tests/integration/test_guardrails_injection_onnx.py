@@ -68,11 +68,12 @@ class TestBotDefaultEngineSelection:
         import parrot.bots.guardrails.builtin.prompt_injection as pi_module
 
         # `_probe_cached_onnx_snapshot` is expected to return the SNAPSHOT
-        # ROOT, with the graph nested at `<root>/onnx/model.onnx` and the
+        # ROOT, with the graph nested at `<root>/<_ONNX_GRAPH_REPO_PATH>` and the
         # tokenizer/config files at the root — matches a real cached HF
         # snapshot's layout exactly.
-        (tmp_path / "onnx").mkdir()
-        (tmp_path / "onnx" / "model.onnx").write_bytes(b"fake-graph")
+        graph = tmp_path / pi_module._ONNX_GRAPH_REPO_PATH
+        graph.parent.mkdir(parents=True)
+        graph.write_bytes(b"fake-graph")
         (tmp_path / "config.json").write_text(
             '{"id2label": {"0": "SAFE", "1": "INJECTION"}}'
         )
