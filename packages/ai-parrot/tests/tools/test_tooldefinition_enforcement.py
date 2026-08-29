@@ -9,6 +9,7 @@ TASK-2580 (this addition) the core execute_tool() enforcement parity —
 guardrail hoist, ConfirmationGuard, manager-level resolver gate, and the
 uniform enforcement logger.
 """
+
 import logging
 from types import SimpleNamespace
 from typing import ClassVar
@@ -60,6 +61,7 @@ class TestToolDecoratorRequiredPermissions:
         def f(x: int) -> str:
             """Doc."""
             return str(x)
+
         assert f._tool_metadata["required_permissions"] == {"reports:read"}
 
     def test_default_empty(self):
@@ -67,6 +69,7 @@ class TestToolDecoratorRequiredPermissions:
         def g(x: int) -> str:
             """Doc."""
             return str(x)
+
         assert g._tool_metadata["required_permissions"] == set()
 
     def test_routing_meta_still_built(self):
@@ -74,6 +77,7 @@ class TestToolDecoratorRequiredPermissions:
         def h(x: int) -> str:
             """Doc."""
             return str(x)
+
         assert h._tool_metadata["routing_meta"]["requires_confirmation"] is True
 
 
@@ -87,6 +91,7 @@ class TestRegistrationMetadata:
         def f(x: int) -> str:
             """Doc."""
             return str(x)
+
         tm.register_tool(f)
         td = tm.get_tool("f")
         assert td.routing_meta["requires_confirmation"] is True
@@ -95,7 +100,10 @@ class TestRegistrationMetadata:
     def test_inert_grant_warning(self, caplog):
         tm = ToolManager()
         td = ToolDefinition(
-            "g", "d", {}, lambda: 1,
+            "g",
+            "d",
+            {},
+            lambda: 1,
             routing_meta={"requires_grant": True},
         )
         with caplog.at_level(logging.WARNING):
@@ -105,7 +113,10 @@ class TestRegistrationMetadata:
     def test_no_warning_for_confirmation_only(self, caplog):
         tm = ToolManager()
         td = ToolDefinition(
-            "h", "d", {}, lambda: 1,
+            "h",
+            "d",
+            {},
+            lambda: 1,
             routing_meta={"requires_confirmation": True},
         )
         with caplog.at_level(logging.WARNING):
@@ -141,6 +152,7 @@ class TestRegistrationMetadata:
         def f(x: int) -> str:
             """Doc."""
             return str(x)
+
         f._tool_metadata["routing_meta"]["requires_grant"] = True
 
         with caplog.at_level(logging.WARNING):
@@ -251,6 +263,7 @@ class TestToolDefinitionEnforcement:
             """Doc."""
             calls.append(x)
             return str(x)
+
         tm.register_tool(f)
 
         res = await tm.execute_tool("f", {"x": 1}, permission_context=object())
@@ -265,6 +278,7 @@ class TestToolDefinitionEnforcement:
         def g(x: int) -> str:
             """Doc."""
             return str(x)
+
         tm.register_tool(g)
 
         assert await tm.execute_tool("g", {"x": 2}) == "2"  # RAW value
@@ -277,6 +291,7 @@ class TestToolDefinitionEnforcement:
         def h(x: int) -> str:
             """Doc."""
             return str(x)
+
         tm.register_tool(h)
 
         result = await tm.execute_tool("h", {"x": 3}, permission_context=object())
@@ -290,6 +305,7 @@ class TestToolDefinitionEnforcement:
         def i(x: int) -> str:
             """Doc."""
             return str(x)
+
         tm.register_tool(i)
 
         with pytest.raises(RuntimeError, match="resolver boom"):
@@ -306,6 +322,7 @@ class TestToolDefinitionEnforcement:
             """Doc."""
             calls.append(x)
             return str(x)
+
         tm.register_tool(j)
 
         result = await tm.execute_tool("j", {"x": 1})
@@ -327,6 +344,7 @@ class TestToolDefinitionEnforcement:
             """Doc."""
             calls.append(x)
             return str(x)
+
         tm.register_tool(k)
 
         result = await tm.execute_tool("k", {"x": 1})
@@ -345,6 +363,7 @@ class TestToolDefinitionEnforcement:
         def m(x: int) -> str:
             """Doc."""
             return str(x)
+
         tm.register_tool(m)
 
         assert await tm.execute_tool("m", {"x": 5}) == "5"
@@ -371,15 +390,14 @@ class TestToolDefinitionEnforcement:
         class _OrderConfirm:
             async def confirm(self, *, tool, parameters, permission_context=None):
                 call_order.append("confirm")
-                return ConfirmationDecision(
-                    allowed=True, status="confirmed", reason="ok", parameters=parameters
-                )
+                return ConfirmationDecision(allowed=True, status="confirmed", reason="ok", parameters=parameters)
 
         original_run = tm._tool_call_pipeline.run
 
         async def _tracking_run(content, ctx):
             call_order.append("tool_call")
             return await original_run(content, ctx)
+
         tm._tool_call_pipeline.run = _tracking_run
         tm._grant_guard = _OrderGrant()
         tm._confirmation_guard = _OrderConfirm()
@@ -399,16 +417,14 @@ class TestToolDefinitionEnforcement:
         def n(x: int) -> str:
             """Doc."""
             return str(x)
+
         tm.register_tool(n)
 
         with caplog.at_level(logging.INFO):
             await tm.execute_tool("n", {"x": 1}, permission_context=object())
 
         records = [r.getMessage() for r in caplog.records]
-        assert any(
-            "layer=resolver" in m and "decision=deny" in m and "kind=tool_definition" in m
-            for m in records
-        )
+        assert any("layer=resolver" in m and "decision=deny" in m and "kind=tool_definition" in m for m in records)
 
     @pytest.mark.asyncio
     async def test_enforcement_log_uniform_abstracttool_resolver_deny(self, caplog):
@@ -433,12 +449,10 @@ class TestToolDefinitionEnforcement:
 
         with caplog.at_level(logging.INFO):
             await tm.execute_tool(
-                "guarded_abstract_tool", {},
+                "guarded_abstract_tool",
+                {},
                 permission_context=SimpleNamespace(user_id="u-1"),
             )
 
         records = [r.getMessage() for r in caplog.records]
-        assert any(
-            "layer=resolver" in m and "decision=deny" in m and "kind=abstract_tool" in m
-            for m in records
-        )
+        assert any("layer=resolver" in m and "decision=deny" in m and "kind=abstract_tool" in m for m in records)

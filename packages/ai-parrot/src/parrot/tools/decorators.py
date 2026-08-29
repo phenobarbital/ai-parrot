@@ -27,9 +27,11 @@ def requires_permission(*permissions: str):
     Returns:
         Decorated function/class with `_required_permissions` attribute.
     """
+
     def decorator(obj):
         obj._required_permissions = frozenset(permissions)
         return obj
+
     return decorator
 
 
@@ -44,11 +46,13 @@ def tool_schema(schema: Type[BaseModel], description: Optional[str] = None):
             '''My custom tool.'''
             return result
     """
+
     def decorator(func):
         # print(f"Decorating {func.__name__} with {schema}")
         func._args_schema = schema
         func._tool_description = description or func.__doc__ or f"Tool: {func.__name__}"
         return func
+
     return decorator
 
 
@@ -117,6 +121,7 @@ def tool(
             '''Register a check-in.'''
             return "ok"
     """
+
     def decorator(func: Callable) -> Callable:
         # Extract metadata
         tool_name = name or func.__name__
@@ -139,13 +144,13 @@ def tool(
 
         # Store metadata on the function
         func._tool_metadata = {
-            'name': tool_name,
-            'description': tool_description,
-            'schema': tool_schema,
-            'function': func,
-            'auto_register': auto_register,
-            'routing_meta': confirmation_routing,
-            'required_permissions': set(required_permissions or ()),
+            "name": tool_name,
+            "description": tool_description,
+            "schema": tool_schema,
+            "function": func,
+            "auto_register": auto_register,
+            "routing_meta": confirmation_routing,
+            "required_permissions": set(required_permissions or ()),
         }
 
         # Mark as a tool
@@ -166,6 +171,7 @@ def tool(
         return decorator(_func)
     return decorator
 
+
 def _extract_description(func: Callable) -> str:
     """
     Extract description from function docstring.
@@ -178,7 +184,7 @@ def _extract_description(func: Callable) -> str:
     docstring = func.__doc__.strip()
 
     # Split by newlines and get first non-empty line
-    lines = [line.strip() for line in docstring.split('\n')]
+    lines = [line.strip() for line in docstring.split("\n")]
     non_empty = [line for line in lines if line]
 
     if non_empty:
@@ -211,7 +217,7 @@ def _generate_schema_from_function(func: Callable) -> Dict[str, Any]:
 
     for param_name, param in sig.parameters.items():
         # Skip self and cls
-        if param_name in ('self', 'cls'):
+        if param_name in ("self", "cls"):
             continue
 
         # Get type hint (default to string if not specified)
@@ -228,15 +234,12 @@ def _generate_schema_from_function(func: Callable) -> Dict[str, Any]:
             # Complex type (List, Optional, Union, etc.)
             prop_def = json_type.copy()
             if param_description:
-                prop_def['description'] = param_description
+                prop_def["description"] = param_description
             else:
-                prop_def['description'] = f"The {param_name} parameter"
+                prop_def["description"] = f"The {param_name} parameter"
         else:
             # Simple type
-            prop_def = {
-                'type': json_type,
-                'description': param_description or f"The {param_name} parameter"
-            }
+            prop_def = {"type": json_type, "description": param_description or f"The {param_name} parameter"}
 
         properties[param_name] = prop_def
 
@@ -244,11 +247,8 @@ def _generate_schema_from_function(func: Callable) -> Dict[str, Any]:
         if param.default == inspect.Parameter.empty:
             required.append(param_name)
 
-    return {
-        'type': 'object',
-        'properties': properties,
-        'required': required
-    }
+    return {"type": "object", "properties": properties, "required": required}
+
 
 def _extract_param_description(func: Callable, param_name: str) -> Optional[str]:
     """
@@ -261,13 +261,13 @@ def _extract_param_description(func: Callable, param_name: str) -> Optional[str]
     docstring = func.__doc__
 
     # Google style: Args: section
-    google_pattern = rf'{param_name}\s*:\s*(.+?)(?:\n|$)'
+    google_pattern = rf"{param_name}\s*:\s*(.+?)(?:\n|$)"
     match = re.search(google_pattern, docstring)
     if match:
         return match.group(1).strip()
 
     # Sphinx style: :param name: description
-    sphinx_pattern = rf':param\s+{param_name}\s*:\s*(.+?)(?:\n|$)'
+    sphinx_pattern = rf":param\s+{param_name}\s*:\s*(.+?)(?:\n|$)"
     match = re.search(sphinx_pattern, docstring)
     if match:
         return match.group(1).strip()
@@ -308,19 +308,14 @@ def _python_type_to_json_type(python_type: Any) -> Union[str, Dict[str, Any]]:
                     return base_type
                 return {"type": [base_type, "null"]}
         # Regular Union - return anyOf
-        return {
-            "anyOf": [_python_type_to_json_type(t) for t in args]
-        }
+        return {"anyOf": [_python_type_to_json_type(t) for t in args]}
 
     # Handle List[T]
     if origin is list or python_type is list:
         args = get_args(python_type)
         if args:
             item_type = _python_type_to_json_type(args[0])
-            return {
-                "type": "array",
-                "items": {"type": item_type} if isinstance(item_type, str) else item_type
-            }
+            return {"type": "array", "items": {"type": item_type} if isinstance(item_type, str) else item_type}
         return "array"
 
     # Handle Dict[K, V]
@@ -329,10 +324,7 @@ def _python_type_to_json_type(python_type: Any) -> Union[str, Dict[str, Any]]:
 
     # Handle Enum
     if inspect.isclass(python_type) and issubclass(python_type, Enum):
-        return {
-            "type": "string",
-            "enum": [e.value for e in python_type]
-        }
+        return {"type": "string", "enum": [e.value for e in python_type]}
 
     # Basic types
     type_mapping = {

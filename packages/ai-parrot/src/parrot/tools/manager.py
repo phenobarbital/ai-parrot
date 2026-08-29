@@ -9,7 +9,9 @@ import aiohttp
 import pandas as pd
 from .abstract import AbstractTool, ToolResult
 from .compression import CompressionStage, CompressorRegistry
-from .compression import codecs as _compression_codecs  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
+from .compression import (
+    codecs as _compression_codecs,
+)  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
 from .compression.budget import BudgetRouter
 from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
 @dataclass(slots=True)
 class ToolDefinition:
     """Data structure for tool definition."""
+
     """Defines a tool with its name, description, input schema, and function."""
     name: str
     description: str
@@ -47,6 +50,7 @@ class ToolNameCollisionError(ValueError):
 
 class ToolFormat(Enum):
     """Enum for different tool format requirements by LLM providers."""
+
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GOOGLE = "google"
@@ -62,10 +66,7 @@ class ToolSchemaAdapter:
     """
 
     @staticmethod
-    def clean_schema_for_provider(
-        schema: Dict[str, Any],
-        provider: ToolFormat
-    ) -> Dict[str, Any]:
+    def clean_schema_for_provider(schema: Dict[str, Any], provider: ToolFormat) -> Dict[str, Any]:
         """
         Clean and adapt tool schema for specific LLM provider requirements.
 
@@ -79,7 +80,7 @@ class ToolSchemaAdapter:
         cleaned_schema = schema.copy()
 
         # Remove internal metadata
-        cleaned_schema.pop('_tool_instance', None)
+        cleaned_schema.pop("_tool_instance", None)
 
         if provider in [ToolFormat.GOOGLE, ToolFormat.VERTEX]:
             # Google/Vertex AI specific cleaning
@@ -106,9 +107,9 @@ class ToolSchemaAdapter:
         def remove_additional_properties(obj):
             if isinstance(obj, dict):
                 # Remove additionalProperties
-                obj.pop('additionalProperties', None)
+                obj.pop("additionalProperties", None)
                 # Remove other unsupported properties
-                obj.pop('title', None)  # Google doesn't use title in parameters
+                obj.pop("title", None)  # Google doesn't use title in parameters
 
                 # Recursively clean nested objects
                 for _, value in obj.items():
@@ -117,8 +118,8 @@ class ToolSchemaAdapter:
                 for item in obj:
                     remove_additional_properties(item)
 
-        if 'parameters' in cleaned:
-            remove_additional_properties(cleaned['parameters'])
+        if "parameters" in cleaned:
+            remove_additional_properties(cleaned["parameters"])
 
         return cleaned
 
@@ -131,10 +132,19 @@ class ToolSchemaAdapter:
             if isinstance(obj, dict):
                 # Remove validation constraints that Groq doesn't support
                 unsupported = [
-                    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                    "minLength", "maxLength", "pattern", "format",
-                    "minItems", "maxItems", "uniqueItems",
-                    "minProperties", "maxProperties"
+                    "minimum",
+                    "maximum",
+                    "exclusiveMinimum",
+                    "exclusiveMaximum",
+                    "minLength",
+                    "maxLength",
+                    "pattern",
+                    "format",
+                    "minItems",
+                    "maxItems",
+                    "uniqueItems",
+                    "minProperties",
+                    "maxProperties",
                 ]
 
                 for constraint in unsupported:
@@ -151,8 +161,8 @@ class ToolSchemaAdapter:
                 for item in obj:
                     remove_unsupported_constraints(item)
 
-        if 'parameters' in cleaned:
-            remove_unsupported_constraints(cleaned['parameters'])
+        if "parameters" in cleaned:
+            remove_unsupported_constraints(cleaned["parameters"])
 
         return cleaned
 
@@ -187,8 +197,8 @@ class ToolSchemaAdapter:
                 for item in obj:
                     ensure_openai_object(item)
 
-        if 'parameters' in cleaned:
-            ensure_openai_object(cleaned['parameters'])
+        if "parameters" in cleaned:
+            ensure_openai_object(cleaned["parameters"])
 
         return cleaned
 
@@ -198,15 +208,11 @@ class ToolSchemaAdapter:
         cleaned = schema.copy()
 
         # Remove internal metadata and ensure basic structure
-        cleaned.pop('_tool_instance', None)
+        cleaned.pop("_tool_instance", None)
 
         # Ensure required fields exist
-        if 'parameters' not in cleaned:
-            cleaned['parameters'] = {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
+        if "parameters" not in cleaned:
+            cleaned["parameters"] = {"type": "object", "properties": {}, "required": []}
 
         return cleaned
 
@@ -220,13 +226,13 @@ class ToolSchemaAdapter:
         ``{"name", "description", "parameters": {...}}`` shape.
         """
         cleaned = schema.copy()
-        cleaned.pop('_tool_instance', None)
+        cleaned.pop("_tool_instance", None)
         parameters = cleaned.pop("parameters", cleaned.pop("input_schema", {}))
         return {
             "toolSpec": {
                 "name": cleaned["name"],
                 "description": cleaned.get("description", ""),
-                "inputSchema": {"json": parameters}
+                "inputSchema": {"json": parameters},
             }
         }
 
@@ -234,7 +240,7 @@ class ToolSchemaAdapter:
 class ToolManager(MCPToolManagerMixin):
     """
     Unified tool manager for handling tools across AbstractBot and AbstractClient.
-    
+
     Capabilities:
     - Local tool registration and execution
     - MCP server management (via MCPToolManagerMixin)
@@ -351,17 +357,17 @@ class ToolManager(MCPToolManagerMixin):
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "The search query to match against tool names and descriptions"
+                            "description": "The search query to match against tool names and descriptions",
                         },
                         "limit": {
                             "type": "integer",
                             "description": "Maximum number of results to return",
-                            "default": 15
-                        }
+                            "default": 15,
+                        },
                     },
-                    "required": ["query"]
+                    "required": ["query"],
                 },
-                function=self.search_tools
+                function=self.search_tools,
             )
 
     # ── Permission Resolver Methods ────────────────────────────────────────────
@@ -387,9 +393,7 @@ class ToolManager(MCPToolManagerMixin):
             resolver: The new permission resolver to use.
         """
         self._resolver = resolver
-        self.logger.debug(
-            "Permission resolver set: %s", resolver.__class__.__name__
-        )
+        self.logger.debug("Permission resolver set: %s", resolver.__class__.__name__)
 
     # ── Execution Policy Methods ───────────────────────────────────────────────
 
@@ -407,19 +411,15 @@ class ToolManager(MCPToolManagerMixin):
                 ``{"rules": {"python_repl": "docker"}}``).
         """
         from .executors.policy import ExecutionPolicy
+
         if isinstance(policy, dict):
             policy = ExecutionPolicy.model_validate(policy)
         if not isinstance(policy, ExecutionPolicy):
-            raise TypeError(
-                f"execution_policy must be an ExecutionPolicy or dict, "
-                f"got {type(policy).__name__}"
-            )
+            raise TypeError(f"execution_policy must be an ExecutionPolicy or dict, " f"got {type(policy).__name__}")
         self._execution_policy = policy
         for tool in self._tools.values():
             self._apply_execution_policy(tool)
-        self.logger.debug(
-            "Execution policy set with %d rule(s)", len(policy.rules)
-        )
+        self.logger.debug("Execution policy set with %d rule(s)", len(policy.rules))
 
     def _apply_execution_policy(self, tool: Any) -> None:
         """Route *tool* through the policy, if one is set and it matches.
@@ -436,7 +436,8 @@ class ToolManager(MCPToolManagerMixin):
         except Exception as e:  # noqa: BLE001
             self.logger.error(
                 "Error applying execution policy to tool %r: %s",
-                getattr(tool, 'name', tool), e,
+                getattr(tool, "name", tool),
+                e,
             )
 
     async def close_executors(self) -> None:
@@ -461,9 +462,7 @@ class ToolManager(MCPToolManagerMixin):
             broker: A :class:`~parrot.auth.broker.CredentialBroker` instance.
         """
         self._broker = broker
-        self.logger.debug(
-            "Credential broker set: %s", broker.__class__.__name__
-        )
+        self.logger.debug("Credential broker set: %s", broker.__class__.__name__)
 
     # ── Grant Guard Methods (FEAT-211) ─────────────────────────────────────────
 
@@ -535,10 +534,10 @@ class ToolManager(MCPToolManagerMixin):
         Returns:
             The tool's description, or an empty string when unavailable.
         """
-        if hasattr(tool, 'description'):
+        if hasattr(tool, "description"):
             return tool.description or ""
         elif isinstance(tool, dict):
-            return tool.get('description', '') or ""
+            return tool.get("description", "") or ""
         return ""
 
     @staticmethod
@@ -650,12 +649,14 @@ class ToolManager(MCPToolManagerMixin):
             return f"No tools found matching '{query_norm}'. Try a different search term."
 
         import json
+
         return json.dumps(matches, indent=2)
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         if not tools:
             try:
                 from parrot_tools.math import MathTool
+
                 tools = [MathTool()]
             except ImportError:
                 tools = []
@@ -666,7 +667,7 @@ class ToolManager(MCPToolManagerMixin):
         """Get list of registered tool instances."""
         return self._tools
 
-    def sync(self, other_manager: 'ToolManager') -> None:
+    def sync(self, other_manager: "ToolManager") -> None:
         """
         Sync tools from another ToolManager instance.
 
@@ -680,13 +681,9 @@ class ToolManager(MCPToolManagerMixin):
         for tool_name, tool in other_manager._tools.items():
             if tool_name not in self._tools:
                 self._tools[tool_name] = tool
-                self.logger.debug(
-                    "Synchronized tool: %s", tool_name
-                )
+                self.logger.debug("Synchronized tool: %s", tool_name)
             else:
-                self.logger.debug(
-                    "Tool already exists, skipping: %s", tool_name
-                )
+                self.logger.debug("Tool already exists, skipping: %s", tool_name)
 
     def add_tool(self, tool: Union[ToolDefinition, AbstractTool], name: Optional[str] = None) -> None:
         """
@@ -696,7 +693,7 @@ class ToolManager(MCPToolManagerMixin):
             tool: Tool instance (AbstractTool or ToolDefinition)
             name: Optional custom name for the tool
         """
-        tool_name = name or getattr(tool, 'name', None) or tool.__class__.__name__
+        tool_name = name or getattr(tool, "name", None) or tool.__class__.__name__
         if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
             if isinstance(tool, AbstractTool):
                 if self.enable_redaction:
@@ -710,13 +707,9 @@ class ToolManager(MCPToolManagerMixin):
                 self._warn_if_inert_grant(tool)
             self._tools[tool_name] = tool
             self._apply_execution_policy(tool)
-            self.logger.debug(
-                "Registered tool: %s", tool_name
-            )
+            self.logger.debug("Registered tool: %s", tool_name)
         else:
-            self.logger.error(
-                "Unsupported tool type: %s", type(tool)
-            )
+            self.logger.error("Unsupported tool type: %s", type(tool))
 
     def register_tool(
         self,
@@ -735,14 +728,15 @@ class ToolManager(MCPToolManagerMixin):
         """
         # If an AbstractToolkit is passed, delegate to register_toolkit
         from .toolkit import AbstractToolkit as _AbstractToolkit
+
         if isinstance(tool, _AbstractToolkit):
             self.register_toolkit(tool)
             return
         # Resolve tool_name early, including @tool()-decorated functions
         if isinstance(tool, (ToolDefinition, AbstractTool)):
             tool_name = tool.name
-        elif callable(tool) and getattr(tool, '_is_tool', False) and hasattr(tool, '_tool_metadata'):
-            tool_name = tool._tool_metadata.get('name') or name
+        elif callable(tool) and getattr(tool, "_is_tool", False) and hasattr(tool, "_tool_metadata"):
+            tool_name = tool._tool_metadata.get("name") or name
         else:
             tool_name = name
         if tool_name in self._tools:
@@ -753,18 +747,14 @@ class ToolManager(MCPToolManagerMixin):
             # per toolkit. For legacy tools (no ``tool_prefix``), we keep
             # the previous soft behaviour — log a warning and skip — to
             # avoid breaking untouched toolkits during the migration.
-            from_prefixed_toolkit = bool(
-                getattr(tool, '_from_prefixed_toolkit', False)
-            )
+            from_prefixed_toolkit = bool(getattr(tool, "_from_prefixed_toolkit", False))
             if from_prefixed_toolkit:
                 raise ToolNameCollisionError(
                     f"Tool name collision: '{tool_name}' is already "
                     "registered by another toolkit. Pick a different "
                     "`tool_prefix` or rename the method."
                 )
-            self.logger.warning(
-                f"Tool '{tool_name}' is already registered."
-            )
+            self.logger.warning(f"Tool '{tool_name}' is already registered.")
             return
         try:
             if isinstance(tool, (ToolDefinition, AbstractTool)):
@@ -780,41 +770,38 @@ class ToolManager(MCPToolManagerMixin):
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
                 self._apply_execution_policy(tool)
-            elif callable(tool) and getattr(tool, '_is_tool', False) and hasattr(tool, '_tool_metadata'):
+            elif callable(tool) and getattr(tool, "_is_tool", False) and hasattr(tool, "_tool_metadata"):
                 # @tool()-decorated function — convert to ToolDefinition.
                 # Use meta['function'] (the original async fn) so that
                 # asyncio.iscoroutinefunction() returns True correctly.
                 meta = tool._tool_metadata
                 self._tools[tool_name] = ToolDefinition(
                     name=tool_name,
-                    description=meta.get('description', ''),
-                    input_schema=meta.get('schema', {}),
-                    function=meta.get('function', tool),
-                    routing_meta=dict(meta.get('routing_meta') or {}),
-                    required_permissions=set(meta.get('required_permissions') or ()),
+                    description=meta.get("description", ""),
+                    input_schema=meta.get("schema", {}),
+                    function=meta.get("function", tool),
+                    routing_meta=dict(meta.get("routing_meta") or {}),
+                    required_permissions=set(meta.get("required_permissions") or ()),
                 )
                 self._warn_if_inert_grant(self._tools[tool_name])
             elif isinstance(tool, dict):
-                tool_name = tool.get('name')
+                tool_name = tool.get("name")
                 if tool_name in self._tools:
                     self.logger.warning("Tool %r is already registered.", tool_name)
                     return
                 self._tools[tool_name] = ToolDefinition(
                     name=tool_name,
-                    description=tool.get('description', ''),
-                    input_schema=tool.get('parameters', {}),
-                    function=tool.get('_tool_instance'),
-                    routing_meta=dict(tool.get('routing_meta') or {}),
-                    required_permissions=set(tool.get('required_permissions') or ()),
+                    description=tool.get("description", ""),
+                    input_schema=tool.get("parameters", {}),
+                    function=tool.get("_tool_instance"),
+                    routing_meta=dict(tool.get("routing_meta") or {}),
+                    required_permissions=set(tool.get("required_permissions") or ()),
                 )
                 self._warn_if_inert_grant(self._tools[tool_name])
             elif name and description and input_schema and function:
                 # Create a ToolDefinition from the provided parameters
                 self._tools[tool_name] = ToolDefinition(
-                    name=name,
-                    description=description,
-                    input_schema=input_schema,
-                    function=function
+                    name=name, description=description, input_schema=input_schema, function=function
                 )
             else:
                 # TODO: if provided a function and a name, create the input_schema based on instrospection
@@ -828,14 +815,9 @@ class ToolManager(MCPToolManagerMixin):
                     "Tool must be a ToolDefinition, AbstractTool, or provide all parameters: "
                     "name, description, input_schema, function."
                 )
-            self.logger.debug(
-                "Registered tool: %s", tool_name
-            )
+            self.logger.debug("Registered tool: %s", tool_name)
         except Exception as e:
-            self.logger.error(
-                "Error registering tool: %s", e
-            )
-
+            self.logger.error("Error registering tool: %s", e)
 
     def _log_enforcement(
         self,
@@ -867,7 +849,12 @@ class ToolManager(MCPToolManagerMixin):
         user_id = getattr(permission_context, "user_id", None)
         self.logger.info(
             "Tool enforcement: tool=%s kind=%s layer=%s decision=%s user_id=%s reason=%s",
-            tool_name, tool_kind, layer, decision, user_id, reason,
+            tool_name,
+            tool_kind,
+            layer,
+            decision,
+            user_id,
+            reason,
         )
 
     def _warn_if_inert_grant(self, tool: ToolDefinition) -> None:
@@ -881,8 +868,8 @@ class ToolManager(MCPToolManagerMixin):
         Args:
             tool: The ``ToolDefinition`` being registered.
         """
-        routing_meta = getattr(tool, 'routing_meta', {}) or {}
-        if routing_meta.get('requires_grant'):
+        routing_meta = getattr(tool, "routing_meta", {}) or {}
+        if routing_meta.get("requires_grant"):
             self.logger.warning(
                 "Tool %s declares routing_meta['requires_grant'] but grant "
                 "policies (FEAT-211) are not enforced on the ToolDefinition "
@@ -895,23 +882,22 @@ class ToolManager(MCPToolManagerMixin):
     def _auto_wire_toolkit(self, tool: Union[AbstractTool, ToolDefinition]) -> None:
         """Auto-wire set_tool_manager on parent toolkit of ToolkitTool instances."""
         from .toolkit import ToolkitTool
+
         if not isinstance(tool, ToolkitTool):
             return
-        bound = getattr(tool, 'bound_method', None)
+        bound = getattr(tool, "bound_method", None)
         if bound is None:
             return
-        toolkit = getattr(bound, '__self__', None)
+        toolkit = getattr(bound, "__self__", None)
         if toolkit is None:
             return
         tk_id = id(toolkit)
         if tk_id in self._wired_toolkits:
             return
-        if hasattr(toolkit, 'set_tool_manager'):
+        if hasattr(toolkit, "set_tool_manager"):
             toolkit.set_tool_manager(self)
             self._wired_toolkits.add(tk_id)
-            self.logger.debug(
-                "Auto-wired ToolManager for toolkit %s", toolkit.__class__.__name__
-            )
+            self.logger.debug("Auto-wired ToolManager for toolkit %s", toolkit.__class__.__name__)
 
     def register(
         self,
@@ -941,11 +927,7 @@ class ToolManager(MCPToolManagerMixin):
                 pass
         return result
 
-
-    def register_tools(
-        self,
-        tools: List[Union[ToolDefinition, AbstractTool]]
-    ) -> None:
+    def register_tools(self, tools: List[Union[ToolDefinition, AbstractTool]]) -> None:
         """
         Register multiple tools from list or dictionary.
 
@@ -967,15 +949,13 @@ class ToolManager(MCPToolManagerMixin):
             elif isinstance(tool, dict):
                 # Register dictionary as a tool
                 self.register_tool(tool)
-            elif callable(tool) and getattr(tool, '_is_tool', False):
+            elif callable(tool) and getattr(tool, "_is_tool", False):
                 # @tool()-decorated function
                 self.register_tool(tool)
-            elif hasattr(tool, 'name'):
+            elif hasattr(tool, "name"):
                 self.register_tool(tool, tool.name)
             else:
-                self.logger.error(
-                    f"Unsupported tool type: {type(tool)}"
-                )
+                self.logger.error(f"Unsupported tool type: {type(tool)}")
 
     def load_tool(self, tool_name: str, **kwargs) -> bool:
         """
@@ -1010,7 +990,7 @@ class ToolManager(MCPToolManagerMixin):
 
         # Legacy fallback: parrot.tools.<name> (the meta-path finder redirects
         # this to parrot_tools.<name> when a matching submodule exists).
-        tool_file = tool_name.lower().replace('tool', '')
+        tool_file = tool_name.lower().replace("tool", "")
         try:
             module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool_name])
             cls = getattr(module, tool_name)
@@ -1018,9 +998,7 @@ class ToolManager(MCPToolManagerMixin):
             self.register_tool(instance)
             return True
         except (ImportError, AttributeError) as e:
-            self.logger.error(
-                f"Error loading tool {tool_name}: {e}"
-            )
+            self.logger.error(f"Error loading tool {tool_name}: {e}")
             return False
 
     def _load_tool_from_registry(self, tool_name: str, **kwargs) -> bool:
@@ -1054,9 +1032,7 @@ class ToolManager(MCPToolManagerMixin):
         try:
             cls = resolve_class(dotted_path)
         except (ImportError, AttributeError) as e:
-            self.logger.error(
-                "Error resolving tool %r (%s): %s", tool_name, dotted_path, e
-            )
+            self.logger.error("Error resolving tool %r (%s): %s", tool_name, dotted_path, e)
             return False
 
         try:
@@ -1066,16 +1042,10 @@ class ToolManager(MCPToolManagerMixin):
                 self.register_tool(cls(**kwargs))
             return True
         except Exception as e:  # noqa: BLE001
-            self.logger.error(
-                "Error instantiating tool %r (%s): %s", tool_name, dotted_path, e
-            )
+            self.logger.error("Error instantiating tool %r (%s): %s", tool_name, dotted_path, e)
             return False
 
-    def register_toolkit(
-        self,
-        toolkit: Union[str, "AbstractToolkit", type],
-        **kwargs
-    ) -> List[AbstractTool]:
+    def register_toolkit(self, toolkit: Union[str, "AbstractToolkit", type], **kwargs) -> List[AbstractTool]:
         """
         Register all tools from a toolkit.
 
@@ -1117,16 +1087,11 @@ class ToolManager(MCPToolManagerMixin):
             toolkit_class = ToolkitRegistry.get(toolkit)
             if toolkit_class is None:
                 available = ToolkitRegistry.list_toolkits()
-                raise ValueError(
-                    f"Unknown toolkit: '{toolkit}'. "
-                    f"Available toolkits: {available}"
-                )
+                raise ValueError(f"Unknown toolkit: '{toolkit}'. " f"Available toolkits: {available}")
             try:
                 toolkit_instance = toolkit_class(**kwargs)
             except Exception as e:
-                self.logger.error(
-                    "Error instantiating toolkit %r: %s", toolkit, e
-                )
+                self.logger.error("Error instantiating toolkit %r: %s", toolkit, e)
                 raise
 
         elif isinstance(toolkit, type) and issubclass(toolkit, AbstractToolkit):
@@ -1135,9 +1100,7 @@ class ToolManager(MCPToolManagerMixin):
             try:
                 toolkit_instance = toolkit(**kwargs)
             except Exception as e:
-                self.logger.error(
-                    "Error instantiating toolkit class %r: %s", toolkit_name, e
-                )
+                self.logger.error("Error instantiating toolkit class %r: %s", toolkit_name, e)
                 raise
 
         elif isinstance(toolkit, AbstractToolkit):
@@ -1155,7 +1118,7 @@ class ToolManager(MCPToolManagerMixin):
         tools = toolkit_instance.get_tools_sync()
 
         # Auto-wire ToolManager reference for toolkits that support sharing
-        if hasattr(toolkit_instance, 'set_tool_manager'):
+        if hasattr(toolkit_instance, "set_tool_manager"):
             toolkit_instance.set_tool_manager(self)
 
         # Register each tool
@@ -1172,22 +1135,21 @@ class ToolManager(MCPToolManagerMixin):
             except Exception as e:
                 self.logger.error(
                     "Error registering tool %r from toolkit %r: %s",
-                    getattr(tool, 'name', 'unknown'), toolkit_name, e,
+                    getattr(tool, "name", "unknown"),
+                    toolkit_name,
+                    e,
                 )
 
         self.logger.info(
             "Registered toolkit %r with %d tools: %s",
-            toolkit_name, len(registered_tools),
-            [getattr(t, 'name', 'unknown') for t in registered_tools],
+            toolkit_name,
+            len(registered_tools),
+            [getattr(t, "name", "unknown") for t in registered_tools],
         )
 
         return registered_tools
 
-
-    def get_tool_schemas(
-        self,
-        provider_format: ToolFormat = ToolFormat.GENERIC
-    ) -> List[Dict[str, Any]]:
+    def get_tool_schemas(self, provider_format: ToolFormat = ToolFormat.GENERIC) -> List[Dict[str, Any]]:
         """
         Get tool schemas formatted for specific LLM provider.
 
@@ -1209,13 +1171,11 @@ class ToolManager(MCPToolManagerMixin):
 
                 if schema:
                     # Add tool instance reference for execution
-                    schema['_tool_instance'] = tool
+                    schema["_tool_instance"] = tool
                     # Clean schema for provider compatibility
-                    cleaned_schema = ToolSchemaAdapter.clean_schema_for_provider(
-                        schema, provider_format
-                    )
+                    cleaned_schema = ToolSchemaAdapter.clean_schema_for_provider(schema, provider_format)
                     # Re-add tool instance after cleaning
-                    cleaned_schema['_tool_instance'] = tool
+                    cleaned_schema["_tool_instance"] = tool
                     client_tools.append(cleaned_schema)
 
             except Exception as e:
@@ -1236,46 +1196,36 @@ class ToolManager(MCPToolManagerMixin):
         """
         try:
             # AbstractTool with get_schema method
-            if hasattr(tool, 'get_schema'):
+            if hasattr(tool, "get_schema"):
                 return tool.get_schema()
 
             # ToolDefinition with input_schema
-            elif hasattr(tool, 'input_schema') and hasattr(tool, 'description'):
-                return {
-                    "name": tool_name,
-                    "description": tool.description,
-                    "parameters": tool.input_schema
-                }
+            elif hasattr(tool, "input_schema") and hasattr(tool, "description"):
+                return {"name": tool_name, "description": tool.description, "parameters": tool.input_schema}
 
             # Dictionary format
             elif isinstance(tool, dict):
-                if 'name' in tool and 'parameters' in tool:
+                if "name" in tool and "parameters" in tool:
                     return tool
                 else:
                     # Try to construct from available fields
                     return {
-                        "name": tool.get('name', tool_name),
-                        "description": tool.get('description', f"Tool: {tool_name}"),
-                        "parameters": tool.get('parameters', tool.get('input_schema', {}))
+                        "name": tool.get("name", tool_name),
+                        "description": tool.get("description", f"Tool: {tool_name}"),
+                        "parameters": tool.get("parameters", tool.get("input_schema", {})),
                     }
 
             # Legacy format with name, description, input_schema attributes
-            elif hasattr(tool, 'name') and hasattr(tool, 'description'):
-                schema = getattr(tool, 'input_schema', {})
-                return {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": schema
-                }
+            elif hasattr(tool, "name") and hasattr(tool, "description"):
+                schema = getattr(tool, "input_schema", {})
+                return {"name": tool.name, "description": tool.description, "parameters": schema}
 
             else:
                 self.logger.warning("Unknown tool format for: %s", tool_name)
                 return None
 
         except Exception as e:
-            self.logger.error(
-                f"Error extracting schema for {tool_name}: {e}"
-            )
+            self.logger.error(f"Error extracting schema for {tool_name}: {e}")
             return None
 
     def get_tool(self, tool_name: str) -> Optional[Any]:
@@ -1342,9 +1292,7 @@ class ToolManager(MCPToolManagerMixin):
         """
         if tool_name in self._tools:
             del self._tools[tool_name]
-            self.logger.debug(
-                "Removed tool: %s", tool_name
-            )
+            self.logger.debug("Removed tool: %s", tool_name)
         else:
             self.logger.warning("Tool not found: %s", tool_name)
 
@@ -1361,7 +1309,7 @@ class ToolManager(MCPToolManagerMixin):
         format_style: str = "compact",
         include_parameters: bool = True,
         include_examples: bool = False,
-        max_tools: Optional[int] = None
+        max_tools: Optional[int] = None,
     ) -> str:
         """
         Build formatted tool descriptions for system prompts.
@@ -1384,34 +1332,17 @@ class ToolManager(MCPToolManagerMixin):
             tools_to_describe = tools_to_describe[:max_tools]
 
         if format_style == "detailed":
-            return self._build_detailed_description(
-                tools_to_describe,
-                include_parameters,
-                include_examples
-            )
+            return self._build_detailed_description(tools_to_describe, include_parameters, include_examples)
         elif format_style == "compact":
             return self._build_compact_description(tools_to_describe, include_parameters)
         elif format_style == "list":
             return self._build_list_description(tools_to_describe)
         elif format_style == "markdown":
-            return self._build_markdown_description(
-                tools_to_describe,
-                include_parameters,
-                include_examples
-            )
+            return self._build_markdown_description(tools_to_describe, include_parameters, include_examples)
         else:
-            return self._build_detailed_description(
-                tools_to_describe,
-                include_parameters,
-                include_examples
-            )
+            return self._build_detailed_description(tools_to_describe, include_parameters, include_examples)
 
-    def _build_detailed_description(
-        self,
-        tools: List[tuple],
-        include_parameters: bool,
-        include_examples: bool
-    ) -> str:
+    def _build_detailed_description(self, tools: List[tuple], include_parameters: bool, include_examples: bool) -> str:
         """Build detailed tool descriptions."""
         descriptions = ["=== AVAILABLE TOOLS ===\n"]
 
@@ -1425,21 +1356,23 @@ class ToolManager(MCPToolManagerMixin):
                 descriptions.append(f"{i}. {schema['name']}: {schema['description']}")
 
                 # Parameters section
-                if include_parameters and 'parameters' in schema:
-                    params = schema['parameters'].get('properties', {})
-                    required = schema['parameters'].get('required', [])
+                if include_parameters and "parameters" in schema:
+                    params = schema["parameters"].get("properties", {})
+                    required = schema["parameters"].get("required", [])
 
                     if params:
                         descriptions.append("   Parameters:")
                         for param_name, param_info in params.items():
-                            param_type = param_info.get('type', 'unknown')
-                            param_desc = param_info.get('description', 'No description')
+                            param_type = param_info.get("type", "unknown")
+                            param_desc = param_info.get("description", "No description")
                             required_marker = " (required)" if param_name in required else " (optional)"
                             descriptions.append(f"     - {param_name} ({param_type}){required_marker}: {param_desc}")
 
                 # Usage example
                 if include_examples:
-                    descriptions.append(f"   Usage: Call {schema['name']} when you need to {schema['description'].lower()}")
+                    descriptions.append(
+                        f"   Usage: Call {schema['name']} when you need to {schema['description'].lower()}"
+                    )
 
                 descriptions.append("")  # Empty line between tools
 
@@ -1448,9 +1381,7 @@ class ToolManager(MCPToolManagerMixin):
                 descriptions.append(f"{i}. {tool_name}: Error getting tool information")
                 descriptions.append("")
 
-        descriptions.append(
-            "Use these tools when appropriate to answer the question effectively."
-        )
+        descriptions.append("Use these tools when appropriate to answer the question effectively.")
         return "\n".join(descriptions)
 
     def _build_compact_description(self, tools: List[tuple], include_parameters: bool) -> str:
@@ -1466,8 +1397,8 @@ class ToolManager(MCPToolManagerMixin):
 
                 summary = f"{schema['name']}"
 
-                if include_parameters and 'parameters' in schema:
-                    params = schema['parameters'].get('properties', {})
+                if include_parameters and "parameters" in schema:
+                    params = schema["parameters"].get("properties", {})
                     if params:
                         param_names = list(params.keys())[:3]  # First 3 params
                         param_str = ", ".join(param_names)
@@ -1502,12 +1433,7 @@ class ToolManager(MCPToolManagerMixin):
 
         return "\n".join(descriptions)
 
-    def _build_markdown_description(
-        self,
-        tools: List[tuple],
-        include_parameters: bool,
-        include_examples: bool
-    ) -> str:
+    def _build_markdown_description(self, tools: List[tuple], include_parameters: bool, include_examples: bool) -> str:
         """Build markdown-formatted tool descriptions."""
         descriptions = ["## Available Tools\n"]
 
@@ -1522,22 +1448,24 @@ class ToolManager(MCPToolManagerMixin):
                 descriptions.append(f"**Description:** {schema['description']}\n")
 
                 # Parameters section
-                if include_parameters and 'parameters' in schema:
-                    params = schema['parameters'].get('properties', {})
-                    required = schema['parameters'].get('required', [])
+                if include_parameters and "parameters" in schema:
+                    params = schema["parameters"].get("properties", {})
+                    required = schema["parameters"].get("required", [])
 
                     if params:
                         descriptions.append("**Parameters:**")
                         for param_name, param_info in params.items():
-                            param_type = param_info.get('type', 'unknown')
-                            param_desc = param_info.get('description', 'No description')
+                            param_type = param_info.get("type", "unknown")
+                            param_desc = param_info.get("description", "No description")
                             required_marker = "**required**" if param_name in required else "*optional*"
                             descriptions.append(f"- `{param_name}` ({param_type}) - {required_marker}: {param_desc}")
                         descriptions.append("")
 
                 # Usage example
                 if include_examples:
-                    descriptions.append(f"**Usage:** Call `{schema['name']}` when you need to {schema['description'].lower()}\n")
+                    descriptions.append(
+                        f"**Usage:** Call `{schema['name']}` when you need to {schema['description'].lower()}\n"
+                    )
 
             except Exception as e:
                 self.logger.error("Error building markdown description for %s: %s", tool_name, e)
@@ -1561,26 +1489,17 @@ class ToolManager(MCPToolManagerMixin):
                 schema = self._extract_tool_schema(tool, tool_name)
                 tool_info = {
                     "name": tool_name,
-                    "description": schema.get(
-                        'description', 'No description'
-                    ) if schema else 'Schema unavailable',
-                    "parameters_count": len(
-                        schema.get('parameters', {}).get('properties', {})
-                    ) if schema else 0
+                    "description": schema.get("description", "No description") if schema else "Schema unavailable",
+                    "parameters_count": len(schema.get("parameters", {}).get("properties", {})) if schema else 0,
                 }
                 tools_info.append(tool_info)
             except Exception as e:
                 self.logger.error("Error getting summary for %s: %s", tool_name, e)
-                tools_info.append({
-                    "name": tool_name,
-                    "description": "Error getting information",
-                    "parameters_count": 0
-                })
+                tools_info.append(
+                    {"name": tool_name, "description": "Error getting information", "parameters_count": 0}
+                )
 
-        return {
-            "count": len(self._tools),
-            "tools": tools_info
-        }
+        return {"count": len(self._tools), "tools": tools_info}
 
     async def execute_tool(
         self,
@@ -1609,12 +1528,7 @@ class ToolManager(MCPToolManagerMixin):
             ValueError: If tool not found or execution fails.
         """
         if tool_name not in self._tools:
-            return ToolResult(
-                success=False,
-                status='not_found',
-                error=f"Tool '{tool_name}' not found",
-                result=None
-            )
+            return ToolResult(success=False, status="not_found", error=f"Tool '{tool_name}' not found", result=None)
         try:
             tool = self._tools[tool_name]
             tool_kind = "tool_definition" if isinstance(tool, ToolDefinition) else "abstract_tool"
@@ -1632,6 +1546,7 @@ class ToolManager(MCPToolManagerMixin):
             # is unchanged (regression-safe).
             if self._tool_call_pipeline is not None and self._tool_call_pipeline.has_guardrails:
                 from ..bots.guardrails.base import GuardrailContext, GuardrailStage
+
                 tool_call_ctx = GuardrailContext(
                     stage=GuardrailStage.TOOL_CALL,
                     agent_name=tool_name,
@@ -1642,9 +1557,7 @@ class ToolManager(MCPToolManagerMixin):
                         "arguments": parameters,
                     },
                 )
-                tool_call_outcome = await self._tool_call_pipeline.run(
-                    f"tool_call:{tool_name}", tool_call_ctx
-                )
+                tool_call_outcome = await self._tool_call_pipeline.run(f"tool_call:{tool_name}", tool_call_ctx)
                 if tool_call_outcome.blocked:
                     # Prefer the blocking guardrail's human-readable report
                     # message (e.g. PBACToolCallGuardrail's operator-authored
@@ -1656,8 +1569,12 @@ class ToolManager(MCPToolManagerMixin):
                             error_message = report["message"]
                             break
                     self._log_enforcement(
-                        tool_name, tool_kind, "guardrail", "deny",
-                        permission_context, error_message,
+                        tool_name,
+                        tool_kind,
+                        "guardrail",
+                        "deny",
+                        permission_context,
+                        error_message,
                     )
                     return ToolResult(
                         success=False,
@@ -1681,8 +1598,12 @@ class ToolManager(MCPToolManagerMixin):
                     )
                     if not confirm_decision.allowed:
                         self._log_enforcement(
-                            tool_name, tool_kind, "confirmation", "deny",
-                            permission_context, confirm_decision.reason,
+                            tool_name,
+                            tool_kind,
+                            "confirmation",
+                            "deny",
+                            permission_context,
+                            confirm_decision.reason,
                         )
                         return ToolResult(
                             success=False,
@@ -1691,8 +1612,12 @@ class ToolManager(MCPToolManagerMixin):
                             result=None,
                         )
                     self._log_enforcement(
-                        tool_name, tool_kind, "confirmation", "allow",
-                        permission_context, confirm_decision.reason,
+                        tool_name,
+                        tool_kind,
+                        "confirmation",
+                        "allow",
+                        permission_context,
+                        confirm_decision.reason,
                     )
                     if confirm_decision.parameters is not None:
                         # Use the (possibly edited and re-validated) parameters
@@ -1708,13 +1633,15 @@ class ToolManager(MCPToolManagerMixin):
                 # no silent fail-open (spec §7 gotcha).
                 if permission_context is not None and self._resolver is not None:
                     required = getattr(tool, "required_permissions", set()) or set()
-                    allowed = await self._resolver.can_execute(
-                        permission_context, tool.name, required
-                    )
+                    allowed = await self._resolver.can_execute(permission_context, tool.name, required)
                     if not allowed:
                         self._log_enforcement(
-                            tool_name, tool_kind, "resolver", "deny",
-                            permission_context, "permission denied",
+                            tool_name,
+                            tool_kind,
+                            "resolver",
+                            "deny",
+                            permission_context,
+                            "permission denied",
                         )
                         return ToolResult(
                             success=False,
@@ -1728,8 +1655,12 @@ class ToolManager(MCPToolManagerMixin):
                             },
                         )
                     self._log_enforcement(
-                        tool_name, tool_kind, "resolver", "allow",
-                        permission_context, None,
+                        tool_name,
+                        tool_kind,
+                        "resolver",
+                        "allow",
+                        permission_context,
+                        None,
                     )
                 # === End manager-level Layer 2 resolver check ===
 
@@ -1738,9 +1669,7 @@ class ToolManager(MCPToolManagerMixin):
                 else:
                     result = tool.function(**parameters)
 
-                self.logger.debug(
-                    "Executed tool %r with parameters: %s", tool_name, parameters
-                )
+                self.logger.debug("Executed tool %r with parameters: %s", tool_name, parameters)
                 return result
 
             elif isinstance(tool, AbstractTool):
@@ -1751,7 +1680,7 @@ class ToolManager(MCPToolManagerMixin):
                 # FEAT-396: keep the per-bot TOOL_OUTPUT pipeline reference
                 # in sync too (defensive re-stamp, mirrors enable_redaction
                 # above — see add_tool()/register_tool()).
-                if getattr(tool, '_tool_output_pipeline', None) is not self._tool_output_pipeline:
+                if getattr(tool, "_tool_output_pipeline", None) is not self._tool_output_pipeline:
                     tool._tool_output_pipeline = self._tool_output_pipeline
 
                 # === Grant guard check (FEAT-211) ===
@@ -1766,8 +1695,12 @@ class ToolManager(MCPToolManagerMixin):
                     )
                     if not decision.allowed:
                         self._log_enforcement(
-                            tool_name, tool_kind, "grant", "deny",
-                            permission_context, decision.reason,
+                            tool_name,
+                            tool_kind,
+                            "grant",
+                            "deny",
+                            permission_context,
+                            decision.reason,
                         )
                         return ToolResult(
                             success=False,
@@ -1790,8 +1723,12 @@ class ToolManager(MCPToolManagerMixin):
                     )
                     if not confirm_decision.allowed:
                         self._log_enforcement(
-                            tool_name, tool_kind, "confirmation", "deny",
-                            permission_context, confirm_decision.reason,
+                            tool_name,
+                            tool_kind,
+                            "confirmation",
+                            "deny",
+                            permission_context,
+                            confirm_decision.reason,
                         )
                         return ToolResult(
                             success=False,
@@ -1800,8 +1737,12 @@ class ToolManager(MCPToolManagerMixin):
                             result=None,
                         )
                     self._log_enforcement(
-                        tool_name, tool_kind, "confirmation", "allow",
-                        permission_context, confirm_decision.reason,
+                        tool_name,
+                        tool_kind,
+                        "confirmation",
+                        "allow",
+                        permission_context,
+                        confirm_decision.reason,
                     )
                     if confirm_decision.parameters is not None:
                         # Use the (possibly edited and re-validated) parameters
@@ -1812,22 +1753,16 @@ class ToolManager(MCPToolManagerMixin):
                 # for Layer 2 enforcement
                 exec_kwargs = dict(parameters)
                 if permission_context is not None:
-                    exec_kwargs['_permission_context'] = permission_context
+                    exec_kwargs["_permission_context"] = permission_context
                 if self._resolver is not None:
-                    exec_kwargs['_resolver'] = self._resolver
+                    exec_kwargs["_resolver"] = self._resolver
                 # FEAT-264: propagate credential broker + identity context
                 if self._broker is not None:
-                    exec_kwargs['_broker'] = self._broker
+                    exec_kwargs["_broker"] = self._broker
                     # channel and user_id from permission_context if available
                     if permission_context is not None:
-                        exec_kwargs.setdefault(
-                            '_cred_channel',
-                            getattr(permission_context, 'channel', 'unknown')
-                        )
-                        exec_kwargs.setdefault(
-                            '_cred_user_id',
-                            getattr(permission_context, 'user_id', None)
-                        )
+                        exec_kwargs.setdefault("_cred_channel", getattr(permission_context, "channel", "unknown"))
+                        exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
                 result = await tool.execute(**exec_kwargs)
 
@@ -1840,10 +1775,14 @@ class ToolManager(MCPToolManagerMixin):
                     # observable on BOTH branches (FEAT-474 G6/AC-9), even though
                     # the check itself intentionally stays inside AbstractTool
                     # (no duplicate manager-level check — see spec §6).
-                    if result.status == 'forbidden':
+                    if result.status == "forbidden":
                         self._log_enforcement(
-                            tool_name, tool_kind, "resolver", "deny",
-                            permission_context, result.error,
+                            tool_name,
+                            tool_kind,
+                            "resolver",
+                            "deny",
+                            permission_context,
+                            result.error,
                         )
                         return result
                     if result.status == "error":
@@ -1858,13 +1797,12 @@ class ToolManager(MCPToolManagerMixin):
                         # original `result.error` (code-review fix).
                         try:
                             self._bind_compression_tee()
-                            await self._compression_tee.store(
-                                tool_name, result.result, "error"
-                            )
+                            await self._compression_tee.store(tool_name, result.result, "error")
                         except Exception as tee_exc:  # noqa: BLE001
                             self.logger.warning(
-                                "Compression tee failed while capturing "
-                                "error payload for %s: %s", tool_name, tee_exc,
+                                "Compression tee failed while capturing " "error payload for %s: %s",
+                                tool_name,
+                                tee_exc,
                             )
                         raise ValueError(result.error)
                     out = result.result
@@ -1894,7 +1832,8 @@ class ToolManager(MCPToolManagerMixin):
                 # `_compressed` marker travel with it.
                 self._bind_compression_tee()
                 out, comp_meta = await self._compression_stage.run(
-                    tool_name, out,
+                    tool_name,
+                    out,
                     status=result.status if isinstance(result, ToolResult) else "success",
                     metadata=meta,
                     return_direct=getattr(tool, "return_direct", False),
@@ -1902,9 +1841,7 @@ class ToolManager(MCPToolManagerMixin):
                 meta.update(comp_meta)
                 return out
             else:
-                raise ValueError(
-                    f"Unknown tool type: {type(tool)}"
-                )
+                raise ValueError(f"Unknown tool type: {type(tool)}")
         except AuthorizationRequired as auth_exc:
             self.logger.info(
                 "Authorization required for tool %s: provider=%s",
@@ -1913,7 +1850,7 @@ class ToolManager(MCPToolManagerMixin):
             )
             return ToolResult(
                 success=False,
-                status='authorization_required',
+                status="authorization_required",
                 result=None,
                 error=auth_exc.message,
                 metadata={
@@ -1924,9 +1861,7 @@ class ToolManager(MCPToolManagerMixin):
                 },
             )
         except Exception as e:
-            self.logger.error(
-                "Error executing tool %s: %s", tool_name, e
-            )
+            self.logger.error("Error executing tool %s: %s", tool_name, e)
             raise
 
     async def register_a2a_agent(self, url: str) -> RegisteredAgent:
@@ -1942,7 +1877,7 @@ class ToolManager(MCPToolManagerMixin):
         Raises:
             Exception: If registration fails or agent is unreachable.
         """
-        url = url.rstrip('/')
+        url = url.rstrip("/")
         agent_url = f"{url}/.well-known/agent.json"
 
         try:
@@ -1953,12 +1888,9 @@ class ToolManager(MCPToolManagerMixin):
 
                     data = await response.json()
                     card = AgentCard.from_dict(data)
-                    card.url = url # Ensure URL is set to the base URL
+                    card.url = url  # Ensure URL is set to the base URL
 
-                    agent = RegisteredAgent(
-                        url=url,
-                        card=card
-                    )
+                    agent = RegisteredAgent(url=url, card=card)
 
                     self._registered_agents[card.name] = agent
                     self.logger.info("Registered A2A agent: %s (%s)", card.name, url)
@@ -2009,18 +1941,18 @@ class ToolManager(MCPToolManagerMixin):
         q = query.lower()
         for agent in self._registered_agents.values():
             # Search in agent metadata and tags
-            if (q in agent.card.name.lower() or
-                q in agent.card.description.lower() or
-                any(q in t.lower() for t in agent.card.tags)):
+            if (
+                q in agent.card.name.lower()
+                or q in agent.card.description.lower()
+                or any(q in t.lower() for t in agent.card.tags)
+            ):
                 results.append(agent)
                 continue
 
             # Search in skills
             found_in_skills = False
             for s in agent.card.skills:
-                if (q in s.name.lower() or
-                    q in s.description.lower() or
-                    any(q in t.lower() for t in s.tags)):
+                if q in s.name.lower() or q in s.description.lower() or any(q in t.lower() for t in s.tags):
                     found_in_skills = True
                     break
 
@@ -2052,21 +1984,10 @@ class ToolManager(MCPToolManagerMixin):
         tool_id = content_block["id"]
 
         try:
-            tool_result = await self.execute_tool(
-                tool_name, tool_input, permission_context=permission_context
-            )
-            return {
-                "type": "tool_result",
-                "tool_use_id": tool_id,
-                "content": str(tool_result)
-            }
+            tool_result = await self.execute_tool(tool_name, tool_input, permission_context=permission_context)
+            return {"type": "tool_result", "tool_use_id": tool_id, "content": str(tool_result)}
         except Exception as e:
-            return {
-                "type": "tool_result",
-                "tool_use_id": tool_id,
-                "is_error": True,
-                "content": str(e)
-            }
+            return {"type": "tool_result", "tool_use_id": tool_id, "is_error": True, "content": str(e)}
 
     def _postprocess_result(self, tool_name: str, out: Any, meta: Dict[str, Any]) -> None:
         """Auto-share DataFrame outputs and push to PythonPandasTool."""
@@ -2111,6 +2032,7 @@ class ToolManager(MCPToolManagerMixin):
             if none is registered.
         """
         from .working_memory import WorkingMemoryToolkit
+
         for tool in self._tools.values():
             owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
             if isinstance(owner, WorkingMemoryToolkit):
@@ -2126,9 +2048,7 @@ class ToolManager(MCPToolManagerMixin):
         ``WorkingMemoryToolkit`` may be registered at any point after the
         manager (and its ``CompressionTee``) is constructed.
         """
-        self._compression_tee.bind_working_memory(
-            self._find_working_memory_toolkit()
-        )
+        self._compression_tee.bind_working_memory(self._find_working_memory_toolkit())
 
     def tool_count(self) -> int:
         """Get the number of registered tools."""
@@ -2189,9 +2109,7 @@ class ToolManager(MCPToolManagerMixin):
             if tool_name == "search_tools" and not include_search_tool:
                 continue
             new_tm._tools[tool_name] = tool
-        new_tm._categories = {
-            cat: list(names) for cat, names in self._categories.items()
-        }
+        new_tm._categories = {cat: list(names) for cat, names in self._categories.items()}
         new_tm.auto_share_dataframes = self.auto_share_dataframes
         new_tm.auto_push_to_pandas = self.auto_push_to_pandas
         new_tm.pandas_tool_name = self.pandas_tool_name
@@ -2283,16 +2201,17 @@ class ToolManager(MCPToolManagerMixin):
         wedge the toolkit/tool into "always considered open".
         """
         from .toolkit import ToolkitTool
+
         seen: set[int] = set()
 
         # --- Phase 1: close and clean up toolkits ---
         for tool in self._tools.values():
             if not isinstance(tool, ToolkitTool):
                 continue
-            bound = getattr(tool, 'bound_method', None)
+            bound = getattr(tool, "bound_method", None)
             if bound is None:
                 continue
-            toolkit = getattr(bound, '__self__', None)
+            toolkit = getattr(bound, "__self__", None)
             if toolkit is None:
                 continue
             tk_id = id(toolkit)
@@ -2304,18 +2223,19 @@ class ToolManager(MCPToolManagerMixin):
             # _opened is force-reset in `finally` regardless of outcome —
             # framework-owned, not left to the override calling
             # super()._close() (see docstring above).
-            if getattr(toolkit, '_opened', False):
+            if getattr(toolkit, "_opened", False):
                 try:
                     await toolkit._close()
                 except Exception as exc:
                     self.logger.debug(
                         "Error in _close() for toolkit %s: %s",
-                        type(toolkit).__name__, exc,
+                        type(toolkit).__name__,
+                        exc,
                     )
                 finally:
                     toolkit._opened = False
 
-            cleanup_fn = getattr(toolkit, 'cleanup', None) or getattr(toolkit, 'stop', None)
+            cleanup_fn = getattr(toolkit, "cleanup", None) or getattr(toolkit, "stop", None)
             if cleanup_fn and callable(cleanup_fn):
                 try:
                     result = cleanup_fn()
@@ -2324,7 +2244,8 @@ class ToolManager(MCPToolManagerMixin):
                 except Exception as exc:
                     self.logger.debug(
                         "Error cleaning up toolkit %s: %s",
-                        type(toolkit).__name__, exc,
+                        type(toolkit).__name__,
+                        exc,
                     )
 
         # --- Phase 2: close standalone tools (non-ToolkitTool) ---
@@ -2332,13 +2253,14 @@ class ToolManager(MCPToolManagerMixin):
             if isinstance(tool, ToolkitTool):
                 continue
             # FEAT-391: same framework-enforced reset as Phase 1 above.
-            if getattr(tool, '_opened', False):
+            if getattr(tool, "_opened", False):
                 try:
                     await tool._close()
                 except Exception as exc:
                     self.logger.debug(
                         "Error in _close() for tool %s: %s",
-                        tool.name, exc,
+                        tool.name,
+                        exc,
                     )
                 finally:
                     tool._opened = False

@@ -4,6 +4,7 @@ ToolInterface - Interface for tool management functionality.
 This interface provides methods for initializing, managing, and using tools
 in bot implementations.
 """
+
 from typing import List, Union, Dict, Any, Callable
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
@@ -14,7 +15,7 @@ from ..clients.factory import SUPPORTED_CLIENTS
 class ToolInterface:
     """
     Interface for tool management in bot implementations.
-    
+
     This interface provides methods for:
     - Initializing and registering tools
     - Syncing tools with LLM clients
@@ -48,9 +49,7 @@ class ToolInterface:
                         self.logger.info(f"Successfully loaded tool: {tool}")
                         continue
 
-                    self.logger.warning(
-                        f"Unknown tool or toolkit: {tool}"
-                    )
+                    self.logger.warning(f"Unknown tool or toolkit: {tool}")
 
                 elif isinstance(tool, type) and issubclass(tool, AbstractToolkit):
                     # It's a toolkit class, register it. Instantiate first so we
@@ -70,24 +69,22 @@ class ToolInterface:
                     # Handle tool objects directly
                     self.tool_manager.register_tool(tool)
 
-                elif callable(tool) and getattr(tool, '_is_tool', False):
+                elif callable(tool) and getattr(tool, "_is_tool", False):
                     # Handle @tool decorated functions
-                    metadata = getattr(tool, '_tool_metadata', None)
+                    metadata = getattr(tool, "_tool_metadata", None)
                     if metadata:
                         tool_def = ToolDefinition(
-                            name=metadata['name'],
-                            description=metadata['description'],
-                            input_schema=metadata['schema'],
-                            function=metadata['function'],
-                            routing_meta=dict(metadata.get('routing_meta') or {}),
-                            required_permissions=set(metadata.get('required_permissions') or ()),
+                            name=metadata["name"],
+                            description=metadata["description"],
+                            input_schema=metadata["schema"],
+                            function=metadata["function"],
+                            routing_meta=dict(metadata.get("routing_meta") or {}),
+                            required_permissions=set(metadata.get("required_permissions") or ()),
                         )
                         self.tool_manager.register_tool(tool_def)
                         self.logger.info(f"Registered @tool function: {metadata['name']}")
                     else:
-                        self.logger.warning(
-                            f"@tool decorated function missing metadata: {tool}"
-                        )
+                        self.logger.warning(f"@tool decorated function missing metadata: {tool}")
 
                 else:
                     self.logger.warning(f"Unknown tool type: {type(tool)}")
@@ -126,10 +123,7 @@ class ToolInterface:
         """
         if getattr(self, "_pageindex_toolkit", None) is not None:
             return True
-        return any(
-            name.startswith("pageindex")
-            for name in self.tool_manager.list_tools()
-        )
+        return any(name.startswith("pageindex") for name in self.tool_manager.list_tools())
 
     @property
     def has_graphindex_tools(self) -> bool:
@@ -137,8 +131,7 @@ class ToolInterface:
         if getattr(self, "_graphindex_toolkit", None) is not None:
             return True
         return any(
-            name.startswith("graphindex") or name.startswith("graph_")
-            for name in self.tool_manager.list_tools()
+            name.startswith("graphindex") or name.startswith("graph_") for name in self.tool_manager.list_tools()
         )
 
     @property
@@ -161,10 +154,7 @@ class ToolInterface:
         """
         if getattr(self, "_llmwiki_toolkit", None) is not None:
             return True
-        return any(
-            name.startswith("wiki_")
-            for name in self.tool_manager.list_tools()
-        )
+        return any(name.startswith("wiki_") for name in self.tool_manager.list_tools())
 
     @property
     def has_knowledge_index(self) -> bool:
@@ -206,9 +196,7 @@ class ToolInterface:
             llm.tool_manager = self.tool_manager
             llm.enable_tools = True
         except Exception as e:
-            self.logger.error(
-                f"Error assigning tool_manager to LLM: {e}"
-            )
+            self.logger.error(f"Error assigning tool_manager to LLM: {e}")
 
     def _use_tools(
         self,
@@ -223,22 +211,31 @@ class ToolInterface:
             return False
 
         # For agentic mode, always use tools if available
-        if self.operation_mode == 'agentic':
+        if self.operation_mode == "agentic":
             return True
 
         # For conversational mode, never use tools
-        if self.operation_mode == 'conversational':
+        if self.operation_mode == "conversational":
             return False
 
         # For adaptive mode, use heuristics
-        if self.operation_mode == 'adaptive':
+        if self.operation_mode == "adaptive":
             if self.has_tools():
                 return True
             # Simple heuristics based on question content
             conversational_indicators = [
-                'how are you', 'what\'s up', 'thanks', 'thank you',
-                'hello', 'hi', 'hey', 'bye', 'goodbye',
-                'good morning', 'good evening', 'good night',
+                "how are you",
+                "what's up",
+                "thanks",
+                "thank you",
+                "hello",
+                "hi",
+                "hey",
+                "bye",
+                "goodbye",
+                "good morning",
+                "good evening",
+                "good night",
             ]
             question_lower = question.lower()
             return not any(keyword in question_lower for keyword in conversational_indicators)
@@ -252,50 +249,50 @@ class ToolInterface:
             tool = self.get_tool(tool_name)
             if tool:
                 tool_details[tool_name] = {
-                    'description': getattr(tool, 'description', 'No description'),
-                    'category': getattr(tool, 'category', 'general'),
-                    'type': type(tool).__name__
+                    "description": getattr(tool, "description", "No description"),
+                    "category": getattr(tool, "category", "general"),
+                    "type": type(tool).__name__,
                 }
 
         return {
-            'tools_enabled': self.enable_tools,
-            'operation_mode': self.operation_mode,
-            'tools_count': self.get_tools_count(),
-            'available_tools': self.get_available_tools(),
-            'tool_details': tool_details,
-            'categories': self.list_tool_categories(),
-            'has_tools': self.has_tools(),
-            'is_agent_mode': self.is_agent_mode(),
-            'is_conversational_mode': self.is_conversational_mode(),
-            'effective_mode': self.get_operation_mode(),
-            'tool_threshold': self.tool_threshold,
-            'has_pageindex_tools': self.has_pageindex_tools,
-            'has_graphindex_tools': self.has_graphindex_tools,
+            "tools_enabled": self.enable_tools,
+            "operation_mode": self.operation_mode,
+            "tools_count": self.get_tools_count(),
+            "available_tools": self.get_available_tools(),
+            "tool_details": tool_details,
+            "categories": self.list_tool_categories(),
+            "has_tools": self.has_tools(),
+            "is_agent_mode": self.is_agent_mode(),
+            "is_conversational_mode": self.is_conversational_mode(),
+            "effective_mode": self.get_operation_mode(),
+            "tool_threshold": self.tool_threshold,
+            "has_pageindex_tools": self.has_pageindex_tools,
+            "has_graphindex_tools": self.has_graphindex_tools,
         }
 
     def validate_tools(self) -> Dict[str, Any]:
         """Validate all registered tools."""
         validation_results = {
-            'valid_tools': [],
-            'invalid_tools': [],
-            'total_count': self.get_tools_count(),
-            'validation_errors': []
+            "valid_tools": [],
+            "invalid_tools": [],
+            "total_count": self.get_tools_count(),
+            "validation_errors": [],
         }
 
         for tool_name in self.get_available_tools():
             try:
                 tool = self.get_tool(tool_name)
-                if tool and hasattr(tool, 'validate'):
+                if tool and hasattr(tool, "validate"):
                     if tool.validate():
-                        validation_results['valid_tools'].append(tool_name)
+                        validation_results["valid_tools"].append(tool_name)
                     else:
-                        validation_results['invalid_tools'].append(tool_name)
+                        validation_results["invalid_tools"].append(tool_name)
                 else:
                     # Assume valid if no validation method
-                    validation_results['valid_tools'].append(tool_name)
+                    validation_results["valid_tools"].append(tool_name)
             except Exception as e:
-                validation_results['invalid_tools'].append(tool_name)
-                validation_results['validation_errors'].append(f"{tool_name}: {str(e)}")
+                validation_results["invalid_tools"].append(tool_name)
+                validation_results["validation_errors"].append(f"{tool_name}: {str(e)}")
 
         return validation_results
 
@@ -313,38 +310,23 @@ class ToolInterface:
         we only need to register once. The tool will be immediately available to both.
         """
         self.tool_manager.register_tool(
-            tool=tool,
-            name=name,
-            description=description,
-            input_schema=input_schema,
-            function=function
+            tool=tool, name=name, description=description, input_schema=input_schema, function=function
         )
 
-    def configure_llm(
-        self,
-        llm: Union[str, Callable] = None,
-        **kwargs
-    ) -> AbstractClient:
+    def configure_llm(self, llm: Union[str, Callable] = None, **kwargs) -> AbstractClient:
         """
         Configuration of LLM at runtime (during conversation/ask methods)
         """
         config = self._resolve_llm_config(llm, **kwargs)
         llm = self._create_llm_client(config, self.conversation_memory)
         try:
-            if self.tool_manager and hasattr(llm, 'tool_manager'):
+            if self.tool_manager and hasattr(llm, "tool_manager"):
                 self.sync_tools(llm)
         except Exception as e:
-            self.logger.error(
-                f"Error registering tools: {e}"
-            )
+            self.logger.error(f"Error registering tools: {e}")
         return llm
 
-    def llm_chain(
-        self,
-        llm: str = "vertexai",
-        model: str = None,
-        **kwargs
-    ) -> AbstractClient:
+    def llm_chain(self, llm: str = "vertexai", model: str = None, **kwargs) -> AbstractClient:
         """llm_chain.
 
         Args:
@@ -357,8 +339,6 @@ class ToolInterface:
         try:
             if cls := SUPPORTED_CLIENTS.get(llm.lower(), None):
                 return cls(model=model, **kwargs)
-            raise ValueError(
-                f"Unsupported LLM: {llm}"
-            )
+            raise ValueError(f"Unsupported LLM: {llm}")
         except Exception:
             raise
