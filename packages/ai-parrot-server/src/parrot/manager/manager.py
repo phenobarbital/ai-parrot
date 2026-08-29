@@ -32,6 +32,7 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
+from ..handlers.a2ui import A2UIHandler
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
 from ..handlers.agents.data import DataAnalystHandler
@@ -1932,6 +1933,14 @@ class BotManager:
         # Talk with agents:
         router.add_view("/api/v1/agents/chat/{agent_id}", AgentTalk)
         router.add_view("/api/v1/agents/chat/{agent_id}/{method_name}", AgentTalk)
+        # A2UI Agent Functions runtime (FEAT-469 TASK-2573, spec §3 Module 6, G6) —
+        # a DEDICATED endpoint for renderer->agent envelopes, deliberately NOT
+        # routed through the AgentTalk POST above (spec §8). The literal
+        # "/capabilities" sub-route is registered first so aiohttp resolves it
+        # before matching it as part of the bare "{agent_id}/a2ui" pattern,
+        # mirroring the knowledge-router precedent below.
+        router.add_view("/api/v1/agents/{agent_id}/a2ui/capabilities", A2UIHandler)
+        router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask
