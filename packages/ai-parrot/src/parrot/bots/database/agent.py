@@ -13,6 +13,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
 from ...models import AIMessage, CompletionUsage
 from ...models.outputs import OutputMode, StructuredOutputConfig
+from ...outputs.a2ui.artifacts import attach_structured_artifact
 from ...stores.abstract import AbstractStore
 from ..agent import BasicAgent
 from ..prompts.builder import PromptBuilder
@@ -617,6 +618,12 @@ class DatabaseAgent(BasicAgent):
                 # StructuredTableRenderer will consume them deterministically.
                 # We signal the mode so the formatter dispatches correctly.
                 response.output_mode = OutputMode.STRUCTURED_TABLE
+                # FEAT-473 (G5): mint the artifacts[] entry here too, closing
+                # the FEAT-224 gap (DatabaseAgent never minted one). No-op
+                # (via the helper's own dict/envelope checks) until the
+                # formatter's StructuredTableRenderer pass has populated
+                # response.output/response.a2ui_envelope for this response.
+                attach_structured_artifact(response, OutputMode.STRUCTURED_TABLE)
             else:
                 # Default: signal to the HTTP layer that this AIMessage carries a
                 # structured QueryResponse the frontend should render as a SQL

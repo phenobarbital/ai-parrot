@@ -29,6 +29,7 @@ from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
+from ..outputs.a2ui.artifacts import attach_structured_artifact
 from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
@@ -2091,43 +2092,20 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                             data_response.explanation
                         )
 
-                # FEAT-224 (G1): Build the canonical artifacts[] envelope for the
-                # three structured output modes.  A typed artifact entry is appended to
-                # response.artifacts and response.artifact_id is set to the minted id.
-                # response.output is kept as a deprecated mirror (G6) so existing
-                # consumers keep working during the migration window.
-                _STRUCTURED_ARTIFACT_TYPE = {
-                    OutputMode.STRUCTURED_CHART: "chart",
-                    OutputMode.STRUCTURED_MAP:   "map",
-                    OutputMode.STRUCTURED_TABLE: "table",
-                }
-                _art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
-                if _art_type and isinstance(content, dict) and content:
-                    # output_mode may arrive as a plain str (not an OutputMode
-                    # enum) — mirror the hasattr guard used in the log line below.
-                    _mode_str = (
-                        output_mode.value
-                        if hasattr(output_mode, "value")
-                        else output_mode
-                    )
-                    _art_id = f"{_mode_str}-{uuid.uuid4().hex[:8]}"
-                    # G2 safety net: the renderer already excludes rows, but strip
-                    # any stray `data` key defensively so the envelope definition
-                    # never carries rows (rows live in response.data only).
-                    # `datasets` (STRUCTURED_MAP per-layer GeoJSON payloads) is
-                    # also stripped to keep the stored artifact lean.
-                    _definition = {
-                        _k: _v for _k, _v in content.items()
-                        if _k not in ("data", "datasets")
-                    }
-                    response.artifacts.append({
-                        "type": _art_type,
-                        "artifactId": _art_id,
-                        "definition": _definition,   # camelCase config, data excluded
-                    })
-                    response.artifact_id = _art_id
+                # FEAT-224 (G1) / FEAT-473 (G5/G6): Build the canonical
+                # artifacts[] envelope for the three structured output modes,
+                # via the reusable core helper (also used by DatabaseAgent's
+                # STRUCTURED_TABLE path). With response.a2ui_envelope present
+                # (dual-emit, TASK-2563) mints a v2 entry
+                # ({type, artifactId, surfaceId, schemaVersion: 2, definition});
+                # without one, reproduces the exact FEAT-224 v1 shape
+                # (camelCase config dict, data/datasets stripped). Either way,
+                # response.output is kept as a deprecated mirror (G6) so
+                # existing consumers keep working during the migration window.
+                _art_id = attach_structured_artifact(response, output_mode)
+                if _art_id:
                     self.logger.info(
-                        "FEAT-224: structured artifact envelope minted — mode=%s artifact_id=%s",
+                        "FEAT-224/FEAT-473: structured artifact envelope minted — mode=%s artifact_id=%s",
                         output_mode.value if hasattr(output_mode, "value") else output_mode,
                         _art_id,
                     )
