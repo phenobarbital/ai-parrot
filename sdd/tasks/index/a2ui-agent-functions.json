@@ -15,7 +15,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Touches outputs/a2ui/models.py, shared with in-flight FEAT-473. Sequenced first and kept surgical to minimise the overlap window; everything downstream depends on the new field.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2567-wire-model-action-datamodel.md"
+      "completed_at": "2026-08-29T01:11:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2567-wire-model-action-datamodel.md"
     },
     {
       "id": "TASK-2568",
