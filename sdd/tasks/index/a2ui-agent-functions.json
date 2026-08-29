@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-29T00:00:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-29T03:00:04+00:00",
   "start_gate": "FEAT-470 a2ui-v1-dialect merged into dev (PR #1263) — VERIFIED SATISFIED 2026-08-29. Coordinate TASK-2567 with in-flight FEAT-473, which may also touch outputs/a2ui/models.py.",
   "tasks": [
     {
@@ -216,7 +216,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -226,8 +226,8 @@
       "parallelism_notes": "Last: documents what actually shipped, using the completion notes of 2570 (permission gap, concurrency) and 2576 (measured overhead).",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2577-docs-and-migration.md"
+      "completed_at": "2026-08-29T02:59:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2577-docs-and-migration.md"
     }
   ]
 }
