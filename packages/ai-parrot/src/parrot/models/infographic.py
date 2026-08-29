@@ -791,11 +791,29 @@ class TableBlock(BaseModel):
         - Legacy format: [{"key": "col1", "label": "Col 1"}, ...]
         - ColumnDef format: [{"header": "Col 1", "width": "200px"}, ...]
         - Dict rows: [{"col1": "val1"}, ...] → [["val1"], ...]
+        - Records under ``data`` with no ``columns``/``rows`` at all:
+          ``{"data": [{"month": "Dec", "mrr": 1.2}]}`` → ``columns`` from the
+          first record's keys, ``rows`` from its values. This is the shape a
+          model reaches for when handed a DataFrame; rejecting it burns agent
+          retries on a purely notational mismatch (same rationale as
+          ``ChartBlock._normalize_chart_data``).
         """
         if isinstance(values, BaseModel):
             return values
         if not isinstance(values, dict):
             return values
+
+        # Records under `data` (or `rows` without `columns`) → columns + rows.
+        if not values.get("columns"):
+            records = values.get("data")
+            if not isinstance(records, list):
+                records = values.get("rows")
+            if isinstance(records, list) and records and isinstance(records[0], dict):
+                keys = list(records[0].keys())
+                values["columns"] = keys
+                values["rows"] = [[row.get(k) for k in keys] for row in records]
+                values.pop("data", None)
+
         cols = values.get("columns", [])
         rows = values.get("rows", [])
         col_keys: List[str] = []

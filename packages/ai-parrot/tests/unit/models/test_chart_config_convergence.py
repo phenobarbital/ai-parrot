@@ -35,8 +35,9 @@ _storage_models = _load_storage_models()
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
-from parrot.models.infographic import ChartBlock, ChartDataSeries, ChartType
+from parrot.models.infographic import ChartBlock, ChartDataSeries, ChartType, TableBlock
 from parrot.models.outputs import StructuredChartConfig
 
 
@@ -206,6 +207,115 @@ class TestChartBlockFromConfig:
         )
         block = ChartBlock.from_chart_config(cfg)
         assert block.chart_type == ChartType.BAR
+
+
+class TestChartBlockNormalizesLLMShapes:
+    """``ChartBlock`` accepts the record-oriented shapes LLMs actually emit.
+
+    ``labels`` + ``series[].values`` is column-oriented; a model handed a
+    DataFrame reaches for row records instead. Rejecting that burned agent
+    retries on a purely notational mismatch (an LLM would send
+    ``chart.data=[{...}]`` or ``series[].data``, get "Field required" for
+    ``labels``/``series``, and often fail the whole render).
+    """
+
+    def test_records_under_data_become_labels_and_series(self):
+        block = ChartBlock.model_validate({
+            "type": "chart", "chart_type": "line", "title": "MRR trend",
+            "data": [
+                {"month": "Nov", "mrr": 1150804.33, "new_mrr": 48121.42},
+                {"month": "Dec", "mrr": 1204934.63, "new_mrr": 74855.18},
+            ],
+        })
+        assert block.labels == ["Nov", "Dec"]
+        assert {s.name for s in block.series} == {"mrr", "new_mrr"}
+        mrr = next(s for s in block.series if s.name == "mrr")
+        assert mrr.values == [1150804.33, 1204934.63]
+
+    def test_series_data_key_is_accepted_as_values(self):
+        block = ChartBlock.model_validate({
+            "type": "chart", "chart_type": "line", "labels": ["Nov", "Dec"],
+            "series": [{"name": "MRR", "data": [1150804.33, 1204934.63]}],
+        })
+        assert block.series[0].values == [1150804.33, 1204934.63]
+
+    def test_explicit_x_field_wins_over_first_key(self):
+        block = ChartBlock.model_validate({
+            "type": "chart", "chart_type": "bar", "x_field": "plan",
+            "data": [{"mrr": 1.0, "plan": "Team"}, {"mrr": 2.0, "plan": "Pro"}],
+        })
+        assert block.labels == ["Team", "Pro"]
+        assert [s.name for s in block.series] == ["mrr"]
+
+    def test_records_under_rows_are_also_accepted(self):
+        block = ChartBlock.model_validate({
+            "type": "chart", "chart_type": "bar",
+            "rows": [{"plan": "Team", "mrr": 1.0}],
+        })
+        assert block.labels == ["Team"]
+
+    def test_canonical_shape_is_untouched(self):
+        block = ChartBlock.model_validate({
+            "type": "chart", "chart_type": "pie", "labels": ["a", "b"],
+            "series": [{"name": "s", "values": [1, 2]}],
+        })
+        assert block.labels == ["a", "b"]
+        assert block.series[0].values == [1, 2]
+
+    def test_still_rejects_a_chart_with_no_data_at_all(self):
+        with pytest.raises(ValidationError):
+            ChartBlock.model_validate({"type": "chart", "chart_type": "line"})
+
+    def test_still_rejects_records_with_only_an_x_column(self):
+        with pytest.raises(ValidationError):
+            ChartBlock.model_validate({
+                "type": "chart", "chart_type": "line",
+                "data": [{"month": "Nov"}, {"month": "Dec"}],
+            })
+
+
+class TestTableBlockNormalizesLLMShapes:
+    """``TableBlock`` accepts records under ``data``, like ``ChartBlock`` does.
+
+    Same failure, same turn cost: a model handed a DataFrame writes
+    ``table.data=[{...}]`` and got "Field required" for ``columns``/``rows``.
+    """
+
+    def test_records_under_data_become_columns_and_rows(self):
+        block = TableBlock.model_validate({
+            "type": "table", "title": "Monthly detail",
+            "data": [
+                {"month": "Nov", "mrr": 1150804.33},
+                {"month": "Dec", "mrr": 1204934.63},
+            ],
+        })
+        assert block.columns == ["month", "mrr"]
+        assert block.rows == [["Nov", 1150804.33], ["Dec", 1204934.63]]
+
+    def test_dict_rows_without_columns_are_accepted(self):
+        block = TableBlock.model_validate({
+            "type": "table", "rows": [{"plan": "Team", "mrr": 1.0}],
+        })
+        assert block.columns == ["plan", "mrr"]
+        assert block.rows == [["Team", 1.0]]
+
+    def test_existing_dict_rows_with_columns_path_still_works(self):
+        block = TableBlock.model_validate({
+            "type": "table", "columns": ["month", "mrr"],
+            "rows": [{"month": "Dec", "mrr": 1.2}],
+        })
+        assert block.rows == [["Dec", 1.2]]
+
+    def test_canonical_shape_is_untouched(self):
+        block = TableBlock.model_validate({
+            "type": "table", "columns": ["a", "b"], "rows": [[1, 2]],
+        })
+        assert block.columns == ["a", "b"]
+        assert block.rows == [[1, 2]]
+
+    def test_still_rejects_a_table_with_no_data_at_all(self):
+        with pytest.raises(ValidationError):
+            TableBlock.model_validate({"type": "table", "title": "empty"})
 
 
 # ── Round-trip ────────────────────────────────────────────────────────────────

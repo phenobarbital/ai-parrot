@@ -82,6 +82,22 @@ def chart_template():
 
 
 @pytest.fixture
+def records_template():
+    """Register a test template with a chart slot followed by a table slot."""
+    t = InfographicTemplate(
+        name="_test_chart_then_table",
+        description="chart then table",
+        block_specs=[
+            BlockSpec(block_type=BlockType.CHART),
+            BlockSpec(block_type=BlockType.TABLE),
+        ],
+    )
+    infographic_registry.register(t)
+    yield t
+    # No unregister API — unique name guarantees test isolation.
+
+
+@pytest.fixture
 def toolkit(fake_artifact_store):
     """InfographicToolkit with a mock bot attached."""
     tk = InfographicToolkit(artifact_store=fake_artifact_store)
@@ -215,19 +231,50 @@ class TestValidation:
         """``infographic_validate_blocks`` reports it as data, never as a raise."""
         result = await toolkit.validate_blocks(
             template_name=chart_template.name,
+            # Records carrying only the x column: nothing to plot, and no
+            # normalization can rescue it (contrast the record shapes that
+            # ChartBlock._normalize_chart_data DOES accept).
             blocks=[
                 {
                     "type": "chart",
                     "chart_type": "line",
-                    "labels": ["Nov", "Dec"],
-                    # series items need `values`, not `data`.
-                    "series": [{"name": "MRR", "data": [1.0, 2.0]}],
+                    "data": [{"month": "Nov"}, {"month": "Dec"}],
                 }
             ],
         )
         assert result["ok"] is False
         assert result["code"] == "BLOCK_SCHEMA_INVALID"
-        assert result["detail"]["errors"][0]["field"] == "chart.series.0.values"
+        assert {err["field"] for err in result["detail"]["errors"]} == {
+            "chart.labels",
+            "chart.series",
+        }
+
+    @pytest.mark.asyncio
+    async def test_llm_record_shapes_are_accepted_end_to_end(self, toolkit, records_template):
+        """The chart/table shapes an LLM actually emits must validate.
+
+        A model handed a DataFrame writes row records, not ``labels``/``series``
+        or ``columns``/``rows``. Both blocks used to fail validation outright,
+        which cost the agent its render.
+        """
+        result = await toolkit.validate_blocks(
+            template_name=records_template.name,
+            blocks=[
+                {
+                    "type": "chart",
+                    "chart_type": "line",
+                    "data": [
+                        {"month": "Nov", "mrr": 1150804.33},
+                        {"month": "Dec", "mrr": 1204934.63},
+                    ],
+                },
+                {
+                    "type": "table",
+                    "data": [{"month": "Dec", "mrr": 1204934.63}],
+                },
+            ],
+        )
+        assert result == {"ok": True}
 
     @pytest.mark.asyncio
     async def test_data_var_missing(self, toolkit, hero_cards_template):

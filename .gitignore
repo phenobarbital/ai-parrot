@@ -27,6 +27,9 @@ examples/**/*.py
 # FEAT-438 OpenAI-compatible-client smoke scripts are documentation too —
 # credential-gated, run manually, meant to ship with the repo.
 !examples/clients/smoke/**/*.py
+# The A2UI dashboard walkthrough is documentation as well — it runs offline on
+# seeded data and doubles as a smoke test for the v1.0 wire (FEAT-470).
+!examples/agents/a2ui/**/*.py
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
