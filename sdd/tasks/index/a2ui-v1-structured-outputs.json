@@ -73,7 +73,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Shares no files with TASK-2564 (a2ui_renderers/) or TASK-2565 (bots/ + server handlers) — the three can run in parallel once their deps are done.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2563-satellite-route-envelope-hook.md"
+      "completed_at": "2026-08-29T01:03:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2563-satellite-route-envelope-hook.md"
     },
     {
       "id": "TASK-2564",
