@@ -53,7 +53,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Uses adapters.structured.root_component/SCHEMA_VERSION from TASK-2561.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2562-compat-shim-artifact-helper.md"
+      "completed_at": "2026-08-29T00:50:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2562-compat-shim-artifact-helper.md"
     },
     {
       "id": "TASK-2563",
