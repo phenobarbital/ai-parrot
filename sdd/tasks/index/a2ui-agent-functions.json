@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-29T00:00:00+02:00",
-  "completed_at": "2026-08-29T03:00:04+00:00",
+  "completed_at": "2026-08-29T11:31:33+00:00",
   "start_gate": "FEAT-470 a2ui-v1-dialect merged into dev (PR #1263) — VERIFIED SATISFIED 2026-08-29. Coordinate TASK-2567 with in-flight FEAT-473, which may also touch outputs/a2ui/models.py.",
   "tasks": [
     {
@@ -24,7 +24,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T01:11:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2567-wire-model-action-datamodel.md"
+      "file": "sdd/tasks/completed/TASK-2567-wire-model-action-datamodel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2568",
@@ -44,7 +45,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T01:18:20+00:00",
-      "file": "sdd/tasks/completed/TASK-2568-runtime-models-error-codes.md"
+      "file": "sdd/tasks/completed/TASK-2568-runtime-models-error-codes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2569",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T01:31:42+00:00",
-      "file": "sdd/tasks/completed/TASK-2569-runtime-dispatch.md"
+      "file": "sdd/tasks/completed/TASK-2569-runtime-dispatch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2570",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T01:40:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2570-runtime-adapters.md"
+      "file": "sdd/tasks/completed/TASK-2570-runtime-adapters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2571",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T01:50:08+00:00",
-      "file": "sdd/tasks/completed/TASK-2571-catalog-export-functions.md"
+      "file": "sdd/tasks/completed/TASK-2571-catalog-export-functions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2572",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T02:06:59+00:00",
-      "file": "sdd/tasks/completed/TASK-2572-a2a-agent-card-datapart.md"
+      "file": "sdd/tasks/completed/TASK-2572-a2a-agent-card-datapart.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2573",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T02:18:55+00:00",
-      "file": "sdd/tasks/completed/TASK-2573-http-a2ui-handler.md"
+      "file": "sdd/tasks/completed/TASK-2573-http-a2ui-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2574",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T02:29:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2574-deeplink-dispatch-and-mount.md"
+      "file": "sdd/tasks/completed/TASK-2574-deeplink-dispatch-and-mount.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2575",
@@ -184,7 +192,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T02:42:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2575-bot-surface-state-context.md"
+      "file": "sdd/tasks/completed/TASK-2575-bot-surface-state-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2576",
@@ -207,7 +216,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T02:55:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2576-e2e-conformance-tests.md"
+      "file": "sdd/tasks/completed/TASK-2576-e2e-conformance-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2577",
@@ -227,7 +237,8 @@
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
       "completed_at": "2026-08-29T02:59:54+00:00",
-      "file": "sdd/tasks/completed/TASK-2577-docs-and-migration.md"
+      "file": "sdd/tasks/completed/TASK-2577-docs-and-migration.md",
+      "verification": "verified"
     }
   ]
 }
