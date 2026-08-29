@@ -93,7 +93,7 @@
       "feature_id": "FEAT-469",
       "feature": "a2ui-agent-functions",
       "spec": "sdd/specs/a2ui-agent-functions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Needs the executor Protocol from 2569/2570 to derive function definitions. Fan-out point: 2572 and 2573 both branch from here.",
       "assigned_to": null,
       "started_at": "2026-08-29T01:06:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2571-catalog-export-functions.md"
+      "completed_at": "2026-08-29T01:50:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2571-catalog-export-functions.md"
     },
     {
       "id": "TASK-2572",
