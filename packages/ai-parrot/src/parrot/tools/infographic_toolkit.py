@@ -857,26 +857,37 @@ class InfographicToolkit(AbstractToolkit):
         real catalog component and routes chart/table rows through data-model
         bindings. The toolkit only owns the surface id and the failure policy.
 
+        The return value is the **A2UI v1.0 wire envelope** —
+        ``{"version": "v1.0", "createSurface": {...}}`` with camelCase aliases —
+        produced by :func:`parrot.outputs.a2ui.serialization.serialize`, the sole
+        owner of the ``version`` field (spec invariant G3). It is what
+        ``AIMessage.a2ui_envelope`` carries, so it can be handed straight to
+        :meth:`parrot.a2a.models.Artifact.from_a2ui_envelope` or an external
+        renderer without re-shaping.
+
         Args:
             response: The same ``InfographicResponse`` handed to the HTML renderer,
                 so the envelope and the HTML always describe identical content.
-            artifact_id: Persisted artifact id, used to derive the surface id.
+            artifact_id: Persisted artifact id. It is used verbatim as the surface
+                id — it already carries an ``infographic-`` prefix, so re-prefixing
+                it here would yield ``infographic-infographic-<hex>``.
             title: Optional explicit surface title, overriding the response's own.
 
         Returns:
-            The serialised envelope, or ``None`` when the build fails — the A2UI
-            lane is additive (spec G7), so a failure degrades to an HTML-only
+            The serialised v1.0 envelope, or ``None`` when the build fails — the
+            A2UI lane is additive (spec G7), so a failure degrades to an HTML-only
             result instead of breaking the render.
         """
         from parrot.outputs.a2ui.adapters import infographic_response_to_envelope
+        from parrot.outputs.a2ui.serialization import serialize
 
         try:
             envelope = infographic_response_to_envelope(
                 response,
-                surface_id=f"infographic-{artifact_id}",
+                surface_id=artifact_id,
                 title=title,
             )
-            return envelope.model_dump(mode="json")
+            return serialize(envelope)
         except Exception:
             self.logger.warning(
                 "A2UI envelope build failed for infographic %s; " "falling back to HTML-only result.",
@@ -919,12 +930,16 @@ class InfographicToolkit(AbstractToolkit):
             template_name: Template name, used as the title fallback.
 
         Returns:
-            The serialised envelope, or ``None`` when the build fails.
+            The serialised A2UI v1.0 wire envelope
+            (``{"version": "v1.0", "createSurface": {...}}``), or ``None`` when
+            the build fails.
         """
         from parrot.outputs.a2ui.builders import build_infographic, build_surface
+        from parrot.outputs.a2ui.serialization import serialize
 
         layout = getattr(descriptor, "layout", None)
-        surface_id = f"infographic-{artifact_id}"
+        # Used verbatim: the artifact id already carries the ``infographic-`` prefix.
+        surface_id = artifact_id
 
         try:
             if layout is None:
@@ -961,7 +976,7 @@ class InfographicToolkit(AbstractToolkit):
                     surface_id=surface_id,
                     data_model=payload or None,
                 )
-            return envelope.model_dump(mode="json")
+            return serialize(envelope)
         except Exception:
             self.logger.warning(
                 "A2UI envelope build failed for data-splice infographic %s; " "falling back to HTML-only result.",
@@ -1701,8 +1716,38 @@ class InfographicToolkit(AbstractToolkit):
             # Item-count check (for hero_cards, bullets, etc.)
             self._check_item_count(idx, spec, block_raw)
 
-            # Coerce dict → InfographicBlock via the discriminated union
-            block_model = InfographicResponse.model_validate({"blocks": [block_raw]}).blocks[0]
+            # Coerce dict → InfographicBlock via the discriminated union.
+            # A raw pydantic ValidationError here used to escape as a tool
+            # FAILURE, which defeats the point of `infographic_validate_blocks`
+            # (whose whole contract is to hand the LLM a structured, actionable
+            # {"ok": False, "code", "detail"} it can retry against). Wrong block
+            # fields are the single most common LLM mistake — "chart needs
+            # labels/series, you sent data" has to reach the model as data.
+            try:
+                block_model = InfographicResponse.model_validate({"blocks": [block_raw]}).blocks[0]
+            except PydanticValidationError as exc:
+                raise InfographicValidationError(
+                    "BLOCK_SCHEMA_INVALID",
+                    {
+                        "position": idx,
+                        "block_type": spec.block_type.value,
+                        "errors": [
+                            {
+                                # Drop the "blocks.0.<type>." prefix — it is an
+                                # artefact of validating through the union.
+                                "field": ".".join(str(p) for p in err["loc"][2:]) or ".".join(
+                                    str(p) for p in err["loc"]
+                                ),
+                                "problem": err["msg"],
+                            }
+                            for err in exc.errors()
+                        ],
+                        "hint": (
+                            "Prefer `infographic_build_block`, which builds chart/table "
+                            "blocks from a DataFrame and cannot get the field names wrong."
+                        ),
+                    },
+                ) from exc
             coerced.append(block_model)
 
         return coerced

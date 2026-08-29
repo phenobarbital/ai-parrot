@@ -29,6 +29,7 @@ from .mixins.intent_router import IntentRouterMixin
 from ..registry.capabilities.models import IntentRouterConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
+from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273
 from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
@@ -1989,6 +1990,20 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     await self._inject_multi_data_from_variables(
                         response, infographic_envelope.data_variables,
                     )
+                    # FEAT-273/470: when the toolkit ran with emit_a2ui=True the
+                    # render carries a declarative surface — route it the way
+                    # ``BaseBot`` does instead of forcing OutputMode.INFOGRAPHIC,
+                    # which would drop the envelope on the floor.
+                    if getattr(infographic_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = infographic_envelope.a2ui_envelope
+                        response.artifact_id = infographic_envelope.artifact_id
+                        finalize_a2ui_response(response)
+                        self.logger.info(
+                            "InfographicRenderResult detected (A2UI) — bypassing formatter: "
+                            "artifact_id=%s",
+                            infographic_envelope.artifact_id,
+                        )
+                        return response
                     explanation = self._finalize_infographic_response(
                         response, infographic_envelope,
                     )
@@ -2006,6 +2021,16 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                     response.tool_calls
                 )
                 if interactive_envelope is not None:
+                    if getattr(interactive_envelope, "a2ui_envelope", None) is not None:
+                        response.a2ui_envelope = interactive_envelope.a2ui_envelope
+                        response.artifact_id = interactive_envelope.artifact_id
+                        finalize_a2ui_response(response)
+                        self.logger.info(
+                            "InteractiveRenderResult detected (A2UI) — bypassing formatter: "
+                            "artifact_id=%s",
+                            interactive_envelope.artifact_id,
+                        )
+                        return response
                     explanation = self._finalize_interactive_response(
                         response, interactive_envelope,
                     )
@@ -2017,6 +2042,19 @@ class PandasAgent(IntentRouterMixin, BasicAgent):
                         len(explanation or ""),
                     )
                     return response   # skip formatter + structured reformat
+
+                # A2UI was requested but nothing rendered a surface this turn
+                # (toolkit not registered, or the LLM answered in prose). There
+                # is no A2UI renderer to dispatch to — the mode is a request-side
+                # signal handled by the render tools — so degrade to DEFAULT
+                # rather than let the formatter raise "No renderer registered".
+                if output_mode == OutputMode.A2UI:
+                    self.logger.warning(
+                        "output_mode=a2ui requested but no A2UI surface was produced; "
+                        "falling back to plain response."
+                    )
+                    output_mode = OutputMode.DEFAULT
+                    response.output_mode = OutputMode.DEFAULT
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:

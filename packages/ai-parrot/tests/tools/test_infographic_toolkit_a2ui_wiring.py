@@ -62,6 +62,19 @@ def _response() -> InfographicResponse:
     )
 
 
+def _surface(envelope: dict) -> dict:
+    """Unwrap the A2UI v1.0 envelope-by-key and return the inner surface.
+
+    ``_build_a2ui_envelope*`` returns the wire envelope
+    (``{"version": "v1.0", "createSurface": {...}}``, camelCase aliases) — the
+    same shape ``AIMessage.a2ui_envelope`` carries and
+    ``Artifact.from_a2ui_envelope`` accepts — not a bare ``model_dump()``.
+    """
+    assert set(envelope) == {"version", "createSurface"}
+    assert envelope["version"] == "v1.0"
+    return envelope["createSurface"]
+
+
 def _infographic(envelope: dict) -> dict:
     """Return the root ``Infographic`` component's dict — A2UI v1.0 (FEAT-470):
     catalog props live top-level on the ``Component``, not nested under a
@@ -69,7 +82,7 @@ def _infographic(envelope: dict) -> dict:
     OWN nested ``sections[].components[]`` descriptors, which are not wire
     ``Component`` objects).
     """
-    components = envelope["components"]
+    components = _surface(envelope)["components"]
     assert len(components) == 1
     assert components[0]["component"] == "Infographic"
     return components[0]
@@ -93,12 +106,14 @@ class TestEnvelopeCarriesRealComponents:
         assert props["theme"] == "ocean"
 
     def test_surface_id_derives_from_the_artifact_id(self, toolkit):
-        envelope = toolkit._build_a2ui_envelope(_response(), "art-42")
-        assert envelope["surface_id"] == "infographic-art-42"
+        envelope = toolkit._build_a2ui_envelope(_response(), "infographic-art-42")
+        # The artifact id IS the surface id — it already carries the prefix, so
+        # re-prefixing would yield "infographic-infographic-art-42".
+        assert _surface(envelope)["surfaceId"] == "infographic-art-42"
 
     def test_chart_and_table_rows_reach_the_data_model(self, toolkit):
         envelope = toolkit._build_a2ui_envelope(_response(), "art-1")
-        data_model = envelope["data_model"]
+        data_model = _surface(envelope)["dataModel"]
         assert data_model["charts"]["chart-0"] == [{"label": "Jan", "2026": 10}]
         assert data_model["tables"]["table-0"] == [{"Region": "North", "Total": 10}]
 
@@ -110,7 +125,55 @@ class TestEnvelopeCarriesRealComponents:
         # The pre-adapter implementation shipped data_model={"blocks": [...]}
         # with heading-only sections and zero components.
         envelope = toolkit._build_a2ui_envelope(_response(), "art-1")
-        assert "blocks" not in (envelope.get("data_model") or {})
+        assert "blocks" not in (_surface(envelope).get("dataModel") or {})
+
+
+class TestEnvelopeIsTheV1Wire:
+    """The carried envelope must be the wire, not a bare ``model_dump()``.
+
+    It previously shipped snake_case field names and no ``version`` wrapper, so
+    ``Artifact.from_a2ui_envelope`` rejected it outright and any agent putting an
+    infographic surface on A2A was broken.
+    """
+
+    def test_envelope_is_wrapped_by_key_with_a_version(self, toolkit):
+        envelope = toolkit._build_a2ui_envelope(_response(), "infographic-art-1")
+        assert set(envelope) == {"version", "createSurface"}
+        assert envelope["version"] == "v1.0"
+
+    def test_envelope_uses_camelcase_wire_aliases(self, toolkit):
+        surface = _surface(toolkit._build_a2ui_envelope(_response(), "infographic-art-1"))
+        assert "surfaceId" in surface and "surface_id" not in surface
+        assert "catalogId" in surface and "catalog_id" not in surface
+        assert "dataModel" in surface and "data_model" not in surface
+
+    def test_envelope_is_accepted_over_a2a(self, toolkit):
+        from parrot.a2a.models import Artifact
+
+        envelope = toolkit._build_a2ui_envelope(_response(), "infographic-art-1")
+        artifact = Artifact.from_a2ui_envelope(envelope)
+        assert artifact.parts[0].data == envelope
+
+    def test_data_splice_lane_is_the_wire_too(self, toolkit):
+        envelope = toolkit._build_a2ui_envelope_from_layout(
+            None, {"a": 1}, "infographic-art-2", title="T", template_name="dash"
+        )
+        assert set(envelope) == {"version", "createSurface"}
+        assert _surface(envelope)["surfaceId"] == "infographic-art-2"
+
+
+class TestSurfaceIdIsNotDoubled:
+    """The artifact id already carries its ``infographic-`` prefix.
+
+    ``f"infographic-{artifact_id}"`` produced ``infographic-infographic-<hex>``
+    for every real render (ids are minted as ``f"infographic-{uuid4().hex[:12]}"``).
+    """
+
+    def test_real_artifact_id_is_used_verbatim(self, toolkit):
+        artifact_id = "infographic-8a6354dbb959"
+        surface = _surface(toolkit._build_a2ui_envelope(_response(), artifact_id))
+        assert surface["surfaceId"] == artifact_id
+        assert not surface["surfaceId"].startswith("infographic-infographic-")
 
 
 class TestFailureIsAdditive:
@@ -182,14 +245,14 @@ class TestDataSpliceLane:
             }
         )
         envelope = toolkit._build_a2ui_envelope_from_layout(
-            descriptor, {"rows": [{"region": "North"}]}, "art-5", template_name="dash"
+            descriptor, {"rows": [{"region": "North"}]}, "infographic-art-5", template_name="dash"
         )
         props = _infographic(envelope)
         assert props["title"] == "Budget Variance"
         table = props["sections"][0]["components"][0]
         assert table["properties"]["data"] == {"path": "/rows"}
-        assert envelope["data_model"] == {"rows": [{"region": "North"}]}
-        assert envelope["surface_id"] == "infographic-art-5"
+        assert _surface(envelope)["dataModel"] == {"rows": [{"region": "North"}]}
+        assert _surface(envelope)["surfaceId"] == "infographic-art-5"
 
     def test_non_infographic_layout_dispatches_to_build_surface(self, toolkit):
         descriptor = self._descriptor(
@@ -202,8 +265,8 @@ class TestDataSpliceLane:
         envelope = toolkit._build_a2ui_envelope_from_layout(
             descriptor, {"rows": [{"region": "N"}]}, "art-6", template_name="dash"
         )
-        assert envelope["components"][0]["component"] == "DataTable"
-        assert envelope["data_model"] == {"rows": [{"region": "N"}]}
+        assert _surface(envelope)["components"][0]["component"] == "DataTable"
+        assert _surface(envelope)["dataModel"] == {"rows": [{"region": "N"}]}
 
     def test_without_a_layout_it_falls_back_to_the_minimal_surface(self, toolkit):
         envelope = toolkit._build_a2ui_envelope_from_layout(
@@ -220,7 +283,7 @@ class TestDataSpliceLane:
 
     def test_empty_payload_yields_no_data_model(self, toolkit):
         envelope = toolkit._build_a2ui_envelope_from_layout(None, {}, "art-9", title="Empty", template_name="dash")
-        assert not envelope.get("data_model")
+        assert not _surface(envelope).get("dataModel")
 
     def test_invalid_layout_degrades_to_none(self, toolkit, caplog):
         descriptor = self._descriptor({"component": "NotAnA2UIComponent"})

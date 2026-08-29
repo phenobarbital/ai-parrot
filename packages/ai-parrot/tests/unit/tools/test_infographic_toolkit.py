@@ -69,6 +69,19 @@ def hero_cards_template():
 
 
 @pytest.fixture
+def chart_template():
+    """Register a test template whose single required slot is a chart."""
+    t = InfographicTemplate(
+        name="_test_one_chart",
+        description="one chart",
+        block_specs=[BlockSpec(block_type=BlockType.CHART)],
+    )
+    infographic_registry.register(t)
+    yield t
+    # No unregister API — unique name guarantees test isolation.
+
+
+@pytest.fixture
 def toolkit(fake_artifact_store):
     """InfographicToolkit with a mock bot attached."""
     tk = InfographicToolkit(artifact_store=fake_artifact_store)
@@ -166,6 +179,55 @@ class TestValidation:
                 data_variables=[],
             )
         assert ei.value.code == "EXTRA_BLOCKS"
+
+    @pytest.mark.asyncio
+    async def test_block_schema_invalid_is_structured_not_a_raw_pydantic_error(
+        self, toolkit, chart_template
+    ):
+        """A wrong block field must surface as an actionable validation error.
+
+        The pydantic ``ValidationError`` used to escape ``_validate_blocks``, so
+        ``infographic_validate_blocks`` failed the tool call outright instead of
+        returning the ``{"ok": False, "code", "detail"}`` its contract promises —
+        and the LLM had nothing structured to retry against. Wrong chart fields
+        (``data`` instead of ``labels``/``series``) are the most common miss.
+        """
+        with pytest.raises(InfographicValidationError) as ei:
+            await toolkit.render(
+                template_name=chart_template.name,
+                theme=None,
+                mode="deterministic",
+                blocks=[{"type": "chart", "chart_type": "line", "data": {"rows": []}}],
+                data_variables=[],
+            )
+        assert ei.value.code == "BLOCK_SCHEMA_INVALID"
+        detail = ei.value.detail
+        assert detail["position"] == 0
+        assert detail["block_type"] == "chart"
+        fields = {err["field"] for err in detail["errors"]}
+        assert fields == {"chart.labels", "chart.series"}
+        assert "infographic_build_block" in detail["hint"]
+
+    @pytest.mark.asyncio
+    async def test_validate_blocks_tool_returns_the_structured_error(
+        self, toolkit, chart_template
+    ):
+        """``infographic_validate_blocks`` reports it as data, never as a raise."""
+        result = await toolkit.validate_blocks(
+            template_name=chart_template.name,
+            blocks=[
+                {
+                    "type": "chart",
+                    "chart_type": "line",
+                    "labels": ["Nov", "Dec"],
+                    # series items need `values`, not `data`.
+                    "series": [{"name": "MRR", "data": [1.0, 2.0]}],
+                }
+            ],
+        )
+        assert result["ok"] is False
+        assert result["code"] == "BLOCK_SCHEMA_INVALID"
+        assert result["detail"]["errors"][0]["field"] == "chart.series.0.values"
 
     @pytest.mark.asyncio
     async def test_data_var_missing(self, toolkit, hero_cards_template):

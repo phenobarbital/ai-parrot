@@ -61,9 +61,9 @@ class TestToolkitsEmitV1Envelopes:
     ``build_infographic`` -> ``build_surface``), which already call
     ``validate_envelope`` at construction time — a non-``None`` result is
     itself proof the envelope validated. This test also re-validates
-    explicitly (reconstructing the ``CreateSurface`` from the dumped dict)
-    and asserts the v1.0 wire shape: top-level props (no legacy
-    ``properties`` nesting) and a component with ``id="root"``.
+    explicitly (reconstructing the ``CreateSurface`` from the wire dict)
+    and asserts the v1.0 wire shape: the envelope-by-key wrapper, top-level
+    props (no legacy ``properties`` nesting), and a component with ``id="root"``.
     """
 
     def _bare_instance(self, module_name: str, class_name: str):
@@ -74,6 +74,12 @@ class TestToolkitsEmitV1Envelopes:
         instance = cls.__new__(cls)
         instance.logger = logging.getLogger(f"test.{module_name}")
         return instance
+
+    def _surface(self, envelope: dict) -> dict:
+        """Assert the v1.0 envelope-by-key wrapper and return the inner surface."""
+        assert set(envelope) == {"version", "createSurface"}
+        assert envelope["version"] == "v1.0"
+        return envelope["createSurface"]
 
     def test_infographic_toolkit_envelope_validates_as_v1(self):
         from parrot.models.infographic import InfographicResponse
@@ -88,16 +94,20 @@ class TestToolkitsEmitV1Envelopes:
                 {"type": "hero_card", "label": "Revenue", "value": "$1.2M"},
             ],
         )
-        envelope = toolkit._build_a2ui_envelope(response, "art-v1")
+        envelope = toolkit._build_a2ui_envelope(response, "infographic-art-v1")
         assert envelope is not None
 
-        root = envelope["components"][0]
+        surface = self._surface(envelope)
+        # The artifact id is the surface id verbatim — never re-prefixed.
+        assert surface["surfaceId"] == "infographic-art-v1"
+
+        root = surface["components"][0]
         assert root["id"] == "root"
         assert "properties" not in root  # v1.0: props are top-level, not nested
         assert root["title"] == "Q1 Overview"
 
         # Re-validate explicitly against the catalog allowlist.
-        rebuilt = CreateSurface.model_validate(envelope)
+        rebuilt = CreateSurface.model_validate(surface)
         validate_envelope(rebuilt, origin=ProducerOrigin.LLM)
 
     def test_interactive_toolkit_envelope_validates_as_v1(self):
@@ -106,15 +116,45 @@ class TestToolkitsEmitV1Envelopes:
 
         toolkit = self._bare_instance("parrot.tools.interactive_toolkit", "InteractiveToolkit")
         envelope = toolkit._build_a2ui_envelope(
-            template_name="dashboard", artifact_id="art-v2", title="Dashboard", brief="A brief."
+            template_name="dashboard", artifact_id="interactive-art-v2", title="Dashboard", brief="A brief."
         )
         assert envelope is not None
 
-        root = envelope["components"][0]
+        surface = self._surface(envelope)
+        # The artifact id is the surface id verbatim — never re-prefixed.
+        assert surface["surfaceId"] == "interactive-art-v2"
+        assert not surface["surfaceId"].startswith("interactive-interactive-")
+
+        root = surface["components"][0]
         assert root["id"] == "root"
         assert root["component"] == "InfoCard"
         assert "properties" not in root  # v1.0: props are top-level, not nested
         assert root["title"] == "Dashboard"
 
-        rebuilt = CreateSurface.model_validate(envelope)
+        rebuilt = CreateSurface.model_validate(surface)
         validate_envelope(rebuilt, origin=ProducerOrigin.LLM)
+
+    def test_both_toolkits_emit_a2a_acceptable_envelopes(self):
+        """The wire shape is what ``Artifact.from_a2ui_envelope`` accepts.
+
+        A bare ``model_dump()`` was rejected with "Unrecognized A2UI envelope
+        keys", so every agent shipping one of these surfaces over A2A failed.
+        """
+        from parrot.a2a.models import Artifact
+        from parrot.models.infographic import InfographicResponse
+
+        infographic = self._bare_instance("parrot.tools.infographic_toolkit", "InfographicToolkit")
+        interactive = self._bare_instance("parrot.tools.interactive_toolkit", "InteractiveToolkit")
+
+        envelopes = [
+            infographic._build_a2ui_envelope(
+                InfographicResponse(template="q", blocks=[{"type": "title", "title": "T"}]),
+                "infographic-art-a2a",
+            ),
+            interactive._build_a2ui_envelope(
+                template_name="dashboard", artifact_id="interactive-art-a2a", title="D"
+            ),
+        ]
+        for envelope in envelopes:
+            artifact = Artifact.from_a2ui_envelope(envelope)
+            assert artifact.parts[0].data == envelope

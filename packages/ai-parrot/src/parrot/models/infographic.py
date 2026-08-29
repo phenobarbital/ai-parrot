@@ -562,6 +562,74 @@ class ChartBlock(BaseModel):
         """Validate CSS color value — silently drops invalid values."""
         return _validate_css_color(v)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_chart_data(cls, values: Any) -> Any:
+        """Normalize the record-oriented chart shapes LLMs actually emit.
+
+        ``labels`` + ``series[].values`` is a column-oriented representation, but
+        a model handed a DataFrame overwhelmingly reaches for row records instead
+        — the same shape ``StructuredChartConfig`` uses and
+        :meth:`from_chart_config` already knows how to translate. Rejecting it
+        burns retries on a purely notational mismatch, so accept it here (same
+        rationale, and the same ``model_validator(mode="before")`` mechanism, as
+        ``TableBlock._normalize_table_data``).
+
+        Handles:
+        - ``data``/``rows`` as records: ``[{"month": "Dec", "mrr": 1.2}, ...]``
+          → ``labels`` from the x column, one series per remaining numeric column.
+          The x column is ``x_field``/``x``/``label_column``/``labels`` when given,
+          else the record's first key.
+        - ``series: [{"name": ..., "data": [...]}]`` → ``values`` instead of ``data``.
+
+        Anything already carrying valid ``labels``/``series`` is left untouched.
+
+        Args:
+            values: Raw input passed to the model.
+
+        Returns:
+            The input, with chart data normalized in place when applicable.
+        """
+        if isinstance(values, BaseModel) or not isinstance(values, dict):
+            return values
+
+        # series[].data → series[].values
+        series = values.get("series")
+        if isinstance(series, list):
+            for item in series:
+                if isinstance(item, dict) and "values" not in item and isinstance(item.get("data"), list):
+                    item["values"] = item.pop("data")
+
+        if values.get("labels") is not None and values.get("series") is not None:
+            return values
+
+        records = values.get("data")
+        if not isinstance(records, list):
+            records = values.get("rows")
+        if not isinstance(records, list) or not records or not isinstance(records[0], dict):
+            return values
+
+        keys = list(records[0].keys())
+        x_key = next(
+            (
+                str(values[k])
+                for k in ("x_field", "x", "label_column", "labels")
+                if isinstance(values.get(k), str) and values[k] in keys
+            ),
+            keys[0],
+        )
+        y_keys = [k for k in keys if k != x_key]
+        if not y_keys:
+            return values
+
+        values["labels"] = [str(row.get(x_key, "")) for row in records]
+        values["series"] = [
+            {"name": col, "values": [row.get(col) for row in records]} for col in y_keys
+        ]
+        values.pop("data", None)
+        values.pop("rows", None)
+        return values
+
     def to_chart_config(self) -> Any:
         """Convert to the agnostic StructuredChartConfig shape.
 

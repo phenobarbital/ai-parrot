@@ -63,6 +63,34 @@ class TestA2UIRouting:
         finalize_a2ui_response(resp)
         assert resp.response == "Existing summary"
 
+    def test_fallback_text_reads_the_surface_id_out_of_the_v1_wire(self):
+        """The toolkits now carry the wire envelope, where surfaceId is nested.
+
+        Reading ``envelope["surfaceId"]`` off the wrapper always missed, so the
+        fallback degraded to a bare "[A2UI surface]" with no id.
+        """
+        resp = SimpleNamespace(
+            a2ui_envelope={
+                "version": "v1.0",
+                "createSurface": {"surfaceId": "infographic-abc123", "components": []},
+            },
+            output=None,
+            response=None,
+            output_mode=OutputMode.DEFAULT,
+        )
+        finalize_a2ui_response(resp)
+        assert resp.response == "[A2UI surface: infographic-abc123]"
+
+    def test_fallback_text_survives_an_envelope_with_no_id(self):
+        resp = SimpleNamespace(
+            a2ui_envelope={"version": "v1.0", "deleteSurface": {}},
+            output=None,
+            response=None,
+            output_mode=OutputMode.DEFAULT,
+        )
+        finalize_a2ui_response(resp)
+        assert resp.response == "[A2UI surface]"
+
 
 class TestFormatterBypass:
     def test_a2ui_never_calls_formatter(self):
