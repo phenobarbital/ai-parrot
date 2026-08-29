@@ -215,23 +215,44 @@ def table_to_surface(
 
     Args:
         cfg: The table configuration (rows/``data`` are ignored — passed
-            separately as ``rows``).
+            separately as ``rows``). If ``cfg.total_rows`` is set, it is
+            treated as the caller's own true pre-cap count (e.g. a
+            satellite renderer that already capped ``rows`` upstream via
+            its own ``row_limit`` before calling this adapter) and takes
+            precedence over ``len(rows)`` — see the "Known bug fixed"
+            note below.
         rows: The table's data rows, already canonicalised (JSON-ready).
+            May already be capped by the caller (in which case
+            ``cfg.total_rows``/``cfg.truncated`` must carry the true
+            values) or the full, uncapped set (in which case
+            ``cfg.total_rows`` is typically unset/``None`` and this
+            function computes truth from ``len(rows)`` itself).
         surface_id: The surface id to mint.
         row_limit: Maximum rows placed in the data model; overflow sets
-            ``truncated=True``/``totalRows=len(rows)`` (``response.data``
+            ``truncated=True``/``totalRows`` accordingly (``response.data``
             keeps the full set).
 
     Returns:
         A ``CreateSurface`` with root component ``id="root"``,
         ``component="DataTable"``, ``data={"path": "/rows"}``, and
         ``dataModel.rows`` (capped).
+
+    Note:
+        Bug fix (post-review): a caller that pre-caps ``rows`` to
+        ``row_limit`` before calling this adapter (e.g.
+        ``StructuredTableRenderer`` via ``canonical_records(row_limit=...)``)
+        would previously cause ``len(rows)`` to silently equal the CAPPED
+        count, so ``totalRows``/``truncated`` were always wrong (never
+        flagged as truncated). Preferring ``cfg.total_rows`` — the true
+        pre-cap count the renderer already computed — when present fixes
+        this without requiring every caller to pass the full, uncapped row
+        list.
     """
     props = config_to_component_props(cfg)
-    total = len(rows)
+    total = cfg.total_rows if cfg.total_rows is not None else len(rows)
     props["data"] = {"path": ROWS_PATH}
     props["totalRows"] = total
-    props["truncated"] = total > row_limit
+    props["truncated"] = bool(cfg.truncated) or total > row_limit
     data_model = {"rows": list(rows[:row_limit])}
     surface = build_surface(
         "DataTable", props, surface_id=surface_id, data_model=data_model, origin=ProducerOrigin.TOOL
@@ -252,19 +273,36 @@ def map_to_surface(
     Args:
         cfg: The map configuration (``data``/``datasets`` are ignored —
             per-layer features are passed separately as ``layer_features``,
-            ordered as ``cfg.layers``).
-        layer_features: One feature-dict list per ``cfg.layers`` entry
-            (never ``SpatialResult`` — D4 one-way import rule).
+            ordered as ``cfg.layers``). Each ``cfg.layers[i].total_count``,
+            when it exceeds ``len(layer_features[i])``, is treated as a more
+            authoritative true count (e.g. a prior spatial-query-level cap
+            distinct from this adapter's own ``row_limit``) and preserved —
+            see the "Known bug fixed" note below.
+        layer_features: One feature-dict list per ``cfg.layers`` entry,
+            ideally the FULL (uncapped) per-layer set so this function's own
+            ``row_limit`` can accurately detect overflow (never
+            ``SpatialResult`` — D4 one-way import rule).
         surface_id: The surface id to mint.
         row_limit: Maximum features placed in the data model PER LAYER;
-            overflow sets that layer's ``capped=True``/
-            ``totalCount=len(features)``.
+            overflow sets that layer's ``capped=True`` and bumps
+            ``totalCount`` to at least ``len(features)``.
 
     Returns:
         A ``CreateSurface`` with root component ``id="root"``,
         ``component="Map"``, each ``layers[i]`` binding
         ``data={"path": "/layers/{i}/features"}``, and
         ``dataModel.layers[i].features`` (capped).
+
+    Note:
+        Bug fix (post-review): a caller that pre-caps ``layer_features[i]``
+        to ``row_limit`` before calling this adapter would previously cause
+        ``len(features)`` to silently equal the CAPPED count, so
+        ``totalCount``/``capped`` were always wrong (never flagged as
+        capped). Taking ``max(cfg.layers[i].total_count, len(features))``
+        fixes this whether the caller pre-caps or hands the full set — a
+        real upstream ``total_count`` (e.g. from ``SpatialLayerResult``,
+        which may already reflect a prior, unrelated cap) is never
+        under-reported by this adapter's own capping.
     """
     props = config_to_component_props(cfg)
     layers_prop: list[dict[str, Any]] = props.get("layers", [])
@@ -272,11 +310,11 @@ def map_to_surface(
     data_model_layers: list[dict[str, Any]] = []
     for i, layer_prop in enumerate(layers_prop):
         features = layer_features[i] if i < len(layer_features) else []
-        total = len(features)
+        total = max(int(layer_prop.get("totalCount") or 0), len(features))
         layer_copy = dict(layer_prop)
         layer_copy["data"] = {"path": LAYER_FEATURES_PATH.format(i=i)}
         layer_copy["totalCount"] = total
-        layer_copy["capped"] = total > row_limit
+        layer_copy["capped"] = bool(layer_prop.get("capped")) or total > row_limit
         new_layers.append(layer_copy)
         data_model_layers.append({"features": list(features[:row_limit])})
     props["layers"] = new_layers

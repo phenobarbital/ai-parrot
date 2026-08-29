@@ -123,3 +123,30 @@ async def test_folium_legacy_single_layer_still_renders(monkeypatch):
     doc = art.content.decode()
     assert "40.4" in doc and "-3.7" in doc
     assert doc.count("L.marker") == 1
+
+
+async def test_folium_falls_back_to_default_zoom_when_viewport_zoom_is_null():
+    """Regression (post-review): a real STRUCTURED_MAP viewport (from
+    `_compute_viewport`, which only derives bbox/center) dumps an explicit
+    `"zoom": null` key rather than omitting it — `.get("zoom", 2)` does NOT
+    fall back in that case (the key is present, just None), so
+    `folium.Map(zoom_start=None)` would previously break the map's zoom.
+    """
+    env = CreateSurface(
+        surfaceId="main",
+        catalogId="https://parrot.dev/catalogs/v1",
+        components=[
+            Component(
+                id="root",
+                component="Map",
+                title="Stores",
+                layers=[{"layer": "stores", "data": {"path": "/layers/0/features"}}],
+                viewport={"center": [40.4, -3.7], "zoom": None},
+            )
+        ],
+        dataModel={"layers": [{"features": []}]},
+    )
+    art = await fm.FoliumMapRenderer().render(env)
+    doc = art.content.decode()
+    assert '"zoom": 2' in doc  # fell back to the default, not null/None
+    assert "40.4" in doc and "-3.7" in doc

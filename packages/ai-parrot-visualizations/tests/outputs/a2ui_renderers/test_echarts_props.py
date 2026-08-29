@@ -55,6 +55,10 @@ async def test_echarts_honours_new_props():
     # colorBySign
     assert option["visualMap"]["pieces"][0]["color"] == "#ff0000"
     assert option["visualMap"]["pieces"][1]["color"] == "#00ff00"
+    # Regression (post-review): series.data is a flat scalar array (not
+    # [x,y] pairs) — the visualMap must target dimension 0, not 1, or the
+    # sign-based coloring silently has no effect.
+    assert option["visualMap"]["dimension"] == 0
     # axis labels
     assert isinstance(option["xAxis"], list)  # splitSeries -> multi-grid
     assert all(ax["name"] == "Month" for ax in option["xAxis"])

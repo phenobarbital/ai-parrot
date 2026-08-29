@@ -94,6 +94,27 @@ def test_table_to_surface_empty_rows_still_builds():
     assert root.model_extra["truncated"] is False
 
 
+def test_table_to_surface_uses_cfg_total_rows_when_caller_precaps():
+    """Regression (post-review): real renderer pipeline pre-caps `rows` via
+    `canonical_records(row_limit=...)` before calling this adapter, but
+    stashes the TRUE total/truncated flag on `cfg.total_rows`/`cfg.truncated`.
+    Recomputing from `len(rows)` in that scenario always under-reports
+    (rows is already capped) — `totalRows`/`truncated` must reflect the
+    caller-supplied truth, not the local (already-capped) row count.
+    """
+    capped_rows = [{"label": f"row-{i}"} for i in range(1000)]
+    cfg = StructuredTableConfig(
+        columns=[{"name": "label", "type": "string", "title": "Label"}],
+        data=capped_rows,
+        total_rows=1500,
+        truncated=True,
+    )
+    surface = table_to_surface(cfg, capped_rows, surface_id="table-precapped", row_limit=1000)
+    root = surface.components[0]
+    assert root.model_extra["totalRows"] == 1500
+    assert root.model_extra["truncated"] is True
+
+
 def test_map_to_surface_layers_paths(map_cfg_two_layers):
     layer_features = [[{"x": 1}, {"x": 2}], [{"y": "a"}]]
     surface = map_to_surface(map_cfg_two_layers, layer_features, surface_id="map-1")
@@ -122,6 +143,31 @@ def test_map_to_surface_row_cap_sets_capped(rows_1500):
     assert layer["totalCount"] == 1500
     assert layer["capped"] is True
     assert len(surface.data_model["layers"][0]["features"]) == 1000
+
+
+def test_map_to_surface_preserves_true_total_when_caller_precaps():
+    """Regression (post-review): a caller that hands ALREADY-CAPPED
+    per-layer features (e.g. a satellite renderer capping to row_limit
+    before calling this adapter) must not silently under-report
+    totalCount/capped — `cfg.layers[i].total_count`/`capped` (e.g. from
+    `SpatialLayerResult`, which may reflect a prior, unrelated cap) takes
+    precedence over `len(features)` when it is the larger of the two.
+    """
+    capped_features = [{"name": f"f{i}"} for i in range(1000)]
+    cfg = StructuredMapConfig(
+        layers=[
+            {
+                "layer": "l1",
+                "columns": [{"name": "name", "type": "string", "title": "Name"}],
+                "totalCount": 1500,
+                "capped": True,
+            }
+        ]
+    )
+    surface = map_to_surface(cfg, [capped_features], surface_id="map-precapped", row_limit=1000)
+    layer = surface.components[0].model_extra["layers"][0]
+    assert layer["totalCount"] == 1500
+    assert layer["capped"] is True
 
 
 def test_build_map_validates_tool_origin():

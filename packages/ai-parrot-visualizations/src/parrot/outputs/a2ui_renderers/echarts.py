@@ -184,10 +184,15 @@ class EChartsRenderer(AbstractA2UIRenderer):
             option["color"] = list(palette)
 
         if props.get("colorBySign"):
+            # Bug fix (post-review): series.data here is a flat scalar array
+            # (e.g. [10, -5, 20]) built above, not [x, y] pairs — the value
+            # to colour by is dimension 0, not 1. `dimension: 1` targeted a
+            # nonexistent second dimension, so colorBySign silently had no
+            # effect (no error, just no coloring).
             option["visualMap"] = {
                 "type": "piecewise",
                 "show": False,
-                "dimension": 1,
+                "dimension": 0,
                 "pieces": [
                     {"max": 0, "color": props.get("negativeColor") or "#d62728"},
                     {"min": 0, "color": props.get("positiveColor") or "#2ca02c"},

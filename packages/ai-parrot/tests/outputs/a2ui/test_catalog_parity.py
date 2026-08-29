@@ -92,6 +92,41 @@ def test_llm_origin_accepts_path_binding():
     validate_envelope(_surface(comp), origin=ProducerOrigin.LLM)  # must not raise
 
 
+def test_llm_origin_rejects_inline_rows_on_map_layer():
+    """Regression (post-review): the top-level data/datasets check never
+    inspected Map's PER-LAYER `layers[i].data` binding, so an LLM-origin
+    envelope inlining rows there was never rejected.
+    """
+    comp = Component(
+        id="m1",
+        component="Map",
+        layers=[
+            {
+                "layer": "l1",
+                "columns": [{"name": "x", "type": "string", "title": "X"}],
+                "data": [{"x": 1}],
+            }
+        ],
+    )
+    with pytest.raises(CatalogValidationError):
+        validate_envelope(_surface(comp), origin=ProducerOrigin.LLM)
+
+
+def test_llm_origin_accepts_path_binding_on_map_layer():
+    comp = Component(
+        id="m1",
+        component="Map",
+        layers=[
+            {
+                "layer": "l1",
+                "columns": [{"name": "x", "type": "string", "title": "X"}],
+                "data": {"path": "/layers/0/features"},
+            }
+        ],
+    )
+    validate_envelope(_surface(comp), origin=ProducerOrigin.LLM)  # must not raise
+
+
 def test_tool_origin_allows_inline_rows():
     comp = Component(
         id="c1",

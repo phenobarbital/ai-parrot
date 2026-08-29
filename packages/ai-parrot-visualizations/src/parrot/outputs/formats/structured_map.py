@@ -361,20 +361,28 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                         layer_result.features,
                         row_limit=effective_row_limit,
                     )
-                    a2ui_layer_features = payload["rows"]
                 else:
                     payload = {
                         "type": "FeatureCollection",
                         "features": layer_result.features[:effective_row_limit],
                     }
-                    # FEAT-473: the a2ui data model always carries flat
-                    # feature-property dicts regardless of this layer's own
-                    # `data_shape` (which only governs the legacy `datasets`
-                    # GeoJSON/rows payload) — build it via the same helper.
-                    a2ui_layer_features = self._build_rows_payload(
-                        layer_result.features,
-                        row_limit=effective_row_limit,
-                    )["rows"]
+                # FEAT-473: the a2ui data model always carries flat
+                # feature-property dicts regardless of this layer's own
+                # `data_shape` (which only governs the legacy `datasets`
+                # GeoJSON/rows payload) — build it via the same helper.
+                #
+                # Bug fix (post-review): pass the FULL, uncapped feature list
+                # here (row_limit=len(...) is a no-op slice) so
+                # `map_to_surface`'s own row_limit does the capping and its
+                # `capped`/`totalCount` reflect the TRUE count. Pre-capping
+                # this list to `effective_row_limit` here (as before) made
+                # `len(features) > row_limit` inside the adapter always
+                # False — `capped` was always wrong, `totalCount` always
+                # under-reported on overflow.
+                a2ui_layer_features = self._build_rows_payload(
+                    layer_result.features,
+                    row_limit=len(layer_result.features),
+                )["rows"]
                 all_layer_features.append(a2ui_layer_features)
 
                 # Tooltip and label from profile hints

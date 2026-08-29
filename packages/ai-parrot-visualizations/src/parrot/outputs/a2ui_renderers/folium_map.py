@@ -113,7 +113,15 @@ class FoliumMapRenderer(AbstractA2UIRenderer):
         props = map_comp
         viewport = props.get("viewport") or {}
         center = viewport.get("center") or [0.0, 0.0]
-        zoom = viewport.get("zoom", 2)
+        # Bug fix (post-review): `viewport.get("zoom", 2)` only falls back
+        # to 2 when the "zoom" KEY is absent — a real STRUCTURED_MAP
+        # viewport (`_compute_viewport`, which only derives bbox/center,
+        # never zoom) dumps an explicit `"zoom": null` key, so `.get()`
+        # returned `None` and `folium.Map(zoom_start=None)` produced a map
+        # with a center but no usable zoom level.
+        zoom = viewport.get("zoom")
+        if zoom is None:
+            zoom = 2
 
         fmap = folium.Map(location=list(center), zoom_start=zoom)
 

@@ -517,6 +517,26 @@ def validate_envelope(
                             "path": comp.id,
                         }
                     )
+            # Bug fix (post-review): a Map's OWN top-level `data`/`datasets`
+            # is rarely used — the real per-component row binding for Map
+            # lives PER-LAYER at `layers[i].data` (spec §2, /layers/<i>/features).
+            # The top-level-only check above never inspected this nested
+            # binding, so an LLM-origin envelope inlining rows under
+            # `layers[i].data` was never rejected. Check it explicitly.
+            if comp.component == "Map":
+                for i, layer in enumerate(extra.get("layers") or []):
+                    if isinstance(layer, dict) and isinstance(layer.get("data"), list):
+                        issues.append(
+                            {
+                                "code": INLINE_DATA_NOT_ALLOWED_FOR_LLM,
+                                "message": (
+                                    f"LLM-produced envelopes may not inline 'data' rows on "
+                                    f"Map layer {i} (id={comp.id!r}); use a "
+                                    '{"path": "/pointer"} data-model binding instead.'
+                                ),
+                                "path": comp.id,
+                            }
+                        )
 
     by_id = {c.id: c for c in components}
     for comp in components:
