@@ -705,9 +705,7 @@ class FirefliesObsidianAgent(BasicAgent):
                                 participants=record.participants,
                                 duration_minutes=record.duration_minutes,
                                 fingerprint=(
-                                    classified.fingerprint
-                                    if classified.fingerprint is not None
-                                    else record.fingerprint
+                                    classified.fingerprint if classified.fingerprint is not None else record.fingerprint
                                 ),
                                 summary_fingerprint=(
                                     classified.summary_fingerprint
