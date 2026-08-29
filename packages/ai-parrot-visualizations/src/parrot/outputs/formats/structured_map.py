@@ -27,23 +27,22 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 
-from .chart import BaseChart
-from .structured_base import StructuredOutputBase
-from . import register_renderer
 from ...models.outputs import (
+    MapColumn,
+    MapLayer,
+    MapQuery,
+    MapViewport,
     OutputMode,
     StructuredMapConfig,
-    MapLayer,
-    MapColumn,
-    MapViewport,
-    MapQuery,
 )
 from ...outputs.formats.table_types import base_column_types
-
+from . import register_renderer
+from .chart import BaseChart
+from .structured_base import StructuredOutputBase
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ _NAMED_COLORS: frozenset[str] = frozenset(
 _HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 #: Keys the LLM may use to apply a single color to every layer.
-_DEFAULT_COLOR_KEYS: Tuple[str, ...] = ("default", "all", "*")
+_DEFAULT_COLOR_KEYS: tuple[str, ...] = ("default", "all", "*")
 
 #: Fenced block the LLM appends to its explanation to carry marker colors.
 #: Distinct tag (``mapcolors``) so it never collides with other code/JSON blocks.
@@ -210,9 +209,9 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
         response: Any,
         *,
         environment: str = "html",
-        row_limit: Optional[int] = None,
+        row_limit: int | None = None,
         **kwargs: Any,
-    ) -> Tuple[Any, Optional[Any]]:
+    ) -> tuple[Any, Any | None]:
         """Render a structured map configuration from the agent response.
 
         Pipeline:
@@ -244,7 +243,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             effective_row_limit = row_limit if row_limit is not None else 1000
 
             # Step 1: Capture explanation from the producing agent.
-            explanation: Optional[str] = getattr(response, "response", None) or None
+            explanation: str | None = getattr(response, "response", None) or None
 
             # Step 1b: Extract optional marker colors the LLM emitted in the same
             # generation call (piggyback — no extra LLM call). Strips the fenced
@@ -285,21 +284,28 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
             # Attempt to load profile registry (fail-open: renderer continues without profiles)
             try:
-                from ...tools.dataset_manager.spatial.registry import get_spatial_profile
+                from ...tools.dataset_manager.spatial.registry import (
+                    get_spatial_profile,
+                )
                 _profiles_available = True
             except ImportError:
                 _profiles_available = False
                 get_spatial_profile = None  # type: ignore[assignment]
 
             # Step 3: Build one MapLayer per dataset.
-            layers: List[MapLayer] = []
-            all_payloads: List[Dict] = []
+            layers: list[MapLayer] = []
+            all_payloads: list[dict] = []
+            # FEAT-473 (Module 4): per-layer feature-dict lists (row-shaped,
+            # `_geometry`-carrying), ordered as `layers`/`cfg.layers` — handed
+            # to `_route_envelope`'s a2ui dual-emit as `layer_features`
+            # (never `SpatialResult`, per the core adapter's D4 import rule).
+            all_layer_features: list[list[dict]] = []
 
             # Extract LLM format hints ONCE before the loop — _apply_llm_refine
             # parses response.code which does not change between layers.  Parsing
             # it per-layer (old behaviour) was wasteful and potentially inconsistent
             # when the same response object is reused across layers.
-            llm_hints: Dict[str, str] = self._extract_llm_hints(response)
+            llm_hints: dict[str, str] = self._extract_llm_hints(response)
 
             for dataset_name, layer_result in spatial_result.layers.items():
                 # Load profile for this dataset (fail-open: empty columns if absent)
@@ -316,7 +322,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                     data_shape = profile.default_data_shape
 
                 # Build columns from feature.properties
-                columns: List[MapColumn] = self._build_columns(
+                columns: list[MapColumn] = self._build_columns(
                     layer_result.features,
                     profile=profile,
                     row_limit=effective_row_limit,
@@ -331,15 +337,25 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
                         layer_result.features,
                         row_limit=effective_row_limit,
                     )
+                    a2ui_layer_features = payload["rows"]
                 else:
                     payload = {
                         "type": "FeatureCollection",
                         "features": layer_result.features[:effective_row_limit],
                     }
+                    # FEAT-473: the a2ui data model always carries flat
+                    # feature-property dicts regardless of this layer's own
+                    # `data_shape` (which only governs the legacy `datasets`
+                    # GeoJSON/rows payload) — build it via the same helper.
+                    a2ui_layer_features = self._build_rows_payload(
+                        layer_result.features,
+                        row_limit=effective_row_limit,
+                    )["rows"]
+                all_layer_features.append(a2ui_layer_features)
 
                 # Tooltip and label from profile hints
-                tooltip_template: Optional[str] = None
-                label_field: Optional[str] = None
+                tooltip_template: str | None = None
+                label_field: str | None = None
                 if profile is not None:
                     tooltip_template = (
                         profile.tooltip_template or profile.description_template or None
@@ -400,14 +416,18 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             # Step 8: Route envelope via shared base (data excluded; explanation wrapped).
             # cfg.data is [] by design so _route_envelope skips data routing; we
             # route the flat tabular rows explicitly below.
-            out, wrapped = self._route_envelope(response, cfg, explanation)
+            # FEAT-473: layer_features/row_limit drive the a2ui dual-emit's
+            # per-layer `/layers/<i>/features` binding (Module 4).
+            out, wrapped = self._route_envelope(
+                response, cfg, explanation, layer_features=all_layer_features, row_limit=effective_row_limit
+            )
             if spatial_result.layers:
                 response.data = self._build_tabular_rows(
                     spatial_result, row_limit=effective_row_limit,
                 )
             return out, wrapped
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             msg = f"Unexpected error in StructuredMapRenderer: {exc}"
             logger.exception(msg)
             return None, msg
@@ -416,11 +436,11 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     def _build_columns(
         self,
-        features: List[Dict],
+        features: list[dict],
         *,
         profile: Any,
         row_limit: int,
-    ) -> List[MapColumn]:
+    ) -> list[MapColumn]:
         """Build ``MapColumn`` list from feature properties.
 
         Args:
@@ -481,11 +501,11 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
         else:
             col_types = {}
 
-        columns: List[MapColumn] = []
+        columns: list[MapColumn] = []
         for col in prop_cols:
             # Profile may override title and format
             title = col
-            fmt: Optional[str] = None
+            fmt: str | None = None
             if profile is not None:
                 title = profile.column_titles.get(col, col)
                 fmt = profile.column_formats.get(col) or None
@@ -503,10 +523,10 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     @staticmethod
     def _build_rows_payload(
-        features: List[Dict],
+        features: list[dict],
         *,
         row_limit: int,
-    ) -> Dict:
+    ) -> dict:
         """Flatten GeoJSON features to a rows+columns+geometry-ref payload.
 
         Args:
@@ -540,7 +560,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
         spatial_result: Any,
         *,
         row_limit: int,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Flatten all layers' features into the tabular rows for ``response.data``.
 
         Each row carries the feature's ``properties`` plus the geometry it was
@@ -557,7 +577,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             Flat list of row dicts across all layers.
         """
         multi_layer = len(spatial_result.layers) > 1
-        rows: List[Dict] = []
+        rows: list[dict] = []
         for layer_result in spatial_result.layers.values():
             for feat in layer_result.features[:row_limit]:
                 row = dict(feat.get("properties") or {})
@@ -580,7 +600,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
     # ── Viewport computation ───────────────────────────────────────────────────
 
     @staticmethod
-    def _compute_viewport(spatial_result: Any) -> Optional[MapViewport]:
+    def _compute_viewport(spatial_result: Any) -> MapViewport | None:
         """Compute MapViewport (bbox + center) from all feature coordinates.
 
         Args:
@@ -590,8 +610,8 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
             A ``MapViewport`` with ``bbox`` and optional ``center``, or ``None``
             if no coordinates are found.
         """
-        lngs: List[float] = []
-        lats: List[float] = []
+        lngs: list[float] = []
+        lats: list[float] = []
 
         for layer_result in spatial_result.layers.values():
             for feat in layer_result.features:
@@ -649,7 +669,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
     # ── MapQuery extraction ────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_map_query(response: Any) -> Optional[MapQuery]:
+    def _extract_map_query(response: Any) -> MapQuery | None:
         """Extract MapQuery from the response's spatial filter spec (if present).
 
         Args:
@@ -675,12 +695,12 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
     # ── Marker color extraction (piggyback) ──────────────────────────────────────
 
     def _extract_marker_colors(
-        self, explanation: Optional[str]
-    ) -> Tuple[Dict[str, str], Optional[str]]:
+        self, explanation: str | None
+    ) -> tuple[dict[str, str], str | None]:
         """Extract LLM-supplied marker colors from the explanation text.
 
         The map system prompt instructs the LLM to append a single fenced
-        ``​```mapcolors {...}```​`` block to its explanation **only** when the
+        ``\u200b```mapcolors {...}```\u200b`` block to its explanation **only** when the
         user requested marker colors.  This rides on the same generation call —
         no extra LLM round-trip.  The block is parsed into a
         ``{layer_or_default: canonical_color}`` mapping and stripped from the
@@ -721,7 +741,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
         if not isinstance(raw, dict):
             return {}, cleaned
 
-        colors: Dict[str, str] = {}
+        colors: dict[str, str] = {}
         for key, value in raw.items():
             normalized = self._normalize_color(value)
             if normalized is not None:
@@ -735,7 +755,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
         return colors, cleaned
 
     @staticmethod
-    def _normalize_color(value: Any) -> Optional[str]:
+    def _normalize_color(value: Any) -> str | None:
         """Normalize a single color value to a canonical form, or None.
 
         Accepts a closed set of CSS color names (case-insensitive) or a 3-/6-digit
@@ -762,10 +782,10 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     @staticmethod
     def _resolve_layer_color(
-        colors: Dict[str, str],
+        colors: dict[str, str],
         dataset_name: str,
         layer_id: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Pick the color for one layer from the parsed color mapping.
 
         Resolution order: exact dataset name → layer id → a ``default``/``all``/``*``
@@ -792,7 +812,7 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     # ── LLM-refine pass ────────────────────────────────────────────────────────
 
-    def _extract_llm_hints(self, response: Any) -> Dict[str, str]:
+    def _extract_llm_hints(self, response: Any) -> dict[str, str]:
         """Extract column format hints from ``response.code`` (LLM refine pass).
 
         Parses the raw JSON emitted by the LLM (if any) into a
@@ -837,9 +857,9 @@ class StructuredMapRenderer(StructuredOutputBase, BaseChart):
 
     @staticmethod
     def _apply_hints_to_columns(
-        columns: List[MapColumn],
-        hints: Dict[str, str],
-    ) -> List[MapColumn]:
+        columns: list[MapColumn],
+        hints: dict[str, str],
+    ) -> list[MapColumn]:
         """Apply pre-parsed LLM format hints to a column list.
 
         The LLM may ONLY annotate columns whose base type is ``"string"`` or
