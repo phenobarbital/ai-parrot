@@ -141,10 +141,59 @@ def test_frontend_guide_examples_validate(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-08-29
+**Notes**: Ran the AC-13 gate first for a baseline (confirmed the pre-existing
+`SpatialResult` class-identity flakiness already existed before any of this
+task's changes, via `git stash`). Created the four E2E test files, but
+**renamed two** from the task's literal file table: `test_structured_table_e2e.py`
+and `test_structured_map_e2e.py` already existed (FEAT-218/FEAT-221 e2e
+suites) — a name collision in the task's own planning, caught only after an
+accidental `Write` overwrote 250 lines of the pre-existing table e2e suite
+(immediately reverted via `git checkout --`). Used
+`test_structured_table_e2e_a2ui.py` / `test_structured_map_e2e_a2ui.py`
+instead — both files carry an explicit NOTE docstring explaining the rename.
+`test_structured_chart_e2e.py` had no pre-existing collision, created as
+named.
 
-**Completed by**:
-**Date**:
-**Notes**:
+All four E2E tests exercise the REAL renderer + REAL adapter pipeline (no
+mocking of `_route_envelope` internals): chart → `EChartsRenderer`; table →
+`bake_envelope` row-count parity + `PDFRenderer`; map → multi-layer
+`FoliumMapRenderer` (2 `FeatureGroup`s). `test_frontend_guide_examples.py`
+extracts ` ```json a2ui-envelope ` fenced blocks (a new, deliberately
+distinct fence marker — most of the guide's pre-existing JSON examples are
+legacy v1 config-only snippets that were never meant to validate as full
+A2UI envelopes, so a naive "every ```json block" extractor would have been
+wrong) and validates each via the same two-layer conformance pattern
+(`validate_envelope` + lowered `validate_message`) established by
+`test_all_emitters.py`.
+
+Frontend guide: added §2.6 "Envelope A2UI v1.0 (FEAT-473 — dual-emit)" (what
+changed/didn't, v1→v2 `artifacts[]` diff, `is_legacy_artifact`/
+`artifact_definition_to_legacy` shim in Python + TS, `a2ui_envelope`
+consumption + dataModel shapes table) and Appendix B (three real, generated
+— not hand-written — validated envelope examples: chart/table/map). Updated
+the checklist (§10) and Appendix A anchors. Did NOT rewrite every existing
+§4-6 config-only example into a full envelope (would have meant hundreds of
+additional lines for marginal gain over Appendix B's dedicated, validated
+set) — flagging this as a scope decision, not an oversight.
+
+Created `docs/migration/feat-473-structured-a2ui.md` (v1→v2 diff, shim
+window 0.30→0.32, new renderer capabilities, G8 anti-hallucination guard).
+
+Checked off all 13 spec ACs, with explicit caveats inline on AC-6 (the
+DatabaseAgent timing observation from TASK-2565) and AC-13 (the pre-existing
+test-isolation artifact) rather than silently marking them clean.
+
+Regression (run at proper file/directory granularity, matching every
+prior task in this feature): `tests/outputs/a2ui` 498 passed/1 skipped;
+`tests/outputs/formats -k structured` 142 passed; `tests/bots -k "structured
+or artifact"` 57 passed; all 7 structured-relevant `tests/integration` files
+(including the 3 pre-existing ones) 33 passed. ruff clean on every new file.
+
+**Deviations from spec**: `test_structured_table_e2e.py`/
+`test_structured_map_e2e.py` renamed to `..._e2e_a2ui.py` (collision with
+pre-existing FEAT-218/221 files, see Notes above) — required, not optional,
+to avoid destroying existing test coverage.
 
 **Deviations from spec**: none
