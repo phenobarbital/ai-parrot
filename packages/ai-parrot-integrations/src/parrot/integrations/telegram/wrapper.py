@@ -1558,6 +1558,13 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
     async def _handle_deeplink_resume(self, message: Message, token: str) -> bool:
         """Consume an A2UI deep-link token and inject the action into the original session.
 
+        Telegram only ever resumes via a deep link (no Adaptive Cards submit path,
+        unlike Teams) — the structured message injected into the session is built by
+        ``parrot.integrations.a2ui_resume.build_structured_message``:
+        ``{"type": "a2ui_action", "action": <v1.0 action envelope>}`` (FEAT-470 G6),
+        the same tag/shape the Teams Adaptive Cards ``a2ui_action`` submit branch
+        expects (TASK-2545), so both ends of the pipe agree on one wire contract.
+
         Returns True if the deep link was handled (success or error), False if the
         caller should fall through to normal /start behavior.
         """

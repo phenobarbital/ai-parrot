@@ -5,9 +5,9 @@ import pytest
 pytest.importorskip("jsonpointer")
 pytest.importorskip("folium")
 
-from parrot.outputs.a2ui.models import Component, CreateSurface  # noqa: E402
-from parrot.outputs.a2ui.renderers import get_a2ui_renderer  # noqa: E402
-from parrot.outputs.a2ui_renderers import folium_map as fm  # noqa: E402
+from parrot.outputs.a2ui.models import Component, CreateSurface
+from parrot.outputs.a2ui.renderers import get_a2ui_renderer
+from parrot.outputs.a2ui_renderers import folium_map as fm
 
 pytestmark = pytest.mark.asyncio
 
@@ -18,14 +18,12 @@ def _map_envelope() -> CreateSurface:
         catalogId="https://parrot.dev/catalogs/v1",
         components=[
             Component(
-                id="b0",
+                id="root",
                 component="Map",
-                properties={
-                    "title": "Stores",
-                    "layers": [{"name": "stores"}],
-                    "viewport": {"center": [40.4, -3.7], "zoom": 6},
-                    "data": {"$bind": "/points"},
-                },
+                title="Stores",
+                layers=[{"name": "stores"}],
+                viewport={"center": [40.4, -3.7], "zoom": 6},
+                data={"path": "/points"},
             )
         ],
         dataModel={"points": [{"lat": 40.4, "lon": -3.7, "popup": "Madrid"}]},
@@ -69,7 +67,45 @@ class TestFoliumMapRenderer:
         env = CreateSurface(
             surfaceId="m",
             catalogId="https://parrot.dev/catalogs/v1",
-            components=[Component(id="b0", component="Card", properties={"title": "x"})],
+            components=[Component(id="root", component="InfoCard", title="x")],
         )
         with pytest.raises(ValueError):
             await fm.FoliumMapRenderer().render(env)
+
+
+class TestTASK2544:
+    """FEAT-470 TASK-2544: folium_map declares supported_components."""
+
+    async def test_folium_capabilities(self):
+        caps = fm.FoliumMapRenderer.capabilities
+        assert caps.supported_components == {"Map"}
+
+
+class TestSiblingDegradationRecorded:
+    """Post-review fix: non-Map siblings must not be silently dropped."""
+
+    def _multi_component_envelope(self) -> CreateSurface:
+        return CreateSurface(
+            surfaceId="main",
+            catalogId="https://parrot.dev/catalogs/v1",
+            components=[
+                Component(
+                    id="map-1",
+                    component="Map",
+                    title="Stores",
+                    layers=[{"name": "stores"}],
+                    viewport={"center": [40.4, -3.7], "zoom": 6},
+                    data=[{"lat": 40.4, "lon": -3.7, "popup": "Madrid"}],
+                ),
+                Component(id="note-1", component="Text", text="a sibling note"),
+            ],
+        )
+
+    async def test_sibling_recorded_in_degraded_metadata(self):
+        art = await fm.FoliumMapRenderer().render(self._multi_component_envelope())
+        degraded = art.metadata.get("degraded", [])
+        assert any(d["id"] == "note-1" and d["component"] == "Text" for d in degraded)
+
+    async def test_single_map_no_degradations(self):
+        art = await fm.FoliumMapRenderer().render(_map_envelope())
+        assert art.metadata.get("degraded", []) == []

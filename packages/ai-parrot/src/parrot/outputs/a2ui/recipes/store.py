@@ -21,6 +21,7 @@ Core-side, dependency-free (spec G8): Redis is optional and imported lazily;
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -28,6 +29,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 
 from parrot.outputs.a2ui.recipes.models import InfographicRecipe
 
@@ -40,20 +43,23 @@ except ImportError:  # pragma: no cover - exercised only when redis is absent
     Redis = None  # type: ignore[assignment,misc]
 
 __all__ = [
+    "SUPPORTED_SCHEMA_VERSION",
     "AbstractRecipeStore",
     "DBRecipeStore",
     "FileRecipeStore",
     "RecipeNotFoundError",
     "RecipeSchemaVersionError",
-    "SUPPORTED_SCHEMA_VERSION",
 ]
 
 logger = logging.getLogger(__name__)
 
-#: The only recipe `schema_version` this store generation understands. A
-#: stored recipe carrying any other value fails to load with explicit
-#: upgrade guidance rather than silently misinterpreting its shape.
-SUPPORTED_SCHEMA_VERSION = 1
+#: The current recipe `schema_version` this store generation writes (FEAT-470
+#: TASK-2542 — v2 `LayoutSpec`, top-level props, `{"path"}` bindings). Reads
+#: accept schema_version 1 too (auto-migrated in memory via
+#: `recipes.migrate.migrate_layout` — see `_load_and_migrate` below); a
+#: version outside `[1, SUPPORTED_SCHEMA_VERSION]` fails to load with
+#: explicit upgrade guidance rather than silently misinterpreting its shape.
+SUPPORTED_SCHEMA_VERSION = 2
 
 _VALID_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -69,20 +75,24 @@ class RecipeNotFoundError(LookupError):
     def __init__(self, name: str, available: list[str]) -> None:
         self.name = name
         self.available = available
-        super().__init__(
-            f"Recipe {name!r} not found; available recipes: {sorted(available)!r}"
-        )
+        super().__init__(f"Recipe {name!r} not found; available recipes: {sorted(available)!r}")
 
 
 class RecipeSchemaVersionError(ValueError):
-    """Raised when a stored recipe's `schema_version` is not supported."""
+    """Raised when a stored recipe's `schema_version` is outside the supported range.
+
+    A `schema_version` of 1 or `SUPPORTED_SCHEMA_VERSION` (2) both load fine
+    (1 is auto-migrated in memory on read, per FEAT-470 TASK-2542) — this
+    error is only for versions `< 1` or `> SUPPORTED_SCHEMA_VERSION`.
+    """
 
     def __init__(self, name: str, found_version: int) -> None:
         self.name = name
         self.found_version = found_version
         super().__init__(
             f"Recipe {name!r} has schema_version={found_version!r}, but this "
-            f"store only supports schema_version={SUPPORTED_SCHEMA_VERSION!r}. "
+            f"store only supports schema_version in [1, {SUPPORTED_SCHEMA_VERSION!r}] "
+            "(schema_version=1 is auto-migrated in memory on read). "
             "Migrate the recipe (or the store) before loading it."
         )
 
@@ -100,15 +110,55 @@ def _validate_name(value: str, *, kind: str = "recipe name") -> None:
             rejects path separators, ``..``, and absolute paths outright.
     """
     if not value or not _VALID_NAME_RE.match(value) or ".." in value:
-        raise ValueError(
-            f"Invalid {kind} {value!r}: only letters, digits, '.', '_', '-' are allowed."
-        )
+        raise ValueError(f"Invalid {kind} {value!r}: only letters, digits, '.', '_', '-' are allowed.")
 
 
 def _check_schema_version(recipe: InfographicRecipe) -> InfographicRecipe:
-    if recipe.schema_version != SUPPORTED_SCHEMA_VERSION:
+    """Bounds-check an already-parsed recipe's `schema_version` (1..SUPPORTED)."""
+    if recipe.schema_version < 1 or recipe.schema_version > SUPPORTED_SCHEMA_VERSION:
         raise RecipeSchemaVersionError(recipe.name, recipe.schema_version)
     return recipe
+
+
+def _load_and_migrate(raw: dict[str, Any], *, name_for_error: str) -> InfographicRecipe:
+    """Validate a raw recipe mapping, auto-migrating a v1 ``layout`` in memory.
+
+    Stores read a v1 recipe transparently (spec G5): the `layout` sub-dict is
+    promoted to v2 shape (top-level props, ``{"path"}`` bindings) BEFORE
+    Pydantic validation, so :class:`~parrot.outputs.a2ui.recipes.models.LayoutSpec`
+    (v2-shaped, ``extra="allow"``) never sees a stale nested ``properties``
+    key masquerading as an ordinary top-level prop. Nothing is written back
+    to the store here — persisting the upgrade is `save()`'s (or
+    `recipes.migrate.migrate_store`'s) job.
+
+    ``migrate_layout`` is imported LOCALLY (not at module level): this
+    module (`recipes/store.py`) is imported BY `recipes/migrate.py`
+    (`SUPPORTED_SCHEMA_VERSION`, `AbstractRecipeStore`) — a top-level import
+    here would be a circular import.
+
+    Args:
+        raw: The raw recipe mapping, as loaded from YAML/JSON.
+        name_for_error: Recipe name to use in a schema-version error if
+            ``raw`` itself carries no ``name`` key (defensive only).
+
+    Returns:
+        The parsed :class:`InfographicRecipe`, always at
+        ``SUPPORTED_SCHEMA_VERSION`` in memory.
+
+    Raises:
+        RecipeSchemaVersionError: If ``raw["schema_version"]`` (default 1) is
+            outside ``[1, SUPPORTED_SCHEMA_VERSION]``.
+    """
+    from parrot.outputs.a2ui.recipes.migrate import migrate_layout
+
+    version = int(raw.get("schema_version", 1))
+    if version < 1 or version > SUPPORTED_SCHEMA_VERSION:
+        raise RecipeSchemaVersionError(raw.get("name", name_for_error), version)
+    if version < SUPPORTED_SCHEMA_VERSION:
+        raw = dict(raw)
+        raw["layout"] = migrate_layout(raw["layout"], from_version=version)
+        raw["schema_version"] = SUPPORTED_SCHEMA_VERSION
+    return InfographicRecipe.model_validate(raw)
 
 
 def _summary(recipe: InfographicRecipe) -> dict[str, Any]:
@@ -161,6 +211,21 @@ class AbstractRecipeStore(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    async def _raw_schema_version(self, name: str, owner: Optional[str] = None) -> int:
+        """Return the ON-DISK ``schema_version`` for a recipe, without migrating it.
+
+        `get()` always returns an in-memory-migrated (current-schema)
+        recipe (FEAT-470 TASK-2542 G5), which would otherwise make every
+        recipe look "already current" to a caller that only has `get()` to
+        go on. `recipes.migrate.migrate_store` uses this to decide whether a
+        recipe actually needs re-saving.
+
+        Raises:
+            RecipeNotFoundError: If no such recipe exists.
+        """
+        raise NotImplementedError
+
 
 class FileRecipeStore(AbstractRecipeStore):
     """One YAML file per recipe under ``directory`` (hand-authoring backend).
@@ -201,8 +266,16 @@ class FileRecipeStore(AbstractRecipeStore):
         if not await asyncio.to_thread(path.exists):
             raise RecipeNotFoundError(name, await self._available_names(owner))
         text = await asyncio.to_thread(path.read_text, encoding="utf-8")
-        recipe = InfographicRecipe.from_yaml(text)
-        return _check_schema_version(recipe)
+        raw = yaml.safe_load(text)
+        return _load_and_migrate(raw, name_for_error=name)
+
+    async def _raw_schema_version(self, name: str, owner: Optional[str] = None) -> int:
+        path = self._path_for(name, owner)
+        if not await asyncio.to_thread(path.exists):
+            raise RecipeNotFoundError(name, await self._available_names(owner))
+        text = await asyncio.to_thread(path.read_text, encoding="utf-8")
+        raw = yaml.safe_load(text)
+        return int(raw.get("schema_version", 1))
 
     async def list(self, owner: Optional[str] = None) -> list[dict[str, Any]]:
         scope_dir = self._scope_dir(owner)
@@ -261,15 +334,11 @@ class DBRecipeStore(AbstractRecipeStore):
                 return
             if self._use_redis:
                 try:
-                    self._redis = Redis.from_url(
-                        self.redis_url, decode_responses=True, socket_connect_timeout=5
-                    )
+                    self._redis = Redis.from_url(self.redis_url, decode_responses=True, socket_connect_timeout=5)
                     await self._redis.ping()
                     self.logger.info("DBRecipeStore connected to Redis")
                 except Exception as exc:  # noqa: BLE001 - mirrors SkillRegistry's broad fallback
-                    self.logger.warning(
-                        "DBRecipeStore Redis connection failed (%s); using in-memory store", exc
-                    )
+                    self.logger.warning("DBRecipeStore Redis connection failed (%s); using in-memory store", exc)
                     self._use_redis = False
             self._configured = True
 
@@ -284,9 +353,7 @@ class DBRecipeStore(AbstractRecipeStore):
         recipe = recipe.model_copy(update={"updated_at": datetime.now(timezone.utc)})
         async with self._lock:
             if self._use_redis and self._redis:
-                await self._redis.set(
-                    self._key(recipe.name, recipe.owner), recipe.model_dump_json()
-                )
+                await self._redis.set(self._key(recipe.name, recipe.owner), recipe.model_dump_json())
                 await self._redis.sadd(self._index_key(recipe.owner), recipe.name)
             else:
                 self._recipes[(recipe.owner or "", recipe.name)] = recipe
@@ -297,12 +364,27 @@ class DBRecipeStore(AbstractRecipeStore):
             payload = await self._redis.get(self._key(name, owner))
             if payload is None:
                 raise RecipeNotFoundError(name, await self._available_names(owner))
-            recipe = InfographicRecipe.model_validate_json(payload)
+            raw = json.loads(payload)
         else:
             recipe = self._recipes.get((owner or "", name))
             if recipe is None:
                 raise RecipeNotFoundError(name, await self._available_names(owner))
-        return _check_schema_version(recipe)
+            raw = recipe.model_dump(mode="json")
+        return _load_and_migrate(raw, name_for_error=name)
+
+    async def _raw_schema_version(self, name: str, owner: Optional[str] = None) -> int:
+        await self.configure()
+        if self._use_redis and self._redis:
+            payload = await self._redis.get(self._key(name, owner))
+            if payload is None:
+                raise RecipeNotFoundError(name, await self._available_names(owner))
+            raw = json.loads(payload)
+        else:
+            recipe = self._recipes.get((owner or "", name))
+            if recipe is None:
+                raise RecipeNotFoundError(name, await self._available_names(owner))
+            raw = recipe.model_dump(mode="json")
+        return int(raw.get("schema_version", 1))
 
     async def list(self, owner: Optional[str] = None) -> list[dict[str, Any]]:
         await self.configure()

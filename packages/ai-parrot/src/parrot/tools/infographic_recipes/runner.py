@@ -7,8 +7,8 @@ REST, scheduler — spec G6) executes the seven-step replay:
     2. fetch datasets (DatasetManager, invoker pctx honored)
     3. fail-fast validation gate (spec G4)
     4. execute the registered transform chain into a data_model dict
-    5. cross-check every layout ``$bind`` pointer against data_model keys, then
-       assemble + catalog-validate the envelope
+    5. cross-check every layout ``{"path": ...}`` binding pointer against
+       data_model keys, then assemble + catalog-validate the envelope
     6. render via the resolved renderer profile
     7. optionally deliver (persistence is a caller concern — see NOTE below)
 
@@ -67,15 +67,19 @@ from parrot.outputs.a2ui.artifacts import RenderedArtifact
 from parrot.outputs.a2ui.builders import build_infographic, build_surface
 from parrot.outputs.a2ui.catalog.base import CatalogValidationError
 from parrot.outputs.a2ui.delivery import deliver_artifact
-from parrot.outputs.a2ui.models import BINDING_KEY, is_binding_expression
+from parrot.outputs.a2ui.models import is_valid_pointer
 from parrot.outputs.a2ui.recipes.models import (
     InfographicRecipe,
+    LayoutSpec,
     RecipeRunError,
     TransformStep,
 )
 from parrot.outputs.a2ui.recipes.params import resolve_params, substitute
 from parrot.outputs.a2ui.recipes.store import AbstractRecipeStore
-from parrot.outputs.a2ui.recipes.transformers import transformer_registry, validate_inputs
+from parrot.outputs.a2ui.recipes.transformers import (
+    transformer_registry,
+    validate_inputs,
+)
 from parrot.outputs.a2ui.renderers import get_a2ui_renderer
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.infographic_recipes.narrator import Narrator
@@ -100,17 +104,16 @@ def _pointer_top_key(pointer: str) -> str:
     return segment.replace("~1", "/").replace("~0", "~")
 
 
-def _collect_bind_pointers(value: Any) -> list[tuple[str, bool]]:
-    """Recursively collect every ``{"$bind": "/pointer", ...}`` binding in ``value``.
+def _collect_bind_pointers(value: Any) -> list[str]:
+    """Recursively collect every ``{"path": "/pointer"}`` binding pointer in ``value``.
 
-    Returns:
-        A list of ``(pointer, optional)`` pairs. ``optional`` is `True` when
-        the binding carries a sibling ``optional: True`` key (FEAT-420
-        Module 2 — declared-optional narrative binds), else `False`.
+    v2 layouts (FEAT-470 TASK-2542) never carry an inline ``"optional"``
+    sibling on the binding itself — see :func:`_optional_paths` for how a
+    pointer's optionality is declared instead.
     """
-    pointers: list[tuple[str, bool]] = []
-    if is_binding_expression(value):
-        pointers.append((value[BINDING_KEY], bool(value.get("optional"))))
+    pointers: list[str] = []
+    if isinstance(value, dict) and isinstance(value.get("path"), str) and is_valid_pointer(value["path"]):
+        pointers.append(value["path"])
     elif isinstance(value, dict):
         for item in value.values():
             pointers.extend(_collect_bind_pointers(item))
@@ -118,6 +121,21 @@ def _collect_bind_pointers(value: Any) -> list[tuple[str, bool]]:
         for item in value:
             pointers.extend(_collect_bind_pointers(item))
     return pointers
+
+
+def _optional_paths(layout: LayoutSpec) -> set[str]:
+    """Extract ``layout.metadata.extensions.parrot_optional`` (FEAT-420 optional binds).
+
+    Mirrors :func:`parrot.outputs.a2ui.baking._optional_paths` for a wire
+    ``Component`` — a v2 recipe layout declares "this binding may be absent"
+    the same way ``compat.normalize_legacy_component`` hoists a legacy
+    ``{"$bind": ..., "optional": true}`` binding: as a pointer in the
+    LAYOUT's own ``metadata.extensions.parrot_optional``, never an inline
+    sibling key on the binding itself.
+    """
+    if layout.metadata is None or layout.metadata.extensions is None:
+        return set()
+    return set(layout.metadata.extensions.root.get("parrot_optional") or [])
 
 
 def _substitute_value(value: Any, resolved_params: dict[str, str]) -> Any:
@@ -277,7 +295,7 @@ class RecipeRunner:
             - param references resolve (declared defaults / resolver names valid)
             - every ``TransformStep.transformer`` is registered
             - gate columns against dataset METADATA when available (no fetch)
-            - every layout ``$bind`` pointer's top-level key matches a declared
+            - every layout binding pointer's top-level key matches a declared
               ``output_key``
 
         Args:
@@ -347,7 +365,7 @@ class RecipeRunner:
         if recipe.narrative is not None:
             bindable_output_keys.add(recipe.narrative.output_key)
 
-        for pointer, _optional in _collect_bind_pointers(recipe.layout.properties):
+        for pointer in _collect_bind_pointers(recipe.layout.props):
             top_key = _pointer_top_key(pointer)
             if top_key not in bindable_output_keys:
                 errors.append(
@@ -355,7 +373,7 @@ class RecipeRunner:
                         recipe=recipe.name,
                         stage="layout",
                         detail=(
-                            f"$bind pointer {pointer!r} references undeclared output_key "
+                            f"binding pointer {pointer!r} references undeclared output_key "
                             f"{top_key!r}; declared output_keys: {sorted(bindable_output_keys)!r}"
                         ),
                     )
@@ -401,15 +419,11 @@ class RecipeRunner:
     async def _load_recipe(self, name: str, owner: Optional[str] = None) -> InfographicRecipe:
         return await self.store.get(name, owner=owner)
 
-    def _resolve_params_or_raise(
-        self, recipe: InfographicRecipe, overrides: dict[str, Any] | None
-    ) -> dict[str, str]:
+    def _resolve_params_or_raise(self, recipe: InfographicRecipe, overrides: dict[str, Any] | None) -> dict[str, str]:
         try:
             return resolve_params(recipe.params, overrides)
         except ValueError as exc:
-            raise RecipeRunException(
-                RecipeRunError(recipe=recipe.name, stage="params", detail=str(exc))
-            ) from exc
+            raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="params", detail=str(exc))) from exc
 
     async def _fetch_frames(
         self,
@@ -434,11 +448,7 @@ class RecipeRunner:
                             )
                         ) from exc
                 sql = substitute(ds.sql, resolved_params) if ds.sql else None
-                conditions = (
-                    _substitute_value(ds.conditions, resolved_params)
-                    if ds.conditions is not None
-                    else None
-                )
+                conditions = _substitute_value(ds.conditions, resolved_params) if ds.conditions is not None else None
                 result = await self.dataset_manager.fetch_dataset(
                     ds.dataset, sql=sql, conditions=conditions, force_refresh=ds.force_refresh
                 )
@@ -453,18 +463,13 @@ class RecipeRunner:
                     )
                 entry = self.dataset_manager.get_dataset_entry(ds.dataset)
                 if entry is None:
-                    available = [
-                        d.get("name") for d in await self.dataset_manager.list_datasets()
-                    ]
+                    available = [d.get("name") for d in await self.dataset_manager.list_datasets()]
                     raise RecipeRunException(
                         RecipeRunError(
                             recipe=recipe.name,
                             stage="data",
                             dataset=ds.dataset,
-                            detail=(
-                                f"Dataset {ds.dataset!r} is not registered; "
-                                f"available datasets: {available!r}"
-                            ),
+                            detail=(f"Dataset {ds.dataset!r} is not registered; " f"available datasets: {available!r}"),
                         )
                     )
                 frames[ds.alias] = entry.df
@@ -472,9 +477,7 @@ class RecipeRunner:
         finally:
             _pctx_var.reset(token)
 
-    def _run_gate_or_raise(
-        self, recipe: InfographicRecipe, frames: dict[str, pd.DataFrame]
-    ) -> None:
+    def _run_gate_or_raise(self, recipe: InfographicRecipe, frames: dict[str, pd.DataFrame]) -> None:
         # Only DataFrame-backed (data-source alias) inputs are column-gated;
         # an input referencing a PRIOR step's dict output_key has no columns
         # to check and is validated instead at transform-execution time
@@ -512,8 +515,7 @@ class RecipeRunner:
                             stage="transform",
                             transformer=step.transformer,
                             detail=(
-                                f"Input {alias!r} is neither a data-source alias nor a "
-                                "prior step's output_key."
+                                f"Input {alias!r} is neither a data-source alias nor a " "prior step's output_key."
                             ),
                         )
                     )
@@ -533,9 +535,7 @@ class RecipeRunner:
             data_model[step.output_key] = result
         return data_model
 
-    async def _apply_narrative_best_effort(
-        self, recipe: InfographicRecipe, data_model: dict[str, Any]
-    ) -> None:
+    async def _apply_narrative_best_effort(self, recipe: InfographicRecipe, data_model: dict[str, Any]) -> None:
         """Populate ``data_model`` with LLM prose, best-effort (spec criterion G-E).
 
         Never raises: a missing narrator, a missing ``narrative`` declaration,
@@ -574,20 +574,17 @@ class RecipeRunner:
         if isinstance(prose, str) and prose.strip():
             data_model[spec.output_key] = prose
         else:
-            self.logger.info(
-                "Narrator returned no prose for recipe %r — rendering without it.", recipe.name
-            )
+            self.logger.info("Narrator returned no prose for recipe %r — rendering without it.", recipe.name)
 
-    def _check_bind_drift_or_raise(
-        self, recipe: InfographicRecipe, data_model: dict[str, Any]
-    ) -> None:
+    def _check_bind_drift_or_raise(self, recipe: InfographicRecipe, data_model: dict[str, Any]) -> None:
+        optional_pointers = _optional_paths(recipe.layout)
         missing: set[str] = set()
-        for pointer, optional in _collect_bind_pointers(recipe.layout.properties):
+        for pointer in _collect_bind_pointers(recipe.layout.props):
             if _pointer_top_key(pointer) in data_model:
                 continue
-            if optional:
+            if pointer in optional_pointers:
                 self.logger.info(
-                    "Optional $bind pointer %r references a key absent from the "
+                    "Optional binding pointer %r references a key absent from the "
                     "assembled data_model for recipe %r; the corresponding section "
                     "will be omitted rather than aborting the run.",
                     pointer,
@@ -601,7 +598,7 @@ class RecipeRunner:
                     recipe=recipe.name,
                     stage="layout",
                     detail=(
-                        f"$bind pointer(s) {sorted(missing)!r} reference key(s) absent from the "
+                        f"binding pointer(s) {sorted(missing)!r} reference key(s) absent from the "
                         f"assembled data_model (keys present: {sorted(data_model)!r})."
                     ),
                 )
@@ -609,27 +606,26 @@ class RecipeRunner:
 
     def _assemble_envelope_or_raise(self, recipe: InfographicRecipe, data_model: dict[str, Any]):
         layout = recipe.layout
+        props = layout.props
         try:
             if layout.component == "Infographic":
                 envelope = build_infographic(
-                    title=layout.properties.get("title", recipe.title),
-                    sections=layout.properties.get("sections", []),
-                    subtitle=layout.properties.get("subtitle"),
-                    theme=layout.properties.get("theme") or recipe.render.theme,
+                    title=props.get("title", recipe.title),
+                    sections=props.get("sections", []),
+                    subtitle=props.get("subtitle"),
+                    theme=props.get("theme") or recipe.render.theme,
                     surface_id=f"{recipe.name}-infographic",
                     data_model=data_model,
                 )
             else:
                 envelope = build_surface(
                     layout.component,
-                    layout.properties,
+                    props,
                     surface_id=f"{recipe.name}-{layout.component.lower()}",
                     data_model=data_model,
                 )
         except CatalogValidationError as exc:
-            raise RecipeRunException(
-                RecipeRunError(recipe=recipe.name, stage="layout", detail=str(exc))
-            ) from exc
+            raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="layout", detail=str(exc))) from exc
         return envelope
 
     async def _render_or_raise(self, recipe: InfographicRecipe, envelope) -> RenderedArtifact:
@@ -640,9 +636,7 @@ class RecipeRunner:
         try:
             return await renderer.render(envelope)
         except Exception as exc:  # noqa: BLE001 - any renderer failure is stage="render"
-            raise RecipeRunException(
-                RecipeRunError(recipe=recipe.name, stage="render", detail=str(exc))
-            ) from exc
+            raise RecipeRunException(RecipeRunError(recipe=recipe.name, stage="render", detail=str(exc))) from exc
 
     async def _deliver_best_effort(self, recipe: InfographicRecipe, artifact: RenderedArtifact) -> None:
         # No RecipeRunError stage exists for delivery (spec's stage Literal is
