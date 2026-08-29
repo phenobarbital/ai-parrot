@@ -505,3 +505,51 @@ class TestToolDefinitionResolverParity:
         )
         assert "forbidden" in result["content"].lower()
         assert calls == []  # denied before the function ran
+
+
+# ── Test: Branch-Parity Denial (FEAT-474 TASK-2582) ────────────────────────────
+
+
+class TestBranchParityDenial:
+    """Under one identical resolver, a @tool function and an equivalent
+    AbstractTool are BOTH denied with the same status/error/metadata shape —
+    locks the abstract.py:880-890 mirroring so the two branches can't drift
+    apart again (FEAT-474 AC-1/AC-2)."""
+
+    @pytest.mark.asyncio
+    async def test_denial_shape_identical_across_branches(self, resolver, reader_context):
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+        manager.add_tool(AdminTool())
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+        manager.register_tool(admin_fn)
+
+        abstract_result = await manager.execute_tool(
+            "admin_tool", {}, permission_context=reader_context
+        )
+        tooldef_result = await manager.execute_tool(
+            "admin_fn", {"x": 1}, permission_context=reader_context
+        )
+
+        # Same status
+        assert abstract_result.status == tooldef_result.status == "forbidden"
+        assert abstract_result.success is False
+        assert tooldef_result.success is False
+
+        # Same error message shape: "Permission denied: '<name>' requires {...}"
+        assert abstract_result.error.startswith("Permission denied: 'admin_tool' requires")
+        assert tooldef_result.error.startswith("Permission denied: 'admin_fn' requires")
+
+        # Same metadata keys
+        assert set(abstract_result.metadata.keys()) == {
+            "tool_name", "user_id", "required_permissions"
+        }
+        assert set(tooldef_result.metadata.keys()) == {
+            "tool_name", "user_id", "required_permissions"
+        }
+        assert abstract_result.metadata["user_id"] == tooldef_result.metadata["user_id"]
+        assert abstract_result.metadata["required_permissions"] == ["admin"]
+        assert tooldef_result.metadata["required_permissions"] == ["admin"]

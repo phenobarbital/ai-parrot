@@ -16,6 +16,7 @@ import pytest
 from aiohttp import web
 from parrot.a2a.models import A2UI_MEDIA_TYPE, Message
 from parrot.a2a.server import A2AServer
+from parrot.auth.resolver import DefaultPermissionResolver
 from parrot.handlers.a2ui import A2UIHandler
 from parrot.handlers.deeplink import DeepLinkResumeHandler
 from parrot.memory.file import FileConversationMemory
@@ -125,6 +126,43 @@ class TestE2E:
         body = await resp.json()
         assert body["agentFunctionResponse"]["functionCallId"] == "fc-1"
         assert body["agentFunctionResponse"]["value"] == "Weather in Caracas: Sunny, 25C"
+
+    async def test_e2e_http_call_agent_function_forbidden(self, aiohttp_client, tmp_path):
+        """A renderer-invoked @tool function denied by the resolver returns
+        error{code:'FORBIDDEN'} and never executes (FEAT-474 / FEAT-469 AC-G7).
+
+        `build_principal_context` (a2ui.py handler) defaults `roles` to an
+        empty frozenset (docs/outputs/a2ui-agent-functions.md §4 "deny by
+        default"), so a `DefaultPermissionResolver` with no hierarchy denies
+        any tool declaring `required_permissions` for this anonymous-role
+        user — no custom resolver/PBAC config needed to build the deny.
+        """
+        executed: list[int] = []
+
+        @tool(required_permissions={"secret:read"})
+        def guarded_fn(x: int) -> str:
+            """Guarded test function requiring secret:read."""
+            executed.append(x)
+            return f"secret {x}"
+
+        agent = _make_agent(tmp_path)
+        agent.tool_manager.register_tool(guarded_fn)
+        agent.tool_manager.set_resolver(DefaultPermissionResolver())
+        app = web.Application()
+        app["bot_manager"] = _bot_manager(agent)
+        app.router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
+        client = await aiohttp_client(app)
+
+        resp = await client.post(
+            "/api/v1/agents/demo/a2ui",
+            json=_call_agent_function_envelope(call="guarded_fn", args={"x": 1}),
+            params={"user_id": "u-1", "session_id": "sess-1"},
+        )
+
+        assert resp.status == 400
+        body = await resp.json()
+        assert body["error"]["code"] == "FORBIDDEN"
+        assert executed == []  # function never invoked
 
     async def test_e2e_http_action_with_send_data_model(self, aiohttp_client, tmp_path):
         """`action` + `dataModel` persists to memory, and the NEXT turn sees it via `_a2ui_surface_state`."""
