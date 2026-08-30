@@ -55,6 +55,7 @@ from ..storage import (
     build_overflow_store,
 )
 from ..handlers import ChatbotHandler
+from ..handlers.bots import ToolList
 from ..handlers.config_handler import BotConfigHandler
 from ..handlers.testing_handler import BotConfigTestHandler
 from ..handlers.dashboard_handler import (
@@ -2169,6 +2170,16 @@ class BotManager:
         router.add_view("/api/v1/utilities/print2pdf", PrintPDFHandler)
         # ChatBot Manager
         ChatbotHandler.configure(self.app, "/api/v1/bots")
+        # Tools List (FEAT-475): library-owned so a wheel install of
+        # ai-parrot-server also exposes /api/v1/agent_tools; idempotent
+        # against a host app (e.g. repo-root app.py) that still registers
+        # it directly.
+        if 'tools_list' not in self.app.router.named_resources():
+            self.app.router.add_view(
+                '/api/v1/agent_tools',
+                ToolList,
+                name='tools_list'
+            )
         # Bot Handler
         router.add_view("/api/v1/chatbots", BotHandler)
         router.add_view("/api/v1/chatbots/{name}", BotHandler)
