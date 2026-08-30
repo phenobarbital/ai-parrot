@@ -283,3 +283,128 @@ runs the frontend build automatically. This is caught by a **dual check**:
    - `Makefile`'s `release` target now depends on a new `build-server-ui`
      target (`make build-server-ui`) that does the same, before any
      `uv build --package ai-parrot-server` / `uv publish` step.
+
+## Agent Chat
+
+**Feature**: FEAT-476 — AgentChat Migration
+
+`/admin/agents/:name/chat` mounts a full-page chat with a single agent
+(vendored from the `navigator-frontend-next` reference frontend, spec
+`sdd/specs/agentchat-migration.spec.md`). It's also reachable without
+leaving the agents list: a **Chat** button on every enabled row (database
+*and* registry agents — registry agents just chat without a prompt
+library, since they carry no `chatbot_id`), and a **Chat** tab on the
+existing read-only agent detail dialog (mounting the same component's
+compact variant, canvas disabled).
+
+### Feature flags
+
+Eight build-time flags gate the heaviest surfaces (canvas/charts/maps,
+voice notes, the LiveKit avatar, datasets, and the rich HTML editor) so
+an adopter who doesn't need them isn't forced to ship the dependency.
+Every flag defaults to **on**; set any `PUBLIC_AGENTCHAT_*` env var to
+`false` or `0` (case-insensitive) before `pnpm build` to turn it off:
+
+| Env var | Default | Gates |
+|---|---|---|
+| `PUBLIC_AGENTCHAT_VOICE` | `true` | Voice notes (mic button, `VoiceNotePlayer`) |
+| `PUBLIC_AGENTCHAT_AVATAR` | `true` | LiveKit avatar viewers (`AvatarViewer`, `VoiceNativeAvatarViewer`) |
+| `PUBLIC_AGENTCHAT_MAPS` | `true` | `DataMap`/`StructuredMap` (Leaflet), `AppChartGeo`'s geo renderer |
+| `PUBLIC_AGENTCHAT_CHARTS` | `true` | `AppChart` (layerchart), `ECharts`, `DataChart`/`ChartConfigPanel` |
+| `PUBLIC_AGENTCHAT_CANVAS` | `true` | The whole canvas side panel (`CanvasPanel` and everything under it) |
+| `PUBLIC_AGENTCHAT_INFOGRAPHIC` | `true` | Infographic canvas + editor |
+| `PUBLIC_AGENTCHAT_DATASETS` | `true` | Dataset management modals |
+| `PUBLIC_AGENTCHAT_RICH_EDITOR` | `true` | The `@tiptap`-backed rich HTML editor (`InfographicEditor`, `AppTextEditor`'s rich mode) |
+
+These map 1:1 to `ui/vite.config.ts`'s `agentchatDefines()` (compiled into
+`__AGENTCHAT_<NAME>__` constants) and `ui/src/lib/features.ts`'s
+`features` object, which every gated component checks at the render/
+lazy-import site (`{#if features.x}{#await import(...)}`).
+
+**Lean-build recipe** — e.g. to drop maps support:
+
+```bash
+cd packages/ai-parrot-server/ui
+PUBLIC_AGENTCHAT_MAPS=false pnpm build
+```
+
+Neither `Makefile`'s `build-server-ui` target nor
+`.github/workflows/release.yml`'s `build-server` job needs a change for
+this — both just run a plain `pnpm build`, and since every flag defaults
+to `true`, that produces the same full build as before FEAT-476. Either
+would honour a `PUBLIC_AGENTCHAT_*` override if one were exported into
+their environment (Vite's `loadEnv` reads `process.env`), but neither
+sets one — see the size caveat below before relying on this for a
+smaller release artifact.
+
+**Known limitation — flags don't currently shrink `dist/`.** Verified
+while building this feature (vite@5.4.21 / rollup@4.63.0): each gated
+surface still lazy-loads as its **own chunk file** (confirmed —
+`AppChart-*.js`, `ECharts-*.js`, `DataMap-*.js`, `leaflet-src-*.js`,
+`livekit-client.esm-*.js`, `exceljs.min-*.js`, etc. are all separate from
+the main bundle either way), and that chunk is genuinely never *fetched*
+by the browser unless the corresponding `features.x` branch actually
+executes at runtime — the practically important property for a page's
+initial load cost. But Rollup still **emits** the chunk file into
+`dist/assets/` regardless of the flag, because `features.x` is an object
+*property* read (`Object.freeze({charts: __AGENTCHAT_CHARTS__, ...})`),
+and esbuild/Rollup's dead-code elimination only removes a
+compile-time-constant-guarded dynamic `import()` when the guard is a
+bare `const` binding, not a property read through an object — confirmed
+with an isolated repro during TASK-2595. Measured on this build (all
+eight flags on vs. all eight off): **`dist/assets` is 15,306,233 bytes /
+77 JS files in both cases — byte-for-byte identical.** Turning a flag off
+today only prevents the runtime fetch, not the on-disk/wheel footprint;
+shrinking the actual `dist/`/wheel size for a given flag combination
+would need `$lib/features.ts` reshaped to flat `const` exports (a
+cross-cutting change touching every `features.x` call site across the
+vendored tree) — tracked as a follow-up, not done in FEAT-476.
+
+### Offline icons
+
+Every icon the vendored tree renders (`<Icon icon="prefix:name" />` via
+`@iconify/svelte`) must resolve from a **locally bundled** collection —
+by default `@iconify/svelte` falls back to the public `api.iconify.design`
+API for unregistered icons, which breaks in an air-gapped deployment.
+`ui/src/lib/icons.ts` registers every prefix the tree actually uses
+(`mdi`, `ph`, `svg-spinners`, `tabler`, `lucide`) via `addCollection()`
+before the app mounts; `icons.test.ts` fails the build if a future
+vendored file introduces an unregistered prefix.
+
+### The `wsService` stub
+
+The vendored tree's realtime notifications (`answer_ready` events, etc.)
+go through `$lib/services/websocket-service.ts`'s `wsService` — in
+ai-parrot's Admin UI this is a **stub**: `connect()`/`subscribe()`/
+`onMessage()` exist (so every vendored call site compiles and runs
+verbatim) but no socket is ever opened (there is nothing on the ai-parrot
+backend for it to connect to yet). Chat still works end-to-end over the
+regular HTTP/streaming APIs; only the "push a notification without the
+tab being focused" enhancement is a no-op today.
+
+### Navigator-divergence policy
+
+The vendored tree under `ui/src/lib/components/agents/`,
+`ui/src/lib/components/charts/`, `ui/src/lib/components/visualizations/`,
+and `ui/src/lib/components/grid/` mirrors `navigator-frontend-next`'s
+**relative paths** file-for-file. Every file that needed a real edit
+(gating, an import re-pointed at the Admin UI's own `http.ts`/
+`auth-headers.ts`/stores, an added `features.x` check) carries a
+`// ai-parrot (FEAT-476 TASK-...): ...` header/inline comment explaining
+the change — logic is otherwise untouched ("no logic changes beyond
+gating/shims" per the migration spec). To back-port a navigator fix or
+check what diverged:
+
+```bash
+diff -r \
+  /path/to/navigator-frontend-next/src/lib/components/agents \
+  packages/ai-parrot-server/ui/src/lib/components/agents
+```
+
+A few files were intentionally vendored *ahead of* the task that spec
+originally assigned them to (e.g. `canvas-block-types.ts`,
+`config/regeneration-models.ts`) because an earlier task's component
+needed them unconditionally — see the FEAT-476 task history
+(`sdd/tasks/completed/TASK-2594-*.md` through `TASK-2597-*.md`) for the
+full list and rationale if a diff shows an unexpected file already
+present.

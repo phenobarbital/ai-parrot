@@ -1,0 +1,286 @@
+{
+  "$defs": {
+    "AgentChatMetadata": {
+      "additionalProperties": true,
+      "description": "The ``metadata`` sub-envelope shared by both builders.\n\n``created_at`` is only ever populated by the JSON path\n(``agent.py:2777-2818``); the stream path never sets it. Additional\nkeys (e.g. infographic extras \u2014 ``explanation``, ``html_url``,\n``artifact_id``, ``template_name``, ``theme``) arrive via\n``extra=\"allow\"``.",
+      "properties": {
+        "created_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        },
+        "finish_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finish Reason"
+        },
+        "is_error": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Error"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "response_time": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Time"
+        },
+        "session_id": {
+          "default": "",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "stop_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Reason"
+        },
+        "turn_id": {
+          "default": "",
+          "title": "Turn Id",
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usage"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        }
+      },
+      "title": "AgentChatMetadata",
+      "type": "object"
+    },
+    "AgentToolCall": {
+      "additionalProperties": true,
+      "description": "A single tool invocation as emitted by either envelope builder.\n\nMirrors the ``tool_calls`` list entries built in\n``agent.py:2574-2583`` (stream finaliser) and ``agent.py:2807-2816``\n(JSON formatter).",
+      "properties": {
+        "arguments": {
+          "default": null,
+          "title": "Arguments"
+        },
+        "name": {
+          "default": "unknown",
+          "title": "Name",
+          "type": "string"
+        },
+        "output": {
+          "default": null,
+          "title": "Output"
+        },
+        "status": {
+          "default": "completed",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "AgentToolCall",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "The ``AgentTalk`` response envelope (stream finaliser + JSON path).\n\n``data``, ``response``, ``output_mode`` and ``code`` are populated\nonly by the JSON formatter (``agent.py:2777-2823``); the stream\nfinaliser (``agent.py:2556-2600``) never sets them. ``audio_base64``/\n``audio_format`` are set only on the voice path\n(``parrot.handlers.agent_voice.AgentVoiceTalk``).",
+  "properties": {
+    "a2ui_envelope": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "A2Ui Envelope"
+    },
+    "audio_base64": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Audio Base64"
+    },
+    "audio_format": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Audio Format"
+    },
+    "code": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Code"
+    },
+    "data": {
+      "default": null,
+      "title": "Data"
+    },
+    "input": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input"
+    },
+    "metadata": {
+      "$ref": "#/$defs/AgentChatMetadata"
+    },
+    "output": {
+      "default": null,
+      "title": "Output"
+    },
+    "output_mode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Output Mode"
+    },
+    "response": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Response"
+    },
+    "sources": {
+      "default": [],
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Sources",
+      "type": "array"
+    },
+    "tool_calls": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/AgentToolCall"
+      },
+      "title": "Tool Calls",
+      "type": "array"
+    }
+  },
+  "required": [
+    "metadata"
+  ],
+  "title": "AgentChatResponse",
+  "type": "object"
+}
