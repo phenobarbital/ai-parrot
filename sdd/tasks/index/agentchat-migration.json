@@ -33,7 +33,7 @@
       "feature_id": "FEAT-476",
       "feature": "agentchat-migration",
       "spec": "sdd/specs/agentchat-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -41,8 +41,8 @@
       "parallelism_notes": "Touches vite.config.ts, vitest.config.ts, package.json, config.ts — the shared foundation every later UI task builds on; run first in the feature worktree (requires FEAT-475 merged).",
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2591-build-wiring-shims-flags.md"
+      "completed_at": "2026-08-30T02:06:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2591-build-wiring-shims-flags.md"
     },
     {
       "id": "TASK-2592",

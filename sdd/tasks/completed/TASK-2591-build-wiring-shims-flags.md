@@ -202,8 +202,29 @@ it("delegates to router.navigate", async () => {
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Added runtime deps to `package.json` (marked, dompurify,
+highlight.js, uuid, dexie, @iconify/svelte + 4 @iconify-json/* placeholder
+collections — mdi/ph/svg-spinners/tabler, enumerated by grepping
+navigator's vendored tree, per TASK-2593 to finalize; echarts, layerchart
+pinned 2.0.0-next.64, d3-scale, d3-geo/topojson-client/world-atlas/leaflet/
+@types/geojson, livekit-client, @tiptap/*). Created the three SvelteKit
+shims, `features.ts` (frozen, 8 flags), `websocket-service.ts` stub (never
+constructs `WebSocket`), `icons.ts` (registers the 4 bundled collections
+via `addCollection`, imported once from `main.ts` before mount — verified
+`@iconify/svelte` v5's `dist/index.d.ts` exports no `disableCache`, so
+offline-ness is achieved purely by only ever resolving locally-registered
+prefixes). Extended `vite.config.ts`/`vitest.config.ts` with the
+`$app/*`/`$env/*` aliases and `__AGENTCHAT_*__` defines (default true,
+"false"/"0" disable), declared in `vite-env.d.ts`. Added the agent-related
+`config.ts` fields the task scope specifies (`agentsChatPath`,
+`agentsVoicePath`, `agentsAvatarPath`, `chatInteractionsPath`) — note
+navigator's own vendored `api/agent.ts` hardcodes its own path constants
+rather than reading `config`, so these fields are provisioned for
+TASK-2592's import re-pointing rather than consumed today.
+`pnpm install && pnpm build` succeed (9.4MB main chunk — icon collections
+are statically bundled; code-splitting/flag-gating lands with TASK-2595+).
+`pnpm test`: 176/176 pass (6 new + all existing FEAT-468/475 tests green).
 
 **Deviations from spec**: none
