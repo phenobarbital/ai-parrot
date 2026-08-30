@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "KnowledgeBaseOption": {
+      "description": "A single selectable knowledge-base class for ``custom_kbs``.",
+      "properties": {
+        "class_path": {
+          "title": "Class Path",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "class_path",
+        "name"
+      ],
+      "title": "KnowledgeBaseOption",
+      "type": "object"
+    }
+  },
+  "description": "Aggregate option-list payload for the Admin UI agent form.",
+  "properties": {
+    "bot_class_default": {
+      "default": "BasicBot",
+      "title": "Bot Class Default",
+      "type": "string"
+    },
+    "knowledge_bases": {
+      "items": {
+        "$ref": "#/$defs/KnowledgeBaseOption"
+      },
+      "title": "Knowledge Bases",
+      "type": "array"
+    },
+    "llm_providers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Llm Providers",
+      "type": "array"
+    },
+    "memory_types": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Memory Types",
+      "type": "array"
+    },
+    "operation_modes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Operation Modes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "llm_providers",
+    "operation_modes",
+    "memory_types",
+    "knowledge_bases"
+  ],
+  "title": "AdminCatalog",
+  "type": "object"
+}

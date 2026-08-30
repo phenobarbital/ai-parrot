@@ -1,0 +1,31 @@
+{
+  "description": "A single selectable knowledge-base class for ``custom_kbs``.",
+  "properties": {
+    "class_path": {
+      "title": "Class Path",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "class_path",
+    "name"
+  ],
+  "title": "KnowledgeBaseOption",
+  "type": "object"
+}

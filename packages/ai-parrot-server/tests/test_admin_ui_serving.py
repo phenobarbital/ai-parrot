@@ -29,8 +29,8 @@ class TestAbsentDist:
     async def test_absent_dist_returns_false_and_registers_no_spa_routes(
         self, tmp_path, monkeypatch, caplog
     ):
-        """No dist -> no SPA mount, but the status JSON endpoint is
-        UI-agnostic and still registers (TASK-2524)."""
+        """No dist -> no SPA mount, but the status and catalog JSON
+        endpoints are UI-agnostic and still register (TASK-2524, TASK-2584)."""
         missing = tmp_path / "no-dist-here"
         monkeypatch.setattr(serving, "_dist_dir", lambda: missing)
         monkeypatch.setattr(serving, "_warned_missing_dist", False)
@@ -41,7 +41,7 @@ class TestAbsentDist:
 
         assert result is False
         paths = {r.resource.canonical for r in app.router.routes()}
-        assert paths == {"/api/v1/admin/status"}
+        assert paths == {"/api/v1/admin/status", "/api/v1/admin/catalog"}
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) == 1
 
