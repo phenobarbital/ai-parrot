@@ -19,13 +19,13 @@ import { Textarea } from "./textarea/index.js";
 // jsdom has no ResizeObserver; bits-ui's Slider measures its track/thumb
 // with one on mount. Stubbed locally (not in the shared vitest-setup.ts)
 // since only this primitive needs it.
-class ResizeObserverStub {
+class ResizeObserverStub implements ResizeObserver {
+  constructor(_callback: ResizeObserverCallback) {}
   observe(): void {}
   unobserve(): void {}
   disconnect(): void {}
 }
-(globalThis as { ResizeObserver?: typeof ResizeObserverStub }).ResizeObserver ??=
-  ResizeObserverStub;
+globalThis.ResizeObserver ??= ResizeObserverStub;
 
 // Re-export sanity: Tabs/TabsList/TabsTrigger/TabsContent are exercised
 // through TabsHarness.test.svelte below (a compound component needs real
