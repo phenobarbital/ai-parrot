@@ -13,6 +13,36 @@ from typing import Any
 from parrot.mcp.adapter import MCPToolAdapter
 from parrot.tools.abstract import AbstractTool
 
+#: MCP protocol revisions this server can speak, oldest first.
+SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+)
+#: Newest revision we support — offered when the client requests an unknown one.
+LATEST_PROTOCOL_VERSION: str = SUPPORTED_PROTOCOL_VERSIONS[-1]
+#: Revision assumed when the client does not send ``protocolVersion`` at all
+#: (legacy hand-rolled clients); keeps historical behavior unchanged.
+DEFAULT_PROTOCOL_VERSION: str = SUPPORTED_PROTOCOL_VERSIONS[0]
+
+
+def negotiate_protocol_version(requested: str | None) -> str:
+    """Negotiate the MCP protocol revision for an ``initialize`` request.
+
+    Args:
+        requested: The ``protocolVersion`` sent by the client, if any.
+
+    Returns:
+        The requested version when supported; the latest supported version
+        when the client asked for an unknown one; the legacy default when
+        the client sent no version at all.
+    """
+    if requested is None:
+        return DEFAULT_PROTOCOL_VERSION
+    if requested in SUPPORTED_PROTOCOL_VERSIONS:
+        return requested
+    return LATEST_PROTOCOL_VERSION
+
 
 @dataclass
 class LocalServerConfig:
@@ -52,7 +82,9 @@ class MCPServerBase(ABC):
         self.logger.info("Initializing MCP server...")
 
         return {
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": negotiate_protocol_version(
+                params.get("protocolVersion")
+            ),
             "capabilities": {
                 "tools": {
                     "listChanged": False
