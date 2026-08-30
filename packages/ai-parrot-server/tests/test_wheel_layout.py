@@ -91,6 +91,27 @@ class TestWheelContainsAdminUI:
             "build produced no assets (or was skipped entirely)."
         )
 
+    @pytest.mark.wheel_build
+    def test_agentchat_chunk_present(self, satellite_wheel_namelist):
+        """FEAT-476: the vendored AgentChat lazy chunk ships in the wheel.
+
+        Matched by substring + suffix rather than a specific filename —
+        Vite content-hashes chunk names (e.g. ``AgentChat-DPxnpXKV.js``),
+        so this must not assume a fixed hash.
+        """
+        chunks = [
+            n for n in satellite_wheel_namelist
+            if n.startswith("parrot/server/ui/dist/assets/")
+            and "AgentChat" in n
+            and n.endswith(".js")
+        ]
+        assert chunks, (
+            "wheel is missing the AgentChat chunk — was the UI built with "
+            "the chat module? (packages/ai-parrot-server/ui/src/lib/"
+            "components/agents/AgentChat.svelte, wired into the "
+            "/admin/agents/:name/chat route by TASK-2597)"
+        )
+
 
 class TestSatelliteSourceLayout:
     """Validate the satellite src/ directory layout (without building a wheel)."""
