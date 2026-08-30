@@ -8,7 +8,7 @@ base_branch: dev
 
 **Date**: 2026-08-30
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: exploration — all open questions resolved 2026-08-31 (ready for `/sdd-spec`)
 **Recommended Option**: Option D
 
 **Supersedes / folds in**: `sdd/proposals/sdd-brainstorm_agent-methods-as-mcp-tools.md`
@@ -61,6 +61,16 @@ expose.
   `OAuthAuthorizationServer` (`AuthMethod.OAUTH2_INTERNAL`) stays as a dev/test
   convenience only — its `/authorize` auto-approves (`oauth_server.py:638`), which is
   not acceptable in production.
+- **AI-Parrot ships the RFC 9728 protected-resource metadata** (OQ1). PRM describes
+  the *resource server*, so `/.well-known/oauth-protected-resource` and a
+  `resource_metadata=`-bearing 401 belong to this feature, pointing Claude at
+  navigator-auth as the AS.
+- **Session state must be shared across workers** (OQ4). The project's own deploy
+  template runs `aiohttp.GunicornWebWorker` with `(2×CPUs)+1` workers, recycles them
+  every 2000 requests, and states *"Do NOT rely on in-process dicts for cross-request
+  state"* (`autonomous/deploy/templates.py:12-18`). The branch's in-memory
+  `_sessions` / `SessionEventStore` violates that rule, so a Redis-backed store lands
+  **in this feature**, not as a follow-up.
 - **PBAC is enforced from day one**, at both `tools/list` (filter) and `tools/call`
   (re-verify). Deny-by-default, consistent with `setup_pbac()`'s `PolicyEffect.DENY`.
 - **`ask()` is NOT exposed as an MCP tool.** The LLM stays out of the loop by
@@ -245,7 +255,9 @@ identity with no signature changes anywhere.
 - `AgentMethodTool` must not drag the agent into tool-serialization paths (weak
   reference / bound-method care).
 
-📊 **Effort:** Medium
+📊 **Effort:** Medium for the option itself; **High** for the feature as scoped —
+the OQ1 (PRM endpoint) and OQ4 (Redis-backed session store) resolutions add work that
+is independent of which option is chosen.
 
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
@@ -318,14 +330,32 @@ endpoints when the mount is enabled. Each exposed agent serves:
 
 **For the end user.** They add `https://<host>/mcp/agents/finance` as a Claude custom
 connector, complete an OAuth login against navigator-auth, and see exactly the tools
-their policy allows — plus the agent's description, capability summary and knowledge-
-base descriptors as MCP **resources** (Round 1), readable via `resources/read`.
+their policy allows — plus four MCP **resources** (OQ8), readable via
+`resources/read`:
+
+| Resource | Contents | Note |
+|---|---|---|
+| identity card | `name`, `role`, `goal`, `capabilities`, description | same fields A2A publishes in the `AgentCard` |
+| tool catalog | browsable manifest of the tools **this principal** may call | filtered by the same policy as `tools/list` |
+| KB descriptors | which knowledge bases the agent consults (`AbstractBot.knowledge_bases`) | reveals internal data topology |
+| system prompt | assembled system prompt, `backstory`, `rationale` | **highest disclosure**; see the caveat below |
+
+The system-prompt resource discloses prompt engineering and guardrail wording to any
+principal who can read it. It is in scope by explicit decision, and the spec must gate
+it behind its own PBAC resource (`mcp:agent:{name}:resource:system-prompt`) rather
+than the agent-level grant, so exposing an agent does not automatically expose how it
+is instructed.
 
 ### Internal Behavior
 
 1. **Declaration → reification.** At `configure()`, the agent scans itself for
    decorated methods and reifies each into an `AgentMethodTool` bound to that
-   instance, recorded in an *exposure set* distinct from the LLM tool set.
+   instance, recorded in an *exposure set* that is **deliberately NOT registered into
+   the agent's `ToolManager`** (OQ2): decorating a method exposes it over MCP and
+   never changes the owning agent's own behavior. MCP annotations ride on the tool's
+   `routing_meta` (OQ7) — the same channel `MCPToolAdapter` already reads for
+   `requires_confirmation`, which maps to `destructiveHint`; `readOnlyHint` and
+   `idempotentHint` are declared explicitly on the decorator.
 2. **Mount.** `AgentMCPMount` builds one `StreamableHttpMCPServer` per exposed agent
    against the existing `web.Application`, registering the reified methods plus the
    agent's own tools (minus internal plumbing, as `A2AServer._INTERNAL_TOOL_NAMES`
@@ -375,13 +405,16 @@ base descriptors as MCP **resources** (Round 1), readable via `resources/read`.
   replays it on `Last-Event-ID` reconnect within the session TTL. Beyond that window,
   the job handle is the only durable path — which is exactly why long-running work
   must use it.
-- **Multi-worker deployment** — sessions and the event buffer are in-memory
-  per-process (`streamable_http.py:77`). With more than one worker, a session can land
-  on a process that does not know it. v1 must either pin to one worker or document
-  this loudly; a shared store is a follow-up.
-- **Agent hot-reload** — `BotManager.reload_agent()` rebuilds the instance; reified
-  methods are bound to the *old* one. The mount must re-reify on reload or hold the
-  agent by name, not by reference.
+- **Multi-worker deployment** — resolved (OQ4): sessions and the event buffer move to
+  a Redis-backed store, so a session created on one gunicorn worker resolves on any
+  other and survives the `max_requests = 2000` worker recycle. Store unavailability
+  must fail the request cleanly rather than silently degrading to per-process state.
+- **Agent hot-reload** — resolved (OQ5) by the code: `BotManager.reload_agent()`
+  (`manager.py:856`) swaps `self._bots[name]` **and calls `_safe_cleanup()` on the old
+  instance**, so a mount holding an object reference would serve a closed agent. The
+  mount therefore holds agents **by name** and resolves through `BotManager` per call;
+  the reified exposure set is rebuilt from the new instance on reload. In-flight calls
+  against the old instance are unaffected (documented at `manager.py:868-872`).
 
 ---
 
@@ -396,6 +429,12 @@ base descriptors as MCP **resources** (Round 1), readable via `resources/read`.
   re-verification against a canonical PBAC resource, with audit.
 - `mcp-job-handles`: durable `start_*` / `*_status` / `*_result` pattern for agent
   work exceeding the client tool-call ceiling.
+- `mcp-protected-resource-metadata`: RFC 9728 PRM document plus a `resource_metadata=`
+  hint in the 401 `WWW-Authenticate`, so an MCP client can discover the navigator-auth
+  AS from the resource server (OQ1).
+- `mcp-shared-session-store`: Redis-backed replacement for the in-process Streamable
+  HTTP session map and SSE event buffer, making the transport correct under the
+  project's standard multi-worker gunicorn deployment (OQ4).
 
 ### Modified Capabilities
 - The MCP server stack (`parrot.mcp`) — gains an agent-aware mount alongside the
@@ -413,7 +452,10 @@ base descriptors as MCP **resources** (Round 1), readable via `resources/read`.
 | `packages/ai-parrot/src/parrot/mcp/` (core) | extends | new decorator + `AgentMethodTool`; importable with no extras |
 | `packages/ai-parrot-server/src/parrot/mcp/transports/streamable_http.py` | depends on | prerequisite branch; agent mount subclasses/instantiates it |
 | `packages/ai-parrot-server/src/parrot/mcp/parrot_server.py` | modifies | agent mount registered alongside the tool-level server; must not double-claim `base_path` |
-| `packages/ai-parrot-server/src/parrot/mcp/transports/base.py` | extends | principal resolution from `mcp_user`; PRM-aware 401 |
+| `packages/ai-parrot-server/src/parrot/mcp/transports/base.py` | extends | principal resolution from `mcp_user`; `_unauthorized_response` gains `resource_metadata=` (OQ1) |
+| `packages/ai-parrot-server/src/parrot/mcp/oauth_server.py` | extends | new RFC 9728 PRM route beside the existing RFC 8414 discovery (OQ1) |
+| `streamable_http.py` `SessionEventStore` / `_sessions` | modifies | Redis-backed shared store; affects the tool-level streamable endpoint too (OQ4) |
+| `packages/ai-parrot/src/parrot/security/audit_ledger.py` | depends on | canonical ledger — `await ledger.append(...)` per `tools/call` (OQ3) |
 | `packages/ai-parrot-server/src/parrot/mcp/config.py` | extends | agent-mount settings (exposed agents, aggregate on/off, size caps) |
 | `packages/ai-parrot-server/src/parrot/manager/manager.py` | modifies | `setup()` wires the agent mount from loaded bots |
 | `packages/ai-parrot/src/parrot/auth/resolver.py` / `pbac.py` | depends on | policy decisions per MCP resource |
@@ -421,7 +463,7 @@ base descriptors as MCP **resources** (Round 1), readable via `resources/read`.
 | `packages/ai-parrot-server/src/parrot/human/suspended_store.py` | depends on | job-handle persistence semantics |
 | `packages/ai-parrot-server/src/parrot/a2a/server.py` | depends on | mount pattern precedent; inherits decorated methods as skills |
 | navigator-auth (external) | depends on | OAuth 2.1 AS + introspection + ABAC policies |
-| Deployment | modifies | endpoint must be publicly routable for Claude Web; single-worker caveat |
+| Deployment | modifies | endpoint must be publicly routable for Claude Web; **Redis becomes required** for agent MCP endpoints (sessions + job handles) |
 
 **Breaking changes**: none expected. The tool-level MCP server, all existing
 transports and A2A keep their current behavior.
@@ -594,9 +636,24 @@ from parrot.tools.abstract import AbstractTool, ToolResult
   (`:298`); `routing_meta["requires_confirmation"]` is the existing precedent for
   per-tool MCP metadata.
 - `navigator-auth>0.20.9` is a **core** dependency (`packages/ai-parrot/pyproject.toml:83`).
-- Two `AuditLedger` classes exist: `parrot/auth/audit.py:65` (in-memory,
-  `record()`/`flush()`) and `parrot/security/audit_ledger.py:296`. The spec must pick
-  one — `A2AServer.__init__` documents the `parrot.security.audit_ledger` one.
+- **`AuditLedger` — resolved (OQ3).** `parrot/auth/audit.py:1` declares itself
+  *"DEPRECATED: Use `parrot.security.audit_ledger` instead"* (FEAT-264 / TASK-1675;
+  its own test calls it `OldAuditLedger`). The canonical class is
+  `parrot/security/audit_ledger.py:296`, KMS-signed, async API:
+  `await ledger.append(user_id=..., channel=..., tool=..., provider=...,
+  credential_material=...)`, with `derive_key_fingerprint` alongside
+  (`auth/broker.py:603`). Use it; do not import `parrot.auth.audit`.
+- `BotManager.reload_agent()` (`manager/manager.py:856`) pops and replaces
+  `self._bots[name]`, then `_safe_cleanup()`s the previous instance — an object
+  reference held across a reload points at a closed agent (OQ5).
+- `AbstractBot.knowledge_bases: List[AbstractKnowledgeBase]` (`bots/abstract.py:554`)
+  — source for the KB-descriptor resource; `role` / `goal` / `capabilities` /
+  `backstory` / `rationale` are the identity-card and system-prompt sources
+  (`bots/abstract.py:1290-1310`, prompt_builder context).
+- Deployment shape: `GUNICORN_CONFIG_TEMPLATE`
+  (`autonomous/deploy/templates.py:3`) — `worker_class = "aiohttp.GunicornWebWorker"`,
+  `workers = (2×CPUs)+1` (`installer.py:23`), `max_requests = 2000`, and an explicit
+  *"Do NOT rely on in-process dicts for cross-request state"* note.
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -633,13 +690,18 @@ Verified absent from the tree (`dev` and the branch):
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: real, along three seams that touch disjoint files —
+- **Internal parallelism**: real, along four seams that touch disjoint files —
   (1) the decorator + `AgentMethodTool` reification in **core** `parrot/mcp/`;
   (2) the mount + resources + endpoint topology in **ai-parrot-server**
   `parrot/mcp/`; (3) the identity/PBAC/audit guard, which straddles
   `parrot/auth/` and the mount. (1) is a hard dependency of (2) and (3), so the shape
   is one sequential head followed by a two-way fan-out, not three independent lanes.
   The job-handle work (4) depends only on (1) and can run alongside (2)/(3).
+  The OQ4 Redis session store is a genuinely independent fifth seam: it edits
+  `streamable_http.py` only, depends on nothing in this feature, and benefits the
+  tool-level endpoint too — it is the one piece that could be lifted into its own
+  worktree (or its own spec) without coordination. The OQ1 PRM endpoint is likewise
+  self-contained (`oauth_server.py` + `transports/base.py:305`).
 - **Cross-feature independence**: the prerequisite branch touches
   `mcp/config.py`, `mcp/server.py`, `mcp/parrot_server.py`,
   `transports/http.py` and core `mcp/server_base.py` — **the same files this feature
@@ -650,7 +712,8 @@ Verified absent from the tree (`dev` and the branch):
   which this feature deliberately does not (opt-in is implicit, by decoration).
   `manager/manager.py:setup()` is the one plausible collision point with FEAT-475 —
   a single-line wiring change, worth checking at spec time.
-- **Recommended isolation**: `per-spec`.
+- **Recommended isolation**: `per-spec`, with the OQ4 session-store task as the
+  candidate exception if it is pulled forward.
 - **Rationale**: the three seams share the mount's contract and the tool-exposure
   model, and two of them edit the same handful of files in `parrot/mcp/`. Sequential
   tasks in one worktree cost little (the head task blocks the others anyway) and
@@ -690,30 +753,53 @@ Resolved during discovery (Rounds 0–3):
   (mandatory pagination on lists, `exclude_none`, per-tool cap).
 - [x] Tenant binding? — *Owner: jesuslarag*: per `(tenant_id, principal)`.
 
-Still open:
+Resolved in a follow-up pass (2026-08-31) — three of these were settled by reading
+the code, five by owner decision:
 
-- [ ] **OQ1 — Who ships the RFC 9728 protected-resource metadata?** The PRM document
-  and the `resource_metadata=` 401 hint are missing (§ Does NOT Exist). navigator-auth
-  is the AS, but PRM describes the *resource server* — so this endpoint belongs to
-  AI-Parrot. Confirm it is in this feature's scope. — *Owner: jesuslarag*
-- [ ] **OQ2 — Reification vs LLM-callability.** Must a decorated method be excluded
-  from its own agent's `ToolManager` (MCP-only), or may an agent also call it
-  internally? Affects whether the exposure set and the LLM tool set are two
-  collections or one with a flag. — *Owner: jesuslarag*
-- [ ] **OQ3 — Which `AuditLedger`?** `parrot/auth/audit.py:65` or
-  `parrot/security/audit_ledger.py:296`. A2A documents the latter. — *Owner: jesuslarag*
-- [ ] **OQ4 — Single-worker constraint.** Is v1 allowed to require one aiohttp worker
-  (or sticky routing) for the streamable session/event store, or must a shared store
-  land in this feature? — *Owner: jesuslarag*
-- [ ] **OQ5 — Agent reload.** Re-reify on `BotManager.reload_agent()`, or hold agents
-  by name and resolve per call? The second is cheaper and reload-safe. — *Owner: jesuslarag*
-- [ ] **OQ6 — Which navigator-auth scopes/claims** carry `tenant_id` and the
-  `mcp:agent:{name}` grant, and does the manual user-activation gate live in
-  navigator-auth's `/authorize` or in an AI-Parrot policy? — *Owner: jesuslarag*
-- [ ] **OQ7 — MCP tool annotations.** Derive `readOnlyHint` / `destructiveHint` /
-  `idempotentHint` from the decorator's `scope`, or declare them explicitly? Note
-  `routing_meta["requires_confirmation"]` already drives a destructive-op guard in
-  `MCPToolAdapter` and is the natural carrier. — *Owner: jesuslarag*
-- [ ] **OQ8 — Which agent metadata becomes an MCP resource?** Description and
-  capability summary are obvious; KB descriptors and the system prompt are a
-  disclosure decision. — *Owner: jesuslarag*
+- [x] **OQ1 — Who ships the RFC 9728 protected-resource metadata?** — *Owner:
+  jesuslarag*: **AI-Parrot ships it, in this feature.** PRM describes the resource
+  server, so `/.well-known/oauth-protected-resource` and a `resource_metadata=`-bearing
+  401 (`transports/base.py:305`) live here and point at navigator-auth as the AS.
+  Tracked as the `mcp-protected-resource-metadata` capability.
+- [x] **OQ2 — Reification vs LLM-callability?** — *Owner: jesuslarag*: **MCP-only, no
+  opt-in.** A reified `@mcp_tool` method is never registered into the owning agent's
+  `ToolManager`; decorating a method changes what MCP clients can call and nothing
+  else. The exposure set and the LLM tool set are two collections.
+- [x] **OQ3 — Which `AuditLedger`?** — *Owner: settled by the code*:
+  `parrot.security.audit_ledger.AuditLedger`. `parrot/auth/audit.py:1` is explicitly
+  *"DEPRECATED: Use `parrot.security.audit_ledger` instead"* (FEAT-264 / TASK-1675);
+  the canonical class is KMS-signed with an async `append()`. Do not import the
+  deprecated one.
+- [x] **OQ4 — Single-worker constraint?** — *Owner: jesuslarag*: **no — a Redis-backed
+  session/event store lands in this feature.** The project's own deploy template runs
+  `aiohttp.GunicornWebWorker` with `(2×CPUs)+1` workers, recycles them every 2000
+  requests, and explicitly forbids in-process cross-request state
+  (`autonomous/deploy/templates.py:12-18`), which the branch's in-memory `_sessions`
+  violates. Tracked as the `mcp-shared-session-store` capability; it also fixes the
+  existing tool-level streamable endpoint.
+- [x] **OQ5 — Agent reload?** — *Owner: settled by the code*: **hold agents by name,
+  resolve per call.** `BotManager.reload_agent()` (`manager.py:856`) swaps
+  `self._bots[name]` and then `_safe_cleanup()`s the old instance, so a cached object
+  reference would serve a closed agent. The exposure set is re-reified from the new
+  instance on reload.
+- [x] **OQ6 — navigator-auth scopes, claims and the activation gate?** — *Owner:
+  jesuslarag*: **deferred to the spec as a cross-repo dependency.** The navigator-auth
+  side is not designed yet, so this feature codes against a narrow
+  principal-resolution seam (bearer → `PermissionContext`) and the spec settles where
+  `tenant_id` and the `mcp:agent:{name}` grant are carried, and whether the manual
+  user-activation gate lives in navigator-auth's `/authorize` or in a PBAC policy.
+  **This is the one remaining external unknown — it must be closed in the spec, and it
+  is the likeliest source of rework if it is not.**
+- [x] **OQ7 — MCP tool annotations?** — *Owner: jesuslarag*: **ride `routing_meta`.**
+  `MCPToolAdapter` already reads `routing_meta["requires_confirmation"]` and injects a
+  destructive-op guard (`adapter.py:10-18`); that maps to `destructiveHint`.
+  `readOnlyHint` / `idempotentHint` are declared explicitly on the decorator rather
+  than inferred from `scope`.
+- [x] **OQ8 — Which agent metadata becomes an MCP resource?** — *Owner: jesuslarag*:
+  **all four** — identity card, tool catalog (policy-filtered), KB descriptors, and
+  the system prompt / backstory / rationale. Stated caveat: the system-prompt resource
+  discloses guardrail wording, so the spec must gate it behind its own PBAC resource
+  (`mcp:agent:{name}:resource:system-prompt`), separate from the agent-level grant.
+
+No open questions remain for `/sdd-spec`; OQ6 carries forward as a spec-time decision
+with an external dependency, not as an unknown blocking decomposition.
