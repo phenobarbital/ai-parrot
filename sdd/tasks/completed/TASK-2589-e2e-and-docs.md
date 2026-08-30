@@ -50,7 +50,7 @@ for adopters.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot-server/tests/test_admin_ui_agent_crud.py` | CREATE | round-trip test |
-| `packages/ai-parrot-server/tests/test_generate_ts_types.py` (or the FEAT-468 sync test file — locate with `grep -rl generate_ts_types packages/ai-parrot-server/tests`) | MODIFY | include new models |
+| `packages/ai-parrot-server/tests/test_ts_codegen.py` (existing, FEAT-468; contract corrected — task named `test_generate_ts_types.py`, actual file is `test_ts_codegen.py`, same correction TASK-2584 made) | VERIFY | `test_schemas_in_sync_with_committed` already generically diffs every model in `_models()` (all 11, including the 6 FEAT-475 ones) against `ui/schemas/*.json` — confirmed still green, no edit needed |
 | `docs/admin-ui.md` | MODIFY | agent management section |
 
 ---
@@ -127,8 +127,60 @@ async def test_create_slugifies_and_returns_final_name(...): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Created `test_admin_ui_agent_crud.py` exercising the REAL
+`ChatbotHandler.put`/`get`/`post`/`delete` code paths (not monkeypatched
+away) against an in-memory `BotModel` persistence stand-in: `ChatbotHandler
+.handler` (the `ConnectionHandler` class attribute) replaced by a stub
+async-context-manager factory (patched *after* `configure()` runs, since
+the attribute doesn't exist on the class before that — first attempt hit
+`AttributeError`, fixed by reordering); `BotModel.insert`/`update`/
+`delete` monkeypatched to mutate an in-memory dict;
+`ChatbotHandler._get_db_agents`/`_get_db_agent` monkeypatched to read
+from that same dict (mirrors TASK-2583's harness);
+`_register_bot_into_manager` monkeypatched to a no-op stub bot (the
+FEAT-133 reranker/parent_searcher factory sequence and
+`BotManager.create_bot`/`configure` are out of scope for a UI-payload
+round-trip); `_provision_vector_store` needed no patch (empty
+`vector_store_config` short-circuits to `{"status": "none"}`);
+`ChatbotHandler._registry` overridden to always return `None` (no
+registry-backed agent in this test, so every `registry.has()` check
+short-circuits). 3 tests: the full round-trip (PUT "My Bot" → 201
+`name=="my-bot"` → `GET` lists it → `POST {enabled:false}` → `GET`
+hides it by default / `?include_disabled=true` shows it with
+`enabled:false` → `DELETE` → subsequent `GET` 404), a dedicated
+slugification-with-non-alphanumeric-input case, and a dedup-collision
+case asserting the second same-named agent becomes `my-bot-2`. Every
+response body is validated against `BotMutationResponse`/
+`BotsListResponse` via `.model_validate()`, not just spot-checked keys.
 
-**Deviations from spec**: none
+Corrected the same stale contract entry TASK-2584 already found: the
+task named `test_generate_ts_types.py`/described modifying it, but the
+actual FEAT-468 file is `test_ts_codegen.py`, whose
+`test_schemas_in_sync_with_committed` already generically diffs every
+model in `_models()` (all 11, the 5 FEAT-468 + 6 FEAT-475 ones) against
+`ui/schemas/*.json` — re-ran it, still green, no edit needed.
+
+Added the "Agent management" section to `docs/admin-ui.md` per scope:
+tab ↔ field map (all six tabs, every `BotWritePayload` key), a
+dedicated "Name slugification" subsection spelling out that `PUT` may
+return a different `name` than typed, the UI always navigates to
+`response.name`, and renaming an existing agent is unsupported (`name`
+read-only in edit); registry agents stay read-only (with the 403 DELETE
+message quoted verbatim); disabled agents + "Show disabled" behavior
+(`include_disabled` byte-identical-by-default guarantee); the
+`GET /api/v1/admin/catalog` shape + provider-dedup/KB-degradation notes;
+and the `/api/v1/agent_tools` library-ownership change. Also updated the
+FEAT-468 "What it is" bullet for the Agents page (previously said "No
+create/edit/delete — that is a future spec"), which this feature makes
+obsolete, with a forward link to the new section.
+
+`pytest packages/ai-parrot-server/tests/`: 1296 passed (1293
+pre-TASK-2589 + 3 new), 7 pre-existing failures unrelated to this
+feature (identical to every prior task's baseline in this feature), 1
+skipped. `ruff check` clean on the new test file. `pnpm test`/`pnpm
+build` unaffected (no UI files touched by this task — confirmed via
+`git status`, only `docs/admin-ui.md` and the new Python test file).
+
+**Deviations from spec**: none.

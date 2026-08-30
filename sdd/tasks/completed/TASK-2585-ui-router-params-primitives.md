@@ -153,8 +153,59 @@ it("guard redirect bypasses beforeNavigate", ...)
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Extended `router.svelte.ts` with `:param` segment matching
+(`matchRoute()`/`segments()` helpers), `params = $state<Record<string,
+string>>({})` populated by `match()`, and a `beforeNavigate` hook consulted
+by `navigate()` (sync-or-promise return; `navigate()` itself stays sync —
+a promise defers the history push until it resolves `true`, a rejection
+cancels). `match()` checks static routes before param routes so
+`/admin/agents/new` always wins over `/admin/agents/:name`. `guard()`'s
+login redirect now calls a new private `_commit()` directly, bypassing
+`beforeNavigate` entirely, so the unsaved-changes hook can never block a
+forced auth redirect. Added 8 new `router.test.ts` cases (params captured,
+static-over-param precedence, segment-count mismatch, URI-decoding,
+beforeNavigate true/false, async beforeNavigate, guard-bypasses-hook); all
+6 pre-existing cases still pass unchanged.
 
-**Deviations from spec**: none
+Vendored `tabs`, `checkbox`, `switch`, `textarea`, `slider` under
+`ui/src/lib/ui/internal/shadcn/ui/<family>/` from the shadcn-svelte/bits-ui
+2.x generator pattern (verified against the installed `bits-ui@2.19.0`
+type declarations in `node_modules`, since the corporate copy-in source is
+not on disk) — same `cn()`/`data-slot`/`WithElementRef`/
+`WithoutChildrenOrChild` style as the existing `input`/`switch`/`dialog`
+families. `slider.svelte` required an explicit `type = "single"` default
+(bits-ui 2.x's Slider is a discriminated union on `type: "single" |
+"multiple"`; without it the primitive assumed array-valued `value` and
+crashed) — not in the task's contract, discovered while building the
+smoke test. Added `vendored-primitives.test.ts` (5 tests, one per family,
+including a `TabsHarness.test.svelte` for the compound Tabs
+Root/List/Trigger/Content) with a locally-scoped `ResizeObserver` stub
+(jsdom lacks one; bits-ui's Slider needs it) — the stub is local to this
+test file, not added to the shared `vitest-setup.ts`.
+
+Added `JsonEditor.svelte` (validated textarea; `value` bindable and only
+updated on valid JSON matching `mode`; `valid` bindable + `onvalid`
+callback; Format button pretty-prints) and `StringListEditor.svelte`
+(bindable `items: string[]`; add via button or Enter; remove/reorder;
+blanks trimmed/dropped; optional `suggestions` datalist) with 7 tests
+each — object/array/any mode enforcement, malformed-JSON error state,
+Format button, add/remove/reorder, blank-trimming, suggestions rendering.
+
+Full UI suite (`pnpm test`): 16 files, 86 tests passed (59 pre-existing +
+27 new), 0 failures. `pnpm build` succeeds (772 modules, no type/compile
+errors).
+
+Fixed a state-tracking bug from the two prior tasks in this feature while
+verifying `git status` before this commit: TASK-2583's and TASK-2584's
+"move to completed/" steps staged the new `sdd/tasks/completed/*.md` path
+but never staged the deletion at the old `sdd/tasks/active/*.md` path
+(`git add <new-path>` does not implicitly stage an absent old path) — both
+task files were tracked in two places simultaneously. Fixed in a separate
+commit (`sdd: fix stale active/ task file entries for TASK-2583/TASK-2584`)
+before this task's own commit.
+
+**Deviations from spec**: none — the `type="single"` Slider default is an
+implementation necessity for a working component, not a deviation from
+the described props/behavior.

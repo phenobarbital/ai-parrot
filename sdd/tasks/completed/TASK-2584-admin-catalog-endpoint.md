@@ -59,7 +59,8 @@ sends/receives.
 | `packages/ai-parrot-server/ui/schemas/*.json` | CREATE | regenerated |
 | `packages/ai-parrot-server/ui/src/lib/types/generated/*.d.ts` | CREATE | regenerated via `pnpm generate` |
 | `packages/ai-parrot-server/tests/test_admin_catalog.py` | CREATE | auth, shape, degradation |
-| `packages/ai-parrot-server/tests/test_generate_ts_types.py` (existing, FEAT-468) | MODIFY | assert the 6 new schema files |
+| `packages/ai-parrot-server/tests/test_ts_codegen.py` (existing, FEAT-468; contract corrected — task named `test_generate_ts_types.py`, actual file is `test_ts_codegen.py`) | VERIFY | `test_schemas_in_sync_with_committed` generically diffs every model in `_models()` against `ui/schemas/*.json`, so it already covers the 6 new models with no edit needed — confirmed green after regenerating schemas |
+| `packages/ai-parrot-server/tests/test_admin_ui_serving.py` (existing, FEAT-468) | MODIFY | `TestAbsentDist::test_absent_dist_returns_false_and_registers_no_spa_routes` asserted the route set registered with no `dist/` present was exactly `{"/api/v1/admin/status"}`; the new `/api/v1/admin/catalog` route is UI-agnostic by design (spec §3 Module 2 — registers even when `dist/` is absent), so this pre-existing assertion needed the new path added to stay accurate, not a scope change |
 
 ---
 
@@ -161,8 +162,39 @@ async def test_catalog_authenticated(...): ...
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Created `parrot/server/ui/catalog.py` with `KnowledgeBaseOption`,
+`AdminCatalog`, pure `build_catalog()`, and `AdminCatalogHandler`
+(`@is_authenticated() @user_session()`, copies the `AdminStatusHandler`
+pattern). Provider dedup keeps the first key per resolved client/lazy-
+loader value (handles both class-valued and lazy-loader-function-valued
+`SUPPORTED_CLIENTS` entries, e.g. `claude-agent`/`claude-code` share one
+lazy loader). `LocalKB` import wrapped in `try/except Exception` with a
+warning log, never raises. Registered `AdminCatalogHandler` in
+`setup_admin_ui()` right after the status view (unconditional, dist-
+agnostic). Extended `server/ui/models.py` with `ToolInfo`,
+`ToolsListResponse`, `BotWritePayload` (aliased `model_config_` field,
+`populate_by_name=True`, confirmed the generated `.d.ts` exposes the wire
+name `model_config`), `BotMutationResponse`. Added all 6 new models to
+`scripts/generate_ts_types.py::_models()`, ran the script and `pnpm
+generate` — 6 new `ui/schemas/*.json` + `.d.ts` files committed.
+Added `test_admin_catalog.py` (6 tests: 401/200, shape, dedup, KB
+degradation, class_path importability) — all green.
+Corrected a stale Codebase Contract entry: the task named
+`test_generate_ts_types.py` but the actual FEAT-468 file is
+`test_ts_codegen.py`; its `test_schemas_in_sync_with_committed` already
+generically diffs every model in `_models()`, so it covers the 6 new
+models with no edit — confirmed green.
+Fixing `test_admin_ui_serving.py::TestAbsentDist::
+test_absent_dist_returns_false_and_registers_no_spa_routes` was required:
+it asserted the exact route set registered with `dist/` absent, and the
+new catalog route is deliberately dist-agnostic per spec §3 Module 2 (same
+pattern as the existing status route) — updated the expected set to
+include `/api/v1/admin/catalog`.
+Full `packages/ai-parrot-server/tests/` suite: 1293 passed, 7
+pre-existing failures unrelated to this task (identical to the FEAT-475
+TASK-2583 baseline), 1 skipped. `packages/ai-parrot-server/ui`: `pnpm
+test` 59/59 passed unmodified. `ruff check` clean on all touched files.
 
 **Deviations from spec**: none

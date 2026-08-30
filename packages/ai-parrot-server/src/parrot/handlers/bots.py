@@ -460,13 +460,22 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             name = qs.get('name')
         return name or None
 
-    async def _get_db_agents(self) -> list[BotModel]:
-        """Query all enabled agents from database."""
+    async def _get_db_agents(self, include_disabled: bool = False) -> list[BotModel]:
+        """Query agents from database.
+
+        Args:
+            include_disabled: when ``True``, returns every DB agent
+                regardless of the ``enabled`` flag; default ``False``
+                preserves the existing enabled-only behaviour.
+        """
         db = self.handler
         try:
             async with await db(self.request) as conn:
                 BotModel.Meta.connection = conn
-                agents = await BotModel.filter(enabled=True)
+                if include_disabled:
+                    agents = await BotModel.all()
+                else:
+                    agents = await BotModel.filter(enabled=True)
                 return agents if agents else []
         except Exception as exc:
             self.logger.error("Failed to load DB agents: %s", exc)
@@ -709,7 +718,11 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         seen_names: set[str] = set()
 
         # 1. Database agents (higher priority)
-        db_agents = await self._get_db_agents()
+        qs = self.query_parameters(self.request)
+        include_disabled = str(qs.get('include_disabled', '')).lower() in (
+            '1', 'true', 'yes'
+        )
+        db_agents = await self._get_db_agents(include_disabled=include_disabled)
         for agent in db_agents:
             data = self._bot_model_to_dict(agent)
             agents.append(data)

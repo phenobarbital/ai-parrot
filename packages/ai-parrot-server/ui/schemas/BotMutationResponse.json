@@ -1,0 +1,67 @@
+{
+  "description": "Response body shared by ``PUT``/``POST``/``DELETE`` on\n``ChatbotHandler`` (create/update/delete).",
+  "properties": {
+    "chatbot_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Chatbot Id"
+    },
+    "message": {
+      "title": "Message",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source"
+    },
+    "vector_store_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vector Store Error"
+    },
+    "vector_store_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vector Store Status"
+    }
+  },
+  "required": [
+    "message",
+    "name"
+  ],
+  "title": "BotMutationResponse",
+  "type": "object"
+}

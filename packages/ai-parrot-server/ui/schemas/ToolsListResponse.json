@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "ToolInfo": {
+      "description": "A single tool entry as emitted by ``GET /api/v1/agent_tools``\n(``parrot.handlers.bots.ToolList``) \u2014 codegen descriptor only, not\nimported by the handler (see module docstring).",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "module_path": {
+          "title": "Module Path",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "module_path"
+      ],
+      "title": "ToolInfo",
+      "type": "object"
+    }
+  },
+  "description": "Response body for ``GET /api/v1/agent_tools``.",
+  "properties": {
+    "tools": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolInfo"
+      },
+      "title": "Tools",
+      "type": "object"
+    }
+  },
+  "required": [
+    "tools"
+  ],
+  "title": "ToolsListResponse",
+  "type": "object"
+}

@@ -152,10 +152,25 @@ def test_tools_list_registration_idempotent(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Implemented `include_disabled` on `ChatbotHandler._get_db_agents`
+(defaults to `False`, `BotModel.all()` when `True`) and query-param parsing
+in `_get_all` via `self.query_parameters(self.request)` (truthy:
+`1`/`true`/`yes`, case-insensitive). Registered `ToolList` at
+`/api/v1/agent_tools` (`name='tools_list'`) inside `BotManager.setup()`
+right after `ChatbotHandler.configure(...)`, guarded by
+`'tools_list' not in self.app.router.named_resources()` for idempotency.
+Removed the `ToolList` import and registration block from repo-root
+`app.py` (confirmed `BotManager.setup()` runs earlier in `app.py`'s own
+setup flow, so the route is still registered exactly once).
+Added `test_bots_include_disabled.py` (7 tests) and
+`test_tools_list_route.py` (4 tests) — both green. Full
+`packages/ai-parrot-server/tests/` suite run: 1287 passed, 7 pre-existing
+failures unrelated to this task (verified identical failures on the
+pre-change tree via `git stash`), 1 skipped.
+`ruff check` on touched source files reports the same pre-existing error
+counts before and after this change (verified via `git stash` diff) — no
+new lint issues introduced by this task; the new test files are clean.
 
 **Deviations from spec**: none

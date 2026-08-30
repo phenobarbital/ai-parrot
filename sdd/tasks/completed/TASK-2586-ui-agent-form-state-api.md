@@ -144,8 +144,57 @@ import type { AdminCatalog } from "$lib/types/generated/AdminCatalog";
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: `agents/fields.ts` — `defaults()` sourced from
+`handlers/models/bots.py:95-260` directly (not the spec's paraphrase):
+matches every listed default, and additionally corrects `custom_kbs` to
+`null` (`BotModel: Field(nullable=True, default=None)`, not `[]` as the
+task's generic "lists []" phrasing implied) — noted below as a
+verified-contract correction, not a deviation. `FIELD_TAB` is typed
+`Record<keyof BotWritePayload, TabId>` so a future field added to the
+generated type without a tab mapping is a compile error; `storage`
+(create-only, not really a "field") maps to `general` alongside `name`.
+`validate()` covers required/range/enum/JSON rules per scope, including
+`model_config.temperature`/`max_tokens` nested checks and the
+`permissions` dict-or-list dual shape. 30 tests in `fields.test.ts`,
+including a `Required<BotWritePayload>` fixture that walks every
+generated key against `FIELD_TAB` (belt-and-suspenders with the
+compile-time check).
 
-**Deviations from spec**: none
+`stores/agent-form.svelte.ts` — `AgentFormState` rune class exactly per
+spec §2 Data Models plus `load(agent: BotAgentItem)`: drops `source`,
+peels `chatbot_id`/`created_at`/`created_by`/`updated_at` into `meta`,
+drops any other unrecognized key (registry-shape leakage protection —
+`BotAgentItem` is `extra="allow"`), coerces `null` dict/list fields to
+`{}`/`[]`. `dirty`/`diff()` use a `stableStringify`-based structural
+compare (sorted-keys JSON, per the task's implementation note).
+`diff()` excludes `IMMUTABLE_FIELDS`, `storage`, and `name` in edit mode
+(§8 Q3) unconditionally. 16 tests in `agent-form.test.ts`.
+
+`api/agents.ts` — `listAgents`/`getAgent`/`createAgent`/`updateAgent`/
+`deleteAgent`/`listTools`/`getCatalog` over the shared `apiClient`
+singleton, matching the `AgentsList.svelte` `apiClient.get<T>(url)` ->
+`{data}` pattern; `listAgents({includeDisabled:true})` appends
+`?include_disabled=true`, omitted otherwise. 10 tests in
+`agents.test.ts` via `vi.spyOn(apiClient, ...)` asserting exact
+URL/method/body per operation, plus a 403-passthrough case for the
+registry-agent delete-rejection path.
+
+Ran `npx tsc --noEmit` (no typecheck script exists in this package) as
+an extra check beyond `pnpm test`/`pnpm build`: found and fixed one real
+issue introduced in TASK-2585's `vendored-primitives.test.ts` (the local
+`ResizeObserver` stub's constructor signature didn't structurally match
+`typeof ResizeObserver`, causing a cast error) — gave the stub a
+`ResizeObserverCallback` constructor param and declared `implements
+ResizeObserver`. The remaining 7 `tsc` errors (badge/button/Dashboard
+barrels) are pre-existing false positives: plain `tsc` doesn't resolve
+`.svelte` module exports the way `vite-plugin-svelte`/`svelte-check` do;
+none are in files this feature touches. `pnpm test`: 19 files, 142
+tests passed (86 pre-TASK-2586 + 56 new), 0 failures. `pnpm build`
+succeeds.
+
+**Deviations from spec**: none — the `custom_kbs: null` default and the
+`ResizeObserverStub` typing fix are both contract corrections/bugfixes
+uncovered while implementing, not departures from the described
+behavior.

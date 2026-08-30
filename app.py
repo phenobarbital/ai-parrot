@@ -17,7 +17,6 @@ from parrot.handlers.bots import (
     UserPromptsManagement,
     ChatbotUsageHandler,
     ChatbotSharingQuestion,
-    ToolList
 )
 from parrot.handlers.chat import (
     BotManagement
@@ -148,12 +147,8 @@ class Main(AppHandler):
         )
         # Install Bot Management
         BotManagement.setup(self.app, r'/api/v1/bot_management{slash:/?}{bot:[^/]*}')
-        # Tools List
-        self.app.router.add_view(
-            '/api/v1/agent_tools',
-            ToolList,
-            name='tools_list'
-        )
+        # Tools List: now registered by BotManager.setup() (FEAT-475) so a
+        # wheel install of ai-parrot-server also exposes /api/v1/agent_tools.
         # Video Understanding API:
         self.app.router.add_view(
             '/api/v1/google/understanding',

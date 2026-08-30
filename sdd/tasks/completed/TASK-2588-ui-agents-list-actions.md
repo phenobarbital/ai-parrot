@@ -142,8 +142,50 @@ it("Show disabled toggles include_disabled param", ...)
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: `AgentsList.svelte` switched from raw `apiClient.get` to
+`listAgents({ includeDisabled })` (TASK-2586); confirmed via the
+pre-existing `AgentsList.test.ts` suite (which mocks `apiClient.get`
+directly, unmodified) that this is a transparent wrapper swap. Added
+Create Agent button (`router.navigate("/admin/agents/new")`), per-row
+Edit/Delete actions gated on `agent.source === "database"` (both call
+`e.stopPropagation()` so the row's own detail-open `onclick` never also
+fires — verified in tests), a "Show disabled" `Switch` defaulting off
+(byte-identical `/api/v1/bots` request until toggled, then
+`?include_disabled=true`), and a disabled-row `Badge` + muted row style.
+`AgentDetail.svelte` gained an `Edit` button in the header for database
+agents only (registry agents unchanged) that closes the dialog and
+navigates via `router`. Created `DeleteAgentDialog.svelte`: typed-name
+gate (`Input` must equal `agent.name` exactly to enable the destructive
+`Button`), calls `deleteAgent(name)`, resets its local `typedName`/
+`error` state each time it opens (guards against a stale confirmation
+value or error leaking into a second delete attempt on the same or a
+different agent), surfaces `ApiError.message` verbatim on failure
+(403 for repo registry agents included) without closing, calls
+`ondeleted()` only on success so the parent list refetches.
 
-**Deviations from spec**: none
+Updated the one FEAT-468 test this task's acceptance criteria directly
+supersede: `AgentsList.test.ts`'s "has no mutating controls" asserted
+zero Create/Edit/Delete buttons ever — replaced with "renders Create
+Agent and Edit/Delete only on database rows" (registry rows still
+assert no mutating affordance). No other pre-existing assertion in
+`AgentsList.test.ts`/`AgentDetail.test.ts` was touched, only extended.
+
+Added test coverage per the Test Specification: `AgentsList.test.ts`
+(+5 cases: Create navigation, Edit navigation without opening the detail
+dialog, Delete opening its own dialog without opening the detail dialog,
+show-disabled param toggling, disabled-badge rendering), `AgentDetail
+.test.ts` (+3: Edit button present/absent by source, Edit navigates and
+closes), `DeleteAgentDialog.test.ts` (4 new: typed-name gating, DELETE
+call + `ondeleted()`, 403 message verbatim + dialog stays open, state
+reset across opens).
+
+`pnpm test`: 22 files, 166 tests passed (154 pre-TASK-2588 + 13 total in
+`AgentsList.test.ts` [8 pre-existing/updated + 5 new] + 6 in
+`AgentDetail.test.ts` [3 pre-existing + 3 new] + 4 new in
+`DeleteAgentDialog.test.ts`), 0 failures. `pnpm build` succeeds with zero
+warnings. `npx tsc --noEmit`: same 7 pre-existing false positives as
+prior tasks (files this feature never touches), no new errors.
+
+**Deviations from spec**: none.
