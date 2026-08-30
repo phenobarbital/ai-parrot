@@ -79,8 +79,19 @@ the port is done deliberately).
   (`chat-db.ts`) plus sync with `/api/v1/chat/interactions`.
 - **`/ws/userinfo` → no-op stub** with the identical `wsService`
   surface; `ws_channel_id` is not sent.
-- **No backend changes**; any backend gap found during the port is
-  degraded gracefully in the UI.
+- **Chat envelope codegen**: Pydantic models for the `AgentTalk`
+  response envelope (`AgentChatResponse`, `AgentChatMetadata`,
+  `AgentToolCall`) added under `parrot.server.ui` and registered in
+  `scripts/generate_ts_types.py`, so `ui/src/lib/types/generated/
+  AgentChatResponse.d.ts` replaces the hand-copied `types/agent.ts`
+  response shapes. The handler's two envelope builders are **not
+  rewritten** — a contract test asserts their dicts validate against the
+  model.
+- **Backend changes limited to that codegen module**; any other backend
+  gap found during the port is degraded gracefully in the UI.
+- **Icons offline**: `@iconify/svelte` with the used collections bundled
+  from `@iconify-json/*` and registered via `addCollection` at startup —
+  no runtime calls to `api.iconify.design`.
 - Wheel guarantees intact: `dist/` stays flat, `test_wheel_layout.py`
   and the release assert keep passing; existing Admin UI tests keep
   passing.
@@ -94,8 +105,9 @@ the port is done deliberately).
 - Porting `navauth/**` (replaced by FEAT-468's `AuthStore`) or
   navigator's `AgentTestChat.svelte` (targets navigator-api endpoints).
 - Implementing `/ws/userinfo` (or any WebSocket) in `ai-parrot-server`.
-- Backend Pydantic model + codegen for the streamed `AIMessage`
-  envelope — TS types stay hand-written in v1 (§8).
+- Refactoring `AgentTalk`'s envelope builders to construct the Pydantic
+  model directly (the model is a contract + codegen source only; the
+  builders keep emitting dicts).
 - Agent CRUD (FEAT-475), crews UI, dev-loop console.
 - Client-side authorization beyond what PBAC returns (403 is surfaced,
   not pre-computed).
@@ -177,6 +189,29 @@ existing `getAuthHeaders()`; a 401 anywhere (including mid-stream)
 aborts, clears storage and redirects to `/admin/login?next=<route>`
 (FEAT-468 behaviour, reused).
 
+**Envelope codegen.** `AgentTalk` builds its response envelope as a
+plain dict in two places — the stream finaliser (`agent.py:2556-2600`,
+keys `input`, `output`, `metadata`, `sources`, `tool_calls`,
+optional `a2ui_envelope`) and the JSON formatter (`agent.py:2777-2822`,
+same plus `data`, `response`, `output_mode`, `code`). A new
+`parrot/server/ui/chat_models.py` declares `AgentToolCall`,
+`AgentChatMetadata` and `AgentChatResponse` (`extra="allow"`, every
+non-core field `Optional`) mirroring those dicts; they are registered in
+`scripts/generate_ts_types.py::_models()` so `pnpm generate` emits
+`ui/src/lib/types/generated/AgentChatResponse.d.ts` (+ the two nested
+types). The vendored `types/agent.ts` keeps only client-side shapes
+(`AgentChatRequest`, `AgentMessage`, …) and imports the generated
+response types. A backend contract test feeds representative dicts
+from both builders through `AgentChatResponse.model_validate` so drift
+in either direction fails CI.
+
+**Icons.** `@iconify/svelte` is configured offline: the icon prefixes
+used by the vendored tree are enumerated at port time, the matching
+`@iconify-json/<set>` packages are added, and `src/lib/icons.ts`
+registers them with `addCollection()` before the app mounts; the
+runtime API is disabled (`disableCache`/no network fetch) so an
+air-gapped adopter sees every icon.
+
 **Packaging.** New runtime deps land in `ui/package.json`. Vite emits
 every chunk and static asset flat under `dist/assets/` with hashes, so
 the existing non-recursive package-data globs (`dist/*`,
@@ -230,16 +265,56 @@ flags:  vite.config.ts loadEnv(PUBLIC_AGENTCHAT_*) → define(__AGENTCHAT_*__) �
 
 ### Data Models
 
-No Python models. TypeScript types are vendored from navigator
+```python
+# packages/ai-parrot-server/src/parrot/server/ui/chat_models.py (new) — mirrors agent.py:2556-2600 and :2777-2822
+class AgentToolCall(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    name: str = "unknown"
+    status: str = "completed"
+    output: Any = None
+    arguments: Any = None
+
+class AgentChatMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    model: str | None = None
+    provider: str | None = None
+    session_id: str = ""
+    turn_id: str = ""
+    user_id: str | None = None
+    response_time: int | None = None          # ms
+    usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    stop_reason: str | None = None
+    created_at: str | None = None             # JSON path only
+    is_error: bool | None = None
+    # infographic extras (explanation, html_url, artifact_id, template_name, theme) arrive via extra="allow"
+
+class AgentChatResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    input: str | None = None
+    output: Any = None                         # str | dict | list (DataFrame records / model_dump)
+    data: Any = None                           # JSON path only
+    response: str | None = None                # JSON path only
+    output_mode: str | None = None             # JSON path only
+    code: str | None = None                    # JSON path only
+    metadata: AgentChatMetadata
+    sources: list[dict[str, Any]] = []
+    tool_calls: list[AgentToolCall] = []
+    a2ui_envelope: dict[str, Any] | list[dict[str, Any]] | None = None
+    audio_base64: str | None = None            # voice path
+    audio_format: str | None = None
+```
+
+Registered in `scripts/generate_ts_types.py::_models()` as
+`"AgentChatResponse"`, `"AgentChatMetadata"`, `"AgentToolCall"`.
+Remaining TypeScript types are vendored from navigator
 (`src/lib/types/agent.ts`, `bot-chat.ts`, `prompt-library.ts`,
 `dataset.ts`, `theme.ts`, `index.ts`); key shapes:
 
 ```ts
-// src/lib/types/agent.ts (vendored verbatim)
+// src/lib/types/agent.ts (vendored, trimmed): client-side shapes only —
 export interface AgentChatRequest { ws_channel_id?: string; query: string; session_id?: string; [key: string]: any }
-export interface AgentMetadata { model: string; provider: string; session_id: string; turn_id: string; response_time?: number|null; is_error?: boolean; explanation?: string; html_url?: string; html_inline_omitted?: boolean; artifact_id?: string; template_name?: string; theme?: string }
-export interface AgentToolCall { name: string; status: string; output: any; arguments: any }
-export interface AgentChatResponse { input: string; output: string | InteractiveArtifactResult | null; data: any|null; response: string; output_mode: "default"|"json"|"infographic"|"interactive"|string; code: string|null; metadata: AgentMetadata; sources: any[]; tool_calls: AgentToolCall[]; audio_base64?: string; audio_format?: string }
+export type { AgentChatResponse, AgentChatMetadata as AgentMetadata, AgentToolCall } from "$lib/types/generated/AgentChatResponse";  // GENERATED by pnpm generate
 export interface AgentMessage { id: string; role: "user"|"assistant"; content: string; timestamp: Date; metadata?: AgentMetadata; data?: any; code?: string|null; output?: any; tool_calls?: AgentToolCall[]; output_mode?: string; htmlResponse?: string|null; … }
 
 // src/lib/api/stream.ts (vendored)
@@ -275,8 +350,13 @@ Build variables (documented in `docs/admin-ui.md`):
 
 ### Module 1: Build wiring — deps, shims, feature flags, config
 - **Path**: `ui/package.json`, `ui/vite.config.ts`, `ui/src/lib/shims/{environment,navigation,env-public}.ts`, `ui/src/lib/features.ts`, `ui/src/lib/config.ts`, `ui/src/lib/services/websocket-service.ts` (stub) + tests `ui/src/lib/shims/*.test.ts`, `ui/src/lib/features.test.ts`
-- **Responsibility**: add runtime deps (§7); `resolve.alias` for `$app/environment`, `$app/navigation`, `$env/dynamic/public`; `loadEnv` + `define` for the eight flags (default `true`); typed `features` object; `config.ts` gains the agent fields navigator's ported code reads; `wsService` no-op stub.
+- **Responsibility**: add runtime deps (§7); `resolve.alias` for `$app/environment`, `$app/navigation`, `$env/dynamic/public`; `loadEnv` + `define` for the eight flags (default `true`); typed `features` object; `config.ts` gains the agent fields navigator's ported code reads; `wsService` no-op stub; `src/lib/icons.ts` registering the `@iconify-json/*` collections via `addCollection` (offline, no runtime fetch) — imported once from `main.ts` before mount.
 - **Depends on**: FEAT-468 (`vite.config.ts` `envPrefix` already exposes `PUBLIC_*`), FEAT-475 merged.
+
+### Module 0: Chat envelope models + codegen (backend, can run first)
+- **Path**: `packages/ai-parrot-server/src/parrot/server/ui/chat_models.py`, `scripts/generate_ts_types.py` (`_models()` registry), `ui/schemas/{AgentChatResponse,AgentChatMetadata,AgentToolCall}.json`, `ui/src/lib/types/generated/*.d.ts` (regenerated) + tests `packages/ai-parrot-server/tests/test_chat_models.py`
+- **Responsibility**: the three Pydantic models of §2 Data Models mirroring `agent.py:2556-2600` (stream) and `:2777-2822` (JSON); registration in the codegen; committed schemas regenerated via `python scripts/generate_ts_types.py` + `pnpm generate`; a contract test that validates representative dicts from both builders (including `a2ui_envelope`, voice `audio_*`, empty `sources`/`tool_calls`, missing JSON-only keys on the stream path). `AgentTalk` is not modified.
+- **Depends on**: nothing (FEAT-468 codegen pipeline).
 
 ### Module 2: Transport, types, services, utils
 - **Path**: `ui/src/lib/api/{agent,stream,botChat,chatInteraction,avatar,infographic,integrations,llm,prompt-library,speechReport,user-prompts}.ts`, `ui/src/lib/services/chat-db.ts`, `ui/src/lib/utils/{markdown,highlight,chunk-accumulator,voice-recorder,bot-response-parser,prompt-placeholders}.ts`, `ui/src/lib/types/{agent,bot-chat,prompt-library,dataset,theme,index}.ts`, `ui/src/lib/stores/{agentchat-layout,avatar,prompt-library,client,notifications,toast}.svelte.ts` + tests `ui/src/lib/api/stream.test.ts`, `ui/src/lib/api/agent.test.ts`, `ui/src/lib/services/chat-db.test.ts`
@@ -341,6 +421,10 @@ Build variables (documented in `docs/admin-ui.md`):
 | Test | Description |
 |---|---|
 | `test_wheel_layout.py::TestAdminUiDist::test_agentchat_chunk_present` (`@pytest.mark.wheel_build`) | wheel contains an agentchat chunk under `parrot/server/ui/dist/assets/` |
+| `test_chat_models.py::test_stream_envelope_validates` | dict shaped like `agent.py:2556-2600` (no `data/response/output_mode/code`) validates |
+| `test_chat_models.py::test_json_envelope_validates` | dict shaped like `agent.py:2777-2822` incl. `a2ui_envelope`, `created_at` validates |
+| `test_chat_models.py::test_voice_fields_and_extras` | `audio_base64`/`audio_format` and unknown metadata keys (infographic extras) accepted |
+| `test_chat_models.py::test_codegen_registry` | `generate_ts_types._models()` contains the three names; exported schema files match committed `ui/schemas/*.json` |
 | existing `test_dist_index_present`, `test_dist_assets_present` | still pass |
 
 ### Test Data / Fixtures
@@ -370,7 +454,10 @@ Build variables (documented in `docs/admin-ui.md`):
 - [ ] 401 mid-conversation clears `ai_parrot_token`/`ai_parrot_session` and redirects to login preserving the route; 403 (PBAC) and 404 render error/not-found states without retry loops.
 - [ ] Voice/avatar controls degrade to hidden after the first 404/405 when the backend extras are not installed.
 - [ ] `docs/admin-ui.md` documents the flags, the lean-build recipe, measured bundle sizes (all-on vs. all-off) and the divergence policy.
-- [ ] No Python code changed outside `tests/test_wheel_layout.py`; no breaking changes to existing routes.
+- [ ] `AgentChatResponse`/`AgentChatMetadata`/`AgentToolCall` exist in `parrot.server.ui.chat_models`, are registered in `scripts/generate_ts_types.py`, the committed `ui/schemas/*.json` and `ui/src/lib/types/generated/*.d.ts` are regenerated, and `ui/src/lib/types/agent.ts` re-exports the generated response types (no hand-written duplicate); `pytest packages/ai-parrot-server/tests/test_chat_models.py` passes.
+- [ ] `@iconify/svelte` renders every icon with the network blocked (vitest asserts no `fetch` to `api.iconify.design`; manual check offline) — collections come from bundled `@iconify-json/*`.
+- [ ] Chat action rule: hidden only when the row carries `enabled === false` (DB agents serialize `enabled`; registry rows lack it and are treated as enabled).
+- [ ] Python changes limited to `parrot/server/ui/chat_models.py`, `scripts/generate_ts_types.py` and tests; `AgentTalk` untouched; no breaking changes to existing routes.
 
 ---
 
@@ -387,6 +474,19 @@ Build variables (documented in `docs/admin-ui.md`):
 from parrot.server.ui.serving import setup_admin_ui        # packages/ai-parrot-server/src/parrot/server/ui/serving.py:156
 from parrot.handlers.agent import AgentTalk                 # packages/ai-parrot-server/src/parrot/handlers/agent.py:110
 from parrot.handlers.chat_interaction import ChatInteractionHandler  # packages/ai-parrot-server/src/parrot/handlers/chat_interaction.py:19
+from parrot.server.ui.models import BotAgentItem, BotsListResponse  # packages/ai-parrot-server/src/parrot/server/ui/models.py:20,39
+from parrot.server.ui.status import AdminStatus, AgentCounts, DependencyHealth  # scripts/generate_ts_types.py:55
+# scripts/generate_ts_types.py — SCHEMAS_DIR = REPO_ROOT/packages/ai-parrot-server/ui/schemas (42);
+#   def _models() -> dict[str, type[BaseModel]] (45; returns the name→model registry, 57-63);
+#   def export_schemas(output_dir: Path = SCHEMAS_DIR) -> dict[str, Path] (66; model.model_json_schema() at 79); def main() -> int (90)
+# Envelope builders in packages/ai-parrot-server/src/parrot/handlers/agent.py:
+#   stream finaliser — envelope = {"input", "output", "metadata": {model, provider, session_id, turn_id, user_id, response_time,
+#     usage, finish_reason, stop_reason}, "sources", "tool_calls": [{name,status,output,arguments}]} (2556-2593);
+#     envelope["a2ui_envelope"] optional (2596-2598); written after b"\n\x00" (2599-2600); error payload also after \n\x00 (2677)
+#   JSON path — def _format_response (2685); obj_response = {"input","output","data","response","output_mode","code",
+#     "metadata": {… + "created_at"}, "sources", "tool_calls"} (2777-2818); "a2ui_envelope" optional (2819-2823)
+# BotAgentItem: model_config = ConfigDict(extra="allow"); name: str; source: Literal["database","registry"] (models.py:33-36);
+#   DB rows carry the full BotModel field set incl. `enabled` via ChatbotHandler._bot_model_to_dict; registry rows do not (docstring 23-31)
 ```
 ```ts
 // Admin UI (packages/ai-parrot-server/ui/) — confirmed exports
@@ -563,9 +663,10 @@ let { agentId, chatbotId, chartBackend = "chartjs", allow_custom_llm = false, ap
 - ~~`@iconify/svelte` in the Admin UI on `dev`~~ — not a dependency yet (added by Module 1).
 - ~~`chart.js` / `svelte-chartjs`~~ — not a navigator dependency; `chartBackend="chartjs"` is a label, `AppChart` uses `layerchart`.
 - ~~`Router.params` / `:param` routes on `dev` today~~ — exact matching only; provided by FEAT-475. Do not re-implement.
-- ~~`BotAgentItem.chatbot_id`, `BotAgentItem.enabled`~~ — the generated type has only `name` and `source` (`ui/schemas/BotAgentItem.json`); FEAT-475 adds `include_disabled` to the list endpoint and loads the full record via `GET /api/v1/bots/<name>`. If `enabled` is still absent from the list payload after FEAT-475, the Chat button is hidden based on the detail record or shown for all rows (§8).
+- ~~`BotAgentItem.chatbot_id` / `BotAgentItem.enabled` as *declared* fields~~ — the generated type pins only `name` and `source` (`ui/schemas/BotAgentItem.json`); both arrive as `extra="allow"` passthrough for **database** rows only (`models.py:23-33`). Read them as `(agent as Record<string, unknown>).enabled` with `undefined ⇒ enabled`; registry rows never carry them.
 - ~~`GET /api/v1/agents/chat`~~ (list) — `AgentTalk` serves `/{agent_id}` only.
-- ~~A Pydantic `AgentChatResponse` model / generated `AgentChatResponse.d.ts`~~ — not present; TS types are vendored by hand.
+- ~~`parrot.server.ui.chat_models`, `AgentChatResponse.d.ts`~~ — created by Module 0 of this spec; on `dev` today the envelope is a bare dict in `agent.py` (only `PausedEnvelope` is Pydantic there).
+- ~~`ui/src/lib/icons.ts`, `@iconify-json/*` in the Admin UI~~ — created/added by Module 1.
 - ~~`/api/v1/agents/voice/{agent_id}` unconditionally~~ — registered only when `ai-parrot-integrations[voice]` imports.
 - ~~`agentConfigApi.startTest/stopTest`~~ — navigator-api endpoints; not part of this port.
 - ~~`ui/src/lib/shims/`, `ui/src/lib/features.ts`, `ui/src/pages/agents/AgentChatPage.svelte`, `__AGENTCHAT_*__` defines~~ — created by this spec.
@@ -621,9 +722,14 @@ let { agentId, chatbotId, chartBackend = "chartjs", allow_custom_llm = false, ap
   under `assets/` rather than extending package-data globs; extend the
   globs only with justification in the PR.
 - **`@iconify/svelte`** fetches icon data at runtime from the Iconify
-  API by default — for an offline/air-gapped adopter, bundle the used
-  icon sets (`@iconify-json/*`) or configure an offline collection;
-  decide in implementation (§8).
+  API by default — decided: bundle the used sets (`@iconify-json/*`) and
+  register them with `addCollection` in `src/lib/icons.ts`; enumerate
+  the prefixes with a grep over the vendored tree at port time and fail
+  the build (vitest) if an icon name uses an unregistered prefix.
+- **Envelope drift**: `AgentTalk` keeps building dicts; the only guard
+  is `test_chat_models.py`. Any future key added to either builder must
+  also be added to `chat_models.py` (extras are tolerated by
+  `extra="allow"`, but typed access from the UI needs the field).
 
 ### External Dependencies (`ui/package.json`)
 | Package | Version | Reason |
@@ -633,7 +739,8 @@ let { agentId, chatbotId, chartBackend = "chartjs", allow_custom_llm = false, ap
 | `highlight.js` | `^11.11.1` | code blocks (always on; consider a language subset) |
 | `uuid` | `^13.0.0` | message ids |
 | `dexie` | `^4.2.1` | IndexedDB conversation store |
-| `@iconify/svelte` | `^5.0.2` | icons (28 import sites) |
+| `@iconify/svelte` | `^5.0.2` | icons (28 import sites), offline mode |
+| `@iconify-json/<prefix>` (one per prefix used, e.g. `@iconify-json/mdi`, `@iconify-json/lucide` — enumerate at port time) | latest | bundled icon collections for `addCollection` |
 | `echarts` | `^5.0.0` | CHARTS |
 | `layerchart` | `2.0.0-next.64` (pin) | CHARTS (`AppChart`) |
 | `d3-scale` | `^4.0.2` | CHARTS |
@@ -663,9 +770,9 @@ let { agentId, chatbotId, chartBackend = "chartjs", allow_custom_llm = false, ap
 - [x] Pruning list — *Resolved in this spec*: Module 3 drop list (`manual-data.ts`, `AppDatePicker`, `ToolCatalogPicker`, `SchemaFormField`, `types/{agentsflow,scraping,hierarchy,crew}.ts`, `api/crew.ts`, `navauth/**`, `oauth/popup.ts`, navigator's `stores/{auth,theme}`); anything else the port discovers is decided per file and noted in the PR.
 - [x] `chartBackend` / layerchart — *Resolved in this spec*: `AppChart` imports `layerchart` unconditionally, so layerchart is part of the CHARTS flag (pinned pre-release); the `chartBackend` prop keeps navigator's `"chartjs"` default as a label.
 - [x] `chatbot_id` for prompt library — *Resolved in this spec*: `AgentChatPage` fetches `GET /api/v1/bots/<name>` for database agents to obtain `chatbot_id`; registry agents have none → prompt library hidden.
-- [ ] TS codegen for the chat envelope: define a Pydantic `AgentChatResponse` backend-side in a later spec so `pnpm generate` can cover it, or keep hand-written types permanently? — *Owner: Jesus Lara* (deferred; v1 hand-written)
-- [ ] `enabled` in the list payload: if FEAT-475's `GET /api/v1/bots` still omits `enabled` per row, hide Chat based on the detail record or show for all rows? — *Owner: implementer, re-check after FEAT-475 merge*
-- [ ] `@iconify/svelte` offline strategy (bundle `@iconify-json/*` sets vs. runtime API) for air-gapped adopters. — *Owner: implementer*
+- [x] TS codegen for the chat envelope — *Resolved 2026-08-30 (author)*: included in FEAT-476 as Module 0 — Pydantic `AgentChatResponse`/`AgentChatMetadata`/`AgentToolCall` in `parrot/server/ui/chat_models.py`, registered in `scripts/generate_ts_types.py`, contract-tested against both `AgentTalk` envelope builders; `AgentTalk` itself is not rewritten.
+- [x] `enabled` in the list payload — *Resolved 2026-08-30 (verified)*: `BotAgentItem` is `extra="allow"` and DB rows are serialized with the full `BotModel` field set (`server/ui/models.py:23-33`), so `enabled` is present for database agents; registry rows lack it. Rule: hide Chat only when `enabled === false`; `undefined ⇒ enabled`.
+- [x] `@iconify/svelte` offline strategy — *Resolved 2026-08-30 (author)*: bundle the used collections (`@iconify-json/*`) and register them via `addCollection` in `src/lib/icons.ts`; no runtime calls to the Iconify API.
 
 ---
 
@@ -675,9 +782,10 @@ let { agentId, chatbotId, chartBackend = "chartjs", allow_custom_llm = false, ap
   `.claude/worktrees/feat-476-agentchat-migration` (one large vendored
   tree with shared shims; multiple worktrees would only multiply merge
   conflicts on the same files).
-- **Task order**: Module 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Modules 1–2
-  can be validated with `pnpm test` before any component lands; 5 and 6
-  are independent of each other but both depend on 4.
+- **Task order**: Module 0 (backend codegen, independent) → 1 → 2 → 3 →
+  4 → 5 → 6 → 7 → 8. Module 0 can be validated with `pytest` alone and
+  Modules 1–2 with `pnpm test` before any component lands; 5 and 6 are
+  independent of each other but both depend on 4.
 - **Cross-feature dependencies**: **FEAT-475 (`ui-agent-management`)
   must be merged to `dev` first** — router `:param`/`params`,
   `AgentDetail` as a page, `include_disabled`, extra shadcn primitives.
@@ -697,3 +805,4 @@ let { agentId, chatbotId, chartBackend = "chartjs", allow_custom_llm = false, ap
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-30 | Jesus Lara | Initial draft from `agentchat-migration.brainstorm.md` (Option A) |
+| 0.2 | 2026-08-30 | Jesus Lara | Resolved all open questions: Module 0 envelope codegen (backend), offline `@iconify-json/*` icons, `enabled` rule for the Chat action |
