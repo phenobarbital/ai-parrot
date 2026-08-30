@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-30T03:00:09+02:00",
-  "completed_at": "2026-08-30T22:22:13+00:00",
+  "completed_at": "2026-08-30T23:26:15+00:00",
   "notes": "Worktree deliberately NOT created by /sdd-task: spec Worktree Strategy requires FEAT-475 (ui-agent-management) merged into dev first. Create with: git worktree add -b feat-476-agentchat-migration .claude/worktrees/feat-476-agentchat-migration HEAD (on dev, after the merge).",
   "tasks": [
     {
@@ -24,7 +24,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
       "completed_at": "2026-08-30T02:00:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2590-chat-envelope-models-codegen.md"
+      "file": "sdd/tasks/completed/TASK-2590-chat-envelope-models-codegen.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2591",
@@ -42,7 +43,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
       "completed_at": "2026-08-30T02:06:12+00:00",
-      "file": "sdd/tasks/completed/TASK-2591-build-wiring-shims-flags.md"
+      "file": "sdd/tasks/completed/TASK-2591-build-wiring-shims-flags.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2592",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
       "completed_at": "2026-08-30T02:20:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2592-transport-types-services-utils.md"
+      "file": "sdd/tasks/completed/TASK-2592-transport-types-services-utils.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2593",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
       "completed_at": "2026-08-30T02:26:38+00:00",
-      "file": "sdd/tasks/completed/TASK-2593-shared-ui-pieces-icons.md"
+      "file": "sdd/tasks/completed/TASK-2593-shared-ui-pieces-icons.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2594",
@@ -104,7 +108,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
       "completed_at": "2026-08-30T21:25:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2594-core-chat-components.md"
+      "file": "sdd/tasks/completed/TASK-2594-core-chat-components.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2595",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T21:25:35+00:00",
       "completed_at": "2026-08-30T21:44:11+00:00",
-      "file": "sdd/tasks/completed/TASK-2595-canvas-charts-maps-infographic.md"
+      "file": "sdd/tasks/completed/TASK-2595-canvas-charts-maps-infographic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2596",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T21:44:39+00:00",
       "completed_at": "2026-08-30T22:04:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2596-voice-avatar-datasets.md"
+      "file": "sdd/tasks/completed/TASK-2596-voice-avatar-datasets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2597",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
       "completed_at": "2026-08-30T22:14:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2597-page-and-module-integration.md"
+      "file": "sdd/tasks/completed/TASK-2597-page-and-module-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2598",
@@ -184,7 +192,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T22:14:42+00:00",
       "completed_at": "2026-08-30T22:22:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2598-wheel-test-docs-size-report.md"
+      "file": "sdd/tasks/completed/TASK-2598-wheel-test-docs-size-report.md",
+      "verification": "verified-with-disclosed-issue"
     }
   ]
 }
