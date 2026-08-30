@@ -63,6 +63,10 @@ async def _run(tenant: TenantContext, shared: dict, **deps):
     ctx.shared_data.update(shared)
     result = await flow.run_flow(ctx)
     shared.update(ctx.shared_data)
+    # ``completion_order`` rather than ``result.nodes``: the latter reports the
+    # graph's final state in no particular order, so it can say *what* ran but
+    # never *when*.
+    shared["__completion_order__"] = list(ctx.completion_order)
     return result, [n.node_id for n in result.nodes]
 
 
@@ -763,3 +767,174 @@ async def test_flow_with_checkpointing_enabled_still_builds(tenant) -> None:
 
     assert flow.to_definition().flow == "cm.bar-pepe"
     assert flow.flow_id == "run-1"
+
+
+# ---------------------------------------------------------------------------
+# The eight scenarios, as an ordered table
+# ---------------------------------------------------------------------------
+#
+# The tests above each prove one branch, asserting membership: "close ran",
+# "coupon_issue did not". This table asserts the *exact sequence* of every
+# scenario in one place, which does two things membership cannot:
+#
+#   * an extra node — a coupon_issue that fires when it should not — shows up,
+#     because the sequence is compared whole rather than probed;
+#   * the file gains a readable specification of what the graph does, which is
+#     the thing a person actually wants when asking "what happens to a
+#     one-star review from a guest with no contact details?".
+#
+# The order is the completion order the scheduler produced, so it also pins
+# the OR-join and skip-propagation behaviour: `close` appears once, after
+# whichever branch reached it.
+
+
+def _detractor_with_contact() -> dict:
+    """Shared state for a one-star review from a reachable, consenting guest."""
+    from parrot_saas.flows.community_manager.models import (
+        ContactCapture,
+        ContactChannel,
+    )
+
+    return {
+        "review": _review(rating=1),
+        "tenant_id": "bar-pepe",
+        "contact": ContactCapture(
+            contact_available=True,
+            channel=ContactChannel.EMAIL,
+            guest_id="g-1",
+        ),
+    }
+
+
+SCENARIOS: dict[str, tuple[dict, tuple[str, ...]]] = {
+    # 1. Nothing worth answering: triage skips straight to the terminal.
+    "skipped_at_triage": (
+        {"review": _review(rating=0, text="")},
+        (topo.REVIEW_INTAKE, topo.TRIAGE, topo.CLOSE),
+    ),
+    # 2. A guest we cannot reach is answered publicly and nothing more.
+    "replied_no_contact": (
+        {"review": _review()},
+        (
+            topo.REVIEW_INTAKE,
+            topo.TRIAGE,
+            topo.REPLY_DRAFT,
+            topo.GUARDRAIL,
+            topo.PUBLISH_REPLY,
+            topo.CAPTURE_CONTACT,
+            topo.CLOSE,
+        ),
+    ),
+    # 3. Reachable, but no rule matches: a reply and no offer.
+    "replied_not_eligible": (
+        {
+            **_detractor_with_contact(),
+            "eligibility": CouponDecision(eligible=False, reason="no_rule_matched"),
+        },
+        (
+            topo.REVIEW_INTAKE,
+            topo.TRIAGE,
+            topo.REPLY_DRAFT,
+            topo.GUARDRAIL,
+            topo.PUBLISH_REPLY,
+            topo.CAPTURE_CONTACT,
+            topo.COUPON_ELIGIBILITY,
+            topo.CLOSE,
+        ),
+    ),
+    # 4. Eligible and issued, but the budget is spent — a decision, not a
+    #    failure, so the run closes normally without reaching delivery.
+    "budget_exhausted": (
+        {
+            **_detractor_with_contact(),
+            "eligibility": CouponDecision(eligible=True, offer_code="RECOVER20"),
+            "issued": CouponIssued(issued=False, reason="budget_exhausted"),
+        },
+        (
+            topo.REVIEW_INTAKE,
+            topo.TRIAGE,
+            topo.REPLY_DRAFT,
+            topo.GUARDRAIL,
+            topo.PUBLISH_REPLY,
+            topo.CAPTURE_CONTACT,
+            topo.COUPON_ELIGIBILITY,
+            topo.COUPON_ISSUE,
+            topo.CLOSE,
+        ),
+    ),
+    # 5. The whole happy path, delivery included.
+    "coupon_delivered": (
+        {
+            **_detractor_with_contact(),
+            "eligibility": CouponDecision(eligible=True, offer_code="RECOVER20"),
+            "issued": CouponIssued(issued=True, coupon_code="RECOVER20-7KQF9M"),
+        },
+        (
+            topo.REVIEW_INTAKE,
+            topo.TRIAGE,
+            topo.REPLY_DRAFT,
+            topo.GUARDRAIL,
+            topo.PUBLISH_REPLY,
+            topo.CAPTURE_CONTACT,
+            topo.COUPON_ELIGIBILITY,
+            topo.COUPON_ISSUE,
+            topo.COUPON_DELIVER,
+            topo.CLOSE,
+        ),
+    ),
+}
+
+
+@pytest.mark.parametrize("scenario", sorted(SCENARIOS))
+async def test_the_flow_takes_exactly_the_expected_path(tenant, scenario) -> None:
+    """Each scenario's completion order, whole rather than probed."""
+    seed, expected = SCENARIOS[scenario]
+    shared = dict(seed)
+
+    await _run(tenant, shared)
+
+    assert tuple(shared["__completion_order__"]) == expected
+
+
+async def test_the_repair_loop_is_visible_in_the_completion_order(tenant) -> None:
+    """The cycle is the one path that is not a flat sequence.
+
+    ``completion_order`` records one entry per *completion*, not per node, so
+    a bounded back-edge shows up as the pair repeating — which makes it the
+    only place the loop can be observed directly rather than inferred from the
+    guardrail's attempt counter. Three rounds here, then the bound converts
+    ``revise`` into ``blocked`` and the run closes without publishing.
+    """
+    strict = TenantContext(
+        tenant_id="bar-pepe",
+        name="Bar Pepe",
+        settings={"max_revise_rounds": 3, "banned_phrases": ["thank you", "sorry"]},
+    )
+
+    shared = {"review": _review()}
+    result, _ = await _run(strict, shared)
+    order = shared["__completion_order__"]
+
+    assert result.responses[topo.GUARDRAIL].attempt == 3
+    assert order.count(topo.REPLY_DRAFT) == 3
+    assert order.count(topo.GUARDRAIL) == 3
+    # Drafting and judging alternate; neither runs twice in a row.
+    loop = [n for n in order if n in (topo.REPLY_DRAFT, topo.GUARDRAIL)]
+    assert loop == [topo.REPLY_DRAFT, topo.GUARDRAIL] * 3
+    assert topo.PUBLISH_REPLY not in order
+    assert order[-1] == topo.CLOSE
+
+
+async def test_a_failure_replaces_the_terminal_rather_than_joining_it(
+    tenant,
+) -> None:
+    """``close`` and ``failure_handler`` are alternatives, never both.
+
+    Worth pinning as an ordering fact: the run summary and the failure summary
+    are read by different consumers, and a run that produced both would make
+    "did this succeed?" unanswerable.
+    """
+    shared: dict = {}
+    await _run(tenant, shared)
+
+    assert shared["__completion_order__"] == [topo.FAILURE]

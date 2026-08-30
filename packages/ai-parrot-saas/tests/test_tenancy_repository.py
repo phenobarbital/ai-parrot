@@ -1,8 +1,6 @@
 """Tenant models, the tenant repository, and the isolation guardrail."""
 from __future__ import annotations
 
-import inspect
-import re
 
 import pytest
 from asyncdb import AsyncDB
@@ -106,79 +104,12 @@ async def test_all_three_scoped_helpers_are_guarded() -> None:
             await call
 
 
-def test_scoped_helpers_take_tenant_id_first_and_without_default() -> None:
-    """A caller must not be able to forget the tenant.
-
-    Enforced structurally rather than by review: if someone gives ``tenant_id``
-    a default, or moves it after another parameter, this fails.
-    """
-    for name in ("fetch_one", "fetch_all", "execute"):
-        params = list(inspect.signature(getattr(BaseRepository, name)).parameters)
-        assert params[1] == "tenant_id", name
-        default = inspect.signature(
-            getattr(BaseRepository, name)
-        ).parameters["tenant_id"].default
-        assert default is inspect.Parameter.empty, name
-
-
-#: Methods permitted to reach across tenants, each with the reason why.
-#: Adding a name here is the deliberate act the ``admin_*`` naming exists to
-#: force; the test below makes it the *only* way.
-_CROSS_TENANT_METHODS = {
-    # Onboarding: the row does not exist yet, so it cannot be scoped to.
-    "create",
-    # The control plane's own view of every tenant.
-    "list_tenants",
-}
-
-
-def test_every_repository_method_is_scoped_or_declared_cross_tenant() -> None:
-    """Isolation must be auditable, not remembered.
-
-    For each public method of :class:`TenantRepository`, assert that it either
-    goes through the tenant-scoped helpers (which bind ``tenant_id`` as ``$1``
-    and reject SQL without a tenant predicate) or is listed in
-    :data:`_CROSS_TENANT_METHODS`. A new method that quietly calls
-    ``admin_fetch_all`` fails here rather than in production.
-    """
-    scoped_helpers = ("self.fetch_one(", "self.fetch_all(", "self.execute(")
-    admin_helpers = (
-        "self.admin_fetch_one(",
-        "self.admin_fetch_all(",
-        "self.admin_execute(",
-    )
-
-    checked = 0
-    for name, member in vars(TenantRepository).items():
-        if name.startswith("_") or not inspect.isfunction(member):
-            continue
-        body = inspect.getsource(member)
-        uses_admin = any(helper in body for helper in admin_helpers)
-        uses_scoped = any(helper in body for helper in scoped_helpers)
-        delegates = re.search(r"return await self\.\w+\(", body) is not None
-
-        if uses_admin:
-            assert name in _CROSS_TENANT_METHODS, (
-                f"{name}() reaches across tenants but is not declared in "
-                "_CROSS_TENANT_METHODS — if that is intended, add it there "
-                "with a reason"
-            )
-        else:
-            assert uses_scoped or delegates, (
-                f"{name}() touches neither a scoped helper nor another "
-                "repository method; it may be issuing unscoped SQL"
-            )
-        checked += 1
-
-    assert checked >= 6, "expected to inspect the repository's public methods"
-
-
-def test_declared_cross_tenant_methods_still_exist() -> None:
-    """Keep the allow-list honest as the repository evolves."""
-    for name in _CROSS_TENANT_METHODS:
-        assert hasattr(TenantRepository, name), (
-            f"_CROSS_TENANT_METHODS names {name!r}, which no longer exists"
-        )
+# The structural guard rail that used to live here — "every repository method
+# is tenant-scoped or declared cross-tenant" — moved to
+# ``test_tenant_isolation.py`` and now walks all seven repositories instead of
+# this one. It is not duplicated here: two allow-lists would drift, and the
+# whole value of that test is being the single place the exceptions are
+# written down.
 
 
 # ---------------------------------------------------------------------------
