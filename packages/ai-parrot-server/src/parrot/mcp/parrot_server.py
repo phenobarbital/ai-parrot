@@ -16,7 +16,13 @@ from parrot.conf import (
     MCP_SERVER_TRANSPORT,
     MCP_STARTED_TOOLS,
 )
-from parrot.mcp.server import MCPServer, MCPServerConfig, HttpMCPServer, SseMCPServer
+from parrot.mcp.server import (
+    MCPServer,
+    MCPServerConfig,
+    HttpMCPServer,
+    SseMCPServer,
+    StreamableHttpMCPServer,
+)
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.mcp.config import TransportConfig
@@ -70,11 +76,13 @@ class ParrotMCPServer:
 
         configs = {}
 
+        http_like = {"http", "streamable-http", "streamable_http", "sse"}
+
         if isinstance(transports, str):
-            # Single transport string: "stdio" or "http"
+            # Single transport string: "stdio", "http", "streamable-http", ...
             transport = transports.lower()
-            host = default_host or MCP_SERVER_HOST if transport in {"http", "sse"} else None
-            port = default_port or MCP_SERVER_PORT if transport in {"http", "sse"} else None
+            host = default_host or MCP_SERVER_HOST if transport in http_like else None
+            port = default_port or MCP_SERVER_PORT if transport in http_like else None
             configs[transport] = TransportConfig(
                 transport=transport,
                 host=host,
@@ -85,7 +93,7 @@ class ParrotMCPServer:
             # List of transport names: ["stdio", "http"]
             for i, transport in enumerate(transports):
                 transport = transport.lower()
-                is_http_like = transport in {"http", "sse"}
+                is_http_like = transport in http_like
                 port = ((default_port or MCP_SERVER_PORT) + i) if is_http_like else None
                 configs[transport] = TransportConfig(
                     transport=transport,
@@ -156,12 +164,37 @@ class ParrotMCPServer:
                 self._server_tasks[transport_key] = asyncio.create_task(start_coro)
                 self.logger.info("Spawned stdio MCP server task: %s", server_name)
 
-            elif config.transport in {"http", "sse"}:
-                # Launch HTTP/SSE MCP server using existing aiohttp app
+            elif config.transport in {
+                "http", "streamable-http", "streamable_http", "sse"
+            }:
+                # Launch HTTP-like MCP server using existing aiohttp app
                 if config.transport == "sse":
                     server = SseMCPServer(mcp_config, parent_app=app)
+                elif config.transport in {"streamable-http", "streamable_http"}:
+                    server = StreamableHttpMCPServer(mcp_config, parent_app=app)
                 else:
                     server = HttpMCPServer(mcp_config, parent_app=app)
+
+                # http and streamable-http both claim POST {base_path}; two
+                # servers on one shared app would crash aiohttp with a
+                # duplicate-route error.
+                base_path = mcp_config.base_path
+                if any(
+                    getattr(existing, "config", None)
+                    and getattr(existing.config, "base_path", None) == base_path
+                    and existing.config.transport in {
+                        "http", "streamable-http", "streamable_http", "sse"
+                    }
+                    for existing in self.servers.values()
+                ):
+                    self.logger.error(
+                        "Skipping MCP transport %r: base_path %r already "
+                        "claimed by another HTTP-like transport",
+                        config.transport,
+                        base_path,
+                    )
+                    continue
+
                 server.register_tools(tools)
                 self.servers[transport_key] = server
 

@@ -20,7 +20,10 @@ class MCPServerConfig:
     description: str = "AI-Parrot Tools via MCP Protocol"
 
     # Server settings
-    transport: str = "stdio"  # "stdio" or "http" or "unix"
+    # "stdio", "http", "streamable-http", "sse", "unix" or "quic".
+    # Use "streamable-http" for MCP Streamable HTTP (2025-03-26) clients
+    # such as Claude.ai custom connectors.
+    transport: str = "stdio"
     host: str = "localhost"
     port: int = 8080
     socket_path: Optional[str] = None  # For UNIX socket transport
@@ -58,6 +61,15 @@ class MCPServerConfig:
     base_path: str = "/mcp"
     # custom events path for SSE (optional)
     events_path: Optional[str] = None
+
+    # Streamable HTTP transport settings
+    # Origins allowed on the /mcp endpoint (DNS-rebinding protection).
+    # None = allow any origin; localhost is always allowed.
+    allowed_origins: Optional[List[str]] = None
+    # Idle seconds before an Mcp-Session-Id session expires.
+    session_ttl: int = 3600
+    # Max buffered SSE events per session (Last-Event-ID resumability window).
+    event_buffer_size: int = 1000
     
     # For Future gRPC implementation (expected)
     grpc_host: Optional[str] = None

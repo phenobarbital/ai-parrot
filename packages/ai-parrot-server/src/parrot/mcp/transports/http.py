@@ -48,9 +48,8 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
         base_route = self.config.base_path
         if not base_route or base_route == "/":
             base_route = "/"
-            
-        target_router.add_post(base_route, self._handle_http_request)
-        target_router.add_get(f"{base_route.rstrip('/')}/info", self._handle_info)
+
+        self._register_routes(target_router, base_route)
 
         if self.config.enable_oauth:
             self._add_oauth_routes(target_router)
@@ -87,6 +86,19 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
                 ssl_context=ssl_context
             )
             await self.site.start()
+
+    def _register_routes(self, router, base_route: str) -> None:
+        """Register the transport's HTTP routes.
+
+        Subclasses override this to change the route set without duplicating
+        the parent-app/sub-app/standalone mounting logic in ``start()``.
+
+        Args:
+            router: The aiohttp router to register routes on.
+            base_route: Normalized base path (never empty; ``/`` for root).
+        """
+        router.add_post(base_route, self._handle_http_request)
+        router.add_get(f"{base_route.rstrip('/')}/info", self._handle_info)
 
     async def stop(self):
         """Stop the HTTP server."""
@@ -197,6 +209,10 @@ class HttpMCPSession:
         self._base_headers = {}
         # OAuth2 provider (set when config.oauth2 is configured)
         self._oauth2_provider = None
+        # Streamable HTTP session state (captured from the initialize
+        # response when the server issues them)
+        self._mcp_session_id: Optional[str] = None
+        self._protocol_version: Optional[str] = None
 
     async def _setup_oauth2(self) -> None:
         """Set up MCP SDK OAuth2 provider when config.oauth2 is configured.
@@ -357,6 +373,9 @@ class HttpMCPSession:
                 "capabilities": {"tools": {}},
                 "clientInfo": {"name": "ai-parrot-mcp-client", "version": "1.0.0"}
             })
+            negotiated = (init_result or {}).get("protocolVersion")
+            if negotiated:
+                self._protocol_version = negotiated
 
             # Send initialized notification
             await self._send_notification("notifications/initialized")
@@ -377,11 +396,18 @@ class HttpMCPSession:
         try:
             self.logger.debug("HTTP sending: %s", json.dumps(request))
 
-            # Build per-request headers, injecting OAuth2 token when available
+            # Build per-request headers, injecting OAuth2 token when available.
+            # Accept advertises text/event-stream too — Streamable HTTP
+            # servers (e.g. Fireflies) return 406 without it. SSE response
+            # bodies are not parsed yet (see _read_json_response).
             req_headers: Dict[str, str] = {
                 "Content-Type": "application/json",
-                "Accept": "application/json",
+                "Accept": "application/json, text/event-stream",
             }
+            if self._mcp_session_id:
+                req_headers["Mcp-Session-Id"] = self._mcp_session_id
+            if self._protocol_version:
+                req_headers["MCP-Protocol-Version"] = self._protocol_version
             if self._oauth2_provider is not None:
                 token = await self._get_oauth2_token()
                 if token:
@@ -410,6 +436,21 @@ class HttpMCPSession:
                 if response.status != 200:
                     raise MCPConnectionError(f"HTTP error: {response.status}")
 
+                # Capture the Streamable HTTP session id issued on initialize
+                # and echo it on subsequent requests.
+                issued_session = response.headers.get("Mcp-Session-Id")
+                if issued_session:
+                    self._mcp_session_id = issued_session
+
+                content_type = response.headers.get("Content-Type", "")
+                if "text/event-stream" in content_type:
+                    # Parsing SSE POST responses is not implemented yet
+                    # (tracked in sdd/specs/netsuite-mcp-integration.spec.md).
+                    raise MCPConnectionError(
+                        "Server answered with an SSE stream; this client "
+                        "only supports application/json responses"
+                    )
+
                 response_data = await response.json()
                 self.logger.debug("HTTP received: %s", json.dumps(response_data))
 
@@ -434,14 +475,20 @@ class HttpMCPSession:
         try:
             self.logger.debug("HTTP notification: %s", json.dumps(notification))
 
+            notif_headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+            if self._mcp_session_id:
+                notif_headers["Mcp-Session-Id"] = self._mcp_session_id
+            if self._protocol_version:
+                notif_headers["MCP-Protocol-Version"] = self._protocol_version
+
             async with self._session.post(
                 self.config.url,
                 json=notification,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                }
-            ) as response:
+                headers=notif_headers,
+            ):
                 # Notifications don't expect responses
                 pass
 
@@ -496,3 +543,5 @@ class HttpMCPSession:
 
         self._auth_handler = None
         self._base_headers.clear()
+        self._mcp_session_id = None
+        self._protocol_version = None
