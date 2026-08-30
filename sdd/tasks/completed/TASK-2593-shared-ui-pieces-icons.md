@@ -132,8 +132,33 @@ it("every icon prefix is bundled", () => {
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Ported 13 App* wrapper components + trimmed index.ts,
+SessionExpiredModal, and the sheet/command/progress shadcn primitives
+(sheet+command needed by AppSheet/AppCommand, not covered by the task's
+"progress/separator/skeleton only if absent" note — separator/skeleton
+already existed, sheet/command did not and had to be vendored as a
+necessary dependency). Gated @tiptap/* behind features.richEditor with a
+plain-textarea fallback in both editor components. Finalized
+REGISTERED_PREFIXES by grepping the full navigator closure directly.
+pnpm build/test (189/189)/svelte-check all clean (0 new errors).
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. Vendored `ui/internal/shadcn/ui/{sheet,command}/*` (not explicitly
+   named in the task's "only if absent: progress/separator/skeleton"
+   line) — required because AppSheet/AppCommand (both in this task's
+   explicit file list) import them and they didn't exist after FEAT-475.
+   Standard shadcn-svelte primitives, no cross-cutting dependencies.
+2. `ui/components/index.ts` re-exports only the 13 App* wrappers, not
+   navigator's full shadcn re-export surface (139 lines) — the Admin UI's
+   own shadcn primitives are imported directly from
+   `$lib/ui/internal/shadcn/ui/*` by vendored code, avoiding a duplicate
+   export surface (reuse-over-duplication, spec §7).
+3. `svelte-check` (not `tsc`) used to verify these `.svelte` files
+   actually compile, since `pnpm build`'s Vite/Rollup graph doesn't
+   reach unimported files yet (nothing mounts these components until
+   TASK-2594+) — confirms 0 new errors, 2 new non-blocking `$state`
+   closure-capture warnings in the two editor files' plain-textarea
+   fallback state (harmless: that state only matters while the flag is
+   off, a build-time constant).
