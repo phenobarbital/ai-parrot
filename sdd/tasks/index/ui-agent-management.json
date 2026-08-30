@@ -32,7 +32,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Python (server/ui/catalog.py, models.py, serving.py, generate_ts_types.py) + regenerated ui/schemas & types; no overlap with TASK-2583 or TASK-2585 files.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2584-admin-catalog-endpoint.md"
+      "completed_at": "2026-08-30T00:48:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2584-admin-catalog-endpoint.md"
     },
     {
       "id": "TASK-2585",
