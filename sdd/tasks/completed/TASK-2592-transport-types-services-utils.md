@@ -166,8 +166,60 @@ it("handles a body without separator", async () => {
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Ported all 11 api/*.ts, chat-db.ts, 6 utils/*.ts, 4 types/*.ts
+(bot-chat, dataset, prompt-library verbatim; agent.ts trimmed to re-export
+generated envelope types per spec), 6 stores/*.svelte.ts. `pnpm build`,
+`pnpm test` (187/187 incl. 3 new suites: stream.test.ts, agent.test.ts,
+chat-db.test.ts with fake-indexeddb), `tsc --noEmit` all clean. Grep for
+`createApiClientWithToken|$lib/api/crew|navauth` returns only doc-comment
+mentions, no actual imports.
 
-**Deviations from spec**: none
+**Deviations from spec** (all documented inline in the affected files):
+1. Added `src/lib/auth.ts` (not in the Files table, but explicitly
+   anticipated by the Scope prose: "$lib/auth → re-pointed to authStore,
+   port as a thin file only if still imported" — it is, by
+   stores/prompt-library.svelte.ts). Non-reactive (`subscribe()` fires
+   once with current state) since it must stay a plain `.ts` file
+   (matching navigator's bare `$lib/auth` specifier) and therefore cannot
+   use runes to bridge authStore's `$state` reactively; authStore hydrates
+   synchronously from localStorage so there's no async "loading" phase to
+   wait out like navauth's.
+2. `stores/client.svelte.ts` trimmed to the one accessor AgentChat.svelte
+   uses (`clientStore.getClient()?.slug` → tenantId). The full
+   client/program/module/submodule hierarchy depends on `$lib/types`
+   (hierarchy.ts) and `$lib/data/manual-data` — both on the Module 3 drop
+   list. `getClient()` always returns `null`; tenantId degrades to
+   `undefined` (graceful degradation per spec §7 Known Risks).
+3. Ported `components/agents/canvas/{canvas-block-types.ts,
+   infographic/infographic-types.ts}` early — required type-only
+   dependency of `api/infographic.ts` (itself in this task's scope) that
+   the task's Codebase Contract didn't flag. Pure type files with no
+   `.svelte` components; TASK-2595 builds the canvas UI around them
+   without needing to recreate these two files.
+4. `types/theme.ts` and `types/index.ts` intentionally NOT ported: no file
+   in the AgentChat closure imports either (verified by grep across every
+   file in this task's scope); `theme.ts` would additionally duplicate/
+   conflict with the existing FEAT-468 `themeStore` (different enum
+   values) — reuse-over-duplication per spec §7.
+5. `tsconfig.json` gained `$app/*`/`$env/*` path entries mirroring
+   TASK-2591's `vite.config.ts` aliases, for IDE/`tsc` consistency (no
+   typecheck CI gate exists yet, but this was a one-line, low-risk
+   completion of the alias story).
+6. `config.ts` gained `conversationStoragePrefix` (chat-db.ts's Dexie
+   database name) — a field TASK-2591 didn't anticipate.
+7. `api/avatar.ts`'s `structuredOutputToAgentMessage` changed two
+   `null`-typed `AgentToolCall` fields to `undefined` — the generated
+   `AgentToolCall` type (TASK-2590) types `output`/`arguments` as
+   optional-object, not nullable; `undefined` carries identical "absent"
+   semantics at every consumer.
+8. `fake-indexeddb` added as a devDependency — Dexie has no IndexedDB
+   implementation to open against in jsdom; required to write the
+   mandated `chat-db.test.ts` at all.
+9. `stream.test.ts`'s "handles a body without separator" case asserts
+   chunk-only output, not `done` as the task's Test Specification snippet
+   literally states — the ported (unmodified) `consumeStream()` only ever
+   emits `done` when the `\x00` separator was actually seen; verified by
+   re-reading the source directly. Flagging per Cardinal Rule 4 rather
+   than silently diverging from the given spec text.

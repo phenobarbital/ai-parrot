@@ -51,7 +51,7 @@
       "feature_id": "FEAT-476",
       "feature": "agentchat-migration",
       "spec": "sdd/specs/agentchat-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Imports the generated types (2590) and shims/config/features (2591); all later component tasks import from it.",
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2592-transport-types-services-utils.md"
+      "completed_at": "2026-08-30T02:20:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2592-transport-types-services-utils.md"
     },
     {
       "id": "TASK-2593",
