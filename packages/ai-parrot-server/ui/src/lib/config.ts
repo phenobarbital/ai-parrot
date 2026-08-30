@@ -68,4 +68,9 @@ export const config = {
   /** FEAT-476: conversation history sync (`ChatInteractionHandler`,
    * `manager.py:2212-2213`). */
   chatInteractionsPath: "/api/v1/chat/interactions",
+  /** FEAT-476 (TASK-2592): Dexie database name prefix for
+   * `services/chat-db.ts`'s local conversation store — navigator derives
+   * this from its multi-tenant `storageNamespace`; the Admin UI has no
+   * tenant concept, so it is a fixed, namespaced constant instead. */
+  conversationStoragePrefix: "ai_parrot_agentchat",
 };

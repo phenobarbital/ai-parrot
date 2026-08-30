@@ -17,7 +17,10 @@
     "baseUrl": ".",
     "paths": {
       "$lib": ["src/lib"],
-      "$lib/*": ["src/lib/*"]
+      "$lib/*": ["src/lib/*"],
+      "$app/environment": ["src/lib/shims/environment.ts"],
+      "$app/navigation": ["src/lib/shims/navigation.ts"],
+      "$env/dynamic/public": ["src/lib/shims/env-public.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte"],
