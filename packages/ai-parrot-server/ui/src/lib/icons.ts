@@ -14,15 +14,21 @@
  * `@iconify/svelte` v5 (verified: not exported by `dist/index.d.ts`).
  *
  * The prefix list below (`mdi`, `ph`, `svg-spinners`, `tabler`) was
- * enumerated by grepping the vendored tree's `icon="prefix:…"` usages at
- * port time; TASK-2593 is the source of truth for the final list as more
- * of the tree lands.
+ * enumerated by grepping `icon="prefix:…"` usages across the full
+ * navigator AgentChat closure (components/agents, charts,
+ * visualizations, ui/components) at TASK-2593 (finalized; TASK-2591
+ * provisioned the same four as a placeholder). `icons.test.ts` guards
+ * against any future vendored file using an unregistered prefix.
  */
 import { addCollection } from "@iconify/svelte";
 import { icons as mdiIcons } from "@iconify-json/mdi";
 import { icons as phIcons } from "@iconify-json/ph";
 import { icons as svgSpinnersIcons } from "@iconify-json/svg-spinners";
 import { icons as tablerIcons } from "@iconify-json/tabler";
+
+/** Every icon-set prefix bundled and registered offline — source of truth
+ * for `icons.test.ts`'s unregistered-prefix guard. */
+export const REGISTERED_PREFIXES = ["mdi", "ph", "svg-spinners", "tabler"] as const;
 
 export function registerOfflineIcons(): void {
   addCollection(mdiIcons);
