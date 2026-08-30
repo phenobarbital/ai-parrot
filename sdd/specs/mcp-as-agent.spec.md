@@ -16,10 +16,13 @@ base_branch: dev
 **Cross-repo dependency**: navigator-auth **FEAT-095** — `oauth2-for-mcp-agents.spec.md`
 (v0.2, approved, target 1.4.0). Its D6 names this feature as its counterpart.
 **Cross-repo state (verified 2026-08-31)**: FEAT-095 is *in progress*, not shipped.
-TASK-038 and TASK-039 are complete; TASK-040…045 remain. **Its implementation code is not
-on navigator-auth `dev`** — the two `dev` commits are SDD bookkeeping only; the code sits
-on the unmerged branch `feat-FEAT-095-oauth2-for-mcp-agents` (2 commits). Build against
-the contract in §6 "External Contract", not against an import that resolves today.
+TASK-038, TASK-039 and TASK-040 are complete; TASK-041…045 remain. **Its implementation
+code is not on navigator-auth `dev`** — the `dev` commits are SDD bookkeeping only
+(`6e3c96c` touches just `.index.json` + a task-file rename); the code sits on the unmerged
+branch `feat-FEAT-095-oauth2-for-mcp-agents` (3 commits, HEAD `4ffacd9`). navigator-auth
+still uses the legacy monolithic `sdd/tasks/.index.json`, which is why its worker splits
+state onto `dev` and code onto the branch. Build against the contract in §6 "External
+Contract", not against an import that resolves today.
 **Blocking cross-repo request**: FEAT-095 must add a **tenant claim** to
 `/oauth2/introspect` — see §8.
 
