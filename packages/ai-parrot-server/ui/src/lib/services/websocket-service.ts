@@ -5,7 +5,7 @@
  * lazily registered — `manager.py:1812-1834`), and this spec's Non-Goals
  * explicitly rule out implementing one (FEAT-476 spec §1, §2 "Overview" /
  * §6 "Does NOT Exist"). This module keeps navigator's `wsService` surface
- * (`WSMessage`, `subscribe`, `unsubscribe`, `onMessage`, `send`,
+ * (`WSMessage`, `connect`, `subscribe`, `unsubscribe`, `onMessage`, `send`,
  * `disconnect`) so every vendored call site keeps compiling verbatim, but
  * never constructs a `WebSocket` and `ws_channel_id` is never sent by the
  * ported chat components.
@@ -31,6 +31,11 @@ class WebSocketService {
     this.loggedOnce = true;
     // eslint-disable-next-line no-console
     console.debug("[wsService] stub — no WebSocket connection is opened");
+  }
+
+  /** No-op: there is no WebSocket endpoint to connect to (see header). */
+  async connect(_apiUrl?: string): Promise<void> {
+    this.logOnce();
   }
 
   subscribe(_channel: string): void {

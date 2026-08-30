@@ -919,7 +919,6 @@
               ...(context && { context }),
               ...(llm && { llm }),
               ...(kwargs && kwargs),
-              ws_channel_id: sessionId,
               stream: true,
             };
             clearFollowup();
@@ -1132,7 +1131,25 @@
           isStreaming = true; // keep stop button visible
           // Fall through to the non-streaming path below
         } else {
-          // Generator ended without 'done' event and no error — treat as empty
+          // Generator ended without a 'done' event and without an error —
+          // the documented "no \x00 separator" case (backend force-disabled
+          // streaming for this turn). Render the accumulated text as the
+          // final message rather than silently discarding it; only treat it
+          // as truly empty if nothing streamed at all.
+          const noSeparatorText = accumulator.getFullText();
+          if (noSeparatorText) {
+            const noSeparatorMsg: AgentMessage = {
+              id: pendingResponseId,
+              role: "assistant",
+              content: noSeparatorText,
+              timestamp: new Date(),
+              metadata: { session_id: sessionId! },
+            };
+            messages = messages.map((m) =>
+              m.id === pendingResponseId ? noSeparatorMsg : m,
+            );
+            await ChatService.saveMessage(noSeparatorMsg);
+          }
           pendingQuestions.delete(pendingResponseId);
           pendingQuestions = new Map(pendingQuestions);
           isCreatingNewConversation = false;
@@ -1250,7 +1267,6 @@
           ...(context && { context }),
           ...(llm && { llm }),
           ...(kwargs && kwargs),
-          ws_channel_id: sessionId,
         };
 
         // Clear follow-up state after using it for payload

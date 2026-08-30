@@ -5,12 +5,19 @@
  * injects via `define` (from the `PUBLIC_AGENTCHAT_*` env vars, default
  * `true`). Every gated component/import is reached only through
  * `if (features.x) await import(...)`, and the markup that triggers it is
- * wrapped in `{#if features.x}`, so Rollup drops the corresponding chunk
- * when a flag is compiled `false`.
+ * wrapped in `{#if features.x}` — this hides the related UI and, at
+ * runtime, means the guarded chunk is never *fetched* when a flag is
+ * `false`.
  *
- * `features` is a frozen object of plain booleans (no getters) so
- * `{#if features.x}` stays statically analysable by Svelte/Rollup's
- * dead-code elimination.
+ * KNOWN LIMITATION (see `docs/admin-ui.md` "Known limitation"): because
+ * `features.x` is a runtime object-property read (not a bare `const` at
+ * each call site), Rollup's dead-code elimination cannot prove the
+ * guarded `import()` is unreachable when the flag is compiled `false` —
+ * the chunk is still *emitted* into `dist/assets` (verified: CHARTS/
+ * MAPS/AVATAR/RICH_EDITOR builds are byte-for-byte identical on/off). A
+ * real per-flag chunk-removal fix would require flattening this module
+ * to individual `const` exports, a cross-cutting change deferred as a
+ * follow-up (tracked in TASK-2598's Completion Note).
  */
 export const features = Object.freeze({
   voice: __AGENTCHAT_VOICE__,
