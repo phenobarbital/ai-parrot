@@ -16,8 +16,13 @@ base_branch: dev
 ⚠️ VERIFY anchors were checked against the tree here and **three of its premises turned
 out to be wrong** — see § Code Context.
 
-**Depends on**: remote branch `claude/mcp-http-streamable-transport-bptepy`
-(2 commits over `ab38e64ff`) merged to `dev` first — see § Constraints.
+**Depends on**:
+- remote branch `claude/mcp-http-streamable-transport-bptepy` (2 commits over
+  `ab38e64ff`) merged to `dev` first — see § Constraints;
+- **navigator-auth FEAT-095** — `oauth2-for-mcp-agents.spec.md`, *approved*, target
+  1.4.0. That spec's **D6 names this feature as its cross-repo counterpart**
+  ("ai-parrot serves its own PRM … a follow-up spec in the ai-parrot repo covers that
+  half"). See § Cross-Repo Contract for what it guarantees and what it leaves to us.
 
 ---
 
@@ -56,11 +61,18 @@ expose.
   `claude/mcp-http-streamable-transport-bptepy` must merge to `dev` first; this
   feature bases on `dev` and builds the agent layer on top of `StreamableHttpMCPServer`.
 - **Authentication is delegated to navigator-auth as an external Authorization
-  Server.** AI-Parrot is a resource server: it validates the bearer and resolves a
-  principal. It does **not** grow its own production AS. The in-repo
-  `OAuthAuthorizationServer` (`AuthMethod.OAUTH2_INTERNAL`) stays as a dev/test
-  convenience only — its `/authorize` auto-approves (`oauth_server.py:638`), which is
-  not acceptable in production.
+  Server** — concretely, navigator-auth **FEAT-095** (approved, target 1.4.0), which
+  adds RFC 7591 DCR, RFC 8414/9728 discovery, the Google/Azure upstream-IdP proxy, the
+  per-client access gate and optional JWKS. AI-Parrot is a resource server: it
+  validates the bearer, enforces the audience, and resolves a principal. It does
+  **not** grow its own production AS. The in-repo `OAuthAuthorizationServer`
+  (`AuthMethod.OAUTH2_INTERNAL`) stays a dev/test fixture — its `/authorize`
+  auto-approves (`oauth_server.py:638`) — and FEAT-095 explicitly declines to delete
+  it ("its repo, its cleanup").
+- **Each MCP mount is an RFC 8707 audience.** FEAT-095 D5 puts audience *enforcement*
+  on the resource server: the mount's canonical resource URI is configured as
+  `ExternalOAuthValidator.resource_server_url`, and a token whose `aud` does not
+  contain it is rejected. A token minted for agent A must not open agent B.
 - **AI-Parrot ships the RFC 9728 protected-resource metadata** (OQ1). PRM describes
   the *resource server*, so `/.well-known/oauth-protected-resource` and a
   `resource_metadata=`-bearing 401 belong to this feature, pointing Claude at
@@ -338,13 +350,12 @@ their policy allows — plus four MCP **resources** (OQ8), readable via
 | identity card | `name`, `role`, `goal`, `capabilities`, description | same fields A2A publishes in the `AgentCard` |
 | tool catalog | browsable manifest of the tools **this principal** may call | filtered by the same policy as `tools/list` |
 | KB descriptors | which knowledge bases the agent consults (`AbstractBot.knowledge_bases`) | reveals internal data topology |
-| system prompt | assembled system prompt, `backstory`, `rationale` | **highest disclosure**; see the caveat below |
 
-The system-prompt resource discloses prompt engineering and guardrail wording to any
-principal who can read it. It is in scope by explicit decision, and the spec must gate
-it behind its own PBAC resource (`mcp:agent:{name}:resource:system-prompt`) rather
-than the agent-level grant, so exposing an agent does not automatically expose how it
-is instructed.
+**The system prompt / `backstory` / `rationale` are NOT exposed** (revised 2026-08-31).
+Publishing them would disclose prompt engineering and guardrail wording to every
+principal who can read the agent's resources, which is exactly the material an attacker
+needs to design a bypass. `resources/list` must not advertise them and `resources/read`
+must not serve them — this is a hard exclusion, not a policy-gated resource.
 
 ### Internal Behavior
 
@@ -462,11 +473,79 @@ is instructed.
 | `packages/ai-parrot/src/parrot/auth/context.py` | depends on | `_pctx_var` carries the MCP principal |
 | `packages/ai-parrot-server/src/parrot/human/suspended_store.py` | depends on | job-handle persistence semantics |
 | `packages/ai-parrot-server/src/parrot/a2a/server.py` | depends on | mount pattern precedent; inherits decorated methods as skills |
-| navigator-auth (external) | depends on | OAuth 2.1 AS + introspection + ABAC policies |
+| navigator-auth **FEAT-095** (external, approved) | depends on | DCR + RFC 8414/9728 + upstream IdP + access gate + introspection/JWKS; ships the PRM builder this feature consumes (its D6) |
+| navigator-auth ABAC policies | depends on | per-agent / per-tool decisions — the ONLY place per-agent authz can live (upstream gate is per-client) |
 | Deployment | modifies | endpoint must be publicly routable for Claude Web; **Redis becomes required** for agent MCP endpoints (sessions + job handles) |
 
 **Breaking changes**: none expected. The tool-level MCP server, all existing
 transports and A2A keep their current behavior.
+
+---
+
+## Cross-Repo Contract — navigator-auth FEAT-095
+
+Read from `../navigator-auth/sdd/specs/oauth2-for-mcp-agents.spec.md` (v0.2,
+2026-08-31, **approved**). This removes most of what OQ6 was deferring.
+
+### What navigator-auth guarantees
+
+| Guarantee | Detail | Consequence here |
+|---|---|---|
+| RFC 7591 DCR | `POST /oauth2/register`, **open** policy by default, rate-limited; Claude callbacks (`claude.ai` **and** `claude.com` `/api/mcp/auth_callback`) allowlisted out of the box | Claude self-registers; ai-parrot needs no client provisioning |
+| RFC 8414 discovery | `/.well-known/oauth-authorization-server` at the **origin root**; canonical `AUTH_ISSUER_URL` (https) | ai-parrot's PRM points `authorization_servers` at that issuer |
+| RFC 9728 builder | `build_protected_resource_metadata(resource, auth_servers, scopes)` in `oauth2/metadata.py` — *"importable by external resource servers (ai-parrot MCP mounts)"* | **ai-parrot serves its own PRM document using that builder** (D6) — do not hand-roll the shape |
+| Upstream IdP proxy | AS login offers Google/Azure; pending authorize parked in `IdentityFlowStore`, resumed after callback | Corporate Google login works end-to-end; nothing for ai-parrot to do |
+| Per-client access gate | `auth.client_access` checked at `/authorize` **before consent**; non-activated ⇒ `access_denied`, never a code or token; approval queue + admin API ship in v1 | The manual activation gate lives **entirely upstream** |
+| Revocation cascade | Deactivation revokes grants, refresh chains and live `jti`s for that (user, client) | ai-parrot needs no revocation logic of its own |
+| Token validation | `/oauth2/introspect` (RFC 7662, FEAT-094) **or** offline verify via `/oauth2/jwks` when RS256/ES256 is configured (HS256 remains the default) | Two options — see the open design item below |
+| `resource` → `aud` | RFC 8707 `resource` accepted at authorize+token and reflected into a list-valued `aud` | ai-parrot enforces it (D5) |
+| 401 challenge | AS-side bearer 401s carry `WWW-Authenticate: Bearer resource_metadata="…"` | ai-parrot must do the same on **its** 401s (`transports/base.py:305`) |
+
+### What it explicitly leaves to ai-parrot
+
+FEAT-095's Non-Goals name our half: *"`resolve_principal`, MCP tool exposure, PRM
+served by MCP mounts (navigator-auth ships the builder; ai-parrot serves its own
+document)"*, plus audience enforcement (D5) and deletion of the dev fixture.
+
+### The gate is per (user, **client**) — not per (user, **agent**)
+
+`auth.client_access` is keyed on `(user_id, client_uid)`. Claude registers **one**
+client (`client_name="Claude"`), so the upstream gate answers *"may this person use
+Claude as a connector at all?"* — it cannot express *"…but only the Finance agent."*
+
+That settles the OQ6 split cleanly, and it is the single most important thing this
+spec tells us:
+
+- **coarse, upstream**: navigator-auth's gate — is this human allowed to reach our MCP
+  surface at all;
+- **fine, downstream**: ai-parrot PBAC — which agents and which tools, per principal,
+  re-checked on every `tools/call`;
+- **audience, in between**: the `resource`/`aud` pair scopes a token to one mount.
+
+There is no per-agent grant upstream to lean on, so the PBAC layer this brainstorm
+already requires is not optional — it is the *only* place per-agent authorization can
+happen.
+
+### One design item this opens (for the spec)
+
+FEAT-095 offers **offline JWKS verification** as an alternative to per-call
+introspection. Our current design assumes introspection. The tradeoff is real:
+introspection is authoritative and revocation-aware but adds a network hop per
+`tools/call`; JWKS verification is local but cannot see a revoked `jti`. Note that
+`ExternalOAuthValidator` already caches introspection results for up to 5 minutes
+(`oauth_server.py:302-306`), which bounds both the hop cost *and* the revocation
+latency — so introspection-with-cache is the sane v1 default, and JWKS is an
+optimization to revisit. The spec should state this explicitly rather than leaving it
+implicit.
+
+### Correction inherited from FEAT-095
+
+Its Non-Goals correct the superseded ai-parrot draft's **D11**: in navigator-auth,
+`enforcing: false` on a policy means *"non-short-circuiting ordinary policy"*
+(`abac/policies/abstract.py:81`), **not** audit-only. **There is no PBAC shadow mode.**
+A dry-run rollout would be separate work on `abac/pdp.py` / `audit.py`. This brainstorm
+does not depend on shadow mode (PBAC is enforced from day one), but no downstream task
+may assume `enforcing: false` gives a safe observation period.
 
 ---
 
@@ -578,7 +657,16 @@ class SuspendedExecutionStore:
 # packages/ai-parrot-server/src/parrot/mcp/oauth_server.py
 class APIKeyStore:               # :41   issue_key :53, validate_key :119, revoke_key :142
 class ExternalOAuthValidator:    # :211  RFC 7662 introspection
+    def __init__(self, introspection_endpoint, client_id, client_secret,
+                 resource_server_url=None, http_timeout=15.0)                # :219
     async def validate_token(self, token: str) -> Optional[Dict[str, Any]]   # :244
+    # :262-268 — AUDIENCE ENFORCEMENT ALREADY EXISTS: when resource_server_url is set,
+    #   a token whose `aud` (str or list) omits it is rejected. This is what
+    #   navigator-auth FEAT-095 D5 relies on; configure it per mount.
+    async def get_token_info(self, token: str) -> Dict[str, Any]             # :274
+    # :302-306 — in-process introspection cache: min(exp, now+300) → revocation
+    #   latency is bounded at ~5 minutes, and not every tools/call round-trips.
+    def clear_cache(self) -> None                                            # :322
 class OAuthAuthorizationServer:  # :374  register_routes :393
 class OAuthRoutesMixin:          # :569  _oauth_paths :576, _add_oauth_routes :586
     async def _handle_discovery  # :593  RFC 8414 metadata
@@ -648,8 +736,10 @@ from parrot.tools.abstract import AbstractTool, ToolResult
   reference held across a reload points at a closed agent (OQ5).
 - `AbstractBot.knowledge_bases: List[AbstractKnowledgeBase]` (`bots/abstract.py:554`)
   — source for the KB-descriptor resource; `role` / `goal` / `capabilities` /
-  `backstory` / `rationale` are the identity-card and system-prompt sources
-  (`bots/abstract.py:1290-1310`, prompt_builder context).
+  `backstory` / `rationale` are available on the agent (`bots/abstract.py:1290-1310`,
+  prompt_builder context) — `role` / `goal` / `capabilities` feed the identity card;
+  `backstory` / `rationale` and the assembled system prompt are **deliberately not
+  exposed** as resources.
 - Deployment shape: `GUNICORN_CONFIG_TEMPLATE`
   (`autonomous/deploy/templates.py:3`) — `worker_class = "aiohttp.GunicornWebWorker"`,
   `workers = (2×CPUs)+1` (`installer.py:23`), `max_requests = 2000`, and an explicit
@@ -685,6 +775,13 @@ Verified absent from the tree (`dev` and the branch):
   `parrot/memory/episodic/store.py:57`.
 - ~~`MCPAgent` as a distinct class~~ — `parrot/bots/mcp.py:11` is a deprecated alias
   of `BasicAgent` (MCP *client* capability, the opposite direction).
+- ~~A PBAC shadow / audit-only mode~~ — **does not exist**, in either repo.
+  navigator-auth's `enforcing: false` means "non-short-circuiting ordinary policy"
+  (`abac/policies/abstract.py:81`), NOT dry-run. The superseded draft's D11 assumed
+  otherwise. Do not plan a shadow rollout on it.
+- ~~A per-agent grant in navigator-auth~~ — the FEAT-095 access gate is keyed
+  `(user_id, client_uid)` and Claude is a single client. Per-agent authorization exists
+  only in ai-parrot's PBAC layer.
 
 ---
 
@@ -712,6 +809,14 @@ Verified absent from the tree (`dev` and the branch):
   which this feature deliberately does not (opt-in is implicit, by decoration).
   `manager/manager.py:setup()` is the one plausible collision point with FEAT-475 —
   a single-line wiring change, worth checking at spec time.
+- **Cross-repo sequencing**: navigator-auth FEAT-095 is approved but not yet released
+  (target 1.4.0). Everything here can be **built** against it — the contract is
+  specified and stable (§ Cross-Repo Contract) — but the end-to-end Claude Web path
+  (DCR → upstream Google login → gate → token → `tools/call`) cannot be **verified**
+  until it ships. Plan the acceptance evidence accordingly: mock the introspection and
+  PRM legs for CI, and keep one live conformance run as a post-release gate. The
+  API-key path (Claude Code / Desktop) has no such dependency and can be demonstrated
+  end-to-end immediately — it is the natural first vertical slice.
 - **Recommended isolation**: `per-spec`, with the OQ4 session-store task as the
   candidate exception if it is pulled forward.
 - **Rationale**: the three seams share the mount's contract and the tool-exposure
@@ -757,9 +862,12 @@ Resolved in a follow-up pass (2026-08-31) — three of these were settled by rea
 the code, five by owner decision:
 
 - [x] **OQ1 — Who ships the RFC 9728 protected-resource metadata?** — *Owner:
-  jesuslarag*: **AI-Parrot ships it, in this feature.** PRM describes the resource
-  server, so `/.well-known/oauth-protected-resource` and a `resource_metadata=`-bearing
-  401 (`transports/base.py:305`) live here and point at navigator-auth as the AS.
+  jesuslarag*, **confirmed by navigator-auth FEAT-095 D6**: **AI-Parrot serves its own
+  PRM document, in this feature**, consuming navigator-auth's
+  `build_protected_resource_metadata()` builder (`oauth2/metadata.py`, explicitly
+  "importable by external resource servers") rather than hand-rolling the shape.
+  The `resource_metadata=`-bearing 401 lands in `transports/base.py:305`. FEAT-095's
+  Non-Goals name this exact split, and D6 names this feature as the follow-up spec.
   Tracked as the `mcp-protected-resource-metadata` capability.
 - [x] **OQ2 — Reification vs LLM-callability?** — *Owner: jesuslarag*: **MCP-only, no
   opt-in.** A reified `@mcp_tool` method is never registered into the owning agent's
@@ -783,23 +891,36 @@ the code, five by owner decision:
   reference would serve a closed agent. The exposure set is re-reified from the new
   instance on reload.
 - [x] **OQ6 — navigator-auth scopes, claims and the activation gate?** — *Owner:
-  jesuslarag*: **deferred to the spec as a cross-repo dependency.** The navigator-auth
-  side is not designed yet, so this feature codes against a narrow
-  principal-resolution seam (bearer → `PermissionContext`) and the spec settles where
-  `tenant_id` and the `mcp:agent:{name}` grant are carried, and whether the manual
-  user-activation gate lives in navigator-auth's `/authorize` or in a PBAC policy.
-  **This is the one remaining external unknown — it must be closed in the spec, and it
-  is the likeliest source of rework if it is not.**
+  jesuslarag* (**re-resolved 2026-08-31 against navigator-auth FEAT-095, approved**;
+  no longer deferred): the split is **coarse upstream / fine downstream**.
+  - **Activation gate**: lives entirely in navigator-auth, at `/oauth2/authorize`,
+    before consent (`auth.client_access`, admin API + approval queue, both in v1).
+    A non-activated user gets `access_denied` and never a code or token; deactivation
+    cascades grant + refresh-chain + `jti` revocation. **Nothing to build here.**
+  - **Granularity**: the gate is keyed `(user_id, client_uid)` and Claude registers a
+    single client, so it CANNOT express a per-agent grant. Per-agent and per-tool
+    authorization exist **only** in ai-parrot's PBAC layer — which makes the PBAC work
+    load-bearing rather than defense-in-depth.
+  - **Audience**: each mount's canonical resource URI is configured as
+    `ExternalOAuthValidator.resource_server_url`; the existing `aud` check
+    (`oauth_server.py:262-268`) is the enforcement point FEAT-095 D5 delegates to us.
+  - **Remaining sub-item for the spec** (narrow, no longer a blocker): where
+    `tenant_id` comes from in the introspection response — FEAT-095 notes three
+    distinct meanings of `client_id` (internal PK, wire `client_uid`, FEAT-092 tenant
+    id), so the mapping from introspection payload → `UserSession.tenant_id` must be
+    pinned down explicitly rather than assumed.
 - [x] **OQ7 — MCP tool annotations?** — *Owner: jesuslarag*: **ride `routing_meta`.**
   `MCPToolAdapter` already reads `routing_meta["requires_confirmation"]` and injects a
   destructive-op guard (`adapter.py:10-18`); that maps to `destructiveHint`.
   `readOnlyHint` / `idempotentHint` are declared explicitly on the decorator rather
   than inferred from `scope`.
-- [x] **OQ8 — Which agent metadata becomes an MCP resource?** — *Owner: jesuslarag*:
-  **all four** — identity card, tool catalog (policy-filtered), KB descriptors, and
-  the system prompt / backstory / rationale. Stated caveat: the system-prompt resource
-  discloses guardrail wording, so the spec must gate it behind its own PBAC resource
-  (`mcp:agent:{name}:resource:system-prompt`), separate from the agent-level grant.
+- [x] **OQ8 — Which agent metadata becomes an MCP resource?** — *Owner: jesuslarag*
+  (revised 2026-08-31): **three** — identity card, tool catalog (policy-filtered), and
+  KB descriptors. The system prompt / `backstory` / `rationale` are **excluded
+  outright**: exposing guardrail wording hands an attacker the bypass design. Not a
+  policy-gated resource — never served.
 
-No open questions remain for `/sdd-spec`; OQ6 carries forward as a spec-time decision
-with an external dependency, not as an unknown blocking decomposition.
+No open questions remain for `/sdd-spec`. OQ6 was re-resolved against navigator-auth
+FEAT-095 (approved) and is no longer an external unknown; only the introspection →
+`tenant_id` mapping and the introspection-vs-JWKS default (§ Cross-Repo Contract) carry
+forward as ordinary spec-time decisions.
