@@ -18,5 +18,5 @@
 <script lang="ts">
   // Intentionally empty — never rendered while its feature flag is off,
   // and there is no real implementation here yet.
-  ();
+  let _props = $props();
 </script>

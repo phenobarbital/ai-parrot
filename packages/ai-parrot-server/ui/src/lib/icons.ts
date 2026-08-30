@@ -19,8 +19,12 @@
  * visualizations, ui/components) at TASK-2593 (finalized; TASK-2591
  * provisioned the same four as a placeholder). `icons.test.ts` guards
  * against any future vendored file using an unregistered prefix.
+ * `lucide` was added at TASK-2595 — `components/grid/ResultGrid.svelte`
+ * (the canvas spreadsheet block's data grid, vendored as part of
+ * `canvas/**`) uses `icon="lucide:…"`.
  */
 import { addCollection } from "@iconify/svelte";
+import { icons as lucideIcons } from "@iconify-json/lucide";
 import { icons as mdiIcons } from "@iconify-json/mdi";
 import { icons as phIcons } from "@iconify-json/ph";
 import { icons as svgSpinnersIcons } from "@iconify-json/svg-spinners";
@@ -28,9 +32,10 @@ import { icons as tablerIcons } from "@iconify-json/tabler";
 
 /** Every icon-set prefix bundled and registered offline — source of truth
  * for `icons.test.ts`'s unregistered-prefix guard. */
-export const REGISTERED_PREFIXES = ["mdi", "ph", "svg-spinners", "tabler"] as const;
+export const REGISTERED_PREFIXES = ["lucide", "mdi", "ph", "svg-spinners", "tabler"] as const;
 
 export function registerOfflineIcons(): void {
+  addCollection(lucideIcons);
   addCollection(mdiIcons);
   addCollection(phIcons);
   addCollection(svgSpinnersIcons);

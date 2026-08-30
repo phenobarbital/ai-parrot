@@ -1,0 +1,279 @@
+/* ==========================================================================
+   RevoGrid Theme Override — FEAT-051
+   Maps --revo-grid-* variables to app semantic tokens (FEAT-044) and aligns
+   typography with DataTable.svelte so both surfaces look like one design system.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Light mode — token remap
+   All --revo-grid-* vars on revo-grid[theme="compact"] so RevoGrid's own rules
+   pick up the app's semantic tokens automatically.
+   -------------------------------------------------------------------------- */
+revo-grid[theme="compact"] {
+  /* Typography root — inherit the app's body font stack */
+  font-family: inherit;
+
+  /* The library's built-in min-height:300px makes the grid overflow shorter
+     containers: the bottom of the grid — including the horizontal scrollbar —
+     ends up below the wrapper's overflow-hidden clip line. Our wrappers size
+     the grid explicitly, so drop the floor. */
+  min-height: 0;
+
+  /* Background & foreground */
+  --revo-grid-background: var(--card);
+  --revo-grid-foreground: var(--foreground);
+
+  /* Header */
+  --revo-grid-header-bg: var(--muted);
+  --revo-grid-header-color: var(--foreground);
+  --revo-grid-header-border: var(--border);
+
+  /* Cell */
+  --revo-grid-cell-border: var(--border);
+  --revo-grid-cell-disabled-bg: color-mix(
+    in oklch,
+    var(--muted) 60%,
+    transparent
+  );
+
+  /* Interaction */
+  --revo-grid-row-hover: color-mix(in oklch, var(--muted) 60%, transparent);
+  --revo-grid-focused-bg: color-mix(
+    in oklch,
+    var(--color-primary-500) 14%,
+    transparent
+  );
+  --revo-grid-primary: var(--color-primary-500);
+  --revo-grid-primary-transparent: color-mix(
+    in oklch,
+    var(--color-primary-500) 60%,
+    transparent
+  );
+
+  /* Row headers (index column) */
+  --revo-grid-row-headers-bg: var(--muted);
+  --revo-grid-row-headers-color: var(--muted-foreground);
+
+  /* Dividers & borders */
+  --revo-grid-divider: var(--border);
+  --revo-grid-border: var(--border);
+
+  /* Shadows */
+  --revo-grid-shadow: color-mix(in oklch, black 12%, transparent);
+
+  /* Filter panel */
+  --revo-grid-filter-panel-bg: var(--popover, var(--card));
+  --revo-grid-filter-panel-border: var(--border);
+  --revo-grid-filter-panel-divider: var(--border);
+  --revo-grid-filter-panel-input-bg: var(--muted);
+  --revo-grid-filter-panel-shadow: color-mix(in oklch, black 12%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Typography overrides
+   Match DataTable.svelte's visual vocabulary exactly:
+   - Body cells:   text-xs (0.75rem), px-3 (0.75rem)
+   - Header cells: text-[11px] (0.6875rem), uppercase, tracking-wider (0.05em),
+                   font-semibold (600)
+   -------------------------------------------------------------------------- */
+
+/* Header cells */
+revo-grid[theme="compact"] .rgHeaderCell {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--foreground);
+}
+
+/* Body cells */
+revo-grid[theme="compact"] .rgCell {
+  font-size: 0.75rem;
+  padding: 0 0.75rem;
+  color: var(--foreground);
+}
+
+/* Grouping rows — same body size, keep library's font-weight */
+revo-grid[theme="compact"] .rgRow.groupingRow {
+  font-size: 0.75rem;
+}
+
+/* --------------------------------------------------------------------------
+   Text selection
+   The library sets `user-select: none` on the grid host so drag gestures never
+   highlight text. Results are read-only data users need to get out of the grid,
+   so re-enable native selection on the text surfaces (cell values AND column
+   names) and keep it disabled only on the chrome that is meant to be dragged:
+   resize grips, autofill handle, row-drag icon and the virtual scrollbars.
+   Range selection (`range` prop) stays off on purpose: it calls
+   preventDefault() on mousedown, which would kill the native drag-to-select.
+   -------------------------------------------------------------------------- */
+revo-grid[theme="compact"],
+revo-grid[theme="compact"] .rgCell,
+revo-grid[theme="compact"] .rgHeaderCell,
+revo-grid[theme="compact"] .rgHeaderCell .header-content {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+revo-grid[theme="compact"] .resizable,
+revo-grid[theme="compact"] .revo-draggable,
+revo-grid[theme="compact"] .revo-drag-icon,
+revo-grid[theme="compact"] .autofill-handle,
+revo-grid[theme="compact"] revogr-scroll-virtual,
+revo-grid[theme="compact"] .rowHeaders {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+/* Text caret over the data so selectability is discoverable */
+revo-grid[theme="compact"] .rgCell {
+  cursor: text;
+}
+
+/* --------------------------------------------------------------------------
+   Expand-to-fit header button
+   Rendered by ResultGrid's `columnTemplate` on columns whose content is wider
+   than the column (the ones showing "…"). Clicking it widens the column to the
+   full value; clicking again restores the default width.
+   -------------------------------------------------------------------------- */
+revo-grid[theme="compact"] .rg-header-fit {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  min-width: 0;
+}
+
+revo-grid[theme="compact"] .rg-header-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A chip rather than a bare glyph — it is the only hint that a column is hiding
+   content, so it has to read as a button at a glance — but in the grid's own
+   neutral tones. The expanded/collapsed state is carried by the icon, not by
+   colour, so nothing here competes with the data. */
+revo-grid[theme="compact"] .rg-fit-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  /* keep clear of the resize grip pinned to the cell's right edge */
+  margin-right: 8px;
+  border: 1px solid color-mix(in oklch, var(--foreground) 22%, transparent);
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+revo-grid[theme="compact"] .rg-fit-btn:hover {
+  background: color-mix(in oklch, var(--foreground) 16%, transparent);
+  border-color: color-mix(in oklch, var(--foreground) 40%, transparent);
+  color: var(--foreground);
+}
+
+/* Expanded: pressed-looking, so "click again to collapse" is obvious */
+revo-grid[theme="compact"] .rg-fit-btn.is-active {
+  background: color-mix(in oklch, var(--foreground) 20%, transparent);
+  border-color: color-mix(in oklch, var(--foreground) 40%, transparent);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 2px color-mix(in oklch, black 25%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Dark mode — re-declare only the vars whose values differ from light mode.
+   All other vars (--revo-grid-background, --revo-grid-header-bg, etc.) use
+   the same var(--token) references, which already resolve to dark values via
+   the .dark class in app.css.
+   -------------------------------------------------------------------------- */
+.dark revo-grid[theme="compact"] {
+  /* Focused cell — stronger alpha in dark mode */
+  --revo-grid-focused-bg: color-mix(
+    in oklch,
+    var(--color-primary-400) 18%,
+    transparent
+  );
+
+  /* Primary accent switches to the lighter step */
+  --revo-grid-primary: var(--color-primary-400);
+  --revo-grid-primary-transparent: color-mix(
+    in oklch,
+    var(--color-primary-400) 60%,
+    transparent
+  );
+
+  /* Shadows are darker against dark backgrounds */
+  --revo-grid-shadow: color-mix(in oklch, black 40%, transparent);
+  --revo-grid-filter-panel-shadow: color-mix(in oklch, black 40%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbars — always visible, in their own lane outside the data area
+   On OSes with overlay scrollbars (Linux/macOS), getScrollbarSize() returns 0
+   and RevoGrid switches its virtual scrollbars to an absolutely-positioned
+   autohide overlay (revogr-scroll-virtual[autohide]) that floats on top of
+   the last column/row and disappears 1s after scrolling. Neutralize that
+   mode: keep the bars in the normal flex flow so they reserve their own lane
+   (same layout as on native-scrollbar OSes) and style them always-visible.
+   The [autohide] selector is repeated to out-rank the library's
+   `revogr-scroll-virtual[autohide].vertical[visible]` !important rules.
+   -------------------------------------------------------------------------- */
+revo-grid revogr-scroll-virtual[autohide][autohide][autohide] {
+  position: relative !important;
+  z-index: 1 !important;
+}
+revo-grid revogr-scroll-virtual[autohide][autohide][autohide].vertical {
+  top: auto;
+  right: auto;
+  min-width: 13px !important;
+}
+revo-grid revogr-scroll-virtual[autohide][autohide][autohide].horizontal {
+  bottom: auto;
+  left: auto;
+  min-height: 13px !important;
+}
+
+/* Styled, space-taking scrollbars even when the OS defaults to overlay bars.
+   Standard scrollbar props are scoped to Firefox only: when scrollbar-width /
+   scrollbar-color are set, Chromium ignores ::-webkit-scrollbar styling and
+   falls back to its thin semi-transparent bar, which feels imprecise to drag. */
+@supports not selector(::-webkit-scrollbar) {
+  revo-grid revogr-scroll-virtual {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 35%, transparent)
+      transparent;
+  }
+}
+revo-grid revogr-scroll-virtual::-webkit-scrollbar {
+  -webkit-appearance: none;
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+revo-grid revogr-scroll-virtual::-webkit-scrollbar-track {
+  background: transparent;
+}
+revo-grid revogr-scroll-virtual::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklch, var(--foreground) 35%, transparent);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+revo-grid revogr-scroll-virtual::-webkit-scrollbar-thumb:hover,
+revo-grid revogr-scroll-virtual::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in oklch, var(--foreground) 55%, transparent);
+}
