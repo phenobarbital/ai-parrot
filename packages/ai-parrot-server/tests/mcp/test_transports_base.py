@@ -17,6 +17,7 @@ from parrot.mcp.transports.base import MCPServerBase, RemoteMCPServerBase
 from parrot.mcp.transports.http import HttpMCPServer
 from parrot.mcp.transports.sse import SseMCPServer
 from parrot.mcp.transports.stdio import StdioMCPServer
+from parrot.mcp.transports.streamable_http import StreamableHttpMCPServer
 from parrot.mcp.transports.unix import UnixMCPServer
 from parrot.mcp.transports.websocket import WebSocketMCPServer
 from parrot.tools.abstract import AbstractTool
@@ -60,7 +61,7 @@ class TestRemoteTransportsReparenting:
     server's old standalone MCPServerBase."""
 
     @pytest.mark.parametrize("transport_cls", [
-        HttpMCPServer, SseMCPServer, UnixMCPServer,
+        HttpMCPServer, SseMCPServer, StreamableHttpMCPServer, UnixMCPServer,
         pytest.param(QuicMCPServer, marks=pytest.mark.requires_aioquic),
         WebSocketMCPServer,
     ])

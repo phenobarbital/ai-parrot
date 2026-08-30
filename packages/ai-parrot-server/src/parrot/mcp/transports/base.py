@@ -146,7 +146,9 @@ class RemoteMCPServerBase(_CoreMCPServerBase):
 
         elif auth_method == AuthMethod.OAUTH2_INTERNAL:
             self.oauth_server = OAuthAuthorizationServer(
-                default_scopes=self.config.oauth_scopes,
+                # MCPServerConfig spells this `oauth_scope`; the plural
+                # raised AttributeError, making OAUTH2_INTERNAL unusable.
+                default_scopes=self.config.oauth_scope,
                 allow_dynamic_registration=self.config.oauth_allow_dynamic_registration,
                 token_ttl=self.config.oauth_token_ttl,
                 code_ttl=self.config.oauth_code_ttl,

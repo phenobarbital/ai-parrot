@@ -2,7 +2,13 @@ import pytest
 from pydantic import BaseModel, Field
 
 from parrot.tools.abstract import AbstractTool
-from parrot.mcp.server_base import MCPServerBase, LocalServerConfig
+from parrot.mcp.server_base import (
+    LATEST_PROTOCOL_VERSION,
+    MCPServerBase,
+    LocalServerConfig,
+    SUPPORTED_PROTOCOL_VERSIONS,
+    negotiate_protocol_version,
+)
 
 
 class EchoInput(BaseModel):
@@ -35,6 +41,22 @@ class TestMCPServerBase:
         result = await server.handle_initialize({})
         assert result["protocolVersion"] == "2024-11-05"
         assert result["serverInfo"]["name"] == "test"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("requested", SUPPORTED_PROTOCOL_VERSIONS)
+    async def test_handle_initialize_echoes_supported_version(self, requested):
+        server = ConcreteMCPServer(LocalServerConfig(name="test"))
+        result = await server.handle_initialize({"protocolVersion": requested})
+        assert result["protocolVersion"] == requested
+
+    @pytest.mark.asyncio
+    async def test_handle_initialize_unknown_version_falls_back_to_latest(self):
+        server = ConcreteMCPServer(LocalServerConfig(name="test"))
+        result = await server.handle_initialize({"protocolVersion": "1999-01-01"})
+        assert result["protocolVersion"] == LATEST_PROTOCOL_VERSION
+
+    def test_negotiate_protocol_version_no_version_keeps_legacy_default(self):
+        assert negotiate_protocol_version(None) == "2024-11-05"
 
     @pytest.mark.asyncio
     async def test_handle_tools_list(self):

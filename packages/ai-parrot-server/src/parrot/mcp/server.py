@@ -20,6 +20,7 @@ from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.stdio import StdioMCPServer
 from parrot.mcp.transports.http import HttpMCPServer
 from parrot.mcp.transports.sse import SseMCPServer
+from parrot.mcp.transports.streamable_http import StreamableHttpMCPServer
 from parrot.mcp.transports.unix import UnixMCPServer
 # QUIC lives behind the optional `ai-parrot-server[mcp]` extra (aioquic);
 # resolved lazily so a bare install can still use the other transports.
@@ -42,6 +43,8 @@ class MCPServer:
             self.server = StdioMCPServer(config)
         elif config.transport == "http":
             self.server = HttpMCPServer(config, parent_app=parent_app)
+        elif config.transport in {"streamable-http", "streamable_http"}:
+            self.server = StreamableHttpMCPServer(config, parent_app=parent_app)
         elif config.transport == "sse":
             self.server = SseMCPServer(config, parent_app=parent_app)
         elif config.transport == "unix":
@@ -127,6 +130,30 @@ def create_http_mcp_server(
 
     return server
 
+def create_streamable_http_mcp_server(
+    name: str = "ai-parrot-tools",
+    host: str = "localhost",
+    port: int = 8080,
+    tools: Optional[List[AbstractTool]] = None,
+    parent_app: Optional[web.Application] = None,
+    **kwargs,
+) -> MCPServer:
+    """Create a Streamable HTTP MCP server (Claude.ai-compatible)."""
+    config = MCPServerConfig(
+        name=name,
+        transport="streamable-http",
+        host=host,
+        port=port,
+        **kwargs,
+    )
+
+    server = MCPServer(config, parent_app=parent_app)
+    if tools:
+        server.register_tools(tools)
+
+    return server
+
+
 def create_sse_mcp_server(
     name: str = "ai-parrot-tools",
     host: str = "localhost",
@@ -176,7 +203,9 @@ async def main():
     parser = argparse.ArgumentParser(
         description="AI-Parrot MCP Server"
     )
-    parser.add_argument("--transport", choices=["stdio", "http", "sse"], default="stdio",
+    parser.add_argument("--transport",
+                        choices=["stdio", "http", "streamable-http", "sse"],
+                        default="stdio",
                         help="Transport type")
     parser.add_argument("--host", default="localhost",
                         help="Host for HTTP server")
@@ -206,7 +235,7 @@ async def main():
     # server.register_tool(YourDatabaseQueryTool())
 
     try:
-        if args.transport in {"http", "sse"}:
+        if args.transport in {"http", "streamable-http", "sse"}:
             await server.start()
             print(f"Server running at http://{args.host}:{args.port}")
             print("Press Ctrl+C to stop")

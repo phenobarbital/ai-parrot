@@ -20,7 +20,10 @@ class MCPServerConfig:
     description: str = "AI-Parrot Tools via MCP Protocol"
 
     # Server settings
-    transport: str = "stdio"  # "stdio" or "http" or "unix"
+    # "stdio", "http", "streamable-http", "sse", "unix" or "quic".
+    # Use "streamable-http" for MCP Streamable HTTP (2025-03-26) clients
+    # such as Claude.ai custom connectors.
+    transport: str = "stdio"
     host: str = "localhost"
     port: int = 8080
     socket_path: Optional[str] = None  # For UNIX socket transport
@@ -58,6 +61,27 @@ class MCPServerConfig:
     base_path: str = "/mcp"
     # custom events path for SSE (optional)
     events_path: Optional[str] = None
+
+    # Streamable HTTP transport settings
+    # Browser origins allowed on the /mcp endpoint (DNS-rebinding
+    # protection, mandatory per the MCP spec). Localhost is always allowed
+    # and requests without an Origin header (server-to-server clients such
+    # as Claude.ai) are unaffected; any other origin must be listed here.
+    allowed_origins: Optional[List[str]] = None
+    # Escape hatch: skip Origin validation entirely. Only for deployments
+    # already fronted by a proxy that performs the same check.
+    allow_any_origin: bool = False
+    # Idle seconds before an Mcp-Session-Id session expires.
+    session_ttl: int = 3600
+    # Max buffered SSE events per stream (Last-Event-ID resumability window).
+    event_buffer_size: int = 1000
+    # Max concurrent sessions; further initialize calls are refused with 503
+    # rather than growing memory without bound.
+    max_sessions: int = 1000
+    # Max SSE streams retained per session. Each request-bearing SSE POST
+    # opens one; beyond the cap the least useful are evicted so a busy
+    # session cannot accumulate buffers for the whole of its TTL.
+    max_streams_per_session: int = 64
     
     # For Future gRPC implementation (expected)
     grpc_host: Optional[str] = None
@@ -85,10 +109,14 @@ class MCPServerConfig:
 class TransportConfig:
     """Configuration for a single MCP transport (used by ParrotMCPServer)."""
 
-    transport: str  # "stdio" or "http" or "sse" or "unix"
+    transport: str  # "stdio", "http", "streamable-http", "sse", "unix", "quic"
     enabled: bool = True
     host: Optional[str] = None  # Only for HTTP
     port: Optional[int] = None  # Only for HTTP
     url: Optional[str] = None  # Only for HTTP/SSE transport
     name_suffix: Optional[str] = None  # e.g., "local" or "remote"
     socket_path: Optional[str] = None  # Only for UNIX socket transport
+    # Route prefix for HTTP-like transports on a shared app. Two HTTP-like
+    # transports cannot share one; set distinct paths to run e.g. http and
+    # streamable-http side by side. None = MCPServerConfig.base_path.
+    base_path: Optional[str] = None
