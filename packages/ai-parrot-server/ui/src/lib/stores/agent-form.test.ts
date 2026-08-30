@@ -135,6 +135,48 @@ describe("AgentFormState", () => {
       expect(form.validate()).toBe(true);
       expect(form.errors).toEqual({});
     });
+
+    it("blocks Save when a JSON field's editor holds malformed JSON, even though values[field] itself is still the last-known-good object", () => {
+      // Regression: JsonEditor only writes its bound `value` when the
+      // textarea content is valid JSON — a field being actively edited
+      // to something malformed never changes `state.values[field]`.
+      // Without `setJsonValid()` feeding into `validate()`, the form
+      // would report itself valid (and Save would silently submit the
+      // stale last-good value) while the JsonEditor's own UI is still
+      // showing an inline parse error — contradicting the spec's
+      // "malformed JSON blocks submission" requirement.
+      const form = new AgentFormState();
+      form.load(dbAgent());
+      expect(form.validate()).toBe(true);
+
+      form.setJsonValid("permissions", false);
+
+      expect(form.validate()).toBe(false);
+      expect(form.errors.permissions).toBeDefined();
+    });
+
+    it("setJsonValid(field, true) clears the block once the JSON becomes valid again", () => {
+      const form = new AgentFormState();
+      form.load(dbAgent());
+
+      form.setJsonValid("model_config", false);
+      expect(form.validate()).toBe(false);
+
+      form.setJsonValid("model_config", true);
+      expect(form.validate()).toBe(true);
+      expect(form.errors.model_config).toBeUndefined();
+    });
+
+    it("load() resets invalidJsonFields so a stale flag never leaks across agents", () => {
+      const form = new AgentFormState();
+      form.load(dbAgent());
+      form.setJsonValid("permissions", false);
+      expect(form.validate()).toBe(false);
+
+      form.load(dbAgent({ name: "another-bot" }));
+
+      expect(form.validate()).toBe(true);
+    });
   });
 
   describe("tabErrors", () => {

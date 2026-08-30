@@ -158,6 +158,7 @@
       () => state.values.kb ?? [],
       (v) => (state.values.kb = v as Record<string, unknown>[] | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("kb", valid)}
   />
 
   <div class="flex flex-col gap-1.5">

@@ -141,5 +141,6 @@
       () => state.values.model_config ?? {},
       (v) => (state.values.model_config = v as Record<string, unknown> | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("model_config", valid)}
   />
 </div>

@@ -114,5 +114,6 @@
       () => state.values.prompt_config ?? {},
       (v) => (state.values.prompt_config = v as Record<string, unknown> | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("prompt_config", valid)}
   />
 </div>

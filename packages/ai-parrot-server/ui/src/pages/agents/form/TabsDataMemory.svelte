@@ -35,6 +35,7 @@
       () => state.values.vector_store_config ?? {},
       (v) => (state.values.vector_store_config = v as Record<string, unknown> | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("vector_store_config", valid)}
   />
 
   <JsonEditor
@@ -45,6 +46,7 @@
       () => state.values.reranker_config ?? {},
       (v) => (state.values.reranker_config = v as Record<string, unknown> | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("reranker_config", valid)}
   />
 
   <JsonEditor
@@ -55,6 +57,7 @@
       () => state.values.parent_searcher_config ?? {},
       (v) => (state.values.parent_searcher_config = v as Record<string, unknown> | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("parent_searcher_config", valid)}
   />
 
   <div class="flex flex-col gap-1.5">
@@ -119,6 +122,7 @@
       () => state.values.memory_config ?? {},
       (v) => (state.values.memory_config = v as Record<string, unknown> | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("memory_config", valid)}
   />
 
   <div class="flex flex-col gap-1.5">

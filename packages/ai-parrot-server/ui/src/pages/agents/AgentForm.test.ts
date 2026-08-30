@@ -191,6 +191,32 @@ describe("AgentForm", () => {
     expect((getByTestId("form-footer-save") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("malformed JSON in a JsonEditor blocks Save (regression: onvalid must be wired)", async () => {
+    const { getByTestId, getByLabelText } = render(AgentForm, {
+      mode: "edit",
+      agent: dbAgent(),
+      catalog,
+      tools,
+    });
+
+    expect((getByTestId("form-footer-save") as HTMLButtonElement).disabled).toBe(false);
+
+    await fireEvent.click(getByTestId("tab-trigger-advanced"));
+    const permissionsTextarea = getByLabelText("Permissions") as HTMLTextAreaElement;
+    await fireEvent.input(permissionsTextarea, { target: { value: "{ not valid json" } });
+
+    await waitFor(() =>
+      expect((getByTestId("form-footer-save") as HTMLButtonElement).disabled).toBe(true),
+    );
+    expect(getByTestId("tab-badge-advanced")).toBeTruthy();
+
+    // Fixing the JSON un-blocks Save again.
+    await fireEvent.input(permissionsTextarea, { target: { value: "{}" } });
+    await waitFor(() =>
+      expect((getByTestId("form-footer-save") as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
   it("a dirty form asks before navigating away, via router.beforeNavigate", async () => {
     render(AgentForm, { mode: "edit", agent: dbAgent(), catalog, tools });
 

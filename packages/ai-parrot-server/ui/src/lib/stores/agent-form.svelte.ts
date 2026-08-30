@@ -84,6 +84,17 @@ export class AgentFormState {
   saving = $state(false);
   /** `chatbot_id`/`created_at`/`created_by`/`updated_at` — display-only. */
   meta: AgentFormMeta = $state({});
+  /**
+   * Fields whose `JsonEditor` currently holds unparseable/wrong-shape
+   * JSON — set via `setJsonValid()`, consulted by `validate()`.
+   * `JsonEditor.value` only updates when its textarea content is valid
+   * (see its own doc comment), so `this.values[field]` alone can never
+   * observe an in-progress malformed edit; without this side channel,
+   * `validate()` would silently see the last-known-good value and never
+   * block Save on malformed JSON, contradicting the spec ("malformed
+   * JSON blocks submission").
+   */
+  invalidJsonFields: Record<string, boolean> = $state({});
 
   /** True when `values` differs from the loaded/blank baseline. */
   readonly dirty = $derived(!deepEqual(this.values, this.original ?? defaults()));
@@ -133,6 +144,7 @@ export class AgentFormState {
     this.values = coerced;
     this.original = { ...coerced };
     this.errors = {};
+    this.invalidJsonFields = {};
     this.serverError = null;
   }
 
@@ -146,11 +158,37 @@ export class AgentFormState {
    * same `$state` field inside one effect pass is exactly the
    * "reads and writes the same piece of state" cycle Svelte's error
    * describes.
+   *
+   * Also folds in `invalidJsonFields` — a field whose `JsonEditor` is
+   * currently showing a parse/shape error must block Save even though
+   * `this.values[field]` itself still holds the last-known-good object
+   * (see `invalidJsonFields`'s doc comment).
    */
   validate(): boolean {
     const errors = validateFields(this.values, this.mode);
+    for (const [field, invalid] of Object.entries(this.invalidJsonFields)) {
+      if (invalid && !errors[field]) {
+        errors[field] = "Invalid JSON — fix before saving.";
+      }
+    }
     this.errors = errors;
     return Object.keys(errors).length === 0;
+  }
+
+  /**
+   * Record whether a JSON field's editor currently holds valid JSON.
+   * Called from each tab panel's `JsonEditor` `onvalid` callback.
+   */
+  setJsonValid(field: keyof BotWritePayload, valid: boolean): void {
+    if (valid) {
+      if (field in this.invalidJsonFields) {
+        const next = { ...this.invalidJsonFields };
+        delete next[field];
+        this.invalidJsonFields = next;
+      }
+    } else if (this.invalidJsonFields[field] !== true) {
+      this.invalidJsonFields = { ...this.invalidJsonFields, [field]: true };
+    }
   }
 
   /**

@@ -35,5 +35,6 @@
       () => state.values.permissions ?? {},
       (v) => (state.values.permissions = v as Record<string, unknown> | Record<string, unknown>[] | null)
     }
+    onvalid={(valid: boolean) => state.setJsonValid("permissions", valid)}
   />
 </div>
