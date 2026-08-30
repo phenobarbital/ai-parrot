@@ -27,6 +27,19 @@
       component: () => import("./pages/Agents.svelte"),
       requiresAuth: true,
     },
+    // Static routes are matched before :param routes (router.svelte.ts,
+    // TASK-2585) regardless of table order, so "/admin/agents/new" always
+    // wins over "/admin/agents/:name" — order here is for readability only.
+    {
+      path: "/admin/agents/new",
+      component: () => import("./pages/agents/AgentFormPage.svelte"),
+      requiresAuth: true,
+    },
+    {
+      path: "/admin/agents/:name",
+      component: () => import("./pages/agents/AgentFormPage.svelte"),
+      requiresAuth: true,
+    },
   ];
 
   let ActiveComponent = $state<Component | null>(null);

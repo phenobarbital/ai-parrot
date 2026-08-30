@@ -136,10 +136,21 @@ export class AgentFormState {
     this.serverError = null;
   }
 
-  /** Validate `values`; fills `errors` and returns whether the form is valid. */
+  /**
+   * Validate `values`; fills `errors` and returns whether the form is
+   * valid. Computes into a local first and returns from that local
+   * (never re-reads `this.errors` after writing it) — a caller running
+   * this inside a Svelte `$effect` that also reads `this.errors` (e.g.
+   * to keep validation live while the user types) would otherwise hit
+   * `effect_update_depth_exceeded`: writing then immediately reading the
+   * same `$state` field inside one effect pass is exactly the
+   * "reads and writes the same piece of state" cycle Svelte's error
+   * describes.
+   */
   validate(): boolean {
-    this.errors = validateFields(this.values, this.mode);
-    return Object.keys(this.errors).length === 0;
+    const errors = validateFields(this.values, this.mode);
+    this.errors = errors;
+    return Object.keys(errors).length === 0;
   }
 
   /**

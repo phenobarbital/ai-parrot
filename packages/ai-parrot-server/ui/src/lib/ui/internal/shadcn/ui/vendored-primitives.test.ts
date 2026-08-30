@@ -16,16 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs/index.js";
 import TabsHarness from "./TabsHarness.test.svelte";
 import { Textarea } from "./textarea/index.js";
 
-// jsdom has no ResizeObserver; bits-ui's Slider measures its track/thumb
-// with one on mount. Stubbed locally (not in the shared vitest-setup.ts)
-// since only this primitive needs it.
-class ResizeObserverStub implements ResizeObserver {
-  constructor(_callback: ResizeObserverCallback) {}
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-globalThis.ResizeObserver ??= ResizeObserverStub;
+// ResizeObserver is stubbed globally in vitest-setup.ts (needed by every
+// test that renders a Slider, not just this file — TASK-2587 moved it
+// there from a local stub here).
 
 // Re-export sanity: Tabs/TabsList/TabsTrigger/TabsContent are exercised
 // through TabsHarness.test.svelte below (a compound component needs real
