@@ -122,7 +122,7 @@
       "parallel": false,
       "parallelism_notes": "Independent of 2596 (disjoint files: canvas/, charts/, visualizations/) but both sit on 2594 in the same worktree; sequential by policy (per-spec isolation).",
       "assigned_to": null,
-      "started_at": "2026-08-30T01:56:49+00:00",
+      "started_at": "2026-08-30T21:25:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2595-canvas-charts-maps-infographic.md"
     },
