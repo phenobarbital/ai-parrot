@@ -28,21 +28,30 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
         self.runner = None
         self.site = None
         self.parent_app = parent_app
+        # Route prefix this server answers on. OAuthRoutesMixin._oauth_paths()
+        # reads it, so it must exist before any route registration.
+        self.base_path = config.base_path or "/"
 
         if config.enable_oauth:
             self._init_oauth_support()
 
     async def start(self):
-        """Start the HTTP server."""
-        # Determine strict router target
-        # If we have a parent app and base_path is root (empty or /), we attach directly
-        target_router = self.app.router
-        use_direct_attach = False
-        
-        if self.parent_app:
-            if not self.config.base_path or self.config.base_path == "/":
-                target_router = self.parent_app.router
-                use_direct_attach = True
+        """Start the HTTP server.
+
+        On a shared (parent) application the routes are registered directly on
+        the parent's router at ``base_path``. They used to be registered on
+        this server's own router at ``base_path`` *and* then mounted as a
+        sub-app at ``base_path`` too, which applied the prefix twice and
+        served the endpoint at ``/mcp/mcp`` — inconsistent with
+        ``SseMCPServer`` (which always attached directly) and outside the
+        auth-middleware exclusion list ``ParrotMCPServer`` registers.
+        """
+        # On a shared app, attach to the parent's router; standalone servers
+        # own self.app. Either way the routes carry the full base_path, so the
+        # endpoint is always reachable at exactly base_path.
+        target_router = (
+            self.parent_app.router if self.parent_app else self.app.router
+        )
 
         # Setup routes
         base_route = self.config.base_path
@@ -59,12 +68,7 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
         )
 
         if self.parent_app:
-            if not use_direct_attach:
-                # If running as sub-app with prefix, register the sub-app
-                self.parent_app.add_subapp(self.config.base_path, self.app)
-                self.logger.info("Mounted at %s", self.config.base_path)
-            else:
-                self.logger.info("Mounted at / (merged)")
+            self.logger.info("Mounted on the shared application at %s", base_route)
         else:
             # Run standalone
             self.runner = web.AppRunner(self.app)
@@ -398,8 +402,8 @@ class HttpMCPSession:
 
             # Build per-request headers, injecting OAuth2 token when available.
             # Accept advertises text/event-stream too — Streamable HTTP
-            # servers (e.g. Fireflies) return 406 without it. SSE response
-            # bodies are not parsed yet (see _read_json_response).
+            # servers (e.g. Fireflies) return 406 without it, and both formats
+            # are read back (see _read_sse_response).
             req_headers: Dict[str, str] = {
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
@@ -444,14 +448,14 @@ class HttpMCPSession:
 
                 content_type = response.headers.get("Content-Type", "")
                 if "text/event-stream" in content_type:
-                    # Parsing SSE POST responses is not implemented yet
-                    # (tracked in sdd/specs/netsuite-mcp-integration.spec.md).
-                    raise MCPConnectionError(
-                        "Server answered with an SSE stream; this client "
-                        "only supports application/json responses"
+                    # Streamable HTTP servers may answer a POST with an SSE
+                    # stream instead of a JSON body; read it until our own
+                    # request id comes back.
+                    response_data = await self._read_sse_response(
+                        response, request_id
                     )
-
-                response_data = await response.json()
+                else:
+                    response_data = await response.json()
                 self.logger.debug("HTTP received: %s", json.dumps(response_data))
 
                 if "error" in response_data:
@@ -465,6 +469,65 @@ class HttpMCPSession:
             if isinstance(e, MCPConnectionError):
                 raise
             raise MCPConnectionError(f"HTTP request failed: {e}") from e
+
+    async def _read_sse_response(
+        self, response: aiohttp.ClientResponse, request_id: int
+    ) -> Dict[str, Any]:
+        """Read a JSON-RPC response out of an SSE POST body.
+
+        Streamable HTTP servers may answer a request-bearing POST with a
+        ``text/event-stream`` body instead of ``application/json``. The stream
+        carries a JSON-RPC message — or a batch of them — per ``data:``
+        field; anything that is not the answer to ``request_id``
+        (server-initiated notifications, replies to other requests) is
+        skipped.
+
+        Args:
+            response: The open aiohttp response with an SSE body.
+            request_id: The JSON-RPC id whose response we are waiting for.
+
+        Returns:
+            The matching JSON-RPC response object.
+
+        Raises:
+            MCPConnectionError: If the stream ends without that response.
+        """
+        data_lines: list[str] = []
+
+        async for raw_line in response.content:
+            line = raw_line.decode("utf-8").rstrip("\r\n")
+
+            if line:
+                if line.startswith(":"):
+                    continue  # keep-alive comment
+                field, _, value = line.partition(":")
+                if field == "data":
+                    data_lines.append(value[1:] if value.startswith(" ") else value)
+                continue
+
+            # Blank line terminates the event — dispatch what we collected.
+            if not data_lines:
+                continue
+            payload = "\n".join(data_lines)
+            data_lines = []
+            try:
+                message = json.loads(payload)
+            except json.JSONDecodeError:
+                self.logger.debug("Skipping non-JSON SSE payload: %s", payload)
+                continue
+            self.logger.debug("HTTP received (SSE): %s", payload)
+            # A single data: field may carry one message or a batch.
+            candidates = message if isinstance(message, list) else [message]
+            for candidate in candidates:
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("id") == request_id
+                ):
+                    return candidate
+
+        raise MCPConnectionError(
+            f"SSE stream ended without a response to request {request_id}"
+        )
 
     async def _send_notification(self, method: str, params: dict = None):
         """Send JSON-RPC notification via HTTP."""

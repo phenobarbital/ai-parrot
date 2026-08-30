@@ -13,13 +13,13 @@ import asyncio
 
 import pytest
 from aiohttp import web
+from parrot.tools.abstract import AbstractTool
 from pydantic import BaseModel, Field
 
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.streamable_http import StreamableHttpMCPServer
-from parrot.tools.abstract import AbstractTool
 
-mcp_sdk = pytest.importorskip("mcp", reason="requires the mcp extra")
+pytest.importorskip("mcp", reason="requires the mcp extra")
 pytestmark = pytest.mark.requires_mcp_sdk
 
 from mcp import ClientSession  # noqa: E402
@@ -48,11 +48,14 @@ async def server_url():
         host="127.0.0.1",
         port=0,
     )
-    server = StreamableHttpMCPServer(config)
+    # Mount through start() on a shared app, the way ParrotMCPServer does,
+    # so the interop check covers the real route-mounting path too.
+    app = web.Application()
+    server = StreamableHttpMCPServer(config, parent_app=app)
     server.register_tool(EchoTool())
-    server._register_routes(server.app.router, config.base_path)
+    await server.start()
 
-    runner = web.AppRunner(server.app)
+    runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 0)
     await site.start()
@@ -63,15 +66,17 @@ async def server_url():
 
 
 async def test_official_sdk_client_roundtrip(server_url):
-    async with streamablehttp_client(server_url) as (read, write, _):
-        async with ClientSession(read, write) as session:
-            init = await asyncio.wait_for(session.initialize(), timeout=10)
-            assert init.serverInfo.name == "interop-streamable"
+    async with (
+        streamablehttp_client(server_url) as (read, write, _),
+        ClientSession(read, write) as session,
+    ):
+        init = await asyncio.wait_for(session.initialize(), timeout=10)
+        assert init.serverInfo.name == "interop-streamable"
 
-            tools = await asyncio.wait_for(session.list_tools(), timeout=10)
-            assert any(t.name == "echo" for t in tools.tools)
+        tools = await asyncio.wait_for(session.list_tools(), timeout=10)
+        assert any(t.name == "echo" for t in tools.tools)
 
-            result = await asyncio.wait_for(
-                session.call_tool("echo", {"text": "interop"}), timeout=10
-            )
-            assert any("interop" in c.text for c in result.content)
+        result = await asyncio.wait_for(
+            session.call_tool("echo", {"text": "interop"}), timeout=10
+        )
+        assert any("interop" in c.text for c in result.content)
