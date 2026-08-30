@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T00:41:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2583-backend-enablers.md"
+      "file": "sdd/tasks/completed/TASK-2583-backend-enablers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2584",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T00:48:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2584-admin-catalog-endpoint.md"
+      "file": "sdd/tasks/completed/TASK-2584-admin-catalog-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2585",
@@ -59,7 +61,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T00:59:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2585-ui-router-params-primitives.md"
+      "file": "sdd/tasks/completed/TASK-2585-ui-router-params-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2586",
@@ -79,7 +82,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T01:06:47+00:00",
-      "file": "sdd/tasks/completed/TASK-2586-ui-agent-form-state-api.md"
+      "file": "sdd/tasks/completed/TASK-2586-ui-agent-form-state-api.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2587",
@@ -100,7 +104,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T01:22:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2587-ui-agent-form-pages.md"
+      "file": "sdd/tasks/completed/TASK-2587-ui-agent-form-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2588",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T01:28:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2588-ui-agents-list-actions.md"
+      "file": "sdd/tasks/completed/TASK-2588-ui-agents-list-actions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2589",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
       "completed_at": "2026-08-30T01:34:35+00:00",
-      "file": "sdd/tasks/completed/TASK-2589-e2e-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-2589-e2e-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
