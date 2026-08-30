@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-475
 **Date**: 2026-08-30
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 0.29.0
 
 > Source brainstorm: `sdd/proposals/ui-agent-management.brainstorm.md`
@@ -643,7 +643,7 @@ export const router = new Router();
 - ~~`GET /api/v1/bots` returning disabled agents / an `include_disabled` param~~ — new in Module 1.
 - ~~a router library (`svelte-spa-router`, `tinro`, `@sveltejs/kit` routing) or `Router.params`/`beforeNavigate`~~ — router is hand-rolled; params/hook are new in Module 3.
 - ~~vendored `tabs`, `checkbox`, `switch`, `textarea`, `slider` primitives, `JsonEditor`, `StringListEditor`, `ui/src/lib/api/agents.ts`, `stores/agent-form.svelte.ts`~~ — new.
-- ~~`svelte-jsoneditor` / any JSON editor dependency~~ — not a dependency; the JSON editor is a validated textarea unless §8 Q1 decides otherwise.
+- ~~`svelte-jsoneditor` / any JSON editor dependency~~ — not a dependency; the JSON editor is a validated textarea (§8 Q1, resolved).
 - ~~`ChatbotHandler.patch()` / update by `chatbot_id`~~ — update is `POST /api/v1/bots/{name}`; all mutations key on `name`.
 - ~~`BotModel.enabled` filtering in `_get_db_agent`/`get one`~~ — only the list filters `enabled=True`; single-agent GET/POST/DELETE find disabled agents fine.
 
@@ -744,26 +744,25 @@ export const router = new Router();
 
 ## 8. Open Questions
 
-> Carried from the brainstorm (both unresolved there — the brainstorm's
-> table had no `[x]` items). Neither blocks task decomposition; the spec
-> fixes a recommendation and implementation follows it unless overridden.
+> All three questions are resolved (2026-08-30, Jesus Lara). Decisions are
+> reflected in §2 (JSON editor, catalog endpoint, read-only name) and §7.
 
-- [ ] **Q1 — JSON editor: external library (`svelte-jsoneditor`) or a
-  validated auto-resizing textarea?** — *Owner: Jesus Lara*. Spec
-  recommendation: **validated textarea** (`JsonEditor.svelte`, Module 3)
-  — zero dependencies, jsdom-testable, pretty-print button; a richer
-  editor can replace it later behind the same props.
-- [ ] **Q2 — Which KB IDs/names to hardcode in the UI?** — *Owner: Jesus
-  Lara*. Spec recommendation: **hardcode none**; serve the importable
-  `AbstractKnowledgeBase` classes (`RedisKnowledgeBase`, `LocalKB`) from
-  `GET /api/v1/admin/catalog` as `custom_kbs` class-path options, and edit
-  `kb` (free-form `List[dict]`) with the JSON editor. If specific
-  deployment KB instances must be offered, add them to the catalog
-  builder, not to the UI.
-- [ ] **Q3 (new) — Should the edit form allow renaming (`name`) an
-  existing DB agent?** — *Owner: Jesus Lara*. Spec default: **no** (name is
-  the identity for URL, `BotManager` registration and formdesigner links);
-  read-only in edit mode.
+- [x] **Q1 — JSON editor: external library or validated textarea?** —
+  *Resolved 2026-08-30*: **validated textarea** (`JsonEditor.svelte`,
+  Module 3) — zero dependencies, jsdom-testable, live parse with inline
+  error, pretty-print button. A richer editor may replace it later behind
+  the same props; `svelte-jsoneditor` is NOT a dependency of this feature.
+- [x] **Q2 — Which KB IDs/names to hardcode in the UI?** — *Resolved
+  2026-08-30*: **none**. `GET /api/v1/admin/catalog` serves the importable
+  `AbstractKnowledgeBase` classes (`RedisKnowledgeBase`, `LocalKB`) as
+  `custom_kbs` class-path options; `kb` (free-form `List[dict]`) is edited
+  with the JSON editor. Deployment-specific KB instances, if ever needed,
+  are added to the catalog builder, never to the UI.
+- [x] **Q3 — Allow renaming (`name`) an existing DB agent in the edit
+  form?** — *Resolved 2026-08-30*: **no**. `name` is the identity (URL,
+  `BotManager` registration, formdesigner links); the field is rendered
+  disabled with a hint in edit mode and is never included in the update
+  diff.
 
 ---
 
@@ -772,3 +771,4 @@ export const router = new Router();
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-30 | Jesus Lara | Initial draft from `ui-agent-management.brainstorm.md`, re-anchored on the FEAT-468 Admin UI |
+| 0.2 | 2026-08-30 | Jesus Lara | Status approved; §8 Q1–Q3 resolved (validated textarea, server catalog, read-only name) |
