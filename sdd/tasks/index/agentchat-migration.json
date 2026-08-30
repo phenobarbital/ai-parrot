@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-30T03:00:09+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-30T22:22:13+00:00",
   "notes": "Worktree deliberately NOT created by /sdd-task: spec Worktree Strategy requires FEAT-475 (ui-agent-management) merged into dev first. Create with: git worktree add -b feat-476-agentchat-migration .claude/worktrees/feat-476-agentchat-migration HEAD (on dev, after the merge).",
   "tasks": [
     {
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-476",
       "feature": "agentchat-migration",
       "spec": "sdd/specs/agentchat-migration.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Closes the feature; needs the full build to measure sizes.",
       "assigned_to": null,
       "started_at": "2026-08-30T22:14:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2598-wheel-test-docs-size-report.md"
+      "completed_at": "2026-08-30T22:22:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2598-wheel-test-docs-size-report.md"
     }
   ]
 }
