@@ -68,7 +68,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Imports generated types from TASK-2584.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2586-ui-agent-form-state-api.md"
+      "completed_at": "2026-08-30T01:06:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2586-ui-agent-form-state-api.md"
     },
     {
       "id": "TASK-2587",
