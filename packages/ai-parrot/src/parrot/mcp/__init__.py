@@ -10,6 +10,10 @@ from .resources import MCPResource
 from .server_base import MCPServerBase, LocalServerConfig
 from .local_server import LocalMCPServerBase, StdioMCPServer
 
+# FEAT-477: agent-method MCP exposure declaration. Core-only (G9) — zero
+# ai-parrot-server deps, so eager alongside the other zero-dep modules above.
+from .agent_tools import MCP_TOOL_ATTR, MCPToolDeclaration, mcp_tool
+
 # Consumer-side classes (stay in core) — resolved lazily via __getattr__
 # below. `.integration` imports `navconfig` (which chdir()s to the
 # installed package root and prints diagnostics to stdout as a side
@@ -84,6 +88,10 @@ __all__ = [
     "LocalServerConfig",
     "LocalMCPServerBase",
     "StdioMCPServer",
+    # FEAT-477: agent-method MCP exposure declaration
+    "MCP_TOOL_ATTR",
+    "MCPToolDeclaration",
+    "mcp_tool",
     "MCPEnabledMixin",
     "MCPServerConfig",
     "MCPClient",
