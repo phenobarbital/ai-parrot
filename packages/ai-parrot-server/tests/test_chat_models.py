@@ -7,6 +7,7 @@ drift in either direction fails CI, and asserts the three models are
 registered in the TS codegen pipeline with schemas matching the committed
 files (FEAT-476, TASK-2590).
 """
+
 import json
 from pathlib import Path
 

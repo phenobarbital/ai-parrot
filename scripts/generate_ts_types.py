@@ -28,6 +28,7 @@ install elsewhere on PYTHONPATH, e.g.:
 this script does not import pytest so it needs the explicit PYTHONPATH
 when invoked directly outside a test run.)
 """
+
 from __future__ import annotations
 
 import json

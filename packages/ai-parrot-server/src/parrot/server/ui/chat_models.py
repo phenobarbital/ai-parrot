@@ -15,6 +15,7 @@ feeds representative dicts from both builders through
 See ``sdd/specs/agentchat-migration.spec.md`` §2 "Envelope codegen" / §2
 Data Models / §3 Module 0 (FEAT-476).
 """
+
 from __future__ import annotations
 
 from typing import Any
