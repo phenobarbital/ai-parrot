@@ -185,8 +185,76 @@ it("dirty form asks before navigating away; login redirect bypasses", ...)
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: Implemented all six tab panels under `pages/agents/form/`
+(General/Behavior/AI/Capabilities/DataMemory/Advanced), `FormFooter.svelte`
+(sticky Save/Cancel + dirty indicator + server error), `AgentForm.svelte`
+(owns one `AgentFormState`, renders the vendored `Tabs` + per-tab
+`tabErrors` badge, save/cancel logic, unsaved-changes guard via
+`router.beforeNavigate` + `beforeunload`, and a vendored `Dialog` confirm
+prompt), and `AgentFormPage.svelte` (route wrapper: derives `mode` from
+`router.params.name`, loads catalog + tools + the target agent in
+parallel, loading skeleton / retry card matching `AgentsList.svelte`'s
+pattern, `{#key name}` around `<AgentForm>` so navigating between two
+different edit targets gets a fresh `AgentFormState` rather than a stale
+one). Added the two routes to `App.svelte` (`/admin/agents/new`,
+`/admin/agents/:name`, both `requiresAuth: true`).
 
-**Deviations from spec**: none
+Nullable-field binding: every `BotWritePayload` field is `T | null`
+(Pydantic `Optional`), which doesn't type-check against `bind:value`'s
+non-nullable HTML attribute types — used `value={x ?? default}` +
+`oninput`/`onCheckedChange`/`onValueChange` one-way-plus-callback instead
+of `bind:` for plain HTML-attribute-typed fields, and Svelte 5's
+`bind:value={() => ..., (v) => ...}` get/set syntax for `JsonEditor`/
+`StringListEditor` (whose bindable prop types are exactly `unknown`/
+`string[]`). `llm`/`operation_mode`/`memory_type` use native `<select>`
+per the Codebase Contract's explicit note (bits-ui `Select`'s floating-ui
+positioning is awkward in jsdom, FEAT-468 lesson) — `llm` additionally
+tolerates a stored value/alias absent from `catalog.llm_providers` (§7).
+`TabsAI` derives `model`/`temperature`/`max_tokens`/`top_p`/`top_k` from
+`values.model_config` and writes back into the same dict so the raw
+`JsonEditor` below stays in sync. `TabsCapabilities`' tools list renders
+every catalog tool as a checkbox AND keeps any selected-but-uncataloged
+tool name visible as an "unknown" chip (never silently dropped), plus a
+`StringListEditor` fallback for adding names not in the catalog.
+
+Bugs found and fixed while implementing/testing (documented, not silent):
+1. `AgentForm.svelte`'s local `const state = new AgentFormState()` was
+   renamed to `formState` — Svelte 5 treats a local binding literally
+   named `state` as ambiguous with the `$state` rune
+   (`store_rune_conflict` compile warning).
+2. The one-time `formState.load(agent)` initialization from props is
+   wrapped in `untrack()` with a comment — `{#key name}` in
+   `AgentFormPage` already guarantees a fresh instance per target agent,
+   so this read is deliberately not meant to become reactive.
+3. **Real bug in TASK-2586's `AgentFormState.validate()`** (not just this
+   task's new code): `this.errors = validateFields(...)` followed
+   immediately by `return Object.keys(this.errors).length === 0` — a
+   write then an immediate read of the SAME `$state` field. Harmless when
+   called imperatively (as `agent-form.test.ts` did), but caused
+   `effect_update_depth_exceeded` (infinite loop) as soon as
+   `AgentForm.svelte`'s `$effect(() => formState.validate())` — the
+   mechanism keeping `errors`/`tabErrors` live while typing, required by
+   AC "Save blocked while invalid" — ran it inside a reactive effect.
+   Fixed by computing into a local `errors` variable and returning from
+   that, never re-reading `this.errors` after writing it; re-ran
+   `agent-form.test.ts` (16/16 still pass) to confirm no behavior change.
+4. bits-ui's `Slider` needs `ResizeObserver`, which jsdom lacks; TASK-2585
+   stubbed it locally inside `vendored-primitives.test.ts` only, but
+   `AgentForm.test.ts`/`AgentFormPage.test.ts` also mount `Slider`
+   (TabsAI/TabsCapabilities) — moved the stub to the shared
+   `vitest-setup.ts` (documented in both files) rather than duplicating
+   it a third time.
+
+`pnpm test`: 21 files, 154 tests passed (142 pre-TASK-2587 + 12 new: 8 in
+`AgentForm.test.ts`, 4 in `AgentFormPage.test.ts`), 0 failures. `pnpm
+build` succeeds with zero compiler/vite-plugin-svelte warnings. `npx tsc
+--noEmit` (extra check, no typecheck script in this package): same 7
+pre-existing false positives as TASK-2586 (plain `tsc` misresolving
+`.svelte` module exports in files this feature never touches), no new
+errors.
+
+**Deviations from spec**: none — all four items above are bugfixes to
+already-committed code (bug #3) or environment stubs (bug #4), not
+departures from the described AgentForm/AgentFormPage/tab-panel behavior.

@@ -88,7 +88,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Consumes router params/primitives (2585) and store/API (2586); edits App.svelte.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2587-ui-agent-form-pages.md"
+      "completed_at": "2026-08-30T01:22:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2587-ui-agent-form-pages.md"
     },
     {
       "id": "TASK-2588",
