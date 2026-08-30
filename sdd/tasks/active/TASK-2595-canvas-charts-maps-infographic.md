@@ -55,6 +55,35 @@ makes them exist and verifies the chunks vanish when flags are off.
 | `ui/src/lib/components/charts/**`, `visualizations/ECharts.svelte`, `config/regeneration-models.ts` | CREATE (vendored) | |
 | `ui/src/lib/components/agents/features-gating.test.ts` | CREATE | vitest |
 
+> **Pre-existing state, added by TASK-2594 — read before starting:**
+> - `ui/src/lib/components/agents/canvas/canvas-block-types.ts`,
+>   `canvas/canvas-tab-manager.svelte.ts`, and
+>   `canvas/infographic/infographic-types.ts` **already exist**, ported
+>   verbatim from navigator (byte-identical, `diff` clean) — TASK-2594
+>   needed them unconditionally (`AgentChat.svelte`'s core message
+>   handling creates/updates canvas tabs even before the visual
+>   `CanvasPanel` is gated in) and pulled them forward. Nothing left to
+>   do for these three files — do not recreate/overwrite.
+> - `ui/src/lib/config/regeneration-models.ts` **already exists** (real,
+>   complete implementation, not a placeholder) — `ChatBubble.svelte`
+>   needed it unconditionally. Nothing left to do here either.
+> - `ui/src/lib/components/agents/canvas/CanvasPanel.svelte`,
+>   `{DataChart,DataMap,StructuredMap,ChartConfigPanel}.svelte`,
+>   `ui/src/lib/components/charts/AppChart.svelte`, and
+>   `ui/src/lib/components/visualizations/ECharts.svelte` **already
+>   exist but only as TEMPORARY build-resolution placeholders**
+>   (empty template + a header comment saying so) — TASK-2594 added
+>   these because Vite/Rollup resolve a literal dynamic-import specifier
+>   at transform/build time regardless of the `features.x` runtime
+>   guard (`@vite-ignore` does not suppress resolution for a literal
+>   string, only the warning for a non-analyzable one — verified against
+>   vite@5.4.21/rollup@4.63.0). **Replace these wholesale with the real
+>   vendored component** — do not diff/extend/`git mv` them, there is no
+>   real implementation to preserve.
+> - `structured-map-colors.ts` and `ui/src/lib/components/charts/
+>   chart-contract.ts`/`AppChartGeo.svelte` genuinely do NOT exist yet —
+>   normal CREATE, nothing pre-empted for those.
+
 ---
 
 ## Codebase Contract (Anti-Hallucination)

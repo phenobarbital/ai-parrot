@@ -49,6 +49,24 @@ avatar extras), so the UI must degrade after the first 404/405.
 | `ui/src/lib/stores/avatar.svelte.ts` (from TASK-2592) | MODIFY | availability flag |
 | `ui/src/lib/components/agents/{voice-gating,avatar-gating}.test.ts` | CREATE | vitest |
 
+> **Pre-existing state, added by TASK-2594 — read before starting:**
+> `ui/src/lib/components/agents/VoiceNotePlayer.svelte`,
+> `DataManagementModal.svelte`, `DatasetConfigModal.svelte`, and
+> `ui/src/lib/components/agents/avatar/{AvatarViewer,
+> VoiceNativeAvatarViewer}.svelte` **already exist but only as TEMPORARY
+> build-resolution placeholders** (empty template + a header comment
+> saying so) — TASK-2594 added these because Vite/Rollup resolve a
+> literal dynamic-import specifier at transform/build time regardless of
+> the `features.x` runtime guard (`@vite-ignore` does not suppress
+> resolution for a literal string, only the warning for a non-analyzable
+> one — verified against vite@5.4.21/rollup@4.63.0; a plain
+> `pnpm build` fails with "Could not resolve" once `AgentChat.svelte`/
+> `ChatBubble.svelte` are reachable from an entry point). **Replace
+> these wholesale with the real vendored component** — do not
+> diff/extend/`git mv` them, there is no real implementation to
+> preserve. `DatasetCreatePane.svelte`, `DatasetInlinePreview.svelte`,
+> and `DatasetTab.svelte` genuinely do NOT exist yet — normal CREATE.
+
 ---
 
 ## Codebase Contract (Anti-Hallucination)

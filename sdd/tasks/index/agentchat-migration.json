@@ -92,7 +92,7 @@
       "feature_id": "FEAT-476",
       "feature": "agentchat-migration",
       "spec": "sdd/specs/agentchat-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Central vendored tree; owns the gated dynamic imports that 2595/2596 fill in.",
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2594-core-chat-components.md"
+      "completed_at": "2026-08-30T21:25:10+00:00",
+      "file": "sdd/tasks/completed/TASK-2594-core-chat-components.md"
     },
     {
       "id": "TASK-2595",
