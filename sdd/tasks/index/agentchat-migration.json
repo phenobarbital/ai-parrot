@@ -182,7 +182,7 @@
       "parallel": false,
       "parallelism_notes": "Closes the feature; needs the full build to measure sizes.",
       "assigned_to": null,
-      "started_at": "2026-08-30T01:56:49+00:00",
+      "started_at": "2026-08-30T22:14:42+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2598-wheel-test-docs-size-report.md"
     }
