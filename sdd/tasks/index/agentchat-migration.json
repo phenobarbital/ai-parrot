@@ -15,7 +15,7 @@
       "feature_id": "FEAT-476",
       "feature": "agentchat-migration",
       "spec": "sdd/specs/agentchat-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -23,8 +23,8 @@
       "parallelism_notes": "Python-only (server/ui/chat_models.py, scripts/generate_ts_types.py, tests) plus generated schema/.d.ts files; shares no source files with the UI tasks. Can run before FEAT-475 merges.",
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2590-chat-envelope-models-codegen.md"
+      "completed_at": "2026-08-30T02:00:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2590-chat-envelope-models-codegen.md"
     },
     {
       "id": "TASK-2591",
