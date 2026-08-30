@@ -9,12 +9,19 @@ base_branch: dev
 **Feature ID**: FEAT-477
 **Date**: 2026-08-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0
 
 **Source brainstorm**: `sdd/proposals/mcp-as-agent.brainstorm.md` (Recommended Option **D**)
 **Cross-repo dependency**: navigator-auth **FEAT-095** — `oauth2-for-mcp-agents.spec.md`
 (v0.2, approved, target 1.4.0). Its D6 names this feature as its counterpart.
+**Cross-repo state (verified 2026-08-31)**: FEAT-095 is *in progress*, not shipped.
+TASK-038 and TASK-039 are complete; TASK-040…045 remain. **Its implementation code is not
+on navigator-auth `dev`** — the two `dev` commits are SDD bookkeeping only; the code sits
+on the unmerged branch `feat-FEAT-095-oauth2-for-mcp-agents` (2 commits). Build against
+the contract in §6 "External Contract", not against an import that resolves today.
+**Blocking cross-repo request**: FEAT-095 must add a **tenant claim** to
+`/oauth2/introspect` — see §8.
 
 ---
 
@@ -71,7 +78,10 @@ criterion in §5:
   enforced by the adapter, not by method authors.
 - **G9** — The decorator is importable from core `ai-parrot` with **no extras
   installed**.
-- **G10** — Multi-tenant: the per-call runtime binds to `(tenant_id, principal)`.
+- **G10** — Multi-tenant: the per-call runtime binds to `(tenant_id, principal)`, with
+  `tenant_id` taken from a navigator-auth token claim. **Blocked cross-repo**: that claim
+  does not exist yet (§8) — until FEAT-095 emits it, mounts are single-tenant by
+  configuration and true per-call tenancy is unverifiable.
 - **G11** — No regression to the existing tool-level MCP server, its six transports, or
   A2A.
 
@@ -256,7 +266,9 @@ class AgentMCPMountConfig(BaseModel):
     agents: list[str]                          # agent names, resolved via BotManager
     base_path: str = "/mcp/agents"
     aggregate_enabled: bool = False            # the optional /mcp aggregate
-    default_tenant_id: str | None = None       # fallback when the token carries none
+    default_tenant_id: str | None = None       # single-tenant fallback; the ONLY path
+                                               #   that fires until FEAT-095 emits a
+                                               #   tenant claim (see §8)
     resource_server_url: str                   # RFC 8707 audience for THIS mount
     max_result_tokens: int = 25_000            # under the ~30k connector ceiling
     call_deadline_seconds: float = 240.0       # below the 300 s client ceiling
@@ -359,7 +371,10 @@ class AgentMCPMount:
   `resource_metadata="…"` to the 401 `WWW-Authenticate`. Configure
   `ExternalOAuthValidator.resource_server_url` per mount so the existing audience check
   (`oauth_server.py:262-267`) enforces G3.
-- **Depends on**: nothing in this feature — self-contained, parallelizable.
+- **Depends on**: nothing *in this feature* — self-contained and parallelizable — but it
+  consumes the navigator-auth builder verified in §6 "External Contract". Reuse the
+  module's `WELL_KNOWN_PRM_PATH` constant rather than hardcoding the well-known path, and
+  **do not hand-roll the document shape**.
 
 ### Module 6: Redis-backed shared session + event store
 - **Path**: `packages/ai-parrot-server/src/parrot/mcp/transports/streamable_http.py`
@@ -390,7 +405,7 @@ class AgentMCPMount:
 | `test_aggregate_prefix_and_separator_rejection` | M2 | `{agent}__{tool}` naming; an agent name containing `__` is rejected at mount time |
 | `test_resources_exclude_system_prompt` | M2 | **OQ8**: identity card, tool catalog and KB descriptors are served; `backstory`, `rationale` and the assembled system prompt are in neither `resources/list` nor `resources/read` |
 | `test_principal_from_oauth_and_api_key` | M3 | Both auth paths produce an equivalent `PermissionContext` |
-| `test_tenant_id_precedence_and_fail_closed` | M3 | `tenant_id` claim → `org_id` → mount default → 401; `client_id` is never used as tenant |
+| `test_tenant_id_precedence_and_fail_closed` | M3 | `tenant_id` claim → `org_id` → mount default → 401 fail-closed; `client_id` is never used as tenant. **The claim branches are forward-compat and unreachable until FEAT-095 ships one** — assert them with a synthetic payload and mark the live-claim case `xfail(strict=False)` pending the cross-repo task |
 | `test_tools_list_filtered_by_policy` | M3 | A denied tool is absent from `tools/list` |
 | `test_tools_call_reverifies_policy` | M3 | A `tools/call` for a tool absent from the list returns a clean MCP error, not a stack trace, and is audited as a denial |
 | `test_pctx_var_published_during_call` | M3 | `_pctx_var` carries the caller inside the invoked method |
@@ -456,7 +471,10 @@ def fake_redis():
 - [ ] **G9** — `from parrot.mcp.agent_tools import mcp_tool` works in an environment with
       core `ai-parrot` only.
 - [ ] **G10** — The per-call runtime binds to `(tenant_id, principal)`; `tenant_id`
-      resolution follows the precedence in §8 and fails closed.
+      resolution follows the precedence in §8 and **fails closed** when nothing yields a
+      value. *Scope note*: with no tenant claim upstream, the merge-time bar is
+      "mount-configured tenant + fail-closed"; per-call tenancy from a token claim moves
+      to the deferred-evidence list below.
 - [ ] **G11** — No regression to the tool-level MCP server, its six transports, or A2A.
 - [ ] **OQ2 invariant** — a decorated method is provably absent from its own agent's
       `ToolManager` (`test_reified_tool_not_in_tool_manager`).
@@ -474,6 +492,12 @@ def fake_redis():
 introspection and PRM legs; **one live conformance run is a post-release gate**, not a
 merge blocker. The API-key path has no such dependency and is demonstrated end-to-end at
 merge time.
+
+**Deferred — per-call tenancy**: `tenant_id` sourced from a live token claim cannot be
+demonstrated until the FEAT-095 tenant-claim task lands (§8). Until then a mount serves
+exactly one tenant. This is the only acceptance criterion whose *design intent* exceeds
+what is verifiable at merge; it is called out here rather than quietly satisfied by the
+fallback.
 
 ---
 
@@ -687,6 +711,52 @@ class SuspendedExecutionStore:                                                  
 | Audience check | `ExternalOAuthValidator(resource_server_url=…)` | constructor arg | `mcp/oauth_server.py:219`, enforced `:262-267` |
 | Job store | `SuspendedExecutionStore` | semantics reuse | `human/suspended_store.py:64` |
 
+### External Contract — navigator-auth (verified 2026-08-31)
+
+> Read from the **unmerged** branch `feat-FEAT-095-oauth2-for-mcp-agents` in
+> `/home/jesuslara/proyectos/navigator-auth`. **None of this is on navigator-auth `dev`
+> yet**, so none of it is importable from an ai-parrot environment today. Treat it as a
+> contract to build against, not as a dependency to resolve.
+
+```python
+# navigator_auth/backends/oauth2/metadata.py   (VERIFIED — pure builders, no I/O)
+WELL_KNOWN_AS_PATH:  str = "/.well-known/oauth-authorization-server"   # :42
+WELL_KNOWN_PRM_PATH: str = "/.well-known/oauth-protected-resource"     # :43
+
+def build_as_metadata(...) -> dict: ...                                # :81
+def build_protected_resource_metadata(                                 # :158
+    resource: str,
+    auth_servers: list,
+    scopes: list,
+) -> dict: ...
+# Returns: {"resource": <rstripped>, "authorization_servers": [<rstripped>...],
+#           "bearer_methods_supported": ["header"],
+#           "scopes_supported": [...]}   # scopes_supported omitted when empty
+```
+
+The module docstring names **this feature** as its intended consumer: *"external resource
+servers (the ai-parrot MCP mounts, spec D6) serve their own RFC 9728 document pointing
+back at this authorization server, and consume this builder to do it."* The signature
+matches what §3 M5 assumes — build the document with it, do not re-derive the shape.
+
+**Introspection response — the complete claim set** (`backends/oauth2/backend.py:1724`,
+active-token claim dict at `:1843`):
+
+```python
+{"active": True, "scope": ..., "client_id": <client_uid>, "token_type": "Bearer",
+ "sub": <user_id or client_uid>, "exp": ..., "iat": ..., "aud": ..., "jti": ...}
+# inactive/foreign/revoked -> {"active": False}, HTTP 200
+```
+
+- **There is NO `tenant_id` and NO `org_id` claim.** `grep -rn "tenant_id\|org_id"` over
+  `navigator_auth/backends/oauth2/` returns **empty**, and none of the remaining tasks
+  (TASK-040…045) introduces one. This is the basis of the blocking request in §8.
+- The wire `client_id` **is** the public `client_uid` — never a tenant. FEAT-095 keeps
+  three distinct meanings of `client_id` in play (internal int PK, wire `client_uid`,
+  FEAT-092 tenant id); only the wire form appears in this payload.
+- Introspection is **same-client-only** (RFC 7662 §2.2, `hmac.compare_digest` at `:1831`):
+  a token is introspectable only by the client it was issued to.
+
 ### Does NOT Exist (Anti-Hallucination)
 
 Re-verified absent on `dev` @ `7c92a73f8` (post-merge):
@@ -724,6 +794,12 @@ Re-verified absent on `dev` @ `7c92a73f8` (post-merge):
   (MCP *client* capability — the opposite direction).
 - ~~`EpisodicMemoryStore` in the `parrot.memory` root~~ — it is at
   `parrot/memory/episodic/store.py`.
+- ~~A tenant claim in the navigator-auth introspection response~~ — **does not exist**;
+  see External Contract above. Do not write code that reads `token_info["tenant_id"]` and
+  assume it is populated.
+- ~~`navigator_auth.backends.oauth2.metadata` as an importable dependency~~ — the module
+  exists only on an **unmerged** navigator-auth branch. It will not import from an
+  ai-parrot environment until FEAT-095 merges and releases.
 
 ---
 
@@ -773,9 +849,19 @@ Re-verified absent on `dev` @ `7c92a73f8` (post-merge):
 - **Revocation latency.** Introspection-with-cache bounds revocation at ~5 minutes
   (`oauth_server.py:317`). Acceptable for v1 and stated here so it is a known property,
   not a surprise.
-- **Cross-repo timing.** navigator-auth FEAT-095 is approved but unreleased (1.4.0).
-  Build against the specified contract; mock introspection/PRM in CI; keep one live
-  conformance run as a post-release gate.
+- **Cross-repo timing.** navigator-auth FEAT-095 is approved and *in progress*, not
+  released. **Its code is not on navigator-auth `dev`** — only SDD bookkeeping is; the
+  implementation is 2 unmerged commits on `feat-FEAT-095-oauth2-for-mcp-agents`. Nothing
+  in this feature may `import navigator_auth.backends.oauth2.metadata` and expect it to
+  resolve until that branch merges *and* releases. Vendor the document shape behind our
+  own thin wrapper so M5 is testable in isolation; mock introspection/PRM in CI; keep one
+  live conformance run as a post-release gate.
+- **Missing tenant claim (cross-repo blocker).** navigator-auth's introspection response
+  carries no tenant identifier (§6 External Contract). The mount fallback keeps the
+  feature correct and fail-closed, but multi-tenant mounts are **not** achievable until
+  the FEAT-095 tenant-claim task lands. Do not paper over this by deriving a tenant from
+  `client_id` — the wire `client_id` is the `client_uid`, and FEAT-095 keeps three
+  distinct meanings of that name in play.
 
 ### External Dependencies
 
@@ -903,18 +989,39 @@ git worktree add -b feat-477-mcp-as-agent \
 ### Resolved at `/sdd-spec` time (2026-08-31)
 
 - [x] **Where does `tenant_id` come from in the introspection response?** —
-      *Resolved: jesuslarag*: a **dedicated claim with a mount fallback**. Precedence:
-      `token_info["tenant_id"]` → `token_info["org_id"]` →
-      `AgentMCPMountConfig.default_tenant_id`. If none yields a value, **fail closed**
-      with a 401 audited as `principal_unresolved`. **`client_id` is never used as a
-      tenant** in any of its three FEAT-095 meanings. This closes the sub-item OQ6
-      carried forward. → §2 Data Models, §3 M3, G10, `test_tenant_id_precedence_and_fail_closed`.
+      *Resolved: jesuslarag*; **revised 2026-08-31 against the real navigator-auth code.*
+      Precedence stands: `token_info["tenant_id"]` → `token_info["org_id"]` →
+      `AgentMCPMountConfig.default_tenant_id` → **fail closed** with a 401 audited as
+      `principal_unresolved`. **`client_id` is never used as a tenant** in any of its
+      three FEAT-095 meanings — confirmed by the code: the wire `client_id` *is* the
+      `client_uid` (`backends/oauth2/backend.py:1843`).
+      **Correction to the original answer**: navigator-auth emits **no tenant claim at
+      all**, so the first two branches are unreachable today and the mount fallback is the
+      only live path (§6 External Contract). The precedence chain is retained as
+      forward-compat, and the gap is escalated as a cross-repo request rather than
+      absorbed silently. → §2 Data Models, §3 M3, G10, and the blocking item below.
 - [x] **Does the Redis session store (OQ4) stay in this feature?** — *Resolved:
       jesuslarag*: **yes, keep it here** as M6. Agent MCP endpoints are unusable under
       the project's standard gunicorn deploy without it, so it is a prerequisite for the
       acceptance criteria rather than a follow-up. → §3 M6, G5.
 - [x] **Target version?** — *Resolved: jesuslarag*: **0.30.0**, leaving 0.29.0 to
       in-flight work. → header.
+
+### Blocking cross-repo request (opened 2026-08-31)
+
+- [ ] **navigator-auth must emit a tenant claim from `/oauth2/introspect`** —
+      *Owner: jesuslarag; target repo: navigator-auth, FEAT-095.*
+      **Why**: per-agent, per-principal authorization is the whole point of M3, and the
+      upstream access gate is keyed `(user_id, client_uid)` — it cannot express tenancy.
+      With no tenant claim, `UserSession.tenant_id` (a **required** field,
+      `auth/permission.py:21`) can only be filled from static mount configuration, so one
+      mount serves exactly one tenant and G10's per-call binding is design intent rather
+      than verified behavior.
+      **Ask**: add a tenant identifier to the active-token claim set built at
+      `backends/oauth2/backend.py:1843` — a dedicated `tenant_id` claim, distinct from all
+      three meanings of `client_id`. A ninth task alongside TASK-040…045.
+      **Until it lands**: this feature ships single-tenant-per-mount, fail-closed. It is
+      not otherwise blocked — no other module depends on this claim.
 
 ### Carried forward as stated design properties (not open)
 
@@ -931,3 +1038,4 @@ git worktree add -b feat-477-mcp-as-agent \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft from `mcp-as-agent.brainstorm.md` (Option D). Codebase contract re-verified post-PR-#1274; corrected stale anchors (`SessionEventStore` → `StreamBuffer`, centralized `_guard`). Resolved `tenant_id` precedence, M6 scoping and target version. |
+| 0.2 | 2026-08-31 | Jesus Lara | Re-checked against the live navigator-auth FEAT-095 branch. Added §6 "External Contract": `build_protected_resource_metadata` **verified** (signature matches; use `WELL_KNOWN_PRM_PATH`), and the full introspection claim set. **Found no tenant claim exists** — corrected the 0.1 `tenant_id` answer, marked per-call tenancy as deferred evidence, and opened a blocking cross-repo request against FEAT-095. Recorded that FEAT-095 code is unmerged (not on its `dev`). |
