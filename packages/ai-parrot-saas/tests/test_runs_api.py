@@ -326,3 +326,134 @@ async def test_a_simulated_review_runs_end_to_end_and_earns_a_coupon(
     ).json()
     assert review["review"]["status"] == ReviewStatus.REPLIED.value
     assert body["status"] == "queued"
+
+
+# ---------------------------------------------------------------------------
+# Resume
+# ---------------------------------------------------------------------------
+
+
+class _Resumer:
+    """Stand-in for the runner's resume path."""
+
+    def __init__(self, *, raises=None) -> None:
+        self.calls: list = []
+        self.raises = raises
+
+    async def resume_run(self, tenant, run_id):
+        self.calls.append((tenant.tenant_id, run_id))
+        if self.raises is not None:
+            raise self.raises
+        return {"run_id": run_id, "status": "completed", "outcome": "replied"}
+
+
+async def test_resume_returns_202(client) -> None:
+    """Resuming does work, so it is a POST and it answers 202."""
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    resumer = _Resumer()
+    client.app["saas_run_launcher"] = resumer
+
+    resp = await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)
+
+    assert resp.status == 202
+    assert (await resp.json())["status"] == "completed"
+    assert resumer.calls == [("bar-pepe", RUN_A)]
+
+
+async def test_resume_does_not_reach_another_tenants_run(client) -> None:
+    """The checkpoint store is not tenant-scoped; this check is what is.
+
+    Without the repository lookup first, a run id from another tenant would be
+    handed straight to the checkpoint store, which would happily find it.
+    """
+    await _seed(client, "hotel-x", RUN_B, status=RunStatus.FAILED)
+    resumer = _Resumer()
+    client.app["saas_run_launcher"] = resumer
+
+    resp = await client.post(f"{RUNS}/{RUN_B}/resume", headers=HDR)
+
+    assert resp.status == 404
+    assert resumer.calls == []
+
+
+async def test_resume_without_a_checkpoint_explains_why(client) -> None:
+    """The usual answer when the deployment is not checkpointing."""
+    from parrot.bots.flows.core.checkpoint import CheckpointNotFoundError
+
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    client.app["saas_run_launcher"] = _Resumer(
+        raises=CheckpointNotFoundError("none")
+    )
+
+    resp = await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)
+
+    assert resp.status == 404
+    body = await resp.json()
+    assert body["error"] == "no_checkpoint"
+    assert "checkpointing enabled" in body["message"]
+
+
+async def test_resuming_a_finished_run_is_409(client) -> None:
+    """Re-entering a completed flow could publish a second reply."""
+    from parrot_saas.flows.community_manager.runner import RunNotResumable
+
+    await _seed(client, "bar-pepe", RUN_A)
+    client.app["saas_run_launcher"] = _Resumer(
+        raises=RunNotResumable("run already completed (replied)")
+    )
+
+    resp = await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)
+
+    assert resp.status == 409
+    assert (await resp.json())["error"] == "run_not_resumable"
+
+
+async def test_a_run_another_worker_is_resuming_is_409(client) -> None:
+    """The lease is what keeps two workers off one checkpoint."""
+    from parrot.bots.flows.core.checkpoint import FlowLockedError
+
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    client.app["saas_run_launcher"] = _Resumer(raises=FlowLockedError("held"))
+
+    resp = await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)
+
+    assert resp.status == 409
+    assert (await resp.json())["error"] == "run_locked"
+
+
+async def test_a_launcher_that_cannot_resume_says_so(client) -> None:
+    """A deployment with a custom launcher gets a readable 503, not a 500."""
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    client.app["saas_run_launcher"] = object()
+
+    resp = await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)
+
+    assert resp.status == 503
+    assert (await resp.json())["error"] == "resume_unavailable"
+
+
+async def test_an_operator_may_not_resume(client_factory) -> None:
+    """Reading a failed run is an operator's job; restarting it spends money."""
+    client = await client_factory("tenant_operator", with_pdp=True)
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    client.app["saas_run_launcher"] = _Resumer()
+
+    assert (await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)).status == 403
+
+
+async def test_an_admin_may_resume(client_factory) -> None:
+    """The mirror, so the test above cannot pass by denying everyone."""
+    client = await client_factory("tenant_admin", with_pdp=True)
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    client.app["saas_run_launcher"] = _Resumer()
+
+    assert (await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)).status == 202
+
+
+async def test_the_resume_route_is_not_swallowed_by_the_item_route(client) -> None:
+    """aiohttp resolves in registration order; ``{run_id}`` would match it."""
+    await _seed(client, "bar-pepe", RUN_A, status=RunStatus.FAILED)
+    client.app["saas_run_launcher"] = _Resumer()
+
+    assert (await client.get(f"{RUNS}/{RUN_A}", headers=HDR)).status == 200
+    assert (await client.post(f"{RUNS}/{RUN_A}/resume", headers=HDR)).status == 202

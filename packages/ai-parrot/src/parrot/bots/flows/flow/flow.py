@@ -1095,6 +1095,7 @@ class AgentsFlow(PersistenceMixin):
         agent_registry: AgentRegistry,
         store: Optional[Union[str, CheckpointStore]] = None,
         durable_store: Optional[Union[str, CheckpointStore]] = None,
+        flow_factory: Optional[Callable[[FlowDefinition], "AgentsFlow"]] = None,
     ) -> "AgentsFlow":
         """Reconstruct and resume a checkpointed flow (spec §3 Module 7).
 
@@ -1114,6 +1115,28 @@ class AgentsFlow(PersistenceMixin):
                 fallback).
             durable_store: Durable ``CheckpointStore`` name/instance/None.
                 Checked first when given; falls back to the ephemeral store.
+            flow_factory: Optional ``(definition) -> AgentsFlow`` that rebuilds
+                the graph instead of ``from_definition()``. **Required for any
+                flow whose routing depends on more than the node topology**,
+                for two reasons that compound:
+
+                * ``from_definition()`` reconstructs a custom node type through
+                  the generic fallback ``cls(node_id=…, dependencies=…,
+                  successors=…)``. For a node whose fields all have defaults
+                  that does not raise — it silently produces a node with every
+                  live dependency (agents, repositories, clients) set to
+                  ``None``. Passing ``node_factories`` would fix this half.
+                * A flow rebuilt from a definition has ``self._definition`` set,
+                  and ``run_flow()`` selects the explicit-edge scheduler with
+                  ``self._definition is None and bool(self._edges)``. So a
+                  resumed flow silently drops to AND-join semantics with no
+                  back-edge detection and **no predicate evaluation at all**,
+                  however the original was built. ``node_factories`` cannot fix
+                  this half.
+
+                Handing the caller its own builder back fixes both at once: it
+                already has a function that produces the graph exactly as it
+                was. ``None`` keeps the historical behaviour.
 
         Returns:
             A configured ``AgentsFlow`` instance ready for ``run_flow()``
@@ -1125,6 +1148,8 @@ class AgentsFlow(PersistenceMixin):
                 (missing or TTL-expired).
             FlowLockedError: If another holder already holds the resume
                 lease for ``flow_id``.
+            ValueError: If ``flow_factory`` returns a graph missing a node the
+                checkpoint recorded as completed.
         """
         ephemeral_store = get_checkpoint_store(store)
         durable: Optional[CheckpointStore] = (
@@ -1179,7 +1204,36 @@ class AgentsFlow(PersistenceMixin):
         holder = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         await checkpointer.acquire_lease(holder)
 
-        flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+        if flow_factory is not None:
+            flow = flow_factory(checkpoint.definition)
+        else:
+            flow = cls.from_definition(
+                checkpoint.definition, agent_registry=agent_registry
+            )
+
+        # A factory is free to return any graph; if it returns one that does
+        # not contain a node the checkpoint says finished, the seeding below
+        # would mark a node that does not exist and the run would restart from
+        # the wrong frontier — silently, and looking like a successful resume.
+        # Both shapes count as "known": a programmatic flow holds its nodes in
+        # ``_nodes``, while a definition-bound one materializes them per run
+        # and knows them only through the definition.
+        known_ids = set(flow._nodes)
+        if flow._definition is not None:
+            known_ids |= {node_def.id for node_def in (flow._definition.nodes or ())}
+        missing = [
+            node_id
+            for node_id in checkpoint.context.completion_order
+            if node_id not in known_ids
+        ]
+        if missing:
+            raise ValueError(
+                f"Cannot resume flow_id={flow_id!r}: the rebuilt graph is "
+                f"missing node(s) recorded as completed: {sorted(missing)}. "
+                "The flow_factory must produce the same node ids as the "
+                "checkpointed run."
+            )
+
         flow.flow_id = flow_id
         flow._checkpoint_enabled = True
         flow._checkpointer = checkpointer

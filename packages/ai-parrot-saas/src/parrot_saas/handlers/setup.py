@@ -43,9 +43,11 @@ from .deployments import (
     setup_deployment_routes,
 )
 from .runs import (
+    APP_RUN_LAUNCHER,
     APP_RUN_REPOSITORY,
     RunCollectionView,
     RunItemView,
+    RunResumeView,
     setup_run_routes,
 )
 from .coupons import (
@@ -472,6 +474,9 @@ def setup_saas_api(
         job_manager=job_manager or _app.get("job_manager"),
         run_launcher=run_launcher,
     )
+    # Published so the resume route reaches the same runner the ingest path
+    # uses — one object, one runtime cache, one set of repositories.
+    _app[APP_RUN_LAUNCHER] = run_launcher
     if secret_store is not None:
         _app[APP_SECRET_STORE] = secret_store
 
@@ -497,6 +502,7 @@ def setup_saas_api(
             CouponRedeemView,
             RunCollectionView,
             RunItemView,
+            RunResumeView,
             DeploymentView,
             DeploymentPlanView,
             DeploymentApplyView,
@@ -564,6 +570,7 @@ __all__ = (
     "APP_GUEST_REPOSITORY",
     "APP_REVIEW_REPOSITORY",
     "APP_RULE_REPOSITORY",
+    "APP_RUN_LAUNCHER",
     "APP_RUN_REPOSITORY",
     "APP_REVIEW_SOURCES",
     "APP_SECRET_STORE",

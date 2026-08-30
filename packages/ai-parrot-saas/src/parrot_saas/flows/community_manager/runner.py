@@ -48,6 +48,15 @@ logger = logging.getLogger("parrot_saas.flows.cm.runner")
 FLOW_NAME = "community_manager"
 
 
+class RunNotResumable(RuntimeError):
+    """A run that finished cannot be continued.
+
+    Distinct from "no checkpoint": that one means the deployment is not
+    checkpointing, this one means the work is already done and re-entering
+    the flow could publish a second reply.
+    """
+
+
 def review_to_intake(review: Any) -> ReviewIntake:
     """Convert a stored :class:`~parrot_saas.reviews.models.Review`.
 
@@ -204,16 +213,131 @@ class CommunityManagerRunner:
             tenant, run_id, result, ctx, int((time.monotonic() - started) * 1000)
         )
 
-    async def _execute(
+    async def resume_run(self, tenant: TenantContext, run_id: str) -> dict:
+        """Continue a checkpointed run from where it stopped.
+
+        The graph is rebuilt by :meth:`_build_flow` — the same builder that
+        produced it originally — and handed to ``AgentsFlow.resume()`` as its
+        ``flow_factory``. That is what keeps the live dependencies and the
+        explicit-edge scheduler; see that method for why rebuilding from the
+        checkpoint's definition instead would produce a flow that runs and
+        routes wrongly.
+
+        Args:
+            tenant: The tenant that owns the run.
+            run_id: The run to continue. Doubles as the checkpoint key.
+
+        Returns:
+            A summary of the resumed run.
+
+        Raises:
+            CheckpointNotFoundError: If there is no checkpoint for this run —
+                which is the normal answer when the deployment runs without
+                ``checkpoint_runs``, not a corruption.
+            FlowLockedError: If another worker holds the resume lease.
+            RunNotResumable: If the run already finished successfully.
+        """
+        from parrot.bots.flows.flow.flow import AgentsFlow
+
+        record = await self._runs.get(tenant.tenant_id, run_id) if self._runs else None
+        if record is not None and record.status == RunStatus.COMPLETED.value:
+            # Resuming a finished run would re-enter the flow at its terminal
+            # node and could publish a second reply or issue a second coupon.
+            raise RunNotResumable(
+                f"run {run_id} already completed ({record.outcome or 'no outcome'})"
+            )
+
+        started = time.monotonic()
+        runtime = await self._runtimes.get(tenant)
+        async with runtime.acquire():
+            source_name = await self._source_for(tenant, record)
+            flow = await AgentsFlow.resume(
+                run_id,
+                agent_registry=runtime.agent_registry,
+                store=self._checkpoint_store,
+                durable_store=self._durable_store if self._durable else None,
+                flow_factory=lambda _definition: self._build_flow(
+                    tenant, runtime, source_name, run_id
+                ),
+            )
+            await self._start_record(
+                tenant, run_id, getattr(record, "review_id", "") or ""
+            )
+
+            # Held onto now because ``run_flow`` consumes it — it takes the
+            # seeded context, clears the attribute, and clears ``_active_ctx``
+            # again in its ``finally``. This is the only reference that
+            # survives the call, and the outcome is read off it.
+            ctx = flow._resume_seed_context  # noqa: SLF001
+
+            # The checkpoint carries the *previous* attempt's failure summary
+            # in shared state. Left there, ``_record_outcome`` would read it
+            # and file a successful resume as failed — the run would publish
+            # the reply, close cleanly, and still be reported as broken. A new
+            # attempt starts with no failure; if this one fails too, its own
+            # failure handler writes a fresh one.
+            if ctx is not None:
+                ctx.shared_data.pop("failure", None)
+
+            # Called with no ctx on purpose: ``run_flow`` uses the
+            # checkpoint-seeded context only when it is given none. Passing a
+            # fresh one would discard every completed node and re-run the whole
+            # flow — publishing the reply a second time.
+            result = await flow.run_flow(
+                on_complete=(self._persist_execution(tenant, flow, run_id),)
+            )
+
+        logger.info("resumed run %s for tenant %s", run_id, tenant.tenant_id)
+        return await self._record_outcome(
+            tenant, run_id, result, ctx, int((time.monotonic() - started) * 1000)
+        )
+
+    async def _source_for(self, tenant: TenantContext, record: Any) -> str:
+        """Name the review adapter a resumed run should publish through.
+
+        The run row carries the review id rather than the source, so this
+        reads it back. A run whose review has vanished resumes with no
+        adapter, which means the publish node records the attempt without
+        publishing — the same degradation as an unconfigured source, rather
+        than a crash halfway through a resume.
+        """
+        review_id = getattr(record, "review_id", "") or ""
+        if self._reviews is None or not review_id:
+            return ""
+        try:
+            review = await self._reviews.get(tenant.tenant_id, review_id)
+        except Exception as exc:  # noqa: BLE001 - degrade, do not abort
+            logger.warning("could not read review %s: %s", review_id, exc)
+            return ""
+        return getattr(review, "source", "") or ""
+
+    def _build_flow(
         self,
         tenant: TenantContext,
         runtime: Any,
-        intake: ReviewIntake,
+        source_name: str,
         run_id: str,
-    ) -> tuple[Any, Any]:
-        """Build the flow for this tenant and run it."""
-        from parrot.bots.flows.core import FlowContext
+    ) -> Any:
+        """Assemble the flow for one tenant.
 
+        Extracted so that :meth:`resume_run` can hand *this* to
+        ``AgentsFlow.resume(flow_factory=...)``. Rebuilding a resumed run any
+        other way loses two things at once: the live dependencies (the generic
+        reconstruction path drops them silently rather than failing) and the
+        explicit-edge scheduler, which ``run_flow()`` selects with
+        ``self._definition is None`` — so a definition-rebuilt flow falls back
+        to AND-join with no predicates, and this graph's ``close`` has six
+        predecessors.
+
+        Args:
+            tenant: The tenant this instance serves.
+            runtime: Its live runtime, source of agents and the ruleset.
+            source_name: Which review adapter to publish through.
+            run_id: Flow id, and the checkpoint key.
+
+        Returns:
+            The wired flow.
+        """
         flow = build_community_manager_flow(
             tenant=tenant,
             run_id=run_id,
@@ -224,7 +348,7 @@ class CommunityManagerRunner:
             agent_registry=runtime.agent_registry,
             triage_agent=runtime.agents.get("triage"),
             reply_agent=runtime.agents.get("reply_draft"),
-            review_source=self._sources.get(intake.source),
+            review_source=self._sources.get(source_name),
             review_repository=self._reviews,
             guest_repository=self._guests,
             coupon_repository=self._coupons,
@@ -246,6 +370,19 @@ class CommunityManagerRunner:
         flow._persist_results = self._result_storage is not None  # noqa: SLF001
         if self._result_storage is not None:
             flow._result_storage_arg = self._result_storage  # noqa: SLF001
+        return flow
+
+    async def _execute(
+        self,
+        tenant: TenantContext,
+        runtime: Any,
+        intake: ReviewIntake,
+        run_id: str,
+    ) -> tuple[Any, Any]:
+        """Build the flow for this tenant and run it."""
+        from parrot.bots.flows.core import FlowContext
+
+        flow = self._build_flow(tenant, runtime, intake.source, run_id)
 
         ctx = FlowContext(initial_task=f"community-manager:{intake.review_id}")
         ctx.shared_data.update(
@@ -396,4 +533,9 @@ def _node_summary(result: Any) -> list[dict]:
     return summary
 
 
-__all__ = ("FLOW_NAME", "CommunityManagerRunner", "review_to_intake")
+__all__ = (
+    "FLOW_NAME",
+    "CommunityManagerRunner",
+    "RunNotResumable",
+    "review_to_intake",
+)

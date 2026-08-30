@@ -86,6 +86,7 @@ policies:
       - "saas:coupons"
       - "saas:rules"
       - "saas:reviews"
+      - "saas:runs"
     actions:
       - "saas:offer:write"
       - "saas:rule:read"
@@ -94,6 +95,10 @@ policies:
       # Simulating a review starts a real run, which spends the tenant's own
       # LLM budget — so it is an administrator's call, not an operator's.
       - "saas:review:simulate"
+      # Resuming re-enters a checkpointed flow and spends that budget for the
+      # same reason. An operator can read a failed run; restarting it is a
+      # decision about money.
+      - "saas:run:resume"
     subjects:
       groups:
         - tenant_admin

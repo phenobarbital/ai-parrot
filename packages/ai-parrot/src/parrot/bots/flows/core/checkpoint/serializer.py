@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import ChainMap
 from datetime import datetime
 from typing import Any
 
@@ -26,6 +27,40 @@ _UUID_TAG = "__uuid__"
 _ESCAPED_DICT_TAG = "__escaped_dict__"
 
 logger = logging.getLogger(__name__)
+
+#: Types every :class:`FlowStateSerializer` round-trips, by tag.
+#:
+#: Process-wide by necessity, not by preference. A ``FlowStateSerializer`` is
+#: constructed independently by the checkpointer *and* by each store, and a
+#: store decodes with its own — so an instance-level registration could make a
+#: model encode correctly and still come back degraded. Populate it at import
+#: time, the way ``NODE_REGISTRY`` is populated.
+_DEFAULT_TYPES: dict[str, type[BaseModel]] = {}
+
+
+def register_checkpoint_type(
+    model_cls: type[BaseModel], tag: str | None = None
+) -> str:
+    """Make a Pydantic model survive a checkpoint round-trip.
+
+    Without this a model is not an error — it degrades to its ``repr`` and the
+    checkpoint is flagged ``lossy``. That is a reasonable default for a payload
+    nobody reads back, and a silent disaster for a flow that **routes** on its
+    node results: a CEL predicate like ``result.status == "approved"`` cannot
+    evaluate against a string, so a resumed run takes no branch at all.
+
+    Idempotent: registering the same class twice replaces the entry.
+
+    Args:
+        model_cls: The model to register.
+        tag: Optional explicit tag; defaults to the fully qualified class name.
+
+    Returns:
+        The tag it was registered under.
+    """
+    tag = tag or f"{model_cls.__module__}.{model_cls.__qualname__}"
+    _DEFAULT_TYPES[tag] = model_cls
+    return tag
 
 
 class FlowStateSerializer:
@@ -60,7 +95,14 @@ class FlowStateSerializer:
 
     def __init__(self) -> None:
         self.logger = logger
-        self._registry: dict[str, type[BaseModel]] = {}
+        # A ChainMap over the process-wide defaults rather than a copy of
+        # them, so registration order stops mattering. Serializers are built
+        # in four places — here, the checkpointer, and both stores — and two
+        # of those construct their own lazily, at whatever moment a flow first
+        # checkpoints. With a snapshot, a model registered after the first
+        # store was built would round-trip on the way in and degrade on the
+        # way out.
+        self._registry: Any = ChainMap({}, _DEFAULT_TYPES)
         # Pre-register known result types (spec §6 Integration Points).
         self.register(AIMessage)
 
@@ -78,6 +120,11 @@ class FlowStateSerializer:
         tag = tag or f"{model_cls.__module__}.{model_cls.__qualname__}"
         self._registry[tag] = model_cls
         return tag
+
+    @property
+    def registry(self) -> dict[str, type[BaseModel]]:
+        """The types this serializer round-trips, defaults included."""
+        return dict(self._registry)
 
     def _tag_for_class(self, cls: type) -> str | None:
         for tag, registered_cls in self._registry.items():

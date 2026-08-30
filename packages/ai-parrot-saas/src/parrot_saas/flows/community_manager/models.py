@@ -210,6 +210,38 @@ class FailureSummary(CMResult):
     error: str = ""
 
 
+# Every result here is registered with the checkpoint serializer, and that is
+# load-bearing rather than tidy. An unregistered model degrades to its ``repr``
+# on the way into a checkpoint, so a resumed run would evaluate
+# ``result.status == "approved"`` against the *string*
+# ``"GuardrailVerdict(status='approved', …)"`` — CEL cannot select a field on a
+# string, every predicate raises, and the run takes no branch at all. The whole
+# routing of this flow depends on these surviving the round trip.
+def _register_checkpoint_types() -> None:
+    """Make every routing result survive a checkpoint round-trip."""
+    try:
+        from parrot.bots.flows.core.checkpoint import register_checkpoint_type
+    except ImportError:  # pragma: no cover - core without checkpointing
+        return
+    for model in (
+        ReviewIntake,
+        ReviewTriage,
+        ReplyDraft,
+        GuardrailVerdict,
+        PublishResult,
+        ContactCapture,
+        CouponDecision,
+        CouponIssued,
+        DeliveryResult,
+        RunSummary,
+        FailureSummary,
+    ):
+        register_checkpoint_type(model)
+
+
+_register_checkpoint_types()
+
+
 __all__ = (
     "CMResult",
     "ContactCapture",
