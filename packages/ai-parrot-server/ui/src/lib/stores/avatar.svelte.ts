@@ -90,3 +90,28 @@ export function saveAvatarVisible(agentId: string, visible: boolean): void {
     // ignore — preference is best-effort
   }
 }
+
+/**
+ * ai-parrot (FEAT-476 TASK-2596): session-scoped (page-lifetime, NOT
+ * persisted to localStorage — resets on reload) avatar-availability
+ * degrade flag, per spec §3 Module 6. Set once a live avatar/voice-native
+ * session actually fails to start (403/404 from the avatar endpoints);
+ * consulted before re-attempting the toggle so a tab doesn't keep
+ * retrying a backend that has already proven it lacks the avatar extras
+ * this turn. Deliberately a plain in-memory `Set`, not `$state` — no UI
+ * needs to react to it directly; callers re-check it imperatively at the
+ * point of the next toggle attempt.
+ */
+const unavailableThisSession = new Set<string>();
+
+/** Mark the given agent's avatar/voice-native session as unavailable for the
+ * rest of this browser session (tab lifetime). */
+export function markAvatarUnavailable(agentId: string): void {
+  unavailableThisSession.add(agentId);
+}
+
+/** Whether {@link markAvatarUnavailable} was already called for this agent
+ * during the current session. */
+export function isAvatarUnavailable(agentId: string): boolean {
+  return unavailableThisSession.has(agentId);
+}

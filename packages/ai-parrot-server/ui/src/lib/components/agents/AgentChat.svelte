@@ -67,6 +67,8 @@
   import {
     loadAvatarPreference,
     saveAvatarPreference,
+    markAvatarUnavailable,
+    isAvatarUnavailable,
   } from "$lib/stores/avatar.svelte";
   import { clientStore } from "$lib/stores/client.svelte";
 
@@ -210,6 +212,23 @@
   // with potentially incomplete backend data (bug: first userMsg disappears).
   let isCreatingNewConversation = false;
 
+  // ai-parrot (FEAT-476 TASK-2596): guard for the session-load $effect
+  // below's `else { messages = [] }` branch. Discovered while testing
+  // voice-note degradation: a brand-new conversation whose *first* send
+  // fails (policy-denial 401 in handleSend, or a voice 404 in
+  // handleVoiceNote) drops the just-created conversation and resets
+  // `currentSessionId` to null so the failed attempt leaves no trace —
+  // but that reset alone made the $effect immediately wipe the
+  // in-flight error bubble the same catch block had just written into
+  // `messages`, so the user saw the empty welcome screen instead of an
+  // explanation (a real, pre-existing bug — not previously caught
+  // because the affected AgentChat.test.ts assertions happened to
+  // resolve on `waitFor`'s first synchronous check, before the effect's
+  // next tick). Deliberately NOT `$state`, same reasoning as
+  // `isCreatingNewConversation` above — this is a one-shot flag the
+  // effect consumes, not a value the effect should re-run on writing.
+  let suppressSessionClearOnce = false;
+
   // Followup state
   let followupTurnId = $state<string | null>(null);
   let followupData = $state<any>(null);
@@ -268,6 +287,13 @@
   }
 
   async function handleAvatarToggle() {
+    // ai-parrot (FEAT-476 TASK-2596): once this agent's avatar session has
+    // proven unavailable (403/404) earlier this session, don't let the
+    // user re-trigger a known-broken connect attempt — explain once.
+    if (!avatarEnabled && isAvatarUnavailable(agentId)) {
+      toastStore.error("Avatar is unavailable on this server.");
+      return;
+    }
     avatarEnabled = !avatarEnabled;
     saveAvatarPreference(agentId, avatarEnabled);
     // Phase A and Phase C both want the avatar tracks — only one may publish/mount.
@@ -281,8 +307,13 @@
     avatarLive = s === "live";
     // On 403 (disabled): reset toggle OFF so tenant without opt-in doesn't re-trigger
     if (s === "disabled") {
+      const wasAvailable = !isAvatarUnavailable(agentId);
       avatarEnabled = false;
       saveAvatarPreference(agentId, false);
+      markAvatarUnavailable(agentId);
+      if (wasAvailable) {
+        toastStore.error("Avatar is unavailable on this server.");
+      }
     }
   }
 
@@ -291,6 +322,10 @@
   let voiceNativeEnabled = $state(false);
 
   async function handleVoiceNativeToggle() {
+    if (!voiceNativeEnabled && isAvatarUnavailable(agentId)) {
+      toastStore.error("Avatar is unavailable on this server.");
+      return;
+    }
     voiceNativeEnabled = !voiceNativeEnabled;
     // Mutually exclusive with the Phase A avatar (both subscribe the avatar tracks).
     if (voiceNativeEnabled) {
@@ -301,7 +336,14 @@
   }
 
   function handleVoiceNativeStatusChange(s: AvatarStatus) {
-    if (s === "disabled") voiceNativeEnabled = false;
+    if (s === "disabled") {
+      const wasAvailable = !isAvatarUnavailable(agentId);
+      voiceNativeEnabled = false;
+      markAvatarUnavailable(agentId);
+      if (wasAvailable) {
+        toastStore.error("Avatar is unavailable on this server.");
+      }
+    }
   }
 
   // Split-layout: when either avatar mode is active (and a session exists), the
@@ -486,6 +528,8 @@
       }
       // Subscribe to WebSocket channel for this session
       wsService.subscribe(currentSessionId);
+    } else if (suppressSessionClearOnce) {
+      suppressSessionClearOnce = false;
     } else {
       messages = [];
     }
@@ -1366,6 +1410,7 @@
         // the request failed, so it never shows up in Conversation History.
         if (isNewConversation) {
           await ChatService.deleteConversation(sessionId);
+          suppressSessionClearOnce = true;
           currentSessionId = null;
         }
       } else {
@@ -1531,6 +1576,16 @@
       if (status === 404) {
         displayContent =
           "**Voice unavailable.** This server does not have voice support enabled.";
+        // ai-parrot (FEAT-476 TASK-2596): the mount-time checkVoiceSupport()
+        // preflight (TASK-2594) is a HEAD request and can pass even when the
+        // real POST route 404s — degrade for the rest of the session on the
+        // first such failure and tell the user once, per spec §3 Module 6.
+        if (voiceAvailable) {
+          voiceAvailable = false;
+          toastStore.error(
+            "Voice notes are unavailable on this server — switched to text.",
+          );
+        }
       } else if (status === 503) {
         displayContent =
           "**Voice transcription unavailable.** Please try sending your question as text.";
@@ -1558,6 +1613,7 @@
       );
       if (isNewConversation && status === 404) {
         await ChatService.deleteConversation(sessionId);
+        suppressSessionClearOnce = true;
         currentSessionId = null;
       } else {
         await ChatService.saveMessage(errorMsg);
