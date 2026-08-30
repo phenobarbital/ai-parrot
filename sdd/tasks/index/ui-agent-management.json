@@ -109,7 +109,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Needs include_disabled (2583), Switch primitive (2585), agents API (2586). Touches AgentsList/AgentDetail only — could run alongside 2587 once deps land, but sequential in the single worktree.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2588-ui-agents-list-actions.md"
+      "completed_at": "2026-08-30T01:28:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2588-ui-agents-list-actions.md"
     },
     {
       "id": "TASK-2589",
