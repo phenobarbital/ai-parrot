@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-476
 **Date**: 2026-08-30
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 0.30.0
 
 > Source brainstorm: `sdd/proposals/agentchat-migration.brainstorm.md`
