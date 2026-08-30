@@ -1,6 +1,7 @@
-import { render } from "@testing-library/svelte";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render } from "@testing-library/svelte";
+import { describe, expect, it, vi } from "vitest";
 
+import { router } from "$lib/router.svelte";
 import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";
 
 import AgentDetail from "./AgentDetail.svelte";
@@ -42,5 +43,27 @@ describe("AgentDetail", () => {
   it("renders nothing when there is no agent", () => {
     const { queryByTestId } = render(AgentDetail, { agent: null, open: true });
     expect(queryByTestId("agent-detail-raw-json")).toBeNull();
+  });
+
+  it("shows an Edit button for a database agent (TASK-2588)", () => {
+    const { getByTestId } = render(AgentDetail, { agent: dbAgent, open: true });
+    expect(getByTestId("agent-detail-edit")).toBeTruthy();
+  });
+
+  it("shows no Edit button for a registry agent", () => {
+    const { queryByTestId } = render(AgentDetail, {
+      agent: minimalRegistryAgent,
+      open: true,
+    });
+    expect(queryByTestId("agent-detail-edit")).toBeNull();
+  });
+
+  it("Edit navigates to /admin/agents/{name} and closes the dialog", async () => {
+    const navigateSpy = vi.spyOn(router, "navigate");
+    const { getByTestId } = render(AgentDetail, { agent: dbAgent, open: true });
+
+    await fireEvent.click(getByTestId("agent-detail-edit"));
+
+    expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/helpdesk");
   });
 });

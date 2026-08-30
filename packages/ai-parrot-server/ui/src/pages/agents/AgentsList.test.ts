@@ -2,6 +2,7 @@ import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import apiClient from "$lib/api/http";
+import { router } from "$lib/router.svelte";
 import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";
 
 import AgentsList from "./AgentsList.svelte";
@@ -89,15 +90,70 @@ describe("AgentsList", () => {
     expect(getByTestId("agent-detail-raw-json").textContent).toContain("helpdesk");
   });
 
-  it("has no mutating controls", async () => {
+  it("renders Create Agent and Edit/Delete only on database rows (TASK-2588)", async () => {
     mockAgents([dbAgent, registryAgent]);
 
-    const { findByTestId, queryByRole } = render(AgentsList);
+    const { findByTestId, queryByTestId } = render(AgentsList);
     await findByTestId("agent-row-helpdesk");
 
-    expect(queryByRole("button", { name: /create/i })).toBeNull();
-    expect(queryByRole("button", { name: /^edit$/i })).toBeNull();
-    expect(queryByRole("button", { name: /delete/i })).toBeNull();
+    expect(await findByTestId("create-agent-button")).toBeTruthy();
+    expect(await findByTestId("agent-edit-helpdesk")).toBeTruthy();
+    expect(await findByTestId("agent-delete-helpdesk")).toBeTruthy();
+    // Registry rows keep no mutating affordance — unchanged FEAT-468 rule.
+    expect(queryByTestId("agent-edit-cron-sync")).toBeNull();
+    expect(queryByTestId("agent-delete-cron-sync")).toBeNull();
+  });
+
+  it("Create Agent navigates to /admin/agents/new", async () => {
+    mockAgents([dbAgent]);
+    const navigateSpy = vi.spyOn(router, "navigate");
+
+    const { findByTestId } = render(AgentsList);
+    await fireEvent.click(await findByTestId("create-agent-button"));
+
+    expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/new");
+  });
+
+  it("Edit navigates to /admin/agents/{name} without opening the detail dialog", async () => {
+    mockAgents([dbAgent]);
+    const navigateSpy = vi.spyOn(router, "navigate");
+
+    const { findByTestId, queryByTestId } = render(AgentsList);
+    await fireEvent.click(await findByTestId("agent-edit-helpdesk"));
+
+    expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/helpdesk");
+    // The row's own onclick (open detail) must not also fire.
+    expect(queryByTestId("agent-detail-dialog")).toBeNull();
+  });
+
+  it("Delete opens the confirmation dialog without opening the detail dialog", async () => {
+    mockAgents([dbAgent]);
+
+    const { findByTestId, queryByTestId } = render(AgentsList);
+    await fireEvent.click(await findByTestId("agent-delete-helpdesk"));
+
+    expect(await findByTestId("delete-agent-dialog")).toBeTruthy();
+    expect(queryByTestId("agent-detail-dialog")).toBeNull();
+  });
+
+  it('"Show disabled" toggles include_disabled on the list request', async () => {
+    const get = mockAgents([dbAgent]);
+
+    const { findByTestId } = render(AgentsList);
+    await findByTestId("agent-row-helpdesk");
+    expect(get).toHaveBeenLastCalledWith("/api/v1/bots");
+
+    await fireEvent.click(await findByTestId("show-disabled-toggle"));
+
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith("/api/v1/bots?include_disabled=true"));
+  });
+
+  it("a disabled database agent shows a disabled Badge", async () => {
+    mockAgents([{ ...dbAgent, enabled: false }]);
+
+    const { findByTestId } = render(AgentsList);
+
+    expect(await findByTestId("agent-disabled-badge-helpdesk")).toBeTruthy();
   });
 
   it("shows retry card on fetch error", async () => {

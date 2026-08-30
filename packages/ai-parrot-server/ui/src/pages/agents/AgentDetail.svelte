@@ -1,17 +1,21 @@
 <!--
-  AgentDetail (TASK-2530) — read-only detail panel for a single
-  `BotAgentItem`. Built on the vendored bits-ui-backed Dialog primitive
-  (Codebase Contract: "dialog or side sheet from vendored primitives").
-  Renders every field the payload happens to carry (labeled) plus a raw
-  JSON view — deliberately generic since `BotAgentItem` only pins down
-  `name`/`source` (registry agents without `bot_config` carry a much
-  smaller field set; database agents carry the full BotModel dump).
+  AgentDetail (TASK-2530; Edit button for database agents added TASK-2588,
+  FEAT-475) — detail panel for a single `BotAgentItem`. Built on the
+  vendored bits-ui-backed Dialog primitive (Codebase Contract: "dialog or
+  side sheet from vendored primitives"). Renders every field the payload
+  happens to carry (labeled) plus a raw JSON view — deliberately generic
+  since `BotAgentItem` only pins down `name`/`source` (registry agents
+  without `bot_config` carry a much smaller field set; database agents
+  carry the full BotModel dump).
 
-  NO mutating affordances — read-only by design (next spec owns CRUD).
+  Registry agents still get NO mutating affordance — the Edit button only
+  renders for `source === "database"`.
 -->
 <script lang="ts">
+  import { router } from "$lib/router.svelte";
   import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";
   import { Badge } from "$lib/ui/internal/shadcn/ui/badge/index.js";
+  import { Button } from "$lib/ui/internal/shadcn/ui/button/index.js";
   import {
     Dialog,
     DialogContent,
@@ -29,6 +33,12 @@
     open?: boolean;
   } = $props();
 
+  function goEdit(): void {
+    if (!agent) return;
+    open = false;
+    router.navigate(`/admin/agents/${encodeURIComponent(agent.name)}`);
+  }
+
   /** Every field except `name`/`source`, which the header already shows. */
   const entries = $derived(
     agent ? Object.entries(agent).filter(([key]) => key !== "name" && key !== "source") : [],
@@ -45,7 +55,14 @@
   <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl" data-testid="agent-detail-dialog">
     {#if agent}
       <DialogHeader>
-        <DialogTitle>{agent.name}</DialogTitle>
+        <div class="flex items-center justify-between gap-4">
+          <DialogTitle>{agent.name}</DialogTitle>
+          {#if agent.source === "database"}
+            <Button size="sm" variant="outline" onclick={goEdit} data-testid="agent-detail-edit">
+              Edit
+            </Button>
+          {/if}
+        </div>
         <DialogDescription>
           <Badge variant={agent.source === "database" ? "default" : "secondary"}>
             {agent.source}
