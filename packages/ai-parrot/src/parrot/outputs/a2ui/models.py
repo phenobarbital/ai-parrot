@@ -574,7 +574,7 @@ class _FunctionResponseBase(A2UIMessageBase):
 
 class AgentFunctionResponse(_FunctionResponseBase):
     """``agentFunctionResponse`` — the agent's response to a
-    ``callRendererFunction``."""
+    ``callAgentFunction``."""
 
 
 # ---------------------------------------------------------------------------
@@ -594,6 +594,14 @@ class ActionMessage(A2UIMessageBase):
         timestamp: ISO 8601 timestamp of when the event occurred.
         context: Key-value pairs from ``action.event.context``, resolved.
         metadata: Optional client-side metadata sent back with the action.
+        data_model: The surface's full data model, attached by the renderer
+            when the owning surface was created with ``sendDataModel: true``.
+            ``None`` means the renderer did not attach one (distinct from an
+            explicitly empty ``{}``, which means the surface's data model is
+            empty). Unlike :attr:`CreateSurface.data_model`, this defaults to
+            ``None`` rather than ``{}`` because a surface always starts with
+            *some* data model, whereas an ``action`` may or may not carry one
+            at all.
     """
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -605,6 +613,7 @@ class ActionMessage(A2UIMessageBase):
     timestamp: str
     context: dict[str, Any]
     metadata: ComponentMetadata | None = None
+    data_model: dict[str, Any] | None = Field(default=None, alias="dataModel")
 
 
 class CallAgentFunction(A2UIMessageBase):
@@ -626,7 +635,7 @@ class CallAgentFunction(A2UIMessageBase):
 
 class RendererFunctionResponse(_FunctionResponseBase):
     """``rendererFunctionResponse`` — the renderer's response to a
-    ``callAgentFunction``."""
+    ``callRendererFunction``."""
 
 
 #: Error codes reserved for schema/catalog validation failures. An

@@ -25,6 +25,7 @@ from typing import Any, List, Optional, Tuple
 
 import aiohttp
 from bs4 import BeautifulSoup, NavigableString, Tag
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +76,15 @@ STRUCTURE_INTERESTING_TAGS = {
 }
 
 
-class PageSnapshot:
+class PageSnapshot(BaseModel):
     """Compact page data for LLM prompt building.
 
     Fields are plain strings so they interpolate cleanly into the
-    ``PLAN_GENERATION_PROMPT`` template.
+    ``PLAN_GENERATION_PROMPT`` template. A Pydantic model so it can be
+    exposed as a tool parameter (``WebScrapingToolkit.plan_create``)
+    with a proper JSON schema.
 
-    Args:
+    Attributes:
         title: Page ``<title>`` or ``og:title``.
         text_excerpt: First ~2000 chars of visible text.
         element_hints: Newline-separated list of notable elements with
@@ -92,19 +95,13 @@ class PageSnapshot:
         links: Newline-separated ``text -> href`` pairs (up to 50).
     """
 
-    def __init__(
-        self,
-        title: str = "",
-        text_excerpt: str = "",
-        element_hints: str = "",
-        structure: str = "",
-        links: str = "",
-    ) -> None:
-        self.title = title
-        self.text_excerpt = text_excerpt
-        self.element_hints = element_hints
-        self.structure = structure
-        self.links = links
+    title: str = Field(default="", description="Page <title> or og:title")
+    text_excerpt: str = Field(default="", description="First ~2000 chars of visible text")
+    element_hints: str = Field(
+        default="", description="Newline-separated notable elements (tag, id, class, data-*, aria-*, role)"
+    )
+    structure: str = Field(default="", description="Pruned, repetition-collapsed DOM outline")
+    links: str = Field(default="", description="Newline-separated 'text -> href' pairs (up to 50)")
 
 
 def _truncate(value: str, limit: int = MAX_ATTR_LEN) -> str:

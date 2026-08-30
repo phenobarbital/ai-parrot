@@ -3,7 +3,6 @@
 import json
 
 import pytest
-
 from parrot.handlers.deeplink import DeepLinkResumeHandler, build_structured_message
 from parrot.outputs.a2ui.deeplink import DeepLinkService
 
@@ -140,3 +139,141 @@ class TestDeepLinkResumeWeb:
 
 async def _ok():
     return {"ok": True}
+
+
+class _SpyRuntime:
+    """Records every ``dispatch`` call — the shape ``A2UIRuntime.dispatch`` exposes."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, envelope, ctx):
+        self.calls.append((envelope, ctx))
+        from parrot.outputs.a2ui.runtime.models import DispatchResult
+
+        return DispatchResult()
+
+
+class TestDispatchPath:
+    """FEAT-469 TASK-2574 — resume dispatches through A2UIRuntime, transport='deeplink'."""
+
+    async def test_resume_dispatches_action_v1(self):
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        spy_runtime = _SpyRuntime()
+
+        async def runtime_factory(agent_id, user_id):
+            return spy_runtime
+
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok(), runtime_factory=runtime_factory)
+        dl = await service.mint(
+            session_id="sess-1",
+            user_id="user-1",
+            agent_id="assistant",
+            channel="web",
+            action_payload=_action_envelope("approve", row=7),
+        )
+
+        _body, status = await handler.handle(dl.token_id)
+
+        assert status == 200
+        assert len(spy_runtime.calls) == 1
+        env, ctx = spy_runtime.calls[0]
+        assert "action" in env
+        assert ctx.transport == "deeplink"
+        assert ctx.session_id == "sess-1"
+        assert ctx.user_id == "user-1"
+        assert ctx.agent_id == "assistant"
+
+    async def test_resume_persists_surface_state(self):
+        """A `dataModel`-carrying action dispatched through a real runtime persists state."""
+
+        from parrot.memory.file import FileConversationMemory
+        from parrot.outputs.a2ui.runtime.adapters import (
+            ConversationMemorySurfaceStore,
+            ToolManagerExecutor,
+        )
+        from parrot.outputs.a2ui.runtime.dispatch import A2UIRuntime
+        from parrot.tools.manager import ToolManager
+
+        memory = FileConversationMemory(base_path="/tmp/a2ui-deeplink-test-surfaces")
+        store = ConversationMemorySurfaceStore(memory, user_id="user-1")
+        runtime = A2UIRuntime(executor=ToolManagerExecutor(ToolManager()), surfaces=store, pending=store)
+
+        async def runtime_factory(agent_id, user_id):
+            return runtime
+
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok(), runtime_factory=runtime_factory)
+        dl = await service.mint(
+            session_id="sess-surface",
+            user_id="user-1",
+            agent_id="assistant",
+            channel="web",
+            action_payload={
+                "version": "v1.0",
+                "action": {
+                    "name": "approve",
+                    "surfaceId": "main",
+                    "sourceComponentId": "btn1",
+                    "timestamp": "2026-01-01T00:00:00+00:00",
+                    "context": {},
+                    "dataModel": {"count": 3},
+                },
+            },
+        )
+
+        _body, status = await handler.handle(dl.token_id)
+        assert status == 200
+
+        state = await store.get("sess-surface", "main")
+        assert state is not None
+        assert state.data_model == {"count": 3}
+
+    async def test_structured_message_shape_unchanged(self):
+        """Teams + Telegram depend on this exact string."""
+        from parrot.outputs.a2ui.deeplink import ResumePayload
+
+        payload = ResumePayload(
+            session_id="s", user_id="u", agent_id="a", channel="web", action_payload=_action_envelope("go")
+        )
+        assert json.loads(build_structured_message(payload))["type"] == "a2ui_action"
+
+    async def test_expired_token_still_410(self):
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        spy_runtime = _SpyRuntime()
+
+        async def runtime_factory(agent_id, user_id):
+            return spy_runtime
+
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok(), runtime_factory=runtime_factory)
+        body, status = await handler.handle("does-not-exist")
+        assert status == 410
+        assert "expired" in body["detail"].lower()
+        assert spy_runtime.calls == []
+
+    async def test_get_landing_does_not_consume(self):
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        spy_runtime = _SpyRuntime()
+
+        async def runtime_factory(agent_id, user_id):
+            return spy_runtime
+
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok(), runtime_factory=runtime_factory)
+        dl = await service.mint(
+            session_id="s", user_id="u", agent_id="a", channel="web", action_payload=_action_envelope("go")
+        )
+        handler.render_landing(dl.token_id)
+        assert spy_runtime.calls == []
+        _body, status = await handler.handle(dl.token_id)
+        assert status == 200
+        assert len(spy_runtime.calls) == 1
+
+    async def test_no_runtime_factory_skips_dispatch_without_error(self):
+        """runtime_factory=None (default) — resume still works, just no dispatch."""
+        service = DeepLinkService(FakeRedis(), base_url="https://app.example")
+        handler = DeepLinkResumeHandler(service, lambda **k: _ok())
+        dl = await service.mint(
+            session_id="s", user_id="u", agent_id="a", channel="web", action_payload=_action_envelope("go")
+        )
+        _body, status = await handler.handle(dl.token_id)
+        assert status == 200

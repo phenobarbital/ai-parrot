@@ -16,6 +16,7 @@
 1. [Modelo mental: el contrato común](#1-modelo-mental-el-contrato-común)
 2. [El envelope de respuesta de AgentTalk](#2-el-envelope-de-respuesta-de-agenttalk)
    - [2.5 Ubicación canónica de la config (contrato definitivo)](#25-ubicación-canónica-de-la-config-contrato-definitivo)
+   - [2.6 Envelope A2UI v1.0 (FEAT-473 — dual-emit)](#26-envelope-a2ui-v10-feat-473--dual-emit)
 3. [Endpoints de AgentTalk](#3-endpoints-de-agenttalk)
 4. [STRUCTURED_TABLE](#4-structured_table-feat-218)
 5. [STRUCTURED_CHART](#5-structured_chart-feat-215)
@@ -276,6 +277,147 @@ const rows = resp.data ?? [];
 
 > Cuando el backend complete el refactor, la rama (1) cubrirá el 100% de los casos
 > y podrás retirar (2) y (3). Hasta entonces, mantén las tres.
+
+---
+
+### 2.6 Envelope A2UI v1.0 (FEAT-473 — dual-emit)
+
+> **FEAT-473** añade un **tercer canal**, puramente aditivo, a los tres modos
+> `structured_*`: junto al contrato de §2.5 (`artifacts[]`/`output`/`data`, sin
+> cambios), la respuesta ahora **también** puede llevar un envelope
+> [A2UI v1.0](https://a2ui.org/specification/v1_0) spec-conformante,
+> construido de forma **determinista, sin LLM** por el adaptador
+> `parrot.outputs.a2ui.adapters.structured`.
+
+#### Qué cambia (y qué NO cambia)
+
+| Campo | Antes de FEAT-473 | Con FEAT-473 |
+|---|---|---|
+| `response.output` | Config (dict) | **Igual** + una clave nueva: `surfaceId` |
+| `response.data` | Filas / payloads por capa | **Sin cambios** |
+| `response.artifacts[]` | `{type, artifactId, definition}` (v1) | `{type, artifactId, surfaceId, schemaVersion: 2, definition}` (v2) — `definition` ahora es un **nodo componente A2UI v1.0**, no el dict de config |
+| `response.a2ui_envelope` | No existía para modos `structured_*` | **Nuevo**: `{"version": "v1.0", "createSurface": {...}}` |
+| `response.artifact_id` | Id del artefacto v1 | Igual, pero ahora `== surfaceId` |
+
+> **La única modificación a `response.output` es la clave `surfaceId`.** Si tu
+> cliente valida estrictamente el shape de `output` (JSON Schema cerrado),
+> añade `surfaceId` como propiedad opcional antes de desplegar este cambio.
+
+#### Contrato `artifacts[]` v2
+
+```json
+{
+  "type": "chart",
+  "artifactId": "structured_chart-a1b2c3d4",
+  "surfaceId": "structured_chart-a1b2c3d4",
+  "schemaVersion": 2,
+  "definition": {
+    "id": "root",
+    "component": "Chart",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "type": "bar",
+    "x": "month",
+    "y": ["sales"],
+    "title": "Monthly Sales",
+    "data": { "path": "/rows" }
+  }
+}
+```
+
+Reglas:
+
+1. **`schemaVersion: 2`** discrimina el shape nuevo del v1 (`schemaVersion`
+   ausente o `1`). Usa `compat.is_legacy_artifact(entry)` (backend) o revisa
+   la clave tú mismo en el cliente.
+2. **`surfaceId == artifactId == response.artifact_id`.**
+3. **`definition`** es ahora un **nodo `Component` A2UI v1.0** (`id`,
+   `component`, `catalogId`, props top-level camelCase, `data` como binding
+   `{"path": ...}`) — **no** el dict de config plano de v1. Sus props
+   coinciden 1:1 con la config (`StructuredChartConfig`/`StructuredTableConfig`/
+   `StructuredMapConfig`), pero la forma del objeto cambió.
+4. Si tu cliente **no** está listo para v2, usa el shim de compatibilidad
+   (siguiente subsección) — soportado hasta **0.31**, retirado en **0.32**.
+
+#### Shim de compatibilidad (`artifact_definition_to_legacy`)
+
+Mientras migras, el backend expone un helper puro (Python, lado backend) que
+degrada un `definition` v2 al shape v1 exacto de FEAT-224 — útil si tienes
+lógica de persistencia/BFF que aún espera v1:
+
+```python
+from parrot.outputs.a2ui.compat import is_legacy_artifact, artifact_definition_to_legacy
+
+for entry in response.artifacts:
+    definition = (
+        entry["definition"] if is_legacy_artifact(entry)
+        else artifact_definition_to_legacy(entry)
+    )
+    # `definition` es ahora siempre el dict v1 (camelCase, sin id/component/catalogId/data)
+```
+
+En el cliente (TypeScript), el equivalente es simplemente **omitir** las
+claves de envoltorio A2UI del nodo componente:
+
+```ts
+function toLegacyDefinition(v2Definition: Record<string, any>) {
+  const { id, component, catalogId, data, datasets, ...config } = v2Definition;
+  return config;   // == la config v1 (camelCase, sin filas)
+}
+```
+
+#### Consumir `response.a2ui_envelope`
+
+`response.a2ui_envelope` es un mensaje A2UI v1.0 completo — el mismo
+formato que consumen los renderers satélite (`echarts`, `folium_map`, `pdf`,
+`ssr_html`, `interactive_html`, `adaptive_cards`) y cualquier renderer A2UI
+externo conforme al spec. Forma general:
+
+```json
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "string",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "components": [ { "id": "root", "component": "Chart|DataTable|Map", "...": "props top-level" } ],
+    "dataModel": { "...": "filas/features, ver forma por componente abajo" }
+  }
+}
+```
+
+Filas/features del `dataModel`, por componente:
+
+| Componente | Puntero de binding | Forma de `dataModel` |
+|---|---|---|
+| `Chart` / `DataTable` | `{"path": "/rows"}` | `{"rows": [ {...}, ... ]}` |
+| `Map` | por capa: `{"path": "/layers/<i>/features"}` | `{"layers": [ {"features": [ {...}, ... ]}, ... ]}` |
+
+Overflow más allá del `row_limit` (1000 por defecto, igual que en §4.3/§9.3):
+`Chart`/`DataTable` no llevan bandera aparte (el cap solo aplica al
+`dataModel`, `response.data` conserva el set completo); `DataTable` sí
+expone `totalRows`/`truncated` como props (igual que en v1); cada capa de
+`Map` expone `totalCount`/`capped` (igual que `MapLayer` en v1 — ver §6.3).
+
+**Ejemplos completos y válidos** (los tres pasan `validate_message` sobre su
+forma "lowered", el mismo check de dos capas que usa el resto del backend —
+ver Apéndice B):
+
+- Chart → Apéndice B.1
+- Table → Apéndice B.2
+- Map (multi-capa) → Apéndice B.3
+
+#### Consumo recomendado (resiliente, sin romper el contrato v1)
+
+```ts
+function renderStructuredResponse(resp) {
+  // El contrato v1 (§2.5) sigue funcionando sin cambios — usa extractArtifact()
+  // si aún no migraste. Si quieres el path A2UI nativo (renderers externos,
+  // deep links, PDF/SSR/Adaptive Cards), usa el envelope cuando esté presente:
+  if (resp.a2ui_envelope) {
+    return renderA2UISurface(resp.a2ui_envelope);   // tu renderer A2UI v1.0
+  }
+  return renderStructuredLegacy(resp);              // fallback: extractArtifact() de §2.5
+}
+```
 
 ---
 
@@ -962,6 +1104,11 @@ switch (art.type) {                                               // "chart" | "
 - [ ] Chart: conmutar por `type`; soportar multi-serie (`y[]`); manejar `xAxisMode:"time"`; `type:"map"` requiere `mapName`.
 - [ ] Mapa: emparejar `cfg.layers[].layer` con `response.data[].layer`; soportar `dataShape` `geojson` y `rows` (con `_geometry`); render de `tooltipTemplate` client-side; encuadrar con `viewport.bbox`; dibujar `query` (point/radius/unit).
 - [ ] Streaming desaconsejado para artefactos estructurados; si se usa, parsear con el centinela `\n\x00`.
+- [ ] **(FEAT-473, opcional)** Si consumes el envelope A2UI nativo, lee
+      `response.a2ui_envelope` cuando esté presente (§2.6); recuerda que
+      `response.output` solo gana la clave `surfaceId` — nada más cambia.
+      Si tu backend/BFF todavía espera `artifacts[].definition` v1, usa el
+      shim `artifact_definition_to_legacy` (§2.6) hasta 0.32.
 
 ---
 
@@ -988,10 +1135,150 @@ switch (art.type) {                                               // "chart" | "
 | Spec FEAT-218 | `sdd/specs/structured-table.spec.md` |
 | Spec FEAT-221 | `sdd/specs/structured-map-output.spec.md` |
 | Spec FEAT-223 (contrato común) | `sdd/specs/structured-artifact-contract.spec.md` |
+| Adaptador A2UI v1.0 (FEAT-473) | `packages/ai-parrot/src/parrot/outputs/a2ui/adapters/structured.py` |
+| Hook `_route_envelope` (dual-emit, FEAT-473) | `packages/ai-parrot-visualizations/src/parrot/outputs/formats/structured_base.py` |
+| Shim de compatibilidad `artifacts[]` v1↔v2 | `packages/ai-parrot/src/parrot/outputs/a2ui/compat.py` |
+| Helper `attach_structured_artifact` | `packages/ai-parrot/src/parrot/outputs/a2ui/artifacts.py` |
+| Spec FEAT-473 | `sdd/specs/a2ui-v1-structured-outputs.spec.md` |
+| Nota de migración FEAT-473 | `docs/migration/feat-473-structured-a2ui.md` |
+
+---
+
+## Apéndice B — Ejemplos de envelope A2UI v1.0 validados
+
+Los tres envelopes debajo son salida **real** de
+`parrot.outputs.a2ui.adapters.structured` (no escritos a mano) — cada uno
+pasa `validate_envelope(origin=TOOL)` y, en su forma "lowered" (ver
+`adapters/structured.py`'s `_validate_wire`), `validate_message` contra el
+JSON Schema oficial `agent_to_renderer.json`.
+
+### B.1 — Chart
+
+```json a2ui-envelope
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "structured_chart-a1b2c3d4",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "sendDataModel": false,
+    "components": [
+      {
+        "id": "root",
+        "component": "Chart",
+        "type": "bar",
+        "x": "month",
+        "y": ["sales"],
+        "showLegend": true,
+        "xAxisMode": "category",
+        "palette": ["#1f77b4", "#ff7f0e"],
+        "title": "Monthly Sales",
+        "description": "Sales trend over the past 6 months showing steady growth.",
+        "data": { "path": "/rows" }
+      }
+    ],
+    "dataModel": {
+      "rows": [
+        { "month": "Jan", "sales": 100 },
+        { "month": "Feb", "sales": 120 },
+        { "month": "Mar", "sales": 115 }
+      ]
+    }
+  }
+}
+```
+
+### B.2 — Table
+
+```json a2ui-envelope
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "structured_table-b2c3d4e5",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "sendDataModel": false,
+    "components": [
+      {
+        "id": "root",
+        "component": "DataTable",
+        "columns": [
+          { "name": "id", "type": "integer", "title": "ID", "format": null },
+          { "name": "price", "type": "number", "title": "Price", "format": "currency" }
+        ],
+        "truncated": false,
+        "totalRows": 2,
+        "data": { "path": "/rows" }
+      }
+    ],
+    "dataModel": {
+      "rows": [
+        { "id": 1, "price": 29.99 },
+        { "id": 2, "price": 49.99 }
+      ]
+    }
+  }
+}
+```
+
+### B.3 — Map (multi-capa)
+
+```json a2ui-envelope
+{
+  "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "structured_map-c3d4e5f6",
+    "catalogId": "https://parrot.dev/catalogs/v1",
+    "sendDataModel": false,
+    "components": [
+      {
+        "id": "root",
+        "component": "Map",
+        "layers": [
+          {
+            "layer": "places",
+            "columns": [
+              { "name": "name", "type": "string", "title": "Place Name", "format": null },
+              { "name": "rating", "type": "number", "title": "Rating", "format": null }
+            ],
+            "tooltipTemplate": "{name} — Rating: {rating}",
+            "labelField": "name",
+            "dataShape": "geojson",
+            "totalCount": 1,
+            "capped": false,
+            "geodesic": null,
+            "markerColor": null,
+            "data": { "path": "/layers/0/features" }
+          }
+        ],
+        "viewport": {
+          "bbox": [-74.01, 40.71, -73.99, 40.72],
+          "center": [40.715, -74.0],
+          "zoom": 13
+        },
+        "title": "Nearby Places",
+        "description": "Popular places within 5 miles of your location."
+      }
+    ],
+    "dataModel": {
+      "layers": [
+        {
+          "features": [
+            {
+              "name": "Place A",
+              "rating": 4.8,
+              "_geometry": { "type": "Point", "coordinates": [-74.0, 40.71] }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
 
 ---
 
 *Documento generado para el equipo de Frontend de AI-Parrot. Fuente: código en
-rama `dev` a fecha 2026-06-04. Para cambios en los nombres de campo del contrato
-de mapa (pendientes de confirmación frontend en FEAT-221 §8), coordinar con el
-backend antes de fijar tipos en el cliente.*
+rama `dev` a fecha 2026-06-04, extendido para FEAT-473 (envelope A2UI v1.0
+dual-emit) a fecha 2026-08-29. Para cambios en los nombres de campo del
+contrato de mapa (pendientes de confirmación frontend en FEAT-221 §8),
+coordinar con el backend antes de fijar tipos en el cliente.*

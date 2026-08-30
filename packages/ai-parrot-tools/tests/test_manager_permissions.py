@@ -7,15 +7,14 @@ Tests Module 7 of the granular permissions system:
 - Backward compatibility (no resolver = no enforcement)
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.tools.manager import ToolManager
+import pytest
+from parrot.auth.permission import PermissionContext, UserSession
+from parrot.auth.resolver import AbstractPermissionResolver, DefaultPermissionResolver
 from parrot.tools.abstract import AbstractTool, ToolResult
-from parrot.tools.decorators import requires_permission
-from parrot.auth.permission import UserSession, PermissionContext
-from parrot.auth.resolver import DefaultPermissionResolver
-
+from parrot.tools.decorators import requires_permission, tool
+from parrot.tools.manager import ToolManager
 
 # ── Test Fixtures ──────────────────────────────────────────────────────────────
 
@@ -30,7 +29,7 @@ class MockTool(AbstractTool):
         return {"message": "mock result", "kwargs": kwargs}
 
 
-@requires_permission('admin')
+@requires_permission("admin")
 class AdminTool(AbstractTool):
     """Admin-only mock tool for testing."""
 
@@ -41,7 +40,7 @@ class AdminTool(AbstractTool):
         return {"message": "admin result", "kwargs": kwargs}
 
 
-@requires_permission('write')
+@requires_permission("write")
 class WriteTool(AbstractTool):
     """Write permission mock tool."""
 
@@ -56,9 +55,9 @@ class WriteTool(AbstractTool):
 def role_hierarchy():
     """Standard test role hierarchy."""
     return {
-        'admin': {'write', 'read'},
-        'write': {'read'},
-        'read': set(),
+        "admin": {"write", "read"},
+        "write": {"read"},
+        "read": set(),
     }
 
 
@@ -71,33 +70,21 @@ def resolver(role_hierarchy):
 @pytest.fixture
 def admin_context():
     """Permission context for admin user."""
-    session = UserSession(
-        user_id="admin-user",
-        tenant_id="test-tenant",
-        roles=frozenset({'admin'})
-    )
+    session = UserSession(user_id="admin-user", tenant_id="test-tenant", roles=frozenset({"admin"}))
     return PermissionContext(session=session)
 
 
 @pytest.fixture
 def reader_context():
     """Permission context for reader-only user."""
-    session = UserSession(
-        user_id="reader-user",
-        tenant_id="test-tenant",
-        roles=frozenset({'read'})
-    )
+    session = UserSession(user_id="reader-user", tenant_id="test-tenant", roles=frozenset({"read"}))
     return PermissionContext(session=session)
 
 
 @pytest.fixture
 def writer_context():
     """Permission context for writer user."""
-    session = UserSession(
-        user_id="writer-user",
-        tenant_id="test-tenant",
-        roles=frozenset({'write'})
-    )
+    session = UserSession(user_id="writer-user", tenant_id="test-tenant", roles=frozenset({"write"}))
     return PermissionContext(session=session)
 
 
@@ -138,7 +125,7 @@ class TestToolManagerSetResolver:
     def test_set_resolver_swaps_resolver(self, role_hierarchy):
         """set_resolver swaps resolver at runtime."""
         resolver1 = DefaultPermissionResolver(role_hierarchy=role_hierarchy)
-        resolver2 = DefaultPermissionResolver(role_hierarchy={'other': set()})
+        resolver2 = DefaultPermissionResolver(role_hierarchy={"other": set()})
 
         manager = ToolManager(resolver=resolver1, include_search_tool=False)
         assert manager.resolver is resolver1
@@ -160,10 +147,10 @@ class TestToolManagerExecuteWithoutContext:
         manager = ToolManager(include_search_tool=False)
         manager.add_tool(MockTool())
 
-        result = await manager.execute_tool('mock_tool', {})
+        result = await manager.execute_tool("mock_tool", {})
 
         assert result is not None
-        assert result['message'] == "mock result"
+        assert result["message"] == "mock result"
 
     @pytest.mark.asyncio
     async def test_execute_restricted_without_context_succeeds(self):
@@ -172,22 +159,22 @@ class TestToolManagerExecuteWithoutContext:
         manager.add_tool(AdminTool())
 
         # No context means no enforcement
-        result = await manager.execute_tool('admin_tool', {})
+        result = await manager.execute_tool("admin_tool", {})
 
         assert result is not None
-        assert result['message'] == "admin result"
+        assert result["message"] == "admin result"
 
     @pytest.mark.asyncio
     async def test_execute_not_found_returns_tool_result(self):
         """Execute non-existent tool returns not_found ToolResult."""
         manager = ToolManager(include_search_tool=False)
 
-        result = await manager.execute_tool('nonexistent', {})
+        result = await manager.execute_tool("nonexistent", {})
 
         assert isinstance(result, ToolResult)
         assert result.success is False
-        assert result.status == 'not_found'
-        assert 'nonexistent' in result.error
+        assert result.status == "not_found"
+        assert "nonexistent" in result.error
 
 
 class TestToolManagerExecuteWithPermission:
@@ -199,14 +186,10 @@ class TestToolManagerExecuteWithPermission:
         manager = ToolManager(resolver=resolver, include_search_tool=False)
         manager.add_tool(AdminTool())
 
-        result = await manager.execute_tool(
-            'admin_tool',
-            {},
-            permission_context=admin_context
-        )
+        result = await manager.execute_tool("admin_tool", {}, permission_context=admin_context)
 
         assert result is not None
-        assert result['message'] == "admin result"
+        assert result["message"] == "admin result"
 
     @pytest.mark.asyncio
     async def test_execute_admin_denied(self, resolver, reader_context):
@@ -214,15 +197,11 @@ class TestToolManagerExecuteWithPermission:
         manager = ToolManager(resolver=resolver, include_search_tool=False)
         manager.add_tool(AdminTool())
 
-        result = await manager.execute_tool(
-            'admin_tool',
-            {},
-            permission_context=reader_context
-        )
+        result = await manager.execute_tool("admin_tool", {}, permission_context=reader_context)
 
         assert isinstance(result, ToolResult)
         assert result.success is False
-        assert result.status == 'forbidden'
+        assert result.status == "forbidden"
 
     @pytest.mark.asyncio
     async def test_execute_hierarchy_allowed(self, resolver, admin_context):
@@ -231,31 +210,21 @@ class TestToolManagerExecuteWithPermission:
         manager.add_tool(WriteTool())
 
         # Admin has write through hierarchy
-        result = await manager.execute_tool(
-            'write_tool',
-            {},
-            permission_context=admin_context
-        )
+        result = await manager.execute_tool("write_tool", {}, permission_context=admin_context)
 
         assert result is not None
-        assert result['message'] == "write result"
+        assert result["message"] == "write result"
 
     @pytest.mark.asyncio
-    async def test_execute_unrestricted_always_allowed(
-        self, resolver, reader_context
-    ):
+    async def test_execute_unrestricted_always_allowed(self, resolver, reader_context):
         """Unrestricted tools work for all users."""
         manager = ToolManager(resolver=resolver, include_search_tool=False)
         manager.add_tool(MockTool())
 
-        result = await manager.execute_tool(
-            'mock_tool',
-            {'param': 'value'},
-            permission_context=reader_context
-        )
+        result = await manager.execute_tool("mock_tool", {"param": "value"}, permission_context=reader_context)
 
         assert result is not None
-        assert result['message'] == "mock result"
+        assert result["message"] == "mock result"
 
 
 class TestContextPropagation:
@@ -268,23 +237,17 @@ class TestContextPropagation:
 
         # Create a mock tool to verify what's passed
         mock_tool = MagicMock(spec=AbstractTool)
-        mock_tool.name = 'test_tool'
-        mock_tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="ok"
-        ))
-        manager._tools['test_tool'] = mock_tool
+        mock_tool.name = "test_tool"
+        mock_tool.execute = AsyncMock(return_value=ToolResult(success=True, status="success", result="ok"))
+        manager._tools["test_tool"] = mock_tool
 
-        await manager.execute_tool(
-            'test_tool',
-            {'custom_arg': 'value'},
-            permission_context=admin_context
-        )
+        await manager.execute_tool("test_tool", {"custom_arg": "value"}, permission_context=admin_context)
 
         mock_tool.execute.assert_called_once()
         call_kwargs = mock_tool.execute.call_args.kwargs
-        assert call_kwargs['_permission_context'] is admin_context
-        assert call_kwargs['_resolver'] is resolver
-        assert call_kwargs['custom_arg'] == 'value'
+        assert call_kwargs["_permission_context"] is admin_context
+        assert call_kwargs["_resolver"] is resolver
+        assert call_kwargs["custom_arg"] == "value"
 
     @pytest.mark.asyncio
     async def test_no_context_no_propagation(self, resolver):
@@ -292,19 +255,17 @@ class TestContextPropagation:
         manager = ToolManager(resolver=resolver, include_search_tool=False)
 
         mock_tool = MagicMock(spec=AbstractTool)
-        mock_tool.name = 'test_tool'
-        mock_tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="ok"
-        ))
-        manager._tools['test_tool'] = mock_tool
+        mock_tool.name = "test_tool"
+        mock_tool.execute = AsyncMock(return_value=ToolResult(success=True, status="success", result="ok"))
+        manager._tools["test_tool"] = mock_tool
 
-        await manager.execute_tool('test_tool', {'arg': 'val'})
+        await manager.execute_tool("test_tool", {"arg": "val"})
 
         call_kwargs = mock_tool.execute.call_args.kwargs
         # Context not passed when None
-        assert '_permission_context' not in call_kwargs
+        assert "_permission_context" not in call_kwargs
         # Resolver still passed
-        assert call_kwargs['_resolver'] is resolver
+        assert call_kwargs["_resolver"] is resolver
 
     @pytest.mark.asyncio
     async def test_no_resolver_no_propagation(self, admin_context):
@@ -312,23 +273,17 @@ class TestContextPropagation:
         manager = ToolManager(include_search_tool=False)  # No resolver
 
         mock_tool = MagicMock(spec=AbstractTool)
-        mock_tool.name = 'test_tool'
-        mock_tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="ok"
-        ))
-        manager._tools['test_tool'] = mock_tool
+        mock_tool.name = "test_tool"
+        mock_tool.execute = AsyncMock(return_value=ToolResult(success=True, status="success", result="ok"))
+        manager._tools["test_tool"] = mock_tool
 
-        await manager.execute_tool(
-            'test_tool',
-            {'arg': 'val'},
-            permission_context=admin_context
-        )
+        await manager.execute_tool("test_tool", {"arg": "val"}, permission_context=admin_context)
 
         call_kwargs = mock_tool.execute.call_args.kwargs
         # Context passed
-        assert call_kwargs['_permission_context'] is admin_context
+        assert call_kwargs["_permission_context"] is admin_context
         # Resolver not passed when None
-        assert '_resolver' not in call_kwargs
+        assert "_resolver" not in call_kwargs
 
 
 class TestBackwardCompatibility:
@@ -341,10 +296,10 @@ class TestBackwardCompatibility:
         manager.add_tool(MockTool())
 
         # Old-style call
-        result = await manager.execute_tool('mock_tool', {'param': 'test'})
+        result = await manager.execute_tool("mock_tool", {"param": "test"})
 
         assert result is not None
-        assert result['message'] == "mock result"
+        assert result["message"] == "mock result"
 
     @pytest.mark.asyncio
     async def test_restricted_tools_work_without_enforcement(self):
@@ -353,10 +308,10 @@ class TestBackwardCompatibility:
         manager.add_tool(AdminTool())
 
         # No resolver = no enforcement
-        result = await manager.execute_tool('admin_tool', {})
+        result = await manager.execute_tool("admin_tool", {})
 
         assert result is not None
-        assert result['message'] == "admin result"
+        assert result["message"] == "admin result"
 
     def test_manager_sync_preserves_resolver(self, resolver):
         """Syncing managers doesn't affect resolver."""
@@ -370,3 +325,175 @@ class TestBackwardCompatibility:
         assert manager1.resolver is resolver
         # Manager2 still has no resolver
         assert manager2.resolver is None
+
+
+# ── Test: ToolDefinition (@tool) Enforcement Parity (FEAT-474) ─────────────────
+
+
+class TestToolDefinitionResolverParity:
+    """execute_tool()'s ToolDefinition branch now honors the same resolver
+    Layer 2 gate as the AbstractTool branch (FEAT-474 AC-1/AC-4/AC-5)."""
+
+    @pytest.mark.asyncio
+    async def test_tooldef_admin_allowed(self, resolver, admin_context):
+        """Admin can execute an admin-restricted @tool function."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool("admin_fn", {"x": 1}, permission_context=admin_context)
+        assert result == "admin:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_reader_denied(self, resolver, reader_context):
+        """Reader cannot execute an admin-restricted @tool function."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+        calls = []
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool("admin_fn", {"x": 1}, permission_context=reader_context)
+        assert isinstance(result, ToolResult)
+        assert result.success is False
+        assert result.status == "forbidden"
+        assert calls == []  # function never invoked
+
+    @pytest.mark.asyncio
+    async def test_tooldef_fail_open_without_context(self, resolver):
+        """No permission_context ⇒ ToolDefinition executes unrestricted
+        (identical to pre-FEAT-474 behaviour) even with a resolver set."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool("admin_fn", {"x": 1})
+        assert result == "admin:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_fail_open_without_resolver(self, admin_context):
+        """No resolver configured ⇒ ToolDefinition executes unrestricted
+        even with a permission_context provided."""
+        manager = ToolManager(include_search_tool=False)  # no resolver
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool("admin_fn", {"x": 1}, permission_context=admin_context)
+        assert result == "admin:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_unrestricted_always_allowed(self, resolver, reader_context):
+        """A @tool function with no required_permissions is unrestricted."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+
+        @tool
+        def plain_fn(x: int) -> str:
+            """Doc."""
+            return f"plain:{x}"
+
+        manager.register_tool(plain_fn)
+
+        result = await manager.execute_tool("plain_fn", {"x": 1}, permission_context=reader_context)
+        assert result == "plain:1"
+
+    @pytest.mark.asyncio
+    async def test_tooldef_resolver_exception_propagates(self, admin_context):
+        """A resolver that raises must propagate — no silent fail-open."""
+
+        class BoomResolver(AbstractPermissionResolver):
+            async def can_execute(self, context, tool_name, required_permissions):
+                raise RuntimeError("resolver boom")
+
+        manager = ToolManager(resolver=BoomResolver(), include_search_tool=False)
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        with pytest.raises(RuntimeError, match="resolver boom"):
+            await manager.execute_tool("admin_fn", {"x": 1}, permission_context=admin_context)
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_call_threads_permission_context(self, resolver, reader_context):
+        """execute_tool_call() forwards permission_context to execute_tool()."""
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+        calls = []
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            calls.append(x)
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        result = await manager.execute_tool_call(
+            {"name": "admin_fn", "input": {"x": 1}, "id": "call-1"},
+            permission_context=reader_context,
+        )
+        assert "forbidden" in result["content"].lower()
+        assert calls == []  # denied before the function ran
+
+
+# ── Test: Branch-Parity Denial (FEAT-474 TASK-2582) ────────────────────────────
+
+
+class TestBranchParityDenial:
+    """Under one identical resolver, a @tool function and an equivalent
+    AbstractTool are BOTH denied with the same status/error/metadata shape —
+    locks the abstract.py:880-890 mirroring so the two branches can't drift
+    apart again (FEAT-474 AC-1/AC-2)."""
+
+    @pytest.mark.asyncio
+    async def test_denial_shape_identical_across_branches(self, resolver, reader_context):
+        manager = ToolManager(resolver=resolver, include_search_tool=False)
+        manager.add_tool(AdminTool())
+
+        @tool(required_permissions={"admin"})
+        def admin_fn(x: int) -> str:
+            """Doc."""
+            return f"admin:{x}"
+
+        manager.register_tool(admin_fn)
+
+        abstract_result = await manager.execute_tool("admin_tool", {}, permission_context=reader_context)
+        tooldef_result = await manager.execute_tool("admin_fn", {"x": 1}, permission_context=reader_context)
+
+        # Same status
+        assert abstract_result.status == tooldef_result.status == "forbidden"
+        assert abstract_result.success is False
+        assert tooldef_result.success is False
+
+        # Same error message shape: "Permission denied: '<name>' requires {...}"
+        assert abstract_result.error.startswith("Permission denied: 'admin_tool' requires")
+        assert tooldef_result.error.startswith("Permission denied: 'admin_fn' requires")
+
+        # Same metadata keys
+        assert set(abstract_result.metadata.keys()) == {"tool_name", "user_id", "required_permissions"}
+        assert set(tooldef_result.metadata.keys()) == {"tool_name", "user_id", "required_permissions"}
+        assert abstract_result.metadata["user_id"] == tooldef_result.metadata["user_id"]
+        assert abstract_result.metadata["required_permissions"] == ["admin"]
+        assert tooldef_result.metadata["required_permissions"] == ["admin"]

@@ -22,6 +22,7 @@ If none of these are present the request is rejected — A2AServer never falls
 back to a service identity (OQ#1 is resolved: identity IS present in Copilot
 A2A messages; absence means an unexpected client).
 """
+
 from __future__ import annotations
 from typing import Dict, List, Optional, Any, Union, TYPE_CHECKING
 import uuid
@@ -33,6 +34,8 @@ from navconfig.logging import logging
 from parrot.models.outputs import OutputMode
 from parrot.outputs.formats.text import markdown_to_plain
 from parrot.a2a.models import (
+    A2UI_EXTENSION_URI,
+    A2UI_MEDIA_TYPE,
     AgentCard,
     AgentInterface,
     AgentSkill,
@@ -46,11 +49,17 @@ from parrot.a2a.models import (
     Role,
     SendMessageConfiguration,
     TaskPushNotificationConfig,
+    register_a2ui_extension,
     serialize_task_state,
     serialize_role,
     parse_task_state,
     A2A_ERROR_CODES,
 )
+from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
+from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
+from parrot.outputs.a2ui.runtime.adapters import ConversationMemorySurfaceStore, ToolManagerExecutor
+from parrot.outputs.a2ui.runtime.dispatch import A2UIRuntime
+from parrot.outputs.a2ui.runtime.models import A2UICallContext
 
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
@@ -167,6 +176,7 @@ class A2AServer:
         self.base_path = base_path.rstrip("/")
         self.version = version
         self.capabilities = capabilities or AgentCapabilities(streaming=True)
+        register_a2ui_extension(self.capabilities, [DEFAULT_CATALOG_ID, BASIC_CATALOG_ID])
         self.extra_skills = extra_skills or []
         self.tags = tags or []
         self._output_mode: OutputMode = self._coerce_output_mode(output_mode)
@@ -185,6 +195,7 @@ class A2AServer:
         self._push_store: Optional["PushNotificationStore"] = push_store
         if self._push_store is None and self.capabilities.push_notifications:
             from parrot.a2a.push_notifications import PushNotificationStore
+
             self._push_store = PushNotificationStore()
 
         # SuspendedExecutionStore for A2A suspend/resume
@@ -203,6 +214,7 @@ class A2AServer:
             self._broker: Optional[Any] = broker
         elif credential_resolvers:
             from parrot.auth.broker import CredentialBroker as _CB
+
             _b = _CB(audit_ledger=audit_ledger)
             for _prov, _res in credential_resolvers.items():
                 _b.register(_prov, _res)
@@ -313,9 +325,7 @@ class A2AServer:
         # JSON-RPC binding (alternative)
         app.router.add_post(f"{bp}/rpc", self._handle_jsonrpc)
 
-        self.logger.info(
-            f"A2A server mounted for agent '{self.agent.name}' at {self.base_path}"
-        )
+        self.logger.info(f"A2A server mounted for agent '{self.agent.name}' at {self.base_path}")
 
     # ─────────────────────────────────────────────────────────────
     # AgentCard Generation (from Agent properties)
@@ -332,20 +342,22 @@ class A2AServer:
 
         # Add a default "chat" skill if no tools
         if not skills:
-            skills.append(AgentSkill(
-                id="chat",
-                name="Chat",
-                description=f"Have a conversation with {self.agent.name}",
-                tags=["conversation", "chat"],
-            ))
+            skills.append(
+                AgentSkill(
+                    id="chat",
+                    name="Chat",
+                    description=f"Have a conversation with {self.agent.name}",
+                    tags=["conversation", "chat"],
+                )
+            )
 
         # Build description from agent properties
         description_parts = []
-        if hasattr(self.agent, 'description') and self.agent.description:
+        if hasattr(self.agent, "description") and self.agent.description:
             description_parts.append(self.agent.description)
-        if hasattr(self.agent, 'role') and self.agent.role:
+        if hasattr(self.agent, "role") and self.agent.role:
             description_parts.append(f"Role: {self.agent.role}")
-        if hasattr(self.agent, 'goal') and self.agent.goal:
+        if hasattr(self.agent, "goal") and self.agent.goal:
             description_parts.append(f"Goal: {self.agent.goal}")
 
         description = " | ".join(description_parts) if description_parts else f"AI Agent: {self.agent.name}"
@@ -372,7 +384,7 @@ class A2AServer:
             ],
             skills=skills,
             capabilities=self.capabilities,
-            tags=self.tags or getattr(self.agent, 'tags', []),
+            tags=self.tags or getattr(self.agent, "tags", []),
         )
 
         return self._agent_card
@@ -391,7 +403,7 @@ class A2AServer:
 
         # Get tools from tool_manager if available (guard against a None
         # tool_manager so agents without one fall through to `tools`).
-        if getattr(self.agent, 'tool_manager', None) is not None:
+        if getattr(self.agent, "tool_manager", None) is not None:
             tools = self.agent.tool_manager.list_tools()
             for tool_name in tools:
                 if tool_name in self._INTERNAL_TOOL_NAMES:
@@ -401,9 +413,9 @@ class A2AServer:
                         skills.append(skill)
 
         # Also check direct tools attribute
-        elif hasattr(self.agent, 'tools') and self.agent.tools:
+        elif hasattr(self.agent, "tools") and self.agent.tools:
             for tool in self.agent.tools:
-                if getattr(tool, 'name', None) in self._INTERNAL_TOOL_NAMES:
+                if getattr(tool, "name", None) in self._INTERNAL_TOOL_NAMES:
                     continue
                 if skill := self._tool_to_skill(tool):
                     skills.append(skill)
@@ -413,20 +425,20 @@ class A2AServer:
     def _tool_to_skill(self, tool: "AbstractTool") -> Optional[AgentSkill]:
         """Convert an AbstractTool to an AgentSkill."""
         try:
-            name = getattr(tool, 'name', None)
+            name = getattr(tool, "name", None)
             if not name:
                 return None
 
-            description = getattr(tool, 'description', f"Tool: {name}")
+            description = getattr(tool, "description", f"Tool: {name}")
 
             # Try to get input schema from args_schema (Pydantic model)
             input_schema = None
-            if hasattr(tool, 'args_schema') and tool.args_schema:
+            if hasattr(tool, "args_schema") and tool.args_schema:
                 with contextlib.suppress(Exception):
                     input_schema = tool.args_schema.model_json_schema()
 
             # Get tags if available
-            tags = getattr(tool, 'tags', [])
+            tags = getattr(tool, "tags", [])
             if isinstance(tags, str):
                 tags = [tags]
 
@@ -440,6 +452,143 @@ class A2AServer:
         except Exception as e:
             self.logger.warning("Could not convert tool to skill: %s", e)
             return None
+
+    # ─────────────────────────────────────────────────────────────
+    # A2UI Agent Functions runtime over A2A (FEAT-469 TASK-2572)
+    # ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _find_a2ui_part(message: Message) -> Part | None:
+        """Return the first inbound ``Part`` carrying an A2UI envelope, if any.
+
+        Discriminated on ``Part.metadata["mimeType"] == A2UI_MEDIA_TYPE`` — there
+        is no dedicated ``DataPart`` class (spec §6 "Does NOT Exist").
+        """
+        for part in message.parts:
+            if part.data is not None and (part.metadata or {}).get("mimeType") == A2UI_MEDIA_TYPE:
+                return part
+        return None
+
+    def _build_a2ui_runtime(self, user_id: str | None) -> tuple[A2UIRuntime, ConversationMemorySurfaceStore]:
+        """Build a fresh ``A2UIRuntime`` bound to ``user_id`` for this request.
+
+        ``ConversationMemorySurfaceStore`` binds ``user_id`` at construction
+        time (TASK-2570 — ``ConversationMemory.get_history`` needs it
+        positionally; the store Protocols only carry ``session_id``), so a
+        transport must build one per request/user rather than share a single
+        instance across users.
+        """
+        store = ConversationMemorySurfaceStore(self.agent.conversation_memory, user_id=user_id or "anonymous")
+        executor = ToolManagerExecutor(self.agent.tool_manager)
+        runtime = A2UIRuntime(executor=executor, surfaces=store, pending=store)
+        return runtime, store
+
+    async def _dispatch_a2ui_message(self, message: Message, part: Part, *, streaming: bool) -> Task:
+        """Dispatch an inbound A2UI ``Part`` through ``A2UIRuntime`` and build the response ``Task``.
+
+        An A2UI envelope is an RPC, not a conversational turn: it is
+        dispatched synchronously (never spawned as a background task via
+        ``returnImmediately``) and the response artifact carries the
+        already-serialized A->R envelope(s) from
+        ``DispatchResult.messages`` — never the agent's normal text/markdown
+        response path.
+
+        Args:
+            message: The inbound A2A message.
+            part: The ``Part`` detected by :meth:`_find_a2ui_part`.
+            streaming: Whether this call originates from ``message/stream``
+                (informational — carried on ``A2UICallContext.streaming``).
+
+        Returns:
+            A ``COMPLETED`` :class:`Task` whose artifact (if any) carries the
+            A->R envelope(s) as A2UI ``Part``s. A ``FAILED`` :class:`Task`
+            carrying a ``FORBIDDEN`` A2UI error envelope if no verifiable
+            identity could be extracted (fail-closed — mirrors
+            ``A2UIHandler._authenticate``'s 401, the HTTP transport's
+            equivalent gate).
+        """
+        from parrot.auth.permission import build_principal_context
+
+        user_id = self._extract_identity(message)
+        session_id = message.context_id or str(uuid.uuid4())
+
+        if user_id is None:
+            # Fail closed (spec §8 threat model): every transport must
+            # refuse to dispatch an A2UI RPC without a verifiable identity —
+            # there is no service-identity fallback here, matching
+            # `A2UIHandler._authenticate`'s 401 on the HTTP transport. No
+            # `surfaceId`/`functionCallId` is guaranteed to exist on the
+            # inbound envelope at this point, so a schema-valid A2UI
+            # `error` envelope (which requires exactly one of the two) is
+            # not constructible here — the A2A-level ``FAILED`` task status
+            # carries the reason instead.
+            self.logger.warning(
+                "a2ui_audit agent_id=%s user_id=None call=dispatch status=forbidden reason=no_identity",
+                self.agent.name,
+            )
+            task = Task.create(context_id=session_id)
+            task.history.append(message)
+            task.fail("A2UI dispatch requires a verifiable identity.")
+            return task
+
+        permission_context = build_principal_context(principal=user_id, channel="a2ui")
+
+        runtime, store = self._build_a2ui_runtime(user_id)
+        ctx = A2UICallContext(
+            agent_id=self.agent.name,
+            user_id=user_id,
+            session_id=session_id,
+            transport="a2a",
+            streaming=streaming,
+            permission_context=permission_context,
+        )
+
+        result = await runtime.dispatch(part.data, ctx)
+
+        task = Task.create(context_id=session_id)
+        task.history.append(message)
+        task.status = TaskStatus(state=TaskState.COMPLETED)
+
+        parts = [
+            Part(data=env, metadata={"mimeType": A2UI_MEDIA_TYPE, "extensionUri": A2UI_EXTENSION_URI})
+            for env in result.messages
+        ]
+        # Dual delivery (spec §8 resolved OQ): a `callRendererFunction` queued
+        # by an EARLIER `call_renderer()` (e.g. registered during a prior
+        # streaming turn that closed before the renderer could be reached)
+        # rides the NEXT message/send response instead — drained here so the
+        # SAME PendingCallRegistry entry is never delivered twice.
+        parts.extend(await self._drain_queued_renderer_calls(store, session_id))
+
+        if parts:
+            task.artifacts.append(Artifact(artifact_id=str(uuid.uuid4()), name="a2ui-response", parts=parts))
+        return task
+
+    async def _drain_queued_renderer_calls(self, store: ConversationMemorySurfaceStore, session_id: str) -> list[Part]:
+        """Attach any not-yet-delivered ``callRendererFunction`` calls for ``session_id``.
+
+        Uses the SAME ``ConversationMemorySurfaceStore`` (the single source
+        of truth for correlation, per spec §8) — never a second in-memory
+        queue on ``A2AServer``. Each drained record is reconstructed into its
+        wire envelope and marked delivered (not resolved/removed — resolution
+        only happens when the matching ``rendererFunctionResponse`` arrives).
+        """
+        from parrot.outputs.a2ui.models import CallRendererFunction, FunctionCall
+        from parrot.outputs.a2ui.serialization import serialize
+
+        parts: list[Part] = []
+        for record in await store.list_undelivered(session_id):
+            envelope = serialize(
+                CallRendererFunction(
+                    functionCallId=record.function_call_id,
+                    callFunction=FunctionCall(call=record.call, args=record.args, catalogId=record.catalog_id),
+                )
+            )
+            parts.append(
+                Part(data=envelope, metadata={"mimeType": A2UI_MEDIA_TYPE, "extensionUri": A2UI_EXTENSION_URI})
+            )
+            await store.mark_delivered(session_id, record.function_call_id)
+        return parts
 
     # ─────────────────────────────────────────────────────────────
     # Per-user identity extraction (FEAT-260 / TASK-1643)
@@ -470,9 +619,7 @@ class A2AServer:
         if self._identity_mapper is not None and meta:
             canonical = self._identity_mapper.to_canonical(meta)
             if canonical is not None:
-                self.logger.debug(
-                    "A2A identity: canonical via IdentityMapper=%s", canonical
-                )
+                self.logger.debug("A2A identity: canonical via IdentityMapper=%s", canonical)
                 return canonical
 
         # 1. Explicit user_id (set by parrot-internal routing or direct callers)
@@ -484,28 +631,20 @@ class A2AServer:
         from_obj = meta.get("from") or {}
         if isinstance(from_obj, dict):
             if email := from_obj.get("email"):
-                self.logger.debug(
-                    "A2A identity: user_id from metadata.from.email=%s", email
-                )
+                self.logger.debug("A2A identity: user_id from metadata.from.email=%s", email)
                 return str(email)
             if oid := from_obj.get("id"):
-                self.logger.debug(
-                    "A2A identity: user_id from metadata.from.id=%s", oid
-                )
+                self.logger.debug("A2A identity: user_id from metadata.from.id=%s", oid)
                 return str(oid)
 
         # 3. Flat "sender" field
         if sender := meta.get("sender"):
-            self.logger.debug(
-                "A2A identity: user_id from metadata.sender=%s", sender
-            )
+            self.logger.debug("A2A identity: user_id from metadata.sender=%s", sender)
             return str(sender)
 
         # 4. Microsoft-injected header mirror (some Copilot connector configs)
         if ms_email := meta.get("x-ms-user-email"):
-            self.logger.debug(
-                "A2A identity: user_id from metadata.x-ms-user-email=%s", ms_email
-            )
+            self.logger.debug("A2A identity: user_id from metadata.x-ms-user-email=%s", ms_email)
             return str(ms_email)
 
         self.logger.warning(
@@ -541,12 +680,11 @@ class A2AServer:
         else:
             # Build broker lazily so existing resolvers are gated.
             from parrot.auth.broker import CredentialBroker as _CB
+
             self._broker = _CB(audit_ledger=self._audit_ledger)
             for _p, _r in self._credential_resolvers.items():
                 self._broker.register(_p, _r)
-        self.logger.info(
-            "A2AServer: registered credential resolver for provider=%s", provider
-        )
+        self.logger.info("A2AServer: registered credential resolver for provider=%s", provider)
 
     async def _on_missing_credential(
         self,
@@ -588,9 +726,7 @@ class A2AServer:
             # Legacy path: obtain auth URL from the old-style resolver dict.
             resolver = self._credential_resolvers.get(provider)
             if resolver is None:
-                self.logger.error(
-                    "A2AServer: no resolver for provider=%s; failing task", provider
-                )
+                self.logger.error("A2AServer: no resolver for provider=%s; failing task", provider)
                 task.fail(f"No credential resolver registered for provider={provider!r}.")
                 return task
             # Get the auth URL from the resolver (never a secret — only the URL)
@@ -607,14 +743,17 @@ class A2AServer:
             consent_url = f"{auth_url}?a2a_state={interaction_id}"
 
         self.logger.info(
-            "A2AServer: credential missing for provider=%s user=%s tool=%s; "
-            "suspending interaction_id=%s",
-            provider, user_id, tool_name, interaction_id,
+            "A2AServer: credential missing for provider=%s user=%s tool=%s; " "suspending interaction_id=%s",
+            provider,
+            user_id,
+            tool_name,
+            interaction_id,
         )
 
         # Persist the suspended execution (requires a SuspendedExecutionStore)
         if self._suspended_store is not None:
             from parrot.human.suspended_store import SuspendedExecution
+
             suspended = SuspendedExecution(
                 interaction_id=interaction_id,
                 session_id=task.context_id or task.id,
@@ -624,9 +763,7 @@ class A2AServer:
                 messages=[],
             )
             await self._suspended_store.save(suspended, ttl=7200)
-            self.logger.debug(
-                "A2AServer: suspended execution saved interaction_id=%s", interaction_id
-            )
+            self.logger.debug("A2AServer: suspended execution saved interaction_id=%s", interaction_id)
 
         # Track nonce → interaction_id for resume (TASK-1645)
         self._a2a_nonce_map[interaction_id] = interaction_id
@@ -635,8 +772,7 @@ class A2AServer:
         # INVARIANT: consent_url may contain the auth URL; it does NOT
         # contain any credential/token/secret.
         consent_text = (
-            f"To use {tool_name!r} you need to authorise {provider!r}.\n"
-            f"Please visit this link: {consent_url}"
+            f"To use {tool_name!r} you need to authorise {provider!r}.\n" f"Please visit this link: {consent_url}"
         )
         task.status = TaskStatus(state=TaskState.INPUT_REQUIRED)
         task.artifacts.append(
@@ -684,8 +820,7 @@ class A2AServer:
         suspended = await self._suspended_store.load(interaction_id)
         if suspended is None:
             self.logger.warning(
-                "A2AServer.resume_from_oauth_callback: "
-                "interaction_id=%s not found (expired or already resumed)",
+                "A2AServer.resume_from_oauth_callback: " "interaction_id=%s not found (expired or already resumed)",
                 interaction_id,
             )
             return
@@ -705,29 +840,24 @@ class A2AServer:
                 )
             else:
                 self.logger.warning(
-                    "A2AServer.resume_from_oauth_callback: agent %s has no resume(); "
-                    "re-asking instead",
+                    "A2AServer.resume_from_oauth_callback: agent %s has no resume(); " "re-asking instead",
                     self.agent.name,
                 )
                 await self.agent.ask(user_input, session_id=suspended.session_id)
         except Exception:
             self.logger.exception(
-                "A2AServer.resume_from_oauth_callback: resume failed for "
-                "interaction_id=%s",
+                "A2AServer.resume_from_oauth_callback: resume failed for " "interaction_id=%s",
                 interaction_id,
             )
         finally:
             await self._suspended_store.delete(interaction_id)
             self._a2a_nonce_map.pop(interaction_id, None)
 
-
     # ─────────────────────────────────────────────────────────────
     # Core Message Processing (delegates to Agent)
     # ─────────────────────────────────────────────────────────────
 
-    async def process_message(
-        self, message: Message, task: Optional[Task] = None
-    ) -> Task:
+    async def process_message(self, message: Message, task: Optional[Task] = None) -> Task:
         """Process an A2A message by delegating to the wrapped agent.
 
         FEAT-260 / TASK-1643: extracts the per-user identity at the entry
@@ -841,8 +971,7 @@ class A2AServer:
             if user_id is None:
                 # Fail closed — no identity, no service-identity fallback.
                 self.logger.warning(
-                    "A2AServer: gated tool %s requires identity but user_id is None; "
-                    "failing closed",
+                    "A2AServer: gated tool %s requires identity but user_id is None; " "failing closed",
                     tool_name,
                 )
                 task.fail(
@@ -852,14 +981,13 @@ class A2AServer:
                 return False
 
             try:
-                result = await self._broker.resolve(
-                    provider, channel, user_id, tool_name=tool_name
-                )
+                result = await self._broker.resolve(provider, channel, user_id, tool_name=tool_name)
             except KeyError:
                 self.logger.warning(
                     "A2AServer: tool %s requires provider=%s but no resolver registered; "
                     "failing closed (no service-identity fallback)",
-                    tool_name, provider,
+                    tool_name,
+                    provider,
                 )
                 task.fail(
                     f"No credential resolver for provider={provider!r}. "
@@ -869,11 +997,13 @@ class A2AServer:
 
             if isinstance(result, NeedsAuth):
                 # FEAT-264 invariant: missing credential → suspend, never fallback.
-                self.logger.info(
-                    "A2AServer: credential missing for %s/%s; suspending", provider, user_id
-                )
+                self.logger.info("A2AServer: credential missing for %s/%s; suspending", provider, user_id)
                 await self._on_missing_credential(
-                    tool_name, provider, channel, user_id, task,
+                    tool_name,
+                    provider,
+                    channel,
+                    user_id,
+                    task,
                     auth_url=result.auth_url,
                 )
                 return True  # task is now suspended
@@ -886,7 +1016,9 @@ class A2AServer:
 
             self.logger.info(
                 "A2AServer: credential resolved for provider=%s user=%s tool=%s",
-                provider, user_id, tool_name,
+                provider,
+                user_id,
+                tool_name,
             )
             _token = _CRED_VAR.set(result.secret)
             try:
@@ -932,16 +1064,14 @@ class A2AServer:
             kwargs["user_id"] = user_id
 
         # Use ask() method (most compatible)
-        if hasattr(self.agent, 'ask'):
+        if hasattr(self.agent, "ask"):
             response = await self.agent.ask(question, **kwargs)
-        elif hasattr(self.agent, 'chat'):
+        elif hasattr(self.agent, "chat"):
             response = await self.agent.chat(question, **kwargs)
-        elif hasattr(self.agent, 'conversation'):
+        elif hasattr(self.agent, "conversation"):
             response = await self.agent.conversation(question, **kwargs)
         else:
-            raise NotImplementedError(
-                f"Agent {self.agent.name} doesn't have ask/chat/conversation method"
-            )
+            raise NotImplementedError(f"Agent {self.agent.name} doesn't have ask/chat/conversation method")
 
         return response
 
@@ -957,15 +1087,15 @@ class A2AServer:
             The tool instance, or ``None`` if not found.
         """
         # Try tool_manager first
-        if hasattr(self.agent, 'tool_manager') and self.agent.tool_manager is not None:
+        if hasattr(self.agent, "tool_manager") and self.agent.tool_manager is not None:
             tool = self.agent.tool_manager.get_tool(tool_name)
             if tool:
                 return tool
 
         # Try direct tools list
-        if hasattr(self.agent, 'tools') and self.agent.tools:
+        if hasattr(self.agent, "tools") and self.agent.tools:
             for t in self.agent.tools:
-                if getattr(t, 'name', None) == tool_name:
+                if getattr(t, "name", None) == tool_name:
                     return t
 
         return None
@@ -983,16 +1113,14 @@ class A2AServer:
         Raises:
             NotImplementedError: If the tool has no known executable method.
         """
-        if hasattr(tool, '_execute'):
+        if hasattr(tool, "_execute"):
             return await tool._execute(**params)
-        elif hasattr(tool, 'run'):
+        elif hasattr(tool, "run"):
             return await tool.run(**params)
-        elif hasattr(tool, '_arun'):
+        elif hasattr(tool, "_arun"):
             return await tool._arun(**params)
         else:
-            raise NotImplementedError(
-                f"Tool {getattr(tool, 'name', repr(tool))} has no executable method"
-            )
+            raise NotImplementedError(f"Tool {getattr(tool, 'name', repr(tool))} has no executable method")
 
     async def _invoke_skill(self, skill_id: str, params: Dict[str, Any]) -> Any:
         """Invoke a specific skill (tool) by ID (legacy direct-invocation path)."""
@@ -1029,12 +1157,14 @@ class A2AServer:
         # Plain A2A error shape (matches _a2a_http_error), consistent across the
         # REST endpoints that call this. The numeric -32009 is what clients check.
         raise web.HTTPBadRequest(
-            text=json.dumps({
-                "error": {
-                    "code": -32009,
-                    "message": f"Version not supported: {version}",
-                },
-            }),
+            text=json.dumps(
+                {
+                    "error": {
+                        "code": -32009,
+                        "message": f"Version not supported: {version}",
+                    },
+                }
+            ),
             content_type="application/json",
         )
 
@@ -1043,13 +1173,9 @@ class A2AServer:
         """v1.0 responses use ``application/a2a+json``; v0.3 uses plain JSON."""
         return "application/a2a+json" if version != "0.3" else "application/json"
 
-    def _versioned_response(
-        self, obj: Dict[str, Any], version: str, status: int = 200
-    ) -> web.Response:
+    def _versioned_response(self, obj: Dict[str, Any], version: str, status: int = 200) -> web.Response:
         """Build a JSON response with the version-appropriate Content-Type."""
-        return web.json_response(
-            obj, status=status, content_type=self._content_type_for(version)
-        )
+        return web.json_response(obj, status=status, content_type=self._content_type_for(version))
 
     def _a2a_http_error(self, error_name: str, message: str = "") -> web.Response:
         """Build a REST error response using the A2A v1.0 error code table."""
@@ -1062,11 +1188,13 @@ class A2AServer:
     @staticmethod
     def _jsonrpc_error(req_id: Any, code: int, message: str) -> web.Response:
         """Build a JSON-RPC 2.0 error envelope (HTTP 200 transport)."""
-        return web.json_response({
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": code, "message": message},
-        })
+        return web.json_response(
+            {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": code, "message": message},
+            }
+        )
 
     def _spawn_background(self, coro) -> "asyncio.Task":
         """Schedule a fire-and-forget coroutine, keeping a strong reference.
@@ -1097,6 +1225,19 @@ class A2AServer:
             message = Message.from_dict(data.get("message", {}))
             config = SendMessageConfiguration.from_dict(data.get("configuration") or {})
 
+            # An A2UI envelope is an RPC, not a conversational turn — dispatch
+            # it synchronously and return, bypassing `returnImmediately`
+            # entirely (spec §3 Module 5: "must not be spawned as a
+            # background task").
+            a2ui_part = self._find_a2ui_part(message)
+            if a2ui_part is not None:
+                task = await self._dispatch_a2ui_message(message, a2ui_part, streaming=False)
+                result = task.to_dict(version)
+                if config.history_length is not None:
+                    n = config.history_length
+                    result["history"] = result["history"][-n:] if n > 0 else []
+                return self._versioned_response(result, version)
+
             if config.return_immediately:
                 # Create the task, store it, return SUBMITTED immediately, and
                 # process it in the background on the SAME task object.
@@ -1118,16 +1259,10 @@ class A2AServer:
         except web.HTTPException:
             raise
         except json.JSONDecodeError:
-            return web.json_response(
-                {"error": {"code": "InvalidJSON", "message": "Invalid JSON body"}},
-                status=400
-            )
+            return web.json_response({"error": {"code": "InvalidJSON", "message": "Invalid JSON body"}}, status=400)
         except Exception as e:
             self.logger.error("Error in send_message: %s", e, exc_info=True)
-            return web.json_response(
-                {"error": {"code": "InternalError", "message": str(e)}},
-                status=500
-            )
+            return web.json_response({"error": {"code": "InternalError", "message": str(e)}}, status=500)
 
     async def _handle_stream_message(self, request: web.Request) -> web.StreamResponse:
         """POST /a2a/message/stream - SSE streaming response."""
@@ -1148,13 +1283,61 @@ class A2AServer:
         try:
             data = await request.json()
             message = Message.from_dict(data.get("message", {}))
-            await self._emit_message_stream(response, message, version)
+            a2ui_part = self._find_a2ui_part(message)
+            if a2ui_part is not None:
+                await self._emit_a2ui_stream(response, message, a2ui_part, version)
+            else:
+                await self._emit_message_stream(response, message, version)
         except Exception as e:
             self.logger.error("Error setting up stream: %s", e, exc_info=True)
             await self._send_sse(response, {"error": {"message": str(e)}})
 
         await response.write_eof()
         return response
+
+    async def _emit_a2ui_stream(
+        self,
+        response: web.StreamResponse,
+        message: Message,
+        part: Part,
+        version: str,
+    ) -> None:
+        """SSE variant of :meth:`_dispatch_a2ui_message` (spec §3 Module 5).
+
+        Emits the same ``task``/``artifactUpdate``/``statusUpdate`` frame
+        sequence as the normal streaming path, but the artifact carries
+        A2UI A->R envelopes instead of the agent's text response — an A2UI
+        RPC is dispatched synchronously, never streamed token-by-token.
+        """
+        task = await self._dispatch_a2ui_message(message, part, streaming=True)
+        self._tasks[task.id] = task
+
+        await self._send_sse(response, {"task": task.to_dict(version)})
+
+        for artifact in task.artifacts:
+            await self._send_sse(
+                response,
+                {
+                    "artifactUpdate": {
+                        "taskId": task.id,
+                        "contextId": task.context_id,
+                        "artifact": artifact.to_dict(version),
+                        "lastChunk": True,
+                    }
+                },
+            )
+
+        await self._send_sse(
+            response,
+            {
+                "statusUpdate": {
+                    "taskId": task.id,
+                    "contextId": task.context_id,
+                    "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
+                    "final": True,
+                }
+            },
+        )
 
     async def _emit_message_stream(
         self,
@@ -1189,21 +1372,24 @@ class A2AServer:
 
         # Send working status
         task.working(f"Processing with {self.agent.name}...")
-        await self._send_sse(response, {
-            "statusUpdate": {
-                "taskId": task.id,
-                "contextId": task.context_id,
-                "status": {"state": serialize_task_state(TaskState.WORKING, version)},
-                "final": False
-            }
-        })
+        await self._send_sse(
+            response,
+            {
+                "statusUpdate": {
+                    "taskId": task.id,
+                    "contextId": task.context_id,
+                    "status": {"state": serialize_task_state(TaskState.WORKING, version)},
+                    "final": False,
+                }
+            },
+        )
 
         # Process with streaming
         try:
             question = message.get_text()
 
             # Try to use streaming method
-            if hasattr(self.agent, 'ask_stream'):
+            if hasattr(self.agent, "ask_stream"):
                 await self._stream_with_ask_stream(response, task, question, message, version)
             else:
                 # Fallback to non-streaming
@@ -1212,20 +1398,20 @@ class A2AServer:
         except Exception as e:
             self.logger.error("Error in streaming: %s", e, exc_info=True)
             task.fail(str(e))
-            await self._send_sse(response, {
-                "statusUpdate": {
-                    "taskId": task.id,
-                    "contextId": task.context_id,
-                    "status": {
-                        "state": serialize_task_state(TaskState.FAILED, version),
-                        "message": {
-                            "role": serialize_role(Role.AGENT, version),
-                            "parts": [{"text": str(e)}]
-                        }
-                    },
-                    "final": True
-                }
-            })
+            await self._send_sse(
+                response,
+                {
+                    "statusUpdate": {
+                        "taskId": task.id,
+                        "contextId": task.context_id,
+                        "status": {
+                            "state": serialize_task_state(TaskState.FAILED, version),
+                            "message": {"role": serialize_role(Role.AGENT, version), "parts": [{"text": str(e)}]},
+                        },
+                        "final": True,
+                    }
+                },
+            )
 
     async def _stream_with_ask_stream(
         self,
@@ -1260,19 +1446,22 @@ class A2AServer:
                 chunk_text = "".join(buffer)
                 collected_text.append(chunk_text)
 
-                await self._send_sse(response, {
-                    "artifactUpdate": {
-                        "taskId": task.id,
-                        "contextId": task.context_id,
-                        "artifact": {
-                            "artifactId": artifact_id,
-                            "name": "response",
-                            "parts": [{"text": chunk_text}]
-                        },
-                        "append": len(collected_text) > 1,
-                        "lastChunk": False
-                    }
-                })
+                await self._send_sse(
+                    response,
+                    {
+                        "artifactUpdate": {
+                            "taskId": task.id,
+                            "contextId": task.context_id,
+                            "artifact": {
+                                "artifactId": artifact_id,
+                                "name": "response",
+                                "parts": [{"text": chunk_text}],
+                            },
+                            "append": len(collected_text) > 1,
+                            "lastChunk": False,
+                        }
+                    },
+                )
 
                 buffer = []
                 buffer_size = 0
@@ -1302,32 +1491,34 @@ class A2AServer:
             full_text = "".join(collected_text)
             if self._output_mode == OutputMode.TEXT:
                 full_text = markdown_to_plain(full_text)
-            artifact = Artifact(
-                artifact_id=artifact_id,
-                name="response",
-                parts=[Part.from_text(full_text)]
-            )
+            artifact = Artifact(artifact_id=artifact_id, name="response", parts=[Part.from_text(full_text)])
             task.artifacts.append(artifact)
 
-            await self._send_sse(response, {
-                "artifactUpdate": {
-                    "taskId": task.id,
-                    "contextId": task.context_id,
-                    "artifact": artifact.to_dict(version),
-                    "append": False,
-                    "lastChunk": True
-                }
-            })
+            await self._send_sse(
+                response,
+                {
+                    "artifactUpdate": {
+                        "taskId": task.id,
+                        "contextId": task.context_id,
+                        "artifact": artifact.to_dict(version),
+                        "append": False,
+                        "lastChunk": True,
+                    }
+                },
+            )
 
             task.status = TaskStatus(state=TaskState.COMPLETED)
-            await self._send_sse(response, {
-                "statusUpdate": {
-                    "taskId": task.id,
-                    "contextId": task.context_id,
-                    "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
-                    "final": True
-                }
-            })
+            await self._send_sse(
+                response,
+                {
+                    "statusUpdate": {
+                        "taskId": task.id,
+                        "contextId": task.context_id,
+                        "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
+                        "final": True,
+                    }
+                },
+            )
 
         except Exception as e:
             self.logger.error("Streaming error: %s", e, exc_info=True)
@@ -1347,25 +1538,31 @@ class A2AServer:
         # Send artifact
         artifact = Artifact.from_response(result)
         task.artifacts.append(artifact)
-        await self._send_sse(response, {
-            "artifactUpdate": {
-                "taskId": task.id,
-                "contextId": task.context_id,
-                "artifact": artifact.to_dict(version),
-                "lastChunk": True
-            }
-        })
+        await self._send_sse(
+            response,
+            {
+                "artifactUpdate": {
+                    "taskId": task.id,
+                    "contextId": task.context_id,
+                    "artifact": artifact.to_dict(version),
+                    "lastChunk": True,
+                }
+            },
+        )
 
         # Send completed
         task.status = TaskStatus(state=TaskState.COMPLETED)
-        await self._send_sse(response, {
-            "statusUpdate": {
-                "taskId": task.id,
-                "contextId": task.context_id,
-                "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
-                "final": True
-            }
-        })
+        await self._send_sse(
+            response,
+            {
+                "statusUpdate": {
+                    "taskId": task.id,
+                    "contextId": task.context_id,
+                    "status": {"state": serialize_task_state(TaskState.COMPLETED, version)},
+                    "final": True,
+                }
+            },
+        )
 
     @staticmethod
     def _coerce_output_mode(value: Union[OutputMode, str, None]) -> OutputMode:
@@ -1393,9 +1590,9 @@ class A2AServer:
         kwargs = {}
 
         # Get max_tokens from agent
-        max_tokens = getattr(self.agent, 'max_tokens', None)
-        if max_tokens is None and hasattr(self.agent, '_llm') and self.agent._llm:
-            max_tokens = getattr(self.agent._llm, 'max_tokens', None)
+        max_tokens = getattr(self.agent, "max_tokens", None)
+        if max_tokens is None and hasattr(self.agent, "_llm") and self.agent._llm:
+            max_tokens = getattr(self.agent._llm, "max_tokens", None)
         kwargs["max_tokens"] = max_tokens or 4096
 
         # Pass context_id as session_id
@@ -1419,20 +1616,20 @@ class A2AServer:
             return chunk
 
         # AIMessage or similar response object
-        if hasattr(chunk, 'content'):
+        if hasattr(chunk, "content"):
             return chunk.content
-        if hasattr(chunk, 'text'):
+        if hasattr(chunk, "text"):
             return chunk.text
-        if hasattr(chunk, 'delta'):
+        if hasattr(chunk, "delta"):
             delta = chunk.delta
-            if hasattr(delta, 'text'):
+            if hasattr(delta, "text"):
                 return delta.text
-            if hasattr(delta, 'content'):
+            if hasattr(delta, "content"):
                 return delta.content
 
         # Dict chunk
         if isinstance(chunk, dict):
-            return chunk.get('text') or chunk.get('content') or chunk.get('delta', {}).get('text')
+            return chunk.get("text") or chunk.get("content") or chunk.get("delta", {}).get("text")
 
         # Fallback
         return str(chunk) if chunk else None
@@ -1468,12 +1665,15 @@ class A2AServer:
 
         tasks = tasks[:page_size]
 
-        return self._versioned_response({
-            "tasks": [t.to_dict(version) for t in tasks],
-            "totalSize": len(tasks),
-            "pageSize": page_size,
-            "nextPageToken": ""
-        }, version)
+        return self._versioned_response(
+            {
+                "tasks": [t.to_dict(version) for t in tasks],
+                "totalSize": len(tasks),
+                "pageSize": page_size,
+                "nextPageToken": "",
+            },
+            version,
+        )
 
     async def _handle_cancel_task(self, request: web.Request) -> web.Response:
         """POST /a2a/tasks/{task_id}:cancel (v1.0) or /a2a/tasks/{task_id}/cancel (v0.3)."""
@@ -1500,9 +1700,7 @@ class A2AServer:
         if not task:
             return self._a2a_http_error("TaskNotFoundError")
 
-        response = web.StreamResponse(
-            headers={"Content-Type": "text/event-stream"}
-        )
+        response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await response.prepare(request)
 
         # Send current state
@@ -1538,9 +1736,7 @@ class A2AServer:
         except (KeyError, ValueError) as e:
             # Standard JSON-RPC "Invalid params" (-32602) — kept consistent with
             # the JSON-RPC push-create path.
-            return web.json_response(
-                {"error": {"code": -32602, "message": str(e)}}, status=400
-            )
+            return web.json_response({"error": {"code": -32602, "message": str(e)}}, status=400)
         return self._versioned_response(created.to_dict(version), version)
 
     async def _handle_push_config_get(self, request: web.Request) -> web.Response:
@@ -1562,9 +1758,7 @@ class A2AServer:
             return self._a2a_http_error("PushNotificationNotSupportedError")
         task_id = request.match_info["task_id"]
         configs = await self._push_store.list_for_task(task_id)
-        return self._versioned_response(
-            {"configs": [c.to_dict(version) for c in configs]}, version
-        )
+        return self._versioned_response({"configs": [c.to_dict(version) for c in configs]}, version)
 
     async def _handle_push_config_delete(self, request: web.Request) -> web.Response:
         """DELETE /a2a/tasks/{task_id}/pushNotificationConfigs/{config_id}"""
@@ -1608,9 +1802,7 @@ class A2AServer:
     #: and its v0.3 ``message/stream`` alias reuse the same SSE frames as the
     #: REST ``message/stream`` binding. (``SubscribeToTask`` is intentionally a
     #: unary method here — it returns a task snapshot via ``_rpc_subscribe_task``.)
-    _JSONRPC_STREAMING_METHODS: frozenset = frozenset(
-        {"SendStreamingMessage", "message/stream"}
-    )
+    _JSONRPC_STREAMING_METHODS: frozenset = frozenset({"SendStreamingMessage", "message/stream"})
 
     async def _handle_jsonrpc(self, request: web.Request) -> web.StreamResponse:
         """POST /a2a/rpc - JSON-RPC 2.0 binding (all v1.0 methods + v0.3 aliases).
@@ -1765,11 +1957,7 @@ class A2AServer:
     @staticmethod
     def _push_ids(params: Dict[str, Any]) -> tuple:
         task_id = params.get("taskId") or params.get("task_id")
-        config_id = (
-            params.get("pushNotificationConfigId")
-            or params.get("configId")
-            or params.get("id")
-        )
+        config_id = params.get("pushNotificationConfigId") or params.get("configId") or params.get("id")
         return task_id, config_id
 
     async def _rpc_push_create(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:
@@ -1834,11 +2022,7 @@ class A2AEnabledMixin:
     _a2a_server: Optional[A2AServer] = None
 
     def setup_a2a(
-        self,
-        app: web.Application,
-        url: Optional[str] = None,
-        base_path: str = "/a2a",
-        **kwargs
+        self, app: web.Application, url: Optional[str] = None, base_path: str = "/a2a", **kwargs
     ) -> A2AServer:
         """
         Setup A2A server for this agent.
@@ -1852,11 +2036,7 @@ class A2AEnabledMixin:
         Returns:
             The A2AServer instance
         """
-        self._a2a_server = A2AServer(
-            self,
-            base_path=base_path,
-            **kwargs
-        )
+        self._a2a_server = A2AServer(self, base_path=base_path, **kwargs)
         self._a2a_server.setup(app, url=url)
         return self._a2a_server
 

@@ -9,10 +9,14 @@ import pytest
 from parrot.outputs.a2ui.models import (
     A2UIAgentMessage,
     Action,
+    ActionMessage,
+    AgentFunctionResponse,
+    CallAgentFunction,
     ChildTemplate,
     Component,
     ComponentMetadata,
     DataBinding,
+    RendererFunctionResponse,
     UpdateDataModel,
 )
 from pydantic import ValidationError
@@ -129,3 +133,58 @@ class TestExtensionsKeysUax31AndReservedPrefix:
 
         with pytest.raises(ValidationError):
             ComponentMetadata(extensions={"not a valid key!": 1})
+
+
+def _action(**extra):
+    base = {
+        "name": "submit",
+        "surfaceId": "s-1",
+        "sourceComponentId": "btn-1",
+        "timestamp": "2026-08-29T10:00:00Z",
+        "context": {"k": "v"},
+    }
+    base.update(extra)
+    return base
+
+
+class TestActionDataModel:
+    """TASK-2567 — G3 requires `action` to accept `sendDataModel` payloads."""
+
+    def test_action_accepts_data_model(self):
+        msg = ActionMessage.model_validate(_action(dataModel={"count": 3}))
+        assert msg.data_model == {"count": 3}
+
+    def test_action_data_model_absent_is_none(self):
+        """Absent must be None, NOT {} — TASK-2570 relies on the distinction."""
+        assert ActionMessage.model_validate(_action()).data_model is None
+
+    def test_action_empty_data_model_is_not_none(self):
+        assert ActionMessage.model_validate(_action(dataModel={})).data_model == {}
+
+    def test_action_still_forbids_unknown_keys(self):
+        with pytest.raises(ValidationError):
+            ActionMessage.model_validate(_action(datamodel={"typo": 1}))
+
+    def test_call_agent_function_rejects_data_model(self):
+        """renderer_to_agent.json sets additionalProperties:false here."""
+        with pytest.raises(ValidationError):
+            CallAgentFunction.model_validate(
+                {
+                    "surfaceId": "s-1",
+                    "functionCallId": "fc-1",
+                    "callFunction": {"call": "get_weather", "args": {}},
+                    "dataModel": {"nope": True},
+                }
+            )
+
+
+class TestFunctionResponseDocstrings:
+    """TASK-2567 — FEAT-470 shipped these two docstrings swapped (spec §6 FINDING 2)."""
+
+    def test_agent_function_response_names_call_agent_function(self):
+        assert "callAgentFunction" in AgentFunctionResponse.__doc__
+        assert "callRendererFunction" not in AgentFunctionResponse.__doc__
+
+    def test_renderer_function_response_names_call_renderer_function(self):
+        assert "callRendererFunction" in RendererFunctionResponse.__doc__
+        assert "callAgentFunction" not in RendererFunctionResponse.__doc__

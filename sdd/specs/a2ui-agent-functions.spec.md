@@ -659,6 +659,20 @@ Catalog's official definitions copied verbatim (a bare `$ref` does not satisfy
 
 ### Known Risks / Gotchas
 - **Superficie de ataque**: exponer todas las tools del `ToolManager` (decisión §8) hace del `PermissionContext` la única barrera. Mitigación: el handler rechaza peticiones sin usuario autenticado (401), `execute_tool` recibe siempre el contexto, y se registra un log de auditoría por invocación (`agent_id`, `user_id`, `call`, `status`). Tools marcadas `return_direct`/destructivas deben documentarse; se recomienda (open question) un atributo `a2ui_hidden=True` para excluir tools puntuales sin volver al modelo opt-in.
+  - **[2026-08-29] Cierre (FEAT-474)**: la escalación reportada en el cuerpo del
+    PR #1270 — `ToolManager.execute_tool()` omitía por completo
+    `permission_context` en la rama `ToolDefinition` (`@tool`-decorated),
+    dejando `PermissionContext` como barrera "decorativa" para esa rama y
+    contradiciendo G7/AC-G7 para esas tools — quedó **cerrada** por el fix a
+    nivel de `ToolManager` en
+    `sdd/specs/toolmanager-tooldefinition-enforcement.spec.md` (FEAT-474):
+    ambas ramas (`AbstractTool` y `ToolDefinition`) ejecutan ahora el mismo
+    pipeline de guardrails TOOL_CALL, `ConfirmationGuard`, y el chequeo
+    Layer 2 del resolver a nivel de manager. G7/AC-G7 quedan **satisfechos**
+    para todo tipo de tool — no se contradicen, se cumplen. El único
+    residual documentado es que los grants (FEAT-211) siguen siendo
+    exclusivos de `AbstractTool` (con warning de registro para
+    `ToolDefinition`s que declaren `requires_grant`).
 - **Nombres de tools no UAX #31** (p. ej. con `-` o `.`): se sanean para el catálogo y se mantiene un mapa inverso; colisiones tras sanear → error al exportar.
 - **`functionCallId` pendientes en HTTP request-response**: el renderer puede no volver nunca; TTL 900 s y limpieza perezosa en cada `dispatch`.
 - **`sendDataModel` grande**: `dataModel` de tablas puede pesar MBs; límite configurable (`A2UI_MAX_DATA_MODEL_BYTES`, default 1 MiB) → `error{code:"INTERNAL", message:"data model too large"}`, se conserva el estado anterior.

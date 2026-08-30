@@ -25,6 +25,8 @@ from typing import Any
 from parrot.outputs.a2ui.models import BINDING_KEY
 
 __all__ = [
+    "artifact_definition_to_legacy",
+    "is_legacy_artifact",
     "is_legacy_envelope",
     "normalize_legacy",
     "normalize_legacy_component",
@@ -225,3 +227,53 @@ def normalize_legacy(data: dict[str, Any]) -> dict[str, Any] | list[dict[str, An
     if message_type == "updateDataModel":
         return _normalize_update_data_model(data)
     return _normalize_call_function(data)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-473 G6 — artifacts[] v1 <-> v2 consumer cushion.
+#
+# Unlike the rest of this module (legacy WIRE dialect -> v1.0), these two
+# helpers bridge the FEAT-224 `response.artifacts[]` entry shape (v1: a bare
+# camelCase config dict `definition`, no `schemaVersion`) to/from the FEAT-473
+# v2 shape (`definition` is a v1.0 Component node; `schemaVersion: 2`;
+# `surfaceId` present). The shim is supported through 0.31, removed in 0.32.
+# ---------------------------------------------------------------------------
+
+#: Component-node keys dropped when degrading a v2 `definition` back to the
+#: FEAT-224 v1 camelCase config shape (mirrors the FEAT-224 inline block's own
+#: `data`/`datasets` strip, plus the v1.0-only wire keys `id`/`component`/
+#: `catalogId` that a v1 config dict never carried).
+_V2_DEFINITION_KEYS_DROPPED_FOR_LEGACY = frozenset({"id", "component", "catalogId", "data", "datasets"})
+
+
+def is_legacy_artifact(entry: dict[str, Any]) -> bool:
+    """Return whether an ``artifacts[]`` entry is FEAT-224 v1-shaped.
+
+    Args:
+        entry: A single ``response.artifacts[]`` dict.
+
+    Returns:
+        ``True`` when ``schemaVersion`` is absent or ``1``; ``False`` for
+        ``schemaVersion == 2`` (FEAT-473).
+    """
+    return entry.get("schemaVersion", 1) == 1
+
+
+def artifact_definition_to_legacy(entry: dict[str, Any]) -> dict[str, Any]:
+    """Degrade a v2 ``artifacts[]`` entry's ``definition`` to the FEAT-224 v1 shape.
+
+    The v2 ``definition`` is a v1.0 wire :class:`~parrot.outputs.a2ui.models.Component`
+    node (``id``, ``component``, ``catalogId``, config props top-level, ``data``
+    a ``{"path": ...}`` binding). The v1 shape is a bare camelCase config dict
+    with none of those wire-only keys and no row/feature binding.
+
+    Args:
+        entry: A v2 ``artifacts[]`` entry (``{"type", "artifactId",
+            "surfaceId", "schemaVersion": 2, "definition": {...}}``).
+
+    Returns:
+        The equivalent FEAT-224 v1 ``definition`` dict (no ``id``/
+        ``component``/``catalogId``/``data``/``datasets``).
+    """
+    definition = entry.get("definition") or {}
+    return {key: value for key, value in definition.items() if key not in _V2_DEFINITION_KEYS_DROPPED_FOR_LEGACY}

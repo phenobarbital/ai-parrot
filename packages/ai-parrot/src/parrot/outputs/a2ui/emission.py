@@ -41,5 +41,28 @@ def finalize_a2ui_response(response: Any) -> None:
     response.a2ui_envelope = envelope
     response.output_mode = OutputMode.A2UI
     if not getattr(response, "response", None):
-        title = envelope.get("surfaceId") if isinstance(envelope, dict) else None
+        title = _surface_id(envelope)
         response.response = f"[A2UI surface: {title}]" if title else "[A2UI surface]"
+
+
+def _surface_id(envelope: Any) -> str | None:
+    """Best-effort surface id from a serialized envelope, for the text fallback.
+
+    The v1.0 wire nests the surface under its message key
+    (``{"version": "v1.0", "createSurface": {"surfaceId": ...}}``), so the id is
+    one level down. A bare inner message (``{"surfaceId": ...}``) is also
+    accepted, since ``response.output`` may carry one.
+
+    Args:
+        envelope: The serialized envelope, or anything else.
+
+    Returns:
+        The surface id, or ``None`` when it cannot be determined.
+    """
+    if not isinstance(envelope, dict):
+        return None
+    inner = envelope.get("createSurface")
+    if isinstance(inner, dict) and isinstance(inner.get("surfaceId"), str):
+        return inner["surfaceId"]
+    surface_id = envelope.get("surfaceId")
+    return surface_id if isinstance(surface_id, str) else None

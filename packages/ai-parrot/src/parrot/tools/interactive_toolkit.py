@@ -330,16 +330,27 @@ class InteractiveToolkit(AbstractToolkit):
         title: Optional[str] = None,
         brief: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Build a validated A2UI Card envelope from the interactive render."""
+        """Build a validated A2UI Card envelope from the interactive render.
+
+        Returns the **A2UI v1.0 wire envelope**
+        (``{"version": "v1.0", "createSurface": {...}}``, camelCase aliases) via
+        :func:`parrot.outputs.a2ui.serialization.serialize` — the sole owner of
+        the ``version`` field (spec invariant G3) — so ``AIMessage.a2ui_envelope``
+        can be handed straight to
+        :meth:`parrot.a2a.models.Artifact.from_a2ui_envelope` or an external
+        renderer. ``artifact_id`` is used verbatim as the surface id: it already
+        carries an ``interactive-`` prefix.
+        """
         from parrot.outputs.a2ui.builders import build_card
+        from parrot.outputs.a2ui.serialization import serialize
 
         try:
             envelope = build_card(
                 title=title or template_name,
                 body=brief,
-                surface_id=f"interactive-{artifact_id}",
+                surface_id=artifact_id,
             )
-            return envelope.model_dump(mode="json")
+            return serialize(envelope)
         except Exception:
             self.logger.warning(
                 "A2UI envelope build failed for interactive artifact %s; "

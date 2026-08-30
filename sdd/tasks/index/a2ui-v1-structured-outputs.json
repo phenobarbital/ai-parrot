@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-29T00:00:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-29T01:40:32+00:00",
   "start_gate": "FEAT-470 a2ui-v1-dialect PR merged into dev — worktree must not be created before",
   "tasks": [
     {
@@ -15,7 +15,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -23,8 +23,9 @@
       "parallelism_notes": "Root of the dependency graph; touches catalog/parrot/* and catalog/__init__.py that TASK-2561/2564 build on.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2560-catalog-parity-derived-schemas.md"
+      "completed_at": "2026-08-29T00:38:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2560-catalog-parity-derived-schemas.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2561",
@@ -33,7 +34,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,8 +44,9 @@
       "parallelism_notes": "Imports the TASK-2560 catalog (validate_envelope guard, derived schemas); modifies builders.py.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2561-core-adapter-and-builders.md"
+      "completed_at": "2026-08-29T00:46:36+00:00",
+      "file": "sdd/tasks/completed/TASK-2561-core-adapter-and-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2562",
@@ -53,7 +55,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +65,9 @@
       "parallelism_notes": "Uses adapters.structured.root_component/SCHEMA_VERSION from TASK-2561.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2562-compat-shim-artifact-helper.md"
+      "completed_at": "2026-08-29T00:50:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2562-compat-shim-artifact-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2563",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +86,9 @@
       "parallelism_notes": "Shares no files with TASK-2564 (a2ui_renderers/) or TASK-2565 (bots/ + server handlers) — the three can run in parallel once their deps are done.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2563-satellite-route-envelope-hook.md"
+      "completed_at": "2026-08-29T01:03:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2563-satellite-route-envelope-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2564",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "Only touches a2ui_renderers/{echarts,folium_map}.py — disjoint from TASK-2563/2565; needs only the TASK-2560 schemas.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2564-renderer-prop-fidelity.md"
+      "completed_at": "2026-08-29T01:10:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2564-renderer-prop-fidelity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2565",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "Touches bots/data.py, database/agent.py and server handlers/agent.py — disjoint from TASK-2563/2564.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2565-agents-and-transport.md"
+      "completed_at": "2026-08-29T01:26:51+00:00",
+      "file": "sdd/tasks/completed/TASK-2565-agents-and-transport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2566",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-473",
       "feature": "a2ui-v1-structured-outputs",
       "spec": "sdd/specs/a2ui-v1-structured-outputs.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -145,8 +151,9 @@
       "parallelism_notes": "Closing gate — requires all implementation tasks merged in the worktree.",
       "assigned_to": null,
       "started_at": "2026-08-29T00:26:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2566-e2e-tests-docs-migration.md"
+      "completed_at": "2026-08-29T01:40:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2566-e2e-tests-docs-migration.md",
+      "verification": "verified"
     }
   ]
 }

@@ -261,3 +261,56 @@ class TestInfographicEnvelopeFields:
         env = _make_envelope(html_inline=None)
         expected_output = env.html_inline or env.html_url
         assert expected_output == "https://signed/x"
+
+
+# ---------------------------------------------------------------------------
+# A2UI routing in PandasAgent.ask (FEAT-273/470)
+# ---------------------------------------------------------------------------
+
+class TestPandasAgentRoutesA2UI:
+    """``PandasAgent.ask`` overrides ``BaseBot``'s post-loop dispatch.
+
+    That override was never wired for ``OutputMode.A2UI``, so on a PandasAgent:
+
+    * a successful render went through ``_finalize_infographic_response``, which
+      forces ``OutputMode.INFOGRAPHIC`` and drops ``a2ui_envelope`` on the floor —
+      ``output_mode=a2ui`` could never actually produce an A2UI response; and
+    * a turn where the LLM rendered nothing fell through to
+      ``formatter.format(A2UI, ...)`` and surfaced the internal
+      "No renderer registered for mode: OutputMode.A2UI" as the user-visible reply.
+
+    ``ask`` is a single ~51k-char method, so its branches are asserted at the
+    source level — the same approach ``test_infographic_toolkit_a2ui_wiring.py``
+    uses for ``render()``'s adapter call.
+    """
+
+    def _ask_source(self) -> str:
+        import inspect
+
+        try:
+            from parrot.bots.data import PandasAgent
+        except Exception as exc:  # noqa: BLE001 - namespace/Cython worktree layout
+            pytest.skip(f"cannot import parrot.bots.data: {exc}")
+        return inspect.getsource(PandasAgent.ask)
+
+    def test_infographic_result_with_an_envelope_is_finalized_as_a2ui(self):
+        source = self._ask_source()
+        assert "infographic_envelope.a2ui_envelope" in source
+        assert "finalize_a2ui_response(response)" in source
+
+    def test_interactive_result_with_an_envelope_is_finalized_as_a2ui(self):
+        source = self._ask_source()
+        assert "interactive_envelope.a2ui_envelope" in source
+
+    def test_a2ui_without_a_surface_downgrades_instead_of_hitting_the_formatter(self):
+        source = self._ask_source()
+        downgrade = source.index("output_mode=a2ui requested")
+        formatter = source.index("await self.formatter.format(")
+        # The downgrade must run BEFORE the formatter call, or the formatter
+        # raises "No renderer registered for mode: OutputMode.A2UI" first.
+        assert downgrade < formatter
+
+    def test_finalize_helper_is_imported(self):
+        import parrot.bots.data as data_module
+
+        assert hasattr(data_module, "finalize_a2ui_response")

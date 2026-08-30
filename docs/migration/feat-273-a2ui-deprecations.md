@@ -113,3 +113,36 @@ The public API of `OutputMode.A2UI` and every builder
 (`build_surface`/`build_chart`/`build_kpicard`/`build_card`/`build_datatable`/
 `build_infographic`) is unchanged — only the wire shape they *emit*
 changed. Tool/toolkit call sites do not need to change.
+
+## FEAT-469 — the A2UI Agent Functions runtime (RPC leg)
+
+FEAT-469 adds the runtime that dispatches `callAgentFunction`/`action`/
+`callRendererFunction`/`rendererFunctionResponse` — see
+[`docs/outputs/a2ui-agent-functions.md`](../outputs/a2ui-agent-functions.md)
+for the full picture. Additive only; no dialect/wire shape changes. What
+existing callers need to know:
+
+- **`Artifact.from_a2ui_envelope` gained `allow_actions: bool = False`.**
+  Default unchanged: a `createSurface` with action-bearing components is
+  still rejected exactly as before. Pass `allow_actions=True` only from a
+  caller that has confirmed the Agent Card declares the A2UI extension
+  (the client otherwise has no way to run the action).
+- **The A2A Agent Card now advertises the A2UI extension** (`AgentCapabilities.extensions`
+  gains an entry for `A2UI_EXTENSION_URI` with `params.a2uiAgentCapabilities`),
+  registered idempotently by `A2AServer.__init__` via
+  `parrot.a2a.models.register_a2ui_extension`. If you built your own
+  `AgentCapabilities` and passed pre-existing `extensions=[...]`, they are
+  preserved — only a URI collision is skipped, never overwritten.
+- **`setup_deeplink_routes` is now mounted by the manager.** `BotManager.setup()`
+  calls it automatically (guarded on `app["redis"]` being available, and
+  against double registration). If your deployment previously mounted
+  `/api/v1/a2ui/resume/web` itself, remove your own registration — the
+  manager's guard will log a warning and skip rather than crash if both
+  still run, but you no longer need to call `setup_deeplink_routes`
+  yourself.
+- **Two new `AbstractTool` class attributes**, both optional, both default
+  `False`, no `__init__` change: `a2ui_hidden` (exclude a tool from the
+  A2UI catalog/dispatch entirely) and `a2ui_requires_user_activation`
+  (declarative — enforced by the renderer, never the agent). Every
+  existing tool is unaffected; the A2UI catalog exposes it by default
+  (opt-out, not opt-in).

@@ -30,6 +30,7 @@ __all__ = [
     "DANGLING_CHILD",
     "DEFAULT_CATALOG_ID",
     "DUPLICATE_ID",
+    "INLINE_DATA_NOT_ALLOWED_FOR_LLM",
     "INVALID_FUNCTION_CALL",
     "MISSING_ROOT",
     "UNALLOWED_CHILD",
@@ -75,6 +76,10 @@ UNKNOWN_COMPONENT = "UNKNOWN_COMPONENT"
 #: An LLM-originated envelope carries a component with a non-null ``action``
 #: (G2/D10b gate — LLM envelopes are display-only in v1).
 ACTION_NOT_ALLOWED_FOR_LLM = "ACTION_NOT_ALLOWED_FOR_LLM"
+#: An LLM-originated envelope inlines a ``data`` row/feature list on a
+#: structured component (Chart/DataTable/Map) instead of a ``{"path": ...}``
+#: data-model binding (FEAT-473 G8 gate — TOOL-origin surfaces are exempt).
+INLINE_DATA_NOT_ALLOWED_FOR_LLM = "INLINE_DATA_NOT_ALLOWED_FOR_LLM"
 
 
 class ProducerOrigin(str, Enum):
