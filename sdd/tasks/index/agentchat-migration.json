@@ -153,7 +153,7 @@
       "feature_id": "FEAT-476",
       "feature": "agentchat-migration",
       "spec": "sdd/specs/agentchat-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Edits App.svelte, AgentsList.svelte, AgentDetail.svelte (FEAT-475-owned files) — must follow the FEAT-475 merge; can proceed while 2595/2596 are pending because gated imports are dynamic.",
       "assigned_to": null,
       "started_at": "2026-08-30T01:56:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2597-page-and-module-integration.md"
+      "completed_at": "2026-08-30T22:14:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2597-page-and-module-integration.md"
     },
     {
       "id": "TASK-2598",

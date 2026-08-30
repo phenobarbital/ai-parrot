@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-476 — AgentChat Migration
 **Spec**: `sdd/specs/agentchat-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2594 *(TASK-2595/2596 may be absent — flags/mocks cover them)*
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -54,6 +54,7 @@ detail page mounting the compact variant.
 | `ui/src/pages/agents/AgentsList.svelte` | MODIFY | Chat action |
 | `ui/src/pages/agents/AgentDetail.svelte` | MODIFY | Chat tab |
 | `ui/src/pages/agents/AgentChatPage.test.ts`, `AgentsList.test.ts`, `AgentDetail.test.ts` | CREATE/MODIFY | vitest |
+| `ui/src/pages/agents/__mocks__/AgentChatStub.svelte` | CREATE (test-only) | shared fixture the three test files above mock `$lib/components/agents/AgentChat.svelte` with, per this task's own Test Specification sketch |
 
 ---
 
@@ -86,6 +87,12 @@ import AgentChat from "$lib/components/agents/AgentChat.svelte";      // TASK-25
 - ~~`router.params` on `dev` before FEAT-475~~ — this task requires the merge; abort if `grep -n "params" ui/src/lib/router.svelte.ts` is empty.
 - ~~`GET /api/v1/agents/chat` list~~ — use `/api/v1/bots`.
 - ~~a sidebar "Chat" entry~~ — not added.
+- ~~`AgentDetail.svelte` as a page at `/admin/agents/:name`~~ — CORRECTED:
+  verified `/admin/agents/:name` is `AgentFormPage.svelte` (edit-only,
+  TASK-2587); `AgentDetail.svelte` is still the read-only Dialog
+  `AgentsList.svelte` opens on row click, unchanged by FEAT-475 in this
+  respect. The Chat tab was added to that existing Dialog via `AppTabs`
+  instead — see Completion Note.
 
 ---
 
@@ -108,11 +115,11 @@ import AgentChat from "$lib/components/agents/AgentChat.svelte";      // TASK-25
 
 ## Acceptance Criteria
 
-- [ ] `AgentChatPage.test.ts`: reads `router.params.name`; DB agent → `chatbot_id` fetched and passed; registry agent → no `chatbotId`; unknown → not-found state
-- [ ] `AgentsList.test.ts`: Chat button for enabled rows, absent for `enabled=false`; navigates to `/admin/agents/<name>/chat`
-- [ ] `AgentDetail.test.ts`: Chat tab mounts compact panel
-- [ ] `router.test.ts` (FEAT-468/475) unchanged and green; `/admin/agents/new` still matches its static route
-- [ ] `pnpm test` / `pnpm build` green
+- [x] `AgentChatPage.test.ts`: reads `router.params.name`; DB agent → `chatbot_id` fetched and passed; registry agent → no `chatbotId`; unknown (404) → not-found state
+- [x] `AgentsList.test.ts`: Chat button for enabled rows (both sources) of, absent for `enabled=false`; navigates to `/admin/agents/<name>/chat`
+- [x] `AgentDetail.test.ts`: Chat tab mounts a compact panel with the row's own `chatbot_id` (no extra fetch — see Completion Note) — CORRECTED to a tab inside the existing detail Dialog, not a page (see Completion Note for why)
+- [x] `router.test.ts` (FEAT-468/475) unchanged and green (14/14); `/admin/agents/new` still matches its static route (distinct segment count from the new `/admin/agents/:name/chat`, verified no collision)
+- [x] `pnpm test` (37 files / 225 tests) / `pnpm build` green — this is the first task where `AgentChat.svelte` is genuinely reachable from an entry point; the real `pnpm build` now exercises the whole vendored dependency closure end-to-end (all TASK-2594/2595/2596 chunks: AvatarViewer, VoiceNativeAvatarViewer, CanvasPanel, DataChart/DataMap/StructuredMap, AppChart/AppChartGeo, ECharts, InfographicEditor, livekit-client, exceljs, revo-grid) with zero missing-module errors
 
 ---
 
@@ -142,8 +149,51 @@ it("passes chatbotId for database agents", async () => {
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-31
 **Notes**:
+Added `/admin/agents/:name/chat` (distinct segment count from
+`/admin/agents/:name`, so no route-matching ambiguity), `AgentChatPage.svelte`
+(full-page host, reusing `getAgent()` already used by `AgentFormPage.svelte`),
+a "Chat" action on every enabled `AgentsList` row (both database and
+registry — registry agents just render with no `chatbotId`, hiding the
+prompt library per `AgentChat`'s own existing optional-prop handling), and
+a "Chat" tab in the existing `AgentDetail` dialog. This is the first task
+in the feature where `AgentChat.svelte` is reachable from a real route —
+`pnpm build` now exercises the entire vendored dependency closure
+end-to-end (37 files / 225 tests green; full production build produces
+the expected separate chunks: `AgentChat`, `AvatarViewer`,
+`VoiceNativeAvatarViewer`, `CanvasPanel`, `DataChart`/`DataMap`/
+`StructuredMap`, `AppChart`/`AppChartGeo`, `ECharts`, `InfographicEditor`,
+`livekit-client`, `exceljs`, `revo-grid` — no missing-module errors).
 
-**Deviations from spec**: none
+**Deviations from spec**:
+1. **Codebase Contract correction**: the contract assumed "FEAT-475
+   replaces [AgentDetail] with a page at `/admin/agents/:name`" — verified
+   false. `/admin/agents/:name` is `AgentFormPage.svelte` (edit form,
+   TASK-2587); `AgentDetail.svelte` is still the read-only Dialog
+   `AgentsList.svelte` opens on row click. Added the Chat tab to that
+   existing Dialog (via `AppTabs`, already vendored in TASK-2593) instead
+   of inventing a page/route that doesn't exist and wasn't otherwise
+   needed — satisfies the actual intent ("mount the compact chat panel
+   from the agent's detail surface") without redesigning FEAT-475's
+   already-shipped UI.
+2. **Real bug found and fixed**: bits-ui's `Tabs.Content` (used by the
+   vendored `AppTabs`) renders every tab's content eagerly — CSS-hidden
+   when inactive, not unmounted — so a naive `{:else if tab === "chat"}`
+   branch mounted `AgentChat` (WebSocket connect, prompt-library fetch,
+   …) immediately on dialog open regardless of which tab was selected,
+   breaking `AgentDetail.test.ts`/`AgentsList.test.ts` (neither mocks
+   AgentChat's dependencies) the moment any row's detail dialog opened.
+   Fixed with an explicit `{#if activeTab === "chat"}` guard inside that
+   branch so `AgentChat` only mounts once the user actually selects the
+   tab.
+3. Chat button in `AgentsList` is shown for **both** `database` and
+   `registry` sources (unlike Edit/Delete, which stay database-only) —
+   the spec's Scope explicitly scopes visibility to `enabled !== false`
+   only, not to source; registry agents are chattable, just without a
+   prompt library.
+4. Added `src/pages/agents/__mocks__/AgentChatStub.svelte`, a small
+   shared fixture the three test files mock `AgentChat.svelte` with —
+   exactly the pattern this task's own Test Specification sketch already
+   assumed (`./__mocks__/AgentChatStub.svelte`), just not yet created.
