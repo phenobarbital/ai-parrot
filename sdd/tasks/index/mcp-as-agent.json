@@ -14,7 +14,7 @@
       "feature_id": "FEAT-477",
       "feature": "mcp-as-agent",
       "spec": "sdd/specs/mcp-as-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Head of the graph. Core-only module (G9); no shared files with M5/M6.",
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2599-mcp-tool-decorator.md"
+      "completed_at": "2026-08-30T23:55:54+00:00",
+      "file": "sdd/tasks/completed/TASK-2599-mcp-tool-decorator.md"
     },
     {
       "id": "TASK-2600",
