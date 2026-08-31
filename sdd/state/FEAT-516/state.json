@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-516",
+  "feature_slug": "dev-flow-node-caching",
+  "started_at": "2026-08-31T15:10:00+02:00",
+  "updated_at": "2026-08-31T15:25:00+02:00",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-516/source.md",
+    "fetched_at": "2026-08-31T15:10:00+02:00",
+    "summary_oneline": "Add durable node caching and restart recovery to dev_flow and dev_loop."
+  },
+  "mode": "enrichment",
+  "detected_mode": "enrichment",
+  "phase": "review_gate",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-08-31T15:10:00+02:00",
+      "completed_at": "2026-08-31T15:10:00+02:00",
+      "duration_seconds": 0.0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-08-31T15:10:00+02:00",
+      "completed_at": "2026-08-31T15:10:00+02:00",
+      "duration_seconds": 0.0,
+      "queries_total": 10,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-516/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-08-31T15:19:05+02:00",
+      "completed_at": "2026-08-31T15:24:00+02:00",
+      "duration_seconds": 295.0,
+      "queries_executed": 10,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 18,
+      "grep_calls": 9,
+      "git_calls": 3,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-08-31T15:24:00+02:00",
+      "completed_at": "2026-08-31T15:25:00+02:00",
+      "duration_seconds": 60.0,
+      "synthesis_path": "sdd/state/FEAT-516/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 6,
+      "claims_high_conf": 4,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 2,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "questions_total": 0,
+      "questions_answered": 0,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "proposal_path": "sdd/proposals/dev-flow-node-caching.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "The boundaries are localized; resolve cache scope and failure policy before specification."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 18,
+    "grep_calls": 9,
+    "git_calls": 3,
+    "wall_seconds": 295.0
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "qa_pending",
+    "next_action": "Resolve U1 and U2 at the review gate, then render the proposal."
+  }
+}
