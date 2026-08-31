@@ -1556,25 +1556,32 @@ async def _on_startup(app: web.Application) -> None:
 
     jira_toolkit = _build_jira_toolkit()
     git_toolkit = _build_git_toolkit()
-    app["flow"] = build_dev_loop_flow(
-        dispatcher=dispatcher,
-        jira_toolkit=jira_toolkit,
-        log_toolkits=_build_log_toolkits(),
-        redis_url=redis_url,
-        development_dispatcher=development_dispatcher,
-        development_profile=development_profile,
-        development_pool_config=development_pool_config,
-        development_dispatcher_builder=development_dispatcher_builder,
-        development_pool_max=development_pool_max,
-        name="dev-loop-demo",
-        git_toolkit=git_toolkit,
-        repos=repos,
-        codereview_dispatcher=codereview_dispatcher,
-        wiki_search=wiki_search,
-        graph_memory=graph_memory,
-        require_plan_approval=require_plan_approval,
-        skip_qa=skip_qa,
-    )
+    # FEAT-480 (TASK-2628): captured once as the exact kwargs `build_dev_loop_flow`
+    # was called with, then handed to `DevLoopRunner` as `dev_loop_flow_kwargs` —
+    # its checkpoint-recovery path (`DevLoopRunner.run(..., run_id=...)`) uses
+    # this SAME dict to build a genuinely fresh, checkpoint-enabled `AgentsFlow`
+    # per run (spec §7: "shared flow instances are concurrent today; per-run
+    # construction is mandatory") instead of reusing `app["flow"]` across jobs.
+    dev_loop_flow_kwargs: dict[str, Any] = {
+        "dispatcher": dispatcher,
+        "jira_toolkit": jira_toolkit,
+        "log_toolkits": _build_log_toolkits(),
+        "redis_url": redis_url,
+        "development_dispatcher": development_dispatcher,
+        "development_profile": development_profile,
+        "development_pool_config": development_pool_config,
+        "development_dispatcher_builder": development_dispatcher_builder,
+        "development_pool_max": development_pool_max,
+        "name": "dev-loop-demo",
+        "git_toolkit": git_toolkit,
+        "repos": repos,
+        "codereview_dispatcher": codereview_dispatcher,
+        "wiki_search": wiki_search,
+        "graph_memory": graph_memory,
+        "require_plan_approval": require_plan_approval,
+        "skip_qa": skip_qa,
+    }
+    app["flow"] = build_dev_loop_flow(**dev_loop_flow_kwargs)
     # Orchestrator-side run cap (FLOW_MAX_CONCURRENT_RUNS) — spec G5.
     # The extra deps let the runner build the revision (FEAT-250) and
     # feature (FEAT-378) topologies on demand. graph_memory is forwarded
@@ -1590,6 +1597,16 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
+        # FEAT-480 (TASK-2628): `checkpoint_store=None` resolves through the
+        # existing env-fallback precedence (`FLOW_CHECKPOINT_STORE`, default
+        # "redis") — no new config surface. Supplying `dev_loop_flow_kwargs`
+        # is what actually turns on the recovery path for every `handle_run`
+        # request below, each of which already mints its own stable
+        # `run_id = f"run-{uuid.uuid4().hex[:8]}"` per job (never shared
+        # across jobs), satisfying "no job depends on a checkpoint identity
+        # shared across jobs" (spec §3 Module 6).
+        checkpoint_store=None,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
     )
 
     # Feature mode (FEAT-378). `DevLoopRunner._run_feature` builds its flow

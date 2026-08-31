@@ -7,6 +7,7 @@ loaded by `AgentsFlow.resume()`.
 These models are pure data: no I/O, no logging. Serialization to
 ormsgpack lives in `serializer.py` (TASK-2047).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -23,6 +24,7 @@ class MemoryRefs(BaseModel):
     Checkpoints reference memory by id so `resume()` can re-attach the
     live memory backend instead of duplicating conversation history.
     """
+
     session_id: str | None = Field(
         default=None,
         description="Conversation/session id to re-attach on resume",
@@ -39,6 +41,7 @@ class MemoryRefs(BaseModel):
 
 class NodeStateSnapshot(BaseModel):
     """Per-node FSM state at checkpoint time."""
+
     node_id: str = Field(..., description="Node identifier")
     fsm_state: str = Field(
         ...,
@@ -57,6 +60,7 @@ class ContextSnapshot(BaseModel):
     intentionally excluded — they are not serializable and are
     re-bound/re-seeded by `AgentsFlow.resume()`.
     """
+
     initial_task: str = Field(..., description="Original task/prompt for the flow")
     results: dict[str, Any] = Field(
         default_factory=dict,
@@ -64,8 +68,7 @@ class ContextSnapshot(BaseModel):
     )
     responses: dict[str, Any] | None = Field(
         default=None,
-        description="Raw per-node responses; only populated when "
-        "checkpoint_include_responses=True",
+        description="Raw per-node responses; only populated when " "checkpoint_include_responses=True",
     )
     completed_tasks: list[str] = Field(
         default_factory=list,
@@ -86,6 +89,27 @@ class ContextSnapshot(BaseModel):
     )
 
 
+class CheckpointInputMetadata(BaseModel):
+    """Immutable input-fingerprint metadata for a checkpointed run (spec §2).
+
+    Carried on `FlowCheckpoint.input_metadata` so `AgentsFlow.resume(
+    expected_input=...)` can refuse to resume a `run_id` whose recorded
+    input no longer matches the caller's current input — e.g. the workflow
+    kind, topology, or normalized brief changed since the checkpoint was
+    written. The digest itself (``input_fingerprint``) is computed by the
+    dev recovery adapter (spec §3 Module 3); this model only carries the
+    already-computed value through the checkpoint plane.
+    """
+
+    workflow: Literal["dev-loop", "dev-flow"] = Field(..., description="Which dev workflow produced this checkpoint")
+    topology_version: str = Field(..., description="Version tag of the explicit-edge graph topology")
+    input_fingerprint: str = Field(
+        ...,
+        description="SHA-256 digest over deterministic JSON of the "
+        "normalized brief, repository identity, and execution policy",
+    )
+
+
 class FlowCheckpoint(BaseModel):
     """A single point-in-time checkpoint of an AgentsFlow run.
 
@@ -93,6 +117,7 @@ class FlowCheckpoint(BaseModel):
     so a checkpoint is self-contained and can rebuild the flow via
     `AgentsFlow.from_definition()` on resume.
     """
+
     flow_id: str = Field(..., description="Unique identifier of the flow run")
     flow_name: str = Field(..., description="Flow name")
     checkpoint_id: int = Field(..., description="Monotonic checkpoint id per flow_id")
@@ -104,12 +129,8 @@ class FlowCheckpoint(BaseModel):
     status: Literal["running", "suspended", "completed", "failed"] = Field(
         ..., description="Run status at checkpoint time"
     )
-    definition: FlowDefinition = Field(
-        ..., description="Embedded graph snapshot (full FlowDefinition)"
-    )
-    context: ContextSnapshot = Field(
-        ..., description="Serialized FlowContext snapshot"
-    )
+    definition: FlowDefinition = Field(..., description="Embedded graph snapshot (full FlowDefinition)")
+    context: ContextSnapshot = Field(..., description="Serialized FlowContext snapshot")
     node_states: list[NodeStateSnapshot] = Field(
         default_factory=list, description="Per-node FSM states at checkpoint time"
     )
@@ -120,4 +141,11 @@ class FlowCheckpoint(BaseModel):
     lossy: bool = Field(
         default=False,
         description="True if any value degraded to a tagged repr during serialization",
+    )
+    input_metadata: CheckpointInputMetadata | None = Field(
+        default=None,
+        description="Immutable input-fingerprint metadata (spec §2). "
+        "None for checkpoints written before this field existed, and for "
+        "any generic (non-required-mode) checkpoint — old checkpoints "
+        "still load and resume normally.",
     )
