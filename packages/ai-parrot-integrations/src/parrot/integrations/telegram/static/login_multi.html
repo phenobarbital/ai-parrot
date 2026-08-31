@@ -87,8 +87,18 @@
         }
 
         .btn-azure {
-            background: var(--tg-theme-button-color, #0078d4);
-            color: var(--tg-theme-button-text-color, #fff);
+            background: #0078d4;
+            color: #fff;
+        }
+
+        .btn-google {
+            background: #4285f4;
+            color: #fff;
+        }
+
+        .btn-oauth2 {
+            background: #6c5ce7;
+            color: #fff;
         }
 
         /* --- Form (revealed when basic button is clicked) --- */
@@ -173,6 +183,13 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* --- Provider icon SVGs (inline for CSP) --- */
+        .provider-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 
@@ -193,29 +210,49 @@
 
     <script>
     /*
-     * login_multi.html — Unified auth chooser for CompositeAuthStrategy (FEAT-109).
+     * login_multi.html — Unified auth chooser for CompositeAuthStrategy.
      *
-     * URL parameters:
-     *   auth_url           — Navigator BasicAuth endpoint. Triggers basic button.
-     *   azure_auth_url     — Navigator Azure SSO endpoint. Triggers Azure button.
-     *   next_auth_url      — Optional post-auth chain URL (passed through all flows).
-     *   next_auth_required — "true"|"false". Mandatory secondary auth.
-     *   token              — Azure JWT token-callback (return from Microsoft).
+     * Supports four authentication methods, rendered dynamically based on
+     * the URL parameters the backend passes:
+     *
+     *   auth_url               — Navigator BasicAuth endpoint. Shows basic
+     *                            username/password form.
+     *   google_auth_url        — Navigator Google SSO endpoint. Redirects to
+     *                            Navigator → Google → callback → here with
+     *                            ?token=<jwt>.
+     *   azure_auth_url         — Navigator Azure SSO endpoint. Redirects to
+     *                            Navigator → Azure → callback → here with
+     *                            ?token=<jwt>.
+     *   oauth2_authorize_url   — Pre-built OAuth2 Authorization Code URL
+     *                            (with PKCE). Redirects to the provider;
+     *                            callback goes through oauth2_callback.py.
+     *   oauth2_provider_label  — Human-readable OAuth2 provider name
+     *                            (e.g. "Navigator", "Google").
+     *
+     * Post-auth chain parameters (FEAT-109):
+     *   next_auth_url          — Optional secondary auth redirect URL.
+     *   next_auth_required     — "true"|"false". Mandatory secondary auth.
+     *
+     * Token callback parameters (returned by Navigator after SSO):
+     *   token                  — JWT from Google or Azure SSO.
      */
     (function () {
-        const tg = window.Telegram.WebApp;
+        var tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand();
 
-        const params = new URLSearchParams(window.location.search);
-        const authUrl       = params.get('auth_url')       || '';
-        const azureAuthUrl  = params.get('azure_auth_url') || '';
-        const nextAuthUrl   = params.get('next_auth_url')  || '';
-        const nextAuthRequired = params.get('next_auth_required') === 'true';
-        const token         = params.get('token')          || '';
+        var params = new URLSearchParams(window.location.search);
+        var authUrl              = params.get('auth_url') || '';
+        var googleAuthUrl        = params.get('google_auth_url') || '';
+        var azureAuthUrl         = params.get('azure_auth_url') || '';
+        var oauth2AuthorizeUrl   = params.get('oauth2_authorize_url') || '';
+        var oauth2ProviderLabel  = params.get('oauth2_provider_label') || 'OAuth2';
+        var nextAuthUrl          = params.get('next_auth_url') || '';
+        var nextAuthRequired     = params.get('next_auth_required') === 'true';
+        var token                = params.get('token') || '';
 
-        const mainContent = document.getElementById('mainContent');
-        const statusMsg   = document.getElementById('statusMsg');
+        var mainContent = document.getElementById('mainContent');
+        var statusMsg   = document.getElementById('statusMsg');
 
         // ----------------------------------------------------------------
         // Shared helpers
@@ -237,8 +274,6 @@
          */
         function showErrorText(prefix, unsafeText) {
             statusMsg.className = 'status-msg error';
-            // Set the static prefix as HTML, then append the unsafe text
-            // as a text node so it is never interpreted as markup.
             statusMsg.innerHTML = prefix;
             var textNode = document.createTextNode(' ' + (unsafeText || ''));
             statusMsg.appendChild(textNode);
@@ -247,7 +282,6 @@
         function isSafeRedirect(url) {
             try {
                 var parsed = new URL(url);
-                // Require https and same hostname to prevent open-redirect abuse.
                 return parsed.protocol === 'https:' && parsed.hostname === window.location.hostname;
             } catch (_) {
                 return false;
@@ -263,13 +297,40 @@
             }
         }
 
+        function addDivider() {
+            var divider = document.createElement('div');
+            divider.className = 'divider';
+            divider.textContent = 'or';
+            mainContent.appendChild(divider);
+        }
+
         // ----------------------------------------------------------------
-        // Branch 1: Azure token-callback (return from Microsoft)
+        // Session storage helper for tracking which SSO provider was used.
+        // When Google or Azure redirects back with ?token=, we read this
+        // to set the correct auth_method in the sendData payload.
+        // ----------------------------------------------------------------
+
+        var PENDING_METHOD_KEY = 'tg_pending_auth_method';
+
+        function setPendingMethod(method) {
+            try { sessionStorage.setItem(PENDING_METHOD_KEY, method); } catch (_) { /* private mode */ }
+        }
+
+        function consumePendingMethod() {
+            try {
+                var m = sessionStorage.getItem(PENDING_METHOD_KEY);
+                sessionStorage.removeItem(PENDING_METHOD_KEY);
+                return m;
+            } catch (_) { return null; }
+        }
+
+        // ----------------------------------------------------------------
+        // Branch 1: Token callback (return from Google or Azure via Navigator)
         // Called when Navigator redirects back with ?token=<jwt>
         // ----------------------------------------------------------------
 
         if (token) {
-            handleAzureTokenCallback(token);
+            handleTokenCallback(token);
             return; // Nothing else to render.
         }
 
@@ -277,25 +338,48 @@
         // Branch 2: Chooser — render one button per configured method
         // ----------------------------------------------------------------
 
-        var hasMethod = false;
+        var methodCount = 0;
 
+        // --- Basic Auth (username/password form) ---
         if (authUrl) {
             mainContent.appendChild(buildBasicSection(authUrl));
-            hasMethod = true;
+            methodCount++;
         }
 
+        // --- Google SSO ---
+        if (googleAuthUrl) {
+            if (methodCount > 0) addDivider();
+            mainContent.appendChild(buildSSOButton(
+                'google',
+                googleAuthUrl,
+                '&#x1F310; Sign in with Google',
+                'btn-google',
+                'Sign in with Google account'
+            ));
+            methodCount++;
+        }
+
+        // --- Azure SSO ---
         if (azureAuthUrl) {
-            if (hasMethod) {
-                var divider = document.createElement('div');
-                divider.className = 'divider';
-                divider.textContent = 'or';
-                mainContent.appendChild(divider);
-            }
-            mainContent.appendChild(buildAzureButton(azureAuthUrl));
-            hasMethod = true;
+            if (methodCount > 0) addDivider();
+            mainContent.appendChild(buildSSOButton(
+                'azure',
+                azureAuthUrl,
+                '&#x1F4BC; Sign in with Azure AD',
+                'btn-azure',
+                'Sign in with Azure AD'
+            ));
+            methodCount++;
         }
 
-        if (!hasMethod) {
+        // --- OAuth2 (Navigator native or external provider) ---
+        if (oauth2AuthorizeUrl) {
+            if (methodCount > 0) addDivider();
+            mainContent.appendChild(buildOAuth2Button(oauth2AuthorizeUrl, oauth2ProviderLabel));
+            methodCount++;
+        }
+
+        if (methodCount === 0) {
             showStatus('&#x274C; No authentication methods configured. Contact your administrator.', 'error');
         }
 
@@ -379,7 +463,7 @@
                 }
 
                 submitBtn.disabled = true;
-                submitBtn.innerHTML = '<span class="spinner"></span>Signing in\u2026';
+                submitBtn.innerHTML = '<span class="spinner"></span>Signing in…';
 
                 try {
                     var resp = await fetch(url, {
@@ -430,32 +514,52 @@
         }
 
         // ----------------------------------------------------------------
-        // Azure SSO button
+        // SSO buttons (Google / Azure — same redirect-to-Navigator pattern)
         // ----------------------------------------------------------------
 
-        function buildAzureButton(azureUrl) {
+        /**
+         * Build an SSO button that redirects to a Navigator external auth
+         * endpoint (Google or Azure). After SSO, Navigator redirects back
+         * to this page with ?token=<jwt>.
+         *
+         * @param {string} method   — "google" or "azure" (stored in sessionStorage)
+         * @param {string} ssoUrl   — Navigator's SSO endpoint URL
+         * @param {string} label    — Button HTML label
+         * @param {string} btnClass — CSS class for button styling
+         * @param {string} ariaLabel — Accessible label
+         */
+        function buildSSOButton(method, ssoUrl, label, btnClass, ariaLabel) {
             var btn = document.createElement('button');
-            btn.className = 'btn-base btn-azure';
+            btn.className = 'btn-base ' + btnClass;
             btn.type = 'button';
-            btn.setAttribute('aria-label', 'Sign in with Azure AD');
-            btn.innerHTML = '&#x1F510; Sign in with Azure AD';
+            btn.setAttribute('aria-label', ariaLabel);
+            btn.innerHTML = label;
 
             btn.addEventListener('click', function () {
                 btn.disabled = true;
-                showStatus('<span class="spinner"></span>Redirecting to Azure\u2026', '');
+                var providerName = method === 'google' ? 'Google' : 'Azure';
+                showStatus('<span class="spinner"></span>Redirecting to ' + providerName + '…', '');
+
+                // Track which provider was clicked so the token callback
+                // knows which auth_method to send back.
+                setPendingMethod(method);
 
                 // Build redirect_uri preserving all page params for return trip.
                 // NOTE: navigator-auth reads this under `redirect_uri` (not
                 // `redirect_url`); mismatching the name makes Navigator drop
-                // it and fall back to AUTH_REDIRECT_URI (e.g. the frontend
-                // /auth/sso middleware on localhost), which is unreachable
+                // it and fall back to AUTH_REDIRECT_URI, which is unreachable
                 // from the Telegram in-app browser.
                 var pageBase = window.location.href.split('?')[0];
                 var preserveParams = new URLSearchParams();
-                preserveParams.set('azure_auth_url', azureUrl);
-                // Preserve basic auth_url too so the chooser remains functional
+
+                // Preserve all auth URLs so the chooser remains functional
                 // if the user navigates back.
                 if (authUrl) preserveParams.set('auth_url', authUrl);
+                if (googleAuthUrl) preserveParams.set('google_auth_url', googleAuthUrl);
+                if (azureAuthUrl) preserveParams.set('azure_auth_url', azureAuthUrl);
+                // NOTE: oauth2_authorize_url is NOT preserved — PKCE state
+                // is single-use and expires. A fresh /login is needed.
+
                 // FEAT-109: preserve post-auth chain params.
                 if (nextAuthUrl) {
                     preserveParams.set('next_auth_url', nextAuthUrl);
@@ -465,8 +569,8 @@
                 }
                 var redirectUrl = pageBase + '?' + preserveParams.toString();
 
-                var sep = azureUrl.indexOf('?') !== -1 ? '&' : '?';
-                var fullUrl = azureUrl + sep + 'redirect_uri=' + encodeURIComponent(redirectUrl);
+                var sep = ssoUrl.indexOf('?') !== -1 ? '&' : '?';
+                var fullUrl = ssoUrl + sep + 'redirect_uri=' + encodeURIComponent(redirectUrl);
                 window.location.href = fullUrl;
             });
 
@@ -474,19 +578,52 @@
         }
 
         // ----------------------------------------------------------------
-        // Azure token-callback (copied from azure_login.html)
+        // OAuth2 button (Navigator native or external OAuth2 provider)
         // ----------------------------------------------------------------
 
-        function handleAzureTokenCallback(tokenValue) {
+        function buildOAuth2Button(authorizeUrl, providerLabel) {
+            var btn = document.createElement('button');
+            btn.className = 'btn-base btn-oauth2';
+            btn.type = 'button';
+            var safeLabel = document.createElement('span');
+            safeLabel.textContent = 'Sign in with ' + providerLabel;
+            btn.innerHTML = '&#x1F511; ';
+            btn.appendChild(safeLabel);
+            btn.setAttribute('aria-label', 'Sign in with ' + providerLabel);
+
+            btn.addEventListener('click', function () {
+                btn.disabled = true;
+                showStatus('<span class="spinner"></span>Redirecting to authorization…', '');
+
+                // The authorization URL is pre-built by the backend with
+                // PKCE code_challenge and state already embedded.
+                // The redirect_uri points to oauth2_callback.py, which
+                // calls Telegram.WebApp.sendData() with the auth code.
+                window.location.href = authorizeUrl;
+            });
+
+            return btn;
+        }
+
+        // ----------------------------------------------------------------
+        // Token callback (return from Google or Azure SSO via Navigator)
+        // ----------------------------------------------------------------
+
+        function handleTokenCallback(tokenValue) {
             mainContent.innerHTML =
                 '<div style="text-align:center;padding:20px;">' +
                 '<span class="spinner"></span>' +
-                '<span style="font-size:14px;">Completing authentication\u2026</span>' +
+                '<span style="font-size:14px;">Completing authentication…</span>' +
                 '</div>';
+
+            // Determine which SSO provider was used from sessionStorage.
+            // Falls back to "azure" for backward compatibility with pages
+            // that were opened before this tracking was added.
+            var method = consumePendingMethod() || 'azure';
 
             // FEAT-109: if secondary auth URL configured, redirect instead of sendData.
             if (nextAuthUrl && isSafeRedirect(nextAuthUrl)) {
-                showStatus('<span class="spinner"></span>Redirecting to secondary authentication\u2026', '');
+                showStatus('<span class="spinner"></span>Redirecting to secondary authentication…', '');
                 setTimeout(function () {
                     window.location.href = nextAuthUrl;
                 }, 300);
@@ -494,12 +631,12 @@
             }
 
             var payload = {
-                auth_method: 'azure',
+                auth_method: method,
                 token: tokenValue
             };
 
             showStatus(
-                '<span class="spinner"></span>Authentication complete. Returning to bot\u2026',
+                '<span class="spinner"></span>Authentication complete. Returning to bot…',
                 'success'
             );
 

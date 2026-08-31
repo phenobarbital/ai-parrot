@@ -791,6 +791,270 @@ class AzureAuthStrategy(AbstractAuthStrategy):
 
 
 # ---------------------------------------------------------------------------
+# Google SSO strategy (delegates to Navigator's /api/v1/auth/google/ endpoint)
+# ---------------------------------------------------------------------------
+
+# Google session TTL — same as Azure (4 days).
+_GOOGLE_TOKEN_TTL = timedelta(days=4)
+
+
+class GoogleAuthStrategy(AbstractAuthStrategy):
+    """Navigator Google SSO strategy.
+
+    Delegates the full OAuth2 flow to Navigator's /api/v1/auth/google/ endpoint.
+    The bot only captures the JWT token returned via redirect. No signature
+    verification is performed; Navigator is the trusted issuer.
+
+    The redirect flow is identical to AzureAuthStrategy:
+    1. Telegram WebApp opens login page with ``google_auth_url`` param.
+    2. User clicks "Sign in with Google"; page redirects to Navigator's
+       Google endpoint with ``redirect_uri`` pointing back to the login page.
+    3. Navigator redirects to Google for OAuth consent.
+    4. Google redirects back to Navigator's callback.
+    5. Navigator creates session, generates JWT, redirects back to the
+       login page with ``?token=<jwt>&type=Bearer``.
+    6. Login page sends ``{auth_method: "google", token}`` via
+       ``Telegram.WebApp.sendData()``.
+
+    Args:
+        auth_url: Navigator base authentication endpoint URL (used for token
+            validation via NavigatorAuthClient).
+        google_auth_url: Navigator's Google SSO endpoint URL.
+            E.g. ``https://nav.example.com/api/v1/auth/google/``.
+        login_page_url: URL of the static login page served to the
+            Telegram WebApp.
+        post_auth_registry: Optional ``PostAuthRegistry`` injected at
+            construction time. When provided and non-empty,
+            ``handle_callback`` invokes the chain providers after the JWT
+            is successfully validated.
+    """
+
+    name = "google"
+    supports_post_auth_chain = True
+
+    def __init__(
+        self,
+        auth_url: str,
+        google_auth_url: str,
+        login_page_url: Optional[str] = None,
+        post_auth_registry: Optional[Any] = None,
+    ) -> None:
+        self.auth_url = auth_url
+        self.google_auth_url = google_auth_url
+        self.login_page_url = login_page_url
+        self._post_auth_registry = post_auth_registry
+        self._client = NavigatorAuthClient(auth_url)
+        self.logger = logging.getLogger("parrot.Telegram.Auth.Google")
+
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
+    ) -> ReplyKeyboardMarkup:
+        """Build the Google SSO WebApp keyboard.
+
+        Args:
+            config: TelegramAgentConfig (used for login_page_url fallback).
+            state: CSRF state token (kept for interface consistency; Google
+                flow uses Navigator-managed state internally).
+            next_auth_url: Optional URL of a secondary authentication step.
+            next_auth_required: If True, the secondary auth redirect is
+                mandatory.
+
+        Returns:
+            ReplyKeyboardMarkup with a WebApp button pointing to the
+            login page with ``google_auth_url=...``.
+
+        Raises:
+            ValueError: If no login_page_url is configured.
+        """
+        page_url = self.login_page_url or getattr(config, "login_page_url", None)
+        if not page_url:
+            raise ValueError(
+                "login_page_url is required for GoogleAuthStrategy"
+            )
+
+        params: Dict[str, Any] = {"google_auth_url": self.google_auth_url}
+        if next_auth_url:
+            params["next_auth_url"] = next_auth_url
+            params["next_auth_required"] = "true" if next_auth_required else "false"
+        full_url = f"{page_url}?{urlencode(params)}"
+
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text="\U0001f510 Sign in with Google",
+                    web_app=WebAppInfo(url=full_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Process Google SSO callback: decode JWT and populate session.
+
+        Expects ``data`` to contain ``token`` (the Navigator JWT returned
+        after Google SSO redirect). Decodes the payload to extract user
+        identity fields and calls ``session.set_authenticated()``.
+
+        Args:
+            data: Parsed JSON from Telegram WebApp sendData().
+                Must contain ``{"auth_method": "google", "token": "<jwt>"}``.
+            session: User session to populate on success.
+
+        Returns:
+            True if authentication succeeded, False otherwise.
+        """
+        if data.get("auth_method") != "google":
+            self.logger.warning(
+                "GoogleAuthStrategy received unexpected auth_method=%r; ignoring",
+                data.get("auth_method"),
+            )
+            return False
+
+        token = data.get("token")
+        if not token:
+            self.logger.warning("Google auth callback missing token")
+            return False
+
+        try:
+            claims = self._decode_jwt_payload(token)
+        except (ValueError, json.JSONDecodeError) as exc:
+            self.logger.warning("Failed to decode Google JWT: %s", exc)
+            return False
+
+        # Extract user identity — handle both user_id and sub claims
+        user_id = claims.get("user_id") or claims.get("sub") or ""
+        if not user_id:
+            self.logger.warning("Google JWT missing user_id/sub claim")
+            return False
+
+        email = claims.get("email", "")
+        # Handle both name and first_name/last_name claims
+        display_name = claims.get("name") or claims.get("first_name", "")
+        if claims.get("last_name"):
+            display_name = f"{display_name} {claims['last_name']}".strip()
+
+        session.set_authenticated(
+            nav_user_id=str(user_id),
+            session_token=token,
+            display_name=display_name or None,
+            email=email or None,
+        )
+
+        self.logger.info(
+            "User tg:%s authenticated via Google as %s (%s)",
+            session.telegram_id,
+            user_id,
+            display_name,
+        )
+
+        # Invoke post-auth chain if a registry was injected.
+        if self._post_auth_registry and len(self._post_auth_registry) > 0:
+            await self._run_post_auth_chain(data, session)
+
+        return True
+
+    async def _run_post_auth_chain(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> None:
+        """Invoke registered post-auth providers after successful Google login.
+
+        Each provider's ``handle_result`` is called with the provider-specific
+        sub-dict from ``data``. Failures are logged but do not roll back the
+        primary Google authentication.
+        """
+        primary_data: Dict[str, Any] = {
+            "auth_method": "google",
+            "nav_user_id": session.nav_user_id,
+        }
+        for name in self._post_auth_registry.providers:
+            provider = self._post_auth_registry.get(name)
+            if provider is None:
+                continue
+            provider_data = data.get(name) or {}
+            try:
+                ok = await provider.handle_result(
+                    data=provider_data,
+                    session=session,
+                    primary_auth_data=primary_data,
+                )
+                if not ok:
+                    self.logger.warning(
+                        "Post-auth provider '%s' returned failure for tg:%s",
+                        name,
+                        session.telegram_id,
+                    )
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "Post-auth provider '%s' raised an exception for tg:%s",
+                    name,
+                    session.telegram_id,
+                )
+
+    async def validate_token(
+        self,
+        token: str,
+        session: Optional["TelegramUserSession"] = None,
+    ) -> bool:
+        """Validate a Navigator JWT token, enforcing the 4-day session TTL.
+
+        Args:
+            token: The JWT session token to validate.
+            session: Optional authenticated session. When provided, the
+                4-day TTL is checked via ``authenticated_at``.
+
+        Returns:
+            True if the token is non-empty and the session (when given)
+            has not exceeded the 4-day TTL.
+        """
+        if not token:
+            return False
+        if session is not None:
+            if not session.authenticated or not session.authenticated_at:
+                return False
+            age = datetime.now() - session.authenticated_at
+            if age > _GOOGLE_TOKEN_TTL:
+                self.logger.info(
+                    "Google session expired for tg:%s (age=%s, ttl=%s)",
+                    session.telegram_id,
+                    age,
+                    _GOOGLE_TOKEN_TTL,
+                )
+                return False
+        return await self._client.validate_token(token)
+
+    @staticmethod
+    def _decode_jwt_payload(token: str) -> Dict[str, Any]:
+        """Decode the payload segment of a JWT without signature verification.
+
+        Navigator is the trusted issuer; we only need the claims.
+        Identical to AzureAuthStrategy._decode_jwt_payload.
+        """
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Invalid JWT format: expected 3 parts, got {len(parts)}"
+            )
+        payload_b64 = parts[1]
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        return json.loads(payload_bytes)
+
+
+# ---------------------------------------------------------------------------
 # OAuth2 strategy (Authorization Code + PKCE)
 # ---------------------------------------------------------------------------
 
@@ -891,6 +1155,44 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         ]
         for s in expired:
             del self._pending_states[s]
+
+    # -- Composite support -----------------------------------------------------
+
+    def build_authorize_url(self, state: str) -> str:
+        """Build the full OAuth2 authorization URL with PKCE.
+
+        Used by ``CompositeAuthStrategy.build_login_keyboard()`` to embed the
+        pre-generated authorization URL in the login page query params, so the
+        multi-method chooser can redirect to it on click.
+
+        The PKCE code_verifier is stored internally under ``state`` and is
+        consumed later by ``handle_callback()``.
+
+        Args:
+            state: CSRF state token.
+
+        Returns:
+            Full authorization URL with PKCE code_challenge.
+        """
+        code_verifier, code_challenge = self._generate_pkce()
+        self._store_state(state, code_verifier)
+
+        params = {
+            "client_id": self._client_id,
+            "redirect_uri": self._redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(self._scopes),
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "access_type": "offline",
+        }
+        return f"{self._provider.authorization_url}?{urlencode(params)}"
+
+    @property
+    def provider_label(self) -> str:
+        """Human-readable label for the OAuth2 provider."""
+        return self._provider.name.capitalize()
 
     # -- AbstractAuthStrategy implementation --------------------------------
 
@@ -1237,6 +1539,17 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
             azure_url = getattr(azure, "azure_auth_url", None)
             if azure_url:
                 params["azure_auth_url"] = azure_url
+        if google := self.strategies.get("google"):
+            google_url = getattr(google, "google_auth_url", None)
+            if google_url:
+                params["google_auth_url"] = google_url
+        if oauth2 := self.strategies.get("oauth2"):
+            # Pre-generate the PKCE-enhanced authorization URL so the
+            # login page can redirect to it on click. The state token
+            # ties the PKCE code_verifier stored in the strategy to the
+            # callback that will follow.
+            params["oauth2_authorize_url"] = oauth2.build_authorize_url(state)
+            params["oauth2_provider_label"] = oauth2.provider_label
 
         # Embed post-auth chain params for the multi-method page to use.
         if next_auth_url:

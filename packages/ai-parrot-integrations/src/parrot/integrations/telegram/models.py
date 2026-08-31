@@ -96,6 +96,8 @@ class TelegramAgentConfig:
     oauth2_redirect_uri: Optional[str] = None
     # Azure SSO settings (used when auth_method="azure")
     azure_auth_url: Optional[str] = None
+    # Google SSO settings (used when auth_method="google")
+    google_auth_url: Optional[str] = None
     # Voice transcription settings
     voice_config: Optional["VoiceTranscriberConfig"] = None
     # Post-authentication actions (secondary auth providers chained after primary)
@@ -169,7 +171,7 @@ class TelegramAgentConfig:
             # else: no auth configured — leave empty
 
         # Validate every entry in the normalized list.
-        _ALLOWED_AUTH_METHODS = {"basic", "azure", "oauth2"}
+        _ALLOWED_AUTH_METHODS = {"basic", "azure", "oauth2", "google"}
         unknown = [m for m in self.auth_methods if m not in _ALLOWED_AUTH_METHODS]
         if unknown:
             raise ValueError(
@@ -206,6 +208,19 @@ class TelegramAgentConfig:
                 if base.endswith("/login"):
                     base = base.rsplit("/", 1)[0]
                 self.azure_auth_url = f"{base}/azure/"
+
+        # Resolve Google auth URL from env var or derive from auth_url.
+        if "google" in self.auth_methods:
+            if not self.google_auth_url:
+                self.google_auth_url = config.get(
+                    f"{name_upper}_GOOGLE_AUTH_URL"
+                )
+            # Derive google_auth_url from auth_url when still not set
+            if not self.google_auth_url and self.auth_url:
+                base = self.auth_url.rstrip("/")
+                if base.endswith("/login"):
+                    base = base.rsplit("/", 1)[0]
+                self.google_auth_url = f"{base}/google/"
 
     @property
     def voice_enabled(self) -> bool:
@@ -273,6 +288,7 @@ class TelegramAgentConfig:
             oauth2_scopes=data.get('oauth2_scopes'),
             oauth2_redirect_uri=data.get('oauth2_redirect_uri'),
             azure_auth_url=data.get('azure_auth_url'),
+            google_auth_url=data.get('google_auth_url'),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
             singleton_agent=bool(data.get('singleton_agent', True)),
@@ -363,19 +379,14 @@ class TelegramBotsConfig:
                             f"(set azure_auth_url in YAML or "
                             f"env var {name.upper()}_AZURE_AUTH_URL)"
                         )
-
-            # FEAT-109: oauth2 cannot be combined with other methods.
-            # login_multi.html renders basic and azure buttons only; there is
-            # no OAuth2 button and the PKCE state machine cannot be driven
-            # from a shared chooser page.
-            if "oauth2" in agent_config.auth_methods and len(agent_config.auth_methods) > 1:
-                errors.append(
-                    f"Agent '{name}': 'oauth2' cannot be combined with other "
-                    f"auth_methods {agent_config.auth_methods!r}. "
-                    f"login_multi.html does not implement an OAuth2 flow. "
-                    f"Use auth_method: oauth2 alone, or remove oauth2 from "
-                    f"auth_methods and use basic/azure for multi-auth."
-                )
+                elif method == "google":
+                    if not agent_config.google_auth_url and not agent_config.auth_url:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'google' requires "
+                            f"google_auth_url or a derivable auth_url "
+                            f"(set google_auth_url in YAML or "
+                            f"env var {name.upper()}_GOOGLE_AUTH_URL)"
+                        )
 
             # FEAT-109: multi-auth login page constraint.
             if len(agent_config.auth_methods) >= 2:
@@ -383,15 +394,9 @@ class TelegramBotsConfig:
                     errors.append(
                         f"Agent '{name}': auth_methods has "
                         f"{len(agent_config.auth_methods)} entries but "
-                        f"login_page_url is unset. Multi-auth bots must use "
-                        f"the shared chooser page (login_multi.html)."
-                    )
-                elif "login_multi.html" not in agent_config.login_page_url.lower():
-                    errors.append(
-                        f"Agent '{name}': auth_methods has "
-                        f"{len(agent_config.auth_methods)} entries but "
-                        f"login_page_url does not reference 'login_multi.html'. "
-                        f"Multi-auth bots must use the shared chooser page."
+                        f"login_page_url is unset. Multi-auth bots must set "
+                        f"login_page_url to a shared chooser page "
+                        f"(e.g. login_multi.html)."
                     )
 
             # Soft warning for unknown post_auth_actions providers.
