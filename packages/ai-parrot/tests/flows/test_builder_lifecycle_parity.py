@@ -17,24 +17,24 @@ attempted.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-
 from parrot.bots.flows.flow.telemetry import FlowLifecycleAdapter
 
 
 def _build_dev_loop_flow(**overrides: Any):
     from parrot.flows.dev_loop.flow import build_dev_loop_flow
 
-    kwargs: dict[str, Any] = dict(
-        dispatcher=MagicMock(),
-        jira_toolkit=MagicMock(),
-        log_toolkits={},
-        redis_url="redis://localhost:6379/0",
-        publish_flow_events=False,
-    )
+    kwargs: dict[str, Any] = {
+        "dispatcher": MagicMock(),
+        "jira_toolkit": MagicMock(),
+        "log_toolkits": {},
+        "redis_url": "redis://localhost:6379/0",
+        "publish_flow_events": False,
+    }
     kwargs.update(overrides)
     return build_dev_loop_flow(**kwargs)
 
@@ -42,13 +42,13 @@ def _build_dev_loop_flow(**overrides: Any):
 def _build_dev_loop_revision_flow(**overrides: Any):
     from parrot.flows.dev_loop.runner import build_dev_loop_revision_flow
 
-    kwargs: dict[str, Any] = dict(
-        dispatcher=MagicMock(),
-        jira_toolkit=MagicMock(),
-        git_toolkit=MagicMock(),
-        redis_url="redis://x",
-        publish_flow_events=False,
-    )
+    kwargs: dict[str, Any] = {
+        "dispatcher": MagicMock(),
+        "jira_toolkit": MagicMock(),
+        "git_toolkit": MagicMock(),
+        "redis_url": "redis://x",
+        "publish_flow_events": False,
+    }
     kwargs.update(overrides)
     return build_dev_loop_revision_flow(**kwargs)
 
@@ -56,11 +56,11 @@ def _build_dev_loop_revision_flow(**overrides: Any):
 def _build_dev_loop_feature_flow(**overrides: Any):
     from parrot.flows.dev_loop.runner import build_dev_loop_feature_flow
 
-    kwargs: dict[str, Any] = dict(
-        dispatcher=MagicMock(),
-        redis_url="redis://x",
-        publish_flow_events=False,
-    )
+    kwargs: dict[str, Any] = {
+        "dispatcher": MagicMock(),
+        "redis_url": "redis://x",
+        "publish_flow_events": False,
+    }
     kwargs.update(overrides)
     return build_dev_loop_feature_flow(**kwargs)
 
@@ -68,11 +68,11 @@ def _build_dev_loop_feature_flow(**overrides: Any):
 def _build_dev_flow(**overrides: Any):
     from parrot.flows.dev_flow.flow import build_dev_flow
 
-    kwargs: dict[str, Any] = dict(
-        dispatcher=MagicMock(),
-        redis_url="redis://x",
-        publish_flow_events=False,
-    )
+    kwargs: dict[str, Any] = {
+        "dispatcher": MagicMock(),
+        "redis_url": "redis://x",
+        "publish_flow_events": False,
+    }
     kwargs.update(overrides)
     return build_dev_flow(**kwargs)
 
