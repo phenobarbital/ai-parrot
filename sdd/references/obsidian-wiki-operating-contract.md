@@ -342,11 +342,11 @@ processed_at: YYYY-MM-DDTHH:mm:ss+00:00
 processing_mode: summary-only | summary-and-transcript
 classification_confidence: high | medium | low
 review_required: false
-raw_summary: "[[Raw/Processed/.../summary.md]]"
-raw_transcript: "[[Raw/Processed/.../transcript.md]]"
+raw_summary: "Raw/Processed/.../summary.md"        # plain relative path — raw files are not Obsidian pages
+raw_transcript: "Raw/Processed/.../transcript.md"  # plain relative path (never a [[wikilink]])
 summary_sha256: "<hash>"
 transcript_sha256: "<hash>"
-primary_project: "[[Projects/<Project Name>/<Project Name>]]"
+primary_project: "[[Projects/<Project Name>/<Project Name>]]"   # invariant: must also be listed in projects below
 projects: []
 clients: []
 people: []
@@ -757,8 +757,8 @@ Why the meeting occurred and what it intended to accomplish.
 Include only when the transcript was read. Keep quotes short and relevant.
 
 ## Source Provenance
-- Raw summary: [[Raw/Processed/.../summary.md]]
-- Raw transcript: [[Raw/Processed/.../transcript.md]]
+- Raw summary: `Raw/Processed/.../summary.md` (plain relative path — raw files are not Obsidian pages, so never wikilinked)
+- Raw transcript: `Raw/Processed/.../transcript.md`
 - Processing mode: summary-only or summary-and-transcript
 - Classification confidence: high, medium, or low
 ```
@@ -776,7 +776,7 @@ Projects/<Project Name>/Meeting Summaries/index.md
 Projects/<Project Name>/Meeting Summaries/Archive/index.md
 ```
 
-The active index contains links to canonical source pages for meetings within the active 14-day window:
+The active index contains links to canonical source pages for meetings within the active window (configurable; default 14 days):
 
 ```markdown
 # <Project Name> - Meeting Summaries
@@ -1243,7 +1243,7 @@ Triggered by a request to ingest one bundle, a folder, or all pending files in `
 19. **Update `Wiki/overview.md` when warranted.** Do not change it for trivial or redundant information.
 20. **Update the processed-source registry.** Add the unique source entry only after successful validation.
 21. **Append to `Wiki/log.md`.** Record the operation and changed pages.
-22. **Apply the 14-day archive policy.** Archive old daily notes and project meeting references.
+22. **Apply the archive policy** (active window configurable; default 14 days). Archive old daily notes and project meeting references.
 23. **Run post-ingest validation.** Validate provenance, links, hashes, canonical project state, contradictions, indexes, and access boundaries.
 24. **Print a change summary.** List created, updated, moved, skipped, contradicted, and review-required items.
 
@@ -1350,7 +1350,7 @@ Check for:
 - Missing concept pages for repeatedly referenced material concepts
 - Near-duplicate entities or concepts
 - Daily notes that duplicate meeting text instead of synthesizing it
-- Active meeting references older than the 14-day window
+- Active meeting references older than the active window (default 14 days)
 - Daily notes overdue for archive
 - Incomplete source bundles
 - Unsupported source formats
@@ -1385,11 +1385,11 @@ Output a lint report. Save it only when requested, normally as `Wiki/lint-report
 
 ## 31. Archive Workflow
 
-Maintain a rolling 14-calendar-day active window.
+Maintain a rolling active window, configurable (default 14 calendar days).
 
 ### Daily notes
 
-- Keep notes whose date is on or after `today - 13 days` in `Diary/Daily Notes/`.
+- Keep notes whose date is on or after `today - (window - 1) days` (default window 14) in `Diary/Daily Notes/`.
 - Move older notes unchanged to `Diary/Archive/YYYY/`.
 - Update any affected links.
 
