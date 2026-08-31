@@ -5,10 +5,12 @@ round-trip with type identity via a small type registry; everything else
 degrades to a tagged repr and marks the operation ``lossy`` instead of
 raising. Never pickle (spec §2/§7).
 """
+
 from __future__ import annotations
 
 import logging
 import uuid
+from collections import ChainMap
 from datetime import datetime
 from typing import Any
 
@@ -26,6 +28,63 @@ _UUID_TAG = "__uuid__"
 _ESCAPED_DICT_TAG = "__escaped_dict__"
 
 logger = logging.getLogger(__name__)
+
+#: Types every :class:`FlowStateSerializer` round-trips, by tag.
+#:
+#: Process-wide by necessity, not by preference. A ``FlowStateSerializer`` is
+#: constructed independently by the checkpointer *and* by each store, and a
+#: store decodes with its own — so an instance-level registration could make
+#: a model encode correctly and still come back degraded on the way out.
+#: Populate it at import time (e.g. from a dev-loop/dev-flow models module),
+#: the same way node types register themselves against ``NODE_REGISTRY``.
+_DEFAULT_TYPES: dict[str, type[BaseModel]] = {}
+
+
+def register_checkpoint_type(model_cls: type[BaseModel], tag: str | None = None) -> str:
+    """Register a Pydantic type for every :class:`FlowStateSerializer` instance.
+
+    Without this a model is not an error — it degrades to its ``repr`` and
+    the checkpoint is flagged ``lossy``. That is a reasonable default for a
+    payload nobody reads back, and a silent problem for a flow that routes on
+    a node's typed result, or a resume path that needs to restore a typed
+    dev-loop output (``ResearchOutput``, ``DevelopmentOutput``, ...).
+
+    Idempotent: re-registering the exact same class (or the same
+    ``module.QualName`` re-imported as a fresh class object — a legitimate
+    module-reload scenario some test suites exercise deliberately, e.g.
+    ``del sys.modules[...]`` + re-import to verify lazy-import boundaries)
+    under the same tag is a no-op / refresh. Registering a *genuinely
+    different* class (a different qualified name) under a tag already
+    claimed by another class raises, since silently rebinding the tag
+    would make every already-persisted checkpoint referencing it decode
+    as the wrong type.
+
+    Args:
+        model_cls: The Pydantic ``BaseModel`` subclass to register.
+        tag: Optional explicit type tag; defaults to the fully qualified
+            class name (``module.QualName``).
+
+    Returns:
+        The tag the class was registered under.
+
+    Raises:
+        ValueError: If ``tag`` is already registered to a class with a
+            different ``(__module__, __qualname__)`` — a genuine conflict,
+            not a reload of the same class.
+    """
+    tag = tag or f"{model_cls.__module__}.{model_cls.__qualname__}"
+    existing = _DEFAULT_TYPES.get(tag)
+    if (
+        existing is not None
+        and existing is not model_cls
+        and (existing.__module__, existing.__qualname__) != (model_cls.__module__, model_cls.__qualname__)
+    ):
+        raise ValueError(
+            f"register_checkpoint_type: tag {tag!r} is already registered to "
+            f"{existing!r}; cannot re-register it to {model_cls!r}."
+        )
+    _DEFAULT_TYPES[tag] = model_cls
+    return tag
 
 
 class FlowStateSerializer:
@@ -60,12 +119,19 @@ class FlowStateSerializer:
 
     def __init__(self) -> None:
         self.logger = logger
-        self._registry: dict[str, type[BaseModel]] = {}
+        # A ChainMap over the process-wide defaults rather than a copy of
+        # them, so registration order stops mattering. Serializers are built
+        # independently in several places (here, the checkpointer, and each
+        # store) and construct lazily, at whatever moment a flow first
+        # checkpoints. With a snapshot, a model registered globally after the
+        # first serializer was built would round-trip on the way in and
+        # degrade on the way out.
+        self._registry: Any = ChainMap({}, _DEFAULT_TYPES)
         # Pre-register known result types (spec §6 Integration Points).
         self.register(AIMessage)
 
     def register(self, model_cls: type[BaseModel], tag: str | None = None) -> str:
-        """Register a Pydantic model class under a type tag.
+        """Register a Pydantic model class under a type tag (instance-local).
 
         Args:
             model_cls: The Pydantic ``BaseModel`` subclass to register.
@@ -79,11 +145,30 @@ class FlowStateSerializer:
         self._registry[tag] = model_cls
         return tag
 
+    @property
+    def registry(self) -> dict[str, type[BaseModel]]:
+        """The types this serializer round-trips, process-wide defaults included."""
+        return dict(self._registry)
+
     def _tag_for_class(self, cls: type) -> str | None:
+        # Exact identity is the common case and fast path. Fall back to a
+        # qualname match — same rationale as register_checkpoint_type()'s
+        # own conflict check: a test suite that deliberately reloads a
+        # module (`del sys.modules[...]` + re-import, e.g.
+        # test_lazy_import.py's import-purity verification) produces a
+        # NEW class object for the SAME logical type. Without this, an
+        # instance built from a class reference captured before such a
+        # reload would degrade to a lossy repr even though the type is,
+        # for every practical purpose, still registered.
+        qualname_fallback: str | None = None
         for tag, registered_cls in self._registry.items():
             if registered_cls is cls:
                 return tag
-        return None
+            if qualname_fallback is None and (
+                (registered_cls.__module__, registered_cls.__qualname__) == (cls.__module__, cls.__qualname__)
+            ):
+                qualname_fallback = tag
+        return qualname_fallback
 
     @staticmethod
     def encode_error(exc: BaseException) -> dict[str, str]:
@@ -130,16 +215,13 @@ class FlowStateSerializer:
                 }
             lossy_flag[0] = True
             self.logger.debug(
-                "FlowStateSerializer: unregistered Pydantic model %s degraded "
-                "to lossy repr",
+                "FlowStateSerializer: unregistered Pydantic model %s degraded " "to lossy repr",
                 type(value).__name__,
             )
             return {_TYPE_KEY: _LOSSY_TAG, _REPR_KEY: repr(value)}
 
         if isinstance(value, dict):
-            encoded = {
-                str(k): self._encode_value(v, lossy_flag) for k, v in value.items()
-            }
+            encoded = {str(k): self._encode_value(v, lossy_flag) for k, v in value.items()}
             if _TYPE_KEY in encoded:
                 # Collision guard: a real dict from user/tool data happens
                 # to contain our reserved sentinel key (e.g. a tool result
@@ -157,9 +239,7 @@ class FlowStateSerializer:
         # Anything else (arbitrary custom object) degrades to a tagged repr
         # instead of raising — never fail the flow on serialization.
         lossy_flag[0] = True
-        self.logger.debug(
-            "FlowStateSerializer: %s degraded to lossy repr", type(value).__name__
-        )
+        self.logger.debug("FlowStateSerializer: %s degraded to lossy repr", type(value).__name__)
         return {_TYPE_KEY: _LOSSY_TAG, _REPR_KEY: repr(value)}
 
     @staticmethod
@@ -253,9 +333,7 @@ class FlowStateSerializer:
                     return {k: self._decode_value(v) for k, v in inner.items()}
                 model_cls = self._registry.get(tag)
                 if model_cls is not None:
-                    return model_cls.model_validate(
-                        self._decode_value(value.get(_DATA_KEY))
-                    )
+                    return model_cls.model_validate(self._decode_value(value.get(_DATA_KEY)))
                 # Unknown tag: never dynamically import/reconstruct —
                 # return the raw envelope so the caller can inspect it.
                 return {k: self._decode_value(v) for k, v in value.items()}

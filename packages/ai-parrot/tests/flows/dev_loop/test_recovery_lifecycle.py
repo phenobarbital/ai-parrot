@@ -1,0 +1,450 @@
+"""Dev Loop per-run checkpoint lifecycle (TASK-2626).
+
+Covers: registered dev-loop result types round-trip through
+``FlowStateSerializer`` (mirroring the process-wide registration added to
+``models/__init__.py``), ``TaskScheduler`` excluding already-``done`` tasks
+after a restart (existing on-disk-index behavior — confirmed unaffected),
+node-granular single-agent recovery (an interrupted ``development`` reruns
+whole; completed upstream nodes do not redispatch), and
+``DevLoopRunner.run(run_id=...)`` end-to-end through the real engine with a
+fake in-memory ``CheckpointStore``.
+
+Reuses the mocked-dispatcher/Jira/worktree-base fixture recipe already
+proven by ``test_runner.py``'s end-to-end suite (same dev-loop topology,
+same mocking strategy) rather than inventing a new one.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from parrot import conf
+from parrot.bots.flows.core.checkpoint import (
+    CheckpointStore,
+    FlowCheckpoint,
+    FlowStateSerializer,
+)
+from parrot.bots.flows.core.types import FlowStatus
+from parrot.flows.dev_loop import (
+    BugBrief,
+    DevLoopRunner,
+    QAReport,
+    ResearchOutput,
+    ShellCriterion,
+    WorkBrief,
+    build_dev_loop_flow,
+)
+from parrot.flows.dev_loop.models import DevelopmentOutput, PlannerOutput
+from parrot.flows.dev_loop.nodes.deployment_handoff import DeploymentHandoffNode
+from parrot.flows.dev_loop.task_scheduler import TaskScheduler
+
+# ---------------------------------------------------------------------------
+# In-memory CheckpointStore (mirrors tests/flows/checkpoint/test_suspend_resume.py)
+# ---------------------------------------------------------------------------
+
+
+class FakeCheckpointStore(CheckpointStore):
+    """In-memory CheckpointStore — full contract, no external service."""
+
+    def __init__(self) -> None:
+        self._by_flow: dict[str, list[FlowCheckpoint]] = {}
+        self._leases: dict[str, str] = {}
+
+    async def put(self, checkpoint: FlowCheckpoint) -> None:
+        history = self._by_flow.setdefault(checkpoint.flow_id, [])
+        history[:] = [c for c in history if c.checkpoint_id != checkpoint.checkpoint_id]
+        history.append(checkpoint)
+        history.sort(key=lambda c: c.checkpoint_id)
+
+    async def latest(self, flow_id: str):
+        history = self._by_flow.get(flow_id, [])
+        return history[-1] if history else None
+
+    async def get(self, flow_id: str, checkpoint_id: int):
+        for cp in self._by_flow.get(flow_id, []):
+            if cp.checkpoint_id == checkpoint_id:
+                return cp
+        return None
+
+    async def history(self, flow_id: str, limit: int = 10):
+        return list(reversed(self._by_flow.get(flow_id, [])))[:limit]
+
+    async def list_flows(self, status=None):
+        return []
+
+    async def delete_flow(self, flow_id: str) -> None:
+        self._by_flow.pop(flow_id, None)
+
+    async def acquire_lease(self, flow_id: str, holder: str, ttl: int = 60) -> bool:
+        if flow_id in self._leases:
+            return False
+        self._leases[flow_id] = holder
+        return True
+
+    async def renew_lease(self, flow_id: str, holder: str, ttl: int = 60) -> bool:
+        return self._leases.get(flow_id) == holder
+
+    async def release_lease(self, flow_id: str, holder: str) -> None:
+        if self._leases.get(flow_id) == holder:
+            del self._leases[flow_id]
+
+    async def close(self) -> None:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Registered type round-trip (spec test table: Modules 1/4)
+# ---------------------------------------------------------------------------
+
+
+def test_registered_dev_models_round_trip() -> None:
+    """Importing parrot.flows.dev_loop.models registers every routed result type."""
+    serializer = FlowStateSerializer()
+    instances = [
+        WorkBrief(
+            summary="x" * 12,
+            affected_component="a",
+            acceptance_criteria=[ShellCriterion(name="l", command="true")],
+            escalation_assignee="e",
+            reporter="r",
+        ),
+        ResearchOutput(
+            jira_issue_key="OPS-1",
+            spec_path="s",
+            feat_id="FEAT-1",
+            branch_name="b",
+            worktree_path="/tmp/w",
+        ),
+        PlannerOutput(
+            spec_path="s",
+            task_index_path="t",
+            feat_id="FEAT-1",
+            branch_name="feat-1-x",
+            worktree_path="/tmp/w",
+        ),
+        DevelopmentOutput(files_changed=["a.py"], commit_shas=["abc"], summary="done"),
+    ]
+    for instance in instances:
+        data, lossy = serializer.encode_with_meta(instance)
+        assert not lossy, f"{type(instance).__name__} degraded to lossy repr"
+        restored = serializer.decode(data)
+        # Qualname equality, not `is`/exact identity: a test suite that
+        # runs earlier in the SAME session (test_lazy_import.py) may have
+        # deliberately reloaded parrot.flows.dev_loop.models to verify
+        # import purity, producing a distinct-but-equivalent class object
+        # under the same registered tag. What round-trip fidelity actually
+        # promises is "the right type", not "the exact class object this
+        # test file happened to import at collection time".
+        assert type(restored).__qualname__ == type(instance).__qualname__
+        assert type(restored).__module__ == type(instance).__module__
+
+
+# ---------------------------------------------------------------------------
+# TaskScheduler excludes done tasks after restart (existing on-disk behavior)
+# ---------------------------------------------------------------------------
+
+
+def test_scheduler_excludes_done_tasks_after_restart(tmp_path) -> None:
+    """spec §7: 'task index truth is on disk' — a restart rereads it fresh.
+
+    This task deliberately does NOT modify TaskScheduler/development.py
+    (both build a fresh TaskScheduler from disk on every dispatch already)
+    — this test confirms that existing, already-correct behavior stays
+    intact and is what pool recovery relies on.
+    """
+    index_path = tmp_path / "index.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "TASK-1", "title": "a", "status": "done", "depends_on": []},
+                    {"id": "TASK-2", "title": "b", "status": "done", "depends_on": ["TASK-1"]},
+                    {"id": "TASK-3", "title": "c", "status": "pending", "depends_on": ["TASK-2"]},
+                    {"id": "TASK-4", "title": "d", "status": "pending", "depends_on": []},
+                    {"id": "TASK-5", "title": "e", "status": "pending", "depends_on": ["TASK-4"]},
+                ]
+            }
+        )
+    )
+
+    scheduler = TaskScheduler.from_index_file(index_path)
+    assert scheduler is not None
+
+    wave_ids = {t.id for t in scheduler.next_wave()}
+    # The two already-"done" tasks must never be offered for (re-)dispatch;
+    # TASK-3's dependency (TASK-2) is already done, so it IS dispatchable;
+    # TASK-4 has no deps and is dispatchable; TASK-5 depends on TASK-4
+    # (not yet done) so it is NOT in this wave.
+    assert "TASK-1" not in wave_ids
+    assert "TASK-2" not in wave_ids
+    assert wave_ids == {"TASK-3", "TASK-4"}
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: node-granular recovery through the real engine
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def brief() -> BugBrief:
+    return BugBrief(
+        summary="Customer sync drops the last row",
+        affected_component="etl/customers/sync.yaml",
+        log_sources=[],
+        acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+        escalation_assignee="557058:abc",
+        reporter="557058:def",
+    )
+
+
+@pytest.fixture
+def mock_jira():
+    j = MagicMock()
+    j.jira_create_issue = AsyncMock(return_value={"key": "OPS-1"})
+    j.jira_get_issue = AsyncMock(return_value={"status": "error"})
+    j.jira_search_issues = AsyncMock(return_value={"status": "empty"})
+    j.jira_transition_issue = AsyncMock(return_value={"ok": True})
+    j.jira_transition_to = AsyncMock(return_value={"ok": True})
+    j.jira_add_comment = AsyncMock(return_value={"id": "c1"})
+    j.jira_assign_issue = AsyncMock(return_value={"ok": True})
+    return j
+
+
+@pytest.fixture
+def patch_handoff(monkeypatch):
+    monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", AsyncMock(return_value=None))
+    monkeypatch.setattr(DeploymentHandoffNode, "_create_pr", AsyncMock(return_value="https://github.com/x/y/pull/1"))
+    # test_single_agent_recovery_is_node_granular materializes a REAL git
+    # worktree (for TASK-2625's artifact-validation guard on resume) with
+    # no `origin` remote configured — assert_base_is_clean's own,
+    # unrelated FEAT-466 guard would otherwise refuse to fetch origin/main
+    # from it. Not what this test suite exercises; neutralized like the
+    # two mocks above.
+    #
+    # Resolved via sys.modules[...] directly, NOT a dotted monkeypatch
+    # string: test_lazy_import.py deletes and re-imports every
+    # parrot.flows.dev_loop.* module (then restores sys.modules), and a
+    # dotted string resolves through parent-package attribute chains —
+    # surgery that can leave a parent package's attribute pointing at a
+    # module object sys.modules no longer holds, silently patching an
+    # orphaned object instead of the live one (same pitfall the top-level
+    # conftest.py's _stub_pr_summary_enrichment fixture already documents
+    # and works around for feature_handoff/deployment_handoff).
+    monkeypatch.setattr(
+        sys.modules["parrot.flows.dev_loop.nodes.deployment_handoff"],
+        "assert_base_is_clean",
+        AsyncMock(return_value=None),
+    )
+
+
+@pytest.fixture
+def patch_worktree_base(tmp_path, monkeypatch):
+    monkeypatch.setattr("parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH", str(tmp_path))
+    return tmp_path
+
+
+def _research_output(tmp_path) -> ResearchOutput:
+    return ResearchOutput(
+        jira_issue_key="OPS-1",
+        spec_path="sdd/specs/x.spec.md",
+        feat_id="FEAT-130",
+        branch_name="feat-130-fix",
+        worktree_path=str(tmp_path / "feat-130-fix"),
+        log_excerpts=[],
+    )
+
+
+def _materialize_real_worktree(research_out: ResearchOutput) -> None:
+    """Turn ``research_out.worktree_path`` into a REAL ``git worktree add``.
+
+    A resumed run's ``research_output`` goes through recovered-artifact
+    validation (TASK-2625: worktree registered on the expected branch +
+    referenced spec file exists). Call this AFTER the "process 1" run
+    completes — mimicking what the real ``sdd-research`` subagent does on
+    disk (outside this test's mocked dispatcher) during that first run —
+    never BEFORE it: ``ResearchNode`` itself guards against a
+    pre-existing, already-registered path at dispatch time
+    (``_ensure_worktree_safe``) and would treat it as stale.
+    """
+    import subprocess
+
+    def _git(repo, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+    worktree_path = Path(research_out.worktree_path)
+    repo = worktree_path.parent / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "f.txt").write_text("x")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "init")
+
+    _git(repo, "worktree", "add", "-b", research_out.branch_name, str(worktree_path))
+    spec_dir = worktree_path / "sdd" / "specs"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "x.spec.md").write_text("# spec\n")
+
+
+def _counting_dispatcher(research_out, *, calls: dict, fail_development: bool = False, qa_passed: bool = True):
+    """Like test_runner.py's ``_dispatcher_returning`` but with call counters.
+
+    ``calls`` accumulates counts by ``output_model.__name__`` across
+    however many dispatcher instances a test builds — pass the SAME dict
+    to each dispatcher built for the "same run_id, different process"
+    scenario so the counters span both.
+    """
+
+    async def dispatch(*, brief, profile, output_model, run_id, node_id, cwd, session_host=None):
+        calls[output_model.__name__] = calls.get(output_model.__name__, 0) + 1
+        if output_model is ResearchOutput:
+            return research_out
+        if output_model is DevelopmentOutput:
+            if fail_development:
+                raise RuntimeError("dispatch blew up in development")
+            return DevelopmentOutput(files_changed=["x.py"], commit_shas=["abc123"], summary="implemented the fix")
+        if output_model is QAReport:
+            return QAReport(
+                passed=qa_passed,
+                criterion_results=[],
+                lint_passed=qa_passed,
+                attempt=1 if qa_passed else int(conf.DEV_LOOP_QA_MAX_RETRIES),
+            )
+        raise AssertionError(f"unexpected output_model {output_model}")
+
+    d = MagicMock()
+    d.dispatch = AsyncMock(side_effect=dispatch)
+    return d
+
+
+def _dev_loop_flow_kwargs(dispatcher, jira) -> dict[str, Any]:
+    return {
+        "dispatcher": dispatcher,
+        "jira_toolkit": jira,
+        "log_toolkits": {},
+        "redis_url": "redis://localhost:6399/9",  # never connected in tests
+        "publish_flow_events": False,
+    }
+
+
+async def test_single_agent_recovery_is_node_granular(brief, mock_jira, patch_handoff, patch_worktree_base) -> None:
+    """Interrupted single-agent development reruns whole node (at-least-once);
+    completed upstream (research) is never redispatched."""
+    fake_store = FakeCheckpointStore()
+    calls: dict = {}
+    research_out = _research_output(patch_worktree_base)
+    # BugIntakeNode._enrich() mutates `brief.description` in place during
+    # run 1 — a genuinely separate "process 2" would re-supply its OWN
+    # pristine copy of the brief (from wherever it originally stored the
+    # request), never the first process's in-memory enriched object.
+    # Snapshot it here, before run 1 executes, so "process 2" below gets
+    # exactly that: the same INPUT the checkpoint's fingerprint was
+    # computed from, not an artifact of reusing one Python object across
+    # a simulated process boundary in this test.
+    pristine_brief = brief.model_copy(deep=True)
+
+    # "Process 1": development blows up (the simulated crash).
+    dispatcher1 = _counting_dispatcher(research_out, calls=calls, fail_development=True)
+    kwargs1 = _dev_loop_flow_kwargs(dispatcher1, mock_jira)
+    flow1 = build_dev_loop_flow(**kwargs1)
+    runner1 = DevLoopRunner(flow1, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs1)
+    result1 = await runner1.run(brief, run_id="run-recover-1")
+
+    assert "development" in result1.errors
+    assert calls.get("ResearchOutput") == 1
+    assert calls.get("DevelopmentOutput") == 1  # the crashed attempt
+
+    # The real sdd-research subagent creates the worktree on disk during
+    # research's dispatch — simulated here, AFTER run 1 (never before:
+    # ResearchNode's own guard treats a pre-existing registered path as
+    # stale at dispatch time).
+    _materialize_real_worktree(research_out)
+
+    # "Process 2": a fresh runner/flow, SAME run_id + pristine brief, development now succeeds.
+    dispatcher2 = _counting_dispatcher(research_out, calls=calls, fail_development=False)
+    kwargs2 = _dev_loop_flow_kwargs(dispatcher2, mock_jira)
+    flow2 = build_dev_loop_flow(**kwargs2)
+    runner2 = DevLoopRunner(flow2, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs2)
+    result2 = await runner2.run(pristine_brief, run_id="run-recover-1")
+
+    assert result2.status == FlowStatus.COMPLETED
+    # research was already checkpointed as complete — never redispatched.
+    assert calls.get("ResearchOutput") == 1
+    # development reran WHOLE (node-granular at-least-once) — not restored.
+    assert calls.get("DevelopmentOutput") == 2
+    executed = set(result2.responses)
+    assert "development" in executed
+    assert "qa" in executed
+    assert "deployment_handoff" in executed
+    assert "close" in executed
+
+
+async def test_completed_research_not_redispatched_on_matching_resume(
+    brief, mock_jira, patch_handoff, patch_worktree_base
+) -> None:
+    """A fully-completed run's checkpoint, resumed with the SAME run_id and
+    input, never redispatches ANY node — the whole run restores."""
+    fake_store = FakeCheckpointStore()
+    calls: dict = {}
+    research_out = _research_output(patch_worktree_base)
+    # See test_single_agent_recovery_is_node_granular's comment: BugIntakeNode
+    # mutates `brief.description` in place — snapshot before run 1 so
+    # "process 2" gets the pristine input the checkpoint's fingerprint was
+    # actually computed from.
+    pristine_brief = brief.model_copy(deep=True)
+
+    dispatcher1 = _counting_dispatcher(research_out, calls=calls)
+    kwargs1 = _dev_loop_flow_kwargs(dispatcher1, mock_jira)
+    flow1 = build_dev_loop_flow(**kwargs1)
+    runner1 = DevLoopRunner(flow1, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs1)
+    result1 = await runner1.run(brief, run_id="run-full-resume")
+    assert result1.status == FlowStatus.COMPLETED
+    assert calls.get("ResearchOutput") == 1
+    assert calls.get("DevelopmentOutput") == 1
+
+    # Simulated on-disk artifact from the (mocked) research dispatch —
+    # see test_single_agent_recovery_is_node_granular's comment.
+    _materialize_real_worktree(research_out)
+
+    dispatcher2 = _counting_dispatcher(research_out, calls=calls)
+    kwargs2 = _dev_loop_flow_kwargs(dispatcher2, mock_jira)
+    flow2 = build_dev_loop_flow(**kwargs2)
+    runner2 = DevLoopRunner(flow2, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs2)
+    result2 = await runner2.run(pristine_brief, run_id="run-full-resume")
+
+    assert result2.status == FlowStatus.COMPLETED
+    # Nothing new dispatched — the whole run restored from the checkpoint.
+    assert calls.get("ResearchOutput") == 1
+    assert calls.get("DevelopmentOutput") == 1
+
+
+async def test_run_id_omitted_is_plain_fresh_run(mock_jira, patch_handoff, patch_worktree_base) -> None:
+    """No run_id -> auto-generated -> never routes through recovery at all
+    (spec §8 OQ1), even when checkpoint_store/dev_loop_flow_kwargs are set."""
+    fake_store = FakeCheckpointStore()
+    brief = BugBrief(
+        summary="Customer sync drops the last row",
+        affected_component="etl/customers/sync.yaml",
+        acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+        escalation_assignee="a",
+        reporter="b",
+    )
+    calls: dict = {}
+    research_out = _research_output(patch_worktree_base)
+    dispatcher = _counting_dispatcher(research_out, calls=calls)
+    kwargs = _dev_loop_flow_kwargs(dispatcher, mock_jira)
+    flow = build_dev_loop_flow(**kwargs)
+    runner = DevLoopRunner(flow, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs)
+
+    result = await runner.run(brief)  # no run_id
+
+    assert result.status == FlowStatus.COMPLETED
+    # A fresh run every time — no checkpoint was ever consulted/written
+    # for a specific stable identity (nothing to assert on fake_store
+    # beyond "did not raise"); the point is the recovery path was skipped.

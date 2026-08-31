@@ -182,10 +182,82 @@ merged signatures — do not trust this file's forward references blindly.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-31
+**Notes**: Created `parrot/flows/dev_loop/checkpoint.py` (new module,
+self-contained — does not import or modify `dev_loop/flow.py`/`runner.py`,
+per scope) with `DevCheckpointCoordinator.prepare()` matching the spec §2
+signature exactly.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Design decision documented in the module docstring**: the spec's
+`flow_factory: Callable[..., AgentsFlow]` is deliberately loose. Pinned it
+down to `(definition: FlowDefinition | None) -> AgentsFlow`, matching
+`AgentsFlow.resume()`'s own calling convention exactly (`flow_factory(
+checkpoint.definition)`) so the SAME closure passed to `prepare()` is also
+handed straight to `resume()` unmodified. The factory (built by
+TASK-2626/2627) cannot know this run's `flow_id` or computed
+`CheckpointInputMetadata` in advance, so `prepare()` binds both onto the
+freshly-built flow directly (`flow.flow_id`, `flow._checkpoint_input_arg`)
+before returning — both are read lazily by `_ensure_checkpointer()`, so
+this is safe (same technique TASK-2622/2623/2624's own test suites already
+rely on).
 
-**Deviations from spec**: none
+**Two-part shared-state projection**, since `AgentsFlow.resume(seed_context=
+...)` deliberately never touches `shared_data` (TASK-2622): (1)
+`_project_shared_data` — the WRITE-side `checkpoint_shared_data` projector,
+returning only the allowlisted keys (`bug_brief`, `bug_findings`,
+`research_output`, `planner_output`, `development_output`); (2)
+`_restore_shared_data` — the READ-side restoration, decoding the loaded
+checkpoint's raw `context.shared_data` via a fresh `FlowStateSerializer`
+and writing only keys ABSENT from the live context (so a live value is
+never clobbered); plus `_project_results` — a second restoration path for
+the three keys that are ALSO a node's typed RESULT (restored into
+`live_context.results` by `resume()`'s `mark_completed()` seeding directly,
+independent of the shared_data projector).
+
+Fingerprint: `hashlib.sha256(json.dumps(payload, sort_keys=True,
+separators=(",", ":")).encode())` over workflow/topology_version/
+`brief.model_dump(mode="json")`/repository/execution_policy/
+document_identity, exactly as specified.
+
+Worktree validation (`_verify_recovered_worktree`) adapted from
+`ResearchNode._ensure_worktree_safe`/`_find_worktree_entry` but with
+recovery-specific semantics (a MISSING worktree is a hard failure here,
+not "the subagent will create it" as in fresh research) — and a real bug
+found and fixed relative to the source: the original never passed `cwd=`
+to its `git worktree list` subprocess call, which only works by accident
+if the caller's process cwd happens to already be inside the right repo.
+Added `cwd=worktree_path` explicitly so validation is correct regardless
+of caller cwd (verified by a real `git worktree add`-backed test fixture).
+
+**Contract note, not a deviation**: per spec's own Module 4 responsibility
+("register all result types needed for routing/restoration" —
+`models/__init__.py`/`models/base.py`, TASK-2626), this task deliberately
+does NOT call `register_checkpoint_type()` for `WorkBrief`/`ResearchOutput`/
+`PlannerOutput`/`DevelopmentOutput` anywhere in `checkpoint.py` — that
+registration is out of scope here. The test file's `_register_dev_loop_types`
+autouse fixture simulates it so the read-side projection/restoration logic
+is validated end-to-end exactly as it will run once TASK-2626 adds the real
+registration.
+
+`agent_registry=None` is passed to the internal `AgentsFlow.resume()` call
+(TASK-2622's signature requires SOME value); documented inline why it is
+never actually read on this call path (a non-None `flow_factory` bypasses
+the `from_definition()` fallback, and a non-None `seed_context` bypasses
+the internal-context-construction branch that would otherwise bind it).
+
+12 new tests in `test_checkpoint_coordinator.py`: fingerprint determinism +
+mismatch-on-policy/repo-change, cache-miss fresh-flow construction,
+resume-restores-shared-state (both projection paths), live-object-not-
+overwritten (including a live value already present under an allowlisted
+key), worktree validation (correct branch / wrong branch / missing path /
+unregistered-but-git-aware path, using real `git worktree add`-backed
+fixtures), end-to-end `prepare()` failure on an invalid recovered worktree,
+lease-conflict propagation, and the structured-event public API. Full
+`packages/ai-parrot/tests/flows/dev_loop` suite: 1142 passed, same 3
+pre-existing failures (unrelated dev-loop QA/secondopinion prompt tests,
+confirmed pre-existing in TASK-2622/2623/2624's notes). `ruff check` clean
+on both new files (no pre-existing style debt to preserve — brand-new
+files use modern `dict`/`list`/`X | None` annotations throughout).
+
+**Deviations from spec**: none.

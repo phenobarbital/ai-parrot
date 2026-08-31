@@ -487,21 +487,28 @@ async def _on_startup(app: web.Application) -> None:
     require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
     skip_qa = bool(getattr(conf, "DEV_LOOP_SKIP_QA", False))
 
-    app["flow"] = build_dev_flow(
-        dispatcher=dispatcher,
-        redis_url=redis_url,
-        jira_toolkit=jira_toolkit,
-        git_toolkit=git_toolkit,
-        wiki_toolkit=wiki_toolkit,
-        codereview_dispatcher=judge_panel_dispatcher,
-        development_dispatcher_builder=development_dispatcher_builder,
-        development_pool_max=development_pool_max,
-        graph_memory=graph_memory,
-        wiki_search=wiki_search,
-        skip_qa=skip_qa,
-        require_plan_approval=require_plan_approval,
-        name="dev-flow-console",
-    )
+    # FEAT-480 (TASK-2628): same pattern as server.py's dev-loop wiring —
+    # captured once as the exact kwargs `build_dev_flow` is called with, then
+    # handed to `DevFlowRunner` as `dev_loop_flow_kwargs` (the attribute name
+    # is generic across both workflows per `DevFlowRunner`'s inherited
+    # `__init__`) so its checkpoint-recovery path builds a genuinely fresh,
+    # checkpoint-enabled `AgentsFlow` per run instead of reusing `app["flow"]`.
+    dev_loop_flow_kwargs: dict[str, Any] = {
+        "dispatcher": dispatcher,
+        "redis_url": redis_url,
+        "jira_toolkit": jira_toolkit,
+        "git_toolkit": git_toolkit,
+        "wiki_toolkit": wiki_toolkit,
+        "codereview_dispatcher": judge_panel_dispatcher,
+        "development_dispatcher_builder": development_dispatcher_builder,
+        "development_pool_max": development_pool_max,
+        "graph_memory": graph_memory,
+        "wiki_search": wiki_search,
+        "skip_qa": skip_qa,
+        "require_plan_approval": require_plan_approval,
+        "name": "dev-flow-console",
+    }
+    app["flow"] = build_dev_flow(**dev_loop_flow_kwargs)
     runner = DevFlowRunner(
         app["flow"],
         dispatcher=dispatcher,
@@ -511,6 +518,12 @@ async def _on_startup(app: web.Application) -> None:
         redis_url=redis_url,
         codereview_dispatcher=judge_panel_dispatcher,
         graph_memory=graph_memory,
+        # FEAT-480 (TASK-2628): see server.py's identical wiring note — each
+        # `handle_run` request below mints its own stable per-job `run_id`
+        # (never shared across jobs), and `checkpoint_store=None` resolves
+        # through the existing env-fallback precedence.
+        checkpoint_store=None,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
     )
 
     app["runner"] = runner
