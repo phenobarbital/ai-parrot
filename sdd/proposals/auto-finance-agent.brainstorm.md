@@ -11,7 +11,7 @@ base_branch: dev
 **Date**: 2026-08-31
 **Author**: Jesús Lara
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: B (user-ratified 2026-08-31; A was the initial recommendation)
 
 ---
 
@@ -86,7 +86,8 @@ FEAT-453 `compute_statement_digest` idempotency pattern), `parse_n43` (via
 `detect_recurring` (interval gaps + coefficient of variation, ≥3 occurrences;
 DBSCAN via scikit-learn for multi-stream merchants), `detect_ant_expenses`
 (frequency×amount + Pareto), `detect_price_increases` (`ruptures` change-point),
-`detect_anomalies` (scikit-learn IsolationForest — **no pyod**),
+`detect_anomalies` (`pyod` ECOD/IsolationForest — user decision OQ4; the
+original sklearn-only proposal was declined),
 `classify_transactions` (rules first pass → local encoder embeddings + SetFit
 few-shot head against the fixed ES-autónomo taxonomy), `assess_deductibility`
 (data-driven AEAT rule table → verdicts with rule citations), `query_expenses`
@@ -151,6 +152,7 @@ fail-closed when no `human_manager`).
 | `rapidfuzz>=3.0` | Merchant fuzzy grouping | Installed (3.11.0) but only in `scraping` extra — add to `finance` extra |
 | `scipy`, `statsmodels` | Interval stats / ACF | Installed transitively — declare explicitly |
 | `ruptures` | Price-increase change-point | New dep, pure-python+numpy, small |
+| `pyod` | Anomaly detection (ECOD, IsolationForest) | New dep (user decision OQ4) |
 | `scikit-learn` | DBSCAN, IsolationForest, classifier eval | Installed (1.9.0); declared unpinned in advisors — pin in finance extra |
 | `setfit>=1.1.3` | Few-shot fixed-taxonomy classifier | Active (2025-08); drop-in over sentence-transformers body |
 | `sentence-transformers>=5.0`, `optimum[onnxruntime]` | e5-small ONNX inference | Already declared (embeddings pkg / onnx extra) |
@@ -246,25 +248,36 @@ foreign keys.
 
 ## Recommendation
 
-**Option A**, with one explicit deviation to ratify: during discovery the user
-picked "GraphIndex over SQLite", but codebase research shows the **wiki plane is
-the better substrate for a domain KB** — it *is* already a SQLite
-pages+typed-edges graph, with open `category`/`rel` vocabularies (GraphIndex's
-`NodeKind`/`EdgeKind` are closed enums with no finance kinds), a real ABC
-contract (vs. undocumented duck typing), a proven satellite plugin seam
-(`register_wiki_backend`, legal toolkit), and immediate `wikitoolkit`
-query/federation integration. What Option B uniquely offers — audited revertible
-commits — is covered differently: the DuckDB file is the append-only source of
-truth keyed by statement digest (FEAT-453 pattern), and the wiki is a
-rebuildable projection; if commit-level auditing of *graph* assertions later
-matters, `GraphPublisher` can be layered on without redesign. Option C is kept
-as the fallback floor: Option A's DuckDB layer is Option C, so if wiki work
-slips, the toolkit still ships useful.
+**Option B — user-ratified decision (2026-08-31).** The initial technical
+recommendation was Option A (wiki plane), argued on open `category`/`rel`
+vocabularies, a real ABC contract, and free `wikitoolkit` integration. The user
+weighed that against Option B's unique property — **audited, revertible commits
+over graph assertions from day 1** (`GraphPublisher` → `CommitReceipt`,
+`list_commits`, `revert_commit`, `AssertionMeta` provenance) — and ratified
+**GraphIndex on SQLite**, valuing an auditable/undoable financial KB over
+vocabulary openness. Everything else from Option A's composition carries over
+unchanged: the deterministic toolkit, the DuckDB analytical file as source of
+truth, csb43/N43 ingestion, the SetFit/e5 local classifier, and the two-spec
+split.
 
-Trade-offs accepted: two storage artifacts (mitigated by idempotent
-`build_expense_wiki` per digest), unbenchmarked ES-descriptor classification
-(mitigated by rules-first pass + held-out eval + human review of drafts), and
-the divergence from the Round-1 answer (flagged as Open Question #1).
+Trade-offs accepted, with mitigations to encode in Spec A:
+- **Closed `NodeKind`/`EdgeKind` enums** (schema.py:36,64): finance typing is
+  carried in `domain_tags` (JSON on `UniversalNode:172`/`UniversalEdge:208`),
+  overloading `CONCEPT`/`CLAIM` nodes and `ABOUT`/`REFERENCES` edges. Extending
+  the core enums is explicitly out of scope for Phase 1; if `domain_tags`
+  proves too weak, an enum-extension proposal goes through its own mini-spec.
+- **Duck-typed persistence seam** (no ABC/Protocol): Spec A pins the contract
+  with a conformance test suite exercised against `SQLitePersistence`, so a
+  future PgVector/Arango swap (`GraphIndexPersistence`) is regression-guarded.
+- **No FTS-ranked page-body retrieval like the wiki plane**: `SQLitePersistence`
+  has `nodes_fts`; agent access goes through `GraphIndexToolkit`
+  (`build_graph_memory_toolkit`, factory.py:203) + the sandboxed
+  `query_expenses` SQL tool, which covers the query surface Phase 1 needs.
+- Unbenchmarked ES-descriptor classification: mitigated by rules-first pass +
+  200-row held-out eval + human review of drafts.
+
+Option C remains the fallback floor: the DuckDB layer ships value even if
+graph-projection work slips.
 
 ---
 
@@ -312,9 +325,10 @@ the divergence from the Round-1 answer (flagged as Open Question #1).
 - **Detection**: per-merchant interval series → median gap + CV bands map to
   cadence (weekly/monthly/quarterly/yearly); ≥3 occurrences required (Plaid
   convention); DBSCAN on [interval, amount] separates multiple streams per
-  merchant; `ruptures` flags change-points in variable-amount streams;
-  IsolationForest flags outliers. All pure functions over DuckDB-fetched frames;
-  all thresholds in one config dataclass; all unit-tested against fixtures.
+  merchant; `ruptures` flags change-points in variable-amount streams; `pyod`
+  (ECOD/IsolationForest) flags outliers (user decision OQ4). All pure functions
+  over DuckDB-fetched frames; all thresholds in one config dataclass; all
+  unit-tested against fixtures.
 - **Classification**: pass 1 deterministic rules (merchant dictionary + SEPA
   channel heuristics); pass 2 e5-small embeddings (ONNX, via
   `EmbeddingRegistry`) + SetFit head for the remainder; below-threshold →
@@ -323,16 +337,26 @@ the divergence from the Round-1 answer (flagged as Open Question #1).
 - **Deductibility**: a rule table (rule_id, matcher, percentage, cap, legal
   basis, invoice_required) evaluated deterministically → `DeductibilityVerdict`
   drafts persisted in DuckDB with status `draft`.
-- **Wiki materialization**: `build_expense_wiki` projects DuckDB state into wiki
-  pages+edges via `replace_source_slice` keyed by statement digest (idempotent);
-  embeddings via the wiki store's existing blob path.
-- **Hooba (Spec B)**: `HoobaServiceToolkit` wraps a private action catalog
-  (site actions JSON live outside the repo, per the business-automation runbook);
-  `register_expense(draft_id)` builds a per-call confirmation stub
-  (`routing_meta={"requires_confirmation": True, "confirm_window_seconds": 0}`)
-  → `ConfirmationGuard.confirm()` → only then `run_site_action`. Dedicated
-  `HumanChannel` instance (documented collision hazard when sharing with
-  `exec_await_human`). Wiring copied from `agentd/service.py:385-405`.
+- **Wiki materialization (GraphIndex — user-ratified)**: `build_expense_wiki`
+  mints `UniversalNode`/`UniversalEdge` objects (finance typing in
+  `domain_tags`: merchant, subscription, category, verdict; rels paid_to /
+  categorized_as / supersedes over `ABOUT`/`REFERENCES`) and publishes them via
+  `GraphPublisher.publish(GraphUpdate)` onto `SQLitePersistence`, keyed by
+  statement digest through `replace_document_slice` for idempotent re-imports.
+  Every import/correction is an audited `CommitReceipt`; `revert_commit` undoes
+  a bad import. **`GraphIndexBuilder.build()` is bypassed entirely** (its
+  extractors are code/document-only). Agent access via `GraphIndexToolkit` from
+  `build_graph_memory_toolkit` (SQLite + deterministic `HashingGraphEmbedder`),
+  optionally surfaced to bots through `GraphMemoryMixin`.
+- **Hooba (Spec B — user decision OQ7)**: `HoobaServiceToolkit` reuses the
+  **`BusinessAutomationToolkit` operations/plans model**, pointing `plans_dir`
+  at the user's private Hooba plan directory (the existing private
+  `hooba_agent` assets seed it — OQ2). SUBMIT-kind operations confirm through
+  `ConfirmationGuard` **before the browser opens** with
+  `confirm_window_seconds=0`; checkpointing + `resume_operation` come for free.
+  Dedicated `HumanChannel` instance (documented collision hazard when sharing
+  with `exec_await_human`). Wiring copied from `agentd/service.py:385-405`;
+  default channel for the example agent: **CLI** (`CLIHumanChannel`, OQ6).
 
 ### Edge Cases & Error Handling
 
@@ -367,12 +391,15 @@ the divergence from the Round-1 answer (flagged as Open Question #1).
   ingestion, merchant normalization, recurrence/ant-expense/price/anomaly
   detection, fixed-taxonomy local-ML classification, AEAT deductibility drafts),
   DuckDB analytical store + sandboxed read-only `query_expenses`, and the
-  ExpenseWiki backend (`register_wiki_backend("expense", ...)`) with
+  GraphIndex-based ExpenseWiki (`SQLitePersistence` + `GraphPublisher`,
+  finance typing via `domain_tags`) with idempotent, audited, revertible
   `build_expense_wiki` projection. → Spec A.
-- `hooba-service-toolkit`: Hooba browser-automation toolkit on the
-  WebBrowsingToolkit action catalog with fail-closed ConfirmationGuard HITL
-  (approve/deny/edit before submit), draft-keyed idempotency and resumable runs.
-  → Spec B (depends on A's draft model only).
+- `hooba-service-toolkit`: Hooba automation toolkit on the
+  `BusinessAutomationToolkit` operations/plans model (private `plans_dir`,
+  seeded from the user's out-of-repo hooba_agent assets) with fail-closed
+  ConfirmationGuard HITL (approve/deny/edit before submit, window 0),
+  draft-keyed idempotency and resumable runs. → Spec B (depends on A's draft
+  model only).
 
 ### Modified Capabilities
 - None (additive: new `parrot_tools.finance` + `parrot_tools.hooba` subpackages,
@@ -385,11 +412,11 @@ the divergence from the Round-1 answer (flagged as Open Question #1).
 | Affected Component | Impact Type | Notes |
 |---|---|---|
 | `packages/ai-parrot-tools/src/parrot_tools/finance/` | new | AutoFinanceToolkit, models, taxonomy data, AEAT rules, wiki backend, classifier |
-| `packages/ai-parrot-tools/src/parrot_tools/hooba/` | new | HoobaServiceToolkit (Spec B); private action catalog stays out-of-repo |
-| `packages/ai-parrot-tools/pyproject.toml` | modifies | new `finance = [...]` extra (duckdb, csb43, rapidfuzz, scipy, statsmodels, ruptures, scikit-learn, setfit) |
+| `packages/ai-parrot-tools/src/parrot_tools/hooba/` | new | HoobaServiceToolkit (Spec B) over BusinessAutomationToolkit; private plans_dir stays out-of-repo |
+| `packages/ai-parrot-tools/pyproject.toml` | modifies | new `finance = [...]` extra (duckdb, csb43, rapidfuzz, scipy, statsmodels, ruptures, pyod, scikit-learn, setfit) |
 | `packages/ai-parrot-tools/src/parrot_tools/__init__.py` | modifies | `TOOL_REGISTRY` entries for both toolkits |
-| `parrot.knowledge.wiki` backend registry | depends on | `register_wiki_backend("expense", ...)` at import time — no core change |
-| `parrot.embeddings` registry/catalog | depends on | e5-small entry may need adding to `catalog.py` (only -base/-large catalogued) |
+| `parrot.knowledge.graphindex` | depends on | `SQLitePersistence` + `GraphPublisher` + `build_graph_memory_toolkit` — consumed as-is, builder bypassed, no core change (enum extension explicitly out of scope) |
+| `parrot/embeddings/catalog.py` | modifies | add `intfloat/multilingual-e5-small` entry (user decision OQ8; only -base/-large catalogued today) |
 | `parrot.auth.confirmation` + `parrot.human` | depends on | wiring in the example agent, agentd-style; no core change |
 | `parrot_tools/business_automation/ingest.py` | depends on / possibly extracts | digest/manifest helpers may be imported or lifted to a shared module |
 | `examples/agents/finance/` | new | runnable agent wiring both toolkits + HITL channel |
@@ -560,11 +587,12 @@ from parrot_tools.browsing import WebBrowsingToolkit, ActionCatalog
 
 ## Open Questions
 
-- [ ] Ratify the KB substrate: recommendation is the **wiki plane** (`SQLiteWikiStore` + `register_wiki_backend`) instead of the Round-1 answer "GraphIndex over SQLite" — GraphIndex's closed `NodeKind`/`EdgeKind` enums and duck-typed persistence make it a worse fit; `GraphPublisher` auditing can be layered later. Accept? — *Owner: Jesús*
-- [ ] `hooba_agent.py` does not exist in this repo — does a private version (selectors, flows, catalog JSON) exist on disk elsewhere to seed the Hooba action catalog, or is Spec B greenfield against the live Hooba UI? — *Owner: Jesús*
-- [ ] Which bank(s) produce the real Excel/N43 fixtures (column layouts differ per bank; anonymization script needed before committing fixtures)? — *Owner: Jesús*
-- [ ] Anomalies via scikit-learn `IsolationForest` (already installed) instead of adding `pyod` — accept dropping pyod? — *Owner: Jesús*
-- [ ] Initial fixed taxonomy: propose ~12 top-level / ~40 second-level ES-autónomo categories in Spec A — review the concrete list at spec time. — *Owner: Jesús*
-- [ ] Default HITL channel for the example agent: CLI (simplest) or Telegram (already integrated, matches `ConfirmationConfig.default_channel`)? — *Owner: Jesús*
-- [ ] Spec B engine: thin `HoobaServiceToolkit` over `WebBrowsingToolkit` catalog (recommended) vs. reusing `BusinessAutomationToolkit` operations/plans model — decide at Spec B time based on the private Hooba plan's shape. — *Owner: Jesús*
-- [ ] Add `intfloat/multilingual-e5-small` to `parrot/embeddings/catalog.py` (only -base/-large are catalogued) or pass it uncatalogued via `get_or_create`? — *Owner: dev*
+- [x] Ratify the KB substrate: wiki plane vs. GraphIndex — *Owner: Jesús*: **GraphIndex on SQLite (Option B)**, ratified 2026-08-31 — audited/revertible commits outweigh open vocabularies; finance typing via `domain_tags`, core enum extension out of scope, persistence contract pinned by a conformance test suite (see Recommendation).
+- [x] Private `hooba_agent.py` to seed the Hooba plans — *Owner: Jesús*: **yes, a private version exists in another directory/repo** (selectors/flows/catalog). Path still pending — see the remaining open item below.
+- [x] Which bank(s) produce the real Excel/N43 fixtures? — *Owner: Jesús*: **BBVA** (Excel + Norma 43). Anonymization script required before committing fixtures.
+- [x] Anomalies: sklearn IsolationForest only vs. adding pyod — *Owner: Jesús*: **add `pyod`** (ECOD + IsolationForest) to the `finance` extra.
+- [x] Initial fixed taxonomy — *Owner: Jesús*: **propose ~12 top-level / ~40 second-level ES-autónomo categories in Spec A**; user reviews the concrete list at spec approval time.
+- [x] Default HITL channel for the example agent — *Owner: Jesús*: **CLI** (`CLIHumanChannel`); Telegram/Teams remain available via `HumanInteractionManager.register_channel` without design changes.
+- [x] Spec B engine — *Owner: Jesús*: **`BusinessAutomationToolkit` operations/plans model** (`plans_dir` pointing at the private Hooba plan; confirm-before-browser, checkpoints, `resume_operation` reused as-is).
+- [x] `intfloat/multilingual-e5-small` catalog entry — *Owner: dev*: **add it to `parrot/embeddings/catalog.py`** alongside -base/-large (small core change, listed in Impact & Integration).
+- [ ] Locate and share the path of the private hooba_agent assets (selectors/flows/plans) so Spec B can inventory what maps onto `BusinessAutomationToolkit` plans — *Owner: Jesús*
