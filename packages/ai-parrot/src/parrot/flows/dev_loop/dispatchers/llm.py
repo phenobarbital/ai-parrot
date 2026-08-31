@@ -195,11 +195,15 @@ class LLMCodeDispatcher:
         # nova all report None tokens otherwise). Underscore-private
         # methods — a deliberate, documented choice at the same level of
         # intimacy this loop already has with client._chat_completion
-        # below. NO accumulation here: one event per round; summing is
-        # FEAT-397's client-layer job, not this loop's (see spec §1
-        # Non-Goals — a summing loop here is forbidden).
+        # below. Per-round events are still one-per-round and are NOT
+        # summed for that purpose. FEAT-479 additionally accumulates a
+        # per-call total here (via ``CompletionUsage.__add__``) solely to
+        # populate the awaited ``AfterClientCallEvent`` — see
+        # sdd/specs/devflow-telemetry-accounting.spec.md §3 Module 3 for
+        # why FEAT-405 R4 is deliberately overridden on this path.
         tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
         loop_t0 = time.perf_counter()
+        accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
         try:
             for turn_index in range(profile.max_turns):
                 round_t0 = time.perf_counter()
@@ -214,6 +218,8 @@ class LLMCodeDispatcher:
                 content = self._message_content(message)
                 tool_calls = self._message_tool_calls(message)
                 usage, raw_usage = self._extract_usage(response)
+                if usage is not None:
+                    accumulated = usage if accumulated is None else accumulated + usage
                 self._safe_emit_round_event(
                     client,
                     tc,
@@ -320,7 +326,12 @@ class LLMCodeDispatcher:
             raise DispatchExecutionError(f"LLM code dispatch exceeded max_turns={profile.max_turns}")
         finally:
             await self._safe_emit_after_call(
-                client, tc, model=model, duration_ms=(time.perf_counter() - loop_t0) * 1000
+                client,
+                tc,
+                model=model,
+                duration_ms=(time.perf_counter() - loop_t0) * 1000,
+                input_tokens=accumulated.prompt_tokens if accumulated else None,
+                output_tokens=accumulated.completion_tokens if accumulated else None,
             )
 
     def _create_client(self, profile: LLMCodeDispatchProfile) -> Any:
@@ -480,8 +491,24 @@ class LLMCodeDispatcher:
             duration_ms=duration_ms,
         )
 
-    async def _safe_emit_after_call(self, client: Any, tc: Any, *, model: str, duration_ms: float) -> None:
-        """Call ``client._emit_after_call`` once, at the end of the dispatch."""
+    async def _safe_emit_after_call(
+        self,
+        client: Any,
+        tc: Any,
+        *,
+        model: str,
+        duration_ms: float,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+    ) -> None:
+        """Call ``client._emit_after_call`` once, at the end of the dispatch.
+
+        ``input_tokens``/``output_tokens`` (FEAT-479) carry the per-call
+        total accumulated across the turn loop via
+        ``CompletionUsage.__add__`` — see the accumulation comment at the
+        top of :meth:`_dispatch_loop`. ``None`` means no round reported
+        usage; never fabricate ``0``.
+        """
         if tc is None:
             return
         method = getattr(client, "_emit_after_call", None)
@@ -492,6 +519,8 @@ class LLMCodeDispatcher:
             client_name=self._client_display_name(client),
             model=model,
             duration_ms=duration_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     @staticmethod

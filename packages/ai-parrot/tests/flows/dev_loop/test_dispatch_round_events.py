@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 from parrot.clients.base import AbstractClient
-from parrot.core.events.lifecycle.events.client import ClientRoundEvent
+from parrot.core.events.lifecycle.events.client import (
+    AfterClientCallEvent,
+    ClientRoundEvent,
+)
 from parrot.flows.dev_loop import (
     DevelopmentOutput,
     LLMCodeDispatcher,
@@ -201,6 +204,17 @@ class _Collector:
         self.events.append(event)
 
 
+class _AfterCallCollector:
+    """Subscribes to AfterClientCallEvent on a client's own registry."""
+
+    def __init__(self, client: AbstractClient) -> None:
+        self.events: list[AfterClientCallEvent] = []
+        client.events.subscribe(AfterClientCallEvent, self._capture)
+
+    async def _capture(self, event: AfterClientCallEvent) -> None:
+        self.events.append(event)
+
+
 async def _drain() -> None:
     """Let emit_nowait's fire-and-forget scheduled tasks run."""
     for _ in range(3):
@@ -372,3 +386,103 @@ class TestNoAccumulation:
         ).read_text()
         assert "total_usage" not in src
         assert "_accumulated_usage" not in src
+
+
+class TestAfterCallTokens:
+    """FEAT-479 Module 3: the awaited AfterClientCallEvent must carry the
+    per-call accumulated tokens, not None (spec §1 Finding 4).
+    """
+
+    async def test_dispatcher_after_call_carries_accumulated_tokens(
+        self, monkeypatch, brief, _patch_worktree_base
+    ):
+        """Regression guard for FEAT-479 Finding 4: _safe_emit_after_call
+        dropped the token counts entirely, so the one AWAITED (exactly
+        -delivered) event always reported None."""
+        client = _EmittingFakeClient(
+            [
+                _Response(
+                    _Message(content="t1", tool_calls=[_ToolCall("c1", "read_file", {"path": "x"})]),
+                    usage=_Usage(1000, 500, 1500),
+                ),
+                _Response(
+                    _Message(content="t2", tool_calls=[_final_output_call("c2")]),
+                    usage=_Usage(2000, 700, 2700),
+                ),
+            ]
+        )
+        after_collector = _AfterCallCollector(client)
+        dispatcher = _dispatcher(monkeypatch, client)
+        (_patch_worktree_base / "x").write_text("hi", encoding="utf-8")
+        await _run_dispatch(dispatcher, brief, str(_patch_worktree_base))
+
+        assert len(after_collector.events) == 1
+        assert after_collector.events[0].input_tokens == 3000  # summed, not 2000
+        assert after_collector.events[0].output_tokens == 1200
+
+    async def test_after_call_tokens_none_when_unreported(
+        self, monkeypatch, brief, _patch_worktree_base
+    ):
+        """No round reported usage -> None, never a fabricated 0."""
+        client = _EmittingFakeClient(
+            [_Response(_Message(content="t1", tool_calls=[_final_output_call()]), usage=None)]
+        )
+        after_collector = _AfterCallCollector(client)
+        dispatcher = _dispatcher(monkeypatch, client)
+        await _run_dispatch(dispatcher, brief, str(_patch_worktree_base))
+
+        assert len(after_collector.events) == 1
+        assert after_collector.events[0].input_tokens is None
+        assert after_collector.events[0].output_tokens is None
+
+    async def test_after_call_emitted_with_partial_tokens_on_failure(
+        self, monkeypatch, brief, _patch_worktree_base
+    ):
+        """A loop that raises (max_turns exhaustion) still reports the
+        tokens burned before the failure."""
+        client = _EmittingFakeClient(
+            [
+                _Response(
+                    _Message(content="t1", tool_calls=[_ToolCall("c1", "read_file", {"path": "x"})]),
+                    usage=_Usage(1000, 500, 1500),
+                ),
+            ]
+        )
+        after_collector = _AfterCallCollector(client)
+        dispatcher = _dispatcher(monkeypatch, client)
+        (_patch_worktree_base / "x").write_text("hi", encoding="utf-8")
+
+        from parrot.flows.dev_loop import DispatchExecutionError
+
+        with pytest.raises(DispatchExecutionError):
+            await _run_dispatch(dispatcher, brief, str(_patch_worktree_base), max_turns=1)
+
+        assert len(after_collector.events) == 1
+        assert after_collector.events[0].input_tokens == 1000
+        assert after_collector.events[0].output_tokens == 500
+
+    async def test_round_events_still_one_per_round(
+        self, monkeypatch, brief, _patch_worktree_base
+    ):
+        """The per-call accumulation must not regress TASK-2089: round
+        events remain one-per-round, carrying that round's own usage."""
+        client = _EmittingFakeClient(
+            [
+                _Response(
+                    _Message(content="t1", tool_calls=[_ToolCall("c1", "read_file", {"path": "x"})]),
+                    usage=_Usage(1000, 500, 1500),
+                ),
+                _Response(
+                    _Message(content="t2", tool_calls=[_final_output_call("c2")]),
+                    usage=_Usage(2000, 700, 2700),
+                ),
+            ]
+        )
+        round_collector = _Collector(client)
+        dispatcher = _dispatcher(monkeypatch, client)
+        (_patch_worktree_base / "x").write_text("hi", encoding="utf-8")
+        await _run_dispatch(dispatcher, brief, str(_patch_worktree_base))
+        await _drain()
+
+        assert [e.input_tokens for e in round_collector.events] == [1000, 2000]
+        assert [e.output_tokens for e in round_collector.events] == [500, 700]
