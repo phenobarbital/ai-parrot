@@ -417,10 +417,21 @@ class TestModels:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Implemented `parrot.tools.repo` package scaffold with
+`confinement.py` (`resolve_within_root`, `is_secret_path`,
+`resolve_readable_path`, `PathOutsideRootError`, `SecretFileError`) and
+`models.py` (`RepoToolError`, `RepoReadResult`, `RepoSearchHit`,
+`RepoSearchResult`), plus the `temp_repo` fixture and
+`test_confinement.py`. All 35 unit tests pass; `ruff check` and `mypy`
+clean on all new files. Confirmed no `subprocess`/`shell=True`/file I/O
+in `confinement.py`/`models.py`. Note: running tests in this worktree
+required a `PYTHONPATH` override (shared venv is editable-installed
+against the main checkout) and copying two gitignored compiled Cython
+`.so` files (`parrot.utils.types`, `parrot.utils.parsers.toml`) from the
+main checkout into the worktree purely to satisfy import-time
+dependencies pulled in transitively by `parrot.tools` — neither is part
+of this feature's source and neither was committed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
