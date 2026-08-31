@@ -68,7 +68,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Reads the TASK-2612 ContextVars, so it must follow. Modifies recorders/models.py + subscriber.py.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2614-extend-usagerecord-and-failed-calls.md"
+      "completed_at": "2026-08-31T15:59:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2614-extend-usagerecord-and-failed-calls.md"
     },
     {
       "id": "TASK-2615",
