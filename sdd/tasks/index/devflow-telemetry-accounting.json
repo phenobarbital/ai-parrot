@@ -14,7 +14,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches runner.py + dev_flow/flow.py only. No dependency on the ledger chain; independently shippable and independently valuable (ends dev-flow's telemetry blind spot on its own).",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2611-attach-lifecycle-adapter-all-builders.md"
+      "completed_at": "2026-08-31T15:46:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2611-attach-lifecycle-adapter-all-builders.md"
     },
     {
       "id": "TASK-2612",
