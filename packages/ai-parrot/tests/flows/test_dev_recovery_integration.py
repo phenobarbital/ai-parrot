@@ -873,8 +873,12 @@ async def test_dev_flow_resume_of_a_resumed_flow_can_be_resumed_again(fake_store
     coordinator1 = DevCheckpointCoordinator(store=fake_store)
     ctx1 = FlowContext(initial_task="t", shared_data={"marker": "live-1", "session_host": object()})
     flow1, mode1 = await coordinator1.prepare(
-        workflow="dev-flow", run_id="run-double-resume", brief=brief,
-        live_context=ctx1, flow_factory=_flow_factory, execution_policy={},
+        workflow="dev-flow",
+        run_id="run-double-resume",
+        brief=brief,
+        live_context=ctx1,
+        flow_factory=_flow_factory,
+        execution_policy={},
     )
     assert mode1 == "fresh"
     result1 = await flow1.run_flow(ctx1)
@@ -886,8 +890,12 @@ async def test_dev_flow_resume_of_a_resumed_flow_can_be_resumed_again(fake_store
     coordinator2 = DevCheckpointCoordinator(store=fake_store)
     ctx2 = FlowContext(initial_task="t", shared_data={"marker": "live-2", "session_host": object()})
     flow2, mode2 = await coordinator2.prepare(
-        workflow="dev-flow", run_id="run-double-resume", brief=brief,
-        live_context=ctx2, flow_factory=_flow_factory, execution_policy={},
+        workflow="dev-flow",
+        run_id="run-double-resume",
+        brief=brief,
+        live_context=ctx2,
+        flow_factory=_flow_factory,
+        execution_policy={},
     )
     assert mode2 == "resumed"
     assert "step_a" in ctx2.completed_tasks
@@ -901,8 +909,12 @@ async def test_dev_flow_resume_of_a_resumed_flow_can_be_resumed_again(fake_store
     coordinator3 = DevCheckpointCoordinator(store=fake_store)
     ctx3 = FlowContext(initial_task="t", shared_data={"marker": "live-3", "session_host": object()})
     flow3, mode3 = await coordinator3.prepare(
-        workflow="dev-flow", run_id="run-double-resume", brief=brief,
-        live_context=ctx3, flow_factory=_flow_factory, execution_policy={},
+        workflow="dev-flow",
+        run_id="run-double-resume",
+        brief=brief,
+        live_context=ctx3,
+        flow_factory=_flow_factory,
+        execution_policy={},
     )
     assert mode3 == "resumed"
     assert {"step_a", "step_b"} <= ctx3.completed_tasks
