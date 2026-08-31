@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-480
 **Date**: 2026-08-31
 **Author**: Jesus Lara (with Codex)
-**Status**: review
+**Status**: approved
 **Target version**: next
 **Proposal**: `sdd/proposals/dev-flow-node-caching.proposal.md` (research identity FEAT-516)
 
