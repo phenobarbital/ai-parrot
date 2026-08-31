@@ -15,7 +15,9 @@ host RAM.
 
 Consumed by [`parrot.clients.localllm.LocalLLMClient`](../packages/ai-parrot/src/parrot/clients/localllm.py).
 
-Introduced in commit `fb5f18d4`.
+Introduced in commit `fb5f18d4`. Moved into its own `llama_server/` folder
+afterwards — all `docker compose` / `cp` commands below assume you have
+`cd llama_server` first (paths are relative to this file's directory).
 
 ---
 
