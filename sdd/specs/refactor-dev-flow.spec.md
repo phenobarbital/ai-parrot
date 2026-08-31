@@ -29,7 +29,8 @@ hardcoded Claude agent**:
 - **Research/ideation** is a single seat: `IdeationNode` dispatches one
   `sdd-ideation` Claude Code session with the model hardcoded to
   `claude-sonnet-4-6` (`dev_flow/nodes/ideation.py:338`). The two-sided
-  complementary research design (FEAT-482) is approved but unimplemented.
+  complementary research design (FEAT-482) is approved and in progress
+  upstream (started 2026-09-01; its modules have not landed yet).
 - **Development** is single-agent in practice. `DevelopmentNode` has a full
   task-parallel `DevAgentPool` (`dev_loop/nodes/development.py:608`,
   `dev_loop/agent_pool.py:282`) but dev_flow cannot reach it:
@@ -211,7 +212,7 @@ fingerprint, per FEAT-482's precedent.
 | `ParallelPerspectiveReviewDispatcher` (`dev_loop/code_review.py:341`) | uses | carries the configurable review pair; `JudgeSpec` untouched |
 | `NovaAdversarialReviewDispatcher` (`dev_loop/dispatchers/nova.py:239`) | extends/pattern | Mantle-hosted `gpt-5.6-sol` counter-reviewer, read-only by construction |
 | `catalog.py` `BACKENDS` (`dev_loop/catalog.py:131-253`) | extends | model-list/roles additions (Qwen row for `nova`, `gpt-5.6-sol` reachable via Mantle role) — additive only |
-| FEAT-482 deliverables (`dev_flow/research_partner.py`, `complementary_research.py` — future) | depends on | hard sequencing: FEAT-484 → FEAT-482 → this feature's research portion |
+| FEAT-482 deliverables (`dev_flow/research_partner.py`, `complementary_research.py` — future) | depends on | hard sequencing: FEAT-482 (in progress; FEAT-484 already merged via PR #1281, 2026-09-01) → this feature's research-partner portion |
 | FEAT-480 checkpoint plane (`dev_loop/checkpoint.py`) | depends on | routing-relevant plan fields join `execution_policy`; no topology change |
 | FEAT-479 telemetry (`observability/context.py:126-158`, `dispatchers/llm.py:376-390`) | depends on | per-seat attribution contract for every new client |
 | `examples/dev_loop/server_dev.py` + `static/dev.html` | extends | `/api/config` defaults, run-payload parsing, selector UI |
@@ -314,9 +315,10 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
   passthrough to the FEAT-482 coordinator (plan enabled+backend+model →
   FEAT-482's `resolve_research_partner_backend()` inputs). Soft
   degradation per FEAT-482: partner failure never fails the run.
-- **Depends on**: Module 1; **FEAT-484 → FEAT-482 merged** (hard
-  sequencing — this module is blocked until the coordinator seam exists;
-  the primary-model portion can land independently if FEAT-482 slips).
+- **Depends on**: Module 1; **FEAT-482 merged** (FEAT-484 already landed
+  via PR #1281). Hard sequencing — the partner portion is blocked until
+  the coordinator seam exists; the primary-model portion can land
+  independently if FEAT-482 slips.
 
 ### Module 6: Console surface
 - **Path**: `examples/dev_loop/server_dev.py`, `examples/dev_loop/static/dev.html`
@@ -582,8 +584,8 @@ class LLMFactory:                                    # :161
 - ~~A research node in dev_flow~~ — deliberately absent (dev_flow/definition.py:126-127); the research seat is `IdeationNode`.
 - ~~`development_pool_config` / `repos` / `development_profile` parameters on `build_dev_flow`~~ — do not exist yet (this spec adds the plan-driven equivalent).
 - ~~Any consumer of `PlannerOutput.suggested_pool`~~ — computed but read by nothing (Module 3 becomes the first consumer).
-- ~~FEAT-482 implementation~~ — `dev_flow/research_partner.py`, `complementary_research.py`, `ResearchFindings`, `ComplementaryResearchCoordinator`, `DEV_FLOW_RESEARCH_PARTNER*` conf keys: none exist yet (spec approved, 8 tasks pending). Module 5's partner portion is blocked on it.
-- ~~FEAT-484 implementation~~ — `parrot/tools/repo/` does not exist on disk (tasks in-progress, no code in this checkout).
+- ~~FEAT-482 implementation~~ — `dev_flow/research_partner.py`, `complementary_research.py`, `ResearchFindings`, `ComplementaryResearchCoordinator`, `DEV_FLOW_RESEARCH_PARTNER*`/`DEV_FLOW_IDEATION_MODEL` conf keys: none exist yet as of 2026-09-01 (implementation started upstream — re-verify before Module 5; grep for `research_partner` under `dev_flow/`). Module 5's partner portion is blocked on it.
+- **FEAT-484 now EXISTS** (formerly listed absent): `parrot/tools/repo/` landed via PR #1281 on 2026-09-01 — `confinement.py`, `git_tools.py`, `graph_search.py`, `toolkit.py` (`ReadOnlyRepoToolkit`), `models.py`, `schemas.py`. No longer a blocker.
 - ~~`mcp_servers` on `ClaudeCodeDispatchProfile`~~ — planned by FEAT-482 Module 6, not present.
 - ~~Per-node client/model constructor params on `IdeationNode`/`PlannerNode`/`QANode`/`SynthesisNode`/`FeedbackRouterNode`~~ — models are hardcoded literals or profile defaults today.
 - ~~A provider-agnostic coding-sub-agent abstraction~~ — `ClaudeAgentClient` and `OpenAICodexClient` share only `AbstractClient`; run-options types, constructor shapes, and tool bridges (in-process SDK-MCP vs. localhost HTTP MCP) all differ.
@@ -616,10 +618,11 @@ class LLMFactory:                                    # :161
 
 ### Known Risks / Gotchas
 
-- **Sequencing**: Module 5's partner portion is hard-blocked on
-  FEAT-484 → FEAT-482 merging; this feature also touches files FEAT-482
-  will modify (`dev_flow/factories.py`, `ideation.py`, `catalog.py`,
-  `conf.py`). Land this feature after FEAT-482, keeping edits additive.
+- **Sequencing**: Module 5's partner portion is hard-blocked on FEAT-482
+  merging (FEAT-484 already landed via PR #1281, 2026-09-01); this
+  feature also touches files FEAT-482 will modify (`dev_flow/factories.py`,
+  `ideation.py`, `catalog.py`, `conf.py`). Land this feature after
+  FEAT-482, keeping edits additive.
 - **Fingerprint churn**: adding routing-relevant keys to
   `execution_policy` changes fingerprints for callers that set them —
   documented, accepted consequence; omitted plan ⇒ unchanged fingerprints.
@@ -661,12 +664,13 @@ class LLMFactory:                                    # :161
   `dev_loop/nodes/development.py`, `server_dev.py`); parallel worktrees
   would be a merge hazard for no wall-clock gain.
 - **Cross-feature dependencies (must merge first)**:
-  1. FEAT-484 (`readonly-repo-toolkit`) → 2. FEAT-482
-  (`devflow-complementary-research`) — hard prerequisite for Module 5's
-  partner portion; strongly preferred before starting Modules 1–4 too,
-  since FEAT-482 edits `dev_flow/factories.py`, `ideation.py`,
-  `catalog.py`, and `conf.py`. Watch `expose-toolkits-as-local-mcp`
-  (in-flight proposal) for `mcp_servers`-seam overlap.
+  1. ~~FEAT-484 (`readonly-repo-toolkit`)~~ — **merged** (PR #1281,
+  2026-09-01). 2. FEAT-482 (`devflow-complementary-research`) — in
+  progress; hard prerequisite for Module 5's partner portion, strongly
+  preferred before starting Modules 1–4 too, since FEAT-482 edits
+  `dev_flow/factories.py`, `ideation.py`, `catalog.py`, and `conf.py`.
+  Watch FEAT-485 `expose-toolkits-as-local-mcp` (now started, 7 tasks)
+  for `mcp_servers`-seam overlap.
 - **Contingency**: if FEAT-482 slips, Modules 1–4 + 6 (minus the partner
   toggle) can ship first, with Module 5's partner passthrough as a
   follow-on task gated on FEAT-482.
@@ -698,3 +702,4 @@ class LLMFactory:                                    # :161
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-01 | Jesus Lara (with Claude) | Initial draft from accepted refactor-dev-flow brainstorm (Option A) and verified codebase contract |
+| 0.2 | 2026-09-01 | Jesus Lara (with Claude) | Post-approval freshness amendment: FEAT-484 landed upstream (PR #1281) — sequencing/Does-NOT-Exist updated; FEAT-482 marked in progress; FEAT-485 noted |
