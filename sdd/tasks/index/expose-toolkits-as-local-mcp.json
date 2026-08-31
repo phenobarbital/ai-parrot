@@ -14,7 +14,7 @@
       "feature_id": "FEAT-485",
       "feature": "expose-toolkits-as-local-mcp",
       "spec": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Shares no files with TASK-2645 (toolkit.py + scraping/toolkit.py vs new toolkit_config.py); could run in a parallel worktree, though the spec's per-spec sequential isolation makes this moot in practice.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2644-llm-dependent-tools-metadata.md"
+      "completed_at": "2026-08-31T22:14:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2644-llm-dependent-tools-metadata.md"
     },
     {
       "id": "TASK-2645",
@@ -53,7 +53,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2644", "TASK-2645"],
+      "depends_on": [
+        "TASK-2644",
+        "TASK-2645"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports both TASK-2644's attribute and TASK-2645's loader.",
       "assigned_to": null,
@@ -71,7 +74,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2646"],
+      "depends_on": [
+        "TASK-2646"
+      ],
       "parallel": false,
       "parallelism_notes": "Wraps the TASK-2646 factory.",
       "assigned_to": null,
@@ -89,7 +94,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2645", "TASK-2647"],
+      "depends_on": [
+        "TASK-2645",
+        "TASK-2647"
+      ],
       "parallel": false,
       "parallelism_notes": "No file overlap with TASK-2649 (claude_code/ vs codex/) — the two installer tasks could run concurrently after TASK-2647, but per-spec sequential isolation was chosen in the spec's Worktree Strategy.",
       "assigned_to": null,
@@ -107,7 +115,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-2645", "TASK-2647"],
+      "depends_on": [
+        "TASK-2645",
+        "TASK-2647"
+      ],
       "parallel": false,
       "parallelism_notes": "No file overlap with TASK-2648 (codex/ vs claude_code/); sequential per the spec's Worktree Strategy.",
       "assigned_to": null,
@@ -125,7 +136,14 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-2644", "TASK-2645", "TASK-2646", "TASK-2647", "TASK-2648", "TASK-2649"],
+      "depends_on": [
+        "TASK-2644",
+        "TASK-2645",
+        "TASK-2646",
+        "TASK-2647",
+        "TASK-2648",
+        "TASK-2649"
+      ],
       "parallel": false,
       "parallelism_notes": "Closes the feature; depends on everything.",
       "assigned_to": null,
