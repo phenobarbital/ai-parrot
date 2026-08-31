@@ -297,6 +297,8 @@ class WebScrapingToolkit(AbstractToolkit):
         **kwargs: Passed through to ``AbstractToolkit``.
     """
 
+    llm_dependent_tools: frozenset = frozenset({"plan_create"})
+
     def __init__(
         self,
         driver_type: Literal["selenium", "playwright"] = "selenium",
