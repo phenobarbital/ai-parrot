@@ -130,17 +130,19 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         # `wiki_store` is deliberately excluded: a live store object cannot
         # cross a process boundary; the remote side re-resolves its own
         # plane lazily via `open_plane()` instead.
-        self._init_kwargs.update({
-            "repo_root": str(self._repo_root),
-            "wiki_name": wiki_name,
-            "enable_web_search": enable_web_search,
-            "default_search_mode": default_search_mode,
-            "deny_secret_files": deny_secret_files,
-            "max_result_bytes": max_result_bytes,
-            "max_search_hits": max_search_hits,
-            "search_budget_tokens": search_budget_tokens,
-            "command_timeout": command_timeout,
-        })
+        self._init_kwargs.update(
+            {
+                "repo_root": str(self._repo_root),
+                "wiki_name": wiki_name,
+                "enable_web_search": enable_web_search,
+                "default_search_mode": default_search_mode,
+                "deny_secret_files": deny_secret_files,
+                "max_result_bytes": max_result_bytes,
+                "max_search_hits": max_search_hits,
+                "search_budget_tokens": search_budget_tokens,
+                "command_timeout": command_timeout,
+            }
+        )
 
         if not enable_web_search:
             # Shadow the class attribute with an instance one, before any
@@ -298,9 +300,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                         resolved = entry.resolve()
                     except OSError:
                         continue
-                    if resolved != self._repo_root and not resolved.is_relative_to(
-                        self._repo_root
-                    ):
+                    if resolved != self._repo_root and not resolved.is_relative_to(self._repo_root):
                         # Symlink escape (spec §7): a symlinked entry whose
                         # real target is outside repo_root must never be
                         # listed or descended into — same containment rule
@@ -445,9 +445,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                     resolved = full.resolve()
                 except OSError:
                     continue
-                if resolved != self._repo_root and not resolved.is_relative_to(
-                    self._repo_root
-                ):
+                if resolved != self._repo_root and not resolved.is_relative_to(self._repo_root):
                     # A symlinked file whose real target escapes repo_root
                     # (os.walk's default followlinks=False already keeps
                     # symlinked *directories* out of this traversal, but a
