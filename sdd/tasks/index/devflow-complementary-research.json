@@ -112,7 +112,7 @@
       "feature_id": "FEAT-482",
       "feature": "devflow-complementary-research",
       "spec": "sdd/specs/devflow-complementary-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -121,9 +121,9 @@
       "parallel": true,
       "parallelism_notes": "Parallel with TASK-2633: different file (dev_loop/nodes/research.py vs dev_flow/nodes/ideation.py). Both need TASK-2632. NOTE: FEAT-479 is editing research.py concurrently.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2634-research-node-seam.md"
+      "started_at": "2026-08-31T23:32:15+00:00",
+      "completed_at": "2026-08-31T23:40:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2634-research-node-seam.md"
     },
     {
       "id": "TASK-2635",
