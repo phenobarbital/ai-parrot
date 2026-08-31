@@ -18,12 +18,20 @@ See ``sdd/specs/devflow-complementary-research.spec.md`` §2 Data Models,
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar, Literal
+from pathlib import Path
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
+from parrot import conf
+from parrot.clients.base import AbstractClient
+from parrot.clients.nova.client import NovaClient
+from parrot.clients.nova.mantle import BedrockMantleClient
+from parrot.flows.dev_loop.catalog import resolve_research_partner_backend
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.tools.repo import ReadOnlyRepoToolkit
 
 
 class ResearchFinding(BaseModel):
@@ -157,8 +165,186 @@ class ResearchPartnerFactory:
         return cls._registry[name](**kwargs)
 
 
+@ResearchPartnerFactory.register("gpt")
+@ResearchPartnerFactory.register("nova")
+class BedrockResearchPartner(AbstractResearchPartner):
+    """One implementation covering both research-partner backends.
+
+    ``gpt`` (default) and ``nova`` both reach AWS Bedrock on the same
+    ``AWS_NOVA_API_KEY`` credential and share one call shape —
+    ``ask(use_tools=True, structured_output=ResearchFindings)`` — because
+    :class:`~parrot.clients.nova.mantle.BedrockMantleClient` and
+    :class:`~parrot.clients.nova.client.NovaClient` are both
+    :class:`~parrot.clients.base.AbstractClient` subclasses sharing one
+    tool registry and one ``_execute_tool`` path. No per-transport tool
+    adapter exists, or should exist, here.
+
+    This class MAY raise on any failure (bad credentials, Bedrock outage,
+    unparseable structured output) — :class:`ComplementaryResearchCoordinator`
+    (a later task) is the soft-degradation boundary, not this class.
+    """
+
+    partner_name = "bedrock-research-partner"
+
+    def __init__(self, *, backend: str | None = None) -> None:
+        """Initialize the partner for a resolved backend.
+
+        Args:
+            backend: ``"gpt"`` or ``"nova"``. When omitted, resolved via
+                :func:`resolve_research_partner_backend` (empty/disabled
+                is rejected — a coordinator must never construct this
+                class for a disabled seat).
+
+        Raises:
+            ValueError: If the resolved backend is empty (disabled) or
+                not one of ``"gpt"``/``"nova"``.
+        """
+        self.logger = logging.getLogger(__name__)
+        self.backend = backend if backend is not None else resolve_research_partner_backend()
+        if self.backend not in ("gpt", "nova"):
+            raise ValueError(
+                f"BedrockResearchPartner requires an enabled backend "
+                f"('gpt' or 'nova'); got {self.backend!r} — the "
+                "research-partner seat is disabled or misconfigured."
+            )
+
+    def _build_client(self) -> AbstractClient:
+        """Construct the backend-appropriate client, model pre-configured.
+
+        Returns:
+            A :class:`BedrockMantleClient` (``"gpt"``) or
+            :class:`NovaClient` (``"nova"``) — both share the same
+            ``AWS_NOVA_API_KEY`` credential; no ``OPENAI_API_KEY`` is
+            read, and no Codex CLI is involved.
+        """
+        if self.backend == "gpt":
+            return BedrockMantleClient(model=conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL)
+        return NovaClient(model=conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL)
+
+    def _reasoning_kwargs(self) -> dict[str, Any]:
+        """Return the backend-appropriate reasoning knob only.
+
+        ``thinking_budget`` is a Converse-only ``BedrockConverseBase.ask()``
+        parameter — passing it to :class:`BedrockMantleClient` (which
+        inherits :meth:`OpenAIBaseClient.ask` unchanged) would raise a
+        ``TypeError``, since that signature has no such parameter. The
+        mantle path has no OpenAI-shaped ``effort``/``reasoning_effort``
+        parameter to forward it through either (see this module's
+        docstring note on ``DEV_FLOW_RESEARCH_PARTNER_EFFORT`` — reserved,
+        not yet wired; see TASK-2631 completion note for the full
+        rationale). Returning ``{}`` for ``"gpt"`` keeps that path
+        strictly additive rather than guessing an unsupported kwarg.
+
+        Returns:
+            ``{"thinking_budget": N}`` for ``"nova"``; ``{}`` for ``"gpt"``.
+        """
+        if self.backend == "nova":
+            return {"thinking_budget": conf.DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET}
+        return {}
+
+    @staticmethod
+    def _build_prompt(*, brief: BaseModel, question: str, cwd: str) -> str:
+        """Build the neutral prompt: brief, repo root, question — nothing else.
+
+        Deliberately excludes the primary Claude seat's framing,
+        hypotheses, or preferred conclusion (spec §2 "Why the partner is
+        prompted neutrally") — supplying them would produce ratification
+        of the primary seat's read, not an independent second opinion.
+
+        Args:
+            brief: The originating dev-flow/dev-loop brief.
+            question: The research question posed to the partner.
+            cwd: The repo checkout root the partner may read.
+
+        Returns:
+            The complete prompt text.
+        """
+        return (
+            "You are an independent research partner investigating a "
+            "software development request in parallel with another "
+            "researcher who works separately from you. Answer strictly "
+            "from your own reading of the repository — you do not see "
+            "the other researcher's findings, framing, or conclusions.\n\n"
+            f"Repository root: {cwd}\n\n"
+            f"Request brief (JSON):\n{brief.model_dump_json(indent=2)}\n\n"
+            f"Research question:\n{question}\n"
+        )
+
+    async def research(
+        self,
+        *,
+        brief: BaseModel,
+        question: str,
+        cwd: str,
+        run_id: str,
+        node_id: str,
+        session_host: SessionHost | None = None,
+    ) -> ResearchFindings:
+        """Investigate ``question`` against the repo at ``cwd``.
+
+        Issues exactly one ``ask(use_tools=True,
+        structured_output=ResearchFindings)`` call against the resolved
+        backend's client, with FEAT-484's :class:`ReadOnlyRepoToolkit`
+        (and no other tool) registered.
+
+        Args:
+            brief: The originating dev-flow/dev-loop brief.
+            question: The research question posed to the partner.
+            cwd: The repo checkout the partner may read (read-only).
+            run_id: The flow run id — logged for correlation only; no
+                per-run node wiring happens in this class.
+            node_id: The flow node id — logged for correlation only.
+            session_host: Unused by this implementation (accepted for ABC
+                compatibility).
+
+        Returns:
+            Validated :class:`ResearchFindings`.
+
+        Raises:
+            ValueError: If the client returns no parseable
+                ``ResearchFindings`` (unstructured/failed output). Any
+                other exception raised by the underlying client (auth,
+                network, Bedrock outage) propagates unchanged — this
+                class is not the soft-degradation boundary.
+        """
+        self.logger.info(
+            "%s research partner (%s) starting: run_id=%s node_id=%s",
+            self.partner_name,
+            self.backend,
+            run_id,
+            node_id,
+        )
+        client = self._build_client()
+        toolkit = ReadOnlyRepoToolkit(
+            repo_root=Path(cwd),
+            enable_web_search=conf.DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH,
+        )
+        client.register_tools(toolkit.get_tools())
+
+        prompt = self._build_prompt(brief=brief, question=question, cwd=cwd)
+        message = await client.ask(
+            prompt,
+            use_tools=True,
+            structured_output=ResearchFindings,
+            max_tokens=conf.DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS,
+            **self._reasoning_kwargs(),
+        )
+
+        findings = message.structured_output
+        if isinstance(findings, ResearchFindings):
+            return findings
+        if isinstance(findings, dict):
+            return ResearchFindings.model_validate(findings)
+        raise ValueError(
+            f"{self.backend} research partner returned no valid "
+            f"ResearchFindings (got {type(findings).__name__}); "
+            "structured-output parsing likely failed."
+        )
+
+
 __all__ = [
     "AbstractResearchPartner",
+    "BedrockResearchPartner",
     "ComplementaryFindings",
     "ResearchFinding",
     "ResearchFindings",

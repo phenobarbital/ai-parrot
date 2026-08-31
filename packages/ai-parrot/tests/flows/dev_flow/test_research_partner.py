@@ -6,9 +6,13 @@ and the backend selector triad in ``parrot.flows.dev_loop.catalog``.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
+from parrot import conf
 from parrot.flows.dev_flow.research_partner import (
     AbstractResearchPartner,
+    BedrockResearchPartner,
     ComplementaryFindings,
     ResearchFinding,
     ResearchFindings,
@@ -23,6 +27,20 @@ from pydantic import BaseModel
 
 class _FakeBrief(BaseModel):
     title: str = "fake"
+
+
+class _FakeMessage:
+    """Minimal AIMessage stand-in — only ``structured_output`` is read."""
+
+    def __init__(self, structured_output):
+        self.structured_output = structured_output
+
+
+def _make_client_mock(structured_output):
+    client = MagicMock()
+    client.register_tools = MagicMock()
+    client.ask = AsyncMock(return_value=_FakeMessage(structured_output))
+    return client
 
 
 class _FakePartner(AbstractResearchPartner):
@@ -151,3 +169,150 @@ def test_complementary_findings_requires_findings_and_rendered():
     )
     assert findings.document_path == ""
     assert findings.degraded is False
+
+
+class TestBedrockResearchPartner:
+    """FEAT-482 Module 2 — one implementation, two Bedrock transports."""
+
+    async def test_gpt_partner_uses_mantle_client(self, tmp_path):
+        """Default backend builds BedrockMantleClient; no OPENAI_API_KEY read."""
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        with (
+            patch(
+                "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+                return_value=client,
+            ) as mock_mantle,
+            patch("parrot.flows.dev_flow.research_partner.NovaClient") as mock_nova,
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            findings = await partner.research(
+                brief=_FakeBrief(),
+                question="what is the shape of X?",
+                cwd=str(tmp_path),
+                run_id="run-1",
+                node_id="node-1",
+            )
+        mock_mantle.assert_called_once_with(model=conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL)
+        mock_nova.assert_not_called()
+        assert findings.summary == "ok"
+
+    async def test_nova_partner_uses_converse_client(self, tmp_path):
+        """nova backend builds NovaClient and passes thinking_budget."""
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        with (
+            patch(
+                "parrot.flows.dev_flow.research_partner.NovaClient",
+                return_value=client,
+            ) as mock_nova,
+            patch("parrot.flows.dev_flow.research_partner.BedrockMantleClient") as mock_mantle,
+        ):
+            partner = BedrockResearchPartner(backend="nova")
+            await partner.research(
+                brief=_FakeBrief(),
+                question="q",
+                cwd=str(tmp_path),
+                run_id="run-1",
+                node_id="node-1",
+            )
+        mock_mantle.assert_not_called()
+        mock_nova.assert_called_once_with(model=conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL)
+        _, kwargs = client.ask.call_args
+        assert kwargs["thinking_budget"] == conf.DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET
+
+    async def test_both_backends_share_one_call_shape(self, tmp_path):
+        """Both invoke ask(use_tools=True, structured_output=ResearchFindings)
+        with the toolkit registered — no per-transport branching in the call."""
+        for backend, client_attr in (("gpt", "BedrockMantleClient"), ("nova", "NovaClient")):
+            client = _make_client_mock(ResearchFindings(summary="ok"))
+            with patch(
+                f"parrot.flows.dev_flow.research_partner.{client_attr}",
+                return_value=client,
+            ):
+                partner = BedrockResearchPartner(backend=backend)
+                await partner.research(
+                    brief=_FakeBrief(),
+                    question="q",
+                    cwd=str(tmp_path),
+                    run_id="run-1",
+                    node_id="node-1",
+                )
+            _, kwargs = client.ask.call_args
+            assert kwargs["use_tools"] is True
+            assert kwargs["structured_output"] is ResearchFindings
+            client.register_tools.assert_called_once()
+
+    async def test_reasoning_knob_is_backend_appropriate(self, tmp_path):
+        """thinking_budget only on Converse; effort only on mantle."""
+        gpt_client = _make_client_mock(ResearchFindings(summary="ok"))
+        with patch(
+            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            return_value=gpt_client,
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            await partner.research(
+                brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n"
+            )
+        _, gpt_kwargs = gpt_client.ask.call_args
+        assert "thinking_budget" not in gpt_kwargs
+
+        nova_client = _make_client_mock(ResearchFindings(summary="ok"))
+        with patch(
+            "parrot.flows.dev_flow.research_partner.NovaClient",
+            return_value=nova_client,
+        ):
+            partner = BedrockResearchPartner(backend="nova")
+            await partner.research(
+                brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n"
+            )
+        _, nova_kwargs = nova_client.ask.call_args
+        assert "thinking_budget" in nova_kwargs
+
+    async def test_prompt_excludes_primary_reasoning(self, tmp_path):
+        """NEUTRALITY GUARD: prompt carries brief/root/question and none of the
+        primary seat's framing, hypotheses, or preferred conclusion."""
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        brief = _FakeBrief(title="add caching to the ideation node")
+        with patch(
+            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            return_value=client,
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            await partner.research(
+                brief=brief,
+                question="What are the risks of adding caching here?",
+                cwd=str(tmp_path),
+                run_id="r",
+                node_id="n",
+            )
+        prompt_arg = client.ask.call_args[0][0]
+        assert str(tmp_path) in prompt_arg
+        assert "What are the risks of adding caching here?" in prompt_arg
+        assert "add caching to the ideation node" in prompt_arg  # the brief itself
+        for banned in ("I believe", "my hypothesis", "the answer is", "you should conclude"):
+            assert banned not in prompt_arg
+
+    async def test_no_write_tool_registered(self, tmp_path):
+        """Registered toolkit exposes no write-shaped tool."""
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        with patch(
+            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            return_value=client,
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            await partner.research(
+                brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n"
+            )
+        (registered_tools,), _ = client.register_tools.call_args
+        tool_names = {t.name for t in registered_tools}
+        assert tool_names, "toolkit registered no tools at all"
+        banned_substrings = ("apply_patch", "run_command", "write_file", "write")
+        for name in tool_names:
+            assert not any(bad in name.lower() for bad in banned_substrings), name
+
+    def test_disabled_backend_raises(self):
+        with pytest.raises(ValueError, match="disabled or misconfigured"):
+            BedrockResearchPartner(backend="")
+
+    def test_registered_under_both_factory_names(self):
+        assert ResearchPartnerFactory.create("gpt", backend="gpt").backend == "gpt"
+        assert ResearchPartnerFactory.create("nova", backend="nova").backend == "nova"
