@@ -14,7 +14,7 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task; edits flow.py and checkpoint core shared by every later task.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:58:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2622-typed-registration-and-factory-resume.md"
+      "completed_at": "2026-08-31T16:11:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2622-typed-registration-and-factory-resume.md"
     },
     {
       "id": "TASK-2623",

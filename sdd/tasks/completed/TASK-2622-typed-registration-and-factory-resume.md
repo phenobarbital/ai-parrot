@@ -181,10 +181,43 @@ test, then move this file to `sdd/tasks/completed/` and set index `done`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-31
+**Notes**: Reviewed `git show 8d7657b23` in full (non-ancestor precedent) and
+adapted it to current `dev` `flow.py`/`serializer.py`. Added a process-wide
+`_DEFAULT_TYPES` registry + `register_checkpoint_type()` (idempotent for the
+same class/tag, raises `ValueError` on a conflicting re-registration of an
+already-claimed tag — stricter than the precedent, matches spec's emphasis on
+never silently degrading a routed result). `FlowStateSerializer._registry` is
+now a `ChainMap({}, _DEFAULT_TYPES)` so registration order doesn't matter.
+`AgentsFlow.resume()` gained keyword-only `flow_factory` (rebuilds via the
+caller's builder instead of `from_definition()`, validates every checkpointed
+completed node exists in the rebuilt graph, raises `ValueError` listing
+missing node ids otherwise) and `seed_context` (seeds a caller-supplied live
+`FlowContext` in place via `mark_completed()` only — which never touches
+`shared_data`/`agent_registry`/`synthesis_client`/`trace_context` — instead of
+constructing a fresh internal context, so the caller's live objects for the
+new process are never overwritten by checkpoint data). `flow_factory=None`
+and `seed_context=None` preserve the historical behavior exactly (verified by
+test + explicit code path).
 
-**Completed by**:
-**Date**:
-**Notes**:
+10 new tests in `test_factory_resume.py` covering: flow_factory preserving
+explicit routing (predicates/OR-join), missing-node rejection, backward
+compatibility with `flow_factory=None`, no-re-execution of completed nodes on
+resume, `seed_context` receiving completed ids/results, `seed_context` live
+objects surviving untouched, `seed_context` continuing from a partial
+frontier, `register_checkpoint_type` round-trip, order-independence (a
+serializer built *before* registration still sees it via the `ChainMap`), and
+conflicting-tag rejection. Full `packages/ai-parrot/tests/flows/checkpoint`
+suite passes (80 passed, 2 pre-existing postgres-integration failures
+unrelated to this change — confirmed by running the same tests against a
+clean stash of this worktree). `ruff check` clean on all 4 touched files
+(fixed a pre-existing `__all__` sort issue in `checkpoint/__init__.py` while
+touching that list). Note: this environment's `.venv` editable install points
+at the main repo path rather than this worktree, and `parrot.utils.types`
+required a one-time local Cython build (`python setup.py build_ext --inplace`
+in `packages/ai-parrot/`, gitignored build artifacts) to import `parrot` at
+all — both pre-existing environment conditions, unrelated to this feature,
+worth flagging for whoever runs CI/other tasks in this worktree next.
 
 **Deviations from spec**: none
