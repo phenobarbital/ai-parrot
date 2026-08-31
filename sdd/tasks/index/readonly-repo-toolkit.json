@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T21:35:20.036465+00:00",
-  "completed_at": null,
+  "completed_at": "2026-08-31T22:56:20+00:00",
   "tasks": [
     {
       "id": "TASK-2637",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Root of the dependency graph — the security boundary every other task funnels paths through. Nothing can start before it. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2637-confinement-core-and-secret-denylist.md"
+      "completed_at": "2026-08-31T21:50:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2637-confinement-core-and-secret-denylist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2638",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Establishes the error contract, the bounds contract and the read-only-by-construction property that tasks 2639-2643 all extend. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2638-toolkit-read-file-list-files.md"
+      "completed_at": "2026-08-31T21:53:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2638-toolkit-read-file-list-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2639",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Owns the shared _run_argv subprocess helper that TASK-2640 reuses, and is TASK-2642's degradation target. Same toolkit.py file as 2638/2640/2642. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2639-grep-files-bounded-search.md"
+      "completed_at": "2026-08-31T21:57:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2639-grep-files-bounded-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2640",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Depends on 2639 for _run_argv rather than writing a second subprocess helper. Could in principle run beside 2641 (different files), but both edit toolkit.py and the per-spec worktree is sequential anyway. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2640-local-git-history-tools.md"
+      "completed_at": "2026-08-31T22:03:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2640-local-git-history-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2641",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Ships no tool — pure infrastructure in its own new file (graph_search.py), so it only needs 2637's models. The one task here with genuine parallel potential against 2639/2640, but see the sequential strategy. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2641-worktree-plane-resolution.md"
+      "completed_at": "2026-08-31T22:06:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2641-worktree-plane-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2642",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "The feature's core value (spec §1). Joins two threads: needs 2641's open_plane and 2639's grep_files as its degradation target. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2642-graph-backed-search-code.md"
+      "completed_at": "2026-08-31T22:14:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2642-graph-backed-search-code.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2643",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Terminal task — its integration suite exercises every prior task, so it must run last. Completing it unblocks FEAT-482 Module 2. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2643-web-search-integration-and-docs.md"
+      "completed_at": "2026-08-31T22:19:39+00:00",
+      "file": "sdd/tasks/completed/TASK-2643-web-search-integration-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

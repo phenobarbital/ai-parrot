@@ -657,10 +657,47 @@ class TestNoDevFlowImport:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Added `map_search_hit` / `map_neighbor_hit` to `graph_search.py`
+using the verified field mapping (`page_id`←`node_id`, `path`←`title`,
+`summary`←`snippet`, `outline`==`[]`, `approx_tokens`←`token_count`).
+Added `_plane()` (lazy, cached, injected-store short-circuit), `_degrade()`
+(grep fallback with `degraded=True` + reason + `self.logger.warning`),
+`search_code`, and `related_code` to `ReadOnlyRepoToolkit`. `mode` is
+exposed in `SearchCodeInput`'s schema; `mode="vector"` maps to lexical
+with `degraded_reason="semantic search not configured"` rather than
+raising or returning empty. All 14 new tests pass, plus the full
+`tests/tools/repo/` suite (122 tests); `ruff check` / `mypy` clean;
+confirmed no `dev_flow`/`dev_loop` token anywhere in the package.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec** (both required for the acceptance criteria /
+test spec to actually pass — verified empirically, not assumed):
+1. **`related_code` delegates to `store.neighbors()` directly**, not
+   `WikiRelatedTool` — per this task's own explicit recommendation
+   (§6 Does NOT Exist), since `WikiRelatedTool._execute` is private and
+   wraps results in a `ToolResult`.
+2. **Empty results are also treated as a degrade signal**, not only a
+   raised exception. Verified directly against `WikiCombinedSearch.
+   _search_store`: it catches `search_fts`/`search_vector` exceptions
+   *internally* and logs+swallows them, returning `[]` — no exception
+   ever reaches `search_code`. `test_degrades_when_plane_raises` (this
+   task's own test) requires `degraded=True` for a raising store, which
+   is only observable as an empty result, not an exception. Confirmed
+   with a standalone repro against the real `WikiCombinedSearch` before
+   changing the pattern. This is a strictly-additional degrade trigger —
+   it does not change behavior for any non-empty result.
+3. **`WikiCombinedSearch` is referenced via `wiki_search_module.
+   WikiCombinedSearch(...)`** (a module import), not a direct `from
+   parrot.knowledge.wiki.search import WikiCombinedSearch` name-binding —
+   required for `test_mode_forwarded`'s `monkeypatch.setattr(search_mod,
+   "WikiCombinedSearch", _Spy)` to actually take effect (a direct name
+   import would bind a reference the monkeypatch cannot reach).
+4. **`conftest.py`'s `_StubStore` rows use a `"summary"` key**, not
+   `"content"` as shown in this task's Test Specification — verified
+   against `WikiCombinedSearch._store_row_to_wiki`
+   (`snippet=row.get("summary")`) and the real `BaseWikiStore.search_fts`
+   SQL projection (`p.summary`), both of which read `summary`, not
+   `content`. With the literal `"content"` key the mapped `WikiSearchResult
+   .snippet` — and therefore `RepoSearchHit.summary` — would always be
+   empty, failing `test_field_mapping`'s `assert hit.summary`.

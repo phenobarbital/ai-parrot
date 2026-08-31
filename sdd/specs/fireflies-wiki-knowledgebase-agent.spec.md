@@ -72,15 +72,32 @@ meetings, with a queryable GraphIndex alongside Obsidian.
 - **G6** **GraphIndex/PageIndex is the primary query graph**, rebuilt from the
   vault each ingest; Obsidian's wikilink graph is the secondary human-navigation
   view. Vault pages remain the content source-of-truth.
-- **G7** **Model tiering** via `invoke(model=…)`: strong model for reconciliation,
-  ambiguous classification, and contradiction reasoning; cheap model for bulk
-  extraction and summary-first reads.
+- **G7** **Provider-agnostic, tiered LLMs.** Two clients built from `provider:model`
+  config strings via `LLMFactory` — a *strong* tier (reconciliation, ambiguous
+  classification, contradiction reasoning) and a *cheap* tier (bulk extraction,
+  summary-first reads). Defaults to **Google/Gemini** (GOOGLE API is configured),
+  overridable to **Claude** (`anthropic:…`) or **Codex** (`openai-codex:…`) — any
+  `SUPPORTED_CLIENTS` provider. Same-provider tiers may additionally use
+  `invoke(model=…)`.
 - **G8** **Contract-conformance QA**: an executable checklist derived from §34/§36
   verifies the agent's output against the contract, section by section.
 - **G9** Email digests retained but **shipped disabled** behind a feature flag.
+- **G10** **Short-interval scheduling with catch-up.** Runs on a configurable cron
+  (default **hourly**), so each iteration processes a small batch. The
+  `suggest_from_date` watermark makes a run after downtime automatically fetch the
+  backlog; a manual `ingest(since=…|lookback_days=…, limit=…, force_refetch=…)`
+  widens the window for a large reconciliation, processed **chronologically**.
+- **G11** **Additive-only.** A net-new agent that reuses existing code by import /
+  inheritance / composition — it modifies no existing agent, toolkit, or their
+  tests.
 
 ### Non-Goals (explicitly out of scope)
 
+- **Modifying any existing agent, toolkit, or their behavior.** This is a NET-NEW
+  agent that reuses existing code by **import / inheritance / composition only** —
+  no edits to `agents/obsidian.py`, `agents/fireflies_wiki.py`,
+  `tools/obsidian.py`, or the FEAT-472 files. Existing agents keep their current
+  behavior; their test suites must stay green.
 - **Monolithic subclass** (brainstorm Option A) and the **two-process
   producer/compiler split** (Option C) — both rejected; see
   `proposals/fireflies-wiki-knowledgebase-agent.brainstorm.md`.
@@ -120,6 +137,16 @@ Three distinct authorities, kept separate and non-contradictory:
 - **Primary query/relationship engine** = the derived GraphIndex/PageIndex plane,
   rebuilt from the vault each ingest (D3).
 
+**Execution model.** The agent holds two LLM clients built from `provider:model`
+config strings via `LLMFactory` (strong + cheap tier, G7), defaulting to
+Google/Gemini. It runs on a configurable cron (default hourly, G10): each run
+fetches only meetings newer than the `MeetingRegistry` watermark, so iterations
+stay small; a run after downtime, or a manual wide-window `ingest`, simply carries
+a larger (still chronological) batch. **Additive-only** (G11): all reuse is by
+import/inheritance/composition — the new agent instantiates its own
+`ObsidianToolkit` and inherits `add_fireflies_mcp_server` from `MCPEnabledMixin`,
+editing no existing file.
+
 ### Component Diagram
 
 ```
@@ -148,9 +175,11 @@ Fireflies MCP ──listing──▶ [FetchGate]  (reuse MeetingRegistry:
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `parrot/agents/meeting_registry.py::MeetingRegistry` (FEAT-472) | **reuse (hard dep)** | dedup gate, `classify`, `suggest_from_date`, `fingerprint`, lifecycle stamps |
-| `parrot/agents/obsidian.py::FirefliesObsidianAgent` | reuse + modify | reuse `FirefliesFilters` (participant filter) + fetch pagination; repoint sink to `Raw/Incoming/` |
-| `parrot/tools/obsidian.py::ObsidianToolkit` | reuse + extend | `create_note`/`update_note`/`move_note`/`delete_note` exist; add §8.1 link-fixup; enable `move`/`delete` in `allowed_operations` |
-| `parrot/clients/base.py::AbstractClient.invoke` | reuse | structured extraction (`output_type=`) + per-call model tiering (`model=`) |
+| `parrot/agents/obsidian.py::FirefliesObsidianAgent` | reuse (**no edits**) | import `FirefliesFilters`; mirror the fetch/pagination *pattern* in the new agent's own loop — do NOT modify this file |
+| `parrot/mcp/integration.py::MCPEnabledMixin.add_fireflies_mcp_server` | inherit (**no edits**) | `BasicAgent` already mixes it in; the new agent calls it directly |
+| `parrot/tools/obsidian.py::ObsidianToolkit` | reuse (**no edits**) | the new agent creates its **own** instance with `allowed_operations` incl. `move`/`delete` (constructor arg — no class change); §8.1 link-fixup is a **new** helper in `wiki_ingest/vault.py` |
+| `parrot/clients/factory.py::LLMFactory` | reuse | build the strong/cheap tier clients from `provider:model` strings (`create`/`parse_llm_string`) |
+| `parrot/clients/base.py::AbstractClient.invoke` | reuse | structured extraction (`output_type=`) + optional same-provider `model=` tiering |
 | `parrot/knowledge/wiki/toolkit.py::LLMWikiToolkit` | reuse | derived GraphIndex rebuild + query |
 | `parrot/knowledge/graphindex/factory.py::build_graph_memory_toolkit` | reuse | graph plane |
 | `parrot/knowledge/pageindex/toolkit.py::PageIndexToolkit` | reuse | authoring plane |
@@ -224,48 +253,48 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 > and workflows (M13–M16) fan out against the frozen schemas + §34 validator.
 
 ### Module 1: Subsystem scaffolding, config, agent façade
-- **Path**: `parrot/flows/wiki_ingest/{__init__,agent,definition,factories,runner}.py`, `parrot/agents/conf.py`
-- **Responsibility**: `parrot/flows/wiki_ingest/` package (dev_loop-shaped); `@register_agent("fireflies_wiki_kb")` façade with the six intents; conf keys (external `WIKI_KB_VAULT_PATH`, `WIKI_KB_PARTICIPANTS` allowlist, model-tier keys, `FIREFLIES_WIKI_EMAIL_ENABLED=false`, `WIKI_KB_RAW_ROOT`, `WIKI_KB_ACTIVE_WINDOW_DAYS=14`).
-- **Depends on**: `parrot.registry`, `parrot.scheduler`, FEAT-472 conf.
+- **Path**: `parrot/flows/wiki_ingest/{__init__,agent,definition,factories,runner,conf}.py` (**own `conf.py` — do NOT touch `parrot/agents/conf.py`**)
+- **Responsibility**: `parrot/flows/wiki_ingest/` package (dev_loop-shaped); `@register_agent("fireflies_wiki_kb")` façade (`Agent` subclass) with the six intents; a self-contained `conf.py`: `WIKI_KB_VAULT_PATH` (external vault), `WIKI_KB_PARTICIPANTS` (fetch allowlist), `WIKI_KB_LLM_STRONG` / `WIKI_KB_LLM_CHEAP` (`provider:model` strings; default `google:gemini-2.5-pro` / `google:gemini-2.5-flash`, exact ids via env; may be set to `anthropic:…` or `openai-codex:…`), `WIKI_KB_INGEST_CRON` (default `"0 * * * *"`, hourly), `WIKI_KB_INGEST_LIMIT` (per-run cap), `WIKI_KB_MAX_CATCHUP_DAYS` (large-backlog guard), `FIREFLIES_SYNC_OVERLAP_DAYS` (reuse FEAT-472), `WIKI_KB_ACTIVE_WINDOW_DAYS=14`, `WIKI_KB_RAW_ROOT`, `FIREFLIES_WIKI_EMAIL_ENABLED=false`.
+- **Depends on**: `parrot.registry`, `parrot.scheduler` (`add_cron`/`@schedule`), `LLMFactory`, FEAT-472 conf (imported, not edited).
 
-### Module 2: Fetch-gate (reuse FEAT-472)
+### Module 2: Fetch-gate + scheduling (reuse FEAT-472, additive)
 - **Path**: `parrot/flows/wiki_ingest/nodes/fetch_gate.py`
-- **Responsibility**: participant-filtered Fireflies fetch via `FirefliesFilters`; `MeetingRegistry.suggest_from_date()` watermark; `MeetingRegistry.classify()` (∪ `Raw/` id scan) → fetch only unknown meetings; `force_refetch` override. **No revisions** — a known id is a permanent skip.
-- **Depends on**: `MeetingRegistry` (FEAT-472), `add_fireflies_mcp_server`.
+- **Responsibility**: the new agent's **own** fetch loop — inherits `add_fireflies_mcp_server` (`MCPEnabledMixin`), imports `FirefliesFilters` (participant allowlist), defines its own small `_call_fireflies_tool` helper (does NOT modify `obsidian.py`). Gate = `MeetingRegistry.suggest_from_date()` watermark + `MeetingRegistry.classify()` (∪ a `Raw/` id scan) → fetch only unknown meetings; `force_refetch` / `since` / `lookback_days` override for wide-window catch-up. **No revisions** — a known id is a permanent skip. Hourly cron keeps each run small; a post-downtime run naturally spans a larger window (bounded by `WIKI_KB_MAX_CATCHUP_DAYS`).
+- **Depends on**: `MeetingRegistry` (FEAT-472), `MCPEnabledMixin`, `FirefliesFilters`.
 
 ### Module 3: Raw bundle layer (§13/§14/§27 spine)
 - **Path**: `parrot/flows/wiki_ingest/nodes/raw_bundle.py`
 - **Responsibility**: drop `transcript`/`summary`/`metadata` into `Raw/Incoming/`; pair by strongest key (§13); SHA-256 hash (§14.2); immutable move to `Raw/Processed/<client>/<project>/YYYY/MM/<source-id>/` with pre/post hash verify; `Duplicates/`/`Uncategorized/` routing (§14.3/§15.5). Raw bytes never edited.
 - **Depends on**: Module 2.
 
-### Module 4: Vault access layer + §11 init + §25 mirror
+### Module 4: Vault access layer + §11 init + §25 mirror (own toolkit instance)
 - **Path**: `parrot/flows/wiki_ingest/vault.py`
-- **Responsibility**: thin wrapper over `ObsidianToolkit` (enable `move`/`delete`); **§8.1 link-fixup** after move/rename (the only genuinely new toolkit piece); §11 initialization (create missing control files without overwriting); regenerate `Wiki/Registry/processed-sources.md` mirror from the DB **every ingest** (R1).
-- **Depends on**: `ObsidianToolkit`, `MeetingRegistry`.
+- **Responsibility**: owns its **own** `ObsidianToolkit(vault_path=WIKI_KB_VAULT_PATH, allowed_operations={read,list,search,create,update,move,delete})` — a constructor arg, **no edit to `tools/obsidian.py`**; **§8.1 link-fixup** after `move_note`/rename (new helper — `move_note` reports `affected_backlinks` but does not rewrite them); §11 initialization (create missing control files without overwriting); regenerate `Wiki/Registry/processed-sources.md` mirror from the DB **every ingest** (R1).
+- **Depends on**: `ObsidianToolkit` (own instance), `MeetingRegistry`.
 
 ### Module 5: §10 frontmatter schemas + §34 validation (QA oracle)
 - **Path**: `parrot/flows/wiki_ingest/models.py`, `parrot/flows/wiki_ingest/validation.py`
 - **Responsibility**: Pydantic models for every §10 page type (incl. D1 plain-path provenance, D2 `primary_project ∈ projects` validator, D4 `source_id` identity); the §34 Post-Operation Validation checklist as an executable function returning `ValidationResult`, incl. the §19 diff-guard assertion (Q2) and the `Private/`-never-accessed assertion.
 - **Depends on**: nothing new (shared contract; freeze first).
 
-### Module 6: Ingest orchestrator (§27, chronological)
+### Module 6: Ingest orchestrator (§27, chronological, catch-up-aware)
 - **Path**: `parrot/flows/wiki_ingest/runner.py`, `.../nodes/__init__.py`
-- **Responsibility**: the §27 ordered pipeline; **sort bundles oldest→newest by `meeting_date`** (G5); read operating context (§12); on §34 failure roll back compiled changes (never raw), queue a review item, write no success registry/log entry; print the §35 change summary; trigger the GraphIndex rebuild (Module 13).
+- **Responsibility**: the §27 ordered pipeline; **sort the whole batch oldest→newest by `meeting_date`** (G5) — so an hourly run and a large post-downtime catch-up both reconcile in temporal order; process in bounded chunks (`WIKI_KB_INGEST_LIMIT`) so a big backlog spans several runs without one giant transaction; read operating context (§12); on §34 failure roll back compiled changes (never raw), queue a review item, write no success registry/log entry; print the §35 change summary; trigger the GraphIndex rebuild (Module 13).
 - **Depends on**: Modules 2–5, 7–13.
 
 ### Module 7: Summary-first classification (§15)
 - **Path**: `parrot/flows/wiki_ingest/nodes/classify.py`
-- **Responsibility**: read Fireflies summary first; `invoke(output_type=Classification, model=<strong>)`; confidence; transcript-fallback ladder (§15.4); low-confidence → `Uncategorized/` + `review_required` (§15.5).
+- **Responsibility**: read Fireflies summary first; **strong-tier client** `invoke(output_type=Classification)`; confidence; transcript-fallback ladder (§15.4); low-confidence → `Uncategorized/` + `review_required` (§15.5).
 - **Depends on**: Modules 3, 5; `AbstractClient.invoke`.
 
 ### Module 8: Canonical meeting source page (§17)
 - **Path**: `parrot/flows/wiki_ingest/nodes/meeting_page.py`
-- **Responsibility**: `invoke(output_type=MeetingExtraction, model=<cheap>)` then render the §17 page (Executive Summary … Action Items table … Verified Quotes only when transcript read) under `Wiki/Sources/Meetings/`.
+- **Responsibility**: **cheap-tier client** `invoke(output_type=MeetingExtraction)` then **deterministically render** the exact §17 template (Executive Summary … Action Items table … Verified Quotes only when transcript read) under `Wiki/Sources/Meetings/` — see §3.1.
 - **Depends on**: Modules 5, 7.
 
 ### Module 9: Project page reconciler (§19, diff-guarded)
 - **Path**: `parrot/flows/wiki_ingest/nodes/project_reconcile.py`
-- **Responsibility**: **typed section-merge** (no free-form whole-page regen) with `invoke(model=<strong>)`; the Q2 diff-guard — *no claim dropped while a live source still supports it*; chronological supersession (§19 rule 10); preserve `## Human Notes`; queue if `locked: true`.
+- **Responsibility**: **typed section-merge** (no free-form whole-page regen) with the **strong-tier client**; the Q2 diff-guard — *no claim dropped while a live source still supports it*; chronological supersession (§19 rule 10); preserve `## Human Notes`; queue if `locked: true`.
 - **Depends on**: Modules 5, 8.
 
 ### Module 10: Entity + concept resolvers (§20/§21)
@@ -302,6 +331,65 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport: ...  # §27 ordere
 - **Path**: `tests/integration/test_wiki_kb_contract.py`
 - **Responsibility**: executable checks mapping contract §34/§36 to assertions over a fixture vault; the acceptance oracle for §5.
 - **Depends on**: all.
+
+---
+
+## 3.1 Contract Operationalization
+
+> This section answers "where are the contract's per-section rules, page
+> templates, and workflows implemented?" — every section of
+> `obsidian-wiki-operating-contract.md` maps to a module/node here.
+
+**Page templates are rendered deterministically.** Every contract page template
+(§17 meeting, §19 project, §20 entity, §21 concept, §22 contradiction, §23 daily,
+and the §10 frontmatter blocks) is implemented as a Python **renderer** in
+`parrot/flows/wiki_ingest/render/` that reproduces the template's **exact heading
+structure verbatim**. The LLM never emits page markdown directly: it returns a
+validated Pydantic model (via `invoke(output_type=…)`) whose typed fields the
+renderer places into the fixed structure. This guarantees structural fidelity
+(headings, section order, tables), makes conformance testable heading-by-heading
+(§36 / Module 16), and confines the LLM to *content*, not *layout*. Human-authored
+regions (`## Human Notes`, `locked: true` pages) are read and re-emitted unchanged.
+
+**Contract §-section → implementation map** (every section is covered):
+
+| Contract § | What it defines | Handled by | How |
+|---|---|---|---|
+| §2 Non-Negotiable Rules | 16 hard rules | M5 validator + all nodes | each rule → a §34 assertion (Private/ boundary, immutable Raw, chronological, untrusted-source, no-double-process, contradiction-preserve, immutability/no-revision) |
+| §3 Ownership & Permissions | who may write where | M4 vault layer | writes scoped to `Wiki//Projects//Diary/`; never `Private//.obsidian/` |
+| §4 Repository Layout | the vault tree | M4 (§11 init) + renderers | create missing dirs without overwrite; renderers write to the exact paths |
+| §5 Core Knowledge Layers | raw→meeting→project→wiki→diary | M3 / M8 / M9 / M10–M11 / M12 | one module per layer |
+| §6 Supported User Intents | plain-English commands | M1 agent façade | `ingest`/`query`/`health`/`lint`/`archive`/`graph` |
+| §7 Safe Tool Use | scoped tools | M4 + deterministic nodes | path-scoped reads/writes; no source-script execution |
+| §8 Obsidian Conventions | links/filenames/tags/dates | renderers + M4 link-fixup | filename helpers; ISO dates; wikilinks for pages, plain paths for raw (D1) |
+| §9 Page Protection / Human Notes | `locked`, `## Human Notes` | M9 + all renderers | read-and-preserve verbatim; queue locked-page updates |
+| §10 Required Frontmatter | 7 frontmatter schemas | **M5 Pydantic models** + renderers | one model per page type; renderers emit the YAML block |
+| §11 Initialization | create control files | M4 | idempotent; no overwrite |
+| §12 Startup Context | read index/overview/registry/review | M6 | first steps of the pipeline |
+| §13 Bundle Discovery & Pairing | pair transcript/summary/metadata | M3 | strongest-key pairing; incomplete → review item |
+| §14 Deduplication & Identity | source_id, hashes, outcomes | M2 (gate) + M3 (hash/move) + M4 (mirror) | immutable skip; no revisions (R3) |
+| §15 Classification Rules | summary-first, confidence, fallback | **M7** | `invoke(output_type=Classification)` |
+| §16 New Project Creation | when/how to create a project | M9 | create project structure in the same ingest |
+| §17 Meeting Source Page | page template | **M8 renderer** | exact §17 headings; Verified Quotes only if transcript read |
+| §18 Project Meeting Indexes | active + archive index | M9 + M12 | windowed active list; archive by YYYY/MM |
+| §19 Project Page | template + update rules | **M9 renderer + reconciler** | typed section-merge + Q2 diff-guard + chronological supersession |
+| §20 Entity Page | template | **M10 renderer** | match-before-create |
+| §21 Concept Page | template | **M10 renderer** | material concepts only |
+| §22 Contradiction Protocol | template + mandatory rules | **M11 renderer** | first-class records; linked; never recency-resolved |
+| §23 Daily Note | template | **M12 renderer** | synthesis, not concatenation |
+| §24 Index & Overview | navigation + living overview | M12 | update after every write |
+| §25 Processed Source Registry | grep-friendly mirror | M4 | regenerated from the DB every ingest (R1) |
+| §26 Review Queue | human-judgment queue | M12 | allowed types minus `source-revision` |
+| §27 Ingest Workflow | the 24 ordered steps | **M6 orchestrator** | each step → a node call, oldest→newest |
+| §28 Query Workflow | retrieval + synthesis | **M13** | GraphIndex retrieval → Obsidian verify (D3/D8) |
+| §29 Health | fast operational check | M14 | read-only |
+| §30 Lint (+`--fix`) | integrity scan | M14 | safe auto-fixes only |
+| §31 Archive | rolling window | M14 | configurable window, default 14 (D7) |
+| §32 Graph | derived reports | M13 + M14 | GraphIndex primary; `Wiki/Graph/` derived-only |
+| §33 Log Format | append-only op log | M12 | ops minus `revision-detected` |
+| §34 Post-Op Validation | the integrity checklist | **M5 validator** | the executable QA oracle; gates registry/log writes |
+| §35 Change Summary | required final report | M6 | printed after each operation |
+| §36 Quality Standard | health definition | **M16 conformance suite** | the acceptance oracle for §5 |
 
 ---
 
@@ -367,6 +455,10 @@ def sample_bundle():
 - [ ] **Post-op gate (§34):** no registry/log success entry is written unless validation passes; failures roll back compiled changes only.
 - [ ] **Contract conformance suite** (Module 16) passes — the §34/§36 oracle.
 - [ ] **Email disabled (G9):** digests present but do not send unless `FIREFLIES_WIKI_EMAIL_ENABLED=true`.
+- [ ] **Additive-only (G11):** no existing agent/toolkit file is modified; the existing suites for `agents/obsidian.py`, `agents/fireflies_wiki.py`, and `tools/obsidian.py` stay green.
+- [ ] **Scheduling + catch-up (G10):** default cron is hourly; a run after simulated downtime ingests the missed meetings in `meeting_date` order; a manual wide-window `ingest(lookback_days=…)` reconciles a large backlog chronologically in bounded chunks.
+- [ ] **Provider-agnostic LLM (G7):** model tiers are `provider:model` config strings; the agent runs on Google by default and on Claude/Codex when configured, with no code change.
+- [ ] **Page-template fidelity (§3.1):** rendered pages match the contract's exact §17/§19/§20/§21/§22/§23 heading structure verbatim; the LLM supplies only field content.
 - [ ] All unit + integration tests pass (`pytest tests/ -v`); `ruff`/`mypy` clean on changed files.
 - [ ] No breaking change to FEAT-472 `MeetingRegistry` or the wiki `sources` schema.
 
@@ -389,7 +481,9 @@ from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit      
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit                                   # verified: .../knowledge/pageindex/toolkit.py:50
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter                            # verified: .../knowledge/pageindex/llm_adapter.py:42
 from parrot.registry import register_agent
-from parrot.scheduler import ScheduleType, schedule
+from parrot.scheduler import ScheduleType, schedule   # @schedule(ScheduleType.CRON, …); 5-field cron via add_cron — verified: scheduler/inprocess.py:83
+from parrot.clients.factory import LLMFactory         # verified: clients/factory.py SUPPORTED_CLIENTS — google:127, claude/anthropic:108-109, openai-codex:146-147; LLMFactory.create/parse_llm_string
+from parrot.mcp.integration import MCPEnabledMixin     # verified: mcp/integration.py:1341; add_fireflies_mcp_server:1447 — inherited by BasicAgent, no edit needed
 ```
 
 ### Existing Class Signatures
@@ -458,7 +552,8 @@ async def build_graph_memory_toolkit(db_dir, tenant_id="default", agent_id="agen
 ### Patterns to Follow
 - Async-first; `uv`-managed; Pydantic v2 for all structured data; Google-style docstrings + strict type hints; `self.logger`, never `print`.
 - Model the flow subsystem on `parrot/flows/dev_loop/` (`definition.py`/`factories.py`/`nodes/`/`runner.py`).
-- Deterministic nodes hold NO LLM calls; semantic nodes use `invoke(output_type=…, model=…)` only.
+- Deterministic nodes hold NO LLM calls; semantic nodes call the strong/cheap **tier clients** (`invoke(output_type=…)`) only. **Page markdown is rendered by Python, never emitted by the LLM** (§3.1).
+- **Additive-only (G11):** reuse existing code by import/inheritance/composition; **never edit** `agents/obsidian.py`, `agents/fireflies_wiki.py`, `tools/obsidian.py`, or FEAT-472 files. All new behavior lives under `parrot/flows/wiki_ingest/`.
 - **Re-check the reserved `toolmanager-tooldefinition-enforcement` feature** before finalizing how the agent declares its tools (Q1 note).
 - Freeze Module 5 (schemas + §34 validator) first — it is the shared contract that unblocks parallel fan-out.
 
@@ -478,8 +573,9 @@ async def build_graph_memory_toolkit(db_dir, tenant_id="default", agent_id="agen
 | `python-frontmatter` | already used by `ObsidianToolkit` | parse/preserve YAML frontmatter |
 | `hashlib` (stdlib) | — | SHA-256 raw provenance (aligns with FEAT-472 `fingerprint`) |
 | `PyYAML` (already used) | — | frontmatter render |
+| `google-genai` (already installed) | — | default Google/Gemini tier via `GoogleGenAIClient` |
 
-No new third-party dependencies.
+No new third-party dependencies — provider SDKs (Google / Anthropic / OpenAI-Codex) already ship with ai-parrot; the model tier is a config string, not a new import.
 
 ---
 

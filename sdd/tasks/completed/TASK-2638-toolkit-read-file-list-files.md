@@ -466,10 +466,35 @@ class TestListFiles:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Implemented `ReadOnlyRepoToolkit(AbstractToolkit)` in
+`toolkit.py` with the full spec §2 constructor signature, `_error()` /
+`_rel()` / `_resolve_for_read()` helpers (all underscore-prefixed, sync —
+never exposed as tools), and the `read_file` / `list_files` tools with
+`@tool_schema`-attached Pydantic arg schemas in `schemas.py`. Re-exported
+`ReadOnlyRepoToolkit` from `parrot.tools.repo.__init__`. All 56 unit tests
+(35 confinement + 21 toolkit) pass; `ruff check` and `mypy` clean. Verified
+`get_tools()` is exactly `{read_file, list_files}` and contains no
+write-shaped name under any constructor configuration.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none
 
-**Deviations from spec**: none | describe if any
+**Post-completion fix (2026-09-01, commit c47a252e3)**: the feature-level
+adversarial code review (after TASK-2643) found that `list_files`'s
+bespoke recursion (`entry.is_dir()`) followed symlinked directories out
+of `repo_root` without a containment check — a CRITICAL confinement
+bypass reachable in every deployment. Fixed by resolving each entry and
+skipping it (never listing, never recursing) when its real target is
+outside `repo_root`, reusing the same containment rule
+`resolve_within_root` already enforces. Regression test added:
+`test_rejects_symlinked_directory_escape`.
+
+Same review pass (IMPORTANT): `ReadOnlyRepoToolkit.__init__` did not
+update `self._init_kwargs` with its named constructor arguments, so
+`build_envelope_from_tool` could not reconstruct this toolkit for
+remote/off-process execution (a bare `ReadOnlyRepoToolkit()` would raise
+`TypeError` for the missing `repo_root`). Fixed by updating
+`_init_kwargs` with the serializable subset (mirroring
+`VectorStoreSearchTool`'s convention); `wiki_store` is deliberately
+excluded since a live store object cannot cross a process boundary.
