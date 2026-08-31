@@ -27,20 +27,70 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Union
 
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.checkpoint import CheckpointStore, register_checkpoint_type
+from parrot.flows.dev_loop.checkpoint import project_shared_data
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
-from parrot.flows.dev_loop.models import RepoSpec, WorkBrief
+from parrot.flows.dev_loop.models import (
+    DevelopmentOutput,
+    FeatureBrief,
+    FeedbackDecision,
+    PlannerOutput,
+    QAReport,
+    RepoSpec,
+    ResearchOutput,
+    SynthesisReport,
+    WorkBrief,
+)
 from parrot.flows.dev_loop.session_state import (
     PullRequestLinked,
     action_from_flow_event,
 )
 
 _logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────
+# Process-wide checkpoint type registration (FEAT-480 spec §3 Module 4)
+# ─────────────────────────────────────────────────────────────────────
+#
+# Every dev-loop/dev-flow node RESULT that travels through a required
+# checkpoint (spec §2/§7) must round-trip through FlowStateSerializer with
+# its real Pydantic type, not degrade to a lossy repr — a resumed run that
+# reads `research_output.worktree_path` off a string would crash instead
+# of skipping the completed node. Registered here — at import time of
+# `flow.py` (which every checkpoint-aware caller already imports for
+# `build_dev_loop_flow`), NOT `models/__init__.py` — because
+# `test_lazy_import.py::test_models_module_is_pure` explicitly asserts
+# `parrot.flows.dev_loop.models` imports nothing beyond pydantic/typing
+# (never `parrot.bots.*`); `register_checkpoint_type` lives in
+# `parrot.bots.flows.core.checkpoint`, so registering it there would have
+# violated that invariant. `register_checkpoint_type()` is idempotent for
+# the same class/tag, so this runs safely regardless of how many times
+# `flow.py` (or a caller) triggers this module's (re-)import.
+register_checkpoint_type(WorkBrief)
+register_checkpoint_type(FeatureBrief)
+register_checkpoint_type(ResearchOutput)
+register_checkpoint_type(PlannerOutput)
+register_checkpoint_type(DevelopmentOutput)
+# FEAT-480 review fix: QAReport/SynthesisReport/FeedbackDecision are node
+# RESULTS that the `qa -> deployment_handoff`/`qa -> failure_handler`
+# on_condition edges (and dev-flow's reused feedback_router/QA edges)
+# route on via `_qa_passed`/`_make_qa_retry`/`_make_qa_exhausted`
+# (below). Left unregistered, a checkpoint taken right after `qa`/
+# `synthesis`/`feedback_router` succeeds degrades that node's result to a
+# lossy repr string; every one of those predicates reads `getattr(result,
+# "<field>", <default>)`, which silently returns its default on a plain
+# string — a crash immediately after `qa` passes can therefore resume and
+# deterministically misroute (e.g. treating a PASSED QA as failed/retry-
+# eligible) instead of raising or restoring correctly.
+register_checkpoint_type(QAReport)
+register_checkpoint_type(SynthesisReport)
+register_checkpoint_type(FeedbackDecision)
 
 # ---------------------------------------------------------------------------
 # Edge predicates
@@ -120,10 +170,7 @@ def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
     — G1) still has attempts left → redispatch development."""
 
     def _qa_retry(result: Any) -> bool:
-        return (
-            getattr(result, "passed", True) is False
-            and getattr(result, "attempt", 1) < max_retries
-        )
+        return getattr(result, "passed", True) is False and getattr(result, "attempt", 1) < max_retries
 
     return _qa_retry
 
@@ -133,10 +180,7 @@ def _make_qa_exhausted(max_retries: int) -> Callable[[Any], bool]:
     the failure handler."""
 
     def _qa_exhausted(result: Any) -> bool:
-        return (
-            getattr(result, "passed", True) is False
-            and getattr(result, "attempt", 1) >= max_retries
-        )
+        return getattr(result, "passed", True) is False and getattr(result, "attempt", 1) >= max_retries
 
     return _qa_exhausted
 
@@ -213,25 +257,28 @@ class FlowEventPublisher:
                 session_host = getattr(run_ctx, "shared_data", {}).get("session_host")
             if session_host is not None:
                 action = action_from_flow_event(
-                    event, node_id, ts,
+                    event,
+                    node_id,
+                    ts,
                     error=str(info.get("error", "")),
                     node_result=info.get("node_result"),
                 )
                 if action is not None:
                     session_host.apply(action)
                 node_result = info.get("node_result")
-                if (
-                    event == "node_completed"
-                    and isinstance(node_result, dict)
-                    and node_result.get("pr_url")
-                ):
-                    session_host.apply(PullRequestLinked(
-                        pr_url=str(node_result["pr_url"]),
-                    ))
+                if event == "node_completed" and isinstance(node_result, dict) and node_result.get("pr_url"):
+                    session_host.apply(
+                        PullRequestLinked(
+                            pr_url=str(node_result["pr_url"]),
+                        )
+                    )
         except Exception:  # noqa: BLE001 - session-state fold must never break the run
             _logger.debug(
                 "dev-loop session-state fold failed for event %s (node=%s, run=%s)",
-                event, node_id, run_id, exc_info=True,
+                event,
+                node_id,
+                run_id,
+                exc_info=True,
             )
 
         try:
@@ -305,6 +352,10 @@ def build_dev_loop_flow(
     graph_memory: Optional[Any] = None,
     require_plan_approval: bool = False,
     skip_qa: bool = False,
+    checkpoint: bool = False,
+    checkpoint_required: bool = False,
+    checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
+    flow_id: Optional[str] = None,
 ) -> AgentsFlow:
     """Build the eight-node dev-loop ``AgentsFlow`` (FEAT-132).
 
@@ -380,6 +431,28 @@ def build_dev_loop_flow(
         skip_qa: When ``True``, ``QANode`` returns a synthetic passing
             ``QAReport`` without running deterministic checks or code
             review. ``False`` (default) preserves the full QA gate.
+        checkpoint: FEAT-480 — enable AgentsFlow state checkpointing for
+            the built flow. ``False`` (default) is byte-identical to the
+            pre-FEAT-480 behavior — no checkpoint config is attached at
+            all. This is the "per-run factory" opt-in: a caller building a
+            checkpoint-aware run passes ``checkpoint=True`` (usually
+            alongside ``checkpoint_required=True``) and calls this
+            function fresh for every run (never reusing one shared
+            instance across runs — spec §7 known risk).
+        checkpoint_required: FEAT-480 — when ``True`` (and ``checkpoint``
+            is also ``True``), the scheduler awaits a required checkpoint
+            write after every successful node before routing downstream
+            (TASK-2624). ``False`` (default) keeps generic best-effort
+            checkpointing if ``checkpoint=True`` alone is set.
+        checkpoint_store: FEAT-480 — ephemeral ``CheckpointStore`` name/
+            instance/None (env fallback), forwarded to ``AgentsFlow``.
+            Ignored when ``checkpoint`` is ``False``.
+        flow_id: FEAT-480 — stable per-run checkpoint identity (typically
+            ``"dev-loop/<run_id>"``, minted by ``DevCheckpointCoordinator``).
+            Ignored when ``checkpoint`` is ``False``; auto-generated
+            (UUID4) otherwise when omitted — but omitting it defeats the
+            purpose of a per-run checkpoint identity, so recovery-aware
+            callers always supply it explicitly.
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -428,12 +501,37 @@ def build_dev_loop_flow(
     # skipped (verified empirically against flow.py's scheduler). The topology
     # below mirrors ``build_dev_loop_definition()`` edge-for-edge, using the
     # Python predicate callables (CEL equivalents live in the definition).
-    flow = AgentsFlow(name=name, on_node_event=publisher)
+    flow = AgentsFlow(
+        name=name,
+        on_node_event=publisher,
+        flow_id=flow_id,
+        checkpoint=checkpoint,
+        checkpoint_required=checkpoint_required,
+        checkpoint_store=checkpoint_store,
+        # FEAT-480: the SAME declarative ``definition`` already used for
+        # node materialization is also exactly what a required checkpoint
+        # needs to embed (spec §7 "the flow definition embedded in each
+        # checkpoint comes from the already-built declarative definition
+        # retained by the dev builders"). This is the SEPARATE
+        # ``checkpoint_definition``/``_checkpoint_definition_arg`` field
+        # (TASK-2623) — unlike the constructor's own ``definition=`` param
+        # (never passed here, see below), it does NOT affect
+        # ``explicit_mode`` scheduler selection at all: that check only
+        # ever reads ``self._definition``. Only meaningful when
+        # ``checkpoint=True``; ``AgentsFlow`` ignores it otherwise.
+        checkpoint_definition=definition if checkpoint else None,
+        # FEAT-480: allowlisted shared_data projector (TASK-2625/spec §3
+        # Module 3) — never persist the full live shared_data mapping
+        # (SessionHost, dispatchers, toolkits). Only meaningful when
+        # ``checkpoint=True``.
+        checkpoint_shared_data=project_shared_data if checkpoint else None,
+    )
     # Exposed for DevLoopRunner / callers to bind the current run_id.
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     # The declarative definition is kept for reference/visualization ONLY. It is
-    # deliberately NOT bound to ``flow._definition`` — doing so would switch the
+    # deliberately NOT bound to ``flow._definition`` (the constructor's own
+    # ``definition=`` param, left unset above) — doing so would switch the
     # scheduler to definition-mode (AND-join) and break the OR-join routing.
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
 

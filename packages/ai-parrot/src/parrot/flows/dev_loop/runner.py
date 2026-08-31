@@ -32,8 +32,10 @@ from navconfig.logging import logging
 
 from parrot import conf
 from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.checkpoint import CheckpointStore
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.result import FlowResult
+from parrot.flows.dev_loop.checkpoint import DevCheckpointCoordinator
 from parrot.flows.dev_loop.definition import build_dev_loop_definition
 from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.flow import (
@@ -45,6 +47,7 @@ from parrot.flows.dev_loop.flow import (
     _is_feature,
     _qa_failed,
     _qa_passed,
+    build_dev_loop_flow,
 )
 from parrot.flows.dev_loop.models import (
     FeatureBrief,
@@ -359,9 +362,28 @@ class DevLoopRunner:
     """Hosts dev-loop flow runs behind a global concurrency cap.
 
     Args:
-        flow: The :class:`AgentsFlow` built by ``build_dev_loop_flow``.
+        flow: The :class:`AgentsFlow` built by ``build_dev_loop_flow``. Used
+            as-is for every run whose caller does NOT supply a stable
+            ``run_id`` (the historical, byte-identical fresh-only path).
         max_concurrent_runs: Cap on simultaneously executing runs.
             Defaults to ``conf.FLOW_MAX_CONCURRENT_RUNS``.
+        checkpoint_store: FEAT-480 — ephemeral ``CheckpointStore`` name/
+            instance/None (env fallback) used by the checkpoint-aware
+            recovery path (below). Ignored entirely when no caller ever
+            passes ``run_id=`` to :meth:`run`.
+        dev_loop_flow_kwargs: FEAT-480 — the SAME keyword arguments the
+            caller used to build ``flow`` via ``build_dev_loop_flow(...)``
+            in the first place (``dispatcher``, ``jira_toolkit``,
+            ``log_toolkits``, ``redis_url``, ...). Required for the
+            checkpoint-aware recovery path: :meth:`run` uses it to build a
+            genuinely fresh per-run ``AgentsFlow`` (spec §7 "shared flow
+            instances are concurrent today; per-run construction is
+            mandatory") every time a caller supplies ``run_id=``, instead
+            of reusing ``self.flow``. ``None`` (default) keeps every
+            existing caller working unchanged — :meth:`run` simply never
+            takes the recovery path for them (``run_id=`` still accepted
+            and still used as this run's identity, just without checkpoint
+            recovery, exactly as before FEAT-480).
     """
 
     def __init__(
@@ -376,6 +398,8 @@ class DevLoopRunner:
         redis_url: Optional[str] = None,
         codereview_dispatcher: Optional[Any] = None,
         graph_memory: Optional[Any] = None,
+        checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
+        dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
@@ -421,6 +445,16 @@ class DevLoopRunner:
         # FEAT-377 TASK-1915: optional DevLoopGraphMemory forwarded to the
         # revision flow's QA/close/failure_handler nodes. None is a no-op.
         self._graph_memory = graph_memory
+        # FEAT-480: checkpoint recovery path. `_dev_loop_flow_kwargs=None`
+        # (the default) means `run(run_id=...)` never takes the recovery
+        # path — it still accepts/uses the caller's `run_id` as this run's
+        # identity, just without building a per-run checkpoint-enabled
+        # flow (spec §7: per-run construction is mandatory for the
+        # recovery path specifically; it is not required at all when
+        # recovery is not requested).
+        self._checkpoint_store = checkpoint_store
+        self._dev_loop_flow_kwargs = dev_loop_flow_kwargs
+        self._checkpoint_coordinator = DevCheckpointCoordinator(store=checkpoint_store)
         # Lazily-built, reused revision flow (fixed topology — built once).
         self._rev_flow: Optional[AgentsFlow] = None
         # Lazily-built, reused feature-mode flow (FEAT-378, fixed topology).
@@ -1164,6 +1198,15 @@ class DevLoopRunner:
             )
 
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
+        # FEAT-480 spec §8 OQ1: a caller-supplied stable run_id is the
+        # recovery identity; an auto-generated one is intentionally always
+        # a cache miss (the branch above never even reaches the
+        # coordinator). Recovery also needs `dev_loop_flow_kwargs` (so a
+        # genuinely fresh per-run flow can be built, spec §7 "shared flow
+        # instances are concurrent today") — its absence keeps every
+        # existing caller's `run_id=` byte-identical to before FEAT-480:
+        # still this run's identity, just never checkpoint-recovered.
+        recovery_enabled = run_id is not None and self._dev_loop_flow_kwargs is not None
 
         # AHP-style host: create + register before the flow runs, seed it
         # into shared state so nodes resolve it per-run (never a captured
@@ -1195,6 +1238,27 @@ class DevLoopRunner:
             shared_data=shared,
         )
 
+        flow: AgentsFlow = self.flow
+        if recovery_enabled:
+            flow, mode = await self._checkpoint_coordinator.prepare(
+                workflow="dev-loop",
+                run_id=rid,
+                brief=brief,
+                live_context=ctx,
+                flow_factory=self._dev_loop_flow_factory(),
+                execution_policy=self._execution_policy_for_fingerprint(),
+            )
+            # spec §5: recovered runs must be distinguishable in session
+            # timeline events. `session_state.RunCreated` has no "resumed"
+            # field (adding one is out of scope here) — surfaced via
+            # structured logging instead, mirroring
+            # DevCheckpointCoordinator's own event vocabulary.
+            self.logger.info(
+                "Dev-loop run %s: %s execution (checkpoint recovery enabled)",
+                rid,
+                mode,
+            )
+
         # FEAT-377 TASK-1917 (G6): a manual acquire/release (not `async
         # with self._semaphore`) is required because a park can release
         # the slot WHILE `run_flow()` below is still in flight (the
@@ -1208,7 +1272,7 @@ class DevLoopRunner:
         await self._semaphore.acquire()
         self._active.add(rid)
         # Point the flow's event publisher at this run's stream.
-        holder = getattr(self.flow, "_run_id_holder", None)
+        holder = getattr(flow, "_run_id_holder", None)
         if isinstance(holder, dict):
             holder["run_id"] = rid
         self.logger.info(
@@ -1218,7 +1282,7 @@ class DevLoopRunner:
             self.max_concurrent_runs,
         )
         try:
-            result = await self.flow.run_flow(ctx)
+            result = await flow.run_flow(ctx)
         except BaseException as exc:
             # Propagate to any `resume_run()` awaiter too — a future that
             # never resolves would hang them forever. Popped from the
@@ -1252,6 +1316,77 @@ class DevLoopRunner:
         self._run_completion.pop(rid, None)
         self._discard_run_registry(rid)  # FEAT-479 M5
         return result
+
+    def _dev_loop_flow_factory(self) -> Callable[[Optional[Any]], AgentsFlow]:
+        """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
+
+        Rebuilds a genuinely fresh ``AgentsFlow`` via ``build_dev_loop_flow``
+        using the SAME kwargs the caller originally built ``self.flow``
+        with (``self._dev_loop_flow_kwargs``), with checkpointing forced
+        on — per-run construction is mandatory for the recovery path
+        (spec §7: shared flow instances are concurrent today). The
+        ``definition`` argument ``AgentsFlow.resume()``/
+        ``DevCheckpointCoordinator`` pass to this closure is deliberately
+        ignored, matching the ``flow_factory`` contract documented in
+        ``parrot.flows.dev_loop.checkpoint``: ``build_dev_loop_flow``
+        always derives its own declarative snapshot via
+        ``build_dev_loop_definition()`` regardless.
+
+        Returns:
+            A ``(definition) -> AgentsFlow`` callable.
+
+        Raises:
+            ValueError: If ``dev_loop_flow_kwargs`` was never supplied to
+                ``__init__`` — the caller of :meth:`run` already checked
+                this via ``recovery_enabled`` before reaching here, so
+                this only fires on a direct/misuse call.
+        """
+        if self._dev_loop_flow_kwargs is None:
+            raise ValueError(
+                "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
+                "to have been passed to DevLoopRunner.__init__()."
+            )
+        kwargs = dict(self._dev_loop_flow_kwargs)
+
+        def _factory(_definition: Optional[Any]) -> AgentsFlow:
+            return build_dev_loop_flow(
+                **kwargs,
+                checkpoint=True,
+                checkpoint_required=True,
+                checkpoint_store=self._checkpoint_store,
+            )
+
+        return _factory
+
+    def _execution_policy_for_fingerprint(self) -> Dict[str, Any]:
+        """Routing-relevant policy dict for the checkpoint input fingerprint.
+
+        Derived from the SAME kwargs used to build the checkpoint-aware
+        flow (``self._dev_loop_flow_kwargs``) — whatever affects routing
+        for this run IS the execution policy (spec §2: "routing-relevant
+        execution policy, including QA/approval and pool settings").
+        Pydantic values are dumped to JSON-safe dicts first —
+        ``DevCheckpointCoordinator.compute_input_fingerprint`` hashes
+        ``json.dumps(...)`` directly and cannot serialize a live model.
+
+        Returns:
+            The policy dict passed to ``DevCheckpointCoordinator.prepare(
+            execution_policy=...)``.
+        """
+        kwargs = self._dev_loop_flow_kwargs or {}
+        policy: Dict[str, Any] = {
+            "skip_qa": kwargs.get("skip_qa", False),
+            "require_deployment_approval": kwargs.get("require_deployment_approval", False),
+            "require_plan_approval": kwargs.get("require_plan_approval", False),
+            "development_pool_max": kwargs.get("development_pool_max", 4),
+        }
+        pool_config = kwargs.get("development_pool_config")
+        if pool_config is not None:
+            policy["development_pool_config"] = pool_config.model_dump(mode="json")
+        repos = kwargs.get("repos")
+        if repos:
+            policy["repos"] = [r.model_dump(mode="json") for r in repos]
+        return policy
 
     def _feature_codereview_dispatcher(self) -> Any:
         """Resolve the code-review dispatcher for the feature-mode flow.

@@ -18,12 +18,15 @@ from __future__ import annotations
 from typing import Any
 
 from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.checkpoint import CheckpointStore, register_checkpoint_type
 from parrot.flows.dev_flow.definition import (
     DEV_INTAKE,
     IDEATION,
     build_dev_flow_definition,
 )
 from parrot.flows.dev_flow.factories import build_dev_flow_node_factories
+from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
+from parrot.flows.dev_loop.checkpoint import project_shared_data
 from parrot.flows.dev_loop.definition import (
     CLOSE,
     DEVELOPMENT,
@@ -43,6 +46,20 @@ from parrot.flows.dev_loop.flow import (
     _qa_failed,
     _qa_passed,
 )
+
+# ─────────────────────────────────────────────────────────────────────
+# Process-wide checkpoint type registration (FEAT-480 spec §3 Module 5)
+# ─────────────────────────────────────────────────────────────────────
+#
+# WorkBrief/FeatureBrief/ResearchOutput/PlannerOutput/DevelopmentOutput are
+# already registered by importing `dev_loop.flow` above (TASK-2626) — only
+# the two dev-flow-specific result types need registering here. Same
+# rationale as dev_loop/flow.py: NOT in models.py, to avoid importing
+# `parrot.bots.*` (heavy) from a module some future import-purity test may
+# assert stays pydantic/typing-only, mirroring `test_lazy_import.py`'s
+# existing invariant for `dev_loop.models`.
+register_checkpoint_type(DevRequestBrief)
+register_checkpoint_type(IdeationOutput)
 
 
 def _is_nl_request(result: Any) -> bool:
@@ -83,6 +100,10 @@ def build_dev_flow(
     name: str = "dev-flow",
     publish_flow_events: bool = True,
     lifecycle_events: bool = True,
+    checkpoint: bool = False,
+    checkpoint_required: bool = False,
+    checkpoint_store: str | CheckpointStore | None = None,
+    flow_id: str | None = None,
 ) -> AgentsFlow:
     """Build the executable ``dev-flow`` :class:`AgentsFlow`.
 
@@ -118,6 +139,17 @@ def build_dev_flow(
         lifecycle_events: When True (default), also attach a
             :class:`parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter`
             (FEAT-479).
+        checkpoint: FEAT-480 — enable AgentsFlow state checkpointing.
+            ``False`` (default) is byte-identical to pre-FEAT-480 behavior.
+        checkpoint_required: FEAT-480 — when ``True`` (with ``checkpoint``),
+            the scheduler awaits a required checkpoint write after every
+            successful node before routing downstream (TASK-2624).
+        checkpoint_store: FEAT-480 — ephemeral ``CheckpointStore`` name/
+            instance/None (env fallback). Ignored when ``checkpoint`` is
+            ``False``.
+        flow_id: FEAT-480 — stable per-run checkpoint identity (typically
+            ``"dev-flow/<run_id>"``, minted by ``DevCheckpointCoordinator``).
+            Ignored when ``checkpoint`` is ``False``.
 
     Returns:
         A wired :class:`AgentsFlow` ready to ``run_flow()``.
@@ -147,7 +179,24 @@ def build_dev_flow(
 
     run_id_holder: dict[str, str] = {}
     publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
-    flow = AgentsFlow(name=name, on_node_event=publisher)
+    flow = AgentsFlow(
+        name=name,
+        on_node_event=publisher,
+        flow_id=flow_id,
+        checkpoint=checkpoint,
+        checkpoint_required=checkpoint_required,
+        checkpoint_store=checkpoint_store,
+        # FEAT-480: same rationale as build_dev_loop_flow — the declarative
+        # `definition` used for node materialization is also exactly what
+        # a required checkpoint needs to embed; this is the SEPARATE
+        # `checkpoint_definition` field (TASK-2623), which does not affect
+        # `explicit_mode` scheduler selection (only `self._definition`,
+        # never set here, controls that).
+        checkpoint_definition=definition if checkpoint else None,
+        # FEAT-480: allowlisted shared_data projector (TASK-2625, extended
+        # for dev-flow keys in dev_loop/checkpoint.py's Module 5 update).
+        checkpoint_shared_data=project_shared_data if checkpoint else None,
+    )
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]

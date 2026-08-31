@@ -42,10 +42,12 @@ from ..core.result import (
 )
 from ..core.checkpoint.checkpointer import FlowCheckpointer
 from ..core.checkpoint.errors import (
+    CheckpointFingerprintMismatchError,
     CheckpointNotFoundError,
+    CheckpointPersistenceError,
     FlowNotExportableError,
 )
-from ..core.checkpoint.model import FlowCheckpoint, MemoryRefs
+from ..core.checkpoint.model import CheckpointInputMetadata, FlowCheckpoint, MemoryRefs
 from ..core.checkpoint.serializer import FlowStateSerializer
 from ..core.checkpoint.store.base import CheckpointStore
 from ..core.checkpoint.recovery import get_recovery_service
@@ -247,6 +249,38 @@ class AgentsFlow(PersistenceMixin):
             ``FLOW_CHECKPOINT_HISTORY``.
         checkpoint_include_responses: Include raw per-node responses in
             checkpoints (heavy; results-only by default).
+        checkpoint_definition: Optional externally-supplied ``FlowDefinition``
+            embedded in every checkpoint instead of the result of
+            ``self.to_definition()``. Required for any explicit-edge graph
+            with callable predicates — those fail ``to_definition()``
+            (line 652) since a Python callable cannot round-trip through a
+            declarative definition. ``None`` (default) keeps the historical
+            behavior of deriving the definition via ``to_definition()``.
+        checkpoint_shared_data: Optional ``(ctx) -> dict[str, Any]``
+            projector used instead of the raw ``ctx.shared_data`` mapping
+            when building every checkpoint. See
+            ``FlowCheckpointer.__init__``'s ``shared_data_projector`` for
+            the full rationale (never persist live objects). ``None``
+            (default) keeps the historical behavior.
+        checkpoint_input: Optional immutable ``CheckpointInputMetadata``
+            embedded on every checkpoint this flow builds. Compared against
+            ``resume(expected_input=...)`` to reject reusing a ``run_id``
+            whose recorded input no longer matches. ``None`` (default,
+            the only value generic non-dev-workflow callers ever pass)
+            leaves ``FlowCheckpoint.input_metadata`` unset.
+        checkpoint_required: When True, the explicit-mode scheduler awaits
+            ``FlowCheckpointer.checkpoint(ctx)`` after every successful
+            node's ``mark_completed()`` (and after any retry-reset is
+            applied) and BEFORE dispatching any downstream/back-edge
+            target — a required persistence barrier, not best-effort
+            telemetry. A ``CheckpointPersistenceError`` (including a lost
+            resume lease) fails the run: already-active sibling tasks are
+            cancelled and no new work is dispatched. Required mode also
+            bypasses the fire-and-forget ``make_listener()`` write path
+            entirely — the awaited barrier is the sole persistence
+            mechanism (spec §7: "required persistence must not run through
+            make_listener()"). Default ``False`` keeps the existing
+            best-effort listener path byte-for-byte unchanged.
         durable: Write-through every checkpoint to the durable store too.
         checkpoint_store: Ephemeral ``CheckpointStore`` name/instance/None
             (env fallback) — resolved via ``get_checkpoint_store()``.
@@ -271,6 +305,10 @@ class AgentsFlow(PersistenceMixin):
         checkpoint_retention: Optional[int] = None,
         checkpoint_history: Optional[int] = None,
         checkpoint_include_responses: bool = False,
+        checkpoint_definition: Optional[FlowDefinition] = None,
+        checkpoint_shared_data: Optional[Callable[[FlowContext], Dict[str, Any]]] = None,
+        checkpoint_input: Optional[CheckpointInputMetadata] = None,
+        checkpoint_required: bool = False,
         durable: bool = False,
         checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
         durable_store: Optional[Union[str, CheckpointStore]] = None,
@@ -314,6 +352,18 @@ class AgentsFlow(PersistenceMixin):
         self._checkpoint_retention = FLOW_CHECKPOINT_REDIS_TTL if checkpoint_retention is None else checkpoint_retention
         self._checkpoint_history = FLOW_CHECKPOINT_HISTORY if checkpoint_history is None else checkpoint_history
         self._checkpoint_include_responses = checkpoint_include_responses
+        # External declarative definition (explicit-edge graphs with
+        # callable predicates fail to_definition()) + allowlisted
+        # shared-data projector, both threaded into FlowCheckpointer by
+        # _ensure_checkpointer() (spec §3 Module 2).
+        self._checkpoint_definition_arg = checkpoint_definition
+        self._checkpoint_shared_data_arg = checkpoint_shared_data
+        self._checkpoint_input_arg = checkpoint_input
+        # Required checkpoint barrier (spec §3 Module 2) — the explicit-mode
+        # scheduler awaits FlowCheckpointer.checkpoint() before dispatching
+        # any downstream/back-edge target when True. Default False keeps
+        # the historical best-effort listener path byte-for-byte unchanged.
+        self._checkpoint_required = checkpoint_required
         self._checkpoint_durable = durable
         self._checkpoint_store_arg = checkpoint_store
         self._durable_store_arg = durable_store
@@ -1251,13 +1301,20 @@ class AgentsFlow(PersistenceMixin):
         checkpointer is built, the graph is validated exportable
         (``to_definition()``, fail-fast), and the resume lease is acquired.
 
+        In required mode (``checkpoint_required=True``) the fire-and-forget
+        listener is never attached — the scheduler's awaited barrier is the
+        sole persistence mechanism (spec §7: "required persistence must not
+        run through make_listener()"), so the returned ``listener`` is
+        ``None`` in that case even though ``checkpointer`` is not.
+
         Args:
             ctx: The live ``FlowContext`` for this run — bound into the
-                checkpointer's listener closure.
+                checkpointer's listener closure (skipped in required mode).
 
         Returns:
-            ``(checkpointer, listener)``, or ``(None, None)`` when
-            checkpointing is disabled for this run.
+            ``(checkpointer, listener)``. ``listener`` is ``None`` in
+            required mode or when checkpointing is disabled; ``checkpointer``
+            is ``None`` only when checkpointing is disabled for this run.
 
         Raises:
             FlowNotExportableError: See ``to_definition()``.
@@ -1266,16 +1323,23 @@ class AgentsFlow(PersistenceMixin):
         if self._checkpointer is not None:
             # Already set up by resume() — lease already acquired there.
             checkpointer = self._checkpointer
-            listener = checkpointer.make_listener(ctx)
-            self.add_node_event_listener(listener)
+            listener = None
+            if not self._checkpoint_required:
+                listener = checkpointer.make_listener(ctx)
+                self.add_node_event_listener(listener)
             return checkpointer, listener
 
         if not self._checkpoint_enabled:
             return None, None
 
-        # Fail fast: enable checkpointing only for flows that can round-trip
-        # through to_definition() (spec §7 known risk).
-        definition = self.to_definition()
+        # An externally-supplied definition (checkpoint_definition=...) takes
+        # precedence and skips to_definition() entirely — explicit-edge
+        # graphs built with callable predicates cannot round-trip through it
+        # (spec §7 known risk). Only fall back to the fail-fast
+        # to_definition() export when the caller did not supply one.
+        definition = (
+            self._checkpoint_definition_arg if self._checkpoint_definition_arg is not None else self.to_definition()
+        )
 
         store = get_checkpoint_store(self._checkpoint_store_arg)
         durable_store: Optional[CheckpointStore] = None
@@ -1292,6 +1356,8 @@ class AgentsFlow(PersistenceMixin):
             durable=self._checkpoint_durable,
             history_limit=self._checkpoint_history,
             memory_refs=self._checkpoint_memory_refs,
+            shared_data_projector=self._checkpoint_shared_data_arg,
+            input_metadata=self._checkpoint_input_arg,
             starting_checkpoint_id=self._resume_starting_checkpoint_id,
         )
 
@@ -1299,8 +1365,10 @@ class AgentsFlow(PersistenceMixin):
         await checkpointer.acquire_lease(holder)
 
         self._checkpointer = checkpointer
-        listener = checkpointer.make_listener(ctx)
-        self.add_node_event_listener(listener)
+        listener = None
+        if not self._checkpoint_required:
+            listener = checkpointer.make_listener(ctx)
+            self.add_node_event_listener(listener)
         return checkpointer, listener
 
     async def suspend(self) -> FlowCheckpoint:
@@ -1338,14 +1406,17 @@ class AgentsFlow(PersistenceMixin):
         agent_registry: AgentRegistry,
         store: Optional[Union[str, CheckpointStore]] = None,
         durable_store: Optional[Union[str, CheckpointStore]] = None,
+        flow_factory: Optional[Callable[[FlowDefinition], "AgentsFlow"]] = None,
+        seed_context: Optional[FlowContext] = None,
+        expected_input: Optional[CheckpointInputMetadata] = None,
     ) -> "AgentsFlow":
         """Reconstruct and resume a checkpointed flow (spec §3 Module 7).
 
         Loads the checkpoint (durable store first, ephemeral fallback),
         acquires the resume lease fail-fast, rebuilds the flow via
-        ``from_definition()``, and seeds a fresh ``FlowContext`` from the
-        checkpoint so completed nodes are never re-executed when the
-        returned flow's ``run_flow()`` is called.
+        ``from_definition()`` (or ``flow_factory``, see below), and seeds a
+        ``FlowContext`` from the checkpoint so completed nodes are never
+        re-executed when the returned flow's ``run_flow()`` is called.
 
         Args:
             flow_id: The flow run's identifier (checkpoint key).
@@ -1357,6 +1428,47 @@ class AgentsFlow(PersistenceMixin):
                 fallback).
             durable_store: Durable ``CheckpointStore`` name/instance/None.
                 Checked first when given; falls back to the ephemeral store.
+            flow_factory: Optional ``(definition) -> AgentsFlow`` that rebuilds
+                the graph instead of ``from_definition()``. **Required for any
+                flow whose routing depends on more than the node topology**,
+                for two reasons that compound:
+
+                * ``from_definition()`` reconstructs a custom node type through
+                  the generic fallback ``cls(node_id=…, dependencies=…,
+                  successors=…)``. For a node whose fields all have defaults
+                  that does not raise — it silently produces a node with every
+                  live dependency (agents, repositories, clients) set to
+                  ``None``. Passing ``node_factories`` would fix this half.
+                * A flow rebuilt from a definition has ``self._definition`` set,
+                  and ``run_flow()`` selects the explicit-edge scheduler with
+                  ``self._definition is None and bool(self._edges)``. So a
+                  resumed flow silently drops to AND-join semantics with no
+                  back-edge detection and **no predicate evaluation at all**,
+                  however the original was built. ``node_factories`` cannot fix
+                  this half.
+
+                Handing the caller its own builder back fixes both at once: it
+                already has a function that produces the graph exactly as it
+                was. ``None`` keeps the historical behaviour.
+            seed_context: Optional caller-created live ``FlowContext`` (e.g.
+                one already bound to a fresh ``SessionHost``, dispatcher, or
+                trace context for this process). When given, resume seeds
+                *this* context in place — via ``mark_completed()`` only, which
+                never touches ``shared_data``/``agent_registry``/
+                ``synthesis_client``/``trace_context`` — instead of building a
+                brand-new internal ``FlowContext``. The caller's live objects
+                are therefore never overwritten by checkpoint data. ``None``
+                keeps the historical behaviour of seeding a fresh context.
+            expected_input: Optional ``CheckpointInputMetadata`` the caller
+                expects this checkpoint to carry (spec §2 step 2: "A
+                checkpoint hit must match the expected fingerprint"). When
+                given, resume raises ``CheckpointFingerprintMismatchError``
+                if the loaded checkpoint's ``input_metadata`` is missing or
+                does not equal ``expected_input`` — reusing a ``run_id``
+                across an incompatible workflow, topology version, or input
+                fingerprint must fail loudly instead of silently resuming
+                the wrong run. Checked fail-fast, before the resume lease is
+                acquired. ``None`` (default) skips this check entirely.
 
         Returns:
             A configured ``AgentsFlow`` instance ready for ``run_flow()``
@@ -1368,6 +1480,10 @@ class AgentsFlow(PersistenceMixin):
                 (missing or TTL-expired).
             FlowLockedError: If another holder already holds the resume
                 lease for ``flow_id``.
+            ValueError: If ``flow_factory`` returns a graph missing a node the
+                checkpoint recorded as completed.
+            CheckpointFingerprintMismatchError: If ``expected_input`` is given
+                and does not match the loaded checkpoint's ``input_metadata``.
         """
         ephemeral_store = get_checkpoint_store(store)
         durable: Optional[CheckpointStore] = get_checkpoint_store(durable_store) if durable_store is not None else None
@@ -1399,6 +1515,16 @@ class AgentsFlow(PersistenceMixin):
                 checkpoint.checkpoint_id,
             )
 
+        # Fail fast, before acquiring the lease or rebuilding anything: a
+        # run_id reused across an incompatible workflow/topology/input must
+        # never silently resume the wrong run (spec §2 step 2).
+        if expected_input is not None and checkpoint.input_metadata != expected_input:
+            raise CheckpointFingerprintMismatchError(
+                f"Cannot resume flow_id={flow_id!r}: checkpoint input_metadata "
+                f"{checkpoint.input_metadata!r} does not match expected "
+                f"{expected_input!r}."
+            )
+
         serializer = FlowStateSerializer()
 
         # Acquire the resume lease fail-fast, before any reconstruction —
@@ -1416,23 +1542,77 @@ class AgentsFlow(PersistenceMixin):
         holder = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         await checkpointer.acquire_lease(holder)
 
-        flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+        # FEAT-480 review fix: everything between the lease acquisition
+        # above and the point where `flow._checkpointer = checkpointer`
+        # hands ownership of the (now-attached) lease/heartbeat to the
+        # returned flow must release the lease on ANY failure — otherwise
+        # a `flow_factory()` exception or a "rebuilt graph is missing a
+        # completed node" ValueError leaks a held lease + a live background
+        # heartbeat task, and every subsequent resume attempt for this
+        # run_id gets a spurious FlowLockedError until the process exits
+        # (indistinguishable from a genuine concurrent conflict).
+        try:
+            if flow_factory is not None:
+                flow = flow_factory(checkpoint.definition)
+            else:
+                flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+
+            # A factory is free to return any graph; if it returns one that
+            # does not contain a node the checkpoint says finished, the
+            # seeding below would mark a node that does not exist and the
+            # run would restart from the wrong frontier — silently, and
+            # looking like a successful resume. Both shapes count as
+            # "known": a programmatic flow holds its nodes in ``_nodes``,
+            # while a definition-bound one materializes them per run and
+            # knows them only through the definition.
+            known_ids = set(flow._nodes)
+            if flow._definition is not None:
+                known_ids |= {node_def.id for node_def in (flow._definition.nodes or ())}
+            missing = [node_id for node_id in checkpoint.context.completion_order if node_id not in known_ids]
+            if missing:
+                raise ValueError(
+                    f"Cannot resume flow_id={flow_id!r}: the rebuilt graph is "
+                    f"missing node(s) recorded as completed: {sorted(missing)}. "
+                    "The flow_factory must produce the same node ids as the "
+                    "checkpointed run."
+                )
+        except BaseException:
+            await checkpointer.aclose()
+            raise
+
+        # FEAT-480 review fix: the checkpointer above was constructed BEFORE
+        # `flow_factory()` ran (fail-fast lease acquisition, spec §7), so it
+        # never saw the rebuilt flow's own `checkpoint_shared_data`
+        # constructor arg. Without this, every checkpoint written during a
+        # RESUMED run would fall back to projecting the WHOLE raw
+        # `ctx.shared_data` mapping instead of the caller's allowlist
+        # (checkpointer.py: `dump()` treats an absent projector as "project
+        # everything" — directly violating spec §7 "never pass the complete
+        # live shared_data mapping to required persistence").
+        checkpointer._shared_data_projector = flow._checkpoint_shared_data_arg
+        # `input_metadata` needs the SAME fix for a different reason: a
+        # `flow_factory` closure (like `build_dev_loop_flow`/`build_dev_flow`)
+        # never sets `checkpoint_input=` at construction time — only
+        # `DevCheckpointCoordinator.prepare()`'s FRESH branch does, via a
+        # post-construction `flow._checkpoint_input_arg = input_metadata`
+        # assignment (never on the resume branch). `expected_input` — this
+        # method's own parameter, already verified above to equal
+        # `checkpoint.input_metadata` whenever it is given — is the
+        # authoritative fallback: without it, every checkpoint written
+        # during a RESUMED run would carry `input_metadata=None`, so a
+        # SECOND crash-and-resume of this same run would spuriously raise
+        # CheckpointFingerprintMismatchError (`None != expected_input`) even
+        # though nothing about the run's input actually changed — silently
+        # blocking recovery from ever succeeding a second time.
+        checkpointer._input_metadata = (
+            flow._checkpoint_input_arg if flow._checkpoint_input_arg is not None else expected_input
+        )
+
         flow.flow_id = flow_id
         flow._checkpoint_enabled = True
         flow._checkpointer = checkpointer
         flow._resume_starting_checkpoint_id = checkpoint.checkpoint_id
         flow._checkpoint_memory_refs = checkpoint.memory_refs
-
-        # Seed a fresh FlowContext from the checkpoint (spec §2 step 4):
-        # decode results (+responses when present) via the serializer, then
-        # mark_completed() each node in completion_order — never re-execute
-        # completed nodes. agent_registry/synthesis_client/trace_context are
-        # re-bound here, not restored from the checkpoint (spec §7).
-        seed_ctx = FlowContext(
-            initial_task=checkpoint.context.initial_task,
-            agent_registry=agent_registry,
-        )
-        seed_ctx.shared_data.update(checkpoint.context.shared_data)
 
         decoded_results = {
             node_id: serializer.from_safe(value) for node_id, value in checkpoint.context.results.items()
@@ -1442,12 +1622,37 @@ class AgentsFlow(PersistenceMixin):
             if checkpoint.context.responses is not None
             else {}
         )
-        for node_id in checkpoint.context.completion_order:
-            seed_ctx.mark_completed(
-                node_id,
-                result=decoded_results.get(node_id),
-                response=decoded_responses.get(node_id),
+
+        if seed_context is not None:
+            # Seed the caller's own live context in place (spec §2 step 4):
+            # mark_completed() only touches completed_tasks/completion_order/
+            # active_tasks/results/responses/node_metadata — never
+            # shared_data/agent_registry/synthesis_client/trace_context — so
+            # whatever live objects the caller already wired onto this
+            # context (a fresh SessionHost, dispatchers, toolkits, ...) are
+            # never overwritten by checkpoint data.
+            seed_ctx = seed_context
+            for node_id in checkpoint.context.completion_order:
+                seed_ctx.mark_completed(
+                    node_id,
+                    result=decoded_results.get(node_id),
+                    response=decoded_responses.get(node_id),
+                )
+        else:
+            # Historical behaviour: seed a fresh FlowContext from the
+            # checkpoint. agent_registry/synthesis_client/trace_context are
+            # re-bound here, not restored from the checkpoint (spec §7).
+            seed_ctx = FlowContext(
+                initial_task=checkpoint.context.initial_task,
+                agent_registry=agent_registry,
             )
+            seed_ctx.shared_data.update(checkpoint.context.shared_data)
+            for node_id in checkpoint.context.completion_order:
+                seed_ctx.mark_completed(
+                    node_id,
+                    result=decoded_results.get(node_id),
+                    response=decoded_responses.get(node_id),
+                )
 
         flow._resume_seed_context = seed_ctx
         return flow
@@ -1474,6 +1679,14 @@ class AgentsFlow(PersistenceMixin):
             Aggregated ``FlowResult`` describing the run.
         """
         from .cel_evaluator import CELPredicateEvaluator  # noqa: PLC0415
+
+        # Required checkpoint barrier (spec §3 Module 2). `self._checkpointer`
+        # is set by `_ensure_checkpointer()` before this method runs whenever
+        # checkpointing is enabled at all; `required` gates the awaited-write
+        # barrier below on top of that (both must hold — checkpoint_required
+        # alone, with checkpointing disabled, is a no-op).
+        checkpointer = self._checkpointer
+        required = bool(self._checkpoint_required and checkpointer is not None)
 
         # Fresh nodes per call (concurrent safety).
         nodes: dict[str, Node] = self._materialize_nodes()
@@ -1701,6 +1914,31 @@ class AgentsFlow(PersistenceMixin):
                 {"flow": self.name, "context": ctx},
             )
 
+        async def _await_required_barrier() -> None:
+            """Await the required checkpoint write; fail the job on failure.
+
+            Called only in required mode (``required`` closed over above),
+            only after a node's successful ``ctx.mark_completed()`` and any
+            retry-reset has already been applied to both scheduler state and
+            ``ctx`` — and always BEFORE any new node this event makes
+            eligible is spawned (spec §2 Overview, §7). On
+            ``CheckpointPersistenceError`` (including a lost resume lease),
+            already-active sibling tasks are cancelled/awaited before the
+            error propagates — no new work is dispatched once a required
+            barrier fails.
+            """
+            assert checkpointer is not None  # `required` (closed over) implies this
+            try:
+                checkpointer.raise_if_lease_lost()
+                await checkpointer.checkpoint(ctx)
+            except CheckpointPersistenceError:
+                active = [t for t in tasks.values() if not t.done()]
+                for t in active:
+                    t.cancel()
+                if active:
+                    await asyncio.gather(*active, return_exceptions=True)
+                raise
+
         def _edge_passes(edge: Any, source_result: Any, source_error: Optional[BaseException]) -> bool:
             """Evaluate whether a transition edge allows dispatch of its target.
 
@@ -1767,31 +2005,46 @@ class AgentsFlow(PersistenceMixin):
                 return _edge_passes(edge, results.get(src), errors.get(src))
             return False
 
-        def _resolve_ready_targets() -> None:
-            """Dispatch / skip every node whose incoming edges are all resolved.
+        def _resolve_ready_targets() -> List[str]:
+            """Compute (and skip-resolve) every node whose incoming edges are
+            all resolved — without dispatching the ones ready to run.
 
             Runs to a fixpoint so a skip cascades through its descendants in
             the same pass (e.g. a failed node skips its whole success path,
             which in turn resolves a downstream error-handler's fan-in).
+            Skips are applied immediately (they need no checkpoint — spec §7:
+            only a successful node is ever checkpointed as complete); nodes
+            ready to dispatch are only collected and returned so the caller
+            can await the required checkpoint barrier (spec §2/§7) exactly
+            once per completion event, over every target this pass makes
+            eligible, before spawning any of them. In non-required mode the
+            caller spawns the returned list immediately with no intervening
+            ``await`` — behavior is unchanged from the previous
+            spawn-inline implementation (no yield point exists between the
+            fixpoint computing this list and every entry being dispatched).
 
             Gates on ``_forward_in_edges`` (FEAT-377 TASK-1910) rather than
             the raw ``incoming`` index: a cyclic back-edge must never block a
             node's first-ever dispatch (its source cannot resolve until the
             node it points at has already run once) — re-entry after a
             back-edge fires is handled separately by ``_resolve_retries()``.
+
+            Returns:
+                node_ids ready to dispatch this pass (not yet spawned).
             """
+            to_spawn: List[str] = []
             progress = True
             while progress:
                 progress = False
                 for tgt, in_edges in _forward_in_edges.items():
                     if not in_edges:
                         continue  # entry node — dispatched at start
-                    if tgt in completed or tgt in failed or tgt in skipped or tgt in tasks:
+                    if tgt in completed or tgt in failed or tgt in skipped or tgt in tasks or tgt in to_spawn:
                         continue
                     if not all(_edge_resolved(e) for e in in_edges):
                         continue
                     if any(_edge_fired(e) for e in in_edges):
-                        _spawn(tgt)
+                        to_spawn.append(tgt)
                     else:
                         skipped.add(tgt)
                         try:
@@ -1808,21 +2061,27 @@ class AgentsFlow(PersistenceMixin):
                             {"flow": self.name, "context": ctx},
                         )
                     progress = True
+            return to_spawn
 
-        def _resolve_retries() -> bool:
+        def _resolve_retries() -> Optional[str]:
             """Re-enter a bounded repair loop when a back-edge fires.
 
             When a cyclic back-edge's source has resolved and its predicate
             passes, every node on the cycle (target through source,
-            inclusive) is reset to "never ran" and the target is
-            re-dispatched. Only meaningful once the target has already
-            completed at least once — the loop's first pass is a normal
-            forward dispatch, never a retry.
+            inclusive) is reset to "never ran" in BOTH scheduler-local state
+            AND ``ctx`` (``FlowContext.reset_completed()`` — spec §2/§7: the
+            persisted frontier must request the next repair attempt instead
+            of restoring stale completions) — but the target is NOT spawned
+            here. Only meaningful once the target has already completed at
+            least once — the loop's first pass is a normal forward dispatch,
+            never a retry.
 
             Returns:
-                True if a retry was triggered (the caller should skip the
-                normal OR-join pass for this event — the reset invalidates
-                the state it would otherwise act on).
+                The node_id to (re-)dispatch if a retry was triggered — the
+                caller awaits the required checkpoint barrier (spec §2/§7)
+                before spawning it and skips the normal OR-join pass for
+                this event, since the reset invalidates the state it would
+                otherwise act on. ``None`` if no back-edge fired.
             """
             for edge, members in _back_edges:
                 src = edge.from_
@@ -1845,6 +2104,7 @@ class AgentsFlow(PersistenceMixin):
                         nodes[member] = old_node.model_copy(update={"fsm": AgentTaskMachine(agent_name=member)})
                     except Exception:  # noqa: BLE001 - fallback: keep old node
                         pass
+                ctx.reset_completed(members)
                 self.logger.info(
                     "Repair-loop retry: edge %r -> %r fired; reset %s and " "re-dispatched %r",
                     src,
@@ -1852,9 +2112,8 @@ class AgentsFlow(PersistenceMixin):
                     sorted(members),
                     tgt,
                 )
-                _spawn(tgt)
-                return True
-            return False
+                return tgt
+            return None
 
         # Run-level bracket: flow_started precedes every node_started.
         self._notify_node_event(
@@ -1891,7 +2150,13 @@ class AgentsFlow(PersistenceMixin):
         # A no-op whenever `completed` is empty (every non-resume run).
         if completed:
             if explicit_mode:
-                _resolve_ready_targets()
+                # No barrier here even in required mode: nothing "completed"
+                # in THIS process yet — every id in the pre-seeded
+                # `completed` set was already checkpointed by the prior
+                # process before this resume (that is the whole point of
+                # resuming). The barrier only guards NEW completions below.
+                for tgt in _resolve_ready_targets():
+                    _spawn(tgt)
             else:
                 progress = True
                 while progress:
@@ -1911,6 +2176,10 @@ class AgentsFlow(PersistenceMixin):
             nid = event.node_id
             durations[nid] = loop.time() - started_at.get(nid, run_started_at)
             self.logger.debug("Received completion event for node %r", nid)
+            # Required checkpoint barrier gates only the SUCCESS path (spec
+            # §7: "Failed or cancelled nodes are never checkpointed as
+            # complete") — captured before either branch runs below.
+            node_succeeded = event.error is None
 
             if event.error is not None:
                 # Retry if max_retries > 0 and attempts not exhausted.
@@ -2008,10 +2277,30 @@ class AgentsFlow(PersistenceMixin):
                 # OR-join pass for this event (FEAT-377 TASK-1910): the reset
                 # it performs invalidates the very state the OR-join pass
                 # would otherwise read.
-                if _back_edges and _resolve_retries():
+                retry_target: Optional[str] = None
+                if _back_edges:
+                    retry_target = _resolve_retries()
+                if retry_target is not None:
+                    # Required barrier (spec §2/§7): the reset above has
+                    # already been applied to both scheduler state and ctx
+                    # (via ctx.reset_completed()) — checkpoint that
+                    # post-reset frontier before re-dispatching the target,
+                    # so a crash here restores the invalidated cycle instead
+                    # of the stale completions it replaced.
+                    if required and node_succeeded:
+                        await _await_required_barrier()
+                    _spawn(retry_target)
                     continue
                 # OR-join + skip-propagation over the whole graph.
-                _resolve_ready_targets()
+                to_spawn = _resolve_ready_targets()
+                # Required barrier (spec §2/§7): await it once per completion
+                # event — even when `to_spawn` is empty, this node's own
+                # success must still be durably persisted — before spawning
+                # anything this event made eligible.
+                if required and node_succeeded:
+                    await _await_required_barrier()
+                for tgt in to_spawn:
+                    _spawn(tgt)
                 continue
 
             # Legacy AND-join: evaluate outgoing edges of the finished node.

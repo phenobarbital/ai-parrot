@@ -487,70 +487,58 @@ but are **off by default** behind a feature flag.
 
 ---
 
-## Open Questions
+## Resolved Decisions
 
-> The user asked that document contradictions be flagged for discussion. Items
-> D1–D8 are contradictions/ambiguities **in the operating contract itself**;
-> Q1–Q4 are implementation decisions.
+All open questions and FEAT-472 reconciliation items are **resolved**; the operating
+contract (`sdd/references/obsidian-wiki-operating-contract.md`) has been amended where
+noted. This brainstorm is ready for `/sdd-spec`.
 
-**Document contradictions / ambiguities (owner: user, to resolve before/with `/sdd-spec`):**
+**Reconciliation with FEAT-472:**
 
-- **D1 — Raw provenance links.** §10.1/§17 store `raw_transcript`/`raw_summary`
-  as `[[wikilinks]]` into `Raw/Processed/…`, but raw files can be non-Markdown
-  (`transcript.<ext>`, §4) and §8.1 forbids links to non-existent pages /
-  reserves Markdown links for external URLs. Proposal: use **plain relative
-  paths** (not wikilinks) for raw provenance pointers. Which wins?
-- **D2 — `primary_project ∈ projects[]`.** §10.1 lists both but never states the
-  invariant. Add the rule?
-- **D3 — GraphIndex vs "Obsidian graph is primary / derived-only" (§4/§32).** The
-  contract's own model has **no code-side wiki plane**; the user wants a
-  GraphIndex LLM Wiki alongside Obsidian. We resolved it as a *derived
-  accelerator*, but should the contract be **amended** to acknowledge the derived
-  plane (so a future reader doesn't treat GraphIndex as a rule violation)?
-- **D4 — Dual IDs.** `id: "source:fireflies:<id>"` vs `source_id:
-  "fireflies:<id>"` (§10.1) — which is authoritative for dedup/linking?
-- **D5 — Content-fingerprint dedup fields undefined.** §14.1 #4 invokes a
-  fingerprint when no external id exists but never says which fields feed it.
-- **D6 — Embeddings vs groundedness.** §15/#15 forbid "external knowledge / web
-  research" during normal ops. Does using the **GraphIndex's embeddings** (which
-  index only repo sources) for §6 candidate retrieval count as *internal* (thus
-  allowed)? We read it as allowed — confirm.
-- **D7 — 14-day active window.** §18/§31 hard-code 14 days globally; make it
-  per-project or configurable?
-- **D8 — Query read path.** §28 says answer from compiled pages and drill to raw.
-  Confirm: GraphIndex for *candidate retrieval only*, then **read the Obsidian
-  source pages** for the actual answer + provenance (GraphIndex answers are never
-  quoted as authority).
+- **R1 — Registry authority.** `MeetingRegistry` (`wiki.db`) is the operational dedup
+  authority; `Wiki/Registry/processed-sources.md` (§25) is a derived Markdown mirror
+  **regenerated from the DB on every ingest**. *(contract amended: §25, §12, §14.2)*
+- **R2 — Vault layout.** **No migration.** The agent targets the user's **existing
+  contract-structured vault** and produces into it per §4; §11 init only creates
+  missing control files without overwriting. Legacy flat-`meetings/` backfill is an
+  optional later utility, out of v1 scope.
+- **R3 — Revisions.** **Removed entirely** — transcripts are immutable, so a re-seen
+  `source_id` is a permanent skip; no Revisions folder / review type / log op.
+  *(contract amended: §2 rule 16, §14.3, §4, §26, §30, §33)*
 
-**Implementation decisions (owner: spec):**
+**Contract contradictions / ambiguities:**
 
-- **Q1 — Agent home.** New subsystem under `parrot/flows/wiki_ingest/` (flow
-  pattern) vs a `parrot_tools` toolkit set the agent composes. (Leaning: flow
-  subsystem, matching `dev_loop/`.)
-- **Q2 — Diff-guard for §19.** What exactly protects the project-page rewrite
-  from dropping still-sourced claims — structured section-merge + a "no claim
-  removed while its source is live" assertion in §34? Define the guard.
-- **Q3 — Fetch watermark.** ✅ **RESOLVED by FEAT-472** — `suggest_from_date()`
-  (= `max(synced_at) − FIREFLIES_SYNC_OVERLAP_DAYS`) ships the watermark; the
-  `MeetingRegistry` id gate is the backstop. Reuse as-is.
-- **Q4 — Scheduling & email flag.** Reuse the existing `@schedule` cadence for
-  `ingest`; confirm the email-digest feature-flag key name and default (off).
+- **D1 — Raw provenance.** Plain relative paths, never `[[wikilinks]]` (raw files
+  aren't Obsidian pages). *(contract amended: §10.1, §17)*
+- **D2 — `primary_project ∈ projects[]`.** Invariant added; §34 asserts it.
+  *(contract amended: §10.1)*
+- **D3 — Graph primacy.** **GraphIndex/PageIndex is the primary query graph**;
+  Obsidian's wikilink graph is the secondary human-navigation view. Vault pages remain
+  the content source-of-truth; the DB remains the dedup authority.
+  *(contract amended: §4, §28, §32)*
+- **D4 — IDs.** `source_id: "fireflies:<id>"` is the authoritative identity
+  (= FEAT-472 `external_id`); `id:` is the page-id namespace.
+- **D5 — Fingerprint.** Resolved by FEAT-472: `sha256(normalise_transcript(text))`,
+  summary hashed separately.
+- **D6 — Internal embeddings.** Not "external knowledge" — clarified as an exception.
+  *(contract amended: §2 rule 15, §28)*
+- **D7 — Active window.** Configurable, default 14 days.
+  *(contract amended: §18, §27, §30, §31)*
+- **D8 — Query path.** GraphIndex retrieval → read Obsidian pages for the answer +
+  provenance; GraphIndex output never quoted as authority. *(contract amended via D3: §28)*
+- **NEW — Chronological order.** Meetings processed oldest→newest by `meeting_date`; a
+  late-arriving older meeting integrates as history, never overwrites newer current
+  state. *(contract amended: §2 rule 16, §27, §19)*
 
-**Reconciliation with FEAT-472 (owner: user/spec — decide before `/sdd-spec`):**
+**Implementation decisions:**
 
-- **R1 — Registry substrate.** Confirm: `MeetingRegistry` (`wiki.db`) is the
-  operational authority; `Wiki/Registry/processed-sources.md` (§25) is a derived
-  Markdown mirror this agent writes. (Recommended; FEAT-472 already delegates the
-  mirror to this agent.)
-- **R2 — Vault layout migration.** FEAT-472's registry keys on the note in a flat
-  `meetings_folder` with the raw transcript *in the note body*. Adopting the
-  contract layout re-homes `source_uri` to the canonical `Wiki/Sources/Meetings/`
-  page and moves raw to `Raw/`. Decide: migrate existing vaults via
-  `backfill_from_vault` re-pointing, or start the contract layout fresh?
-- **R3 — Revise policy override.** FEAT-472 updates a changed transcript **in
-  place**; the contract requires Revisions-folder + Review-Queue routing, no
-  auto-merge (§14.3/§22). Confirm the KB agent overrides FEAT-472's revise by
-  consuming `report["revised"]`.
+- **Q1 — Agent home.** New flow subsystem `parrot/flows/wiki_ingest/` (mirrors `dev_loop/`).
+  Re-check the reserved `toolmanager-tooldefinition-enforcement` before finalizing the tool surface.
+- **Q2 — §19 diff-guard.** LLM edits typed sections (no free-form whole-page regen) + a
+  §34 assertion: *no claim may be dropped while a live source still supports it*.
+- **Q3 — Watermark.** Resolved by FEAT-472 `suggest_from_date()`.
+- **Q4 — Scheduling / email.** Reuse `@schedule` for `ingest`; email digests behind
+  `FIREFLIES_WIKI_EMAIL_ENABLED` (default **false**).
 
 ---
 
