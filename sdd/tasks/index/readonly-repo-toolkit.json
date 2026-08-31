@@ -72,7 +72,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on 2639 for _run_argv rather than writing a second subprocess helper. Could in principle run beside 2641 (different files), but both edit toolkit.py and the per-spec worktree is sequential anyway. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2640-local-git-history-tools.md"
+      "completed_at": "2026-08-31T22:03:33+00:00",
+      "file": "sdd/tasks/completed/TASK-2640-local-git-history-tools.md"
     },
     {
       "id": "TASK-2641",
