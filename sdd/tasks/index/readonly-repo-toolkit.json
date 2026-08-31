@@ -32,7 +32,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Establishes the error contract, the bounds contract and the read-only-by-construction property that tasks 2639-2643 all extend. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2638-toolkit-read-file-list-files.md"
+      "completed_at": "2026-08-31T21:53:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2638-toolkit-read-file-list-files.md"
     },
     {
       "id": "TASK-2639",

@@ -466,10 +466,16 @@ class TestListFiles:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Implemented `ReadOnlyRepoToolkit(AbstractToolkit)` in
+`toolkit.py` with the full spec §2 constructor signature, `_error()` /
+`_rel()` / `_resolve_for_read()` helpers (all underscore-prefixed, sync —
+never exposed as tools), and the `read_file` / `list_files` tools with
+`@tool_schema`-attached Pydantic arg schemas in `schemas.py`. Re-exported
+`ReadOnlyRepoToolkit` from `parrot.tools.repo.__init__`. All 56 unit tests
+(35 confinement + 21 toolkit) pass; `ruff check` and `mypy` clean. Verified
+`get_tools()` is exactly `{read_file, list_files}` and contains no
+write-shaped name under any constructor configuration.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
