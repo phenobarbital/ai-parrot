@@ -39,9 +39,12 @@ from parrot.flows.dev_loop.factories import build_dev_loop_node_factories
 from parrot.flows.dev_loop.models import (
     DevelopmentOutput,
     FeatureBrief,
+    FeedbackDecision,
     PlannerOutput,
+    QAReport,
     RepoSpec,
     ResearchOutput,
+    SynthesisReport,
     WorkBrief,
 )
 from parrot.flows.dev_loop.session_state import (
@@ -74,6 +77,20 @@ register_checkpoint_type(FeatureBrief)
 register_checkpoint_type(ResearchOutput)
 register_checkpoint_type(PlannerOutput)
 register_checkpoint_type(DevelopmentOutput)
+# FEAT-480 review fix: QAReport/SynthesisReport/FeedbackDecision are node
+# RESULTS that the `qa -> deployment_handoff`/`qa -> failure_handler`
+# on_condition edges (and dev-flow's reused feedback_router/QA edges)
+# route on via `_qa_passed`/`_make_qa_retry`/`_make_qa_exhausted`
+# (below). Left unregistered, a checkpoint taken right after `qa`/
+# `synthesis`/`feedback_router` succeeds degrades that node's result to a
+# lossy repr string; every one of those predicates reads `getattr(result,
+# "<field>", <default>)`, which silently returns its default on a plain
+# string — a crash immediately after `qa` passes can therefore resume and
+# deterministically misroute (e.g. treating a PASSED QA as failed/retry-
+# eligible) instead of raising or restoring correctly.
+register_checkpoint_type(QAReport)
+register_checkpoint_type(SynthesisReport)
+register_checkpoint_type(FeedbackDecision)
 
 # ---------------------------------------------------------------------------
 # Edge predicates

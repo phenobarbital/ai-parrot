@@ -1542,29 +1542,71 @@ class AgentsFlow(PersistenceMixin):
         holder = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         await checkpointer.acquire_lease(holder)
 
-        if flow_factory is not None:
-            flow = flow_factory(checkpoint.definition)
-        else:
-            flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+        # FEAT-480 review fix: everything between the lease acquisition
+        # above and the point where `flow._checkpointer = checkpointer`
+        # hands ownership of the (now-attached) lease/heartbeat to the
+        # returned flow must release the lease on ANY failure — otherwise
+        # a `flow_factory()` exception or a "rebuilt graph is missing a
+        # completed node" ValueError leaks a held lease + a live background
+        # heartbeat task, and every subsequent resume attempt for this
+        # run_id gets a spurious FlowLockedError until the process exits
+        # (indistinguishable from a genuine concurrent conflict).
+        try:
+            if flow_factory is not None:
+                flow = flow_factory(checkpoint.definition)
+            else:
+                flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
 
-        # A factory is free to return any graph; if it returns one that does
-        # not contain a node the checkpoint says finished, the seeding below
-        # would mark a node that does not exist and the run would restart
-        # from the wrong frontier — silently, and looking like a successful
-        # resume. Both shapes count as "known": a programmatic flow holds its
-        # nodes in ``_nodes``, while a definition-bound one materializes them
-        # per run and knows them only through the definition.
-        known_ids = set(flow._nodes)
-        if flow._definition is not None:
-            known_ids |= {node_def.id for node_def in (flow._definition.nodes or ())}
-        missing = [node_id for node_id in checkpoint.context.completion_order if node_id not in known_ids]
-        if missing:
-            raise ValueError(
-                f"Cannot resume flow_id={flow_id!r}: the rebuilt graph is "
-                f"missing node(s) recorded as completed: {sorted(missing)}. "
-                "The flow_factory must produce the same node ids as the "
-                "checkpointed run."
-            )
+            # A factory is free to return any graph; if it returns one that
+            # does not contain a node the checkpoint says finished, the
+            # seeding below would mark a node that does not exist and the
+            # run would restart from the wrong frontier — silently, and
+            # looking like a successful resume. Both shapes count as
+            # "known": a programmatic flow holds its nodes in ``_nodes``,
+            # while a definition-bound one materializes them per run and
+            # knows them only through the definition.
+            known_ids = set(flow._nodes)
+            if flow._definition is not None:
+                known_ids |= {node_def.id for node_def in (flow._definition.nodes or ())}
+            missing = [node_id for node_id in checkpoint.context.completion_order if node_id not in known_ids]
+            if missing:
+                raise ValueError(
+                    f"Cannot resume flow_id={flow_id!r}: the rebuilt graph is "
+                    f"missing node(s) recorded as completed: {sorted(missing)}. "
+                    "The flow_factory must produce the same node ids as the "
+                    "checkpointed run."
+                )
+        except BaseException:
+            await checkpointer.aclose()
+            raise
+
+        # FEAT-480 review fix: the checkpointer above was constructed BEFORE
+        # `flow_factory()` ran (fail-fast lease acquisition, spec §7), so it
+        # never saw the rebuilt flow's own `checkpoint_shared_data`
+        # constructor arg. Without this, every checkpoint written during a
+        # RESUMED run would fall back to projecting the WHOLE raw
+        # `ctx.shared_data` mapping instead of the caller's allowlist
+        # (checkpointer.py: `dump()` treats an absent projector as "project
+        # everything" — directly violating spec §7 "never pass the complete
+        # live shared_data mapping to required persistence").
+        checkpointer._shared_data_projector = flow._checkpoint_shared_data_arg
+        # `input_metadata` needs the SAME fix for a different reason: a
+        # `flow_factory` closure (like `build_dev_loop_flow`/`build_dev_flow`)
+        # never sets `checkpoint_input=` at construction time — only
+        # `DevCheckpointCoordinator.prepare()`'s FRESH branch does, via a
+        # post-construction `flow._checkpoint_input_arg = input_metadata`
+        # assignment (never on the resume branch). `expected_input` — this
+        # method's own parameter, already verified above to equal
+        # `checkpoint.input_metadata` whenever it is given — is the
+        # authoritative fallback: without it, every checkpoint written
+        # during a RESUMED run would carry `input_metadata=None`, so a
+        # SECOND crash-and-resume of this same run would spuriously raise
+        # CheckpointFingerprintMismatchError (`None != expected_input`) even
+        # though nothing about the run's input actually changed — silently
+        # blocking recovery from ever succeeding a second time.
+        checkpointer._input_metadata = (
+            flow._checkpoint_input_arg if flow._checkpoint_input_arg is not None else expected_input
+        )
 
         flow.flow_id = flow_id
         flow._checkpoint_enabled = True

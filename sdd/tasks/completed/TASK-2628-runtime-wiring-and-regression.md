@@ -230,19 +230,92 @@ point anchor. 4. Index → `in-progress`; implement; move to completed; index �
   resume without ever re-dispatching `deployment_handoff`/
   `feature_handoff`. Recommend a follow-up task registering these three
   types alongside the existing five/two.
-- Verification: `pytest packages/ai-parrot/tests/flows/test_dev_recovery_
-  integration.py -q` → 9 passed; `pytest packages/ai-parrot/tests/flows
-  packages/ai-parrot/tests/cli -k "checkpoint or dev_loop or dev_flow" -q`
-  → 1435 passed (5 pre-existing failures confirmed unrelated: 2 require a
-  local Postgres not running in this environment, 3 — `test_qa_codereview`,
-  `test_secondopinion_brief`, `test_subagent_parity` — fail identically on
-  the `dev` baseline, confirmed via a direct comparison run). `ruff check`
-  clean on the new test file; lint-delta clean (no new categories) on the
-  three pre-existing-style entry-point files after fixing the one genuinely
+- Verification (pre-review): `pytest packages/ai-parrot/tests/flows/
+  test_dev_recovery_integration.py -q` → 9 passed; `pytest packages/
+  ai-parrot/tests/flows packages/ai-parrot/tests/cli -k "checkpoint or
+  dev_loop or dev_flow" -q` → 1435 passed (5 pre-existing failures
+  confirmed unrelated: 2 require a local Postgres not running in this
+  environment, 3 — `test_qa_codereview`, `test_secondopinion_brief`,
+  `test_subagent_parity` — fail identically on the `dev` baseline,
+  confirmed via a direct comparison run). `ruff check` clean on the new
+  test file; lint-delta clean (no new categories) on the three
+  pre-existing-style entry-point files after fixing the one genuinely
   new `C408` finding in each.
 
-**Deviations from spec**: none in behavior. The one gap noted above
-(`QAReport`/`SynthesisReport`/`FeedbackDecision` registration) is a
-pre-existing omission from TASK-2626/TASK-2627, discovered — not
-introduced — by this task's verification pass, and is explicitly out of
-this task's file-list scope to fix.
+**Post-review fixes (adversarial code-reviewer pass, ALL THREE 🔴 CRITICAL
+findings fixed before push, per sdd-worker protocol)** — touches
+`packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` (TASK-2622/2623/
+2624's file),`packages/ai-parrot/src/parrot/flows/dev_loop/checkpoint.py`
+(TASK-2625's file), and `packages/ai-parrot/src/parrot/flows/dev_loop/
+flow.py` (TASK-2626's file) — outside TASK-2628's own original file list,
+but required to fix genuine CRITICAL bugs the review's adversarial pass
+surfaced; each is documented inline at its fix site with a
+`FEAT-480 review fix:` marker:
+
+1. **A run that crashed twice could never be resumed the second time**
+   (`flow.py::resume()`): the reused `FlowCheckpointer` was built BEFORE
+   `flow_factory()` ran, so it never picked up the rebuilt flow's
+   `checkpoint_shared_data` projector or (for the resume path
+   specifically) this method's own `expected_input` parameter as the
+   checkpoint's `input_metadata`. Every checkpoint written during a
+   RESUMED run therefore (a) fell back to projecting the WHOLE raw
+   `ctx.shared_data` mapping — violating spec §7 — and (b) always wrote
+   `input_metadata=None`, so a SECOND resume of that same run would
+   spuriously raise `CheckpointFingerprintMismatchError` even though
+   nothing about the input changed. Fixed by copying
+   `flow._checkpoint_shared_data_arg` onto the checkpointer, and setting
+   `checkpointer._input_metadata` from `flow._checkpoint_input_arg` (if a
+   caller's factory set it) falling back to this call's own
+   `expected_input` (already verified consistent with the checkpoint's
+   recorded metadata). New regression test:
+   `test_dev_flow_resume_of_a_resumed_flow_can_be_resumed_again` — a
+   3-node graph crashed, resumed, crashed again, and resumed a SECOND
+   time; also asserts the resumed run's own checkpoint stayed
+   allowlist-projected (a planted live-object sentinel never reached the
+   persisted payload).
+2. **Resume lease/heartbeat leaked on two failure paths** — a legitimate
+   sequential retry became indistinguishable from a concurrent conflict
+   until process exit: (a) `flow.py::resume()` acquired the lease before
+   calling `flow_factory()`/validating the rebuilt graph's node set, with
+   no cleanup on either raising; (b) `dev_loop/checkpoint.py::prepare()`'s
+   `RecoveredArtifactError` path discarded the already-lease-holding
+   `resumed` flow without releasing it. Fixed by wrapping both in
+   `try/except: await checkpointer.aclose(); raise` (flow.py) and
+   `getattr(resumed, "_checkpointer", None)` + `await ... aclose()`
+   (checkpoint.py) before re-raising.
+3. **`QAReport`/`SynthesisReport`/`FeedbackDecision` registration gap**
+   (already flagged pre-review, above) — the reviewer confirmed this is a
+   *guaranteed* misroute on the affected path (every `_qa_passed`/
+   `_make_qa_retry`/`_make_qa_exhausted` predicate's `getattr(result,
+   "<field>", <default>)` silently returns its default on a degraded
+   string), not merely a risk — escalated from "recommend a follow-up
+   task" to "fix now": registered all three via `register_checkpoint_type`
+   in `dev_loop/flow.py` (covers `dev_flow` too, transitively imported).
+   `test_exception_restart_preserves_completed_frontier`'s docstring
+   still explains why it deliberately fails at `qa` rather than
+   `deployment_handoff` (historically accurate — the fix landed after
+   that test was authored; both fail points now work correctly, no
+   behavior change needed to the test itself).
+
+Four 🟠 IMPORTANT findings (retry-frontier barrier ordering on a
+failed-node's back-edge resolution, `checkpoint_committed`/`node_rerun`
+events declared-but-never-emitted, a `test_lazy_import.py`-order test
+hazard, `execution_policy["repository"]` never populated by name) and all
+🟡/💡 findings were reviewed and are intentionally left for a follow-up
+task — none are correctness-breaking for the primary restart/resume path
+this feature ships, and fixing them would expand this task well past its
+"wire and verify" scope.
+
+Post-fix verification: `pytest packages/ai-parrot/tests/flows/
+test_dev_recovery_integration.py -q` → 10 passed; `pytest packages/
+ai-parrot/tests/flows packages/ai-parrot/tests/cli -k "checkpoint or
+dev_loop or dev_flow" -q` → 1436 passed, same 5 pre-existing unrelated
+failures, no regressions. `ruff check` clean/lint-neutral on all four
+touched files (checkpoint.py's ruff count strictly improved; the other
+three are byte-identical to pre-fix on every category).
+
+**Deviations from spec**: none in behavior. The `QAReport`/
+`SynthesisReport`/`FeedbackDecision` registration gap noted above was
+initially deferred as a pre-existing TASK-2626/2627 omission, then fixed
+in this task after the adversarial review reclassified it from
+"potential risk" to "guaranteed bug" — see "Post-review fixes" above.

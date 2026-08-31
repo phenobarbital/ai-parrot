@@ -793,6 +793,132 @@ async def test_concurrent_resume_lease_conflict(fake_store) -> None:
         )
 
 
+async def test_dev_flow_resume_of_a_resumed_flow_can_be_resumed_again(fake_store) -> None:
+    """CRITICAL regression (code-review finding — flow.py's ``resume()``
+    built its ``FlowCheckpointer`` before ``flow_factory()`` ran, so it
+    never picked up the rebuilt flow's ``checkpoint_shared_data``/
+    ``checkpoint_input`` constructor args). A flow that crashes, resumes,
+    and crashes AGAIN must resume a second time — not raise a spurious
+    ``CheckpointFingerprintMismatchError`` (input_metadata=None on the
+    resumed run's own checkpoints, compared against the caller's real
+    ``expected_input`` on the third ``prepare()`` call, is a false
+    positive: nothing about the run's actual input changed). Also asserts
+    the resumed run's OWN checkpoint stays allowlist-projected — never
+    the raw live ``shared_data`` mapping — by planting a live-object
+    sentinel that must not survive into the persisted checkpoint.
+    """
+    from parrot.bots.flows.core.context import FlowContext
+    from parrot.bots.flows.core.fsm import AgentTaskMachine
+    from parrot.bots.flows.core.node import Node
+    from parrot.bots.flows.flow.definition import FlowDefinition, NodeDefinition
+    from parrot.bots.flows.flow.flow import AgentsFlow, register_node
+    from pydantic import Field
+
+    fail_at: set[str] = set()
+
+    @register_node("dev-recovery-double-resume-test.step")
+    class _StepNode(Node):
+        dependencies: set[str] = Field(default_factory=set)
+        successors: set[str] = Field(default_factory=set)
+        fsm: AgentTaskMachine | None = None
+
+        def model_post_init(self, _context: Any) -> None:
+            if self.fsm is None:
+                object.__setattr__(self, "fsm", AgentTaskMachine(agent_name=self.node_id))
+
+        @property
+        def name(self) -> str:
+            return self.node_id
+
+        async def execute(self, ctx, deps: Any, **kwargs: Any) -> Any:
+            if self.node_id in fail_at:
+                raise RuntimeError(f"simulated crash: {self.node_id}")
+            return {"ok": True}
+
+    def _projector(ctx) -> dict:
+        # Deliberately narrower than the caller's live shared_data — the
+        # allowlist this test asserts survives a SECOND resume.
+        return {"marker": ctx.shared_data.get("marker")}
+
+    def _flow_factory(_definition):
+        external_definition = FlowDefinition(
+            flow="dev-recovery-double-resume-test",
+            nodes=[
+                NodeDefinition(id="step_a", type="dev-recovery-double-resume-test.step"),
+                NodeDefinition(id="step_b", type="dev-recovery-double-resume-test.step"),
+                NodeDefinition(id="step_c", type="dev-recovery-double-resume-test.step"),
+            ],
+            edges=[],
+        )
+        flow = AgentsFlow(
+            name="dev-recovery-double-resume-test",
+            checkpoint=True,
+            checkpoint_store=fake_store,
+            checkpoint_required=True,
+            checkpoint_definition=external_definition,
+            checkpoint_shared_data=_projector,
+        )
+        flow.add_node(_StepNode(node_id="step_a"))
+        flow.add_node(_StepNode(node_id="step_b"))
+        flow.add_node(_StepNode(node_id="step_c"))
+        flow.add_edge("step_a", "step_b", condition="on_success")
+        flow.add_edge("step_b", "step_c", condition="on_success")
+        return flow
+
+    brief = _dev_flow_nl_brief()
+
+    # Process 1: step_a succeeds, step_b crashes.
+    fail_at.clear()
+    fail_at.add("step_b")
+    coordinator1 = DevCheckpointCoordinator(store=fake_store)
+    ctx1 = FlowContext(initial_task="t", shared_data={"marker": "live-1", "session_host": object()})
+    flow1, mode1 = await coordinator1.prepare(
+        workflow="dev-flow", run_id="run-double-resume", brief=brief,
+        live_context=ctx1, flow_factory=_flow_factory, execution_policy={},
+    )
+    assert mode1 == "fresh"
+    result1 = await flow1.run_flow(ctx1)
+    assert "step_b" in result1.errors
+
+    # Process 2: RESUME — step_a skipped, step_b now succeeds, step_c crashes.
+    fail_at.clear()
+    fail_at.add("step_c")
+    coordinator2 = DevCheckpointCoordinator(store=fake_store)
+    ctx2 = FlowContext(initial_task="t", shared_data={"marker": "live-2", "session_host": object()})
+    flow2, mode2 = await coordinator2.prepare(
+        workflow="dev-flow", run_id="run-double-resume", brief=brief,
+        live_context=ctx2, flow_factory=_flow_factory, execution_policy={},
+    )
+    assert mode2 == "resumed"
+    assert "step_a" in ctx2.completed_tasks
+    result2 = await flow2.run_flow(ctx2)
+    assert "step_c" in result2.errors
+
+    # Process 3: RESUME the flow that was ITSELF a resume — the exact
+    # scenario the CRITICAL bug broke. Must NOT raise
+    # CheckpointFingerprintMismatchError; step_a/step_b stay skipped.
+    fail_at.clear()
+    coordinator3 = DevCheckpointCoordinator(store=fake_store)
+    ctx3 = FlowContext(initial_task="t", shared_data={"marker": "live-3", "session_host": object()})
+    flow3, mode3 = await coordinator3.prepare(
+        workflow="dev-flow", run_id="run-double-resume", brief=brief,
+        live_context=ctx3, flow_factory=_flow_factory, execution_policy={},
+    )
+    assert mode3 == "resumed"
+    assert {"step_a", "step_b"} <= ctx3.completed_tasks
+    result3 = await flow3.run_flow(ctx3)
+    assert result3.status == FlowStatus.COMPLETED
+    assert "step_c" in ctx3.completed_tasks
+
+    # The projector (not the raw live shared_data) is what got checkpointed
+    # on the SECOND resume's writes too — the live "session_host" sentinel
+    # must never appear in the persisted checkpoint payload.
+    checkpoint = await fake_store.latest("dev-flow/run-double-resume")
+    assert checkpoint is not None
+    assert "session_host" not in checkpoint.context.shared_data
+    assert "marker" in checkpoint.context.shared_data
+
+
 # ---------------------------------------------------------------------------
 # Runtime entry points: per-run flow factories (spec §3 Module 6)
 # ---------------------------------------------------------------------------

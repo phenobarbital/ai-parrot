@@ -593,6 +593,18 @@ class DevCheckpointCoordinator:
                 self.emit_recovery_event(
                     "artifact_validation_failure", flow_id=flow_id, workflow=workflow, run_id=run_id
                 )
+                # FEAT-480 review fix: `AgentsFlow.resume()` above already
+                # acquired the resume lease and started its background
+                # heartbeat onto `resumed._checkpointer` before this
+                # validation ever runs. Discarding `resumed` here without
+                # releasing it would leak both — the heartbeat keeps
+                # renewing the lease forever, so every subsequent
+                # `prepare()` for this run_id gets `FlowLockedError` even
+                # after an operator fixes the bad worktree/artifact, until
+                # the process exits.
+                checkpointer = getattr(resumed, "_checkpointer", None)
+                if checkpointer is not None:
+                    await checkpointer.aclose()
                 raise
 
         self.emit_recovery_event(
