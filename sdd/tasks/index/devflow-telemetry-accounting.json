@@ -32,7 +32,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Pure addition to observability/context.py + __init__.py. No overlap with any other task's files.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2612-usage-attribution-contextvars.md"
+      "completed_at": "2026-08-31T15:50:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2612-usage-attribution-contextvars.md"
     },
     {
       "id": "TASK-2613",

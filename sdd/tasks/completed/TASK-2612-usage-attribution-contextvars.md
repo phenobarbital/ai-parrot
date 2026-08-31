@@ -274,10 +274,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Added `current_run_id` / `current_seat` ContextVars and the
+`usage_attribution(run_id, seat=None)` context manager to
+`observability/context.py`, mirroring `invocation_context`'s multi-var
+token-based `set()`/`reset()` pattern exactly (reset in reverse order,
+`finally`-guarded). Both new ContextVars default to `None`. Added all three
+names to `context.py`'s `__all__` and re-exported them from
+`observability/__init__.py` (with a matching `__all__` entry and module
+docstring section). Created `packages/ai-parrot/tests/observability/`
+(did not exist yet) with `__init__.py` (matching the empty-`__init__.py`
+convention used by `tests/flows/`) and `test_usage_attribution.py`
+implementing the task's 5-test specification verbatim (bind/restore,
+nested restores outer not None, restores on exception, seat is optional,
+isolated across asyncio tasks) — all pass. `ruff check` on the diff adds no
+new import-ordering or logic findings (fixed I001/SIM117 introduced by the
+new test file and the `__init__.py` import reordering); the remaining
+`UP035`/`UP045`/`RUF022` findings on `context.py`/`__init__.py` are
+pre-existing style debt already present on the unmodified file (`Optional`
+vs `X | None`, unsorted `__all__`) — left as-is per the task's explicit
+instruction to follow `invocation_context`'s existing style/convention
+exactly rather than modernizing unrelated lines. Full
+`packages/ai-parrot/tests/unit/observability/` suite (173 tests, pre-existing
+`context.py` coverage) still passes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
