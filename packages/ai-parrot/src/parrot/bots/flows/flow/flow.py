@@ -42,10 +42,11 @@ from ..core.result import (
 )
 from ..core.checkpoint.checkpointer import FlowCheckpointer
 from ..core.checkpoint.errors import (
+    CheckpointFingerprintMismatchError,
     CheckpointNotFoundError,
     FlowNotExportableError,
 )
-from ..core.checkpoint.model import FlowCheckpoint, MemoryRefs
+from ..core.checkpoint.model import CheckpointInputMetadata, FlowCheckpoint, MemoryRefs
 from ..core.checkpoint.serializer import FlowStateSerializer
 from ..core.checkpoint.store.base import CheckpointStore
 from ..core.checkpoint.recovery import get_recovery_service
@@ -247,6 +248,25 @@ class AgentsFlow(PersistenceMixin):
             ``FLOW_CHECKPOINT_HISTORY``.
         checkpoint_include_responses: Include raw per-node responses in
             checkpoints (heavy; results-only by default).
+        checkpoint_definition: Optional externally-supplied ``FlowDefinition``
+            embedded in every checkpoint instead of the result of
+            ``self.to_definition()``. Required for any explicit-edge graph
+            with callable predicates — those fail ``to_definition()``
+            (line 652) since a Python callable cannot round-trip through a
+            declarative definition. ``None`` (default) keeps the historical
+            behavior of deriving the definition via ``to_definition()``.
+        checkpoint_shared_data: Optional ``(ctx) -> dict[str, Any]``
+            projector used instead of the raw ``ctx.shared_data`` mapping
+            when building every checkpoint. See
+            ``FlowCheckpointer.__init__``'s ``shared_data_projector`` for
+            the full rationale (never persist live objects). ``None``
+            (default) keeps the historical behavior.
+        checkpoint_input: Optional immutable ``CheckpointInputMetadata``
+            embedded on every checkpoint this flow builds. Compared against
+            ``resume(expected_input=...)`` to reject reusing a ``run_id``
+            whose recorded input no longer matches. ``None`` (default,
+            the only value generic non-dev-workflow callers ever pass)
+            leaves ``FlowCheckpoint.input_metadata`` unset.
         durable: Write-through every checkpoint to the durable store too.
         checkpoint_store: Ephemeral ``CheckpointStore`` name/instance/None
             (env fallback) — resolved via ``get_checkpoint_store()``.
@@ -271,6 +291,9 @@ class AgentsFlow(PersistenceMixin):
         checkpoint_retention: Optional[int] = None,
         checkpoint_history: Optional[int] = None,
         checkpoint_include_responses: bool = False,
+        checkpoint_definition: Optional[FlowDefinition] = None,
+        checkpoint_shared_data: Optional[Callable[[FlowContext], Dict[str, Any]]] = None,
+        checkpoint_input: Optional[CheckpointInputMetadata] = None,
         durable: bool = False,
         checkpoint_store: Optional[Union[str, CheckpointStore]] = None,
         durable_store: Optional[Union[str, CheckpointStore]] = None,
@@ -314,6 +337,13 @@ class AgentsFlow(PersistenceMixin):
         self._checkpoint_retention = FLOW_CHECKPOINT_REDIS_TTL if checkpoint_retention is None else checkpoint_retention
         self._checkpoint_history = FLOW_CHECKPOINT_HISTORY if checkpoint_history is None else checkpoint_history
         self._checkpoint_include_responses = checkpoint_include_responses
+        # External declarative definition (explicit-edge graphs with
+        # callable predicates fail to_definition()) + allowlisted
+        # shared-data projector, both threaded into FlowCheckpointer by
+        # _ensure_checkpointer() (spec §3 Module 2).
+        self._checkpoint_definition_arg = checkpoint_definition
+        self._checkpoint_shared_data_arg = checkpoint_shared_data
+        self._checkpoint_input_arg = checkpoint_input
         self._checkpoint_durable = durable
         self._checkpoint_store_arg = checkpoint_store
         self._durable_store_arg = durable_store
@@ -1273,9 +1303,12 @@ class AgentsFlow(PersistenceMixin):
         if not self._checkpoint_enabled:
             return None, None
 
-        # Fail fast: enable checkpointing only for flows that can round-trip
-        # through to_definition() (spec §7 known risk).
-        definition = self.to_definition()
+        # An externally-supplied definition (checkpoint_definition=...) takes
+        # precedence and skips to_definition() entirely — explicit-edge
+        # graphs built with callable predicates cannot round-trip through it
+        # (spec §7 known risk). Only fall back to the fail-fast
+        # to_definition() export when the caller did not supply one.
+        definition = self._checkpoint_definition_arg if self._checkpoint_definition_arg is not None else self.to_definition()
 
         store = get_checkpoint_store(self._checkpoint_store_arg)
         durable_store: Optional[CheckpointStore] = None
@@ -1292,6 +1325,8 @@ class AgentsFlow(PersistenceMixin):
             durable=self._checkpoint_durable,
             history_limit=self._checkpoint_history,
             memory_refs=self._checkpoint_memory_refs,
+            shared_data_projector=self._checkpoint_shared_data_arg,
+            input_metadata=self._checkpoint_input_arg,
             starting_checkpoint_id=self._resume_starting_checkpoint_id,
         )
 
@@ -1340,6 +1375,7 @@ class AgentsFlow(PersistenceMixin):
         durable_store: Optional[Union[str, CheckpointStore]] = None,
         flow_factory: Optional[Callable[[FlowDefinition], "AgentsFlow"]] = None,
         seed_context: Optional[FlowContext] = None,
+        expected_input: Optional[CheckpointInputMetadata] = None,
     ) -> "AgentsFlow":
         """Reconstruct and resume a checkpointed flow (spec §3 Module 7).
 
@@ -1390,6 +1426,16 @@ class AgentsFlow(PersistenceMixin):
                 brand-new internal ``FlowContext``. The caller's live objects
                 are therefore never overwritten by checkpoint data. ``None``
                 keeps the historical behaviour of seeding a fresh context.
+            expected_input: Optional ``CheckpointInputMetadata`` the caller
+                expects this checkpoint to carry (spec §2 step 2: "A
+                checkpoint hit must match the expected fingerprint"). When
+                given, resume raises ``CheckpointFingerprintMismatchError``
+                if the loaded checkpoint's ``input_metadata`` is missing or
+                does not equal ``expected_input`` — reusing a ``run_id``
+                across an incompatible workflow, topology version, or input
+                fingerprint must fail loudly instead of silently resuming
+                the wrong run. Checked fail-fast, before the resume lease is
+                acquired. ``None`` (default) skips this check entirely.
 
         Returns:
             A configured ``AgentsFlow`` instance ready for ``run_flow()``
@@ -1403,6 +1449,8 @@ class AgentsFlow(PersistenceMixin):
                 lease for ``flow_id``.
             ValueError: If ``flow_factory`` returns a graph missing a node the
                 checkpoint recorded as completed.
+            CheckpointFingerprintMismatchError: If ``expected_input`` is given
+                and does not match the loaded checkpoint's ``input_metadata``.
         """
         ephemeral_store = get_checkpoint_store(store)
         durable: Optional[CheckpointStore] = get_checkpoint_store(durable_store) if durable_store is not None else None
@@ -1432,6 +1480,16 @@ class AgentsFlow(PersistenceMixin):
                 "is lossy — some dependency results may be degraded strings",
                 flow_id,
                 checkpoint.checkpoint_id,
+            )
+
+        # Fail fast, before acquiring the lease or rebuilding anything: a
+        # run_id reused across an incompatible workflow/topology/input must
+        # never silently resume the wrong run (spec §2 step 2).
+        if expected_input is not None and checkpoint.input_metadata != expected_input:
+            raise CheckpointFingerprintMismatchError(
+                f"Cannot resume flow_id={flow_id!r}: checkpoint input_metadata "
+                f"{checkpoint.input_metadata!r} does not match expected "
+                f"{expected_input!r}."
             )
 
         serializer = FlowStateSerializer()

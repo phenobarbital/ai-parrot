@@ -86,6 +86,30 @@ class ContextSnapshot(BaseModel):
     )
 
 
+class CheckpointInputMetadata(BaseModel):
+    """Immutable input-fingerprint metadata for a checkpointed run (spec §2).
+
+    Carried on `FlowCheckpoint.input_metadata` so `AgentsFlow.resume(
+    expected_input=...)` can refuse to resume a `run_id` whose recorded
+    input no longer matches the caller's current input — e.g. the workflow
+    kind, topology, or normalized brief changed since the checkpoint was
+    written. The digest itself (``input_fingerprint``) is computed by the
+    dev recovery adapter (spec §3 Module 3); this model only carries the
+    already-computed value through the checkpoint plane.
+    """
+    workflow: Literal["dev-loop", "dev-flow"] = Field(
+        ..., description="Which dev workflow produced this checkpoint"
+    )
+    topology_version: str = Field(
+        ..., description="Version tag of the explicit-edge graph topology"
+    )
+    input_fingerprint: str = Field(
+        ...,
+        description="SHA-256 digest over deterministic JSON of the "
+        "normalized brief, repository identity, and execution policy",
+    )
+
+
 class FlowCheckpoint(BaseModel):
     """A single point-in-time checkpoint of an AgentsFlow run.
 
@@ -120,4 +144,11 @@ class FlowCheckpoint(BaseModel):
     lossy: bool = Field(
         default=False,
         description="True if any value degraded to a tagged repr during serialization",
+    )
+    input_metadata: CheckpointInputMetadata | None = Field(
+        default=None,
+        description="Immutable input-fingerprint metadata (spec §2). "
+        "None for checkpoints written before this field existed, and for "
+        "any generic (non-required-mode) checkpoint — old checkpoints "
+        "still load and resume normally.",
     )

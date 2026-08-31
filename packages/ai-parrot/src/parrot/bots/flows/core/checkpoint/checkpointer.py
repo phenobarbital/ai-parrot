@@ -27,8 +27,12 @@ from typing import TYPE_CHECKING, Any
 
 from navconfig.logging import logging
 
-from parrot.bots.flows.core.checkpoint.errors import FlowLockedError
+from parrot.bots.flows.core.checkpoint.errors import (
+    CheckpointPersistenceError,
+    FlowLockedError,
+)
 from parrot.bots.flows.core.checkpoint.model import (
+    CheckpointInputMetadata,
     FlowCheckpoint,
     MemoryRefs,
     NodeStateSnapshot,
@@ -67,6 +71,21 @@ class FlowCheckpointer:
         starting_checkpoint_id: The last checkpoint id already written
             (e.g. loaded from a resumed run); the next write uses
             ``starting_checkpoint_id + 1``. Defaults to 0 (fresh run).
+        shared_data_projector: Optional ``(ctx) -> dict[str, Any]`` used
+            instead of the raw ``ctx.shared_data`` mapping when building
+            every checkpoint (spec §7: "never pass the complete live
+            shared_data mapping to required persistence"). The projected
+            dict is run through the same ``FlowStateSerializer`` type
+            registry as node results — a registered type round-trips, an
+            unregistered one degrades to a lossy repr rather than raising.
+            ``None`` (default) keeps the historical behavior of embedding
+            the full ``dict(ctx.shared_data)`` unmodified.
+        input_metadata: Optional immutable input-fingerprint metadata
+            (spec §2) embedded on every checkpoint this instance builds —
+            both the fire-and-forget listener path and the awaited
+            ``checkpoint()`` path. ``None`` (default, and the only value
+            generic non-dev-workflow callers ever pass) leaves
+            ``FlowCheckpoint.input_metadata`` unset.
     """
 
     def __init__(
@@ -83,6 +102,8 @@ class FlowCheckpointer:
         history_limit: int = 10,
         memory_refs: MemoryRefs | None = None,
         starting_checkpoint_id: int = 0,
+        shared_data_projector: Callable[[FlowContext], dict[str, Any]] | None = None,
+        input_metadata: CheckpointInputMetadata | None = None,
     ) -> None:
         self._flow_id = flow_id
         self._flow_name = flow_name
@@ -94,6 +115,8 @@ class FlowCheckpointer:
         self._durable = durable
         self._history_limit = history_limit
         self._memory_refs = memory_refs or MemoryRefs()
+        self._shared_data_projector = shared_data_projector
+        self._input_metadata = input_metadata
 
         self._last_checkpoint_id: int = starting_checkpoint_id
         self._parent_checkpoint_id: int | None = (
@@ -137,7 +160,20 @@ class FlowCheckpointer:
             include_responses=self._include_responses,
             lossy_out=lossy_out,
         )
-        lossy = lossy_out[0] if lossy_out else False
+
+        if self._shared_data_projector is not None:
+            # Replace the raw ctx.shared_data mapping with the caller's
+            # allowlisted projection, encoded through the same type registry
+            # as results/responses — a live object slipping into shared_data
+            # (a SessionHost, a dispatcher, ...) must never reach the store,
+            # and an unregistered-but-safe value degrades to a lossy repr
+            # instead of breaking the write (spec §7).
+            projected = self._shared_data_projector(ctx)
+            safe_shared, shared_lossy = self._serializer.to_safe_with_meta(projected)
+            context_snapshot.shared_data = safe_shared
+            lossy_out.append(shared_lossy)
+
+        lossy = any(lossy_out) if lossy_out else False
 
         node_states = [
             NodeStateSnapshot(
@@ -161,6 +197,7 @@ class FlowCheckpointer:
             node_states=node_states,
             memory_refs=self._memory_refs,
             lossy=lossy,
+            input_metadata=self._input_metadata,
         )
         self._last_checkpoint_id = checkpoint_id
         self._parent_checkpoint_id = checkpoint_id
@@ -203,6 +240,65 @@ class FlowCheckpointer:
         task = asyncio.ensure_future(self._write(checkpoint))
         self._pending_tasks.add(task)
         task.add_done_callback(self._pending_tasks.discard)
+
+    # ── Awaited, required write path (spec §2/§7) ──────────────────────────
+
+    async def checkpoint(self, ctx: FlowContext, *, status: str = "running") -> FlowCheckpoint:
+        """Build and synchronously persist one required checkpoint.
+
+        Unlike `make_listener()`'s fire-and-forget path — whose write
+        failures are logged as warnings and swallowed by design — this
+        method awaits the store write and propagates any encoding or
+        persistence failure as `CheckpointPersistenceError`. Required mode
+        exists precisely so a caller can refuse to route to a newly
+        eligible downstream node until Redis durably confirms the upstream
+        completion (spec §2 step 2 / step 6).
+
+        Checkpoint numbering is monotonic only on success (spec §7: "do not
+        advance the in-memory parent ID until the required store write
+        succeeds") — on any failure the in-memory ``last_checkpoint_id``/
+        ``parent_checkpoint_id`` are rolled back to their pre-call values,
+        so a retried call reuses the same checkpoint id instead of
+        skipping ahead of a write that never landed.
+
+        Args:
+            ctx: The live `FlowContext` to snapshot.
+            status: Run status to embed (``running``/``suspended``/
+                ``completed``/``failed``).
+
+        Returns:
+            The `FlowCheckpoint` that was successfully persisted.
+
+        Raises:
+            CheckpointPersistenceError: If assembling the snapshot or
+                writing it to the store (ephemeral, or durable in
+                write-through mode) fails for any reason.
+        """
+        pre_last_id = self._last_checkpoint_id
+        pre_parent_id = self._parent_checkpoint_id
+        try:
+            checkpoint = self._build_checkpoint(ctx, status=status)
+        except Exception as exc:
+            self._last_checkpoint_id = pre_last_id
+            self._parent_checkpoint_id = pre_parent_id
+            raise CheckpointPersistenceError(
+                f"FlowCheckpointer.checkpoint(): failed to build snapshot for "
+                f"flow_id={self._flow_id!r}: {exc}"
+            ) from exc
+
+        try:
+            await self._store.put(checkpoint)
+            if self._durable and self._durable_store is not None:
+                await self._durable_store.put(checkpoint)
+        except Exception as exc:
+            self._last_checkpoint_id = pre_last_id
+            self._parent_checkpoint_id = pre_parent_id
+            raise CheckpointPersistenceError(
+                f"FlowCheckpointer.checkpoint(): failed to persist flow_id="
+                f"{self._flow_id!r} checkpoint_id={checkpoint.checkpoint_id}: {exc}"
+            ) from exc
+
+        return checkpoint
 
     def make_listener(
         self, ctx: FlowContext

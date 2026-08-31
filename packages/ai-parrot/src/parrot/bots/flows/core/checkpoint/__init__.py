@@ -6,11 +6,14 @@ recoverable *state* (expiring by default, opt-in durable), not audit
 """
 from .checkpointer import FlowCheckpointer
 from .errors import (
+    CheckpointFingerprintMismatchError,
     CheckpointNotFoundError,
+    CheckpointPersistenceError,
     FlowLockedError,
     FlowNotExportableError,
 )
 from .model import (
+    CheckpointInputMetadata,
     ContextSnapshot,
     FlowCheckpoint,
     MemoryRefs,
@@ -26,7 +29,10 @@ from .store import (
 )
 
 __all__ = [
+    "CheckpointFingerprintMismatchError",
+    "CheckpointInputMetadata",
     "CheckpointNotFoundError",
+    "CheckpointPersistenceError",
     "CheckpointStore",
     "ContextSnapshot",
     "DurableCheckpointStore",
