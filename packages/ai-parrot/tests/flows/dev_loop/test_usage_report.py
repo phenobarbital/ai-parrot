@@ -22,6 +22,7 @@ from parrot.flows.dev_loop.session_state import (
 )
 from parrot.flows.dev_loop.usage_report import (
     AgentUsage,
+    CycleUsage,
     UsageReport,
     build_usage_report,
     render_usage_markdown,
@@ -261,3 +262,155 @@ class TestBundleIntegration:
         """[R3]-style regression guard: omitting usage_markdown changes nothing."""
         bundle = build_run_bundle(snapshot, [], {})
         assert "## Usage" not in render_markdown(bundle)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# FEAT-479 Module 7b — node/cycle/worker rendering, Failures, partial marker
+# ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def report_with_cycles_and_workers() -> UsageReport:
+    return UsageReport(
+        run_id="run-1",
+        generated_at=0.0,
+        agents=[
+            AgentUsage(
+                seat="development", node_id="development", backend="anthropic",
+                model="claude-opus-5", rounds=2,
+                input_tokens=3000, output_tokens=1200,
+                cycles=[
+                    CycleUsage(cycle=1, model="claude-opus-5", input_tokens=1000, output_tokens=500),
+                    CycleUsage(cycle=2, model="claude-opus-5", input_tokens=2000, output_tokens=700),
+                ],
+            ),
+            AgentUsage(
+                seat="development.w1", node_id="development", backend="anthropic",
+                model="claude-sonnet-4-6", rounds=1,
+                input_tokens=100, output_tokens=50,
+                cycles=[CycleUsage(cycle=1, model="claude-sonnet-4-6", input_tokens=100, output_tokens=50)],
+            ),
+            AgentUsage(
+                seat="development.w2", node_id="development", backend="anthropic",
+                model="claude-sonnet-4-6", rounds=1,
+                input_tokens=200, output_tokens=60,
+                cycles=[CycleUsage(cycle=1, model="claude-sonnet-4-6", input_tokens=200, output_tokens=60)],
+            ),
+        ],
+    )
+
+
+@pytest.fixture
+def report_single_cycle() -> UsageReport:
+    return UsageReport(
+        run_id="run-1",
+        generated_at=0.0,
+        agents=[
+            AgentUsage(
+                seat="qa", node_id="qa", backend="nova", model="m", rounds=1,
+                input_tokens=10, output_tokens=5,
+                cycles=[CycleUsage(cycle=1, model="m", input_tokens=10, output_tokens=5)],
+            ),
+        ],
+    )
+
+
+@pytest.fixture
+def report_with_failure() -> UsageReport:
+    return UsageReport(
+        run_id="run-1",
+        generated_at=0.0,
+        agents=[
+            AgentUsage(
+                seat="qa", node_id="qa", backend="nova", model="m", rounds=2,
+                input_tokens=900, output_tokens=100, failures=1,
+                cycles=[
+                    CycleUsage(cycle=1, model="m", status="completed"),
+                    CycleUsage(
+                        cycle=2, model="m", input_tokens=900, output_tokens=100,
+                        status="failed", error_type="TimeoutError",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+@pytest.fixture
+def report_clean() -> UsageReport:
+    return UsageReport(
+        run_id="run-1",
+        generated_at=0.0,
+        agents=[
+            AgentUsage(
+                seat="qa", node_id="qa", backend="nova", model="m", rounds=1,
+                input_tokens=10, output_tokens=5,
+                cycles=[CycleUsage(cycle=1, model="m", input_tokens=10, output_tokens=5)],
+            ),
+        ],
+    )
+
+
+@pytest.fixture
+def report_partial() -> UsageReport:
+    return UsageReport(
+        run_id="run-1",
+        generated_at=0.0,
+        agents=[
+            AgentUsage(
+                seat="development", node_id="development", backend="nova",
+                model="m", rounds=1, input_tokens=100, output_tokens=50,
+            ),
+        ],
+        partial=True, partial_reason="resumed in a new process",
+    )
+
+
+class TestNodeCycleWorkerRendering:
+    def test_report_renders_node_cycle_worker(self, report_with_cycles_and_workers):
+        md = render_usage_markdown(report_with_cycles_and_workers)
+        assert "development" in md
+        assert "cycle 1" in md and "cycle 2" in md
+        assert "development.w1" in md and "development.w2" in md
+
+    def test_single_cycle_seat_has_no_cycle_rows(self, report_single_cycle):
+        assert "cycle 1" not in render_usage_markdown(report_single_cycle)
+
+
+class TestFailuresSection:
+    def test_report_failures_section(self, report_with_failure):
+        md = render_usage_markdown(report_with_failure)
+        assert "Failures" in md
+        assert "TimeoutError" in md
+
+    def test_no_failures_section_when_clean(self, report_clean):
+        assert "Failures" not in render_usage_markdown(report_clean)
+
+    def test_no_error_message_in_failures_section(self, report_with_failure):
+        """Only error_type appears — never a message (privacy contract).
+
+        The renderer's own footnote legitimately contains the word
+        "messages" (pointing the reader at the run bundle); what must
+        never appear is actual message TEXT, which ``CycleUsage`` has no
+        field for at all in the first place.
+        """
+        md = render_usage_markdown(report_with_failure)
+        assert not hasattr(CycleUsage, "error_message")
+        assert "Error messages are not shown here" in md
+
+
+class TestPartialMarkerMarkdown:
+    def test_partial_ledger_is_labelled(self, report_partial):
+        """Spec §8 Q1: a partial run must SAY so, not print a total that
+        silently omits pre-park usage."""
+        md = render_usage_markdown(report_partial)
+        assert "artial" in md
+        assert "partial" in md.lower().split("**totals")[1][:40]
+
+
+class TestNoPricingWithCyclesAndFailures:
+    def test_no_pricing_in_output(self, report_with_cycles_and_workers, report_with_failure):
+        for rep in (report_with_cycles_and_workers, report_with_failure):
+            out = render_usage_markdown(rep)
+            assert "$" not in out
+            assert "cost" not in out.lower()
