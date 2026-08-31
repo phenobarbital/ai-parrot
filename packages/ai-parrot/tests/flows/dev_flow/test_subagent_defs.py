@@ -190,6 +190,67 @@ def test_prompt_forbids_code_and_jira_writes(body: str):
 
 
 # ---------------------------------------------------------------------------
+# FEAT-482 — Complementary Research + graph-backed search
+# ---------------------------------------------------------------------------
+
+
+def test_subagent_definition_loads_with_new_section(body: str):
+    """The Complementary Research section is present, frontmatter stripped."""
+    assert "Complementary Research" in body
+    assert not body.startswith("---")
+
+
+def test_prompt_documents_partner_findings_input_fields(body: str):
+    assert "partner_findings" in body
+    assert "partner_findings_path" in body
+
+
+def test_prompt_instructs_expand_not_rebut(body: str):
+    lowered = body.lower()
+    assert "not a claim to rebut" in lowered
+    assert "collaboration, not adversarial review" in lowered
+
+
+def test_prompt_instructs_attribution_by_finding_id(body: str):
+    lowered = body.lower()
+    assert "attribute" in lowered
+    assert "gpt-5.6-sol" in body  # the worked attribution example
+
+
+def test_prompt_instructs_open_disagreement(body: str):
+    lowered = body.lower()
+    assert "disagreement is data" in lowered
+
+
+def test_prompt_tolerates_partner_absence(body: str):
+    lowered = body.lower()
+    assert "absence changes nothing" in lowered
+
+
+def test_prompt_documents_graph_search_tools(body: str):
+    for tool in (
+        "mcp__wikitoolkit__wiki_query",
+        "mcp__wikitoolkit__wiki_page",
+        "mcp__wikitoolkit__wiki_related",
+    ):
+        assert tool in body
+    # Write tools are deliberately NOT exposed to the primary seat.
+    assert "mcp__wikitoolkit__wiki_remember" not in body
+    assert "mcp__wikitoolkit__wiki_note" not in body
+
+
+def test_existing_instructions_unchanged(body: str):
+    """GUARD: the FEAT-482 additions are additive — every pre-existing
+    behavioral guarantee (dual-mode, resume policy, frontmatter, explicit
+    commit, JSON-only output) still holds verbatim."""
+    assert 'mode="brainstorm"' in body or "mode = \"brainstorm\"" in body
+    assert "RESUME/EXTEND IT IN PLACE" in body
+    assert "type: feature" in body and "base_branch: dev" in body
+    assert "git add sdd/proposals/" in body
+    assert "no markdown fences" in body.lower()
+
+
+# ---------------------------------------------------------------------------
 # Repo-level twin parity
 # ---------------------------------------------------------------------------
 
