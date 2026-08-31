@@ -280,3 +280,219 @@ async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _pa
         cwd=str(_patch_worktree_base),
     )
     assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# Failure paths — every branch of dispatch() must reach the ledger, not
+# only the success path (code-review finding: the first version of this
+# module only wired the success completion, silently dropping every
+# failed-dispatch record and contradicting the "every failed node/LLM
+# call appears in the report" acceptance criterion).
+# ---------------------------------------------------------------------------
+
+
+async def test_timeout_failure_reaches_ledger(
+    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+):
+    """A wall-clock timeout must still produce a failed ledger record."""
+    import asyncio
+
+    class _SlowClient:
+        async def stream_messages(self, prompt: str, *, run_options: Any):
+            await asyncio.sleep(5)
+            yield  # pragma: no cover
+
+    disp = ClaudeCodeDispatcher(
+        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+    )
+    fake_redis = AsyncMock()
+    fake_redis.xadd = AsyncMock(return_value=b"1-0")
+    monkeypatch.setattr(disp, "_ensure_redis", AsyncMock(return_value=fake_redis))
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
+        lambda *a, **kw: _SlowClient(),
+    )
+    disp.set_event_registry_resolver({"run-1": run_registry}.get)
+
+    real_timeout = asyncio.timeout
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.claude.asyncio.timeout",
+        lambda _seconds: real_timeout(0.05),
+    )
+
+    from parrot.flows.dev_loop import DispatchExecutionError
+
+    with pytest.raises(DispatchExecutionError):
+        await disp.dispatch(
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(timeout_seconds=60),
+            output_model=ResearchOutput,
+            run_id="run-1",
+            node_id="qa",
+            cwd=str(_patch_worktree_base),
+        )
+
+    (rec,) = ledger.records
+    assert rec.status == "failed"
+    assert rec.error_type == "TimeoutError"
+
+
+async def test_session_failure_reaches_ledger_with_partial_usage(
+    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+):
+    """A session failure after a usage-bearing ResultMessage must retain
+    BOTH the tokens burned and the failure — two ledger records, since
+    ClientCallFailedEvent structurally carries no token fields."""
+    partial_result = _ResultMessage(usage={"input_tokens": 900, "output_tokens": 100})
+
+    class _ErrAfterResultClient:
+        async def stream_messages(self, prompt: str, *, run_options: Any):
+            yield partial_result
+            raise RuntimeError("transport lost")
+
+    disp = ClaudeCodeDispatcher(
+        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+    )
+    fake_redis = AsyncMock()
+    fake_redis.xadd = AsyncMock(return_value=b"1-0")
+    monkeypatch.setattr(disp, "_ensure_redis", AsyncMock(return_value=fake_redis))
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
+        lambda *a, **kw: _ErrAfterResultClient(),
+    )
+    disp.set_event_registry_resolver({"run-1": run_registry}.get)
+
+    from parrot.flows.dev_loop import DispatchExecutionError
+
+    with pytest.raises(DispatchExecutionError):
+        await disp.dispatch(
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id="run-1",
+            node_id="qa",
+            cwd=str(_patch_worktree_base),
+        )
+
+    assert len(ledger.records) == 2
+    completed = next(r for r in ledger.records if r.status == "completed")
+    failed = next(r for r in ledger.records if r.status == "failed")
+    assert completed.input_tokens == 900
+    assert completed.output_tokens == 100
+    assert failed.error_type == "RuntimeError"
+
+
+async def test_result_error_without_raise_reaches_ledger(
+    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+):
+    """An is_error ResultMessage the SDK doesn't raise on must still fail
+    the ledger record, not just the dispatch."""
+    err_result = _ResultMessage(is_error=True)
+    err_result.num_turns = None  # nothing harvestable -> no extra AfterClientCallEvent
+
+    disp = ClaudeCodeDispatcher(
+        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+    )
+    fake_redis = AsyncMock()
+    fake_redis.xadd = AsyncMock(return_value=b"1-0")
+    monkeypatch.setattr(disp, "_ensure_redis", AsyncMock(return_value=fake_redis))
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
+        lambda *a, **kw: _FakeClient([err_result]),
+    )
+    disp.set_event_registry_resolver({"run-1": run_registry}.get)
+
+    from parrot.flows.dev_loop import DispatchExecutionError
+
+    with pytest.raises(DispatchExecutionError):
+        await disp.dispatch(
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id="run-1",
+            node_id="qa",
+            cwd=str(_patch_worktree_base),
+        )
+
+    (rec,) = ledger.records
+    assert rec.status == "failed"
+    assert rec.error_type == "ResultError"
+
+
+async def test_output_validation_failure_reaches_ledger(
+    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
+):
+    """A successful stream whose final payload fails JSON/schema
+    validation must still reach the ledger as a failure."""
+    messages = [_AssistantMessage(content=[_TextBlock("not valid json")])]
+
+    disp = ClaudeCodeDispatcher(
+        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+    )
+    fake_redis = AsyncMock()
+    fake_redis.xadd = AsyncMock(return_value=b"1-0")
+    monkeypatch.setattr(disp, "_ensure_redis", AsyncMock(return_value=fake_redis))
+    monkeypatch.setattr(
+        "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
+        lambda *a, **kw: _FakeClient(messages),
+    )
+    disp.set_event_registry_resolver({"run-1": run_registry}.get)
+
+    from parrot.flows.dev_loop import DispatchOutputValidationError
+
+    with pytest.raises(DispatchOutputValidationError):
+        await disp.dispatch(
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id="run-1",
+            node_id="qa",
+            cwd=str(_patch_worktree_base),
+        )
+
+    (rec,) = ledger.records
+    assert rec.status == "failed"
+    assert rec.error_type == "DispatchOutputValidationError"
+
+
+async def test_after_call_forwards_to_global_registry(
+    monkeypatch, brief, _patch_worktree_base
+):
+    """A successful dispatch's usage event must reach the GLOBAL registry
+    too (explicit forward_to_global), not only the per-run one — the
+    per-run registry is forward_to_global=False by design."""
+    import asyncio
+
+    from navigator_eventbus.lifecycle.global_registry import get_global_registry
+    from parrot.core.events.lifecycle.events.client import AfterClientCallEvent
+
+    messages = [
+        _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
+        _ResultMessage(usage={"input_tokens": 5, "output_tokens": 2}),
+    ]
+    global_seen: list[Any] = []
+
+    async def _capture(event):
+        global_seen.append(event)
+
+    sub_id = get_global_registry().subscribe(AfterClientCallEvent, _capture)
+    try:
+        ledger = RunLedgerRecorder(run_id="run-1")
+        registry = EventRegistry(forward_to_global=False)
+        registry.add_provider(UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None))
+        dispatcher = _dispatcher(monkeypatch, messages, registry=registry)
+
+        await dispatcher.dispatch(
+            brief=brief,
+            profile=ClaudeCodeDispatchProfile(),
+            output_model=ResearchOutput,
+            run_id="run-1",
+            node_id="qa",
+            cwd=str(_patch_worktree_base),
+        )
+        for _ in range(3):
+            await asyncio.sleep(0)  # let the forward_to_global task run
+    finally:
+        get_global_registry().unsubscribe(sub_id)
+
+    assert global_seen, "the global registry never saw the forwarded event"

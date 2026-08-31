@@ -41,7 +41,10 @@ from parrot import conf
 from parrot.clients.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
 from parrot.core.events.lifecycle import TraceContext
-from parrot.core.events.lifecycle.events.client import AfterClientCallEvent
+from parrot.core.events.lifecycle.events.client import (
+    AfterClientCallEvent,
+    ClientCallFailedEvent,
+)
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
     _SESSION_HOST_CTX,
@@ -264,6 +267,13 @@ class ClaudeCodeDispatcher:
                         node_id,
                         profile.timeout_seconds,
                     )
+                    # FEAT-479 M6: every failure branch, not only the
+                    # success path, must reach the ledger — with the
+                    # error and whatever tokens were burned before it.
+                    await self._emit_failure_event(
+                        messages, run_id=run_id, node_id=node_id,
+                        profile=profile, error_type="TimeoutError",
+                    )
                     raise DispatchExecutionError(
                         f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap"
                     ) from exc
@@ -297,6 +307,10 @@ class ClaudeCodeDispatcher:
                         node_id,
                         self._format_result_error(err_detail) or str(exc),
                     )
+                    await self._emit_failure_event(
+                        messages, run_id=run_id, node_id=node_id,
+                        profile=profile, error_type=type(exc).__name__,
+                    )
                     raise DispatchExecutionError(self._compose_session_error(exc, err_detail)) from exc
 
                 # Even when the SDK does NOT raise (some CLI versions emit
@@ -322,6 +336,10 @@ class ClaudeCodeDispatcher:
                         node_id,
                         self._format_result_error(err_detail),
                     )
+                    await self._emit_failure_event(
+                        messages, run_id=run_id, node_id=node_id,
+                        profile=profile, error_type="ResultError",
+                    )
                     raise DispatchExecutionError(self._format_result_error(err_detail))
 
                 try:
@@ -336,6 +354,10 @@ class ClaudeCodeDispatcher:
                             "raw_payload": exc.raw_payload[:8000],
                             "error_message": str(exc),
                         },
+                    )
+                    await self._emit_failure_event(
+                        messages, run_id=run_id, node_id=node_id,
+                        profile=profile, error_type=type(exc).__name__,
                     )
                     raise
 
@@ -746,6 +768,13 @@ class ClaudeCodeDispatcher:
         No-ops when there is nothing to report (no harvest, or no
         registry resolver wired) — never fabricates zeros, and never lets
         a telemetry failure break the dispatch.
+
+        Forwards to the global registry explicitly after the awaited
+        per-run emit, mirroring ``AbstractClient._emit_after_call``
+        (``clients/base.py:634``) — this run's per-run registry is
+        constructed with ``forward_to_global=False`` (matching a client's
+        own default), so global OTel/usage-recorder visibility for this
+        out-of-process backend depends entirely on this explicit call.
         """
         if not usage_detail or self._event_registry_resolver is None:
             return
@@ -754,21 +783,73 @@ class ClaudeCodeDispatcher:
             return
         try:
             with usage_attribution(run_id, seat=node_id):
-                await registry.emit(
-                    AfterClientCallEvent(
-                        trace_context=TraceContext.new_root(),
-                        client_name="claude-code",
-                        model=profile.model or "",
-                        duration_ms=float(usage_detail.get("duration_ms") or 0.0),
-                        input_tokens=usage_detail.get("input_tokens"),
-                        output_tokens=usage_detail.get("output_tokens"),
-                        source_type="dispatcher",
-                        source_name="claude-code",
-                    )
+                event = AfterClientCallEvent(
+                    trace_context=TraceContext.new_root(),
+                    client_name="claude-code",
+                    model=profile.model or "",
+                    duration_ms=float(usage_detail.get("duration_ms") or 0.0),
+                    input_tokens=usage_detail.get("input_tokens"),
+                    output_tokens=usage_detail.get("output_tokens"),
+                    source_type="dispatcher",
+                    source_name="claude-code",
                 )
+                await registry.emit(event)
+                registry.forward_to_global(event)
         except Exception:  # telemetry must never break dispatch
             self.logger.warning(
                 "Failed to emit AfterClientCallEvent for run=%s node=%s",
+                run_id,
+                node_id,
+                exc_info=True,
+            )
+
+    async def _emit_failure_event(
+        self,
+        messages: List[Any],
+        *,
+        run_id: str,
+        node_id: str,
+        profile: ClaudeCodeDispatchProfile,
+        error_type: str,
+    ) -> None:
+        """Route a failed dispatch through the same accounting path as a
+        successful one (FEAT-479 M6 extension — every failure branch of
+        this dispatcher's ``dispatch()`` calls this, not only the
+        success path).
+
+        First harvests whatever usage the buffered ``messages`` report
+        (often partial or none for a true timeout — a dispatch that
+        raised before receiving any terminal ``ResultMessage``) via
+        :meth:`_emit_usage_event`, then emits a ``ClientCallFailedEvent``
+        for the failure itself. Two ledger records rather than one:
+        ``ClientCallFailedEvent`` structurally carries no token fields
+        (spec's privacy contract — only ``error_type``, the exception
+        class name, never a message), so "tokens burned before failing"
+        is represented by the harvested cycle, and "what failed" by this
+        one. Never lets a telemetry failure break the dispatch.
+        """
+        usage_detail = self._extract_result_usage(messages)
+        await self._emit_usage_event(
+            usage_detail, run_id=run_id, node_id=node_id, profile=profile,
+        )
+        if self._event_registry_resolver is None:
+            return
+        registry = self._event_registry_resolver(run_id)
+        if registry is None:
+            return
+        try:
+            with usage_attribution(run_id, seat=node_id):
+                event = ClientCallFailedEvent(
+                    trace_context=TraceContext.new_root(),
+                    client_name="claude-code",
+                    model=profile.model or "",
+                    error_type=error_type,
+                )
+                await registry.emit(event)
+                registry.forward_to_global(event)
+        except Exception:  # telemetry must never break dispatch
+            self.logger.warning(
+                "Failed to emit ClientCallFailedEvent for run=%s node=%s",
                 run_id,
                 node_id,
                 exc_info=True,
