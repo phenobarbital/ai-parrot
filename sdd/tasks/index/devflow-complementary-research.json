@@ -14,7 +14,7 @@
       "feature_id": "FEAT-482",
       "feature": "devflow-complementary-research",
       "spec": "sdd/specs/devflow-complementary-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "New file (research_partner.py) plus additive edits to catalog.py/conf.py. Shares no code with TASK-2630. Can start immediately.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:40:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2629-research-partner-contracts.md"
+      "completed_at": "2026-08-31T21:51:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2629-research-partner-contracts.md"
     },
     {
       "id": "TASK-2630",
