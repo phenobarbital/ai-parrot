@@ -112,7 +112,7 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "DevFlowRunner inherits DevLoopRunner; must build on TASK-2626's final runner surface.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:58:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2627-dev-flow-integration.md"
+      "completed_at": "2026-08-31T18:05:55+00:00",
+      "file": "sdd/tasks/completed/TASK-2627-dev-flow-integration.md"
     },
     {
       "id": "TASK-2628",
