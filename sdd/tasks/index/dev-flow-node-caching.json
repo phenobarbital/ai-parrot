@@ -14,14 +14,14 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task; edits flow.py and checkpoint core shared by every later task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2622-typed-registration-and-factory-resume.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2622"],
+      "depends_on": [
+        "TASK-2622"
+      ],
       "parallel": false,
       "parallelism_notes": "Shares serializer.py, checkpoint/__init__.py, and flow.py with TASK-2622.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2623-checkpoint-metadata-and-awaited-persistence.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2623"],
+      "depends_on": [
+        "TASK-2623"
+      ],
       "parallel": false,
       "parallelism_notes": "Consumes FlowCheckpointer.checkpoint() from TASK-2623; edits the same flow.py scheduler region.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2624-required-barrier-and-retry-reset.md"
     },
@@ -68,14 +72,16 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2624"],
+      "depends_on": [
+        "TASK-2624"
+      ],
       "parallel": false,
       "parallelism_notes": "New file, but its API consumes every engine capability from TASK-2622..2624; interfaces must be final first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2625-dev-checkpoint-coordinator.md"
     },
@@ -86,14 +92,16 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2625"],
+      "depends_on": [
+        "TASK-2625"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on the coordinator; edits dev_loop runner.py also touched by TASK-2627 via inheritance.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2626-dev-loop-per-run-lifecycle.md"
     },
@@ -104,14 +112,16 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-2626"],
+      "depends_on": [
+        "TASK-2626"
+      ],
       "parallel": false,
       "parallelism_notes": "DevFlowRunner inherits DevLoopRunner; must build on TASK-2626's final runner surface.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2627-dev-flow-integration.md"
     },
@@ -122,14 +132,16 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-2627"],
+      "depends_on": [
+        "TASK-2627"
+      ],
       "parallel": false,
       "parallelism_notes": "Final wiring + integration matrix over both finished workflows.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T15:58:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2628-runtime-wiring-and-regression.md"
     }
