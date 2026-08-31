@@ -103,9 +103,10 @@ one bill.
 | D3 | **Parallel, then Claude merges** (`asyncio.gather`, then findings feed the `sdd-ideation` dispatch) | Partner is not anchored by Claude's framing; better wall-clock than sequential |
 | D4 | **Soft-degrade to Claude-only** on partner failure | Pure-addition guarantee |
 | D5 | Mechanism is the **Converse tool loop on `NovaClient`**, not bedrock-mantle | Keeps Nova 2 *with* thinking; see the finding below |
-| D6 | Tool surface: cwd-confined `read_file`/`list_files`/`search_files` **+ wiki query + local git history + web search** | Four complementary grounding axes |
+| D6 | Tool surface: cwd-confined `read_file`/`list_files` + **graph-backed `search_code`** + local git history + web search | Four complementary grounding axes |
 | D7 | Findings persist as a separate `sdd/proposals/<slug>.research.md` **and** the merged document attributes insights by source | Provenance auditable; you can tell whether collaboration actually happened |
 | D8 | Partner runs on **round 1 only**, not on HITL resume rounds | Bounded cost; Claude already holds the findings on resume |
+| D9 | Code search is **graph/FTS5-backed over the existing wiki plane**, not `grep` | The AST + tree-sitter code graph already exists in-repo; see the finding below |
 
 ### The finding that reshaped the design
 
@@ -138,6 +139,79 @@ reachable **today**, with no new agentic loop: register a read-only toolkit on a
 *toolkit* and the *collaborator seam* — not the loop. That is a materially smaller
 and lower-risk feature than the original framing implied.
 
+### The second finding: the AST code graph already exists (D9)
+
+The follow-up question — *can the toolkit AST-parse a fetched repository and build a
+graph index for code search, instead of grepping, the way wikitoolkit works?* — has
+a better answer than "possible". **It is already built, shipped, and running in this
+repo**, and the toolkit should consume it rather than reimplement it.
+
+Verified against the live plane (`wikitoolkit status`, 2026-08-31):
+
+```
+Wiki      : parrot (sqlite)
+Root      : /home/jesuslara/proyectos/ai-parrot
+Storage   : /home/jesuslara/proyectos/ai-parrot/.parrot/wiki      (548 MB)
+Plane     : 11518 pages, 18844 edges, ~24.9M tokens
+Categories: {module: 5139, document: 4587, overview: 1011, config: 716, ...}
+Languages : {'python': 'ast', 'php': 'tree-sitter', 'javascript': 'tree-sitter',
+             'rust': 'tree-sitter', 'perl': 'tree-sitter'}
+Sources   : 10442 tracked, 229 stale
+```
+
+The pieces that make this a wiring job rather than a build job:
+
+- **A pluggable per-language scanner framework.** `LanguageScanner` ABC
+  (`knowledge/wiki/languages/base.py`) with `outline()`, `build_reference_index()`,
+  and `resolve_import()`. `PythonScanner` (`languages/python.py:30`) uses the stdlib
+  `ast` module directly (`ast.parse` at `:49`, walking `ClassDef`/`FunctionDef`/
+  `AsyncFunctionDef`/`Import`/`ImportFrom`) to emit a summary, an API outline, and
+  raw import specifiers. PHP, JavaScript/TypeScript, Rust and Perl do the same via
+  tree-sitter (`languages/treesitter.py`). Explicitly **deterministic and offline**
+  (FEAT-394) — no LLM in the indexing path.
+- **A repo scanner that turns that into a graph.** `scan_repository()`
+  (`repo_scan.py:776`) discovers files through `git ls-files` (`_git_ls_files:398`,
+  so `.gitignore` is honored for free), builds `file:` and directory pages
+  (`build_file_slice:556`, `build_dir_pages:645`), and derives cross-file
+  `references` edges from resolved imports (`build_import_edges:718`).
+- **A search layer that is exactly the described "graph-based search".**
+  `WikiCombinedSearch` (`wiki/search.py:32`) over an **FTS5/BM25** virtual table
+  (`store.py:117` `CREATE VIRTUAL TABLE ... USING fts5`), with an optional cosine
+  **vector** leg (`search_fts:1147` / `search_vector:1195`), combined and
+  token-budget-packed by `pack_results`.
+- **Incremental rebuilds, already automated.** Sources are tracked with staleness
+  (10442 tracked / 229 stale above); `build --force` is the full rebuild. A
+  git post-commit hook already runs `upsert --changed` into the SQLite plane, so
+  the index tracks commits without anyone thinking about it.
+- **Agent-facing tools that already exist** — see the correction in Does NOT Exist.
+
+**Measured, honestly.** A warm CLI query returns 12 ranked, deduplicated,
+token-costed results in **~592 tokens / 1.79 s**; the equivalent `grep -rn` returns
+**23 raw hits in 0.07 s**. Grep wins raw wall-clock on a single exact symbol, and
+that gap should not be oversold — but it is the wrong cost function three ways:
+
+1. **~1.7 s of the 1.79 s is CLI cold start** (Python interpreter + tree-sitter
+   grammar loading, visible in the debug trace). In-process — which is exactly how
+   the toolkit would use it — a query is an SQLite FTS5 lookup against an already
+   open connection.
+2. **Tokens, not seconds, are the agent's budget.** 592 ranked tokens versus 23 raw
+   `path:line:` hits that the model must then read files to interpret.
+3. **Grep's 23 hits included duplicates from `packages/ai-parrot/build/lib.linux-x86_64-cpython-311/`** —
+   stale build artifacts. The plane excludes them via `git ls-files`. Noise
+   suppression is a correctness property, not a speed one.
+
+**The honest limitation**: `DevLoopWikiSearch` passes **no embedder**, so the plane
+is queried lexically today. A genuinely conceptual query ("how does a review seat
+degrade when the backend has an outage") scored **0.06 / 0.00** — BM25 cannot do
+concept matching. Symbol, module, and topic queries are excellent; pure-concept
+recall needs the vector leg enabled (Q10).
+
+**The worktree question this raises** is the one real engineering decision, and the
+config already answers it: `project.py:74` states that `storage_dir` **"may be
+absolute, so two repositories can share one"** plane. A feature worktree should
+therefore point at the main checkout's existing plane rather than build a fresh
+548 MB one per worktree (Q9).
+
 ---
 
 ## Options Explored
@@ -151,12 +225,26 @@ Three pieces:
 
 1. **`ReadOnlyRepoToolkit`** — a new `AbstractToolkit` giving any `AbstractClient`
    a cwd-confined, write-free view of a checkout: `read_file`, `list_files`,
-   `search_files`, local `git_log`/`git_show`/`git_blame`, a wiki/knowledge-graph
-   query, and an optional web search. Read-only by construction: `apply_patch` and
-   `run_command` are simply not members. The cwd-confinement logic is *ported* from
-   `LLMCodeDispatcher`'s battle-tested private readers (`_tool_read_file`
-   `llm.py:662`, `_tool_list_files` `llm.py:677`, `_tool_search_files`
-   `llm.py:691`), not reinvented. Reusable well beyond this feature.
+   **graph-backed `search_code`**, local `git_log`/`git_show`/`git_blame`, and an
+   optional web search. Read-only by construction: `apply_patch` and `run_command`
+   are simply not members. The cwd-confinement logic for the file readers is
+   *ported* from `LLMCodeDispatcher`'s battle-tested private methods
+   (`_tool_read_file` `llm.py:662`, `_tool_list_files` `llm.py:677`), not
+   reinvented. Reusable well beyond this feature.
+
+   **`search_code` is graph search, not grep (D9).** It queries the existing
+   AST/tree-sitter wiki plane through `WikiCombinedSearch` (`wiki/search.py:32`)
+   rather than shelling out — ranked pages with API outlines and `references`
+   edges, token-budgeted, build artifacts already excluded. Two of the tools are
+   therefore **thin wrappers over shipped code, not new implementations**:
+   `search_code` delegates to `WikiQueryTool` (`wiki/tools.py:155`) or
+   `DevLoopWikiSearch.build_research_context` (`wiki_search.py:91`), and a
+   `related_code` tool delegates to `WikiRelatedTool` (`wiki/tools.py:225`) to walk
+   `contains`/`references` edges. A `grep_files` fallback stays available for exact
+   literal matching (regexes, config strings, anything the plane does not page),
+   but it is the fallback, not the default. This also makes the toolkit
+   **multi-language for free** — Python via `ast`, PHP/JS/TS/Rust/Perl via
+   tree-sitter — which a hand-rolled Python-only AST parser would not have been.
 
 2. **`AbstractResearchPartner`** + a `ResearchPartnerFactory`, mirroring
    `AbstractCodeReviewDispatcher` (`code_review.py:85`) and
@@ -223,6 +311,8 @@ at `factories.py:117`).
 | `ddgs` (via `parrot_tools.ddgsearch`) | Web-search axis for external prior art | `DdgSearchTool(AbstractTool)` exists at `parrot_tools/ddgsearch.py:19`; no API key needed. `serpapi.py`, `googlesearch.py`, `bingsearch.py` are keyed alternatives |
 | `asyncio` (stdlib) | `gather` fan-out + `timeout` deadline | Same primitives as `code_review.py:392` |
 | `git` (subprocess) | Local history axis (`log`/`show`/`blame`) | Must be built — `parrot_tools/gittoolkit.py` is a **GitHub API** toolkit, not local git (see Does NOT Exist) |
+| `parrot.knowledge.wiki` (in-repo) | Graph-backed `search_code` / `related_code` over the AST + tree-sitter plane | **Already built and running**: FTS5/BM25 SQLite plane, 11518 pages / 18844 edges. Consume `WikiQueryTool`/`WikiRelatedTool` (`wiki/tools.py:155/225`) — do not reimplement |
+| `ast` (stdlib) / `tree-sitter` | Python and PHP/JS/TS/Rust/Perl outlines feeding the plane | Consumed transitively via the wiki build; **not** a direct dependency of this feature. `tree_sitter_{php,typescript,javascript,rust,perl}` already installed |
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot/src/parrot/clients/bedrock.py:699` — `BedrockConverseBase.ask()`: the multi-round Converse tool loop, `thinking_budget` support, reasoning-signature preservation, FEAT-404 round events. The heart of the feature, unmodified.
@@ -465,15 +555,26 @@ tool is confined to that root: paths are resolved and verified to remain inside 
 (rejecting `..` traversal and symlink escapes), results are size-bounded, and
 timeouts bound every subprocess. Tool set across four grounding axes:
 
-| Axis | Tools | Grounding |
-|---|---|---|
-| Static | `read_file`, `list_files`, `search_files` | What the code is now |
-| Architectural | `query_wiki` | How the codebase describes itself (wraps `DevLoopWikiSearch.build_research_context`) |
-| Historical | `git_log`, `git_show`, `git_blame` | Why the code became this way |
-| External | `web_search` | Prior art and libraries outside the repo |
+| Axis | Tools | Grounding | Backed by |
+|---|---|---|---|
+| Structural | `search_code`, `related_code` | Symbols, API outlines, and `references` edges from the AST/tree-sitter plane | `WikiCombinedSearch` (`search.py:32`), `WikiQueryTool`/`WikiRelatedTool` (`tools.py:155/225`) |
+| Static | `read_file`, `list_files`, `grep_files` (fallback) | Exact file contents and literal matches | Ported from `llm.py:662/677/691` |
+| Historical | `git_log`, `git_show`, `git_blame` | Why the code became this way | New — local `git` subprocess |
+| External | `web_search` | Prior art and libraries outside the repo | `DdgSearchTool` (`ddgsearch.py:19`) |
 
 There is no `apply_patch` and no `run_command`. Read-only is a property of the
 membership list, not of a flag that could be misconfigured.
+
+**Index freshness and worktrees.** The toolkit does not build an index; it consumes
+the plane the repo already maintains (incremental, git-post-commit-driven). When the
+partner runs inside a feature worktree, the toolkit resolves the plane by absolute
+`storage_dir` back to the main checkout (`project.py:74` — "two repositories can
+share one") rather than paying a 548 MB cold build per worktree. The plane is then
+slightly behind the worktree's uncommitted edits, which is acceptable and even
+desirable at *research* time: the partner is investigating the codebase as it
+stands, not reviewing a diff. `git_*` and `read_file` cover anything uncommitted.
+If the plane is missing or unbuilt entirely, `search_code` degrades to `grep_files`
+with a logged warning — never a failure (Q9).
 
 **`NovaResearchPartner`** — implements `AbstractResearchPartner`. Constructs a
 `NovaClient`, registers a `ReadOnlyRepoToolkit` bound to the run's cwd, and issues
@@ -589,6 +690,7 @@ Plus a `catalog.py` triad mirroring `catalog.py:54/60/63`:
 | `parrot/clients/bedrock.py` | depends on | **Unmodified.** Consumed as-is — the single most important property of this design. |
 | `parrot/clients/nova/client.py` | depends on | Unmodified. |
 | `parrot/flows/dev_loop/code_review.py` | depends on | **Unmodified.** Pattern source only. Option B would have changed it; Option A does not. |
+| `parrot/knowledge/wiki/` | depends on | **Unmodified.** `WikiQueryTool`/`WikiRelatedTool`/`WikiCombinedSearch` and the AST+tree-sitter plane consumed as-is (D9). Creates a core→`knowledge.wiki` dependency from the toolkit — relevant to Q1's placement decision. |
 | `sdd/proposals/*.research.md` | new artifact | New committed output; slug-scoped. |
 | Run bundle / usage report | extends | New `research-partner` seat row via existing FEAT-404 events. **Overlaps FEAT-479 (`usage_report.py`, 6 tasks) — sequence after it.** |
 | CI / deployment | none | No new required dependency; opt-in, degrades without AWS credentials. |
@@ -789,6 +891,72 @@ from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
 from parrot.flows.dev_flow._subagent_defs import load_subagent_definition
 from parrot.tools import tool                                       # per CLAUDE.md
 from parrot_tools.ddgsearch import DdgSearchTool                    # ddgsearch.py:19
+# The wiki / code-graph plane (D9):
+from parrot.knowledge.wiki.tools import (                           # wiki/tools.py
+    WikiQueryTool, WikiPageTool, WikiRelatedTool, WikiStatusTool,   # :155/:190/:225/:409
+    create_wiki_tools,                                              # :541
+)
+from parrot.knowledge.wiki.search import WikiCombinedSearch         # wiki/search.py:32
+from parrot.knowledge.wiki.toolkit import LLMWikiToolkit            # wiki/toolkit.py:54
+from parrot.knowledge.wiki.languages.base import (                  # wiki/languages/base.py
+    LanguageScanner, LanguageOutline,
+)
+from parrot.knowledge.wiki.repo_scan import scan_repository         # repo_scan.py:776
+from parrot.knowledge.wiki.context import pack_results              # used at wiki_search.py:112
+```
+
+#### The code-graph subsystem (D9)
+
+```python
+# From packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py
+class LanguageOutline(BaseModel):
+    summary: str = ""
+    outline: list[str] = Field(default_factory=list)
+    imports: list[str] = Field(default_factory=list)
+class LanguageScanner(ABC):
+    name: ClassVar[str]
+    suffixes: ClassVar[frozenset[str]]
+    @abstractmethod
+    def outline(self, source: str, rel_path: str) -> LanguageOutline: ...
+    def build_reference_index(self, rel_paths: Iterable[str]) -> Any: ...
+    def resolve_import(...) -> ...: ...
+    def mode(self) -> str: ...        # "ast" | "tree-sitter"
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/languages/python.py:30
+class PythonScanner(LanguageScanner):
+    def outline(self, source, rel_path) -> LanguageOutline:          # line 36
+        tree = ast.parse(source, filename=rel_path or "<unknown>")   # line 49
+        # walks ast.Import / ast.ImportFrom / ast.ClassDef /
+        # ast.FunctionDef / ast.AsyncFunctionDef                     # lines 63-78
+    def build_reference_index(self, rel_paths) -> Any                # line 81
+    def resolve_import(...)                                          # line 111
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/repo_scan.py
+def discover_repo_files(...)                                         # line 355
+def _git_ls_files(root: Path) -> list[str] | None                    # line 398  (gitignore-aware)
+def build_file_slice(...)                                            # line 556
+def build_dir_pages(...)                                             # line 645
+def build_import_edges(...)                                          # line 718  (`references` edges)
+def scan_repository(...)                                             # line 776  <- ENTRY POINT
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/search.py:32
+class WikiCombinedSearch:
+    # modes: "lexical" (FTS5/BM25), "vector" (cosine, needs embedder),
+    #        "combined"; default weights lexical .6 / vector .4  (line 174)
+    async def search(self, query, mode=..., top_k=..., tree_name=...)  # line 91
+    # Vector leg is SKIPPED when no embedder is supplied (line 202) —
+    # DevLoopWikiSearch supplies none, so today it is lexical-only.
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/store.py
+CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(...)         # line 117
+async def search_fts(self, query, category=None, limit=10)           # line 1147
+async def search_vector(self, embedding, limit=10)                   # line 1195
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/project.py
+def storage_path(self, root: Path) -> Path                           # line 457
+    storage_dir: str = Field(default=f"{PARROT_DIR}/wiki")           # line 402
+    # ":74 — ``storage_dir`` may be absolute, so two repositories can
+    #  share one" -> the worktree plane-sharing mechanism (Q9).
 ```
 
 #### Key Attributes & Constants
@@ -812,7 +980,9 @@ from parrot_tools.ddgsearch import DdgSearchTool                    # ddgsearch.
 - ~~`ReadOnlyRepoToolkit`~~ / ~~`RepoBrowseToolkit`~~ / any read-only repo-browsing toolkit — does not exist anywhere. The cwd-confined readers are **private methods** on `LLMCodeDispatcher` (`llm.py:662/677/691`) and are not reusable as-is.
 - ~~`parrot_tools.code_toolkit.CodeToolkit` as a repo browser~~ — it exists (`code_toolkit.py:266`) but is a **coding-agent-delegation** toolkit (`implement_spec`, `fix_bug`, `review_diff`, `generate_tests`, `explain_patch`), not a file/search browser.
 - ~~a local-git toolkit~~ — `parrot_tools/gittoolkit.py` is a **GitHub API** toolkit (`RepositoryCredential:48`, `CreatePullRequestInput:267`, `SearchRepoCodeInput:438`). There is **no** `git log` / `git show` / `git blame` tool over a local checkout. Must be built.
-- ~~a `wiki_query` `AbstractTool`~~ — `DevLoopWikiSearch` (`wiki_search.py:26`) is a plain helper class, not a tool. `GraphIndexToolkit` (`parrot_tools/graphindex/toolkit.py:72`) *is* an `AbstractToolkit` but requires a prebuilt `rustworkx.PyDiGraph` + `faiss.Index` + node maps in its constructor (`:116`) — not a drop-in for a Nova seat. A thin wrapper must be written.
+- ⚠️ **CORRECTED (2026-08-31)** — an earlier revision of this document wrongly listed "a `wiki_query` `AbstractTool`" as non-existent. **It exists.** `parrot/knowledge/wiki/tools.py` (FEAT-403 Module 5) ships six `AbstractTool` subclasses — `WikiQueryTool:155`, `WikiPageTool:190`, `WikiRelatedTool:225`, `WikiRememberTool:257`, `WikiNoteTool:344`, `WikiStatusTool:409` — plus the `create_wiki_tools(store, root, config) -> list[AbstractTool]` factory at `:541`. There is also a full `LLMWikiToolkit(AbstractToolkit)` at `wiki/toolkit.py:54`. **Do not write new wiki tools; bind these.** (`DevLoopWikiSearch` at `wiki_search.py:26` is separately a plain helper, not a tool — that part was accurate.)
+- ~~`GraphIndexToolkit` as the code-search backend~~ — it exists (`parrot_tools/graphindex/toolkit.py:72`) but requires a prebuilt `rustworkx.PyDiGraph` + `faiss.Index` + node maps in its constructor (`:116`). It is **not** the subsystem backing `wikitoolkit` code search; that is `parrot/knowledge/wiki/` over an SQLite FTS5 plane. Do not confuse the two.
+- ~~a need to write an AST parser or build a code graph~~ — **already exists and is running.** `LanguageScanner` ABC (`wiki/languages/base.py`), `PythonScanner` using stdlib `ast` (`languages/python.py:30`), tree-sitter scanners for PHP/JS/Rust/Perl, `scan_repository()` (`repo_scan.py:776`), `build_import_edges()` (`repo_scan.py:718`). The live plane holds 11518 pages / 18844 edges. Writing a new AST indexer would be duplicating shipped, tested code.
 - ~~`NovaResearchDispatcher`~~ / ~~`NovaResearchPartner`~~ / ~~`ComplementaryResearchCoordinator`~~ / ~~`AbstractResearchPartner`~~ / ~~`ResearchPartnerFactory`~~ — none exist; all are proposed by this brainstorm.
 - ~~a Chat Completions endpoint for `us.amazon.nova-*` or `us.anthropic.*` on Bedrock~~ — does not exist. Confirmed by `dispatchers/nova.py` module docstring and `catalog.py:246-251`. Therefore `NovaCodeDispatcher`/bedrock-mantle **cannot** serve Nova 2, and the OpenAI-shaped `LLMCodeDispatcher` loop cannot be reused for it.
 - ~~code that writes `sdd/proposals/*.research.md`~~ — `agents-flow-refactor.research.md` exists as a **hand-written** artifact. There is no generator.
@@ -871,4 +1041,7 @@ from parrot_tools.ddgsearch import DdgSearchTool                    # ddgsearch.
 - [ ] **Q5 — Should `web_search` be on by default when the partner is enabled?** It is the axis Claude's repo-grounded research is weakest on, which is the strongest argument for it — but it is also the only one that sends any part of the brief to a third party. Proposed default: **off**, gated by its own key. Confirm that the external-egress posture is acceptable at all for repo-derived queries. — *Owner: Jesus Lara*
 - [ ] **Q6 — Does the partner see the human's HITL answers?** D8 says the partner runs on round 1 only, so it never sees them. If a human's answer materially reframes the problem, the partner's findings are stale for the rest of the run and Claude alone absorbs the reframing. Accept (bounded cost), or add a narrow exception when an answer changes the document's scope? — *Owner: Jesus Lara*
 - [ ] **Q7 — Should attribution be structural rather than prompt-enforced?** E.g. `ResearchFindings` carries discrete findings with stable ids, and the merged document must cite ids. Stronger guarantee that collaboration happened; more rigid prose. Currently prompt-enforced with the `.research.md` sidecar as backstop. — *Owner: Jesus Lara*
+- [ ] **Q9 — Worktree plane strategy (D9).** The plane is 548 MB and rooted at the checkout, so a fresh build per feature worktree is a non-starter. `project.py:74` says `storage_dir` may be absolute so two repositories can share one plane — is pointing the worktree at the main checkout's plane acceptable? It means the partner sees the repo at roughly last-commit state, not the worktree's uncommitted edits. My read: acceptable and arguably correct at research time (the partner investigates the codebase, it does not review a diff), with `git_*`/`read_file` covering anything uncommitted. Alternative: a small per-worktree overlay plane for changed files only. Needs a decision before the toolkit's constructor signature is fixed. — *Owner: Jesus Lara*
+- [ ] **Q10 — Enable the vector leg for the partner's `search_code`?** `WikiCombinedSearch` supports cosine `search_vector` (`store.py:1195`) but `DevLoopWikiSearch` supplies no embedder (`search.py:202` skips the leg), so search is lexical-only today. Measured consequence: a conceptual query ("how does a review seat degrade when the backend has an outage") scored 0.06/0.00, while symbol and topic queries score 0.8–1.0. A researching agent asks conceptual questions far more than a grepping one does, so this may matter more here than anywhere else the plane is used. Cost: an embedder in the loop plus embedding storage for 11518 pages. Possibly its own feature. — *Owner: Jesus Lara*
+- [ ] **Q11 — Does `search_code` belong to the primary Claude seat too?** The partner gets graph search; the `sdd-ideation` Claude seat currently gets a one-shot `graph_context` string (`ideation.py`, via `build_research_context`) rather than an interactive search tool. If graph search is genuinely better than grep, the primary seat is the bigger beneficiary — but that widens scope beyond the complementary-research feature. Flagging deliberately rather than silently expanding. — *Owner: Jesus Lara*
 - [ ] **Q8 — Add a note to `sdd/specs/novaclient-dev-loop.spec.md` (FEAT-405)?** Its "pluggable research seat" non-goal will read as contradicted by this feature unless annotated with the narrowing (contribute-to vs. replace). Cheap, and prevents a future reader concluding one of the two specs is wrong. — *Owner: Jesus Lara*
