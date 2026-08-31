@@ -132,7 +132,7 @@
       "feature_id": "FEAT-482",
       "feature": "devflow-complementary-research",
       "spec": "sdd/specs/devflow-complementary-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -141,9 +141,9 @@
       "parallel": false,
       "parallelism_notes": "Edits the same ideation.py _dispatch profile as TASK-2633, so it must follow it. Also edits dispatchers/claude.py, which FEAT-479 is editing.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2635-primary-seat-graph-search.md"
+      "started_at": "2026-08-31T23:40:22+00:00",
+      "completed_at": "2026-08-31T23:47:22+00:00",
+      "file": "sdd/tasks/completed/TASK-2635-primary-seat-graph-search.md"
     },
     {
       "id": "TASK-2636",
