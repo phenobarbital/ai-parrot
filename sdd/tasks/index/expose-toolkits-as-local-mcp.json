@@ -71,7 +71,7 @@
       "feature_id": "FEAT-485",
       "feature": "expose-toolkits-as-local-mcp",
       "spec": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,7 +80,7 @@
       "parallel": false,
       "parallelism_notes": "Wraps the TASK-2646 factory.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-08-31T23:40:35+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2647-mcp-local-cli.md"
     },
