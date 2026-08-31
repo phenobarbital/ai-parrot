@@ -71,7 +71,7 @@
       "feature_id": "FEAT-482",
       "feature": "devflow-complementary-research",
       "spec": "sdd/specs/devflow-complementary-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,9 +81,9 @@
       "parallel": false,
       "parallelism_notes": "New file but calls the partner from TASK-2631 and the contracts from TASK-2629.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2632-complementary-research-coordinator.md"
+      "started_at": "2026-08-31T23:15:14+00:00",
+      "completed_at": "2026-08-31T23:18:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2632-complementary-research-coordinator.md"
     },
     {
       "id": "TASK-2633",
