@@ -92,7 +92,7 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Depends on the coordinator; edits dev_loop runner.py also touched by TASK-2627 via inheritance.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:58:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2626-dev-loop-per-run-lifecycle.md"
+      "completed_at": "2026-08-31T17:49:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2626-dev-loop-per-run-lifecycle.md"
     },
     {
       "id": "TASK-2627",
