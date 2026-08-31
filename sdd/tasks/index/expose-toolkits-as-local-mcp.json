@@ -50,7 +50,7 @@
       "feature_id": "FEAT-485",
       "feature": "expose-toolkits-as-local-mcp",
       "spec": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Imports both TASK-2644's attribute and TASK-2645's loader.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2646-toolkit-server-factory.md"
+      "completed_at": "2026-08-31T23:29:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2646-toolkit-server-factory.md"
     },
     {
       "id": "TASK-2647",
