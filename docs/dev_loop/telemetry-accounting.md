@@ -232,11 +232,25 @@ of `clients/base.py`'s lifecycle emission happens. `ClaudeCodeDispatcher`
 mines the terminal `ResultMessage` for usage
 (`_extract_result_usage`, pre-existing TASK-1927 harvest) and, when a
 resolver is wired and the harvest reports something,
-`_emit_usage_event` (`dispatchers/claude.py:732`) constructs and
+`_emit_usage_event` (`dispatchers/claude.py:749`) constructs and
 `await`s an `AfterClientCallEvent` on the run's registry inside
-`usage_attribution(run_id, seat=node_id)` — routing this backend's usage
-through the identical accounting path as in-process clients, with no
-fabricated zeros when the harvest reports nothing.
+`usage_attribution(run_id, seat=node_id)`, then explicitly calls
+`registry.forward_to_global(event)` — mirroring
+`AbstractClient._emit_after_call` (`clients/base.py:634`), since the
+per-run registry is `forward_to_global=False` — routing this backend's
+usage through the identical accounting path as in-process clients, with
+no fabricated zeros when the harvest reports nothing.
+
+Every one of `dispatch()`'s failure branches (timeout, session exception,
+an `is_error` `ResultMessage` the SDK doesn't raise on, and output
+validation failure) also routes through `_emit_failure_event`
+(`dispatchers/claude.py:806`): harvest whatever usage the buffered
+messages report (often partial, sometimes none, for a genuine failure),
+emit that as a normal `AfterClientCallEvent` if anything was reported,
+then emit a `ClientCallFailedEvent` for the failure itself — two ledger
+records rather than one, since `ClientCallFailedEvent` structurally
+carries no token fields (see "Reading a report," below, for how both
+surface in the rendered Failures section).
 
 `codex` and `google_coding` currently have **no usage harvest at all** —
 verified by grepping both dispatcher modules for any token/cost/
