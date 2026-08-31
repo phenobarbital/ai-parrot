@@ -35,25 +35,31 @@ def test_disabled_is_noop(monkeypatch) -> None:
 
 
 def test_enabled_defaults_to_logging(monkeypatch) -> None:
-    """OBSERVABILITY_ENABLED=true alone registers a logging usage subscriber."""
+    """OBSERVABILITY_ENABLED=true alone registers a logging usage subscriber.
+
+    FEAT-479: ``UsageRecordingSubscriber.register()`` now subscribes to
+    both ``AfterClientCallEvent`` and ``ClientCallFailedEvent`` (Module 4a),
+    so one provider now adds 2 subscriptions, not 1.
+    """
     monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
     with scope():
         before = _sub_count()
         boot.ensure_observability_bootstrapped()
-        assert _sub_count() == before + 1
+        assert _sub_count() == before + 2
         sub = boot._SUBSCRIBER
         assert sub is not None
         assert [r.name for r in sub.recorders] == ["logging"]
 
 
 def test_bootstrap_is_idempotent(monkeypatch) -> None:
-    """Calling the bootstrap twice registers exactly one subscription."""
+    """Calling the bootstrap twice registers exactly one provider's worth of
+    subscriptions (2, per FEAT-479 — see test_enabled_defaults_to_logging)."""
     monkeypatch.setenv("OBSERVABILITY_ENABLED", "true")
     with scope():
         before = _sub_count()
         boot.ensure_observability_bootstrapped()
         boot.ensure_observability_bootstrapped()
-        assert _sub_count() == before + 1
+        assert _sub_count() == before + 2
 
 
 def test_otel_backend_delegates_to_setup_telemetry(monkeypatch) -> None:
