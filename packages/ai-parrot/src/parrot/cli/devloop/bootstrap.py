@@ -321,17 +321,26 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
     )
 
-    flow = build_dev_loop_flow(
-        dispatcher=dispatcher,
-        development_profile=development_profile,
-        jira_toolkit=jira_toolkit,
-        log_toolkits=log_toolkits,
-        redis_url=redis_url,
-        wiki_search=wiki_search,
-        graph_memory=graph_memory,
-        require_plan_approval=require_plan_approval,
-        codereview_dispatcher=codereview_dispatcher,
-    )
+    # FEAT-480 (TASK-2628): same pattern as examples/dev_loop/server.py's
+    # dev-loop wiring — captured once as the exact kwargs `build_dev_loop_flow`
+    # is called with, then handed to `DevLoopRunner` as `dev_loop_flow_kwargs`
+    # so its checkpoint-recovery path (`DevLoopRunner.run(..., run_id=...)`,
+    # already how `console.py` dispatches every CLI run) builds a genuinely
+    # fresh, checkpoint-enabled `AgentsFlow` per run instead of reusing
+    # `flow` across jobs (spec §7: "shared flow instances are concurrent
+    # today; per-run construction is mandatory").
+    dev_loop_flow_kwargs: dict[str, Any] = {
+        "dispatcher": dispatcher,
+        "development_profile": development_profile,
+        "jira_toolkit": jira_toolkit,
+        "log_toolkits": log_toolkits,
+        "redis_url": redis_url,
+        "wiki_search": wiki_search,
+        "graph_memory": graph_memory,
+        "require_plan_approval": require_plan_approval,
+        "codereview_dispatcher": codereview_dispatcher,
+    }
+    flow = build_dev_loop_flow(**dev_loop_flow_kwargs)
 
     reporter, escalation = await default_identities(jira_toolkit)
 
@@ -343,6 +352,12 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
         redis_url=redis_url,
         codereview_dispatcher=codereview_dispatcher,
         graph_memory=graph_memory,
+        # FEAT-480 (TASK-2628): `checkpoint_store=None` resolves through the
+        # existing env-fallback precedence (`FLOW_CHECKPOINT_STORE`, default
+        # "redis"); each CLI run already mints its own stable per-job
+        # `run_id` (console.py:765), never shared across jobs.
+        checkpoint_store=None,
+        dev_loop_flow_kwargs=dev_loop_flow_kwargs,
     )
 
     return DevLoopRuntime(
