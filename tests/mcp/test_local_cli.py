@@ -4,6 +4,7 @@ FEAT-485: lazy registration, --list, resolution failures, override
 passthrough to `create_toolkit_mcp_server`, and the serve path against
 the stub toolkit.
 """
+
 from pathlib import Path
 from unittest.mock import MagicMock
 
