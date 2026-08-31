@@ -31,8 +31,24 @@ from .confinement import (
     resolve_readable_path,
     resolve_within_root,
 )
+from .git_tools import (
+    LOG_FORMAT,
+    SHOW_FORMAT,
+    InvalidRefError,
+    parse_blame,
+    parse_log,
+    split_show_output,
+    validate_ref,
+)
 from .models import RepoReadResult, RepoSearchHit, RepoSearchResult, RepoToolError
-from .schemas import GrepFilesInput, ListFilesInput, ReadFileInput
+from .schemas import (
+    GitBlameInput,
+    GitLogInput,
+    GitShowInput,
+    GrepFilesInput,
+    ListFilesInput,
+    ReadFileInput,
+)
 
 #: Directories never descended into by `list_files`, regardless of depth.
 _SKIP_DIRS = frozenset({
@@ -419,3 +435,130 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             hits = await asyncio.to_thread(self._walk_grep, pattern, glob)
 
         return RepoSearchResult(query=pattern, hits=hits, degraded=False)
+
+    @tool_schema(GitLogInput)
+    async def git_log(
+        self, path: str = "", limit: int = 20,
+    ) -> dict[str, Any] | RepoToolError:
+        """List recent commits, optionally only those touching one path.
+
+        Use this to understand why code looks the way it does, or to find
+        when a behaviour changed. Paths are relative to the repository
+        root.
+
+        Args:
+            path: Repository-relative path to filter by. Empty = whole repo.
+            limit: Maximum commits to return (clamped to 200).
+
+        Returns:
+            Mapping with a `commits` list of {sha, author, date, subject},
+            or RepoToolError when the path is refused or git is unavailable.
+        """
+        argv = [
+            "git", "log", f"--max-count={min(max(limit, 1), 200)}",
+            f"--format={LOG_FORMAT}",
+        ]
+        if path:
+            try:
+                target = resolve_within_root(self._repo_root, path)
+            except PathOutsideRootError as exc:
+                return self._error(exc, path)
+            argv += ["--", str(target.relative_to(self._repo_root))]
+        else:
+            argv.append("--")
+
+        try:
+            res = await self._run_argv(argv)
+        except FileNotFoundError as exc:  # `git` not on PATH
+            return RepoToolError(error="git_unavailable", detail=str(exc))
+        if res["timed_out"]:
+            return RepoToolError(error="timeout", detail="git log timed out")
+        if res["exit_code"] != 0:
+            return RepoToolError(
+                error="git_error", detail=res["stderr"][:500], path=path,
+            )
+        return {"commits": parse_log(res["stdout"])}
+
+    @tool_schema(GitShowInput)
+    async def git_show(self, ref: str) -> dict[str, Any] | RepoToolError:
+        """Show a commit's message and change summary.
+
+        Use this to see what a specific commit changed and why. `ref` may
+        be a sha, branch, tag, or a relative ref such as `HEAD~3`.
+
+        Args:
+            ref: A commit sha, branch, tag, or ref such as "HEAD~3".
+
+        Returns:
+            Mapping with `commit_info` (sha/author/date/subject) and `stat` (the
+            diffstat text, bounded and possibly truncated), or a
+            RepoToolError when the ref is unsafe or git fails.
+        """
+        try:
+            safe_ref = validate_ref(ref)
+        except InvalidRefError as exc:
+            return self._error(exc, ref)
+
+        argv = ["git", "show", "--stat", f"--format={SHOW_FORMAT}", safe_ref, "--"]
+        try:
+            res = await self._run_argv(argv)
+        except FileNotFoundError as exc:
+            return RepoToolError(error="git_unavailable", detail=str(exc))
+        if res["timed_out"]:
+            return RepoToolError(error="timeout", detail="git show timed out")
+        if res["exit_code"] != 0:
+            return RepoToolError(
+                error="git_error", detail=res["stderr"][:500], path=ref,
+            )
+
+        commit_info, stat_text = split_show_output(res["stdout"])
+        truncated = False
+        if len(stat_text.encode("utf-8", "replace")) > self._max_result_bytes:
+            truncated = True
+            stat_text = stat_text.encode("utf-8", "replace")[
+                : self._max_result_bytes
+            ].decode("utf-8", "ignore")
+            stat_text += "\n... [truncated] ...\n"
+        return {"commit_info": commit_info, "stat": stat_text, "truncated": truncated}
+
+    @tool_schema(GitBlameInput)
+    async def git_blame(
+        self, path: str, start: int = 1, end: int = 0,
+    ) -> dict[str, Any] | RepoToolError:
+        """Show per-line commit attribution for a file.
+
+        Use this to find who last changed a specific line and in which
+        commit. Secret files are refused, since blame output includes the
+        file's content.
+
+        Args:
+            path: Repository-relative path to blame.
+            start: 1-based first line to blame.
+            end: 1-based last line, inclusive. 0 (the default) means EOF.
+
+        Returns:
+            Mapping with a `lines` list of {line, sha, author, summary,
+            content}, or a RepoToolError when the path is refused or git
+            fails.
+        """
+        try:
+            target = self._resolve_for_read(path)
+        except (PathOutsideRootError, SecretFileError) as exc:
+            return self._error(exc, path)
+
+        argv = ["git", "blame", "--porcelain"]
+        if start > 1 or end:
+            argv += ["-L", f"{start},{end}" if end else f"{start},"]
+        argv += ["--", str(target.relative_to(self._repo_root))]
+
+        try:
+            res = await self._run_argv(argv)
+        except FileNotFoundError as exc:
+            return RepoToolError(error="git_unavailable", detail=str(exc))
+        if res["timed_out"]:
+            return RepoToolError(error="timeout", detail="git blame timed out")
+        if res["exit_code"] != 0:
+            return RepoToolError(
+                error="git_error", detail=res["stderr"][:500], path=path,
+            )
+        return {"lines": parse_blame(res["stdout"])}

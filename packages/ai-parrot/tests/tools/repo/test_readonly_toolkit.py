@@ -32,10 +32,11 @@ class TestReadOnlyByConstruction:
         assert not [n for n in names if WRITE_SHAPED.search(n)], names
 
     def test_expected_tool_set(self, toolkit):
-        # Snapshot as of TASK-2639: later tasks (git tools, search_code,
-        # related_code, opt-in web_search) add more entries to this set.
+        # Snapshot as of TASK-2640: later tasks (search_code, related_code,
+        # opt-in web_search) add more entries to this set.
         assert {t.name for t in toolkit.get_tools()} == {
             "read_file", "list_files", "grep_files",
+            "git_log", "git_show", "git_blame",
         }
 
 

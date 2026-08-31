@@ -45,3 +45,35 @@ class GrepFilesInput(BaseModel):
     glob: str = Field(
         default="", description="Optional glob to restrict which files are searched."
     )
+
+
+class GitLogInput(BaseModel):
+    """Arguments for ``git_log``."""
+
+    path: str = Field(
+        default="",
+        description="Repository-relative path to filter by. Empty = whole repo.",
+    )
+    limit: int = Field(
+        default=20, ge=1, description="Maximum commits to return (clamped to 200)."
+    )
+
+
+class GitShowInput(BaseModel):
+    """Arguments for ``git_show``."""
+
+    ref: str = Field(
+        ..., description="A commit sha, branch, tag, or ref such as 'HEAD~3'."
+    )
+
+
+class GitBlameInput(BaseModel):
+    """Arguments for ``git_blame``."""
+
+    path: str = Field(..., description="Repository-relative path to blame.")
+    start: int = Field(
+        default=1, ge=1, description="1-based first line to blame."
+    )
+    end: int = Field(
+        default=0, ge=0, description="1-based last line, inclusive. 0 means EOF."
+    )
