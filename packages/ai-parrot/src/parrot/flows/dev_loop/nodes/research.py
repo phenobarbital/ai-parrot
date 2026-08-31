@@ -34,9 +34,11 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.clients.factory import LLMFactory
+from parrot.flows.dev_flow.complementary_research import (
+    ComplementaryResearchCoordinator,
+)
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.graph_memory import DevLoopGraphMemory
-from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 from parrot.flows.dev_loop.models import (
     BugBrief,
     ClaudeCodeDispatchProfile,
@@ -50,6 +52,7 @@ from parrot.flows.dev_loop.nodes.base import (
     register_dev_loop_node,
     transition_issue_with_candidates,
 )
+from parrot.flows.dev_loop.wiki_search import DevLoopWikiSearch
 
 # FEAT-466 TASK-2504: WorkKind -> base branch, used ONLY as the fallback
 # when the committed spec's frontmatter cannot be read. Deliberately a
@@ -209,6 +212,14 @@ class ResearchNode(DevLoopNode):
             ``"always"`` fetches for every work kind (pre-flag behavior);
             ``"never"`` disables remote log fetching entirely. Local
             ``inline`` / ``attached_file`` sources are never gated.
+        coordinator: Optional :class:`ComplementaryResearchCoordinator`
+            (FEAT-482). ``None`` (default) means no complementary research
+            partner ever runs. When provided, its findings (if any) are
+            folded into the dispatch payload as an extra context section
+            — the same mechanism already used for wiki/graph-memory
+            context, not a new field on the shared ``BugBrief``/
+            ``WorkBrief`` model. Never raises — a disabled/degraded/timed-
+            out partner simply contributes no extra section.
         name: Node id, default ``"research"``.
     """
 
@@ -225,11 +236,18 @@ class ResearchNode(DevLoopNode):
         repos: Optional[List[RepoSpec]] = None,
         graph_memory: Optional[DevLoopGraphMemory] = None,
         wiki_search: Optional[DevLoopWikiSearch] = None,
+        coordinator: Optional[ComplementaryResearchCoordinator] = None,
         name: str = "research",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_jira", jira_toolkit)
+        # FEAT-482: optional complementary research partner. None (default)
+        # means no partner ever runs — the dispatch payload is byte-
+        # identical to pre-feature behavior. Mirrors IdeationNode's
+        # symmetrical seam (dev_flow/nodes/ideation.py, TASK-2633) — one
+        # shared mechanism, not a fork (spec §1 D1).
+        object.__setattr__(self, "_coordinator", coordinator)
         # FEAT-250: optional repo provisioning before Development. When
         # ``repos`` is empty the node behaves exactly as before (no clone).
         object.__setattr__(self, "_git_toolkit", git_toolkit)
@@ -411,6 +429,27 @@ class ResearchNode(DevLoopNode):
             graph_context = await self._graph_memory.build_research_context(brief)
             if graph_context:
                 extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+
+        # FEAT-482 Module 5: the complementary research partner, if wired,
+        # contributes one more best-effort section — same mechanism as the
+        # wiki/graph-memory context above, not a new field on the shared
+        # brief model. No defensive try/except: the coordinator already
+        # owns its own degradation end-to-end and is contracted to never
+        # raise (spec §3 Module 4).
+        if self._coordinator is not None:
+            partner_findings = await self._coordinator.research(
+                brief=brief,
+                question=f"{brief.summary}\n\n{brief.description}".strip(),
+                cwd=dispatch_cwd,
+                slug=issue_key.lower(),
+                run_id=shared.get("run_id", ""),
+                node_id=self.name,
+                session_host=shared.get("session_host"),
+            )
+            if partner_findings is not None:
+                extra_context_parts.append(
+                    f"## Complementary research findings\n{partner_findings.rendered}"
+                )
 
         dispatch_brief = brief
         if extra_context_parts:
