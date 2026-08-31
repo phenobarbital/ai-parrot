@@ -342,6 +342,30 @@ def _build_ledger_commit(
     return commit
 
 
+def _last_git_error_line(stderr: str) -> str:
+    """Reduce git's multi-line stderr to the one line worth showing.
+
+    git pads failures with advisory output (``hint:`` lines, blank lines).
+    Embedding all of it inside a warning pushes the sentence that actually
+    matters several lines away from its conclusion, which is how a
+    successful reservation ends up *looking* like a failed one — see
+    :func:`_sync_local_branch`.
+
+    Args:
+        stderr: Raw stderr text captured from a git invocation.
+
+    Returns:
+        The last non-empty, non-``hint:`` line, or ``"not a fast-forward"``
+        when nothing usable remains.
+    """
+    lines = [
+        line.strip()
+        for line in stderr.splitlines()
+        if line.strip() and not line.strip().startswith("hint:")
+    ]
+    return lines[-1] if lines else "not a fast-forward"
+
+
 def _sync_local_branch(root: Path, base_branch: str, commit_sha: str) -> None:
     """Fast-forward the checked-out base branch onto the reserved commit.
 
@@ -361,12 +385,26 @@ def _sync_local_branch(root: Path, base_branch: str, commit_sha: str) -> None:
     if merge.returncode == 0:
         return
 
+    # Message ordering is deliberate and load-bearing. The reservation has
+    # ALREADY succeeded here; only a local bookkeeping fast-forward was
+    # skipped. Earlier wording opened with the success, then embedded git's
+    # multi-line `hint:`/`fatal:` output mid-sentence and closed on "were NOT
+    # pushed" (which referred to the caller's own commits, not the
+    # reservation). Any truncation — `tail`, a CI log summary — kept the
+    # alarming half and dropped the reassuring one, so callers read it as a
+    # failure and re-ran, permanently burning the IDs they had just been
+    # issued. So: state the outcome first, keep git's noise to one line, and
+    # put the anti-retry instruction LAST where truncation cannot remove it.
+    reason = _last_git_error_line(merge.stderr)
     print(
-        f"reserve_ids: WARNING — the reservation is pushed to origin/{base_branch}, "
-        f"but the local {base_branch} could not be fast-forwarded onto it "
-        f"({merge.stderr.strip() or 'not a fast-forward'}).\n"
-        f"reserve_ids: your local commits are intact and were NOT pushed. "
-        f"Reconcile before pushing, e.g. `git pull --no-rebase origin {base_branch}`.",
+        f"reserve_ids: reservation SUCCEEDED — the ledger commit is pushed to "
+        f"origin/{base_branch}.\n"
+        f"reserve_ids: only the local courtesy fast-forward was skipped "
+        f"({reason}); your own commits are untouched.\n"
+        f"reserve_ids: reconcile when convenient: "
+        f"`git pull --no-rebase origin {base_branch}`.\n"
+        f"reserve_ids: the ID(s) this command printed are ALREADY ALLOCATED — "
+        f"do NOT re-run it, or you will burn a second set.",
         file=sys.stderr,
     )
 

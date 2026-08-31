@@ -381,8 +381,41 @@ class TestReserveIdsNeverDestroysLocalWork:
         assert head == local_sha, "local branch was moved despite unpushed commits"
 
         err = capsys.readouterr().err
-        assert "could not be fast-forwarded" in err
-        assert "your local commits are intact" in err.lower()
+        assert "reservation SUCCEEDED" in err
+        assert "your own commits are untouched" in err.lower()
+
+    def test_skipped_fast_forward_warning_cannot_be_misread_as_failure(
+        self, bare_remote_and_clone, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The warning must not read as a failed reservation.
+
+        Regression guard. The reservation has already landed on the remote at
+        this point; a caller who reads this warning as a failure and re-runs
+        permanently burns a second set of IDs. Three properties keep that from
+        happening, and each is asserted below.
+        """
+        _remote, clone = bare_remote_and_clone
+        self._add_local_commit(clone, "in_progress.txt")
+
+        reserve_ids("task", 1, "dev", "feature-warning", repo_root=clone)
+
+        err = capsys.readouterr().err.strip()
+        lines = [line for line in err.splitlines() if line.strip()]
+
+        # 1. The outcome is stated first, so a head-truncated read is correct.
+        assert "SUCCEEDED" in lines[0]
+
+        # 2. The anti-retry instruction is LAST, so a tail-truncated read
+        #    (`tail -1`, a CI summary) still carries the critical warning.
+        assert "do NOT re-run" in lines[-1]
+
+        # 3. git's advisory noise is collapsed to a single line — no `hint:`
+        #    block buried inside the sentence.
+        assert not any(line.lstrip().startswith("hint:") for line in lines)
+
+        # And the old ambiguous phrasing, whose subject was the caller's own
+        # commits but which read as "the reservation was not pushed", is gone.
+        assert "were NOT pushed" not in err
 
     def test_reservation_works_without_a_remote_tracking_ref(
         self, bare_remote_and_clone
