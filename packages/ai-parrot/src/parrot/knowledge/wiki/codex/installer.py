@@ -8,12 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.codex import assets
-from parrot.knowledge.wiki.project import (
-    WikiProjectConfig,
-    config_path,
-    load_effective_config,
-    save_project_config,
-)
+from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, load_effective_config, save_project_config
 
 _TABLE_HEADER = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 

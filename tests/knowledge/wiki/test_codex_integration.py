@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-
 from parrot.cli import cli
 from parrot.knowledge.wiki.codex import assets
 from parrot.knowledge.wiki.codex.installer import (

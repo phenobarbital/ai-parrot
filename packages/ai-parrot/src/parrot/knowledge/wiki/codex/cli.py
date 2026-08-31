@@ -7,17 +7,12 @@ from pathlib import Path
 from typing import Optional
 
 import click
-
 from parrot.knowledge.wiki.codex.installer import (
     install_codex_integration,
     integration_status,
     uninstall_codex_integration,
 )
-from parrot.knowledge.wiki.project import (
-    WikiConfigError,
-    find_project_root,
-    load_effective_config,
-)
+from parrot.knowledge.wiki.project import WikiConfigError, find_project_root, load_effective_config
 
 path_option = click.option(
     "--path",
