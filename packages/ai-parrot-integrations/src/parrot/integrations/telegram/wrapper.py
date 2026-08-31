@@ -47,6 +47,7 @@ from .auth import (
     BasicAuthStrategy,
     OAuth2AuthStrategy,
     AzureAuthStrategy,
+    GoogleAuthStrategy,
     CompositeAuthStrategy,
 )
 from .filters import BotMentionedFilter
@@ -698,6 +699,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 login_page_url=config.login_page_url,
                 # Approach A (TASK-778): inject registry so Azure runs the chain
                 # after successful JWT decode without wrapper involvement.
+                post_auth_registry=self._post_auth_registry,
+            )
+
+        if method == "google" and config.google_auth_url:
+            return GoogleAuthStrategy(
+                auth_url=config.auth_url or config.google_auth_url,
+                google_auth_url=config.google_auth_url,
+                login_page_url=config.login_page_url,
                 post_auth_registry=self._post_auth_registry,
             )
 
@@ -2200,6 +2209,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         methods = getattr(self.config, "auth_methods", [])
         if len(methods) > 1:
             prompt_text = "🔐 *Sign In*\n\n" "Tap the button below and choose how you'd like to authenticate."
+        elif "google" in methods:
+            prompt_text = (
+                "🔐 *Google Sign-In*\n\n" "Tap the button below to sign in with your Google account."
+            )
         elif "azure" in methods:
             prompt_text = (
                 "\U0001f510 *Azure SSO*\n\n" "Tap the button below to sign in with your organization's Azure account."

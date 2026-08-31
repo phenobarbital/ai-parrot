@@ -7,12 +7,13 @@ Verifies:
   that include or omit auth_method.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 from parrot.integrations.telegram.auth import (
     AbstractAuthStrategy,
-    BasicAuthStrategy,
     AzureAuthStrategy,
+    BasicAuthStrategy,
+    GoogleAuthStrategy,
     OAuth2AuthStrategy,
     TelegramUserSession,
 )
@@ -32,13 +33,15 @@ def test_concrete_class_names():
     """Each concrete strategy exposes its canonical name."""
     assert BasicAuthStrategy.name == "basic"
     assert AzureAuthStrategy.name == "azure"
+    assert GoogleAuthStrategy.name == "google"
     assert OAuth2AuthStrategy.name == "oauth2"
 
 
 def test_post_auth_chain_capability():
-    """BasicAuth and Azure support the post-auth chain; OAuth2 does not."""
+    """BasicAuth, Azure, and Google support the post-auth chain; OAuth2 does not."""
     assert BasicAuthStrategy.supports_post_auth_chain is True
     assert AzureAuthStrategy.supports_post_auth_chain is True   # flipped by TASK-778
+    assert GoogleAuthStrategy.supports_post_auth_chain is True
     assert OAuth2AuthStrategy.supports_post_auth_chain is False
 
 
