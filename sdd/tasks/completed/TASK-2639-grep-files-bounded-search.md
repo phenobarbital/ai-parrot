@@ -412,10 +412,35 @@ class TestNoShellAnywhere:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Added `grep_files`, `_run_argv`, `_kill`, `_is_git_work_tree`,
+`_hits_from_grep_lines`, and `_walk_grep` to `ReadOnlyRepoToolkit`, plus
+`GrepFilesInput` in `schemas.py`. `git grep` is used with `--untracked`
+(so newly-created-but-not-yet-committed files are found, while `.gitignore`
+exclusions still apply) and `-F -e <pattern> --` (fixed-string, argv-safe,
+no shell). Exit codes `{0, 1}` both treated as success (1 = no matches).
+All 11 new tests pass, plus the full `tests/tools/repo/` suite (67 tests);
+`ruff check` / `mypy` clean; confirmed no `shell=True` / `subprocess.run` /
+`os.system` anywhere in the package.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: `test_readonly_toolkit.py::test_expected_tool_set`
+(TASK-2638) asserted the tool set was exactly `{read_file, list_files}` —
+a snapshot that this task's own acceptance criterion ("Tests pass:
+pytest packages/ai-parrot/tests/tools/repo/ -v") requires to stay green.
+Updated that one assertion to include `grep_files`, with a comment noting
+later tasks add more tools to the same set. No other change to that file.
 
-**Deviations from spec**: none | describe if any
+**Post-completion fix (2026-09-01, commit c47a252e3)**: the feature-level
+adversarial code review (after TASK-2643) found that `_walk_grep` (the
+non-git fallback) followed a symlinked FILE out of `repo_root` and
+returned its content as a search hit — a CRITICAL confinement bypass,
+reachable when `repo_root` isn't a git work tree or `git` is unavailable
+(`git grep` itself does not follow symlinks, even with `--untracked`, so
+the primary path was never affected). Fixed by resolving each candidate
+file and skipping it before `read_text()` when its real target is
+outside `repo_root`. Regression test added:
+`test_walk_grep_rejects_symlinked_file_escape`. Also fixed (IMPORTANT):
+`_run_argv` now reports `stdout_truncated` so `git_show` (TASK-2640) can
+report truncation accurately instead of re-measuring stdout `_run_argv`
+had already clipped to the same bound.

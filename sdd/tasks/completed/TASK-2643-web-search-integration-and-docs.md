@@ -482,10 +482,43 @@ class TestWorktreeSharesPlane:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Part A — added `web_search` (lazy `DdgSearchTool` import,
+degrades to a structured `{"error", "results": []}` dict on import or
+search failure) plus `WebSearchInput`. Gated via
+`self.exclude_tools = (*self.exclude_tools, "web_search")` set in
+`__init__` when `enable_web_search=False`, so `_generate_tools()` never
+creates the tool — absent, not disabled. Part B — added
+`test_web_search.py` and `test_integration.py` per spec §4: client
+registration/dispatch, the transport-agnosticism guard (same toolkit
+instance, identical tool names and identical `.result` payloads on a
+Converse-shaped and an OpenAI-shaped stub, zero transport-name matches
+anywhere in the package), search-then-read flow, the worktree-shares-plane
+check, and the opt-in real-plane test (ran for real against this repo's
+live `.parrot/wiki` — 0 `build/lib` paths in results, `degraded=False`).
+Part C — added `docs/tools/readonly-repo-toolkit.md` covering all four
+axes, read-only-by-construction, confinement, the §8 Q1 deny-list, every
+bound and its default, the degradation contract, the worktree staleness
+tradeoff (research-safe, review-unsafe, called out explicitly), `mode`
+(§8 Q2), `enable_web_search`, and a dual-transport registration example.
+Full `tests/tools/repo/` suite: 131 tests pass; `ruff check` / `mypy`
+clean; no new dependency in any `pyproject.toml`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Walked spec §5 end to end** — every acceptance criterion is satisfied by
+the finished feature (read-only by construction, confinement holds, no
+shell injection, no blocking I/O, bounded, graph-search-not-grep,
+worktree sharing, secrets denied, `mode` exposed, web search absent not
+disabled, client registration + transport-agnosticism, no dev-flow/
+dev-loop import, no new dependency, documentation added).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one test-correctness fix, not a design change —
+`test_same_toolkit_on_both_transports` originally compared
+`str(a) == str(b)` on the full `ToolResult`, which includes a
+per-call-generated `timestamp` field and was flaky by construction.
+Changed the assertion to compare `str(a.result) == str(b.result)` — the
+actual payload — which is what the transport-agnosticism claim is about.
+
+**FEAT-482 unblocked**: per the spec's Worktree Strategy ("Merge FEAT-484
+before FEAT-482's Module 2"), FEAT-482's `BedrockResearchPartner` can now
+register this toolkit on both `NovaClient` and `BedrockMantleClient`.

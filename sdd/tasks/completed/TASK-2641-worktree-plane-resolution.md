@@ -491,10 +491,19 @@ class TestAddsNoTool:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-09-01
+**Notes**: Added `graph_search.py` with module-level `async def
+resolve_plane_root(repo_root)` (tries `--path-format=absolute
+--git-common-dir` then the git<2.31 fallback; falls back to `repo_root`
+unchanged on any failure) and `async def open_plane(repo_root)` (mirrors
+the verified best-effort plane-open pattern used elsewhere in the
+codebase, per this task's own guidance to avoid the literal `dev_loop`
+token in shipped source — confirmed absent via grep). Added the
+`temp_worktree` fixture to `conftest.py` (a real `git worktree add`).
+Neither function is a toolkit method, so `get_tools()` is unchanged
+(asserted). All 9 new tests pass, plus the full `tests/tools/repo/` suite
+(108 tests); `ruff check` / `mypy` clean. Confirmed no plane build is ever
+attempted (no `wiki.db` created in any test).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
