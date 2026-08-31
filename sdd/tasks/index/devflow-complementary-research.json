@@ -50,7 +50,7 @@
       "feature_id": "FEAT-482",
       "feature": "devflow-complementary-research",
       "spec": "sdd/specs/devflow-complementary-research.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -60,9 +60,9 @@
       "parallel": false,
       "parallelism_notes": "Extends TASK-2629's module and relies on TASK-2630's thinking fix. ALSO BLOCKED ON FEAT-484 (readonly-repo-toolkit) merging — it registers that toolkit.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2631-bedrock-research-partner.md"
+      "started_at": "2026-08-31T23:04:20+00:00",
+      "completed_at": "2026-08-31T23:13:04+00:00",
+      "file": "sdd/tasks/completed/TASK-2631-bedrock-research-partner.md"
     },
     {
       "id": "TASK-2632",
