@@ -116,6 +116,7 @@ markers = [
     "wheel_build: requires building the wheel (slow, needs uv)",
     "requires_apscheduler: requires the scheduler extra (apscheduler)",
     "requires_aioquic: requires the mcp extra (aioquic)",
+    "requires_mcp_sdk: requires the official mcp SDK (mcp extra)",
     "live: hits live external services; opt-in, deselect with -m 'not live'",
 ]
 

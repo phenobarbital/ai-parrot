@@ -16,10 +16,26 @@ from parrot.conf import (
     MCP_SERVER_TRANSPORT,
     MCP_STARTED_TOOLS,
 )
-from parrot.mcp.server import MCPServer, MCPServerConfig, HttpMCPServer, SseMCPServer
+from parrot.mcp.server import (
+    MCPServer,
+    MCPServerConfig,
+    HttpMCPServer,
+    SseMCPServer,
+    StreamableHttpMCPServer,
+)
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.mcp.config import TransportConfig
+
+#: Transport names that speak Streamable HTTP (2025-03-26).
+STREAMABLE_TRANSPORTS: frozenset[str] = frozenset(
+    {"streamable-http", "streamable_http"}
+)
+#: Transports served over the shared aiohttp application. They all claim
+#: ``POST {base_path}``, so no two of them may share a base_path.
+HTTP_LIKE_TRANSPORTS: frozenset[str] = frozenset(
+    {"http", "sse"} | STREAMABLE_TRANSPORTS
+)
 
 
 class ParrotMCPServer:
@@ -70,11 +86,13 @@ class ParrotMCPServer:
 
         configs = {}
 
+        http_like = HTTP_LIKE_TRANSPORTS
+
         if isinstance(transports, str):
-            # Single transport string: "stdio" or "http"
+            # Single transport string: "stdio", "http", "streamable-http", ...
             transport = transports.lower()
-            host = default_host or MCP_SERVER_HOST if transport in {"http", "sse"} else None
-            port = default_port or MCP_SERVER_PORT if transport in {"http", "sse"} else None
+            host = default_host or MCP_SERVER_HOST if transport in http_like else None
+            port = default_port or MCP_SERVER_PORT if transport in http_like else None
             configs[transport] = TransportConfig(
                 transport=transport,
                 host=host,
@@ -85,7 +103,7 @@ class ParrotMCPServer:
             # List of transport names: ["stdio", "http"]
             for i, transport in enumerate(transports):
                 transport = transport.lower()
-                is_http_like = transport in {"http", "sse"}
+                is_http_like = transport in http_like
                 port = ((default_port or MCP_SERVER_PORT) + i) if is_http_like else None
                 configs[transport] = TransportConfig(
                     transport=transport,
@@ -100,6 +118,34 @@ class ParrotMCPServer:
 
         return configs
 
+    def _check_base_path_conflicts(self) -> None:
+        """Refuse two HTTP-like transports that would claim the same path.
+
+        They all register ``POST {base_path}``. aiohttp accepts the duplicate
+        silently and routes it to whichever was registered first, so the
+        second transport's semantics (session ids, SSE, DELETE) would vanish
+        without a trace. Checked up front, before any server is constructed —
+        ``SseMCPServer`` registers its routes in ``__init__``, so a check
+        made while starting would already be too late.
+
+        Raises:
+            ValueError: If two enabled HTTP-like transports share a path.
+        """
+        claimed: Dict[str, str] = {}
+        default_base_path = MCPServerConfig().base_path
+        for transport_key, config in self.transport_configs.items():
+            if not config.enabled or config.transport not in HTTP_LIKE_TRANSPORTS:
+                continue
+            base_path = config.base_path or default_base_path
+            owner = claimed.get(base_path)
+            if owner is not None:
+                raise ValueError(
+                    f"MCP transport {transport_key!r} cannot share base_path "
+                    f"{base_path!r} with transport {owner!r}. Give one of them "
+                    f"a distinct path via TransportConfig(base_path=...)."
+                )
+            claimed[base_path] = transport_key
+
     def setup(self, app: web.Application) -> None:
         """Register lifecycle hooks inside the aiohttp application."""
         self.app = app
@@ -112,6 +158,11 @@ class ParrotMCPServer:
 
     async def on_startup(self, app: web.Application) -> None:  # pylint: disable=unused-argument
         """Start the MCP server once aiohttp finishes bootstrapping."""
+        # Validate the whole transport set before starting anything, so a
+        # misconfiguration cannot leave half the transports mounted with
+        # background tasks running.
+        self._check_base_path_conflicts()
+
         tools = await self._load_configured_tools()
         if not tools:
             self.logger.info("No MCP tools configured to start")
@@ -133,6 +184,7 @@ class ParrotMCPServer:
                 host=config.host,
                 port=config.port,
                 log_level=self.log_level,
+                **({"base_path": config.base_path} if config.base_path else {}),
             )
 
             # Ensure MCP endpoints bypass the auth middleware (uses AuthHandler.exclude_list)
@@ -156,12 +208,15 @@ class ParrotMCPServer:
                 self._server_tasks[transport_key] = asyncio.create_task(start_coro)
                 self.logger.info("Spawned stdio MCP server task: %s", server_name)
 
-            elif config.transport in {"http", "sse"}:
-                # Launch HTTP/SSE MCP server using existing aiohttp app
+            elif config.transport in HTTP_LIKE_TRANSPORTS:
+                # Launch HTTP-like MCP server using existing aiohttp app
                 if config.transport == "sse":
                     server = SseMCPServer(mcp_config, parent_app=app)
+                elif config.transport in STREAMABLE_TRANSPORTS:
+                    server = StreamableHttpMCPServer(mcp_config, parent_app=app)
                 else:
                     server = HttpMCPServer(mcp_config, parent_app=app)
+
                 server.register_tools(tools)
                 self.servers[transport_key] = server
 

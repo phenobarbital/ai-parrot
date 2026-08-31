@@ -1,0 +1,191 @@
+# TASK-2588: Agents list/detail actions — Create, Edit, Delete dialog, "Show disabled" toggle
+
+**Feature**: FEAT-475 — UI Agent Management — Admin UI Agent CRUD
+**Spec**: `sdd/specs/ui-agent-management.spec.md`
+**Status**: pending
+**Priority**: high
+**Estimated effort**: M (2-4h)
+**Depends-on**: TASK-2583, TASK-2585, TASK-2586
+**Assigned-to**: unassigned
+
+---
+
+## Context
+
+Spec §2 Overview (list/detail affordances), §3 Module 6, §5 ACs 1, 5, 10.
+FEAT-468's `AgentsList.svelte` / `AgentDetail.svelte` are read-only by
+design; this task adds the entry points into the form (TASK-2587) and the
+delete flow, strictly for `source === "database"` rows.
+
+---
+
+## Scope
+
+- `AgentsList.svelte`:
+  - **Create Agent** button → `router.navigate("/admin/agents/new")`.
+  - Row actions column: **Edit** (→ `/admin/agents/${agent.name}`) and
+    **Delete** (opens dialog) — rendered only when `agent.source === "database"`;
+    registry rows show nothing (keep `data-testid` hooks for tests). Row
+    click still opens the detail dialog; action buttons must
+    `stopPropagation`.
+  - "Show disabled" Switch/checkbox (default off) → refetch with
+    `listAgents({ includeDisabled: true })`; disabled rows get a muted
+    style / `Badge` "disabled".
+  - Use `listAgents()` from `$lib/api/agents` instead of the raw
+    `apiClient.get` (keep behaviour identical; existing tests may need the
+    mock target updated).
+- `AgentDetail.svelte`: **Edit** button in the header for database agents
+  (closes dialog, navigates).
+- `pages/agents/DeleteAgentDialog.svelte`: props `agent`, bindable `open`,
+  `ondeleted`; typed-name confirmation (`Input` must equal `agent.name`
+  to enable the destructive `Button`); calls `deleteAgent(name)`; success
+  → `ondeleted()` (list refetch); `ApiError.message` shown inline (403
+  for repo registry agents verbatim), dialog stays open on error.
+- Tests updated/added.
+
+**NOT in scope**: the form pages (TASK-2587); bulk actions; sorting/pagination.
+
+---
+
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `packages/ai-parrot-server/ui/src/pages/agents/AgentsList.svelte` (+ `.test.ts`) | MODIFY | create/edit/delete affordances, show-disabled |
+| `packages/ai-parrot-server/ui/src/pages/agents/AgentDetail.svelte` (+ `.test.ts`) | MODIFY | Edit button (database only) |
+| `packages/ai-parrot-server/ui/src/pages/agents/DeleteAgentDialog.svelte` (+ `.test.ts`) | CREATE | typed-name confirm + DELETE |
+
+---
+
+## Codebase Contract (Anti-Hallucination)
+
+### Verified Imports (TS)
+```ts
+import { router } from "$lib/router.svelte";
+import { listAgents, deleteAgent } from "$lib/api/agents";              // TASK-2586
+import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";  // { name: string; source: "database"|"registry"; [k: string]: unknown }
+import { ApiError } from "$lib/api/http";
+import { Badge } from "$lib/ui/internal/shadcn/ui/badge/index.js";
+import { Button } from "$lib/ui/internal/shadcn/ui/button/index.js";
+import { Input } from "$lib/ui/internal/shadcn/ui/input/index.js";
+import { Switch } from "$lib/ui/internal/shadcn/ui/switch/index.js";    // TASK-2585
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "$lib/ui/internal/shadcn/ui/dialog/index.js";
+```
+
+### Existing Signatures to Use
+```ts
+// ui/src/pages/agents/AgentsList.svelte (FEAT-468 TASK-2530)
+//   state: agents, loading, error, search, sourceFilter ("all"|"database"|"registry"), detailOpen, selectedAgent
+//   fetchAgents(): apiClient.get<BotsListResponse>("/api/v1/bots")  ← switch to listAgents({includeDisabled})
+//   table rows: data-testid={`agent-row-${agent.name}`}, onclick={() => openDetail(agent)}
+//   <AgentDetail agent={selectedAgent} bind:open={detailOpen} />
+// ui/src/pages/agents/AgentDetail.svelte — props { agent: BotAgentItem | null; open = $bindable(false) }; Dialog-based
+// ui/src/pages/agents/AgentsList.test.ts — mocks via vi.spyOn(apiClient, "get").mockResolvedValue({ data: { agents, total } })
+//   (if you route through listAgents(), keep spying on apiClient.get — listAgents wraps it — or vi.mock("$lib/api/agents"))
+```
+```python
+# DELETE /api/v1/bots/{name}  (handlers/bots.py:1247-1326)
+#   repo registry agent → 403 {"message": "Agent '<n>' is a repo YAML/code agent and cannot be deleted via this endpoint."}
+#   factory registry agent → 200 {"message","name","source":"factory"}; DB → 200 {"message","name"}; missing → 404
+# GET /api/v1/bots?include_disabled=true (TASK-2583)
+```
+
+### Does NOT Exist
+- ~~bulk delete / multi-select~~, ~~pagination~~ — not in this feature.
+- ~~a toast system~~ — inline messages only.
+- ~~`AgentsList` props~~ — it is a page component without props; keep it that way.
+- ~~delete for registry rows~~ — never rendered; the 403 path is only reachable if a DB row turns out to be registry-backed server-side, still surface it.
+
+---
+
+## Implementation Notes
+
+- Preserve every existing `AgentsList.test.ts` / `AgentDetail.test.ts`
+  assertion that is not about affordances; extend rather than rewrite.
+- Row-action buttons inside a clickable `<tr>`: use `onclick={(e) => { e.stopPropagation(); … }}`.
+- Destructive button style: existing `Button` `variant="destructive"` if
+  the vendored button defines it (verify in `button.svelte`); otherwise add
+  the variant there.
+
+---
+
+## Acceptance Criteria
+
+- [ ] Create button visible; Edit/Delete only on `source === "database"` rows; registry rows have no mutating affordance
+- [ ] Detail dialog shows Edit for database agents only
+- [ ] Delete requires typing the exact name; success refetches the list; 403/other errors shown verbatim, dialog stays open
+- [ ] "Show disabled" off by default (byte-identical request to today); on → `?include_disabled=true`, disabled rows badged
+- [ ] `pnpm test` green including all pre-existing FEAT-468 tests (modified only where affordances were added)
+
+---
+
+## Test Specification
+
+```ts
+// AgentsList.test.ts (add)
+it("renders Create button and navigates to /admin/agents/new", ...)
+it("shows Edit/Delete only on database rows", ...)
+it("Show disabled toggles include_disabled param", ...)
+// AgentDetail.test.ts (add) — Edit button visibility per source
+// DeleteAgentDialog.test.ts — typed-name gating, DELETE call, 403 message, ondeleted callback
+```
+
+---
+
+## Agent Instructions
+
+1. Read spec §2 Overview, §3 Module 6, §5, §6.
+2. Confirm TASK-2583/2585/2586 are completed and their exports match.
+3. Implement + tests; move to `sdd/tasks/completed/`, update index → `done`, fill Completion Note.
+
+---
+
+## Completion Note
+
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-30
+**Notes**: `AgentsList.svelte` switched from raw `apiClient.get` to
+`listAgents({ includeDisabled })` (TASK-2586); confirmed via the
+pre-existing `AgentsList.test.ts` suite (which mocks `apiClient.get`
+directly, unmodified) that this is a transparent wrapper swap. Added
+Create Agent button (`router.navigate("/admin/agents/new")`), per-row
+Edit/Delete actions gated on `agent.source === "database"` (both call
+`e.stopPropagation()` so the row's own detail-open `onclick` never also
+fires — verified in tests), a "Show disabled" `Switch` defaulting off
+(byte-identical `/api/v1/bots` request until toggled, then
+`?include_disabled=true`), and a disabled-row `Badge` + muted row style.
+`AgentDetail.svelte` gained an `Edit` button in the header for database
+agents only (registry agents unchanged) that closes the dialog and
+navigates via `router`. Created `DeleteAgentDialog.svelte`: typed-name
+gate (`Input` must equal `agent.name` exactly to enable the destructive
+`Button`), calls `deleteAgent(name)`, resets its local `typedName`/
+`error` state each time it opens (guards against a stale confirmation
+value or error leaking into a second delete attempt on the same or a
+different agent), surfaces `ApiError.message` verbatim on failure
+(403 for repo registry agents included) without closing, calls
+`ondeleted()` only on success so the parent list refetches.
+
+Updated the one FEAT-468 test this task's acceptance criteria directly
+supersede: `AgentsList.test.ts`'s "has no mutating controls" asserted
+zero Create/Edit/Delete buttons ever — replaced with "renders Create
+Agent and Edit/Delete only on database rows" (registry rows still
+assert no mutating affordance). No other pre-existing assertion in
+`AgentsList.test.ts`/`AgentDetail.test.ts` was touched, only extended.
+
+Added test coverage per the Test Specification: `AgentsList.test.ts`
+(+5 cases: Create navigation, Edit navigation without opening the detail
+dialog, Delete opening its own dialog without opening the detail dialog,
+show-disabled param toggling, disabled-badge rendering), `AgentDetail
+.test.ts` (+3: Edit button present/absent by source, Edit navigates and
+closes), `DeleteAgentDialog.test.ts` (4 new: typed-name gating, DELETE
+call + `ondeleted()`, 403 message verbatim + dialog stays open, state
+reset across opens).
+
+`pnpm test`: 22 files, 166 tests passed (154 pre-TASK-2588 + 13 total in
+`AgentsList.test.ts` [8 pre-existing/updated + 5 new] + 6 in
+`AgentDetail.test.ts` [3 pre-existing + 3 new] + 4 new in
+`DeleteAgentDialog.test.ts`), 0 failures. `pnpm build` succeeds with zero
+warnings. `npx tsc --noEmit`: same 7 pre-existing false positives as
+prior tasks (files this feature never touches), no new errors.
+
+**Deviations from spec**: none.

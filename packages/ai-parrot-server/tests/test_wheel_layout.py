@@ -8,9 +8,9 @@ Tests that use the ``satellite_wheel_path`` fixture (which builds the wheel via
 ``uv build``) are marked ``@pytest.mark.wheel_build`` and are skipped automatically
 when ``uv`` is not available on PATH.
 """
+
 import pathlib
 import pytest
-
 
 # The 8 namespace directories that must not have __init__.py
 FORBIDDEN_INIT_PATHS = [
@@ -82,13 +82,30 @@ class TestWheelContainsAdminUI:
     @pytest.mark.wheel_build
     def test_dist_assets_present(self, satellite_wheel_namelist):
         """The wheel contains at least one built asset (JS/CSS bundle)."""
-        assets = [
-            n for n in satellite_wheel_namelist
-            if n.startswith("parrot/server/ui/dist/assets/")
-        ]
+        assets = [n for n in satellite_wheel_namelist if n.startswith("parrot/server/ui/dist/assets/")]
         assert assets, (
             "wheel is missing parrot/server/ui/dist/assets/* — the Admin UI "
             "build produced no assets (or was skipped entirely)."
+        )
+
+    @pytest.mark.wheel_build
+    def test_agentchat_chunk_present(self, satellite_wheel_namelist):
+        """FEAT-476: the vendored AgentChat lazy chunk ships in the wheel.
+
+        Matched by substring + suffix rather than a specific filename —
+        Vite content-hashes chunk names (e.g. ``AgentChat-DPxnpXKV.js``),
+        so this must not assume a fixed hash.
+        """
+        chunks = [
+            n
+            for n in satellite_wheel_namelist
+            if n.startswith("parrot/server/ui/dist/assets/") and "AgentChat" in n and n.endswith(".js")
+        ]
+        assert chunks, (
+            "wheel is missing the AgentChat chunk — was the UI built with "
+            "the chat module? (packages/ai-parrot-server/ui/src/lib/"
+            "components/agents/AgentChat.svelte, wired into the "
+            "/admin/agents/:name/chat route by TASK-2597)"
         )
 
 
@@ -99,24 +116,23 @@ class TestSatelliteSourceLayout:
     def test_expected_file_exists(self, relpath):
         """Expected backend files exist in satellite src/parrot/."""
         full = SATELLITE_SRC / relpath
-        assert full.exists(), (
-            f"Expected {relpath} in satellite src/parrot/, but not found at {full}"
-        )
+        assert full.exists(), f"Expected {relpath} in satellite src/parrot/, but not found at {full}"
 
-    @pytest.mark.parametrize("namespace_dir", [
-        "",        # parrot/
-        "mcp",     # parrot/mcp/
-        "a2a",     # parrot/a2a/
-        "handlers",
-        "manager",
-        "services",
-        "scheduler",
-        "autonomous",
-    ])
+    @pytest.mark.parametrize(
+        "namespace_dir",
+        [
+            "",  # parrot/
+            "mcp",  # parrot/mcp/
+            "a2a",  # parrot/a2a/
+            "handlers",
+            "manager",
+            "services",
+            "scheduler",
+            "autonomous",
+        ],
+    )
     def test_no_init_in_src(self, namespace_dir):
         """PEP 420: namespace directories in src must not have __init__.py."""
         d = SATELLITE_SRC / namespace_dir if namespace_dir else SATELLITE_SRC
         init = d / "__init__.py"
-        assert not init.exists(), (
-            f"__init__.py found in {d} — violates PEP 420 namespace package requirement"
-        )
+        assert not init.exists(), f"__init__.py found in {d} — violates PEP 420 namespace package requirement"

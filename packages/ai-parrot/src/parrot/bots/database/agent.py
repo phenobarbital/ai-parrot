@@ -582,16 +582,46 @@ class DatabaseAgent(BasicAgent):
             if output_mode == OutputMode.STRUCTURED_TABLE:
                 # FEAT-218: caller requested STRUCTURED_TABLE.
                 # response.response (qr.explanation) and response.data
-                # (materialised QueryDataset) are already set above; the
-                # StructuredTableRenderer will consume them deterministically.
-                # We signal the mode so the formatter dispatches correctly.
-                response.output_mode = OutputMode.STRUCTURED_TABLE
-                # FEAT-473 (G5): mint the artifacts[] entry here too, closing
-                # the FEAT-224 gap (DatabaseAgent never minted one). No-op
-                # (via the helper's own dict/envelope checks) until the
-                # formatter's StructuredTableRenderer pass has populated
-                # response.output/response.a2ui_envelope for this response.
-                attach_structured_artifact(response, OutputMode.STRUCTURED_TABLE)
+                # (materialised QueryDataset → DataFrame) are already set
+                # above.  Issue #1269: invoke StructuredTableRenderer so
+                # response.output becomes a typed config dict and
+                # response.a2ui_envelope is populated — without this the
+                # attach_structured_artifact() call below is a guaranteed
+                # no-op (response.output is still a QueryResponse BaseModel,
+                # not a dict).
+                from ...outputs.formats import get_renderer  # noqa: PLC0415
+
+                # Clear response.output so the renderer's _extract_data
+                # reads the materialised DataFrame from response.data
+                # (step 5 fallback) instead of the raw QueryResponse.data
+                # (a QueryDataset, not a DataFrame).
+                response.output = None
+                try:
+                    renderer = get_renderer(OutputMode.STRUCTURED_TABLE)()
+                    content, wrapped = await renderer.render(response)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "StructuredTableRenderer dispatch failed: %s", exc,
+                    )
+                    content, wrapped = None, str(exc)
+
+                if content is not None:
+                    response.output = content
+                    response.response = wrapped
+                    response.output_mode = OutputMode.STRUCTURED_TABLE
+                    # FEAT-473 (G5): mint the artifacts[] entry — now
+                    # succeeds because the renderer has populated
+                    # response.output (dict) and response.a2ui_envelope.
+                    attach_structured_artifact(response, OutputMode.STRUCTURED_TABLE)
+                else:
+                    # Renderer failed — degrade gracefully to SQL_ANALYSIS
+                    # so the frontend still shows a usable SQL artifact card.
+                    self.logger.warning(
+                        "StructuredTableRenderer failed (%s) — falling back "
+                        "to SQL_ANALYSIS",
+                        wrapped,
+                    )
+                    response.output_mode = OutputMode.SQL_ANALYSIS
             else:
                 # Default: signal to the HTTP layer that this AIMessage carries a
                 # structured QueryResponse the frontend should render as a SQL

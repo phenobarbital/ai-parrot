@@ -62,12 +62,22 @@ piece is the Parrot agent that faithfully executes it.
   for the user to resolve before/with `/sdd-spec`.
 - **Fetch must be participant-filtered** and must **never re-download an
   already-processed meeting** through the MCP.
-- **Authoritative dedup gate = `Wiki/Registry/processed-sources.md` (source_id +
-  hashes) ∪ a scan of the `Raw/` tree** — a deterministic id check. The
-  **GraphIndex is derived and rebuildable** and is used only as a *semantic
+- **Build on FEAT-472 (`MeetingRegistry`) — do not re-implement it.** The
+  fireflies-meeting-registry feature is **merged** (PR #1264; all 7 tasks done
+  2026-08-29) and already provides the id-keyed dedup gate, content fingerprints,
+  the `suggest_from_date` watermark, no-refetch skip + `force_refetch`, path
+  repair, backfill/merge, per-meeting lifecycle stamps, and
+  `ObsidianToolkit.move_note`/`delete_note`. This agent **reuses that spine** and
+  adds only the `Raw/` layer, the compiled pages, and the contract governance on
+  top. This is a **hard dependency, now satisfied.**
+- **Authoritative dedup gate = `MeetingRegistry` (the FEAT-472 `external_id`
+  registry on `wiki.db`) ∪ a scan of the `Raw/` tree** — a deterministic id
+  check. The contract's Markdown `Wiki/Registry/processed-sources.md` (§25) is a
+  **derived, human-readable mirror** the agent writes, *not* the primary gate.
+  The **GraphIndex is derived and rebuildable** and is used only as a *semantic
   accelerator* (§6 "match existing knowledge", §28 query), **never** as the id
-  authority. A lost/stale GraphIndex must never cause a re-download or a wrong
-  skip.
+  authority. A lost/stale GraphIndex or Markdown mirror must never cause a
+  re-download or a wrong skip.
 - **Hybrid execution:** deterministic Python owns the safety-critical mechanical
   spine (hashing, dedup gate, immutable moves, provenance, registry, indexes,
   post-op validation/rollback); the LLM owns the semantic steps
@@ -284,16 +294,18 @@ but are **off by default** behind a feature flag.
 
 ### Internal behavior (high-level flow, no code)
 
-1. **Fetch-gate (deterministic).** Build the known-id set = ids in
-   `Wiki/Registry/processed-sources.md` ∪ ids in the `Raw/` tree. Call the
-   Fireflies MCP with the participant filter (+ optional date watermark) and keep
-   only meetings whose id is *not* in the known set. For each, fetch transcript +
-   summary + metadata.
-2. **Drop to `Raw/Incoming/` (deterministic).** Write the raw bundle unchanged;
-   compute SHA-256 of summary and transcript.
+1. **Fetch-gate (deterministic — reuse FEAT-472).** Use
+   `MeetingRegistry.suggest_from_date()` for the watermark and
+   `MeetingRegistry.classify()` (∪ a `Raw/` id scan) so the Fireflies MCP is
+   called with the participant filter and only *unknown/changed* meetings are
+   fetched (transcript + summary + metadata). `force_refetch` overrides.
+2. **Drop to `Raw/Incoming/` (deterministic — new sink).** Write the raw bundle
+   unchanged; the FEAT-472 `fingerprint()`/hashes provide provenance.
 3. **Pair + dedup gate (deterministic, §13/§14).** Pair transcript/summary/
-   metadata by strongest key; classify duplicate/revision/probable-duplicate
-   outcomes; route accordingly *before any semantic read*.
+   metadata by strongest key; the FEAT-472 `classify()` result drives
+   duplicate/revise/probable-duplicate; **override revise** to route to
+   `Raw/Processed/Revisions/` + Review Queue (§14.3) instead of in-place update;
+   all *before any semantic read*.
 4. **Read existing context (deterministic + retrieval).** Read `Wiki/index.md`,
    `Wiki/overview.md`, the registry; use the GraphIndex to *accelerate* "match
    existing knowledge" (§6) — candidate projects/entities/concepts.
@@ -365,7 +377,8 @@ but are **off by default** behind a feature flag.
 - `async def create_note(self, path, content, frontmatter: Optional[Dict]=None)` — `:439` (renders YAML frontmatter; `overwrite=False`, raises `FileExistsError`)
 - `async def update_note(self, path, content, preserve_frontmatter=True)` — `:471` (keeps existing frontmatter by default — useful for the §19 project reconcile)
 - `async def delete_note(self, path)` — `:522`
-- `__init__` takes `allowed_operations` set (`:127`) — current instance enables `{read,list,search,create,update}`.
+- `async def move_note(self, source, destination)` — `:538` (**move/rename EXISTS**; returns `affected_backlinks` but **does NOT rewrite links** — §8.1 link-fixup is still on us).
+- `__init__` takes `allowed_operations` set (`:127`); FEAT-472 added `move`/`delete` to the Fireflies agent's set — enable the same here.
 
 ### Structured extraction — `class AbstractClient` `packages/ai-parrot/src/parrot/clients/base.py`
 
@@ -381,45 +394,67 @@ but are **off by default** behind a feature flag.
 - `async def build_graph_memory_toolkit(db_dir, tenant_id="default", agent_id="agent", run_id=None, embedder=None, client=None, dimension=…) -> GraphIndexToolkit` — `packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py:203`
 - `class PageIndexToolkit(AbstractToolkit)` — `packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py:50`; `class PageIndexLLMAdapter` — `…/pageindex/llm_adapter.py:42`
 
+### FEAT-472 `MeetingRegistry` (merged PR #1264 — REUSE, do not rebuild)
+
+- `class MeetingRegistry` — `packages/ai-parrot/src/parrot/agents/meeting_registry.py`
+  - `__init__(self, registry_dir, *, manager: SourceCollectionManager | None = None)` — defaults to a manager on `registry_dir/"wiki.db"`; every call dispatched via `asyncio.to_thread`.
+  - `async def classify(self, item, *, fetch, fetch_summary, force_refetch=False) -> Classified` — create | skip | revise, with `probable_duplicate_of` for contract §14.3 (hash match, different id).
+  - `async def suggest_from_date(self, *, overlap_days) -> str | None` — the fetch **watermark** (resolves brainstorm Q3).
+  - `record_synced`, `pending_analysis`, `mark_analyzed`, `mark_analysis_failed`, `mark_wiki_ingested`, `repair_path`, `backfill_from_vault`, `merge_duplicates`, `forget(reject=True)`, `unique_slug`, `available`.
+  - Helpers: `normalise_transcript(text)` and `fingerprint(text)` = `sha256(normalise_transcript(text))` — **content-only** transcript hash (summary hashed separately). *(Partially answers D5.)*
+- `SourceCollectionManager` gained `external_id` support — `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py`: `find_by_external_id`, `find_entries_by_external_ids`, `list_by_external_prefix("fireflies:")`, `set_external_id`, `update_source_uri` (keeps `source_id`, re-hashes at new path). `SourceManifestEntry.external_id: str | None` — `.../wiki/models.py:248`.
+- Registry shares one `wiki.db` row per meeting with `LLMWikiToolkit.ingest_obsidian_vault` (sync writes `external_id` + `doc_metadata.fireflies`; ingest fills `pages_generated`/`file_hash`).
+- **Divergence to override (FEAT-472 §7/§8):** on "same id, changed content" FEAT-472 updates the note **in place**; this agent must instead route to `Raw/Processed/Revisions/` + Review Queue per contract §14.3/§22 (consume `report["revised"]`).
+
 ### Config & MCP
 
-- Fireflies/wiki config keys — `packages/ai-parrot/src/parrot/agents/conf.py`: `FIREFLIES_WIKI_LLM` `:133`, `WIKI_MODEL` `:144`, `FIREFLIES_WIKI_NAME` `:151`, `FIREFLIES_WIKI_STORAGE_DIR` `:152`, `FIREFLIES_WIKI_EXTRACT_ENTITIES` `:156`, schedule + recipients keys `:112–188` (new keys needed: external vault path, participant allowlist, model tiers, email-disabled flag).
+- Fireflies/wiki config keys — `packages/ai-parrot/src/parrot/agents/conf.py`: `FIREFLIES_WIKI_LLM` `:133`, `WIKI_MODEL` `:144`, `FIREFLIES_WIKI_NAME` `:151`, `FIREFLIES_WIKI_STORAGE_DIR` `:152`, `FIREFLIES_WIKI_EXTRACT_ENTITIES` `:156`, schedule + recipients keys `:112–188`. FEAT-472 **added** `FIREFLIES_REGISTRY_DIR`, `FIREFLIES_SYNC_OVERLAP_DAYS` (2), `FIREFLIES_RECHECK_DAYS` (7). New keys still needed: external vault path, participant allowlist, model tiers, email-disabled flag, `Raw/` layout roots.
 - `async def add_fireflies_mcp_server(self, api_key=…)` — `packages/ai-parrot/src/parrot/mcp/integration.py:1447` (transcript/summary MCP tools).
 - Registration/scheduling: `from parrot.registry import register_agent`; `from parrot.scheduler import ScheduleType, schedule` (usage verified in `agents/fireflies_wiki.py`).
 
-### Does NOT exist (prevent hallucination)
+### Prior art to REUSE — verified, do NOT rebuild (Jesus review + FEAT-472)
 
-- **No move/rename method on `ObsidianToolkit`** — only create/update/read/list/search/delete. The contract's immutable `Raw/Incoming → Raw/Processed` moves (§14/§27), vault archive moves (§31), and rename-with-link-update (§8.1) need **deterministic filesystem ops** (and, for vault renames, a link-fixup step) — a **new capability**, not an existing toolkit call.
-- **No processed-source registry / hash-based dedup** in the current agents — dedup today is filename-stem-only (`_make_note_title` / `_get_existing_meeting_titles`).
-- **No classification, project reconciliation, entity/concept, contradiction, daily-diary, review-queue, lint/health/archive, or §34 validation logic** anywhere in the current Fireflies agents.
-- **No server-side "exclude already-processed" on `fireflies_get_transcripts`** — the MCP exposes filters + `limit` + `skip` only; processed-dedup must be done **client-side** against the registry ∪ `Raw/` set.
-- **No raw-bundle drop** in the current fetch path — `sync_fireflies_transcripts` writes a compiled note straight into `meetings/`, not immutable raw files into `Raw/Incoming/`.
-- `ModelSwitchingMixin` (`parrot/bots/mixins/model_switching.py`, per `.agent/CONTEXT.md`) exists but was **not read here** — the confirmed per-call tiering mechanism is `invoke(model=…)`; the mixin is an optional alternative to verify at spec time.
+- **`ObsidianToolkit.move_note` EXISTS** — `tools/obsidian.py:538`; move/rename is covered. (Residual: it reports `affected_backlinks` but does not rewrite them — §8.1 link-fixup is the only piece we add.)
+- **Hash-based staleness EXISTS** — `knowledge/wiki/sources.py` (SHA-1 + mtime), consumed by `ingest_obsidian_vault(incremental=True)`.
+- **Id-keyed dedup registry EXISTS (FEAT-472)** — `MeetingRegistry` + `external_id`, `classify()`, content `fingerprint()`, `suggest_from_date()` watermark, no-refetch skip / `force_refetch`, `repair_path`, `backfill_from_vault`, `merge_duplicates`, lifecycle stamps. (See the FEAT-472 Code Context block above.)
+
+### Genuinely missing — this feature builds (smaller than v0 of this doc implied)
+
+- **No `Raw/` immutable-bundle layer** — nothing drops `transcript`/`summary`/`metadata` into `Raw/Incoming/` or moves them to `Raw/Processed/…` with hash verify (§13/§14/§27). FEAT-472 keeps raw *in the note body*; the dedup-gate logic is reusable — only the **sink changes** to `Raw/`.
+- **No contract-shaped compilation** — canonical meeting page (§17), living project reconciliation (§19), entities/concepts (§20/§21), contradiction protocol (§22), daily diary (§23), review queue (§26), lint/health/archive (§29–§31), §34 validation. None exist.
+- **No Markdown `processed-sources.md` mirror (§25)** — FEAT-472 keeps the registry in `wiki.db` only; the human-readable mirror is this agent's job (explicitly deferred to it by the FEAT-472 spec).
+- **No auto-link-rewrite after move/rename (§8.1)** — `move_note` reports broken backlinks but does not fix them.
+- **No server-side "exclude already-processed" on `fireflies_get_transcripts`** — confirmed still true; **unnecessary** given the client-side `MeetingRegistry` gate + `suggest_from_date` watermark.
+- `ModelSwitchingMixin` exists but is optional — the confirmed per-call tiering mechanism is `invoke(model=…)`.
 
 ---
 
 ## Capabilities
 
-**New:**
-- `fireflies-fetch-gate` — participant-filtered fetch + registry∪Raw id dedup (client-side).
-- `raw-bundle-provenance` — pairing (§13), SHA-256 hashing, immutable `Raw/` moves + verify (§14).
+**Reused from FEAT-472 / existing code (wire in — NO new build):**
+- id-keyed dedup + `classify` (create/skip/revise/probable-duplicate), content fingerprints, `suggest_from_date` watermark, no-refetch skip / `force_refetch`, `repair_path`, `backfill_from_vault`, `merge_duplicates`, lifecycle stamps — `MeetingRegistry`.
+- `ObsidianToolkit.move_note`/`delete_note`; incremental note-file staleness (`sources.py`).
+- `AbstractClient.invoke(output_type=, model=)` — structured extraction + per-call model tiering.
+- `LLMWikiToolkit.ingest_obsidian_vault(incremental=True)` — derived GraphIndex rebuild.
+
+**New (this feature):**
+- `raw-bundle-layer` — drop immutable `transcript`/`summary`/`metadata` into `Raw/Incoming/`; move to `Raw/Processed/…` with pre/post hash verify (§13/§14/§27).
 - `meeting-source-compiler` — canonical §17 page via structured extraction.
 - `project-page-reconciler` — diff-guarded §19 living-state rewrite.
 - `entity-concept-resolver` — match-before-create for §20/§21.
 - `contradiction-protocol` — first-class §22 records.
 - `daily-diary-synthesizer` — §23 synthesis (not concatenation).
 - `wiki-index-overview-maintainer` — §24 navigation + living overview.
-- `processed-source-registry` — §25 append-only dedup registry (authoritative).
+- `processed-sources-mirror` — §25 Markdown mirror of the FEAT-472 `wiki.db` registry.
 - `review-queue-manager` — §26 non-blocking human-judgment queue.
-- `ingest-pipeline-orchestrator` — §27 ordered flow.
+- `ingest-pipeline-orchestrator` — §27 ordered flow (wraps the FEAT-472 gate).
 - `wiki-query` — §28 retrieval-then-verify.
 - `wiki-health` / `wiki-lint` / `wiki-archive` / `graph-report` — §29/§30/§31/§32.
 - `post-op-validation` — §34 executable checklist = QA oracle.
-- `graphindex-derived-rebuild` — incremental vault → GraphIndex refresh.
-- `vault-fs-mover` — deterministic scoped file moves/rename+link-fixup (fills the ObsidianToolkit gap).
+- `link-fixup` — rewrite `[[wikilinks]]` after a move/rename (§8.1).
 
 **Modified:**
-- `fireflies-obsidian-fetch` — repoint sink from `meetings/` notes to `Raw/Incoming/` bundles.
+- `fireflies-obsidian-fetch` — the FEAT-472 sync writes a compiled note; repoint the sink to `Raw/Incoming/` bundles, and **override the in-place `revise`** with the contract's Revisions + Review-Queue routing (§14.3).
 - `email-digests` — retained, shipped disabled behind a feature flag.
 
 ---
@@ -430,7 +465,9 @@ but are **off by default** behind a feature flag.
 |---|---|---|
 | `agents/fireflies_wiki.py` | superseded / repurposed | keep as reference + reuse wiki-build + (disabled) email methods |
 | `packages/ai-parrot/src/parrot/agents/obsidian.py` | reuse + modify | reuse `FirefliesFilters` + fetch loop; repoint sink |
-| `packages/ai-parrot/src/parrot/tools/obsidian.py` | reuse + extend | needs move/rename+link-fixup capability |
+| `packages/ai-parrot/src/parrot/agents/meeting_registry.py` (FEAT-472) | reuse (hard dep) | `MeetingRegistry` dedup gate, watermark, lifecycle — the spine this agent builds on |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py` (FEAT-472) | reuse | `external_id` lookups, `update_source_uri`, staleness hashing |
+| `packages/ai-parrot/src/parrot/tools/obsidian.py` | reuse | `move_note`/`delete_note` exist (:538); add only §8.1 link-fixup |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py` | reuse | derived GraphIndex rebuild + query |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py` | reuse | graph plane |
 | `packages/ai-parrot/src/parrot/clients/base.py` (`invoke`) | reuse | structured extraction + model tiering |
@@ -441,9 +478,12 @@ but are **off by default** behind a feature flag.
 | **External Obsidian vault** (outside repo) | write target | path via config; no auto-commit |
 | `sdd/references/obsidian-wiki-operating-contract.md` | reference oracle | the authoritative Obsidian operating contract (not a brainstorm) |
 
-Related priors (not conflicts): `sdd/specs/fireflies-mcp-improvements.spec.md`,
-`sdd/specs/integrate-mcp-fireflies.spec.md`, and the `LLMWikiToolkit` FEAT-392
-Obsidian ingest already exist and are leveraged.
+**Dependencies & prior art:**
+- **FEAT-472 fireflies-meeting-registry** — MERGED (PR #1264, done 2026-08-29). **Hard dependency, satisfied.** Provides the dedup/fingerprint/watermark spine this agent builds on.
+- **FEAT-473 a2ui-v1-structured-outputs** — MERGED (PR #1267). Maturing structured-output infra (`adapters/structured.py`, `data_model=` passthrough); the core `invoke(output_type=)` we rely on predates it — note only, no dependency.
+- **FEAT-392** `LLMWikiToolkit` Obsidian ingest — leveraged for the derived GraphIndex rebuild.
+- **toolmanager-tooldefinition-enforcement** — a feature whose ids were just *reserved* (not built, 2026-08-29). May change how toolkits declare tools; re-check at `/sdd-spec` time before finalizing the agent's tool surface.
+- Related (not conflicts): `sdd/specs/fireflies-mcp-improvements.spec.md`, `sdd/specs/integrate-mcp-fireflies.spec.md` (the `FirefliesFilters` + native-summary work this fetch reuses).
 
 ---
 
@@ -490,27 +530,46 @@ Obsidian ingest already exist and are leveraged.
 - **Q2 — Diff-guard for §19.** What exactly protects the project-page rewrite
   from dropping still-sourced claims — structured section-merge + a "no claim
   removed while its source is live" assertion in §34? Define the guard.
-- **Q3 — Fetch watermark.** Ship the optional persisted "last sync" date
-  watermark now (fewer MCP calls) or rely on the registry∪Raw id gate alone in
-  v1? (Registry gate is the backstop either way.)
+- **Q3 — Fetch watermark.** ✅ **RESOLVED by FEAT-472** — `suggest_from_date()`
+  (= `max(synced_at) − FIREFLIES_SYNC_OVERLAP_DAYS`) ships the watermark; the
+  `MeetingRegistry` id gate is the backstop. Reuse as-is.
 - **Q4 — Scheduling & email flag.** Reuse the existing `@schedule` cadence for
   `ingest`; confirm the email-digest feature-flag key name and default (off).
+
+**Reconciliation with FEAT-472 (owner: user/spec — decide before `/sdd-spec`):**
+
+- **R1 — Registry substrate.** Confirm: `MeetingRegistry` (`wiki.db`) is the
+  operational authority; `Wiki/Registry/processed-sources.md` (§25) is a derived
+  Markdown mirror this agent writes. (Recommended; FEAT-472 already delegates the
+  mirror to this agent.)
+- **R2 — Vault layout migration.** FEAT-472's registry keys on the note in a flat
+  `meetings_folder` with the raw transcript *in the note body*. Adopting the
+  contract layout re-homes `source_uri` to the canonical `Wiki/Sources/Meetings/`
+  page and moves raw to `Raw/`. Decide: migrate existing vaults via
+  `backfill_from_vault` re-pointing, or start the contract layout fresh?
+- **R3 — Revise policy override.** FEAT-472 updates a changed transcript **in
+  place**; the contract requires Revisions-folder + Review-Queue routing, no
+  auto-merge (§14.3/§22). Confirm the KB agent overrides FEAT-472's revise by
+  consuming `report["revised"]`.
 
 ---
 
 ## Parallelism Assessment
 
 - **Internal parallelism:** High, *after a foundation phase*. The shared contract
-  is (a) the Pydantic §10 frontmatter/schema models, (b) the `ObsidianToolkit` +
-  `vault-fs-mover` access layer, and (c) the §34 validation checklist. Once those
-  are frozen, the deterministic spine (fetch-gate, provenance, registry) and each
-  page-type compiler (meeting §17, project §19, entities §20, concepts §21,
-  contradictions §22, daily §23) and each read-only workflow (query §28, health
-  §29, lint §30, archive §31, graph §32) are largely independent.
-- **Cross-feature independence:** Mostly additive (new subsystem). Shared edits to
-  `obsidian.py` (fetch repoint) and `ObsidianToolkit` (move/rename) are the only
-  contended files; no in-flight spec is known to target them (not exhaustively
-  checked — verify at `/sdd-task`).
+  is (a) the Pydantic §10 frontmatter/schema models, (b) the vault-access layer
+  (`ObsidianToolkit` — `move_note` exists — plus the new §8.1 link-fixup and the
+  reused `MeetingRegistry`), and (c) the §34 validation checklist. Once those are
+  frozen, the compilation nodes — meeting §17, project §19, entities §20,
+  concepts §21, contradictions §22, daily §23 — and each read-only workflow
+  (query §28, health §29, lint §30, archive §31, graph §32) are largely
+  independent. The dedup/provenance spine is mostly **reused from FEAT-472**, so
+  the foundation phase is lighter than v0 of this doc assumed.
+- **Cross-feature independence:** Mostly additive (new subsystem) on top of the
+  now-merged FEAT-472. `obsidian.py` / `ObsidianToolkit` (fetch repoint, revise
+  override, link-fixup) are the only contended files; FEAT-472 is merged so no
+  in-flight spec is known to target them (not exhaustively checked — verify at
+  `/sdd-task`).
 - **Recommended isolation:** **mixed.** One sequential *foundation* worktree
   (schemas + vault access/mover + fetch-gate + provenance spine + §34 validator),
   then fan out the page-type compilers and read-only workflows into parallel

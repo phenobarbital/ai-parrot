@@ -18,6 +18,7 @@ from pathlib import Path
 from aiohttp import web
 from navconfig.logging import logging
 
+from .catalog import AdminCatalogHandler
 from .status import AdminStatusHandler
 
 try:
@@ -193,6 +194,7 @@ def setup_admin_ui(app: web.Application, *, prefix: str = DEFAULT_PREFIX) -> boo
     # status endpoint is UI-agnostic and useful even on an install-from-git
     # that never ran the Node build.
     app.router.add_view("/api/v1/admin/status", AdminStatusHandler)
+    app.router.add_view("/api/v1/admin/catalog", AdminCatalogHandler)
 
     dist = _dist_dir()
     index_html = dist / "index.html"

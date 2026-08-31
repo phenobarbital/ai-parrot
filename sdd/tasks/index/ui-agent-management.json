@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-30T02:23:54+02:00",
-  "completed_at": null,
+  "completed_at": "2026-08-30T01:34:35+00:00",
   "tasks": [
     {
       "id": "TASK-2583",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Python-only (handlers/bots.py, manager.py, app.py); shares no files with TASK-2584/2585.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2583-backend-enablers.md"
+      "completed_at": "2026-08-30T00:41:06+00:00",
+      "file": "sdd/tasks/completed/TASK-2583-backend-enablers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2584",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Python (server/ui/catalog.py, models.py, serving.py, generate_ts_types.py) + regenerated ui/schemas & types; no overlap with TASK-2583 or TASK-2585 files.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2584-admin-catalog-endpoint.md"
+      "completed_at": "2026-08-30T00:48:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2584-admin-catalog-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2585",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -58,8 +60,9 @@
       "parallelism_notes": "UI-only (router.svelte.ts, shadcn primitives, components/); no overlap with Python lanes.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2585-ui-router-params-primitives.md"
+      "completed_at": "2026-08-30T00:59:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2585-ui-router-params-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2586",
@@ -68,7 +71,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,8 +81,9 @@
       "parallelism_notes": "Imports generated types from TASK-2584.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2586-ui-agent-form-state-api.md"
+      "completed_at": "2026-08-30T01:06:47+00:00",
+      "file": "sdd/tasks/completed/TASK-2586-ui-agent-form-state-api.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2587",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -99,8 +103,9 @@
       "parallelism_notes": "Consumes router params/primitives (2585) and store/API (2586); edits App.svelte.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2587-ui-agent-form-pages.md"
+      "completed_at": "2026-08-30T01:22:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2587-ui-agent-form-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2588",
@@ -109,7 +114,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,8 +126,9 @@
       "parallelism_notes": "Needs include_disabled (2583), Switch primitive (2585), agents API (2586). Touches AgentsList/AgentDetail only — could run alongside 2587 once deps land, but sequential in the single worktree.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2588-ui-agents-list-actions.md"
+      "completed_at": "2026-08-30T01:28:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2588-ui-agents-list-actions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2589",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-475",
       "feature": "ui-agent-management",
       "spec": "sdd/specs/ui-agent-management.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Final integration; depends on everything.",
       "assigned_to": null,
       "started_at": "2026-08-30T00:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2589-e2e-and-docs.md"
+      "completed_at": "2026-08-30T01:34:35+00:00",
+      "file": "sdd/tasks/completed/TASK-2589-e2e-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

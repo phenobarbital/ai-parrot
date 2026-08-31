@@ -28,29 +28,37 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
         self.runner = None
         self.site = None
         self.parent_app = parent_app
+        # Route prefix this server answers on. OAuthRoutesMixin._oauth_paths()
+        # reads it, so it must exist before any route registration.
+        self.base_path = config.base_path or "/"
 
         if config.enable_oauth:
             self._init_oauth_support()
 
     async def start(self):
-        """Start the HTTP server."""
-        # Determine strict router target
-        # If we have a parent app and base_path is root (empty or /), we attach directly
-        target_router = self.app.router
-        use_direct_attach = False
-        
-        if self.parent_app:
-            if not self.config.base_path or self.config.base_path == "/":
-                target_router = self.parent_app.router
-                use_direct_attach = True
+        """Start the HTTP server.
+
+        On a shared (parent) application the routes are registered directly on
+        the parent's router at ``base_path``. They used to be registered on
+        this server's own router at ``base_path`` *and* then mounted as a
+        sub-app at ``base_path`` too, which applied the prefix twice and
+        served the endpoint at ``/mcp/mcp`` — inconsistent with
+        ``SseMCPServer`` (which always attached directly) and outside the
+        auth-middleware exclusion list ``ParrotMCPServer`` registers.
+        """
+        # On a shared app, attach to the parent's router; standalone servers
+        # own self.app. Either way the routes carry the full base_path, so the
+        # endpoint is always reachable at exactly base_path.
+        target_router = (
+            self.parent_app.router if self.parent_app else self.app.router
+        )
 
         # Setup routes
         base_route = self.config.base_path
         if not base_route or base_route == "/":
             base_route = "/"
-            
-        target_router.add_post(base_route, self._handle_http_request)
-        target_router.add_get(f"{base_route.rstrip('/')}/info", self._handle_info)
+
+        self._register_routes(target_router, base_route)
 
         if self.config.enable_oauth:
             self._add_oauth_routes(target_router)
@@ -60,12 +68,7 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
         )
 
         if self.parent_app:
-            if not use_direct_attach:
-                # If running as sub-app with prefix, register the sub-app
-                self.parent_app.add_subapp(self.config.base_path, self.app)
-                self.logger.info("Mounted at %s", self.config.base_path)
-            else:
-                self.logger.info("Mounted at / (merged)")
+            self.logger.info("Mounted on the shared application at %s", base_route)
         else:
             # Run standalone
             self.runner = web.AppRunner(self.app)
@@ -87,6 +90,19 @@ class HttpMCPServer(OAuthRoutesMixin, RemoteMCPServerBase):
                 ssl_context=ssl_context
             )
             await self.site.start()
+
+    def _register_routes(self, router, base_route: str) -> None:
+        """Register the transport's HTTP routes.
+
+        Subclasses override this to change the route set without duplicating
+        the parent-app/sub-app/standalone mounting logic in ``start()``.
+
+        Args:
+            router: The aiohttp router to register routes on.
+            base_route: Normalized base path (never empty; ``/`` for root).
+        """
+        router.add_post(base_route, self._handle_http_request)
+        router.add_get(f"{base_route.rstrip('/')}/info", self._handle_info)
 
     async def stop(self):
         """Stop the HTTP server."""
@@ -197,6 +213,10 @@ class HttpMCPSession:
         self._base_headers = {}
         # OAuth2 provider (set when config.oauth2 is configured)
         self._oauth2_provider = None
+        # Streamable HTTP session state (captured from the initialize
+        # response when the server issues them)
+        self._mcp_session_id: Optional[str] = None
+        self._protocol_version: Optional[str] = None
 
     async def _setup_oauth2(self) -> None:
         """Set up MCP SDK OAuth2 provider when config.oauth2 is configured.
@@ -357,6 +377,9 @@ class HttpMCPSession:
                 "capabilities": {"tools": {}},
                 "clientInfo": {"name": "ai-parrot-mcp-client", "version": "1.0.0"}
             })
+            negotiated = (init_result or {}).get("protocolVersion")
+            if negotiated:
+                self._protocol_version = negotiated
 
             # Send initialized notification
             await self._send_notification("notifications/initialized")
@@ -377,11 +400,18 @@ class HttpMCPSession:
         try:
             self.logger.debug("HTTP sending: %s", json.dumps(request))
 
-            # Build per-request headers, injecting OAuth2 token when available
+            # Build per-request headers, injecting OAuth2 token when available.
+            # Accept advertises text/event-stream too — Streamable HTTP
+            # servers (e.g. Fireflies) return 406 without it, and both formats
+            # are read back (see _read_sse_response).
             req_headers: Dict[str, str] = {
                 "Content-Type": "application/json",
-                "Accept": "application/json",
+                "Accept": "application/json, text/event-stream",
             }
+            if self._mcp_session_id:
+                req_headers["Mcp-Session-Id"] = self._mcp_session_id
+            if self._protocol_version:
+                req_headers["MCP-Protocol-Version"] = self._protocol_version
             if self._oauth2_provider is not None:
                 token = await self._get_oauth2_token()
                 if token:
@@ -410,7 +440,22 @@ class HttpMCPSession:
                 if response.status != 200:
                     raise MCPConnectionError(f"HTTP error: {response.status}")
 
-                response_data = await response.json()
+                # Capture the Streamable HTTP session id issued on initialize
+                # and echo it on subsequent requests.
+                issued_session = response.headers.get("Mcp-Session-Id")
+                if issued_session:
+                    self._mcp_session_id = issued_session
+
+                content_type = response.headers.get("Content-Type", "")
+                if "text/event-stream" in content_type:
+                    # Streamable HTTP servers may answer a POST with an SSE
+                    # stream instead of a JSON body; read it until our own
+                    # request id comes back.
+                    response_data = await self._read_sse_response(
+                        response, request_id
+                    )
+                else:
+                    response_data = await response.json()
                 self.logger.debug("HTTP received: %s", json.dumps(response_data))
 
                 if "error" in response_data:
@@ -425,6 +470,65 @@ class HttpMCPSession:
                 raise
             raise MCPConnectionError(f"HTTP request failed: {e}") from e
 
+    async def _read_sse_response(
+        self, response: aiohttp.ClientResponse, request_id: int
+    ) -> Dict[str, Any]:
+        """Read a JSON-RPC response out of an SSE POST body.
+
+        Streamable HTTP servers may answer a request-bearing POST with a
+        ``text/event-stream`` body instead of ``application/json``. The stream
+        carries a JSON-RPC message — or a batch of them — per ``data:``
+        field; anything that is not the answer to ``request_id``
+        (server-initiated notifications, replies to other requests) is
+        skipped.
+
+        Args:
+            response: The open aiohttp response with an SSE body.
+            request_id: The JSON-RPC id whose response we are waiting for.
+
+        Returns:
+            The matching JSON-RPC response object.
+
+        Raises:
+            MCPConnectionError: If the stream ends without that response.
+        """
+        data_lines: list[str] = []
+
+        async for raw_line in response.content:
+            line = raw_line.decode("utf-8").rstrip("\r\n")
+
+            if line:
+                if line.startswith(":"):
+                    continue  # keep-alive comment
+                field, _, value = line.partition(":")
+                if field == "data":
+                    data_lines.append(value[1:] if value.startswith(" ") else value)
+                continue
+
+            # Blank line terminates the event — dispatch what we collected.
+            if not data_lines:
+                continue
+            payload = "\n".join(data_lines)
+            data_lines = []
+            try:
+                message = json.loads(payload)
+            except json.JSONDecodeError:
+                self.logger.debug("Skipping non-JSON SSE payload: %s", payload)
+                continue
+            self.logger.debug("HTTP received (SSE): %s", payload)
+            # A single data: field may carry one message or a batch.
+            candidates = message if isinstance(message, list) else [message]
+            for candidate in candidates:
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("id") == request_id
+                ):
+                    return candidate
+
+        raise MCPConnectionError(
+            f"SSE stream ended without a response to request {request_id}"
+        )
+
     async def _send_notification(self, method: str, params: dict = None):
         """Send JSON-RPC notification via HTTP."""
         notification = {"jsonrpc": "2.0", "method": method}
@@ -434,14 +538,20 @@ class HttpMCPSession:
         try:
             self.logger.debug("HTTP notification: %s", json.dumps(notification))
 
+            notif_headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+            if self._mcp_session_id:
+                notif_headers["Mcp-Session-Id"] = self._mcp_session_id
+            if self._protocol_version:
+                notif_headers["MCP-Protocol-Version"] = self._protocol_version
+
             async with self._session.post(
                 self.config.url,
                 json=notification,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                }
-            ) as response:
+                headers=notif_headers,
+            ):
                 # Notifications don't expect responses
                 pass
 
@@ -496,3 +606,5 @@ class HttpMCPSession:
 
         self._auth_handler = None
         self._base_headers.clear()
+        self._mcp_session_id = None
+        self._protocol_version = None

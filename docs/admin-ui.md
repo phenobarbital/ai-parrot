@@ -16,9 +16,10 @@ standing up a separate frontend deployment.
 - **Dashboard** (`/admin/dashboard`) — `GET /api/v1/admin/status`: version,
   uptime, agent counts (database/registry/loaded), crews, and per-dependency
   health (Postgres, Redis, the configured vector store), auto-refreshed.
-- **Agents** (`/admin/agents`) — read-only table over `GET /api/v1/bots`
-  (merged database + registry agents). No create/edit/delete — that is a
-  future spec.
+- **Agents** (`/admin/agents`) — table over `GET /api/v1/bots` (merged
+  database + registry agents), plus full CRUD for **database** agents
+  (FEAT-475 — see [Agent management](#agent-management) below). Registry
+  (YAML/code) agents stay read-only.
 
 ## Auth model
 
@@ -38,6 +39,113 @@ auth system for the Admin UI.
   response clears the stored session and redirects to `/admin/login`,
   preserving the page you were on via `?next=`.
 - Logout: `GET /api/v1/logout`.
+
+## Agent management
+
+**Feature**: FEAT-475 — UI Agent Management — Admin UI Agent CRUD
+
+The Agents page (`/admin/agents`) gets a **Create Agent** button, per-row
+**Edit**/**Delete** actions, and a **Show disabled** toggle. Every
+mutating affordance is **database-agent-only** (`source: "database"`) —
+registry (YAML/code) rows never get an Edit or Delete action, matching
+FEAT-468's original read-only design for that source.
+
+### Registry agents stay read-only
+
+Agents loaded from the repository's YAML/code registry (`source:
+"registry"`) cannot be created, edited, or deleted from the Admin UI —
+there is no affordance for it in the list, the detail dialog, or the
+form. Attempting to `DELETE` a repo-committed registry agent via the API
+directly returns `403` (`"...is a repo YAML/code agent and cannot be
+deleted via this endpoint."`); only **database** agents are managed here.
+
+### Creating and editing: the form
+
+`/admin/agents/new` (create) and `/admin/agents/<name>` (edit) open a
+six-tab form covering every user-editable `BotModel` field:
+
+| Tab | Fields |
+|---|---|
+| **General** | `chatbot_id` (edit only, read-only), `name` (read-only in edit — see below), `description`, `avatar`, `enabled`, `timezone`, `language`, `disclaimer` |
+| **Behavior** | `role`, `goal`, `backstory`, `rationale`, `capabilities`, `pre_instructions`, `system_prompt_template`, `human_prompt_template`, `prompt_config` |
+| **AI** | `llm` (from the catalog), plus `model`/`temperature`/`max_tokens`/`top_p`/`top_k` (stored inside `model_config`), and the raw `model_config` JSON |
+| **Capabilities** | `tools_enabled`, `auto_tool_detection`, `tool_threshold`, `tools` (checkbox list from `/api/v1/agent_tools` + a fallback text list for names not in the catalog), `operation_mode` (from the catalog), `use_kb`, `kb`, `custom_kbs` (suggestions from the catalog's knowledge-base classes) |
+| **Data & Memory** | `use_vector`, `vector_store_config`, `reranker_config`, `parent_searcher_config`, `context_search_limit`, `context_score_threshold`, `memory_type` (from the catalog), `memory_config`, `max_context_turns`, `use_conversation_history` |
+| **Advanced** | `bot_class` (plain text, default `BasicBot`), `permissions` (JSON — a dict or a list of rule objects) |
+
+Every JSONB field (`model_config`, `prompt_config`, `vector_store_config`,
+`reranker_config`, `parent_searcher_config`, `memory_config`,
+`permissions`) is edited through a validated JSON text editor — malformed
+JSON blocks Save with an inline error; there is no external JSON-editor
+dependency. Save is sticky across every tab, and a tab with an invalid
+field shows a red badge with its error count.
+
+#### Name slugification — read this before scripting against the API
+
+`name` is the agent's identity (it appears in the URL and in
+`BotManager`'s internal registration key). On **create**, the server
+**slugifies and deduplicates** whatever you type:
+
+- `PUT /api/v1/bots` with `name: "My Bot"` creates an agent named
+  `my-bot`, not `My Bot`. If `my-bot` is already taken, the server tries
+  `my-bot-2`, `my-bot-3`, etc.
+- The Admin UI **always navigates to the name the server actually
+  returned** (`response.name`), never the name you typed, and shows a
+  brief notice when the two differ.
+- **Renaming an existing agent is not supported** by the UI (v1) — `name`
+  is rendered read-only in the edit form and is never included in the
+  update request. The backend itself would technically apply a `name` key
+  sent via `POST /api/v1/bots/{name}`, but the UI deliberately never sends
+  one.
+
+### Disabled agents and "Show disabled"
+
+By default, `GET /api/v1/bots` — and therefore the Agents list — only
+returns **enabled** database agents (`enabled: true`), exactly as before
+FEAT-475. Toggling **Show disabled** on the list page adds
+`?include_disabled=true` to the request, which returns every database
+agent regardless of its `enabled` flag; disabled rows are shown with a
+muted style and a "disabled" badge. This lets you find and re-enable (or
+delete) an agent you previously toggled off from the form's General tab.
+
+### The catalog endpoint (`GET /api/v1/admin/catalog`)
+
+The form never hardcodes its option lists. `GET /api/v1/admin/catalog`
+(authenticated, like every other Admin UI JSON endpoint) returns:
+
+```json
+{
+  "llm_providers": ["anthropic", "google", "groq", "..."],
+  "operation_modes": ["conversational", "agentic", "adaptive"],
+  "memory_types": ["memory", "file", "redis"],
+  "knowledge_bases": [
+    {"class_path": "parrot.stores.kb.redis.RedisKnowledgeBase", "name": "RedisKnowledgeBase"}
+  ],
+  "bot_class_default": "BasicBot"
+}
+```
+
+- `llm_providers` is deduplicated by resolved client class (`SUPPORTED_CLIENTS`
+  has many alias keys — `claude`/`anthropic`, `claude-agent`/`claude-code`,
+  etc. — for the same underlying client; only the first alias per client
+  is listed). An agent's stored `llm` value is still shown/kept even when
+  it holds an alias absent from this list.
+- `knowledge_bases` lists the importable `AbstractKnowledgeBase`
+  subclasses (`RedisKnowledgeBase` always; `LocalKB` only when
+  `ai-parrot-embeddings` is installed — its absence degrades the catalog
+  gracefully rather than raising).
+- Like `/api/v1/admin/status`, this endpoint registers **unconditionally**
+  (even when the compiled `dist/` is absent) — it is UI-agnostic JSON, not
+  part of the SPA shell.
+
+### Tools list is now library-owned
+
+`GET /api/v1/agent_tools` (the tools picker's data source) is registered
+by **`BotManager.setup()`** itself — a plain `pip install ai-parrot-server`
+deployment has this route without needing repo-root `app.py` to register
+it separately (as it did before FEAT-475). The registration is
+idempotent: a host app that still registers the route itself does not
+crash on startup.
 
 ## Adopter view: running it
 
@@ -175,3 +283,128 @@ runs the frontend build automatically. This is caught by a **dual check**:
    - `Makefile`'s `release` target now depends on a new `build-server-ui`
      target (`make build-server-ui`) that does the same, before any
      `uv build --package ai-parrot-server` / `uv publish` step.
+
+## Agent Chat
+
+**Feature**: FEAT-476 — AgentChat Migration
+
+`/admin/agents/:name/chat` mounts a full-page chat with a single agent
+(vendored from the `navigator-frontend-next` reference frontend, spec
+`sdd/specs/agentchat-migration.spec.md`). It's also reachable without
+leaving the agents list: a **Chat** button on every enabled row (database
+*and* registry agents — registry agents just chat without a prompt
+library, since they carry no `chatbot_id`), and a **Chat** tab on the
+existing read-only agent detail dialog (mounting the same component's
+compact variant, canvas disabled).
+
+### Feature flags
+
+Eight build-time flags gate the heaviest surfaces (canvas/charts/maps,
+voice notes, the LiveKit avatar, datasets, and the rich HTML editor) so
+an adopter who doesn't need them isn't forced to ship the dependency.
+Every flag defaults to **on**; set any `PUBLIC_AGENTCHAT_*` env var to
+`false` or `0` (case-insensitive) before `pnpm build` to turn it off:
+
+| Env var | Default | Gates |
+|---|---|---|
+| `PUBLIC_AGENTCHAT_VOICE` | `true` | Voice notes (mic button, `VoiceNotePlayer`) |
+| `PUBLIC_AGENTCHAT_AVATAR` | `true` | LiveKit avatar viewers (`AvatarViewer`, `VoiceNativeAvatarViewer`) |
+| `PUBLIC_AGENTCHAT_MAPS` | `true` | `DataMap`/`StructuredMap` (Leaflet), `AppChartGeo`'s geo renderer |
+| `PUBLIC_AGENTCHAT_CHARTS` | `true` | `AppChart` (layerchart), `ECharts`, `DataChart`/`ChartConfigPanel` |
+| `PUBLIC_AGENTCHAT_CANVAS` | `true` | The whole canvas side panel (`CanvasPanel` and everything under it) |
+| `PUBLIC_AGENTCHAT_INFOGRAPHIC` | `true` | Infographic canvas + editor |
+| `PUBLIC_AGENTCHAT_DATASETS` | `true` | Dataset management modals |
+| `PUBLIC_AGENTCHAT_RICH_EDITOR` | `true` | The `@tiptap`-backed rich HTML editor (`InfographicEditor`, `AppTextEditor`'s rich mode) |
+
+These map 1:1 to `ui/vite.config.ts`'s `agentchatDefines()` (compiled into
+`__AGENTCHAT_<NAME>__` constants) and `ui/src/lib/features.ts`'s
+`features` object, which every gated component checks at the render/
+lazy-import site (`{#if features.x}{#await import(...)}`).
+
+**Lean-build recipe** — e.g. to drop maps support:
+
+```bash
+cd packages/ai-parrot-server/ui
+PUBLIC_AGENTCHAT_MAPS=false pnpm build
+```
+
+Neither `Makefile`'s `build-server-ui` target nor
+`.github/workflows/release.yml`'s `build-server` job needs a change for
+this — both just run a plain `pnpm build`, and since every flag defaults
+to `true`, that produces the same full build as before FEAT-476. Either
+would honour a `PUBLIC_AGENTCHAT_*` override if one were exported into
+their environment (Vite's `loadEnv` reads `process.env`), but neither
+sets one — see the size caveat below before relying on this for a
+smaller release artifact.
+
+**Known limitation — flags don't currently shrink `dist/`.** Verified
+while building this feature (vite@5.4.21 / rollup@4.63.0): each gated
+surface still lazy-loads as its **own chunk file** (confirmed —
+`AppChart-*.js`, `ECharts-*.js`, `DataMap-*.js`, `leaflet-src-*.js`,
+`livekit-client.esm-*.js`, `exceljs.min-*.js`, etc. are all separate from
+the main bundle either way), and that chunk is genuinely never *fetched*
+by the browser unless the corresponding `features.x` branch actually
+executes at runtime — the practically important property for a page's
+initial load cost. But Rollup still **emits** the chunk file into
+`dist/assets/` regardless of the flag, because `features.x` is an object
+*property* read (`Object.freeze({charts: __AGENTCHAT_CHARTS__, ...})`),
+and esbuild/Rollup's dead-code elimination only removes a
+compile-time-constant-guarded dynamic `import()` when the guard is a
+bare `const` binding, not a property read through an object — confirmed
+with an isolated repro during TASK-2595. Measured on this build (all
+eight flags on vs. all eight off): **`dist/assets` is 15,306,233 bytes /
+77 JS files in both cases — byte-for-byte identical.** Turning a flag off
+today only prevents the runtime fetch, not the on-disk/wheel footprint;
+shrinking the actual `dist/`/wheel size for a given flag combination
+would need `$lib/features.ts` reshaped to flat `const` exports (a
+cross-cutting change touching every `features.x` call site across the
+vendored tree) — tracked as a follow-up, not done in FEAT-476.
+
+### Offline icons
+
+Every icon the vendored tree renders (`<Icon icon="prefix:name" />` via
+`@iconify/svelte`) must resolve from a **locally bundled** collection —
+by default `@iconify/svelte` falls back to the public `api.iconify.design`
+API for unregistered icons, which breaks in an air-gapped deployment.
+`ui/src/lib/icons.ts` registers every prefix the tree actually uses
+(`mdi`, `ph`, `svg-spinners`, `tabler`, `lucide`) via `addCollection()`
+before the app mounts; `icons.test.ts` fails the build if a future
+vendored file introduces an unregistered prefix.
+
+### The `wsService` stub
+
+The vendored tree's realtime notifications (`answer_ready` events, etc.)
+go through `$lib/services/websocket-service.ts`'s `wsService` — in
+ai-parrot's Admin UI this is a **stub**: `connect()`/`subscribe()`/
+`onMessage()` exist (so every vendored call site compiles and runs
+verbatim) but no socket is ever opened (there is nothing on the ai-parrot
+backend for it to connect to yet). Chat still works end-to-end over the
+regular HTTP/streaming APIs; only the "push a notification without the
+tab being focused" enhancement is a no-op today.
+
+### Navigator-divergence policy
+
+The vendored tree under `ui/src/lib/components/agents/`,
+`ui/src/lib/components/charts/`, `ui/src/lib/components/visualizations/`,
+and `ui/src/lib/components/grid/` mirrors `navigator-frontend-next`'s
+**relative paths** file-for-file. Every file that needed a real edit
+(gating, an import re-pointed at the Admin UI's own `http.ts`/
+`auth-headers.ts`/stores, an added `features.x` check) carries a
+`// ai-parrot (FEAT-476 TASK-...): ...` header/inline comment explaining
+the change — logic is otherwise untouched ("no logic changes beyond
+gating/shims" per the migration spec). To back-port a navigator fix or
+check what diverged:
+
+```bash
+diff -r \
+  /path/to/navigator-frontend-next/src/lib/components/agents \
+  packages/ai-parrot-server/ui/src/lib/components/agents
+```
+
+A few files were intentionally vendored *ahead of* the task that spec
+originally assigned them to (e.g. `canvas-block-types.ts`,
+`config/regeneration-models.ts`) because an earlier task's component
+needed them unconditionally — see the FEAT-476 task history
+(`sdd/tasks/completed/TASK-2594-*.md` through `TASK-2597-*.md`) for the
+full list and rationale if a diff shows an unexpected file already
+present.

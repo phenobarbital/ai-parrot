@@ -75,4 +75,108 @@ describe("Router", () => {
 
     expect(router.path).toBe(`${LOGIN}?next=${encodeURIComponent("/admin")}`);
   });
+
+  describe(":param routes", () => {
+    const AGENTS_NEW = "/admin/agents/new";
+    const AGENT_PARAM = "/admin/agents/:name";
+
+    it("matches :param routes and exposes params", () => {
+      const router = new Router([
+        { path: AGENT_PARAM, component: async () => ({ default: null }) },
+      ]);
+
+      const matched = router.match("/admin/agents/helpdesk");
+
+      expect(matched?.path).toBe(AGENT_PARAM);
+      expect(router.params).toEqual({ name: "helpdesk" });
+    });
+
+    it("prefers a static route over a param route", () => {
+      const router = new Router([
+        { path: AGENT_PARAM, component: async () => ({ default: null }) },
+        { path: AGENTS_NEW, component: async () => ({ default: null }) },
+      ]);
+
+      const matched = router.match(AGENTS_NEW);
+
+      expect(matched?.path).toBe(AGENTS_NEW);
+      expect(router.params).toEqual({});
+    });
+
+    it("does not match a route with a different segment count", () => {
+      const router = new Router([
+        { path: AGENT_PARAM, component: async () => ({ default: null }) },
+      ]);
+
+      expect(router.match("/admin/agents")).toBeUndefined();
+      expect(router.match("/admin/agents/helpdesk/extra")).toBeUndefined();
+    });
+
+    it("decodes URI-encoded param segments", () => {
+      const router = new Router([
+        { path: AGENT_PARAM, component: async () => ({ default: null }) },
+      ]);
+
+      router.match("/admin/agents/my%20bot");
+
+      expect(router.params).toEqual({ name: "my bot" });
+    });
+  });
+
+  describe("beforeNavigate", () => {
+    it("beforeNavigate returning false cancels navigation", () => {
+      const router = new Router([
+        { path: DASHBOARD, component: async () => ({ default: null }) },
+      ]);
+      router.beforeNavigate = () => false;
+
+      router.navigate(DASHBOARD);
+
+      expect(router.path).not.toBe(DASHBOARD);
+    });
+
+    it("beforeNavigate returning true allows navigation", () => {
+      const router = new Router([
+        { path: DASHBOARD, component: async () => ({ default: null }) },
+      ]);
+      router.beforeNavigate = () => true;
+
+      router.navigate(DASHBOARD);
+
+      expect(router.path).toBe(DASHBOARD);
+    });
+
+    it("an async beforeNavigate defers the commit until it resolves true", async () => {
+      const router = new Router([
+        { path: DASHBOARD, component: async () => ({ default: null }) },
+      ]);
+      let resolveHook: (value: boolean) => void = () => {};
+      router.beforeNavigate = () =>
+        new Promise<boolean>((resolve) => {
+          resolveHook = resolve;
+        });
+
+      router.navigate(DASHBOARD);
+      expect(router.path).not.toBe(DASHBOARD);
+
+      resolveHook(true);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(router.path).toBe(DASHBOARD);
+    });
+
+    it("guard redirect bypasses beforeNavigate", () => {
+      const router = new Router([
+        { path: DASHBOARD, component: async () => ({ default: null }), requiresAuth: true },
+      ]);
+      router.path = DASHBOARD;
+      router.beforeNavigate = () => false;
+
+      const allowed = router.guard(DASHBOARD);
+
+      expect(allowed).toBe(false);
+      expect(router.path).toBe(`${LOGIN}?next=${encodeURIComponent(DASHBOARD)}`);
+    });
+  });
 });

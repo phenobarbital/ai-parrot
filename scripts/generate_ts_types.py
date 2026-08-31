@@ -28,6 +28,7 @@ install elsewhere on PYTHONPATH, e.g.:
 this script does not import pytest so it needs the explicit PYTHONPATH
 when invoked directly outside a test run.)
 """
+
 from __future__ import annotations
 
 import json
@@ -51,7 +52,20 @@ def _models() -> dict[str, type[BaseModel]]:
     Returns:
         Mapping of the TypeScript-facing model name to its Pydantic class.
     """
-    from parrot.server.ui.models import BotAgentItem, BotsListResponse
+    from parrot.server.ui.catalog import AdminCatalog, KnowledgeBaseOption
+    from parrot.server.ui.chat_models import (
+        AgentChatMetadata,
+        AgentChatResponse,
+        AgentToolCall,
+    )
+    from parrot.server.ui.models import (
+        BotAgentItem,
+        BotMutationResponse,
+        BotsListResponse,
+        BotWritePayload,
+        ToolInfo,
+        ToolsListResponse,
+    )
     from parrot.server.ui.status import AdminStatus, AgentCounts, DependencyHealth
 
     return {
@@ -60,6 +74,15 @@ def _models() -> dict[str, type[BaseModel]]:
         "DependencyHealth": DependencyHealth,
         "BotsListResponse": BotsListResponse,
         "BotAgentItem": BotAgentItem,
+        "AdminCatalog": AdminCatalog,
+        "KnowledgeBaseOption": KnowledgeBaseOption,
+        "ToolInfo": ToolInfo,
+        "ToolsListResponse": ToolsListResponse,
+        "BotWritePayload": BotWritePayload,
+        "BotMutationResponse": BotMutationResponse,
+        "AgentChatResponse": AgentChatResponse,
+        "AgentChatMetadata": AgentChatMetadata,
+        "AgentToolCall": AgentToolCall,
     }
 
 
