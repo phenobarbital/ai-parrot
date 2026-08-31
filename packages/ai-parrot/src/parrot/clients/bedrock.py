@@ -83,6 +83,30 @@ def rejects_sampling_params(model_id: str) -> bool:
     return any(family in (model_id or "") for family in NO_SAMPLING_MODEL_FAMILIES)
 
 
+def _requires_adaptive_thinking(model_id: str) -> bool:
+    """Return True when *model_id* requires the ``"adaptive"`` thinking shape.
+
+    FEAT-482 Module 3: the same 2026-generation model families that reject
+    legacy sampling parameters (see :func:`rejects_sampling_params`) also
+    reject the legacy extended-thinking shape —
+    ``additionalModelRequestFields.thinking = {"type": "enabled",
+    "budget_tokens": N}`` — returning ``ValidationException`` / HTTP 400.
+    They require ``{"type": "adaptive"}`` instead (confirmed against AWS's
+    Bedrock Converse API documentation for Claude adaptive thinking,
+    2026-08-31). Amazon Nova and older Anthropic families are unaffected
+    and keep the ``budget_tokens`` shape byte-identically.
+
+    Args:
+        model_id: A Bedrock model ID, already translated (it may carry a
+            region prefix, a version suffix, or be a full ARN).
+
+    Returns:
+        ``True`` when the ``"adaptive"`` thinking shape must be used
+        instead of ``budget_tokens`` for this model.
+    """
+    return rejects_sampling_params(model_id)
+
+
 class _StaticBedrockTokenProvider:
     """Serves a fixed Bedrock API key as a botocore auth token.
 
@@ -733,6 +757,13 @@ class BedrockConverseBase(AbstractClient):
                 ``signature``) are preserved verbatim across tool-use
                 rounds and are available on the returned ``AIMessage`` via
                 ``raw_response`` (no dedicated field — see spec §6).
+                FEAT-482 Module 3: on 2026-generation Anthropic models
+                that reject ``budget_tokens`` (Opus 5, Fable 5, Opus
+                4.8/4.7, Sonnet 5, Mythos 5 — see
+                :func:`_requires_adaptive_thinking`), the value is used
+                only as an on/off switch and the request instead carries
+                ``{"type": "adaptive"}``. Amazon Nova and older Anthropic
+                models keep the ``budget_tokens`` shape byte-identically.
             output_schema: Optional raw JSON Schema dict. When provided, a
                 schema-in-system-prompt instruction is injected (Module 5)
                 and the final response text is parsed as JSON into
@@ -829,10 +860,21 @@ class BedrockConverseBase(AbstractClient):
 
         additional_fields: Dict[str, Any] = {}
         if thinking_budget:
-            additional_fields["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": thinking_budget,
-            }
+            if _requires_adaptive_thinking(resolved_model):
+                # FEAT-482 Module 3: modern Anthropic models (Opus 5, Fable
+                # 5, Opus 4.8/4.7, Sonnet 5) 400 on the legacy
+                # ``budget_tokens`` shape and require ``{"type":
+                # "adaptive"}`` instead. Effort is deliberately left at
+                # Bedrock's own default rather than threading a new
+                # ``effort`` parameter through this call — the caller's
+                # ``thinking_budget`` value has no adaptive-shape
+                # equivalent to carry.
+                additional_fields["thinking"] = {"type": "adaptive"}
+            else:
+                additional_fields["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": thinking_budget,
+                }
         if prompt_cache:
             additional_fields["promptCaching"] = {"cachePoint": {"type": "default"}}
         if additional_fields:
@@ -1080,7 +1122,9 @@ class BedrockConverseBase(AbstractClient):
 
         Args:
             thinking_budget: See :meth:`ask` — enables extended thinking via
-                ``additionalModelRequestFields.thinking`` (Module 5).
+                ``additionalModelRequestFields.thinking`` (Module 5),
+                including the FEAT-482 Module 3 adaptive-shape selection
+                for 2026-generation Anthropic models.
             guardrail_id: Per-call guardrail identifier override. Falls back
                 to the identifier passed to ``__init__``.
             guardrail_version: Per-call guardrail version override. Falls
@@ -1128,9 +1172,15 @@ class BedrockConverseBase(AbstractClient):
             payload["system"] = [{"text": resolved_system_prompt}]
 
         if thinking_budget:
-            payload["additionalModelRequestFields"] = {
-                "thinking": {"type": "enabled", "budget_tokens": thinking_budget}
-            }
+            if _requires_adaptive_thinking(resolved_model):
+                # FEAT-482 Module 3: see the identical branch in ask().
+                payload["additionalModelRequestFields"] = {
+                    "thinking": {"type": "adaptive"}
+                }
+            else:
+                payload["additionalModelRequestFields"] = {
+                    "thinking": {"type": "enabled", "budget_tokens": thinking_budget}
+                }
 
         resolved_guardrail_id = guardrail_id or self._guardrail_id
         resolved_guardrail_version = guardrail_version or self._guardrail_version
