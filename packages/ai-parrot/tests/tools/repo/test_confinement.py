@@ -1,4 +1,5 @@
 """Unit tests for the confinement core and secret deny-list (FEAT-484)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,20 +46,43 @@ class TestResolveWithinRoot:
 
 
 class TestIsSecretPath:
-    @pytest.mark.parametrize("p", [
-        ".env", ".env.production", "server.pem", "server.key",
-        "id_rsa", "id_rsa.pub", "id_ed25519", "config/.env",
-        "wiki.local.json", "credentials", ".netrc", ".pgpass",
-        "a.p12", "a.pfx", "a.keystore", "a.jks", ".ENV",
-    ])
+    @pytest.mark.parametrize(
+        "p",
+        [
+            ".env",
+            ".env.production",
+            "server.pem",
+            "server.key",
+            "id_rsa",
+            "id_rsa.pub",
+            "id_ed25519",
+            "config/.env",
+            "wiki.local.json",
+            "credentials",
+            ".netrc",
+            ".pgpass",
+            "a.p12",
+            "a.pfx",
+            "a.keystore",
+            "a.jks",
+            ".ENV",
+        ],
+    )
     def test_denied(self, p):
         assert is_secret_path(p) is True
 
-    @pytest.mark.parametrize("p", [
-        ".env.example", ".env.sample", "server.pem.example",
-        "server.key.template", "credentials.dist",
-        "pkg/sub/mod.py", "README.md",
-    ])
+    @pytest.mark.parametrize(
+        "p",
+        [
+            ".env.example",
+            ".env.sample",
+            "server.pem.example",
+            "server.key.template",
+            "credentials.dist",
+            "pkg/sub/mod.py",
+            "README.md",
+        ],
+    )
     def test_allowed(self, p):
         assert is_secret_path(p) is False
 

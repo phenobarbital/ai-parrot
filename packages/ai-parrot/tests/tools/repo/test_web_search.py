@@ -1,4 +1,5 @@
 """Unit tests for the opt-in `web_search` tool (FEAT-484)."""
+
 from __future__ import annotations
 
 import builtins
@@ -24,6 +25,7 @@ class TestWebSearchExposure:
             if "ddgsearch" in name:
                 raise ImportError("no ddgs")
             return real(name, *a, **k)
+
         monkeypatch.setattr(builtins, "__import__", _fail)
 
         tk = ReadOnlyRepoToolkit(repo_root=temp_repo, enable_web_search=True)

@@ -4,6 +4,7 @@ See ``sdd/specs/readonly-repo-toolkit.spec.md`` (FEAT-484) for the full
 design. This package exposes ``ReadOnlyRepoToolkit`` plus the confinement
 core and shared data contracts used across every tool.
 """
+
 from __future__ import annotations
 
 from .confinement import (

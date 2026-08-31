@@ -1,4 +1,5 @@
 """Unit tests for graph-backed `search_code` / `related_code` (FEAT-484)."""
+
 from __future__ import annotations
 
 import pathlib
@@ -15,11 +16,16 @@ def graph_toolkit(temp_repo: pathlib.Path, stub_wiki_store) -> ReadOnlyRepoToolk
 
 class TestSearchCodeHappyPath:
     async def test_queries_plane_not_grep(
-        self, graph_toolkit, stub_wiki_store, monkeypatch,
+        self,
+        graph_toolkit,
+        stub_wiki_store,
+        monkeypatch,
     ):
         """Spec §5: no grep subprocess on the happy path."""
+
         async def _boom(*a, **k):
             raise AssertionError("grep subprocess spawned on the happy path")
+
         monkeypatch.setattr(graph_toolkit, "_run_argv", _boom)
 
         out = await graph_toolkit.search_code("alpha")
@@ -31,15 +37,16 @@ class TestSearchCodeHappyPath:
     async def test_field_mapping(self, graph_toolkit):
         out = await graph_toolkit.search_code("alpha")
         hit = out.hits[0]
-        assert hit.page_id == "file:pkg/sub/mod.py"   # from node_id
-        assert hit.path == "pkg/sub/mod.py"           # from title
-        assert hit.summary                             # from snippet
-        assert hit.outline == []                       # not available
-        assert hit.approx_tokens >= 0                  # from token_count
+        assert hit.page_id == "file:pkg/sub/mod.py"  # from node_id
+        assert hit.path == "pkg/sub/mod.py"  # from title
+        assert hit.summary  # from snippet
+        assert hit.outline == []  # not available
+        assert hit.approx_tokens >= 0  # from token_count
 
     async def test_respects_token_budget(self, temp_repo, stub_wiki_store):
         tk = ReadOnlyRepoToolkit(
-            repo_root=temp_repo, wiki_store=stub_wiki_store,
+            repo_root=temp_repo,
+            wiki_store=stub_wiki_store,
             search_budget_tokens=50,
         )
         out = await tk.search_code("alpha")
@@ -47,7 +54,9 @@ class TestSearchCodeHappyPath:
 
     async def test_top_k_clamped(self, temp_repo, stub_wiki_store):
         tk = ReadOnlyRepoToolkit(
-            repo_root=temp_repo, wiki_store=stub_wiki_store, max_search_hits=2,
+            repo_root=temp_repo,
+            wiki_store=stub_wiki_store,
+            max_search_hits=2,
         )
         out = await tk.search_code("alpha", top_k=100)
         assert len(out.hits) <= 2
@@ -56,8 +65,7 @@ class TestSearchCodeHappyPath:
 class TestSearchMode:
     def test_mode_in_tool_schema(self, graph_toolkit):
         """§8 Q2: the model can see and set `mode`."""
-        tool = next(t for t in graph_toolkit.get_tools()
-                    if t.name == "search_code")
+        tool = next(t for t in graph_toolkit.get_tools() if t.name == "search_code")
         schema = str(getattr(tool, "args_schema", "")) + str(tool.__dict__)
         assert "mode" in schema
 
@@ -69,6 +77,7 @@ class TestSearchMode:
             async def search(self, query, mode="combined", **kw):
                 seen["mode"] = mode
                 return []
+
         monkeypatch.setattr(search_mod, "WikiCombinedSearch", _Spy)
         tk = ReadOnlyRepoToolkit(repo_root=temp_repo, wiki_store=stub_wiki_store)
         await tk.search_code("alpha", mode="combined")
@@ -76,7 +85,8 @@ class TestSearchMode:
 
     async def test_mode_defaults_to_constructor(self, temp_repo, stub_wiki_store):
         tk = ReadOnlyRepoToolkit(
-            repo_root=temp_repo, wiki_store=stub_wiki_store,
+            repo_root=temp_repo,
+            wiki_store=stub_wiki_store,
             default_search_mode="combined",
         )
         out = await tk.search_code("alpha")
@@ -92,16 +102,14 @@ class TestSearchMode:
 
 class TestDegradation:
     async def test_degrades_when_plane_missing(self, temp_repo, caplog):
-        tk = ReadOnlyRepoToolkit(repo_root=temp_repo)   # no store, no plane
+        tk = ReadOnlyRepoToolkit(repo_root=temp_repo)  # no store, no plane
         out = await tk.search_code("def alpha")
         assert out.degraded is True
         assert out.degraded_reason
-        assert any("degrading" in r.message.lower() or "degrad" in r.message.lower()
-                   for r in caplog.records)
+        assert any("degrading" in r.message.lower() or "degrad" in r.message.lower() for r in caplog.records)
 
     async def test_degrades_when_plane_raises(self, temp_repo, broken_wiki_store):
-        tk = ReadOnlyRepoToolkit(repo_root=temp_repo,
-                                 wiki_store=broken_wiki_store)
+        tk = ReadOnlyRepoToolkit(repo_root=temp_repo, wiki_store=broken_wiki_store)
         out = await tk.search_code("def alpha")
         assert out.degraded is True
         assert "failed" in out.degraded_reason.lower() or out.degraded_reason

@@ -1,4 +1,5 @@
 """Unit tests for `ReadOnlyRepoToolkit` — `read_file` / `list_files` (FEAT-484)."""
+
 from __future__ import annotations
 
 import re
@@ -20,12 +21,15 @@ def toolkit(temp_repo: Path) -> ReadOnlyRepoToolkit:
 
 
 class TestReadOnlyByConstruction:
-    @pytest.mark.parametrize("kwargs", [
-        {},
-        {"enable_web_search": True},
-        {"deny_secret_files": False},
-        {"enable_web_search": True, "deny_secret_files": False},
-    ])
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {},
+            {"enable_web_search": True},
+            {"deny_secret_files": False},
+            {"enable_web_search": True, "deny_secret_files": False},
+        ],
+    )
     def test_no_write_tool_under_any_config(self, temp_repo: Path, kwargs):
         tk = ReadOnlyRepoToolkit(repo_root=temp_repo, **kwargs)
         names = [t.name for t in tk.get_tools()]
@@ -35,9 +39,14 @@ class TestReadOnlyByConstruction:
         # Snapshot as of TASK-2642: TASK-2643 adds the opt-in `web_search`
         # entry to this set (only when enable_web_search=True).
         assert {t.name for t in toolkit.get_tools()} == {
-            "read_file", "list_files", "grep_files",
-            "git_log", "git_show", "git_blame",
-            "search_code", "related_code",
+            "read_file",
+            "list_files",
+            "grep_files",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "search_code",
+            "related_code",
         }
 
 
@@ -51,8 +60,7 @@ class TestReadFile:
         out = await toolkit.read_file("pkg/sub/mod.py", start=1, end=1)
         assert out.content.strip() == "def alpha():"
 
-    @pytest.mark.parametrize("bad", ["../../etc/passwd", "/etc/passwd",
-                                     "escape/secret.txt"])
+    @pytest.mark.parametrize("bad", ["../../etc/passwd", "/etc/passwd", "escape/secret.txt"])
     async def test_rejects_outside_without_raising(self, toolkit, bad):
         out = await toolkit.read_file(bad)
         assert isinstance(out, RepoToolError)

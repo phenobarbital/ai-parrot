@@ -1,4 +1,5 @@
 """Unit tests for worktree-aware wiki plane resolution (FEAT-484)."""
+
 from __future__ import annotations
 
 import json
@@ -35,10 +36,15 @@ class TestOpenPlane:
 
     async def test_unbuilt_plane_returns_reason(self, temp_repo: Path):
         (temp_repo / ".parrot").mkdir(exist_ok=True)
-        (temp_repo / ".parrot" / "wiki.json").write_text(json.dumps({
-            "wiki_name": "test", "backend": "sqlite",
-            "storage_dir": ".parrot/wiki",
-        }))
+        (temp_repo / ".parrot" / "wiki.json").write_text(
+            json.dumps(
+                {
+                    "wiki_name": "test",
+                    "backend": "sqlite",
+                    "storage_dir": ".parrot/wiki",
+                }
+            )
+        )
         store, reason = await open_plane(temp_repo)
         assert store is None
         assert "not built" in reason.lower() or reason
@@ -46,23 +52,35 @@ class TestOpenPlane:
     async def test_never_builds(self, temp_repo: Path):
         """Spec §1 Non-Goals: this toolkit is a pure consumer."""
         (temp_repo / ".parrot").mkdir(exist_ok=True)
-        (temp_repo / ".parrot" / "wiki.json").write_text(json.dumps({
-            "wiki_name": "test", "backend": "sqlite",
-            "storage_dir": ".parrot/wiki",
-        }))
+        (temp_repo / ".parrot" / "wiki.json").write_text(
+            json.dumps(
+                {
+                    "wiki_name": "test",
+                    "backend": "sqlite",
+                    "storage_dir": ".parrot/wiki",
+                }
+            )
+        )
         await open_plane(temp_repo)
         assert not (temp_repo / ".parrot" / "wiki" / "wiki.db").exists()
 
     async def test_worktree_resolves_to_main_config(
-        self, temp_repo, temp_worktree,
+        self,
+        temp_repo,
+        temp_worktree,
     ):
         """A config present ONLY in the main checkout is still found from
         inside the worktree."""
         (temp_repo / ".parrot").mkdir(exist_ok=True)
-        (temp_repo / ".parrot" / "wiki.json").write_text(json.dumps({
-            "wiki_name": "mainplane", "backend": "sqlite",
-            "storage_dir": ".parrot/wiki",
-        }))
+        (temp_repo / ".parrot" / "wiki.json").write_text(
+            json.dumps(
+                {
+                    "wiki_name": "mainplane",
+                    "backend": "sqlite",
+                    "storage_dir": ".parrot/wiki",
+                }
+            )
+        )
         _store, reason = await open_plane(temp_worktree)
         # Either it opened the main plane, or it reported the MAIN path as
         # unbuilt — never the worktree path.
@@ -72,6 +90,7 @@ class TestOpenPlane:
 class TestAddsNoTool:
     def test_toolkit_tool_set_unchanged(self, temp_repo: Path):
         from parrot.tools.repo import ReadOnlyRepoToolkit
+
         names = {t.name for t in ReadOnlyRepoToolkit(repo_root=temp_repo).get_tools()}
         assert "resolve_plane_root" not in names
         assert "open_plane" not in names

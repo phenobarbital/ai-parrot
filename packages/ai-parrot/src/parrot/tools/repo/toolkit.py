@@ -11,6 +11,7 @@ Read-only by construction: this class defines no mutating method, so
 turns every public ``async def`` into an LLM-callable tool — has nothing
 to expose. There is no flag that adds write capability.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,10 +58,19 @@ from .schemas import (
 )
 
 #: Directories never descended into by `list_files`, regardless of depth.
-_SKIP_DIRS = frozenset({
-    ".git", ".venv", "__pycache__", "node_modules", "build", "dist",
-    ".mypy_cache", ".ruff_cache", ".pytest_cache",
-})
+_SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "__pycache__",
+        "node_modules",
+        "build",
+        "dist",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+    }
+)
 
 
 class ReadOnlyRepoToolkit(AbstractToolkit):
@@ -167,7 +177,10 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
     @tool_schema(ReadFileInput)
     async def read_file(
-        self, path: str, start: int = 1, end: int = 0,
+        self,
+        path: str,
+        start: int = 1,
+        end: int = 0,
     ) -> RepoReadResult | RepoToolError:
         """Read a text file from the repository, optionally a line range.
 
@@ -203,20 +216,15 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         if start > 1 or end:
             lines = raw.splitlines(keepends=True)
             end_index = end if end else len(lines)
-            raw = "".join(lines[max(start - 1, 0):end_index])
+            raw = "".join(lines[max(start - 1, 0) : end_index])
 
         content = raw
         truncated = False
         encoded = content.encode("utf-8", errors="replace")
         if len(encoded) > self._max_result_bytes:
             truncated = True
-            content = encoded[: self._max_result_bytes].decode(
-                "utf-8", errors="ignore"
-            )
-            content += (
-                f"\n... [truncated: {total_bytes} bytes total, "
-                f"{self._max_result_bytes} returned] ...\n"
-            )
+            content = encoded[: self._max_result_bytes].decode("utf-8", errors="ignore")
+            content += f"\n... [truncated: {total_bytes} bytes total, " f"{self._max_result_bytes} returned] ...\n"
 
         return RepoReadResult(
             path=self._rel(target),
@@ -324,7 +332,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             self._kill(proc)
             await proc.wait()
             return {
-                "exit_code": -1, "stdout": "", "stderr": "timeout",
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": "timeout",
                 "timed_out": True,
             }
         except asyncio.CancelledError:
@@ -368,7 +378,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                 continue
             hits.append(
                 RepoSearchHit(
-                    page_id="", path=rel_path, summary=content.strip()[:300],
+                    page_id="",
+                    path=rel_path,
+                    summary=content.strip()[:300],
                     score=0.0,
                 )
             )
@@ -398,7 +410,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                     if pattern in line:
                         hits.append(
                             RepoSearchHit(
-                                page_id="", path=rel, summary=line.strip()[:300],
+                                page_id="",
+                                path=rel,
+                                summary=line.strip()[:300],
                                 score=0.0,
                             )
                         )
@@ -407,7 +421,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
     @tool_schema(GrepFilesInput)
     async def grep_files(
-        self, pattern: str, glob: str = "",
+        self,
+        pattern: str,
+        glob: str = "",
     ) -> RepoSearchResult | RepoToolError:
         """Search the repository for a literal string.
 
@@ -427,8 +443,16 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         """
         if self._is_git_work_tree():
             argv = [
-                "git", "grep", "--line-number", "--no-color", "-I",
-                "--untracked", "-F", "-e", pattern, "--",
+                "git",
+                "grep",
+                "--line-number",
+                "--no-color",
+                "-I",
+                "--untracked",
+                "-F",
+                "-e",
+                pattern,
+                "--",
             ]
             if glob:
                 argv.append(f":(glob){glob}")
@@ -439,7 +463,8 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             elif result["exit_code"] not in (0, 1):
                 self.logger.warning(
                     "grep_files: git grep failed (%s): %s",
-                    result["exit_code"], result["stderr"],
+                    result["exit_code"],
+                    result["stderr"],
                 )
                 hits = []
             else:
@@ -451,7 +476,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
     @tool_schema(GitLogInput)
     async def git_log(
-        self, path: str = "", limit: int = 20,
+        self,
+        path: str = "",
+        limit: int = 20,
     ) -> dict[str, Any] | RepoToolError:
         """List recent commits, optionally only those touching one path.
 
@@ -468,7 +495,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             or RepoToolError when the path is refused or git is unavailable.
         """
         argv = [
-            "git", "log", f"--max-count={min(max(limit, 1), 200)}",
+            "git",
+            "log",
+            f"--max-count={min(max(limit, 1), 200)}",
             f"--format={LOG_FORMAT}",
         ]
         if path:
@@ -488,7 +517,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             return RepoToolError(error="timeout", detail="git log timed out")
         if res["exit_code"] != 0:
             return RepoToolError(
-                error="git_error", detail=res["stderr"][:500], path=path,
+                error="git_error",
+                detail=res["stderr"][:500],
+                path=path,
             )
         return {"commits": parse_log(res["stdout"])}
 
@@ -521,22 +552,25 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             return RepoToolError(error="timeout", detail="git show timed out")
         if res["exit_code"] != 0:
             return RepoToolError(
-                error="git_error", detail=res["stderr"][:500], path=ref,
+                error="git_error",
+                detail=res["stderr"][:500],
+                path=ref,
             )
 
         commit_info, stat_text = split_show_output(res["stdout"])
         truncated = False
         if len(stat_text.encode("utf-8", "replace")) > self._max_result_bytes:
             truncated = True
-            stat_text = stat_text.encode("utf-8", "replace")[
-                : self._max_result_bytes
-            ].decode("utf-8", "ignore")
+            stat_text = stat_text.encode("utf-8", "replace")[: self._max_result_bytes].decode("utf-8", "ignore")
             stat_text += "\n... [truncated] ...\n"
         return {"commit_info": commit_info, "stat": stat_text, "truncated": truncated}
 
     @tool_schema(GitBlameInput)
     async def git_blame(
-        self, path: str, start: int = 1, end: int = 0,
+        self,
+        path: str,
+        start: int = 1,
+        end: int = 0,
     ) -> dict[str, Any] | RepoToolError:
         """Show per-line commit attribution for a file.
 
@@ -572,7 +606,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             return RepoToolError(error="timeout", detail="git blame timed out")
         if res["exit_code"] != 0:
             return RepoToolError(
-                error="git_error", detail=res["stderr"][:500], path=path,
+                error="git_error",
+                detail=res["stderr"][:500],
+                path=path,
             )
         return {"lines": parse_blame(res["stdout"])}
 
@@ -596,7 +632,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         the operator.
         """
         self.logger.warning(
-            "search_code degrading to grep_files: %s (query=%r)", reason, query,
+            "search_code degrading to grep_files: %s (query=%r)",
+            reason,
+            query,
         )
         fallback = await self.grep_files(query)
         if isinstance(fallback, RepoSearchResult):
@@ -604,7 +642,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             fallback.degraded_reason = reason
             return fallback
         return RepoSearchResult(
-            query=query, hits=[], degraded=True,
+            query=query,
+            hits=[],
+            degraded=True,
             degraded_reason=f"{reason}; grep fallback also failed",
         )
 
@@ -652,7 +692,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
         try:
             search = wiki_search_module.WikiCombinedSearch(
-                pageindex_toolkit=None, graphindex_toolkit=None, store=store,
+                pageindex_toolkit=None,
+                graphindex_toolkit=None,
+                store=store,
             )
             results = await search.search(
                 query,
@@ -670,17 +712,17 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             # failed underneath us" — treat both as degraded rather than
             # returning a silently-empty structural result.
             return await self._degrade(
-                query, note or "plane query returned no results",
+                query,
+                note or "plane query returned no results",
             )
 
         packed = pack_results(results, budget_tokens=self._search_budget_tokens)
-        hits = [
-            map_search_hit(r)
-            for r in results[: packed.results_packed or len(results)]
-        ]
+        hits = [map_search_hit(r) for r in results[: packed.results_packed or len(results)]]
         return RepoSearchResult(
-            query=query, hits=hits,
-            degraded=bool(note), degraded_reason=note,
+            query=query,
+            hits=hits,
+            degraded=bool(note),
+            degraded_reason=note,
             total_tokens=packed.tokens_used,
         )
 
@@ -732,7 +774,9 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         except ImportError as exc:
             self.logger.warning("web_search unavailable: %s", exc)
             return {
-                "error": "web_search_unavailable", "detail": str(exc), "results": [],
+                "error": "web_search_unavailable",
+                "detail": str(exc),
+                "results": [],
             }
         try:
             tool = DdgSearchTool()
@@ -741,5 +785,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("web_search failed: %s", exc)
             return {
-                "error": "web_search_failed", "detail": str(exc), "results": [],
+                "error": "web_search_failed",
+                "detail": str(exc),
+                "results": [],
             }

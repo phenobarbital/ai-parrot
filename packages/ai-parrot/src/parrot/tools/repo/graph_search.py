@@ -15,6 +15,7 @@ This module never builds the plane (spec §1 Non-Goals: "this toolkit is a
 pure consumer") and never raises: any failure degrades to a `(None,
 reason)` pair or, for `resolve_plane_root`, to `repo_root` unchanged.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -72,7 +73,8 @@ async def resolve_plane_root(repo_root: Path) -> Path:
         if plane_root != root:
             logger.info(
                 "resolve_plane_root: %s is a worktree — sharing the plane at %s",
-                root, plane_root,
+                root,
+                plane_root,
             )
         return plane_root
     logger.debug("resolve_plane_root: not a git repo — using %s", root)
@@ -105,9 +107,7 @@ async def open_plane(repo_root: Path) -> tuple[Any | None, str]:
         plane_root = await resolve_plane_root(repo_root)
         config: WikiProjectConfig = load_project_config(plane_root)
         if not config.is_built(plane_root):
-            return None, (
-                f"wiki plane not built at {config.storage_path(plane_root)}"
-            )
+            return None, (f"wiki plane not built at {config.storage_path(plane_root)}")
         store = create_wiki_store(
             config.storage_path(plane_root),
             wiki_name=config.wiki_name,

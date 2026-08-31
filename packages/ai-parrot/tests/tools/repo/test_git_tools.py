@@ -1,4 +1,5 @@
 """Unit tests for the local git history tools (FEAT-484)."""
+
 from __future__ import annotations
 
 import pathlib
@@ -17,17 +18,36 @@ def toolkit(temp_repo: pathlib.Path) -> ReadOnlyRepoToolkit:
 
 
 class TestValidateRef:
-    @pytest.mark.parametrize("ref", [
-        "HEAD", "HEAD~3", "main", "origin/main", "v1.2.3",
-        "a" * 40, "HEAD^", "refs/heads/dev",
-    ])
+    @pytest.mark.parametrize(
+        "ref",
+        [
+            "HEAD",
+            "HEAD~3",
+            "main",
+            "origin/main",
+            "v1.2.3",
+            "a" * 40,
+            "HEAD^",
+            "refs/heads/dev",
+        ],
+    )
     def test_accepts(self, ref):
         assert validate_ref(ref) == ref
 
-    @pytest.mark.parametrize("ref", [
-        "", "   ", "--upload-pack=/bin/sh", "-x", "--output=/tmp/x",
-        "HEAD; rm -rf /", "a b", "$(whoami)", "`id`",
-    ])
+    @pytest.mark.parametrize(
+        "ref",
+        [
+            "",
+            "   ",
+            "--upload-pack=/bin/sh",
+            "-x",
+            "--output=/tmp/x",
+            "HEAD; rm -rf /",
+            "a b",
+            "$(whoami)",
+            "`id`",
+        ],
+    )
     def test_rejects(self, ref):
         with pytest.raises(InvalidRefError):
             validate_ref(ref)
@@ -36,8 +56,7 @@ class TestValidateRef:
 class TestParseLog:
     def test_handles_awkward_subjects(self):
         us, rs = "\x1f", "\x1e"
-        raw = us.join(["sha1", "A U Thor", "2026-01-01T00:00:00+00:00",
-                       "fix: a | b\twith tab"]) + rs
+        raw = us.join(["sha1", "A U Thor", "2026-01-01T00:00:00+00:00", "fix: a | b\twith tab"]) + rs
         [rec] = parse_log(raw)
         assert rec["subject"] == "fix: a | b\twith tab"
 
@@ -67,9 +86,15 @@ class TestGitShow:
         out = await toolkit.git_show("HEAD")
         assert not isinstance(out, RepoToolError)
 
-    @pytest.mark.parametrize("bad", [
-        "--upload-pack=/bin/sh", "-x", "--output=/tmp/pwned", "",
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "--upload-pack=/bin/sh",
+            "-x",
+            "--output=/tmp/pwned",
+            "",
+        ],
+    )
     async def test_rejects_argv_injection(self, toolkit, bad):
         out = await toolkit.git_show(bad)
         assert isinstance(out, RepoToolError)
@@ -113,9 +138,7 @@ class TestDegradesOutsideGit:
 
 class TestNoMutatingGit:
     def test_package_has_no_mutating_subcommand(self):
-        banned = re.compile(
-            r'"(commit|checkout|push|fetch|reset|rebase|merge|apply|clean|rm|add)"'
-        )
+        banned = re.compile(r'"(commit|checkout|push|fetch|reset|rebase|merge|apply|clean|rm|add)"')
         pkg = pathlib.Path("packages/ai-parrot/src/parrot/tools/repo")
         for f in pkg.rglob("*.py"):
             assert not banned.search(f.read_text()), f

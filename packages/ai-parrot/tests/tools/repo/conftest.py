@@ -1,4 +1,5 @@
 """Shared fixtures for the ReadOnlyRepoToolkit test suite (FEAT-484)."""
+
 from __future__ import annotations
 
 import subprocess
@@ -48,7 +49,8 @@ def temp_worktree(temp_repo: Path, tmp_path: Path) -> Path:
     wt = tmp_path / "wt"
     subprocess.run(
         ["git", "worktree", "add", "-q", "-b", "wt-branch", str(wt), "HEAD"],
-        cwd=temp_repo, check=True,
+        cwd=temp_repo,
+        check=True,
     )
     return wt
 
@@ -64,10 +66,19 @@ class _StubStore:
     """
 
     def __init__(self, rows=None, neighbors=None, raises=False):
-        self._rows = rows if rows is not None else [
-            {"concept_id": "file:pkg/sub/mod.py", "title": "pkg/sub/mod.py",
-             "summary": "def alpha(): ...", "score": 0.9, "token_count": 120},
-        ]
+        self._rows = (
+            rows
+            if rows is not None
+            else [
+                {
+                    "concept_id": "file:pkg/sub/mod.py",
+                    "title": "pkg/sub/mod.py",
+                    "summary": "def alpha(): ...",
+                    "score": 0.9,
+                    "token_count": 120,
+                },
+            ]
+        )
         self._neighbors = neighbors or [
             {"concept_id": "dir:pkg", "title": "pkg", "rel": "contains"},
         ]

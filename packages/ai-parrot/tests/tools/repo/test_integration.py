@@ -1,4 +1,5 @@
 """Integration tests for `ReadOnlyRepoToolkit` (FEAT-484 spec §4)."""
+
 from __future__ import annotations
 
 import pathlib
@@ -43,7 +44,9 @@ class TestTransportAgnosticism:
     BedrockMantleClient (OpenAI-compatible)."""
 
     async def test_same_toolkit_on_both_transports(
-        self, temp_repo, stub_wiki_store,
+        self,
+        temp_repo,
+        stub_wiki_store,
     ):
         tk = ReadOnlyRepoToolkit(repo_root=temp_repo, wiki_store=stub_wiki_store)
         converse = _StubClient("converse")
@@ -92,4 +95,5 @@ class TestRealPlane:
 class TestWorktreeSharesPlane:
     async def test_worktree_resolves_main_plane(self, temp_repo, temp_worktree):
         from parrot.tools.repo.graph_search import resolve_plane_root
+
         assert await resolve_plane_root(temp_worktree) == temp_repo.resolve()

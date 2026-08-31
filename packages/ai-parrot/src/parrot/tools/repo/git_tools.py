@@ -11,6 +11,7 @@ does not terminate its options is remote code execution (spec §7). Every
 git invocation below validates the ref *and* terminates options with
 ``--``, belt and braces.
 """
+
 from __future__ import annotations
 
 import re
@@ -97,11 +98,7 @@ def split_show_output(stdout: str) -> tuple[dict[str, str], str]:
     if _RS in stdout:
         header_part, _, rest = stdout.partition(_RS)
         parts = header_part.split(_US)
-        header = (
-            {"sha": parts[0], "author": parts[1], "date": parts[2], "subject": parts[3]}
-            if len(parts) == 4
-            else {}
-        )
+        header = {"sha": parts[0], "author": parts[1], "date": parts[2], "subject": parts[3]} if len(parts) == 4 else {}
     else:
         header, rest = {}, stdout
     return header, rest.lstrip("\n")
@@ -132,17 +129,19 @@ def parse_blame(stdout: str) -> list[dict[str, object]]:
             current_final = int(header.group(3))
             continue
         if raw_line.startswith("author "):
-            authors[current_sha] = raw_line[len("author "):]
+            authors[current_sha] = raw_line[len("author ") :]
             continue
         if raw_line.startswith("summary "):
-            summaries[current_sha] = raw_line[len("summary "):]
+            summaries[current_sha] = raw_line[len("summary ") :]
             continue
         if raw_line.startswith("\t"):
-            lines.append({
-                "line": current_final,
-                "sha": current_sha,
-                "author": authors.get(current_sha, ""),
-                "summary": summaries.get(current_sha, ""),
-                "content": raw_line[1:],
-            })
+            lines.append(
+                {
+                    "line": current_final,
+                    "sha": current_sha,
+                    "author": authors.get(current_sha, ""),
+                    "summary": summaries.get(current_sha, ""),
+                    "content": raw_line[1:],
+                }
+            )
     return lines

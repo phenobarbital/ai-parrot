@@ -1,4 +1,5 @@
 """Unit tests for `grep_files` — bounded, gitignore-aware search (FEAT-484)."""
+
 from __future__ import annotations
 
 import asyncio

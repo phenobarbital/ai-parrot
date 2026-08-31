@@ -5,6 +5,7 @@ returns or raises. They are deliberately free of any dependency beyond
 ``pydantic`` so this module can be imported without pulling in the
 ``AbstractToolkit`` machinery.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field

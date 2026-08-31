@@ -17,6 +17,7 @@ This module is deliberately dependency-free beyond the standard library —
 no ``AbstractToolkit``, no ``pydantic`` models are imported here so it can
 be exercised in isolation.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -28,10 +29,22 @@ logger = logging.getLogger(__name__)
 # Deny patterns matched case-insensitively against each path segment of the
 # repo-relative POSIX path (spec §8 Q1 — implement exactly).
 _SECRET_DENY: tuple[str, ...] = (
-    ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx",
-    "id_rsa*", "id_dsa*", "id_ecdsa*", "id_ed25519*",
-    "*.local.json", "credentials", ".netrc", ".pgpass",
-    "*.keystore", "*.jks",
+    ".env",
+    ".env.*",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa*",
+    "id_dsa*",
+    "id_ecdsa*",
+    "id_ed25519*",
+    "*.local.json",
+    "credentials",
+    ".netrc",
+    ".pgpass",
+    "*.keystore",
+    "*.jks",
 )
 
 # A deny-list match is overridden (the file becomes readable) when the
@@ -73,9 +86,7 @@ def resolve_within_root(root: Path, candidate: str) -> Path:
     # below — no special-casing needed.
     target = (real_root / candidate).resolve()
     if target != real_root and not target.is_relative_to(real_root):
-        raise PathOutsideRootError(
-            f"{candidate!r} resolves outside the repository root"
-        )
+        raise PathOutsideRootError(f"{candidate!r} resolves outside the repository root")
     return target
 
 
@@ -98,11 +109,7 @@ def is_secret_path(rel_path: str) -> bool:
     posix = Path(rel_path).as_posix().lower()
     if posix.endswith(_SECRET_ALLOW_SUFFIXES):
         return False
-    return any(
-        fnmatch.fnmatch(segment, pattern)
-        for segment in Path(posix).parts
-        for pattern in _SECRET_DENY
-    )
+    return any(fnmatch.fnmatch(segment, pattern) for segment in Path(posix).parts for pattern in _SECRET_DENY)
 
 
 def resolve_readable_path(root: Path, candidate: str) -> Path:
