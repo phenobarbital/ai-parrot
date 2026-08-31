@@ -52,7 +52,7 @@
       "feature_id": "FEAT-484",
       "feature": "readonly-repo-toolkit",
       "spec": "sdd/specs/readonly-repo-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Owns the shared _run_argv subprocess helper that TASK-2640 reuses, and is TASK-2642's degradation target. Same toolkit.py file as 2638/2640/2642. Sequential: per-spec worktree strategy (spec §7 Worktree Strategy). Modules 2-4 all build on Module 1's confinement core and RepoToolError contract; parallelizing before that contract exists in code would mean coordinating it in prose.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2639-grep-files-bounded-search.md"
+      "completed_at": "2026-08-31T21:57:46+00:00",
+      "file": "sdd/tasks/completed/TASK-2639-grep-files-bounded-search.md"
     },
     {
       "id": "TASK-2640",

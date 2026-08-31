@@ -412,10 +412,21 @@ class TestNoShellAnywhere:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-08-31
+**Notes**: Added `grep_files`, `_run_argv`, `_kill`, `_is_git_work_tree`,
+`_hits_from_grep_lines`, and `_walk_grep` to `ReadOnlyRepoToolkit`, plus
+`GrepFilesInput` in `schemas.py`. `git grep` is used with `--untracked`
+(so newly-created-but-not-yet-committed files are found, while `.gitignore`
+exclusions still apply) and `-F -e <pattern> --` (fixed-string, argv-safe,
+no shell). Exit codes `{0, 1}` both treated as success (1 = no matches).
+All 11 new tests pass, plus the full `tests/tools/repo/` suite (67 tests);
+`ruff check` / `mypy` clean; confirmed no `shell=True` / `subprocess.run` /
+`os.system` anywhere in the package.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `test_readonly_toolkit.py::test_expected_tool_set`
+(TASK-2638) asserted the tool set was exactly `{read_file, list_files}` —
+a snapshot that this task's own acceptance criterion ("Tests pass:
+pytest packages/ai-parrot/tests/tools/repo/ -v") requires to stay green.
+Updated that one assertion to include `grep_files`, with a comment noting
+later tasks add more tools to the same set. No other change to that file.
