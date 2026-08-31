@@ -34,3 +34,14 @@ class ListFilesInput(BaseModel):
     depth: int = Field(
         default=1, ge=1, description="How many directory levels to recurse."
     )
+
+
+class GrepFilesInput(BaseModel):
+    """Arguments for ``grep_files``."""
+
+    pattern: str = Field(
+        ..., description="Fixed-string pattern to search for, literally."
+    )
+    glob: str = Field(
+        default="", description="Optional glob to restrict which files are searched."
+    )

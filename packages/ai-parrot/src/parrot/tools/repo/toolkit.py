@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,8 +31,8 @@ from .confinement import (
     resolve_readable_path,
     resolve_within_root,
 )
-from .models import RepoReadResult, RepoToolError
-from .schemas import ListFilesInput, ReadFileInput
+from .models import RepoReadResult, RepoSearchHit, RepoSearchResult, RepoToolError
+from .schemas import GrepFilesInput, ListFilesInput, ReadFileInput
 
 #: Directories never descended into by `list_files`, regardless of depth.
 _SKIP_DIRS = frozenset({
@@ -259,3 +262,160 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             "files": files,
             "truncated": truncated,
         }
+
+    async def _run_argv(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Run an argv list in the repo root, bounded and cancellation-safe.
+
+        Never uses a shell. The child is killed on timeout AND on
+        cancellation, so a cancelled dispatch leaves no orphan process
+        (spec §7).
+
+        Args:
+            argv: Program and arguments as a list — never a single string.
+            timeout: Seconds; defaults to ``self._command_timeout``.
+
+        Returns:
+            Mapping with ``exit_code``, ``stdout``, ``stderr``, ``timed_out``.
+        """
+        limit = timeout if timeout is not None else self._command_timeout
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(self._repo_root),
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=limit)
+        except TimeoutError:
+            self._kill(proc)
+            await proc.wait()
+            return {
+                "exit_code": -1, "stdout": "", "stderr": "timeout",
+                "timed_out": True,
+            }
+        except asyncio.CancelledError:
+            self._kill(proc)
+            # Do not await proc.wait() here on a cancel path; reap and re-raise.
+            raise
+        return {
+            "exit_code": proc.returncode,
+            "stdout": out[: self._max_result_bytes].decode("utf-8", "replace"),
+            "stderr": err[:4096].decode("utf-8", "replace"),
+            "timed_out": False,
+        }
+
+    @staticmethod
+    def _kill(proc: asyncio.subprocess.Process) -> None:
+        """Best-effort terminate; an already-exited child is not an error."""
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
+    def _is_git_work_tree(self) -> bool:
+        """True when `git` is available and `repo_root` looks like a work tree."""
+        return shutil.which("git") is not None and (self._repo_root / ".git").exists()
+
+    def _hits_from_grep_lines(self, stdout: str) -> list[RepoSearchHit]:
+        """Parse ``path:lineno:content`` lines into bounded, filtered hits."""
+        hits: list[RepoSearchHit] = []
+        for line in stdout.splitlines():
+            if not line:
+                continue
+            parts = line.split(":", 2)
+            if len(parts) < 3:
+                continue
+            rel_path, _lineno, content = parts
+            if self._deny_secret_files and is_secret_path(rel_path):
+                continue
+            try:
+                resolve_within_root(self._repo_root, rel_path)
+            except PathOutsideRootError:
+                continue
+            hits.append(
+                RepoSearchHit(
+                    page_id="", path=rel_path, summary=content.strip()[:300],
+                    score=0.0,
+                )
+            )
+            if len(hits) >= self._max_search_hits:
+                break
+        return hits
+
+    def _walk_grep(self, pattern: str, glob: str) -> list[RepoSearchHit]:
+        """Bounded, in-process fallback search for a non-git repo root."""
+        hits: list[RepoSearchHit] = []
+        for dirpath, dirnames, filenames in os.walk(self._repo_root):
+            dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
+            for filename in sorted(filenames):
+                if len(hits) >= self._max_search_hits:
+                    return hits
+                full = Path(dirpath) / filename
+                rel = self._rel(full)
+                if glob and not full.match(glob):
+                    continue
+                if self._deny_secret_files and is_secret_path(rel):
+                    continue
+                try:
+                    text = full.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                for line in text.splitlines():
+                    if pattern in line:
+                        hits.append(
+                            RepoSearchHit(
+                                page_id="", path=rel, summary=line.strip()[:300],
+                                score=0.0,
+                            )
+                        )
+                        break
+        return hits
+
+    @tool_schema(GrepFilesInput)
+    async def grep_files(
+        self, pattern: str, glob: str = "",
+    ) -> RepoSearchResult | RepoToolError:
+        """Search the repository for a literal string.
+
+        Prefer `search_code` for conceptual or symbol lookups — it is
+        ranked and ignores build artifacts. Use `grep_files` for exact
+        strings, config values, or anything not indexed by the code graph.
+        The pattern is matched literally (not as a regex). Secret files
+        (e.g. `.env`, private keys) are never included in results.
+
+        Args:
+            pattern: The literal string to search for.
+            glob: Optional glob restricting which files are searched.
+
+        Returns:
+            A RepoSearchResult with matching hits (never an error result
+            for zero matches — that is a normal, empty result).
+        """
+        if self._is_git_work_tree():
+            argv = [
+                "git", "grep", "--line-number", "--no-color", "-I",
+                "--untracked", "-F", "-e", pattern, "--",
+            ]
+            if glob:
+                argv.append(f":(glob){glob}")
+            result = await self._run_argv(argv)
+            if result["timed_out"]:
+                self.logger.warning("grep_files: git grep timed out")
+                hits: list[RepoSearchHit] = []
+            elif result["exit_code"] not in (0, 1):
+                self.logger.warning(
+                    "grep_files: git grep failed (%s): %s",
+                    result["exit_code"], result["stderr"],
+                )
+                hits = []
+            else:
+                hits = self._hits_from_grep_lines(result["stdout"])
+        else:
+            hits = await asyncio.to_thread(self._walk_grep, pattern, glob)
+
+        return RepoSearchResult(query=pattern, hits=hits, degraded=False)
