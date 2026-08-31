@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T15:46:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2611-attach-lifecycle-adapter-all-builders.md"
+      "file": "sdd/tasks/completed/TASK-2611-attach-lifecycle-adapter-all-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2612",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T15:50:21+00:00",
-      "file": "sdd/tasks/completed/TASK-2612-usage-attribution-contextvars.md"
+      "file": "sdd/tasks/completed/TASK-2612-usage-attribution-contextvars.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2613",
@@ -59,7 +61,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T15:53:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2613-dispatcher-after-call-tokens.md"
+      "file": "sdd/tasks/completed/TASK-2613-dispatcher-after-call-tokens.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2614",
@@ -79,7 +82,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T15:59:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2614-extend-usagerecord-and-failed-calls.md"
+      "file": "sdd/tasks/completed/TASK-2614-extend-usagerecord-and-failed-calls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2615",
@@ -99,7 +103,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T16:02:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2615-run-ledger-recorder.md"
+      "file": "sdd/tasks/completed/TASK-2615-run-ledger-recorder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2616",
@@ -119,7 +124,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T16:22:07+00:00",
-      "file": "sdd/tasks/completed/TASK-2616-per-run-event-registry.md"
+      "file": "sdd/tasks/completed/TASK-2616-per-run-event-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2617",
@@ -140,7 +146,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T16:31:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2617-cli-dispatchers-emit-usage.md"
+      "file": "sdd/tasks/completed/TASK-2617-cli-dispatchers-emit-usage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2618",
@@ -160,7 +167,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T16:41:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2618-usage-report-from-ledger.md"
+      "file": "sdd/tasks/completed/TASK-2618-usage-report-from-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2619",
@@ -180,7 +188,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T16:47:58+00:00",
-      "file": "sdd/tasks/completed/TASK-2619-usage-report-renderers.md"
+      "file": "sdd/tasks/completed/TASK-2619-usage-report-renderers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2620",
@@ -203,7 +212,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T17:01:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2620-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-2620-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2621",
@@ -232,7 +242,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
       "completed_at": "2026-08-31T17:07:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2621-documentation.md"
+      "file": "sdd/tasks/completed/TASK-2621-documentation.md",
+      "verification": "verified"
     }
   ]
 }
