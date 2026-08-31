@@ -48,10 +48,15 @@ def register_checkpoint_type(model_cls: type[BaseModel], tag: str | None = None)
     a node's typed result, or a resume path that needs to restore a typed
     dev-loop output (``ResearchOutput``, ``DevelopmentOutput``, ...).
 
-    Idempotent: re-registering the exact same class under the same tag is a
-    no-op. Registering a *different* class under a tag already claimed by
-    another class raises, since silently rebinding the tag would make every
-    already-persisted checkpoint referencing it decode as the wrong type.
+    Idempotent: re-registering the exact same class (or the same
+    ``module.QualName`` re-imported as a fresh class object — a legitimate
+    module-reload scenario some test suites exercise deliberately, e.g.
+    ``del sys.modules[...]`` + re-import to verify lazy-import boundaries)
+    under the same tag is a no-op / refresh. Registering a *genuinely
+    different* class (a different qualified name) under a tag already
+    claimed by another class raises, since silently rebinding the tag
+    would make every already-persisted checkpoint referencing it decode
+    as the wrong type.
 
     Args:
         model_cls: The Pydantic ``BaseModel`` subclass to register.
@@ -62,11 +67,17 @@ def register_checkpoint_type(model_cls: type[BaseModel], tag: str | None = None)
         The tag the class was registered under.
 
     Raises:
-        ValueError: If ``tag`` is already registered to a different class.
+        ValueError: If ``tag`` is already registered to a class with a
+            different ``(__module__, __qualname__)`` — a genuine conflict,
+            not a reload of the same class.
     """
     tag = tag or f"{model_cls.__module__}.{model_cls.__qualname__}"
     existing = _DEFAULT_TYPES.get(tag)
-    if existing is not None and existing is not model_cls:
+    if (
+        existing is not None
+        and existing is not model_cls
+        and (existing.__module__, existing.__qualname__) != (model_cls.__module__, model_cls.__qualname__)
+    ):
         raise ValueError(
             f"register_checkpoint_type: tag {tag!r} is already registered to "
             f"{existing!r}; cannot re-register it to {model_cls!r}."
@@ -139,10 +150,24 @@ class FlowStateSerializer:
         return dict(self._registry)
 
     def _tag_for_class(self, cls: type) -> str | None:
+        # Exact identity is the common case and fast path. Fall back to a
+        # qualname match — same rationale as register_checkpoint_type()'s
+        # own conflict check: a test suite that deliberately reloads a
+        # module (`del sys.modules[...]` + re-import, e.g.
+        # test_lazy_import.py's import-purity verification) produces a
+        # NEW class object for the SAME logical type. Without this, an
+        # instance built from a class reference captured before such a
+        # reload would degrade to a lossy repr even though the type is,
+        # for every practical purpose, still registered.
+        qualname_fallback: str | None = None
         for tag, registered_cls in self._registry.items():
             if registered_cls is cls:
                 return tag
-        return None
+            if qualname_fallback is None and (
+                (registered_cls.__module__, registered_cls.__qualname__) == (cls.__module__, cls.__qualname__)
+            ):
+                qualname_fallback = tag
+        return qualname_fallback
 
     @staticmethod
     def encode_error(exc: BaseException) -> dict[str, str]:

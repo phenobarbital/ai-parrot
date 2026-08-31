@@ -16,7 +16,7 @@ graphs built by ``dev_loop``/``dev_flow``:
   ``AgentsFlow.resume(flow_factory=..., seed_context=..., expected_input=...)``
   (TASK-2622/2623), never ``from_definition()``.
 * Shared-state projection: the allowlisted checkpoint_shared_data
-  projector used on the WRITE side (``_project_shared_data``, passed as
+  projector used on the WRITE side (``project_shared_data``, passed as
   ``AgentsFlow(checkpoint_shared_data=...)``), and the matching decode-and-
   restore step used on the READ side after a successful resume
   (``_restore_shared_data``) — never the full live ``shared_data`` mapping,
@@ -176,12 +176,12 @@ def compute_input_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _project_shared_data(ctx: FlowContext) -> dict[str, Any]:
+def project_shared_data(ctx: FlowContext) -> dict[str, Any]:
     """``checkpoint_shared_data`` projector (write side, spec §3 Module 3).
 
     Returns only the allowlisted keys present in ``ctx.shared_data`` — the
     dev workflows' typed results/briefs — never the full live mapping.
-    Passed as ``AgentsFlow(checkpoint_shared_data=_project_shared_data)``
+    Passed as ``AgentsFlow(checkpoint_shared_data=project_shared_data)``
     by the flow factory (TASK-2626/2627).
 
     Args:
@@ -365,7 +365,7 @@ class DevCheckpointCoordinator:
         Args:
             checkpoint: The loaded ``FlowCheckpoint`` (its
                 ``context.shared_data`` was written by
-                ``_project_shared_data`` through the same
+                ``project_shared_data`` through the same
                 ``FlowStateSerializer`` type registry as node results).
             live_context: The caller's fresh, live context to restore into
                 — only allowlisted keys ABSENT from it already are set, so
