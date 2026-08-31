@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-486
 **Date**: 2026-09-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 **Brainstorm**: `sdd/proposals/refactor-dev-flow.brainstorm.md` (Recommended: Option A — Config-Surface Extension)
 
