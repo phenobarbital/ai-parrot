@@ -6,6 +6,8 @@ LLM may pass when calling that tool.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -76,4 +78,35 @@ class GitBlameInput(BaseModel):
     )
     end: int = Field(
         default=0, ge=0, description="1-based last line, inclusive. 0 means EOF."
+    )
+
+
+class SearchCodeInput(BaseModel):
+    """Arguments for ``search_code``."""
+
+    query: str = Field(
+        ...,
+        description=(
+            "What you are looking for — name the symbol, module, or "
+            "subsystem, not your theory about where it might be."
+        ),
+    )
+    top_k: int = Field(default=12, ge=1, description="Maximum results to return.")
+    mode: Literal["lexical", "vector", "combined"] | None = Field(
+        default=None,
+        description=(
+            "'lexical' (default) matches names and text — best for symbols "
+            "and modules. 'combined' also considers semantic similarity "
+            "where available. 'vector' is semantic only. When semantic "
+            "search is not configured, these fall back to lexical and the "
+            "result is marked degraded."
+        ),
+    )
+
+
+class RelatedCodeInput(BaseModel):
+    """Arguments for ``related_code``."""
+
+    page_id: str = Field(
+        ..., description="A page id previously returned by search_code."
     )

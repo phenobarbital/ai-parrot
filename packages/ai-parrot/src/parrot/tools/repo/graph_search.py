@@ -22,6 +22,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from .models import RepoSearchHit
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,3 +117,53 @@ async def open_plane(repo_root: Path) -> tuple[Any | None, str]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("open_plane failed: %s", exc)
         return None, f"wiki plane unavailable: {exc}"
+
+
+def map_search_hit(result: Any) -> RepoSearchHit:
+    """Map a `WikiSearchResult` onto the toolkit's `RepoSearchHit` shape.
+
+    Field names do NOT line up between the two models: `page_id` comes
+    from `node_id` (not `page_id`, which does not exist on the search
+    result), `path` comes from `title`, and `summary` comes from
+    `snippet` (not `summary`, which likewise does not exist there).
+    `outline` is always empty — an API outline needs a page read, which
+    a search result does not carry.
+
+    Args:
+        result: A `WikiSearchResult`-shaped object (duck-typed via `Any`
+            so this module has no import-time dependency on the wiki
+            package).
+
+    Returns:
+        The equivalent `RepoSearchHit`.
+    """
+    return RepoSearchHit(
+        page_id=result.node_id,
+        path=result.title,
+        summary=result.snippet,
+        outline=[],
+        score=result.score,
+        approx_tokens=result.token_count or 0,
+    )
+
+
+def map_neighbor_hit(edge: dict[str, Any]) -> RepoSearchHit:
+    """Map one `store.neighbors()` edge dict onto `RepoSearchHit`.
+
+    Args:
+        edge: A dict as returned by `BaseWikiStore.neighbors()` — carries
+            `concept_id`, `rel`, `direction`, and — when the target is a
+            known page — `title`/`summary`/`token_count`.
+
+    Returns:
+        The equivalent `RepoSearchHit`. No score is available from a
+        neighbor edge, so `score` is always `0.0`.
+    """
+    return RepoSearchHit(
+        page_id=str(edge.get("concept_id") or ""),
+        path=str(edge.get("title") or ""),
+        summary=str(edge.get("summary") or edge.get("rel") or ""),
+        outline=[],
+        score=0.0,
+        approx_tokens=int(edge.get("token_count") or 0),
+    )

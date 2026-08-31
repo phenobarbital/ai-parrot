@@ -21,6 +21,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal
 
+from parrot.knowledge.wiki import search as wiki_search_module
+from parrot.knowledge.wiki.context import pack_results
 from parrot.tools.decorators import tool_schema
 from parrot.tools.toolkit import AbstractToolkit
 
@@ -40,6 +42,7 @@ from .git_tools import (
     split_show_output,
     validate_ref,
 )
+from .graph_search import map_neighbor_hit, map_search_hit, open_plane
 from .models import RepoReadResult, RepoSearchHit, RepoSearchResult, RepoToolError
 from .schemas import (
     GitBlameInput,
@@ -48,6 +51,8 @@ from .schemas import (
     GrepFilesInput,
     ListFilesInput,
     ReadFileInput,
+    RelatedCodeInput,
+    SearchCodeInput,
 )
 
 #: Directories never descended into by `list_files`, regardless of depth.
@@ -105,6 +110,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         self._max_search_hits = max_search_hits
         self._search_budget_tokens = search_budget_tokens
         self._command_timeout = command_timeout
+        self._plane_cached: tuple[Any, str] | None = None
         self.logger = logging.getLogger(__name__)
 
     def _error(self, exc: Exception, path: str = "") -> RepoToolError:
@@ -562,3 +568,138 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                 error="git_error", detail=res["stderr"][:500], path=path,
             )
         return {"lines": parse_blame(res["stdout"])}
+
+    async def _plane(self) -> tuple[Any | None, str]:
+        """Return the cached (store, reason) pair, opening it on first use.
+
+        An injected `wiki_store` short-circuits resolution entirely, which
+        is what keeps the unit tests hermetic.
+        """
+        if self._wiki_store is not None:
+            return self._wiki_store, ""
+        if self._plane_cached is None:
+            self._plane_cached = await open_plane(self._repo_root)
+        return self._plane_cached
+
+    async def _degrade(self, query: str, reason: str) -> RepoSearchResult:
+        """Serve a grep result in place of a graph result, and SAY SO.
+
+        Spec §7 forbids silent degradation: the marker and the reason
+        travel in the payload the model reads, and a warning is logged for
+        the operator.
+        """
+        self.logger.warning(
+            "search_code degrading to grep_files: %s (query=%r)", reason, query,
+        )
+        fallback = await self.grep_files(query)
+        if isinstance(fallback, RepoSearchResult):
+            fallback.degraded = True
+            fallback.degraded_reason = reason
+            return fallback
+        return RepoSearchResult(
+            query=query, hits=[], degraded=True,
+            degraded_reason=f"{reason}; grep fallback also failed",
+        )
+
+    @tool_schema(SearchCodeInput)
+    async def search_code(
+        self,
+        query: str,
+        top_k: int = 12,
+        mode: Literal["lexical", "vector", "combined"] | None = None,
+    ) -> RepoSearchResult:
+        """Search the codebase's structural index for relevant files and modules.
+
+        PREFER THIS over `grep_files` for any question about where
+        something lives or how modules relate: it returns ranked,
+        deduplicated results with summaries and skips build artifacts,
+        where grep returns raw unranked line matches. Use `grep_files`
+        only for exact strings, regexes, or config values this index does
+        not cover.
+
+        Args:
+            query: What you are looking for — name the symbol, module or
+                subsystem, not your theory about where it might be.
+            top_k: Maximum results to return.
+            mode: "lexical" (default) matches names and text — best for
+                symbols and modules. "combined" also considers semantic
+                similarity where available. "vector" is semantic only.
+                When semantic search is not configured, these fall back to
+                lexical and the result is marked degraded.
+
+        Returns:
+            RepoSearchResult. Check `degraded`: when True, the structural
+            index was unavailable (or returned nothing usable) and these
+            are weaker grep-based results, or the mode itself degraded.
+        """
+        store, reason = await self._plane()
+        if store is None:
+            return await self._degrade(query, reason or "no wiki plane")
+
+        effective = mode or self._default_search_mode
+        note = ""
+        if effective == "vector":
+            # No embedder ships (spec §8 Q4), so the vector leg is skipped
+            # by the plane and a pure-vector query would return nothing.
+            effective, note = "lexical", "semantic search not configured"
+
+        try:
+            search = wiki_search_module.WikiCombinedSearch(
+                pageindex_toolkit=None, graphindex_toolkit=None, store=store,
+            )
+            results = await search.search(
+                query,
+                mode=effective,
+                top_k=min(top_k, self._max_search_hits),
+                tree_name=self._wiki_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return await self._degrade(query, f"plane query failed: {exc}")
+
+        if not results:
+            # The plane logs and swallows its own per-leg query errors
+            # rather than raising, so an empty result here is the only
+            # observable signal of either "no matches" or "the plane
+            # failed underneath us" — treat both as degraded rather than
+            # returning a silently-empty structural result.
+            return await self._degrade(
+                query, note or "plane query returned no results",
+            )
+
+        packed = pack_results(results, budget_tokens=self._search_budget_tokens)
+        hits = [
+            map_search_hit(r)
+            for r in results[: packed.results_packed or len(results)]
+        ]
+        return RepoSearchResult(
+            query=query, hits=hits,
+            degraded=bool(note), degraded_reason=note,
+            total_tokens=packed.tokens_used,
+        )
+
+    @tool_schema(RelatedCodeInput)
+    async def related_code(self, page_id: str) -> RepoSearchResult:
+        """Find pages related to a page returned by `search_code`.
+
+        Use this to explore what a file/module contains or connects to
+        (e.g. a directory's files, an import relationship) via the code
+        graph's typed edges.
+
+        Args:
+            page_id: A page id previously returned by `search_code`.
+
+        Returns:
+            RepoSearchResult with neighbouring pages as hits, or a
+            degraded result when the structural index is unavailable.
+        """
+        store, reason = await self._plane()
+        if store is None:
+            return await self._degrade(page_id, reason or "no wiki plane")
+
+        try:
+            edges = await store.neighbors(page_id)
+        except Exception as exc:  # noqa: BLE001
+            return await self._degrade(page_id, f"plane query failed: {exc}")
+
+        hits = [map_neighbor_hit(edge) for edge in edges]
+        return RepoSearchResult(query=page_id, hits=hits, degraded=False)

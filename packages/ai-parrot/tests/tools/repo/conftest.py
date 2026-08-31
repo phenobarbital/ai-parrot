@@ -51,3 +51,49 @@ def temp_worktree(temp_repo: Path, tmp_path: Path) -> Path:
         cwd=temp_repo, check=True,
     )
     return wt
+
+
+class _StubStore:
+    """Answers search_fts with fixed rows; neighbors with fixed edges.
+
+    Row shape mirrors ``BaseWikiStore.search_fts``'s real SQL projection
+    (``store.py``: ``concept_id, node_id, title, category, summary,
+    source_id, token_count, score``) — note the key is ``summary``, which
+    is what ``WikiCombinedSearch._store_row_to_wiki`` reads into
+    ``WikiSearchResult.snippet``.
+    """
+
+    def __init__(self, rows=None, neighbors=None, raises=False):
+        self._rows = rows if rows is not None else [
+            {"concept_id": "file:pkg/sub/mod.py", "title": "pkg/sub/mod.py",
+             "summary": "def alpha(): ...", "score": 0.9, "token_count": 120},
+        ]
+        self._neighbors = neighbors or [
+            {"concept_id": "dir:pkg", "title": "pkg", "rel": "contains"},
+        ]
+        self._raises = raises
+        self.fts_calls = 0
+
+    async def search_fts(self, query, category=None, limit=10):
+        self.fts_calls += 1
+        if self._raises:
+            raise RuntimeError("plane is broken")
+        return list(self._rows)
+
+    async def search_vector(self, embedding, limit=10):
+        return []
+
+    async def neighbors(self, concept_id, rel=None, direction="both"):
+        if self._raises:
+            raise RuntimeError("plane is broken")
+        return list(self._neighbors)
+
+
+@pytest.fixture
+def stub_wiki_store():
+    return _StubStore()
+
+
+@pytest.fixture
+def broken_wiki_store():
+    return _StubStore(raises=True)
