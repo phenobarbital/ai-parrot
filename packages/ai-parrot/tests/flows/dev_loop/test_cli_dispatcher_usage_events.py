@@ -291,9 +291,7 @@ async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _pa
 # ---------------------------------------------------------------------------
 
 
-async def test_timeout_failure_reaches_ledger(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
-):
+async def test_timeout_failure_reaches_ledger(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
     """A wall-clock timeout must still produce a failed ledger record."""
     import asyncio
 
@@ -303,7 +301,9 @@ async def test_timeout_failure_reaches_ledger(
             yield  # pragma: no cover
 
     disp = ClaudeCodeDispatcher(
-        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+        max_concurrent=2,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=300,
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -351,7 +351,9 @@ async def test_session_failure_reaches_ledger_with_partial_usage(
             raise RuntimeError("transport lost")
 
     disp = ClaudeCodeDispatcher(
-        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+        max_concurrent=2,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=300,
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -391,7 +393,9 @@ async def test_result_error_without_raise_reaches_ledger(
     err_result.num_turns = None  # nothing harvestable -> no extra AfterClientCallEvent
 
     disp = ClaudeCodeDispatcher(
-        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+        max_concurrent=2,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=300,
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -419,15 +423,15 @@ async def test_result_error_without_raise_reaches_ledger(
     assert rec.error_type == "ResultError"
 
 
-async def test_output_validation_failure_reaches_ledger(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
-):
+async def test_output_validation_failure_reaches_ledger(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
     """A successful stream whose final payload fails JSON/schema
     validation must still reach the ledger as a failure."""
     messages = [_AssistantMessage(content=[_TextBlock("not valid json")])]
 
     disp = ClaudeCodeDispatcher(
-        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+        max_concurrent=2,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=300,
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -455,9 +459,7 @@ async def test_output_validation_failure_reaches_ledger(
     assert rec.error_type == "DispatchOutputValidationError"
 
 
-async def test_after_call_forwards_to_global_registry(
-    monkeypatch, brief, _patch_worktree_base
-):
+async def test_after_call_forwards_to_global_registry(monkeypatch, brief, _patch_worktree_base):
     """A successful dispatch's usage event must reach the GLOBAL registry
     too (explicit forward_to_global), not only the per-run one — the
     per-run registry is forward_to_global=False by design."""

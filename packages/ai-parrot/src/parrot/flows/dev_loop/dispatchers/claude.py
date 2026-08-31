@@ -271,8 +271,11 @@ class ClaudeCodeDispatcher:
                     # success path, must reach the ledger — with the
                     # error and whatever tokens were burned before it.
                     await self._emit_failure_event(
-                        messages, run_id=run_id, node_id=node_id,
-                        profile=profile, error_type="TimeoutError",
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="TimeoutError",
                     )
                     raise DispatchExecutionError(
                         f"Dispatch exceeded {profile.timeout_seconds}s " f"wall-clock cap"
@@ -308,8 +311,11 @@ class ClaudeCodeDispatcher:
                         self._format_result_error(err_detail) or str(exc),
                     )
                     await self._emit_failure_event(
-                        messages, run_id=run_id, node_id=node_id,
-                        profile=profile, error_type=type(exc).__name__,
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type=type(exc).__name__,
                     )
                     raise DispatchExecutionError(self._compose_session_error(exc, err_detail)) from exc
 
@@ -337,8 +343,11 @@ class ClaudeCodeDispatcher:
                         self._format_result_error(err_detail),
                     )
                     await self._emit_failure_event(
-                        messages, run_id=run_id, node_id=node_id,
-                        profile=profile, error_type="ResultError",
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="ResultError",
                     )
                     raise DispatchExecutionError(self._format_result_error(err_detail))
 
@@ -356,8 +365,11 @@ class ClaudeCodeDispatcher:
                         },
                     )
                     await self._emit_failure_event(
-                        messages, run_id=run_id, node_id=node_id,
-                        profile=profile, error_type=type(exc).__name__,
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type=type(exc).__name__,
                     )
                     raise
 
@@ -830,7 +842,10 @@ class ClaudeCodeDispatcher:
         """
         usage_detail = self._extract_result_usage(messages)
         await self._emit_usage_event(
-            usage_detail, run_id=run_id, node_id=node_id, profile=profile,
+            usage_detail,
+            run_id=run_id,
+            node_id=node_id,
+            profile=profile,
         )
         if self._event_registry_resolver is None:
             return
