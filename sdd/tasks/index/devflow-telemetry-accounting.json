@@ -169,7 +169,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -179,8 +179,8 @@
       "parallelism_notes": "Renders the model TASK-2618 produces; same file, so strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2619-usage-report-renderers.md"
+      "completed_at": "2026-08-31T16:47:58+00:00",
+      "file": "sdd/tasks/completed/TASK-2619-usage-report-renderers.md"
     },
     {
       "id": "TASK-2620",
