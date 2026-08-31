@@ -91,9 +91,7 @@ class _ScriptedDispatcher:
     def set_event_registry_resolver(self, resolver) -> None:
         self._event_registry_resolver = resolver
 
-    async def emit_usage(
-        self, *, run_id: str, node_id: str, input_tokens: int, output_tokens: int
-    ) -> None:
+    async def emit_usage(self, *, run_id: str, node_id: str, input_tokens: int, output_tokens: int) -> None:
         """Emit a real AfterClientCallEvent — awaited, exact (spec §2)."""
         if self._event_registry_resolver is None:
             return
@@ -197,8 +195,11 @@ def _stub_dev_flow_executes(monkeypatch, fake: _ScriptedDispatcher, *, qa_passed
 
     async def handoff_exec(self, ctx, deps=None, **kw):
         return {
-            "status": "ready_to_deploy", "pr_url": "u", "pr_number": 1,
-            "docs_path": "docs/features/feat-999-x.md", "wiki_page_id": None,
+            "status": "ready_to_deploy",
+            "pr_url": "u",
+            "pr_number": 1,
+            "docs_path": "docs/features/feat-999-x.md",
+            "wiki_page_id": None,
         }
 
     async def close_exec(self, ctx, deps=None, **kw):
@@ -247,7 +248,9 @@ async def test_dev_flow_run_produces_usage_report(monkeypatch, tmp_path):
 
 
 def _stub_feature_executes_with_retry(
-    monkeypatch, fake: _ScriptedDispatcher, dev_tokens: list[tuple[int, int]],
+    monkeypatch,
+    fake: _ScriptedDispatcher,
+    dev_tokens: list[tuple[int, int]],
 ) -> dict[str, int]:
     """Mirrors ``test_feature_flow.py``'s ``_stub_feature_executes``, but
     ``development`` reports a DIFFERENT token count each cycle (scripted by
@@ -267,8 +270,11 @@ def _stub_feature_executes_with_retry(
         run_id = shared["run_id"]
         await fake.emit_usage(run_id=run_id, node_id=self.name, input_tokens=100, output_tokens=40)
         out = PlannerOutput(
-            spec_path="sdd/specs/x.spec.md", task_index_path="/tmp/x.json",
-            feat_id="FEAT-999", branch_name="feat-999-x", worktree_path="/tmp/feat-999-x",
+            spec_path="sdd/specs/x.spec.md",
+            task_index_path="/tmp/x.json",
+            feat_id="FEAT-999",
+            branch_name="feat-999-x",
+            worktree_path="/tmp/feat-999-x",
         )
         shared["planner_output"] = out
         return out
@@ -309,8 +315,11 @@ def _stub_feature_executes_with_retry(
 
     async def handoff_exec(self, ctx, deps=None, **kw):
         return {
-            "status": "ready_to_deploy", "pr_url": "u", "pr_number": 1,
-            "docs_path": "d", "wiki_page_id": None,
+            "status": "ready_to_deploy",
+            "pr_url": "u",
+            "pr_number": 1,
+            "docs_path": "d",
+            "wiki_page_id": None,
         }
 
     async def failure_exec(self, ctx, deps=None, **kw):
@@ -390,8 +399,11 @@ def _stub_bug_mode_pool_executes(monkeypatch, fake: _ScriptedDispatcher) -> None
         run_id = shared["run_id"]
         await fake.emit_usage(run_id=run_id, node_id=self.name, input_tokens=50, output_tokens=20)
         out = ResearchOutput(
-            jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md", feat_id="FEAT-130",
-            branch_name="feat-130-fix", worktree_path=str(shared.get("_tmp_path", ".")),
+            jira_issue_key="OPS-1",
+            spec_path="sdd/specs/x.spec.md",
+            feat_id="FEAT-130",
+            branch_name="feat-130-fix",
+            worktree_path=str(shared.get("_tmp_path", ".")),
             log_excerpts=[],
         )
         shared["research_output"] = out
@@ -401,10 +413,16 @@ def _stub_bug_mode_pool_executes(monkeypatch, fake: _ScriptedDispatcher) -> None
         shared = self.shared_state(ctx)
         run_id = shared["run_id"]
         await fake.emit_usage(
-            run_id=run_id, node_id="development.w1", input_tokens=100, output_tokens=50,
+            run_id=run_id,
+            node_id="development.w1",
+            input_tokens=100,
+            output_tokens=50,
         )
         await fake.emit_usage(
-            run_id=run_id, node_id="development.w2", input_tokens=200, output_tokens=60,
+            run_id=run_id,
+            node_id="development.w2",
+            input_tokens=200,
+            output_tokens=60,
         )
         out = DevelopmentOutput(files_changed=["a.py", "b.py"], commit_shas=["a1", "b2"], summary="fanned out")
         shared["development_output"] = out
@@ -456,8 +474,11 @@ async def test_pool_run_attributes_every_worker(monkeypatch, bug_brief):
     _stub_bug_mode_pool_executes(monkeypatch, fake)
 
     flow = build_dev_loop_flow(
-        dispatcher=fake, jira_toolkit=AsyncMock(), log_toolkits={},
-        redis_url="redis://x", publish_flow_events=False,
+        dispatcher=fake,
+        jira_toolkit=AsyncMock(),
+        log_toolkits={},
+        redis_url="redis://x",
+        publish_flow_events=False,
     )
     runner = DevLoopRunner(flow, dispatcher=fake, redis_url="redis://x")
 
@@ -493,8 +514,12 @@ def _stub_bug_mode_qa_failure(monkeypatch, fake: _ScriptedDispatcher) -> None:
     async def research_exec(self, ctx, deps=None, **kw):
         shared = self.shared_state(ctx)
         out = ResearchOutput(
-            jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md", feat_id="FEAT-130",
-            branch_name="feat-130-fix", worktree_path=".", log_excerpts=[],
+            jira_issue_key="OPS-1",
+            spec_path="sdd/specs/x.spec.md",
+            feat_id="FEAT-130",
+            branch_name="feat-130-fix",
+            worktree_path=".",
+            log_excerpts=[],
         )
         shared["research_output"] = out
         return out
@@ -543,8 +568,11 @@ async def test_failed_node_reported_with_usage(monkeypatch, bug_brief):
     _stub_bug_mode_qa_failure(monkeypatch, fake)
 
     flow = build_dev_loop_flow(
-        dispatcher=fake, jira_toolkit=AsyncMock(), log_toolkits={},
-        redis_url="redis://x", publish_flow_events=False,
+        dispatcher=fake,
+        jira_toolkit=AsyncMock(),
+        log_toolkits={},
+        redis_url="redis://x",
+        publish_flow_events=False,
     )
     runner = DevLoopRunner(flow, dispatcher=fake, redis_url="redis://x")
 

@@ -146,9 +146,7 @@ def build_dev_flow(
     nodes = staged._materialize_nodes()
 
     run_id_holder: dict[str, str] = {}
-    publisher = (
-        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
-    )
+    publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
     flow = AgentsFlow(name=name, on_node_event=publisher)
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
@@ -187,8 +185,14 @@ def build_dev_flow(
     flow.add_edge(FEATURE_HANDOFF, CLOSE)
 
     for source in (
-        DEV_INTAKE, IDEATION, PLANNER, DEVELOPMENT, SYNTHESIS,
-        QA, FEEDBACK_ROUTER, FEATURE_HANDOFF,
+        DEV_INTAKE,
+        IDEATION,
+        PLANNER,
+        DEVELOPMENT,
+        SYNTHESIS,
+        QA,
+        FEEDBACK_ROUTER,
+        FEATURE_HANDOFF,
     ):
         flow.add_edge(source, FAILURE, condition="on_error")
 

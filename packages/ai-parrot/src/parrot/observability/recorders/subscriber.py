@@ -96,9 +96,7 @@ class UsageRecordingSubscriber:
         provider = resolve_gen_ai_system(event.client_name)
         input_tokens = event.input_tokens or 0
         output_tokens = event.output_tokens or 0
-        usage_reported = not (
-            event.input_tokens is None and event.output_tokens is None
-        )
+        usage_reported = not (event.input_tokens is None and event.output_tokens is None)
 
         cost_usd: Optional[float] = None
         cumulative: Optional[float] = None
@@ -115,9 +113,7 @@ class UsageRecordingSubscriber:
                     self._has_cost = True
                 cumulative = self._cumulative_cost_usd if self._has_cost else None
 
-        trace_id = (
-            event.trace_context.trace_id if event.trace_context else None
-        )
+        trace_id = event.trace_context.trace_id if event.trace_context else None
         run_id = current_run_id.get()
         seat = current_seat.get()
         record = UsageRecord(
@@ -150,9 +146,7 @@ class UsageRecordingSubscriber:
         deliberately NOT carried here, per the module's privacy contract.
         """
         provider = resolve_gen_ai_system(event.client_name)
-        trace_id = (
-            event.trace_context.trace_id if event.trace_context else None
-        )
+        trace_id = event.trace_context.trace_id if event.trace_context else None
         run_id = current_run_id.get()
         seat = current_seat.get()
         record = UsageRecord(

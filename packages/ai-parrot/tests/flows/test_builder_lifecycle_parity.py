@@ -85,9 +85,7 @@ _BUILDERS: list[Callable[..., Any]] = [
 ]
 
 
-@pytest.mark.parametrize(
-    "builder", _BUILDERS, ids=lambda b: b.__name__.removeprefix("_build_")
-)
+@pytest.mark.parametrize("builder", _BUILDERS, ids=lambda b: b.__name__.removeprefix("_build_"))
 def test_all_builders_attach_lifecycle_adapter(builder):
     """Regression guard for FEAT-479 Finding 1: the adapter was attached in
     only 1 of 4 builders, so dev-flow emitted zero lifecycle events."""
@@ -97,9 +95,7 @@ def test_all_builders_attach_lifecycle_adapter(builder):
     ), f"{builder.__name__} did not attach a FlowLifecycleAdapter"
 
 
-@pytest.mark.parametrize(
-    "builder", _BUILDERS, ids=lambda b: b.__name__.removeprefix("_build_")
-)
+@pytest.mark.parametrize("builder", _BUILDERS, ids=lambda b: b.__name__.removeprefix("_build_"))
 def test_builders_honour_lifecycle_events_false(builder):
     """Opting out must be honoured, and the attribute must still exist."""
     flow = builder(lifecycle_events=False)

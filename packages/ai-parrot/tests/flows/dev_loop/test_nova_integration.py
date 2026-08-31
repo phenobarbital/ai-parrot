@@ -83,9 +83,7 @@ class TestNovaDevSeat:
         """Pool spec ``{"agent": "nova"}`` -> dispatcher -> loop (mocked
         bedrock-mantle client, never real Bedrock) -> validated
         DevelopmentOutput."""
-        pool = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="nova", model="minimax.minimax-m2.5", count=1)]
-        )
+        pool = DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", model="minimax.minimax-m2.5", count=1)])
         assert pool.agents[0].agent == "nova"
 
         dispatcher, profile = build_dispatcher(pool.agents[0], **COMMON)
@@ -99,9 +97,7 @@ class TestNovaDevSeat:
         class _ToolCall:
             def __init__(self, name, arguments):
                 self.id = "call_1"
-                self.function = SimpleNamespace(
-                    name=name, arguments=json.dumps(arguments)
-                )
+                self.function = SimpleNamespace(name=name, arguments=json.dumps(arguments))
 
         class _Message:
             def __init__(self, tool_calls):
@@ -162,9 +158,7 @@ class TestNovaAdversarial:
         async def _fake_collect_diff(self, cwd, profile):
             return "diff --git a/foo.py b/foo.py\n+print('hi')\n"
 
-        monkeypatch.setattr(
-            NovaAdversarialReviewDispatcher, "_collect_diff", _fake_collect_diff
-        )
+        monkeypatch.setattr(NovaAdversarialReviewDispatcher, "_collect_diff", _fake_collect_diff)
 
         fake_ask = AsyncMock(
             return_value=SimpleNamespace(
@@ -183,15 +177,10 @@ class TestNovaAdversarial:
             def model_dump_json(self):
                 return "{}"
 
-        verdict = await reviewer.review(
-            brief=_Brief(), run_id=RUN_ID, node_id="qa", cwd="."
-        )
+        verdict = await reviewer.review(brief=_Brief(), run_id=RUN_ID, node_id="qa", cwd=".")
 
         assert verdict.files_modified == []
-        assert all(
-            isinstance(f, AdversarialFinding) and f.source == "nova-adversarial"
-            for f in verdict.findings
-        )
+        assert all(isinstance(f, AdversarialFinding) and f.source == "nova-adversarial" for f in verdict.findings)
         # no tools passed at all — verified directly on the call kwargs
         assert "tools" not in fake_ask.await_args.kwargs
         assert fake_ask.await_args.kwargs.get("use_tools") is False
@@ -219,9 +208,13 @@ class TestUsageArtifacts:
         ledger = RunLedgerRecorder(run_id=RUN_ID)
         await ledger.record(
             UsageRecord(
-                provider="nova", client_name="nova",
-                seat="development", node_id="development",
-                input_tokens=1000, output_tokens=250, duration_ms=4000,
+                provider="nova",
+                client_name="nova",
+                seat="development",
+                node_id="development",
+                input_tokens=1000,
+                output_tokens=250,
+                duration_ms=4000,
             )
         )
         return ledger
@@ -268,9 +261,7 @@ class TestOptInRegression:
     def test_research_node_untouched(self):
         """[R7] guard: the research seat must stay Claude Code only — fails
         loudly if a future change widens ResearchNode's dispatcher type."""
-        src = Path(
-            "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py"
-        ).read_text()
+        src = Path("packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py").read_text()
         assert "dispatcher: ClaudeCodeDispatcher" in src
         assert 'subagent="sdd-research"' in src
         assert "nova" not in src.lower()

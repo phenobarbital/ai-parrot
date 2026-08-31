@@ -21,13 +21,20 @@ def report() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="dev-agent-1", node_id="development", backend="nova",
-                model="minimax.minimax-m2.5", rounds=7,
-                input_tokens=1000, output_tokens=250,
+                seat="dev-agent-1",
+                node_id="development",
+                backend="nova",
+                model="minimax.minimax-m2.5",
+                rounds=7,
+                input_tokens=1000,
+                output_tokens=250,
             ),
             AgentUsage(
-                seat="adversarial", node_id="qa", backend="nova",
-                model="us.anthropic.claude-opus-5", rounds=1,
+                seat="adversarial",
+                node_id="qa",
+                backend="nova",
+                model="us.anthropic.claude-opus-5",
+                rounds=1,
             ),
         ],
     )
@@ -65,11 +72,14 @@ class TestContent:
 
     def test_escapes_hostile_values(self):
         rep = UsageReport(
-            run_id="r", generated_at=0.0,
+            run_id="r",
+            generated_at=0.0,
             agents=[
                 AgentUsage(
-                    seat="<script>alert(1)</script>", node_id="n",
-                    backend="nova", model="m",
+                    seat="<script>alert(1)</script>",
+                    node_id="n",
+                    backend="nova",
+                    model="m",
                 ),
             ],
         )
@@ -117,24 +127,36 @@ def report_with_cycles_and_workers() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="development", node_id="development", backend="anthropic",
-                model="claude-opus-5", rounds=2,
-                input_tokens=3000, output_tokens=1200,
+                seat="development",
+                node_id="development",
+                backend="anthropic",
+                model="claude-opus-5",
+                rounds=2,
+                input_tokens=3000,
+                output_tokens=1200,
                 cycles=[
                     CycleUsage(cycle=1, model="claude-opus-5", input_tokens=1000, output_tokens=500),
                     CycleUsage(cycle=2, model="claude-opus-5", input_tokens=2000, output_tokens=700),
                 ],
             ),
             AgentUsage(
-                seat="development.w1", node_id="development", backend="anthropic",
-                model="claude-sonnet-4-6", rounds=1,
-                input_tokens=100, output_tokens=50,
+                seat="development.w1",
+                node_id="development",
+                backend="anthropic",
+                model="claude-sonnet-4-6",
+                rounds=1,
+                input_tokens=100,
+                output_tokens=50,
                 cycles=[CycleUsage(cycle=1, model="claude-sonnet-4-6", input_tokens=100, output_tokens=50)],
             ),
             AgentUsage(
-                seat="development.w2", node_id="development", backend="anthropic",
-                model="claude-sonnet-4-6", rounds=1,
-                input_tokens=200, output_tokens=60,
+                seat="development.w2",
+                node_id="development",
+                backend="anthropic",
+                model="claude-sonnet-4-6",
+                rounds=1,
+                input_tokens=200,
+                output_tokens=60,
                 cycles=[CycleUsage(cycle=1, model="claude-sonnet-4-6", input_tokens=200, output_tokens=60)],
             ),
         ],
@@ -148,13 +170,23 @@ def report_with_failure() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="qa", node_id="qa", backend="nova", model="m", rounds=2,
-                input_tokens=900, output_tokens=100, failures=1,
+                seat="qa",
+                node_id="qa",
+                backend="nova",
+                model="m",
+                rounds=2,
+                input_tokens=900,
+                output_tokens=100,
+                failures=1,
                 cycles=[
                     CycleUsage(cycle=1, model="m", status="completed"),
                     CycleUsage(
-                        cycle=2, model="m", input_tokens=900, output_tokens=100,
-                        status="failed", error_type="TimeoutError",
+                        cycle=2,
+                        model="m",
+                        input_tokens=900,
+                        output_tokens=100,
+                        status="failed",
+                        error_type="TimeoutError",
                     ),
                 ],
             ),
@@ -169,11 +201,17 @@ def report_partial() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="development", node_id="development", backend="nova",
-                model="m", rounds=1, input_tokens=100, output_tokens=50,
+                seat="development",
+                node_id="development",
+                backend="nova",
+                model="m",
+                rounds=1,
+                input_tokens=100,
+                output_tokens=50,
             ),
         ],
-        partial=True, partial_reason="resumed in a new process",
+        partial=True,
+        partial_reason="resumed in a new process",
     )
 
 
@@ -184,8 +222,10 @@ def report_with_hostile_names() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="<script>alert(1)</script>", node_id="n",
-                backend="nova", model="<img src=x>",
+                seat="<script>alert(1)</script>",
+                node_id="n",
+                backend="nova",
+                model="<img src=x>",
             ),
         ],
     )

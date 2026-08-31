@@ -53,17 +53,11 @@ __all__ = [
     "usage_attribution",
 ]
 
-current_agent_name: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_agent_name", default=None
-)
+current_agent_name: ContextVar[Optional[str]] = ContextVar("parrot_current_agent_name", default=None)
 
-current_user_id: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_user_id", default=None
-)
+current_user_id: ContextVar[Optional[str]] = ContextVar("parrot_current_user_id", default=None)
 
-current_session_id: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_session_id", default=None
-)
+current_session_id: ContextVar[Optional[str]] = ContextVar("parrot_current_session_id", default=None)
 
 
 @contextmanager
@@ -129,13 +123,9 @@ def invocation_context(
         current_agent_name.reset(tok_agent)
 
 
-current_run_id: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_run_id", default=None
-)
+current_run_id: ContextVar[Optional[str]] = ContextVar("parrot_current_run_id", default=None)
 
-current_seat: ContextVar[Optional[str]] = ContextVar(
-    "parrot_current_seat", default=None
-)
+current_seat: ContextVar[Optional[str]] = ContextVar("parrot_current_seat", default=None)
 
 
 @contextmanager

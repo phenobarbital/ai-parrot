@@ -131,13 +131,9 @@ class ClaudeCodeDispatcher:
         # one in — see set_event_registry_resolver. Same shape as
         # LLMCodeDispatcher's resolver (dispatchers/llm.py) so DevLoopRunner
         # wires both identically via one hasattr-guarded call.
-        self._event_registry_resolver: Optional[
-            Callable[[str], Optional[EventRegistry]]
-        ] = None
+        self._event_registry_resolver: Optional[Callable[[str], Optional[EventRegistry]]] = None
 
-    def set_event_registry_resolver(
-        self, resolver: Callable[[str], Optional[EventRegistry]]
-    ) -> None:
+    def set_event_registry_resolver(self, resolver: Callable[[str], Optional[EventRegistry]]) -> None:
         """Wire a ``run_id -> EventRegistry`` lookup (FEAT-479 M6).
 
         Called once by the owning :class:`DevLoopRunner` so harvested usage
@@ -363,7 +359,10 @@ class ClaudeCodeDispatcher:
                 # No harvest -> no event: "—" in the report is honest, a
                 # fabricated 0 is not.
                 await self._emit_usage_event(
-                    usage_detail, run_id=run_id, node_id=node_id, profile=profile,
+                    usage_detail,
+                    run_id=run_id,
+                    node_id=node_id,
+                    profile=profile,
                 )
                 return result
             finally:
@@ -713,12 +712,8 @@ class ClaudeCodeDispatcher:
                 detail: Dict[str, Any] = {
                     "input_tokens": _usage_get("input_tokens"),
                     "output_tokens": _usage_get("output_tokens"),
-                    "cache_creation_input_tokens": _usage_get(
-                        "cache_creation_input_tokens"
-                    ),
-                    "cache_read_input_tokens": _usage_get(
-                        "cache_read_input_tokens"
-                    ),
+                    "cache_creation_input_tokens": _usage_get("cache_creation_input_tokens"),
+                    "cache_read_input_tokens": _usage_get("cache_read_input_tokens"),
                     "total_cost_usd": getattr(msg, "total_cost_usd", None),
                     "num_turns": getattr(msg, "num_turns", None),
                     "duration_ms": getattr(msg, "duration_ms", None),
@@ -774,7 +769,9 @@ class ClaudeCodeDispatcher:
         except Exception:  # telemetry must never break dispatch
             self.logger.warning(
                 "Failed to emit AfterClientCallEvent for run=%s node=%s",
-                run_id, node_id, exc_info=True,
+                run_id,
+                node_id,
+                exc_info=True,
             )
 
     @staticmethod
@@ -976,4 +973,3 @@ class ClaudeCodeDispatcher:
             node_id=node_id,
             payload=payload,
         )
-

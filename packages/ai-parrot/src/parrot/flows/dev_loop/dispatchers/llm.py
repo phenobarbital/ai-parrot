@@ -71,13 +71,9 @@ class LLMCodeDispatcher:
         # fire-and-forget on a lazily self-created registry. None (default)
         # when no owner (e.g. DevLoopRunner) has wired one in — see
         # set_event_registry_resolver.
-        self._event_registry_resolver: Optional[
-            Callable[[str], Optional["EventRegistry"]]
-        ] = None
+        self._event_registry_resolver: Optional[Callable[[str], Optional["EventRegistry"]]] = None
 
-    def set_event_registry_resolver(
-        self, resolver: Callable[[str], Optional["EventRegistry"]]
-    ) -> None:
+    def set_event_registry_resolver(self, resolver: Callable[[str], Optional["EventRegistry"]]) -> None:
         """Wire a ``run_id -> EventRegistry`` lookup (FEAT-479 M5).
 
         Called once by the owning :class:`DevLoopRunner` so
@@ -370,9 +366,7 @@ class LLMCodeDispatcher:
                     output_tokens=accumulated.completion_tokens if accumulated else None,
                 )
 
-    def _create_client(
-        self, profile: LLMCodeDispatchProfile, *, run_id: Optional[str] = None
-    ) -> Any:
+    def _create_client(self, profile: LLMCodeDispatchProfile, *, run_id: Optional[str] = None) -> Any:
         model_args = {
             "temperature": profile.temperature,
             "max_tokens": profile.max_tokens,
@@ -1115,4 +1109,3 @@ class LLMCodeDispatcher:
             await redis_client.xadd(stream_key, fields, maxlen=maxlen, approximate=True)
         except Exception as exc:  # pragma: no cover - best-effort publish
             self.logger.warning("Failed to XADD %s to %s: %s", kind, stream_key, exc)
-

@@ -146,12 +146,8 @@ class RunLedgerRecorder(AbstractLogger):
         for seat, cycles in by_seat.items():
             node_id = cycles[0].node_id or seat.split(".", 1)[0]
             reported = [r for r in cycles if r.usage_reported]
-            input_tokens = (
-                sum(r.input_tokens for r in reported) if reported else None
-            )
-            output_tokens = (
-                sum(r.output_tokens for r in reported) if reported else None
-            )
+            input_tokens = sum(r.input_tokens for r in reported) if reported else None
+            output_tokens = sum(r.output_tokens for r in reported) if reported else None
             failures = sum(1 for r in cycles if r.status == "failed")
             result.append(
                 SeatUsage(

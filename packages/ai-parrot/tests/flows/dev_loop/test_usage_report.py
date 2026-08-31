@@ -71,16 +71,25 @@ async def ledger_with_two_agents() -> RunLedgerRecorder:
     ledger = RunLedgerRecorder(run_id=RUN_ID)
     await ledger.record(
         UsageRecord(
-            provider="nova", client_name="nova", model="minimax.minimax-m2.5",
-            seat="development", node_id="development",
-            input_tokens=1000, output_tokens=250, duration_ms=4000,
+            provider="nova",
+            client_name="nova",
+            model="minimax.minimax-m2.5",
+            seat="development",
+            node_id="development",
+            input_tokens=1000,
+            output_tokens=250,
+            duration_ms=4000,
         )
     )
     await ledger.record(
         UsageRecord(
-            provider="claude-code", client_name="claude-code",
-            seat="qa", node_id="qa",
-            input_tokens=0, output_tokens=0, usage_reported=False,
+            provider="claude-code",
+            client_name="claude-code",
+            seat="qa",
+            node_id="qa",
+            input_tokens=0,
+            output_tokens=0,
+            usage_reported=False,
         )
     )
     return ledger
@@ -152,14 +161,22 @@ class TestBuild:
         ledger = RunLedgerRecorder(run_id=RUN_ID)
         await ledger.record(
             UsageRecord(
-                provider="nova", client_name="nova", seat="development",
-                node_id="development", input_tokens=1000, output_tokens=500,
+                provider="nova",
+                client_name="nova",
+                seat="development",
+                node_id="development",
+                input_tokens=1000,
+                output_tokens=500,
             )
         )
         await ledger.record(
             UsageRecord(
-                provider="nova", client_name="nova", seat="development",
-                node_id="development", input_tokens=2000, output_tokens=700,
+                provider="nova",
+                client_name="nova",
+                seat="development",
+                node_id="development",
+                input_tokens=2000,
+                output_tokens=700,
             )
         )
         report = build_usage_report(ledger, run_id=RUN_ID)
@@ -173,32 +190,42 @@ class TestBuild:
         ledger = RunLedgerRecorder(run_id=RUN_ID)
         await ledger.record(
             UsageRecord(
-                provider="nova", client_name="nova", model="model-a",
-                seat="development.w1", node_id="development",
-                input_tokens=100, output_tokens=50,
+                provider="nova",
+                client_name="nova",
+                model="model-a",
+                seat="development.w1",
+                node_id="development",
+                input_tokens=100,
+                output_tokens=50,
             )
         )
         await ledger.record(
             UsageRecord(
-                provider="anthropic", client_name="claude-code", model="model-b",
-                seat="development.w2", node_id="development",
-                input_tokens=200, output_tokens=60,
+                provider="anthropic",
+                client_name="claude-code",
+                model="model-b",
+                seat="development.w2",
+                node_id="development",
+                input_tokens=200,
+                output_tokens=60,
             )
         )
         report = build_usage_report(ledger, run_id=RUN_ID)
         seats = {a.seat for a in report.agents}
         assert {"development.w1", "development.w2"} <= seats
-        assert all(
-            a.model for a in report.agents if a.seat.startswith("development.")
-        )
+        assert all(a.model for a in report.agents if a.seat.startswith("development."))
         assert all(a.node_id == "development" for a in report.agents)
 
     async def test_report_never_fabricates_zero(self):
         ledger = RunLedgerRecorder(run_id=RUN_ID)
         await ledger.record(
             UsageRecord(
-                provider="claude-code", client_name="claude-code", seat="qa",
-                node_id="qa", input_tokens=0, output_tokens=0,
+                provider="claude-code",
+                client_name="claude-code",
+                seat="qa",
+                node_id="qa",
+                input_tokens=0,
+                output_tokens=0,
                 usage_reported=False,
             )
         )
@@ -228,8 +255,13 @@ class TestBuild:
         ledger = RunLedgerRecorder(run_id=RUN_ID)
         await ledger.record(
             UsageRecord(
-                provider="nova", client_name="nova", seat="qa", node_id="qa",
-                input_tokens=900, output_tokens=100, status="failed",
+                provider="nova",
+                client_name="nova",
+                seat="qa",
+                node_id="qa",
+                input_tokens=900,
+                output_tokens=100,
+                status="failed",
                 error_type="TimeoutError",
             )
         )
@@ -244,9 +276,7 @@ class TestBuild:
 class TestBundleIntegration:
     @pytest.fixture
     def snapshot(self) -> Snapshot:
-        state = reduce(
-            _fresh_state(), RunCreated(run_id=RUN_ID, work_kind="bug", summary="fix x")
-        )
+        state = reduce(_fresh_state(), RunCreated(run_id=RUN_ID, work_kind="bug", summary="fix x"))
         state = reduce(state, RunClosed(outcome="succeeded"))
         return Snapshot(channel=state.channel, state=state, from_seq=0)
 
@@ -276,24 +306,36 @@ def report_with_cycles_and_workers() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="development", node_id="development", backend="anthropic",
-                model="claude-opus-5", rounds=2,
-                input_tokens=3000, output_tokens=1200,
+                seat="development",
+                node_id="development",
+                backend="anthropic",
+                model="claude-opus-5",
+                rounds=2,
+                input_tokens=3000,
+                output_tokens=1200,
                 cycles=[
                     CycleUsage(cycle=1, model="claude-opus-5", input_tokens=1000, output_tokens=500),
                     CycleUsage(cycle=2, model="claude-opus-5", input_tokens=2000, output_tokens=700),
                 ],
             ),
             AgentUsage(
-                seat="development.w1", node_id="development", backend="anthropic",
-                model="claude-sonnet-4-6", rounds=1,
-                input_tokens=100, output_tokens=50,
+                seat="development.w1",
+                node_id="development",
+                backend="anthropic",
+                model="claude-sonnet-4-6",
+                rounds=1,
+                input_tokens=100,
+                output_tokens=50,
                 cycles=[CycleUsage(cycle=1, model="claude-sonnet-4-6", input_tokens=100, output_tokens=50)],
             ),
             AgentUsage(
-                seat="development.w2", node_id="development", backend="anthropic",
-                model="claude-sonnet-4-6", rounds=1,
-                input_tokens=200, output_tokens=60,
+                seat="development.w2",
+                node_id="development",
+                backend="anthropic",
+                model="claude-sonnet-4-6",
+                rounds=1,
+                input_tokens=200,
+                output_tokens=60,
                 cycles=[CycleUsage(cycle=1, model="claude-sonnet-4-6", input_tokens=200, output_tokens=60)],
             ),
         ],
@@ -307,8 +349,13 @@ def report_single_cycle() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="qa", node_id="qa", backend="nova", model="m", rounds=1,
-                input_tokens=10, output_tokens=5,
+                seat="qa",
+                node_id="qa",
+                backend="nova",
+                model="m",
+                rounds=1,
+                input_tokens=10,
+                output_tokens=5,
                 cycles=[CycleUsage(cycle=1, model="m", input_tokens=10, output_tokens=5)],
             ),
         ],
@@ -322,13 +369,23 @@ def report_with_failure() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="qa", node_id="qa", backend="nova", model="m", rounds=2,
-                input_tokens=900, output_tokens=100, failures=1,
+                seat="qa",
+                node_id="qa",
+                backend="nova",
+                model="m",
+                rounds=2,
+                input_tokens=900,
+                output_tokens=100,
+                failures=1,
                 cycles=[
                     CycleUsage(cycle=1, model="m", status="completed"),
                     CycleUsage(
-                        cycle=2, model="m", input_tokens=900, output_tokens=100,
-                        status="failed", error_type="TimeoutError",
+                        cycle=2,
+                        model="m",
+                        input_tokens=900,
+                        output_tokens=100,
+                        status="failed",
+                        error_type="TimeoutError",
                     ),
                 ],
             ),
@@ -343,8 +400,13 @@ def report_clean() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="qa", node_id="qa", backend="nova", model="m", rounds=1,
-                input_tokens=10, output_tokens=5,
+                seat="qa",
+                node_id="qa",
+                backend="nova",
+                model="m",
+                rounds=1,
+                input_tokens=10,
+                output_tokens=5,
                 cycles=[CycleUsage(cycle=1, model="m", input_tokens=10, output_tokens=5)],
             ),
         ],
@@ -358,11 +420,17 @@ def report_partial() -> UsageReport:
         generated_at=0.0,
         agents=[
             AgentUsage(
-                seat="development", node_id="development", backend="nova",
-                model="m", rounds=1, input_tokens=100, output_tokens=50,
+                seat="development",
+                node_id="development",
+                backend="nova",
+                model="m",
+                rounds=1,
+                input_tokens=100,
+                output_tokens=50,
             ),
         ],
-        partial=True, partial_reason="resumed in a new process",
+        partial=True,
+        partial_reason="resumed in a new process",
     )
 
 

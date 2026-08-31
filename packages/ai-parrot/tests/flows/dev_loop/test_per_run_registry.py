@@ -52,9 +52,7 @@ async def test_recorder_receives_before_call_returns():
     the wrong registry and accounting would race the report."""
     ledger = RunLedgerRecorder(run_id="run-1")
     registry = EventRegistry(forward_to_global=False)
-    registry.add_provider(
-        UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None)
-    )
+    registry.add_provider(UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None))
 
     await registry.emit(_after_call_event(input_tokens=10, output_tokens=5))
 
@@ -106,9 +104,7 @@ def mock_jira():
 
 @pytest.fixture
 def patch_handoff(monkeypatch):
-    monkeypatch.setattr(
-        DeploymentHandoffNode, "_push_branch", AsyncMock(return_value=None)
-    )
+    monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", AsyncMock(return_value=None))
     monkeypatch.setattr(
         DeploymentHandoffNode,
         "_create_pr",
@@ -134,11 +130,15 @@ def _dispatcher_returning(research_out, qa_passed: bool = True):
             return research_out
         if output_model is DevelopmentOutput:
             return DevelopmentOutput(
-                files_changed=["x.py"], commit_shas=["abc123"], summary="fixed",
+                files_changed=["x.py"],
+                commit_shas=["abc123"],
+                summary="fixed",
             )
         if output_model is QAReport:
             return QAReport(
-                passed=qa_passed, criterion_results=[], lint_passed=qa_passed,
+                passed=qa_passed,
+                criterion_results=[],
+                lint_passed=qa_passed,
                 attempt=1 if qa_passed else int(conf.DEV_LOOP_QA_MAX_RETRIES),
             )
         raise AssertionError(f"unexpected output_model {output_model}")
@@ -172,9 +172,9 @@ async def test_subscriber_not_registered_globally(dev_loop_runner, brief):
     for sub in after:
         target = getattr(sub.callback, "__self__", None)
         recorders = getattr(target, "recorders", []) or []
-        assert not any(isinstance(r, RunLedgerRecorder) for r in recorders), (
-            "a RunLedgerRecorder is reachable from the global registry"
-        )
+        assert not any(
+            isinstance(r, RunLedgerRecorder) for r in recorders
+        ), "a RunLedgerRecorder is reachable from the global registry"
 
 
 async def test_run_registry_created_and_discarded(dev_loop_runner, brief):
@@ -254,9 +254,7 @@ class _FinalOutputCall:
 
     class function:  # mirrors the OpenAI SDK's tool_call.function shape
         name = "final_output"
-        arguments = json.dumps(
-            {"files_changed": [], "commit_shas": [], "summary": "done"}
-        )
+        arguments = json.dumps({"files_changed": [], "commit_shas": [], "summary": "done"})
 
 
 class _EmittingFakeClient(AbstractClient):
@@ -300,9 +298,7 @@ def llm_worktree(tmp_path, monkeypatch):
     return tmp_path
 
 
-async def test_create_client_injects_the_resolved_run_registry(
-    monkeypatch, llm_worktree
-):
+async def test_create_client_injects_the_resolved_run_registry(monkeypatch, llm_worktree):
     """§8 resolved: LLMFactory.create/_client_factory does NOT propagate a
     registry (verified by reading factory.py + AbstractClient.__init__,
     clients/base.py:372 — it always self-creates a fresh, isolated one).
@@ -316,9 +312,7 @@ async def test_create_client_injects_the_resolved_run_registry(
     )
     ledger = RunLedgerRecorder(run_id="run-inject")
     registry = EventRegistry(forward_to_global=False)
-    registry.add_provider(
-        UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None)
-    )
+    registry.add_provider(UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None))
 
     def _client_factory(*args: Any, **kwargs: Any) -> Any:
         return client
@@ -370,9 +364,7 @@ async def test_create_client_without_resolver_does_not_break(monkeypatch, llm_wo
     """No resolver wired (a dispatcher not owned by a DevLoopRunner, or
     used before wiring) must not raise — it degrades gracefully to the
     client's own isolated registry."""
-    client = _EmittingFakeClient(
-        [_Response(_Message(content="t1", tool_calls=[_FinalOutputCall()]))]
-    )
+    client = _EmittingFakeClient([_Response(_Message(content="t1", tool_calls=[_FinalOutputCall()]))])
 
     def _client_factory(*args: Any, **kwargs: Any) -> Any:
         return client

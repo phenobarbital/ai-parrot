@@ -41,9 +41,7 @@ def isolated_registry() -> EventRegistry:
     return EventRegistry(forward_to_global=False)
 
 
-def _after_call_event(
-    *, input_tokens: int | None, output_tokens: int | None
-) -> AfterClientCallEvent:
+def _after_call_event(*, input_tokens: int | None, output_tokens: int | None) -> AfterClientCallEvent:
     return AfterClientCallEvent(
         trace_context=TraceContext.new_root(),
         client_name="openai",
@@ -76,13 +74,9 @@ def test_usagerecord_backcompat_minimal_construction():
 
 async def test_attribution_from_contextvars(isolated_registry):
     sink = _CapturingSink()
-    isolated_registry.add_provider(
-        UsageRecordingSubscriber(recorders=[sink], cost_calculator=None)
-    )
+    isolated_registry.add_provider(UsageRecordingSubscriber(recorders=[sink], cost_calculator=None))
     with usage_attribution("run-1", "development.w1"):
-        await isolated_registry.emit(
-            _after_call_event(input_tokens=10, output_tokens=5)
-        )
+        await isolated_registry.emit(_after_call_event(input_tokens=10, output_tokens=5))
     (rec,) = sink.records
     assert rec.run_id == "run-1"
     assert rec.seat == "development.w1"
@@ -93,9 +87,7 @@ async def test_attribution_from_contextvars(isolated_registry):
 async def test_unattributed_call_has_none_attribution(isolated_registry):
     """Outside any usage_attribution() block, attribution stays None."""
     sink = _CapturingSink()
-    isolated_registry.add_provider(
-        UsageRecordingSubscriber(recorders=[sink], cost_calculator=None)
-    )
+    isolated_registry.add_provider(UsageRecordingSubscriber(recorders=[sink], cost_calculator=None))
     await isolated_registry.emit(_after_call_event(input_tokens=10, output_tokens=5))
     (rec,) = sink.records
     assert rec.run_id is None
@@ -106,12 +98,8 @@ async def test_unattributed_call_has_none_attribution(isolated_registry):
 async def test_usage_reported_false_when_provider_reported_nothing(isolated_registry):
     """The 0-coercion stays for Prometheus/OpenLit; the flag preserves truth."""
     sink = _CapturingSink()
-    isolated_registry.add_provider(
-        UsageRecordingSubscriber(recorders=[sink], cost_calculator=None)
-    )
-    await isolated_registry.emit(
-        _after_call_event(input_tokens=None, output_tokens=None)
-    )
+    isolated_registry.add_provider(UsageRecordingSubscriber(recorders=[sink], cost_calculator=None))
+    await isolated_registry.emit(_after_call_event(input_tokens=None, output_tokens=None))
     (rec,) = sink.records
     assert rec.usage_reported is False
     assert rec.input_tokens == 0  # coerced, but flagged as unreported
@@ -119,9 +107,7 @@ async def test_usage_reported_false_when_provider_reported_nothing(isolated_regi
 
 async def test_failed_call_recorded(isolated_registry):
     sink = _CapturingSink()
-    isolated_registry.add_provider(
-        UsageRecordingSubscriber(recorders=[sink], cost_calculator=None)
-    )
+    isolated_registry.add_provider(UsageRecordingSubscriber(recorders=[sink], cost_calculator=None))
     await isolated_registry.emit(_failed_call_event(error_type="TimeoutError"))
     (rec,) = sink.records
     assert rec.status == "failed"
@@ -131,9 +117,7 @@ async def test_failed_call_recorded(isolated_registry):
 
 async def test_failed_call_carries_attribution(isolated_registry):
     sink = _CapturingSink()
-    isolated_registry.add_provider(
-        UsageRecordingSubscriber(recorders=[sink], cost_calculator=None)
-    )
+    isolated_registry.add_provider(UsageRecordingSubscriber(recorders=[sink], cost_calculator=None))
     with usage_attribution("run-2", "qa"):
         await isolated_registry.emit(_failed_call_event(error_type="ValueError"))
     (rec,) = sink.records
@@ -155,9 +139,7 @@ async def test_register_subscribes_after_and_failed_never_stream_chunk(
     from parrot.core.events.lifecycle.events import ClientStreamChunkEvent
 
     sink = _CapturingSink()
-    UsageRecordingSubscriber(recorders=[sink], cost_calculator=None).register(
-        isolated_registry
-    )
+    UsageRecordingSubscriber(recorders=[sink], cost_calculator=None).register(isolated_registry)
     assert isolated_registry.has_subscribers(AfterClientCallEvent) is True
     assert isolated_registry.has_subscribers(ClientCallFailedEvent) is True
     assert isolated_registry.has_subscribers(ClientStreamChunkEvent) is False
@@ -171,8 +153,6 @@ async def test_existing_recorders_unaffected(isolated_registry):
     )
 
     recorder = LoggingUsageRecorder()
-    isolated_registry.add_provider(
-        UsageRecordingSubscriber(recorders=[recorder], cost_calculator=None)
-    )
+    isolated_registry.add_provider(UsageRecordingSubscriber(recorders=[recorder], cost_calculator=None))
     # Must not raise.
     await isolated_registry.emit(_after_call_event(input_tokens=10, output_tokens=5))

@@ -71,9 +71,7 @@ class UsageRecord(BaseModel):
     finish_reason: Optional[str] = None
     trace_id: Optional[str] = None
     service_name: str = "ai-parrot"
-    timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # ── FEAT-479: flow attribution. All optional/defaulted. ──
     run_id: Optional[str] = None

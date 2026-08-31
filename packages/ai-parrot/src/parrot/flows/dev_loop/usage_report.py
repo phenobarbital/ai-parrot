@@ -167,9 +167,7 @@ def build_usage_report(ledger: RunLedgerRecorder, run_id: str) -> UsageReport:
                 model=record.model,
                 input_tokens=record.input_tokens if record.usage_reported else None,
                 output_tokens=record.output_tokens if record.usage_reported else None,
-                duration_seconds=(
-                    record.duration_ms / 1000.0 if record.duration_ms else None
-                ),
+                duration_seconds=(record.duration_ms / 1000.0 if record.duration_ms else None),
                 status=record.status,
                 error_type=record.error_type or "",
             )
@@ -184,9 +182,7 @@ def build_usage_report(ledger: RunLedgerRecorder, run_id: str) -> UsageReport:
                 rounds=seat_usage.rounds,
                 input_tokens=seat_usage.input_tokens,
                 output_tokens=seat_usage.output_tokens,
-                duration_seconds=_sum_optional_float(
-                    [c.duration_seconds for c in cycles]
-                ),
+                duration_seconds=_sum_optional_float([c.duration_seconds for c in cycles]),
                 cycles=cycles,
                 failures=seat_usage.failures,
             )
@@ -225,17 +221,17 @@ def _fmt_tokens(input_tokens: int | None, output_tokens: int | None) -> str:
     """
     if input_tokens is None and output_tokens is None:
         return "—"
-    return f"{input_tokens if input_tokens is not None else '—'} in / " \
-           f"{output_tokens if output_tokens is not None else '—'} out"
+    return (
+        f"{input_tokens if input_tokens is not None else '—'} in / "
+        f"{output_tokens if output_tokens is not None else '—'} out"
+    )
 
 
 def _cycle_markdown_row(agent: AgentUsage, cycle: CycleUsage) -> str:
     """One indented ``| └ cycle N | ... |`` row — suppressed by the caller
     when a seat has exactly one cycle (the parent row already says
     everything)."""
-    duration = (
-        f"{cycle.duration_seconds:.1f}s" if cycle.duration_seconds is not None else "—"
-    )
+    duration = f"{cycle.duration_seconds:.1f}s" if cycle.duration_seconds is not None else "—"
     return (
         f"| └ cycle {cycle.cycle} | {agent.node_id} | — "
         f"| {cycle.model or '—'} | — "
@@ -245,12 +241,7 @@ def _cycle_markdown_row(agent: AgentUsage, cycle: CycleUsage) -> str:
 
 def _failed_cycles(report: UsageReport) -> list[tuple[AgentUsage, CycleUsage]]:
     """Every ``(agent, cycle)`` pair whose cycle failed, in report order."""
-    return [
-        (agent, cycle)
-        for agent in report.agents
-        for cycle in agent.cycles
-        if cycle.status == "failed"
-    ]
+    return [(agent, cycle) for agent in report.agents for cycle in agent.cycles if cycle.status == "failed"]
 
 
 def render_usage_markdown(report: UsageReport) -> str:
@@ -290,9 +281,7 @@ def render_usage_markdown(report: UsageReport) -> str:
     lines.append("| Seat | Node | Backend | Model | Rounds | Tokens | Duration |")
     lines.append("|---|---|---|---|---|---|---|")
     for agent in report.agents:
-        duration = (
-            f"{agent.duration_seconds:.1f}s" if agent.duration_seconds is not None else "—"
-        )
+        duration = f"{agent.duration_seconds:.1f}s" if agent.duration_seconds is not None else "—"
         lines.append(
             f"| {agent.seat} | {agent.node_id} | {agent.backend or '—'} "
             f"| {agent.model or '—'} | {_fmt_value(agent.rounds)} "
@@ -323,10 +312,7 @@ def render_usage_markdown(report: UsageReport) -> str:
                 f"| {_fmt_tokens(cycle.input_tokens, cycle.output_tokens)} |"
             )
         lines.append("")
-        lines.append(
-            "_Error messages are not shown here — see the run bundle's "
-            "per-node errors._"
-        )
+        lines.append("_Error messages are not shown here — see the run bundle's " "per-node errors._")
         lines.append("")
 
     return "\n".join(lines)
@@ -364,9 +350,7 @@ def _html_row(agent: AgentUsage) -> str:
     interpolated value is HTML-escaped — model ids and seat names reach
     this page as data, not trusted markup.
     """
-    duration = (
-        f"{agent.duration_seconds:.1f}s" if agent.duration_seconds is not None else "—"
-    )
+    duration = f"{agent.duration_seconds:.1f}s" if agent.duration_seconds is not None else "—"
     return (
         "<tr>"
         f"<td>{escape(agent.seat)}</td>"
@@ -383,9 +367,7 @@ def _html_row(agent: AgentUsage) -> str:
 def _cycle_html_row(agent: AgentUsage, cycle: CycleUsage) -> str:
     """One indented ``<tr class="cycle">`` for a retained cycle — suppressed
     by the caller when a seat has exactly one cycle."""
-    duration = (
-        f"{cycle.duration_seconds:.1f}s" if cycle.duration_seconds is not None else "—"
-    )
+    duration = f"{cycle.duration_seconds:.1f}s" if cycle.duration_seconds is not None else "—"
     return (
         '<tr class="cycle">'
         f"<td>└ cycle {cycle.cycle}</td>"
@@ -480,8 +462,7 @@ def render_usage_html(report: UsageReport) -> str:
     if report.partial:
         reason = escape(report.partial_reason or "reason unknown")
         partial_banner = (
-            f'<p style="color:#b45309"><strong>⚠️ Partial</strong> '
-            f"— {reason}. Totals below are a lower bound.</p>"
+            f'<p style="color:#b45309"><strong>⚠️ Partial</strong> ' f"— {reason}. Totals below are a lower bound.</p>"
         )
     failures_html = _failures_table_html(report)
 

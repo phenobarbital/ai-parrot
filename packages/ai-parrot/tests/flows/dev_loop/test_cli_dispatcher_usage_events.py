@@ -115,15 +115,15 @@ def ledger() -> RunLedgerRecorder:
 @pytest.fixture
 def run_registry(ledger) -> EventRegistry:
     registry = EventRegistry(forward_to_global=False)
-    registry.add_provider(
-        UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None)
-    )
+    registry.add_provider(UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None))
     return registry
 
 
 def _dispatcher(monkeypatch, messages, *, registry=None) -> ClaudeCodeDispatcher:
     disp = ClaudeCodeDispatcher(
-        max_concurrent=2, redis_url="redis://localhost:6379/0", stream_ttl_seconds=300,
+        max_concurrent=2,
+        redis_url="redis://localhost:6379/0",
+        stream_ttl_seconds=300,
     )
     fake_redis = AsyncMock()
     fake_redis.xadd = AsyncMock(return_value=b"1-0")
@@ -149,7 +149,8 @@ async def test_claude_dispatch_emits_after_call_with_model(
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
         _ResultMessage(
-            usage={"input_tokens": 100, "output_tokens": 50}, duration_ms=1200,
+            usage={"input_tokens": 100, "output_tokens": 50},
+            duration_ms=1200,
         ),
     ]
     dispatcher = _dispatcher(monkeypatch, messages, registry=run_registry)
@@ -170,9 +171,7 @@ async def test_claude_dispatch_emits_after_call_with_model(
     assert rec.seat == "development"
 
 
-async def test_pool_worker_seat_reaches_ledger(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
-):
+async def test_pool_worker_seat_reaches_ledger(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
     """Regression guard for FEAT-479 Finding 3: 'development.w1' cannot
     validate against the closed NodeId Literal, so _apply_to_session_host
     swallowed it at DEBUG and all fan-out usage was lost."""
@@ -217,9 +216,7 @@ async def test_no_usage_no_event(monkeypatch, brief, _patch_worktree_base, run_r
     assert ledger.records == []
 
 
-async def test_usage_as_object_and_as_dict(
-    monkeypatch, brief, _patch_worktree_base, run_registry, ledger
-):
+async def test_usage_as_object_and_as_dict(monkeypatch, brief, _patch_worktree_base, run_registry, ledger):
     """The harvest docstring promises both shapes are supported."""
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
@@ -241,9 +238,7 @@ async def test_usage_as_object_and_as_dict(
     assert rec.output_tokens == 8
 
 
-async def test_telemetry_failure_does_not_break_dispatch(
-    monkeypatch, brief, _patch_worktree_base
-):
+async def test_telemetry_failure_does_not_break_dispatch(monkeypatch, brief, _patch_worktree_base):
     """A raising registry must not fail the dispatch."""
     messages = [
         _AssistantMessage(content=[_TextBlock(_make_research_payload())]),
@@ -267,9 +262,7 @@ async def test_telemetry_failure_does_not_break_dispatch(
     assert result is not None
 
 
-async def test_no_resolver_wired_does_not_break_dispatch(
-    monkeypatch, brief, _patch_worktree_base
-):
+async def test_no_resolver_wired_does_not_break_dispatch(monkeypatch, brief, _patch_worktree_base):
     """A dispatcher not owned by a DevLoopRunner (no resolver ever wired)
     must dispatch successfully — no event emitted, no error."""
     messages = [
