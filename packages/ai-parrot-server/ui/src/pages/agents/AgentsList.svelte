@@ -107,6 +107,11 @@
     router.navigate(`/admin/agents/${encodeURIComponent(agent.name)}`);
   }
 
+  function goChat(agent: BotAgentItem, e: MouseEvent): void {
+    e.stopPropagation();
+    router.navigate(`/admin/agents/${encodeURIComponent(agent.name)}/chat`);
+  }
+
   function openDelete(agent: BotAgentItem, e: MouseEvent): void {
     e.stopPropagation();
     deleteTarget = agent;
@@ -218,8 +223,18 @@
                 {/if}
               </td>
               <td class="px-3 py-2">
-                {#if agent.source === "database"}
-                  <div class="flex gap-2">
+                <div class="flex gap-2">
+                  {#if !isDisabledRow}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={(e: MouseEvent) => goChat(agent, e)}
+                      data-testid={`agent-chat-${agent.name}`}
+                    >
+                      Chat
+                    </Button>
+                  {/if}
+                  {#if agent.source === "database"}
                     <Button
                       size="sm"
                       variant="outline"
@@ -236,8 +251,8 @@
                     >
                       Delete
                     </Button>
-                  </div>
-                {/if}
+                  {/if}
+                </div>
               </td>
             </tr>
           {/each}

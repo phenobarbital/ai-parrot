@@ -40,6 +40,14 @@
       component: () => import("./pages/agents/AgentFormPage.svelte"),
       requiresAuth: true,
     },
+    // FEAT-476: distinct segment count from "/admin/agents/:name" above —
+    // exact-length route matching (router.svelte.ts) means these never
+    // collide, so ordering relative to it doesn't matter.
+    {
+      path: "/admin/agents/:name/chat",
+      component: () => import("./pages/agents/AgentChatPage.svelte"),
+      requiresAuth: true,
+    },
   ];
 
   let ActiveComponent = $state<Component | null>(null);

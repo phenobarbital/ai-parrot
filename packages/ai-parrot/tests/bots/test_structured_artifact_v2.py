@@ -87,13 +87,19 @@ async def test_dbagent_structured_table_mints_artifact():
 
 
 async def test_attach_structured_artifact_noop_before_render():
-    """The exact agent.py call-site timing: response.output isn't a dict yet.
+    """The helper's guard: a QueryResponse (BaseModel) input is a safe no-op.
 
-    DatabaseAgent's STRUCTURED_TABLE branch calls the helper immediately
-    after setting output_mode — BEFORE the formatter's renderer pass has
-    turned response.output into a config dict. The helper's own guard makes
-    this a safe no-op (never raises, never mutates response) rather than a
-    premature/incorrect mint.
+    This tests the ``attach_structured_artifact`` helper's own guard clause:
+    when ``response.output`` is a Pydantic BaseModel (not a dict) and
+    ``response.a2ui_envelope`` is ``None``, the helper correctly returns
+    ``None`` without mutating the response.
+
+    Note (issue #1269): DatabaseAgent.ask() now invokes the
+    StructuredTableRenderer BEFORE calling this helper, so in production
+    ``response.output`` is always a dict by the time the helper runs.
+    This test exercises only the helper's defensive guard, not the full
+    agent code path — see test_db_agent_structured_table_artifact.py for
+    the end-to-end integration tests.
     """
     from parrot.bots.database.models import QueryResponse
 

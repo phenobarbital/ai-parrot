@@ -1,0 +1,26 @@
+{
+  "additionalProperties": true,
+  "description": "A single tool invocation as emitted by either envelope builder.\n\nMirrors the ``tool_calls`` list entries built in\n``agent.py:2574-2583`` (stream finaliser) and ``agent.py:2807-2816``\n(JSON formatter).",
+  "properties": {
+    "arguments": {
+      "default": null,
+      "title": "Arguments"
+    },
+    "name": {
+      "default": "unknown",
+      "title": "Name",
+      "type": "string"
+    },
+    "output": {
+      "default": null,
+      "title": "Output"
+    },
+    "status": {
+      "default": "completed",
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "title": "AgentToolCall",
+  "type": "object"
+}

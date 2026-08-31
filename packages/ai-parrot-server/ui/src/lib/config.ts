@@ -56,4 +56,21 @@ export const config = {
   tokenStorageKey: "ai_parrot_token",
   /** localStorage key for the raw login response payload (user info). */
   sessionStorageKey: "ai_parrot_session",
+  /** FEAT-476: base path AgentChat's vendored `api/agent.ts` /
+   * `api/stream.ts` POST to (`AgentTalk`, `manager.py:1991-1992`). */
+  agentsChatPath: "/api/v1/agents/chat",
+  /** FEAT-476: voice turn upload (`AgentVoiceTalk`, `manager.py:1772`,
+   * registered only when `ai-parrot-integrations[voice]` imports). */
+  agentsVoicePath: "/api/v1/agents/voice",
+  /** FEAT-476: avatar viewer/session routes (`handlers/avatar.py:681,686`,
+   * `handlers/avatar_fullmode.py:484-494`). */
+  agentsAvatarPath: "/api/v1/agents/avatar",
+  /** FEAT-476: conversation history sync (`ChatInteractionHandler`,
+   * `manager.py:2212-2213`). */
+  chatInteractionsPath: "/api/v1/chat/interactions",
+  /** FEAT-476 (TASK-2592): Dexie database name prefix for
+   * `services/chat-db.ts`'s local conversation store — navigator derives
+   * this from its multi-tenant `storageNamespace`; the Admin UI has no
+   * tenant concept, so it is a fixed, namespaced constant instead. */
+  conversationStoragePrefix: "ai_parrot_agentchat",
 };
