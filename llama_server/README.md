@@ -8,10 +8,10 @@ host RAM.
 
 | File | Purpose |
 |---|---|
-| [`docker-compose.llama.yml`](../docker-compose.llama.yml) | the stack |
-| [`docker/llama/Dockerfile`](../docker/llama/Dockerfile) | official image + `curl` + `HEALTHCHECK` |
-| [`docker/llama/.env.example`](../docker/llama/.env.example) | config template → copy to `docker/llama/.env` |
-| `docker/llama/models/` | drop-in dir for local `.gguf` files (contents gitignored) |
+| [`docker-compose.llama.yml`](docker-compose.llama.yml) | the stack |
+| [`Dockerfile`](Dockerfile) | official image + `curl` + `HEALTHCHECK` |
+| [`.env.example`](.env.example) | config template → copy to `.env` |
+| `models/` | drop-in dir for local `.gguf` files (contents gitignored) |
 
 Consumed by [`parrot.clients.localllm.LocalLLMClient`](../packages/ai-parrot/src/parrot/clients/localllm.py).
 
@@ -29,8 +29,8 @@ daemon restart or a reboot, because it would silently hold VRAM you were
 about to use. You start it, you stop it:
 
 ```bash
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml up -d   # take the GPU
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml down    # give it back
+docker compose --env-file .env -f docker-compose.llama.yml up -d   # take the GPU
+docker compose --env-file .env -f docker-compose.llama.yml down    # give it back
 ```
 
 **We extend the official image rather than build llama.cpp.** The Dockerfile
@@ -47,7 +47,7 @@ crowded on a dev box. The endpoint is therefore
 
 - `llama-models:/root/.cache/llama.cpp` — named volume holding models
   auto-downloaded with `-hf`. Survives `down`, wiped by `down -v`.
-- `./docker/llama/models:/models:ro` — read-only bind mount for GGUF files
+- `./models:/models:ro` — read-only bind mount for GGUF files
   you fetched yourself.
 
 **`LLAMA_EXTRA_ARGS` is the escape hatch.** The `command:` block hard-codes
@@ -65,9 +65,9 @@ for no authentication.
 ## Quick start
 
 ```bash
-cp docker/llama/.env.example docker/llama/.env
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml up -d
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml logs -f
+cp .env.example .env
+docker compose --env-file .env -f docker-compose.llama.yml up -d
+docker compose --env-file .env -f docker-compose.llama.yml logs -f
 ```
 
 > **`--env-file` is mandatory, not decoration.** See
@@ -163,7 +163,7 @@ Quantizations are published at
 Budget before you start: the experts alone are ~19 GB, so you need **≥ 24 GB
 of free system RAM**, plus ~23 GB of disk for the download.
 
-In `docker/llama/.env`:
+In `.env`:
 
 ```ini
 LLAMA_PORT=8089
@@ -188,8 +188,8 @@ LLAMA_HEALTH_START=30m
 Then, **with `--env-file`**:
 
 ```bash
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml up -d
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml logs -f
+docker compose --env-file .env -f docker-compose.llama.yml up -d
+docker compose --env-file .env -f docker-compose.llama.yml logs -f
 ```
 
 The first start downloads ~22 GB, and loading it off a cold page cache takes
@@ -259,7 +259,7 @@ hypothesis, not a fact — the exact split depends on quant, context and driver.
 2. Read the real numbers out of the startup log rather than trusting the
    table above:
    ```bash
-   docker compose --env-file docker/llama/.env -f docker-compose.llama.yml logs llama-server \
+   docker compose --env-file .env -f docker-compose.llama.yml logs llama-server \
      | grep -Ei 'buffer size|n_ctx|offloaded|CUDA0'
    ```
    The `CUDA0 model buffer size` and `KV buffer size` lines are ground truth
@@ -375,10 +375,10 @@ stack a good target for `StructuredOutputConfig` work.
 only from the shell environment, a `.env` at the *project root*, or an
 explicit `--env-file`.
 
-Every knob in `docker/llama/.env` — `LLAMA_PORT`, `LLAMA_HF_MODEL`,
+Every knob in `.env` — `LLAMA_PORT`, `LLAMA_HF_MODEL`,
 `LLAMA_CTX`, `LLAMA_NGL`, `LLAMA_PARALLEL`, `LLAMA_EXTRA_ARGS`,
 `LLAMA_HEALTH_START` — is consumed by interpolation. So without
-`--env-file docker/llama/.env`, editing that file does **nothing**: the stack
+`--env-file .env`, editing that file does **nothing**: the stack
 silently starts with the built-in defaults (the 4 B model, 8192 context,
 `--parallel 2`, no extra args). No warning, no error — it just serves the
 wrong model.
@@ -386,7 +386,7 @@ wrong model.
 Always pass it, and confirm before starting:
 
 ```bash
-docker compose --env-file docker/llama/.env -f docker-compose.llama.yml config
+docker compose --env-file .env -f docker-compose.llama.yml config
 ```
 
 Read back the resolved `command:` list. If your `--n-cpu-moe` is not in it,
@@ -434,11 +434,11 @@ pinning it by digest is the conservative move.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `unknown model architecture` at load | Image predates Gated DeltaNet support | `docker compose --env-file docker/llama/.env -f docker-compose.llama.yml build --pull` |
+| `unknown model architecture` at load | Image predates Gated DeltaNet support | `docker compose --env-file .env -f docker-compose.llama.yml build --pull` |
 | `CUDA out of memory` during load | `--n-cpu-moe` too low | Raise it toward 40 |
 | Loads fine, OOMs on a long request | KV cache growth at high `LLAMA_CTX` | Lower `LLAMA_CTX`, add `--cache-type-k q8_0 --cache-type-v q8_0`, or raise `--n-cpu-moe` |
 | Container `unhealthy` but serving fine | Load exceeds the start period | Raise `LLAMA_HEALTH_START` (30m for a first `-hf` download) |
-| Edits to `docker/llama/.env` have no effect | Missing `--env-file` — `env_file:` does not drive interpolation | Pass `--env-file docker/llama/.env`; verify with `config` |
+| Edits to `.env` have no effect | Missing `--env-file` — `env_file:` does not drive interpolation | Pass `--env-file .env`; verify with `config` |
 | Serving the 4 B default when you configured the 35 B | Same as above | Same as above |
 | Multi-second stalls mid-generation | Experts being paged out of RAM | Check free RAM; add `--load-mode mmap+mlock` to `LLAMA_EXTRA_ARGS` (needs `ulimits: memlock: -1` in the compose) |
 | Very low tok/s, GPU near idle | Expected — experts run on CPU | Add `--threads <physical cores>`; lower `--n-cpu-moe` to move layers to GPU |
