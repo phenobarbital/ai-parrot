@@ -65,10 +65,16 @@ for web-based QA is a **separate follow-up spec** (see Open Questions).
 - **Development pool**: fixed configurable pool — operator supplies an
   explicit list of `(backend, model)` client specs, pool size N derives from
   that list. No default lineup baked into the flow; the console UI defaults to
-  Bedrock GLM + kimi-k3.
-- **Research verdict can collapse the pool to 1**: pool composition is fixed
-  by config, but if research/planner determines the job fits a single agent,
-  only the first configured client runs.
+  Bedrock GLM + Bedrock Qwen3 coder. **NVIDIA NIM is currently unusable for
+  this account (401 Unauthorized, observed even on other NIM models such as
+  gemma): any NIM seat is replaced by Qwen coder on Amazon Bedrock**; NIM
+  stays selectable in the picker, kimi-k3 stays selectable via the direct
+  `moonshot` backend.
+- **Single-task collapse rule (no flag)**: pool composition is fixed by
+  config; no explicit verdict field is added. When research/planning ends
+  with exactly one `TASK-`, the Development node deploys a single sub-agent —
+  the first model from `suggested_pool`/the configured list. More than one
+  task ⇒ the full configured pool deploys.
 - **Development sub-agents are non-thinking models** (Claude sonnet,
   gpt-5.5-codex, kimi-k3, GLM) — the pool spec must not enable
   thinking/reasoning-effort escalation by default for these seats.
@@ -280,13 +286,18 @@ dev_loop and dev_flow by role. Console pickers become fully registry-driven.
   groups on the run form, all backed by `/api/config`:
   1. **Development sub-agents**: an editable list of `(backend, model)` rows
      (same shape as the existing ops-console `dev_agents` rows). UI default:
-     Bedrock GLM (`nova` backend, `zai.glm-5`) + kimi-k3 (`moonshot`
-     backend). Empty list ⇒ single-agent claude-code.
+     Bedrock GLM (`nova` backend, `zai.glm-5`) + Qwen3 coder (`nova` backend,
+     `qwen.qwen3-coder-480b-a35b-v1:0`; public alias `qwen3-coder-480b-a35b`,
+     `parrot/models/bedrock_models.py:128`). NIM stays selectable but is not
+     a default (401 for this account); kimi-k3 selectable via the `moonshot`
+     backend. Empty list ⇒ single-agent claude-code.
   2. **Research models**: primary (default `claude-opus-5`) and complementary
-     partner (default `gpt-5.6-sol` over Bedrock Mantle; `nova-2-lite`
-     selectable; "disabled" selectable).
+     partner — **disabled by default** (FEAT-482's shipping default) with an
+     explicit enable flag in the UI; when enabled, defaults to `gpt-5.6-sol`
+     over Bedrock Mantle, `nova-2-lite` selectable.
   3. **Adversarial review pair**: primary reviewer (default `claude-opus-5`)
-     and counter-reviewer (default `gpt-5.6-sol`; Nova 2 selectable).
+     and counter-reviewer (default `gpt-5.6-sol` over Bedrock Mantle via a
+     read-only adversarial dispatcher; Nova 2 selectable).
 - When the Development node deploys the pool, the operator sees an INFO log
   line (and the existing flow events) stating how many sub-agents launched
   and which backend/model each seat runs, e.g.
@@ -295,8 +306,9 @@ dev_loop and dev_flow by role. Console pickers become fully registry-driven.
   both seats' findings with attribution; the run's usage report breaks token
   spend down per seat (`ideation`, `ideation.partner`, `development.wN`,
   judges) — vendor diversification is visible in the ledger.
-- If research/planner concludes the job fits one agent, the run proceeds
-  single-agent with the first configured client; the log says so explicitly.
+- If research/planning produces exactly one task, the run proceeds
+  single-agent with the first model from the suggested/configured pool; the
+  log says so explicitly.
 
 ### Internal Behavior
 
@@ -307,9 +319,11 @@ dev_loop and dev_flow by role. Console pickers become fully registry-driven.
   `DevelopmentNode` (`pool_config` + `dispatcher_builder` from
   `agent_builder.build_dispatcher`), and `QANode`
   (`ParallelPerspectiveReviewDispatcher` or judge panel built from the pair).
-- Pool collapse rule: pool composition comes from config; a
-  single-agent-sufficient verdict from planner/ideation (carried in
-  `PlannerOutput`/shared data) truncates deployment to the first spec.
+- Pool collapse rule: pool composition comes from config; **no new flag or
+  typed field is introduced** (so no FEAT-480 allowlist change). The
+  Development node counts tasks in the per-spec index: exactly one `TASK-` ⇒
+  deploy only the first model from `PlannerOutput.suggested_pool` (falling
+  back to the first configured spec); otherwise deploy the full pool.
   Dependency-chained task graphs already serialize naturally through the
   existing wave logic.
 - Worktree model is unchanged: one feature worktree, `DevAgentPool.run_wave`
@@ -335,8 +349,10 @@ dev_loop and dev_flow by role. Console pickers become fully registry-driven.
   dispatch.
 - **Empty dev pool list**: identical to today's single-agent path
   (`_execute_single`), including honoring an injected profile.
-- **Collapse signal absent**: no verdict ⇒ deploy the full configured pool
-  (config is authoritative; the verdict only shrinks, never grows).
+- **Task index unreadable**: falls back to today's behavior (existing warning
+  + single-agent degradation at `development.py:202-206`); with a readable
+  index, one task ⇒ one agent, multiple tasks ⇒ full configured pool (config
+  is authoritative; the task count only shrinks the pool, never grows it).
 - **Checkpoint resume**: model-plan fields that affect routing enter the
   FEAT-480 `execution_policy` fingerprint — changing the plan between resume
   attempts is a deliberate fingerprint mismatch (fresh run), not a silent
@@ -356,7 +372,8 @@ dev_loop and dev_flow by role. Console pickers become fully registry-driven.
   `build_dev_flow`/`DevFlowRunner` (research primary/partner, dev pool,
   review pair), with env-key defaults.
 - `dev-flow-multi-agent-development`: reachable `DevAgentPool` in dev_flow —
-  operator-defined pool, planner/research collapse-to-1, INFO deployment log.
+  operator-defined pool, single-task collapse to one agent, INFO deployment
+  log.
 - `dev-flow-configurable-review`: configurable adversarial review pair for
   dev_flow (default Opus 5 + gpt-5.6-sol).
 - `dev-flow-console-llm-selectors`: `server_dev.py` UI + API surface for all
@@ -364,8 +381,9 @@ dev_loop and dev_flow by role. Console pickers become fully registry-driven.
 
 ### Modified Capabilities
 - `sdd-dev-flow` (FEAT-412 spec): `build_dev_flow` surface, factories wiring.
-- `devflow-complementary-research` (FEAT-482): consumed dependency; dev_flow
-  default for the partner may flip from disabled to enabled (open question).
+- `devflow-complementary-research` (FEAT-482): consumed dependency; the
+  partner keeps FEAT-482's disabled-by-default, with an enable flag exposed
+  in the dev-flow console.
 
 ---
 
@@ -567,10 +585,10 @@ from parrot.clients.factory import LLMFactory                     # factory.py:1
 - [x] Can research collapse the pool? — *Owner: Jesus Lara*: yes — a single-agent-sufficient verdict from research/planner deploys only the first configured client; otherwise the full configured pool runs.
 - [x] Worktree model for concurrent sub-agents — *Owner: Jesus Lara*: one shared feature worktree, disjoint task sets, serialized commits (existing `DevAgentPool` wave model); no per-agent worktrees.
 - [x] Default model pairs — *Owner: Jesus Lara*: Opus 5 + `gpt-5.6-sol` everywhere (research primary+partner, adversarial review pair); AWS Nova 2 stays selectable.
-- [ ] **kimi-k3 routing**: the requested "NVIDIA NIM kimi-k3" seat does not exist (NIM has only account-gated `kimi-k2.6`). Default the kimi seat to the `moonshot` backend (direct API, kimi-k3, already the dev-loop default) or to NIM `kimi-k2.6`? — *Owner: Jesus Lara*
-- [ ] **gpt-5.6-sol transport for review**: run the counter-reviewer over Bedrock Mantle (new/extended Nova-style adversarial dispatcher; read-only by construction like `NovaAdversarialReviewDispatcher`) or extend the `codex` backend model list? Codex CLI cannot run `gpt-5.6-sol` today. — *Owner: Jesus Lara*
-- [ ] **GLM-on-Bedrock transport for the dev pool**: `nova` backend with `zai.glm-5` (Mantle, 131072 max tokens configured) vs. direct `zai` backend `glm-5.2` — which is the console default row? — *Owner: Jesus Lara*
-- [ ] **Collapse-signal carrier**: reuse `PlannerOutput.suggested_pool` (exists, unconsumed) or add an explicit `single_agent_sufficient: bool` to `IdeationOutput`/`PlannerOutput`? Affects the FEAT-480 allowlist only if a new typed result is added. — *Owner: spec phase*
-- [ ] **Research partner default state in dev_flow**: FEAT-482 ships with the partner disabled by default (`DEV_FLOW_RESEARCH_PARTNER=""`). Does this feature flip dev_flow's default to enabled (`gpt-5.6-sol`), or keep disabled-by-default with the console preselecting it? — *Owner: Jesus Lara*
-- [ ] **JudgeSpec backend widening**: making the review pair fully configurable may require widening `JudgeSpec.agent` beyond `{claude-code, codex, gemini}` (e.g. `nova` for Mantle-hosted counter-review) — confirm at spec time whether the pair rides `ParallelPerspectiveReviewDispatcher` (no JudgeSpec change) or the judge panel (Literal change). — *Owner: spec phase*
+- [x] **kimi-k3 routing** — *Owner: Jesus Lara*: NVIDIA NIM is currently unusable for this account (401 Unauthorized, observed even on other NIM models such as gemma) — any unavailable NIM seat is replaced with Qwen3 coder on Amazon Bedrock (`qwen.qwen3-coder-480b-a35b-v1:0`, public alias `qwen3-coder-480b-a35b`, `bedrock_models.py:128`). Console default pool becomes Bedrock GLM + Bedrock Qwen3 coder; NIM stays in the picker (not default), kimi-k3 stays selectable via the direct `moonshot` backend.
+- [x] **gpt-5.6-sol transport for review** — *Owner: Jesus Lara*: Option 1 — run the counter-reviewer over Bedrock Mantle with a read-only-by-construction adversarial dispatcher (like `NovaAdversarialReviewDispatcher`); implied by the JudgeSpec answer below (pair rides `ParallelPerspectiveReviewDispatcher`). The `codex` backend model list is NOT extended.
+- [x] **GLM-on-Bedrock transport for the dev pool** — *Owner: Jesus Lara*: Option 1 — `nova` backend over Bedrock Mantle with `zai.glm-5` as the console default row; direct `zai` backend stays selectable.
+- [x] **Collapse-signal carrier** — *Owner: Jesus Lara*: no new flag or typed field. The signal is the task count itself: research/planning ending with exactly one `TASK-` ⇒ Development deploys one agent, taking the first model from `PlannerOutput.suggested_pool`; otherwise the full configured pool. No FEAT-480 allowlist change.
+- [x] **Research partner default state in dev_flow** — *Owner: Jesus Lara*: Option 2 — keep disabled by default (FEAT-482's shipping default); the console adds an explicit enable flag/configuration toggle (enabling defaults the partner to `gpt-5.6-sol`).
+- [x] **JudgeSpec backend widening** — *Owner: Jesus Lara*: no change to `JudgeSpec` — the configurable review pair rides `ParallelPerspectiveReviewDispatcher` (`code_review.py:341`), not the judge panel.
 - [ ] **Backend registry refactor (Option C)**: file as a separate follow-up brainstorm once FEAT-482/484 land? — *Owner: Jesus Lara*
