@@ -33,26 +33,31 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
 from parrot import conf
 from parrot.clients.claude_agent import ClaudeAgentRunOptions
 from parrot.clients.factory import LLMFactory
+from parrot.core.events.lifecycle import TraceContext
+from parrot.core.events.lifecycle.events.client import AfterClientCallEvent
 from parrot.flows.dev_loop._subagent_defs import load_subagent_definition
 from parrot.flows.dev_loop.dispatchers._shared import (
-    T,
     _SESSION_HOST_CTX,
-    _apply_to_session_host,
     DispatchExecutionError,
     DispatchOutputValidationError,
+    T,
+    _apply_to_session_host,
 )
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, DispatchEvent
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.observability.context import usage_attribution
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from claude_agent_sdk.types import AgentDefinition  # noqa: F401
+
+    from parrot.core.events.lifecycle import EventRegistry
 
 # Edit/Write tools that let a dispatched session mutate the filesystem through
 # the SDK's own tool surface. A dispatch whose profile excludes ALL of these
@@ -119,6 +124,31 @@ class ClaudeCodeDispatcher:
         self._redis: Any = None  # lazy aioredis.Redis
         self._cached_dispatch_env: Optional[Dict[str, str]] = None
         self._client_cache: Dict[str, Any] = {}  # model -> ClaudeAgentClient
+        # FEAT-479 M6: resolves run_id -> the run's per-run EventRegistry, so
+        # this out-of-process dispatcher's harvested usage can be emitted as
+        # an AfterClientCallEvent on the exact registry the ledger listens
+        # on. None (default) when no owner (e.g. DevLoopRunner) has wired
+        # one in — see set_event_registry_resolver. Same shape as
+        # LLMCodeDispatcher's resolver (dispatchers/llm.py) so DevLoopRunner
+        # wires both identically via one hasattr-guarded call.
+        self._event_registry_resolver: Optional[
+            Callable[[str], Optional[EventRegistry]]
+        ] = None
+
+    def set_event_registry_resolver(
+        self, resolver: Callable[[str], Optional[EventRegistry]]
+    ) -> None:
+        """Wire a ``run_id -> EventRegistry`` lookup (FEAT-479 M6).
+
+        Called once by the owning :class:`DevLoopRunner` so harvested usage
+        can be emitted on the run's per-run registry (§2 Exactness).
+
+        Args:
+            resolver: A callable returning the live :class:`EventRegistry`
+                for a given ``run_id``, or ``None`` if that run has no
+                tracked registry.
+        """
+        self._event_registry_resolver = resolver
 
     # ------------------------------------------------------------------
     # Public API
@@ -325,6 +355,15 @@ class ClaudeCodeDispatcher:
                     run_id=run_id,
                     node_id=node_id,
                     payload=completed_payload,
+                )
+                # FEAT-479 M6: route out-of-process usage through the same
+                # accounting path as in-process AbstractClient calls. seat=
+                # node_id, which is "development.w1" for a pool worker — a
+                # free string, so no NodeId widening is needed (Finding 3).
+                # No harvest -> no event: "—" in the report is honest, a
+                # fabricated 0 is not.
+                await self._emit_usage_event(
+                    usage_detail, run_id=run_id, node_id=node_id, profile=profile,
                 )
                 return result
             finally:
@@ -689,6 +728,54 @@ class ClaudeCodeDispatcher:
             detail = {k: v for k, v in detail.items() if v is not None}
             return detail or None
         return None
+
+    async def _emit_usage_event(
+        self,
+        usage_detail: Optional[Dict[str, Any]],
+        *,
+        run_id: str,
+        node_id: str,
+        profile: ClaudeCodeDispatchProfile,
+    ) -> None:
+        """Emit an ``AfterClientCallEvent`` from harvested terminal usage.
+
+        FEAT-479 Module 6. This dispatcher runs out of process — there is
+        no ``AbstractClient`` and none of ``clients/base.py``'s lifecycle
+        emission happens. Routes the harvested
+        :meth:`_extract_result_usage` payload through the same accounting
+        path in-process clients use, so pool-worker seats
+        (``node_id="development.w1"``) and this backend's real model reach
+        the per-run ledger instead of being silently dropped (spec
+        Findings 3 and 4's model gap).
+
+        No-ops when there is nothing to report (no harvest, or no
+        registry resolver wired) — never fabricates zeros, and never lets
+        a telemetry failure break the dispatch.
+        """
+        if not usage_detail or self._event_registry_resolver is None:
+            return
+        registry = self._event_registry_resolver(run_id)
+        if registry is None:
+            return
+        try:
+            with usage_attribution(run_id, seat=node_id):
+                await registry.emit(
+                    AfterClientCallEvent(
+                        trace_context=TraceContext.new_root(),
+                        client_name="claude-code",
+                        model=profile.model or "",
+                        duration_ms=float(usage_detail.get("duration_ms") or 0.0),
+                        input_tokens=usage_detail.get("input_tokens"),
+                        output_tokens=usage_detail.get("output_tokens"),
+                        source_type="dispatcher",
+                        source_name="claude-code",
+                    )
+                )
+        except Exception:  # telemetry must never break dispatch
+            self.logger.warning(
+                "Failed to emit AfterClientCallEvent for run=%s node=%s",
+                run_id, node_id, exc_info=True,
+            )
 
     @staticmethod
     def _format_result_error(detail: Optional[Dict[str, Any]]) -> str:
