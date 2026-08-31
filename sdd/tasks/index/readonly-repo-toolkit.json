@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T21:35:20.036465+00:00",
-  "completed_at": "2026-08-31T22:19:59+00:00",
+  "completed_at": "2026-08-31T22:56:20+00:00",
   "tasks": [
     {
       "id": "TASK-2637",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T21:50:28+00:00",
-      "file": "sdd/tasks/completed/TASK-2637-confinement-core-and-secret-denylist.md"
+      "file": "sdd/tasks/completed/TASK-2637-confinement-core-and-secret-denylist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2638",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T21:53:49+00:00",
-      "file": "sdd/tasks/completed/TASK-2638-toolkit-read-file-list-files.md"
+      "file": "sdd/tasks/completed/TASK-2638-toolkit-read-file-list-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2639",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T21:57:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2639-grep-files-bounded-search.md"
+      "file": "sdd/tasks/completed/TASK-2639-grep-files-bounded-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2640",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T22:03:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2640-local-git-history-tools.md"
+      "file": "sdd/tasks/completed/TASK-2640-local-git-history-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2641",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T22:06:33+00:00",
-      "file": "sdd/tasks/completed/TASK-2641-worktree-plane-resolution.md"
+      "file": "sdd/tasks/completed/TASK-2641-worktree-plane-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2642",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T22:14:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2642-graph-backed-search-code.md"
+      "file": "sdd/tasks/completed/TASK-2642-graph-backed-search-code.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2643",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:39:32+00:00",
       "completed_at": "2026-08-31T22:19:39+00:00",
-      "file": "sdd/tasks/completed/TASK-2643-web-search-integration-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-2643-web-search-integration-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
