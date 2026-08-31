@@ -406,8 +406,9 @@ class DevLoopRunner:
         # may be any CLI-backed dispatcher that never touches
         # EventRegistry at all). ``self._run_registries.get`` is a live
         # bound method, so later runs added to the dict are resolved too.
-        if hasattr(self._dispatcher, "set_event_registry_resolver"):
-            self._dispatcher.set_event_registry_resolver(self._run_registries.get)
+        _resolver_setter = getattr(self._dispatcher, "set_event_registry_resolver", None)
+        if callable(_resolver_setter):
+            _resolver_setter(self._run_registries.get)
         self._jira_toolkit = jira_toolkit
         self._git_toolkit = git_toolkit
         self._wiki_toolkit = wiki_toolkit
