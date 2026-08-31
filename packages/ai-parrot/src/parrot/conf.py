@@ -1099,9 +1099,7 @@ DEV_FLOW_RESEARCH_PARTNER: str = config.get("DEV_FLOW_RESEARCH_PARTNER", fallbac
 # (`BedrockMantleClient`), authenticated with the SAME `AWS_NOVA_API_KEY`
 # bearer token the Converse seats use below — no second vendor credential,
 # no `OPENAI_API_KEY`.
-DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL: str = config.get(
-    "DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL", fallback="gpt-5.6-sol"
-)
+DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL: str = config.get("DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL", fallback="gpt-5.6-sol")
 # Converse model for the "nova" backend. Mirrors DEV_LOOP_NOVA_REVIEW_MODEL
 # (:1069 above) but is independently configurable — the research-partner
 # seat and the adversarial-review seat may run different Nova models.
@@ -1115,27 +1113,19 @@ DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET: int = config.getint(
 )
 # Mantle-only reasoning knob (OpenAI-shaped effort). Ignored on the Converse
 # ("nova") path.
-DEV_FLOW_RESEARCH_PARTNER_EFFORT: str = config.get(
-    "DEV_FLOW_RESEARCH_PARTNER_EFFORT", fallback="high"
-)
+DEV_FLOW_RESEARCH_PARTNER_EFFORT: str = config.get("DEV_FLOW_RESEARCH_PARTNER_EFFORT", fallback="high")
 # Hard deadline (seconds) `ComplementaryResearchCoordinator` gives the
 # partner under `asyncio.timeout` before soft-degrading the run to
 # single-agent.
-DEV_FLOW_RESEARCH_PARTNER_TIMEOUT: int = config.getint(
-    "DEV_FLOW_RESEARCH_PARTNER_TIMEOUT", fallback=600
-)
+DEV_FLOW_RESEARCH_PARTNER_TIMEOUT: int = config.getint("DEV_FLOW_RESEARCH_PARTNER_TIMEOUT", fallback=600)
 # Cost ceiling passed to the partner's `ask(max_tokens=...)` call.
-DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS: int = config.getint(
-    "DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS", fallback=16384
-)
+DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS: int = config.getint("DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS", fallback=16384)
 # External web-search egress via the partner's `ReadOnlyRepoToolkit`
 # (keyless `DdgSearchTool`, FEAT-484). ON by default when the seat itself is
 # enabled — inert while `DEV_FLOW_RESEARCH_PARTNER` is unset, so the
 # pure-addition guarantee holds. Set False if brief content reaching a
 # third-party search provider is unacceptable for this deployment.
-DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH: bool = config.getboolean(
-    "DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH", fallback=True
-)
+DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH: bool = config.getboolean("DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH", fallback=True)
 
 # ---------------------------------------------------------------------------
 # Remote Tool Executors (parrot.tools.executors)

@@ -49,24 +49,18 @@ def test_resolve_research_partner_backend_default_disabled():
 
 def test_resolve_research_partner_backend_rejects_unknown():
     """Invalid value raises ValueError naming gpt/nova."""
-    getter = lambda key, fallback=None: (
-        "codex" if key == "DEV_FLOW_RESEARCH_PARTNER" else fallback
-    )
+    getter = lambda key, fallback=None: ("codex" if key == "DEV_FLOW_RESEARCH_PARTNER" else fallback)
     with pytest.raises(ValueError, match="gpt"):
         resolve_research_partner_backend(getter)
 
 
 def test_resolve_research_partner_backend_selects_gpt():
-    getter = lambda key, fallback=None: (
-        "gpt" if key == "DEV_FLOW_RESEARCH_PARTNER" else fallback
-    )
+    getter = lambda key, fallback=None: ("gpt" if key == "DEV_FLOW_RESEARCH_PARTNER" else fallback)
     assert resolve_research_partner_backend(getter) == "gpt"
 
 
 def test_resolve_research_partner_backend_selects_nova():
-    getter = lambda key, fallback=None: (
-        "nova" if key == "DEV_FLOW_RESEARCH_PARTNER" else fallback
-    )
+    getter = lambda key, fallback=None: ("nova" if key == "DEV_FLOW_RESEARCH_PARTNER" else fallback)
     assert resolve_research_partner_backend(getter) == "nova"
 
 

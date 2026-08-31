@@ -10,6 +10,7 @@ shape selection in both ``ask()`` and ``ask_stream()``, and — most
 importantly — that the legacy shape is byte-identical for every model
 that is NOT in that family (the "no regression" acceptance criterion).
 """
+
 from unittest.mock import patch
 
 import pytest
@@ -63,9 +64,7 @@ class TestThinkingShapeSelection:
         with patch.object(client, "_sdk_create", return_value=_mock_response()) as mock_create:
             await client.ask("Question?", thinking_budget=4096)
             sent_payload = mock_create.call_args[0][0]
-            assert sent_payload["additionalModelRequestFields"]["thinking"] == {
-                "type": "adaptive"
-            }
+            assert sent_payload["additionalModelRequestFields"]["thinking"] == {"type": "adaptive"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("model", BUDGET_TOKENS_MODELS)
@@ -109,9 +108,7 @@ class TestThinkingShapeSelection:
             async for _ in client.ask_stream("Hi", thinking_budget=4096):
                 pass
 
-        assert captured_payloads[0]["additionalModelRequestFields"]["thinking"] == {
-            "type": "adaptive"
-        }
+        assert captured_payloads[0]["additionalModelRequestFields"]["thinking"] == {"type": "adaptive"}
 
     @pytest.mark.asyncio
     async def test_ask_stream_no_regression_for_nova(self):
@@ -145,13 +142,20 @@ class TestThinkingShapeSelection:
         loop still re-appends reasoningContent blocks with their
         signature intact for an adaptive-thinking model."""
         tool_response = {
-            "output": {"message": {"role": "assistant", "content": [
-                {"reasoningContent": {
-                    "reasoningText": {"text": "Thinking..."},
-                    "signature": "sig_adaptive_1",
-                }},
-                {"toolUse": {"toolUseId": "tu_1", "name": "get_weather", "input": {"city": "NYC"}}},
-            ]}},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "reasoningContent": {
+                                "reasoningText": {"text": "Thinking..."},
+                                "signature": "sig_adaptive_1",
+                            }
+                        },
+                        {"toolUse": {"toolUseId": "tu_1", "name": "get_weather", "input": {"city": "NYC"}}},
+                    ],
+                }
+            },
             "stopReason": "tool_use",
             "usage": {"inputTokens": 20, "outputTokens": 10},
         }
@@ -165,15 +169,11 @@ class TestThinkingShapeSelection:
 
         with patch.object(client, "_sdk_create", side_effect=fake_sdk_create):
             with patch.object(client, "_execute_tool", return_value="Sunny, 25C"):
-                result = await client.ask(
-                    "What's the weather in NYC?", use_tools=True, thinking_budget=4096
-                )
+                result = await client.ask("What's the weather in NYC?", use_tools=True, thinking_budget=4096)
                 assert result.output == "NYC is sunny."
 
         second_payload_messages = captured_payloads[1]["messages"]
-        assistant_turn = next(
-            m for m in second_payload_messages if m["role"] == "assistant"
-        )
+        assistant_turn = next(m for m in second_payload_messages if m["role"] == "assistant")
         reasoning_blocks = [b for b in assistant_turn["content"] if "reasoningContent" in b]
         assert len(reasoning_blocks) == 1
         assert reasoning_blocks[0]["reasoningContent"]["signature"] == "sig_adaptive_1"

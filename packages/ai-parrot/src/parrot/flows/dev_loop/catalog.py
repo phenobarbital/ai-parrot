@@ -80,15 +80,14 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
             ``"nova"`` — names the valid options.
     """
     getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
-    value = str(
-        getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND
-    )
+    value = str(getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND)
     if value not in _ADVERSARIAL_BACKEND_CHOICES:
         raise ValueError(
             f"Invalid DEV_LOOP_ADVERSARIAL_BACKEND={value!r}; must be one "
             f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova)."
         )
     return value
+
 
 # Non-judge review dispatchers registered in ``CodeReviewDispatcherFactory``
 # that can serve as the *primary* reviewer of a bug-mode run.
@@ -173,10 +172,7 @@ def resolve_research_partner_backend(config_getter: Optional[ConfigGetter] = Non
             resolved backend's model is an Anthropic model id.
     """
     getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
-    value = str(
-        getter("DEV_FLOW_RESEARCH_PARTNER", _RESEARCH_PARTNER_DISABLED)
-        or _RESEARCH_PARTNER_DISABLED
-    )
+    value = str(getter("DEV_FLOW_RESEARCH_PARTNER", _RESEARCH_PARTNER_DISABLED) or _RESEARCH_PARTNER_DISABLED)
     if not value:
         return _RESEARCH_PARTNER_DISABLED
     if value not in _RESEARCH_PARTNER_CHOICES:
@@ -255,8 +251,7 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         models=("gpt-5.5", "gpt-5.5-codex"),
         requires="`codex` CLI on $PATH (or OPENAI_API_KEY)",
         roles=("development", "judge", "primary_review", "adversarial"),
-        notes="Only backend with a read-only `sdd-secondopinion` profile — "
-              "it holds the mandatory adversarial seat.",
+        notes="Only backend with a read-only `sdd-secondopinion` profile — " "it holds the mandatory adversarial seat.",
     ),
     BackendInfo(
         id="gemini",
@@ -346,12 +341,12 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
         roles=("development", "adversarial", "research_partner"),
         notes="Dev seat routes MiniMax/Kimi/GLM via bedrock-mantle; the "
-              "adversarial seat is a read-only, no-tools Converse call on "
-              "Nova 2 Lite — select via DEV_LOOP_ADVERSARIAL_BACKEND. The "
-              "us.anthropic.* ids remain selectable but require the "
-              "per-account Anthropic use-case form on Bedrock. The "
-              "research-partner seat (FEAT-482) selects this backend via "
-              "DEV_FLOW_RESEARCH_PARTNER=nova.",
+        "adversarial seat is a read-only, no-tools Converse call on "
+        "Nova 2 Lite — select via DEV_LOOP_ADVERSARIAL_BACKEND. The "
+        "us.anthropic.* ids remain selectable but require the "
+        "per-account Anthropic use-case form on Bedrock. The "
+        "research-partner seat (FEAT-482) selects this backend via "
+        "DEV_FLOW_RESEARCH_PARTNER=nova.",
     ),
 )
 
@@ -376,13 +371,13 @@ RESEARCH_PARTNER_BACKENDS: Tuple[BackendInfo, ...] = (
         default_model="gpt-5.6-sol",
         models=("gpt-5.6-sol",),
         requires="AWS credentials with a Bedrock API key (bedrock-mantle); "
-                 "reuses AWS_NOVA_API_KEY — no separate OPENAI_API_KEY",
+        "reuses AWS_NOVA_API_KEY — no separate OPENAI_API_KEY",
         roles=("research_partner",),
         notes="FEAT-482: the default complementary research-partner "
-              "backend — OpenAI-compatible bedrock-mantle transport via "
-              "BedrockMantleClient, decorrelated from the primary Claude "
-              "seat. Select via DEV_FLOW_RESEARCH_PARTNER=gpt (default "
-              "once the seat is enabled).",
+        "backend — OpenAI-compatible bedrock-mantle transport via "
+        "BedrockMantleClient, decorrelated from the primary Claude "
+        "seat. Select via DEV_FLOW_RESEARCH_PARTNER=gpt (default "
+        "once the seat is enabled).",
     ),
     _BY_ID["nova"],
 )

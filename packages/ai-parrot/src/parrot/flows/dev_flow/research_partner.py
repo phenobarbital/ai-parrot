@@ -153,10 +153,7 @@ class ResearchPartnerFactory:
             ValueError: If ``name`` is not registered.
         """
         if name not in cls._registry:
-            raise ValueError(
-                f"Unknown research partner backend: {name!r}. "
-                f"Available: {sorted(cls._registry)}"
-            )
+            raise ValueError(f"Unknown research partner backend: {name!r}. " f"Available: {sorted(cls._registry)}")
         return cls._registry[name](**kwargs)
 
 
