@@ -19,10 +19,7 @@ def stub_config(tmp_path):
     parrot_dir.mkdir()
     config_file = parrot_dir / "mcp-toolkits.yaml"
     config_file.write_text(
-        "toolkits:\n"
-        "  stub:\n"
-        "    class: tests.mcp.stub_toolkit.StubToolkit\n"
-        "    kwargs: {}\n"
+        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    kwargs: {}\n"
     )
     return tmp_path
 
@@ -32,8 +29,10 @@ def mock_import_module(name):
     if "stub_toolkit" in name:
         # Import locally to avoid module resolution issues
         from tests.mcp.stub_toolkit import StubToolkit
+
         class MockModule:
             pass
+
         mock = MockModule()
         setattr(mock, "StubToolkit", StubToolkit)
         return mock
@@ -43,9 +42,7 @@ def mock_import_module(name):
 def test_serves_stub_toolkit(stub_config, monkeypatch):
     """Stub toolkit served: tools listed, plain tool callable."""
     # Monkeypatch importlib to return StubToolkit
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config)
 
@@ -63,9 +60,7 @@ def test_serves_stub_toolkit(stub_config, monkeypatch):
 
 def test_include_wins_over_exclude(stub_config, monkeypatch):
     """Include wins over exclude; both filters work by tool name."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     # Config with both include and exclude
     parrot_dir = stub_config / ".parrot"
@@ -88,17 +83,12 @@ def test_include_wins_over_exclude(stub_config, monkeypatch):
 
 def test_exclude_works_alone(stub_config, monkeypatch):
     """Exclude filters when include is not set."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     parrot_dir = stub_config / ".parrot"
     config_file = parrot_dir / "mcp-toolkits.yaml"
     config_file.write_text(
-        "toolkits:\n"
-        "  stub:\n"
-        "    class: tests.mcp.stub_toolkit.StubToolkit\n"
-        "    exclude: [dangerous]\n"
+        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    exclude: [dangerous]\n"
     )
 
     server = create_toolkit_mcp_server("stub", stub_config)
@@ -111,9 +101,7 @@ def test_exclude_works_alone(stub_config, monkeypatch):
 
 def test_llm_dependent_dropped_without_llm(stub_config, monkeypatch):
     """No `llm:` → llm-dependent tool absent from exposure."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config)
     tool_names = {t.name for t in server._tools}
@@ -125,24 +113,17 @@ def test_llm_dependent_dropped_without_llm(stub_config, monkeypatch):
 
 def test_llm_wired_when_configured(stub_config, monkeypatch):
     """With `llm:` configured, LLMFactory.create called and client wired."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     parrot_dir = stub_config / ".parrot"
     config_file = parrot_dir / "mcp-toolkits.yaml"
     config_file.write_text(
-        "toolkits:\n"
-        "  stub:\n"
-        "    class: tests.mcp.stub_toolkit.StubToolkit\n"
-        "    llm: 'test:model'\n"
+        "toolkits:\n" "  stub:\n" "    class: tests.mcp.stub_toolkit.StubToolkit\n" "    llm: 'test:model'\n"
     )
 
     # Mock LLMFactory.create
     mock_client = MagicMock()
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.LLMFactory.create", return_value=mock_client
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.LLMFactory.create", return_value=mock_client)
 
     server = create_toolkit_mcp_server("stub", stub_config)
 
@@ -157,9 +138,7 @@ def test_llm_wired_when_configured(stub_config, monkeypatch):
 
 def test_confirm_flag_in_schema(stub_config, monkeypatch):
     """Confirming tool's MCP schema contains required `confirm` property."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config)
 
@@ -181,9 +160,7 @@ def test_confirm_flag_in_schema(stub_config, monkeypatch):
 
 def test_unknown_name_lists_names(stub_config, monkeypatch):
     """Unknown name error lists resolvable names."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     with pytest.raises(ValueError, match="Unknown toolkit name") as exc_info:
         create_toolkit_mcp_server("unknown", stub_config)
@@ -196,11 +173,7 @@ def test_import_error_named(stub_config, monkeypatch):
     """ImportError names the missing module."""
     parrot_dir = stub_config / ".parrot"
     config_file = parrot_dir / "mcp-toolkits.yaml"
-    config_file.write_text(
-        "toolkits:\n"
-        "  stub:\n"
-        "    class: nonexistent.module.Toolkit\n"
-    )
+    config_file.write_text("toolkits:\n" "  stub:\n" "    class: nonexistent.module.Toolkit\n")
 
     with pytest.raises(ImportError):
         create_toolkit_mcp_server("stub", stub_config)
@@ -208,9 +181,7 @@ def test_import_error_named(stub_config, monkeypatch):
 
 def test_stdout_purity(stub_config, monkeypatch, capsys):
     """stdout carries only JSON-RPC: no import noise."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config)
 
@@ -223,9 +194,7 @@ def test_stdout_purity(stub_config, monkeypatch, capsys):
 
 def test_cli_override_include(stub_config, monkeypatch):
     """CLI override for include parameter."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     server = create_toolkit_mcp_server("stub", stub_config, include=["plain"])
     tool_names = {t.name for t in server._tools}
@@ -237,9 +206,7 @@ def test_cli_override_include(stub_config, monkeypatch):
 
 def test_toolkit_instantiation_error(stub_config, monkeypatch):
     """TypeError during toolkit instantiation raises ValueError."""
-    monkeypatch.setattr(
-        "parrot.mcp.toolkit_server.importlib.import_module", mock_import_module
-    )
+    monkeypatch.setattr("parrot.mcp.toolkit_server.importlib.import_module", mock_import_module)
 
     parrot_dir = stub_config / ".parrot"
     config_file = parrot_dir / "mcp-toolkits.yaml"

@@ -104,9 +104,7 @@ def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
     config_path = root / ".parrot" / "mcp-toolkits.yaml"
 
     # Start with built-in defaults (these will be overridden by file sections)
-    merged: dict[str, ToolkitSection] = {
-        name: section.model_copy() for name, section in BUILTIN_TOOLKITS.items()
-    }
+    merged: dict[str, ToolkitSection] = {name: section.model_copy() for name, section in BUILTIN_TOOLKITS.items()}
 
     # If file does not exist, return builtins only
     if not config_path.exists():
@@ -117,9 +115,7 @@ def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
         with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ValueError(
-            f"Failed to parse YAML at {config_path}: {e}"
-        ) from e
+        raise ValueError(f"Failed to parse YAML at {config_path}: {e}") from e
 
     # Handle empty/None YAML document
     if data is None:
@@ -127,18 +123,12 @@ def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
 
     # Validate root structure
     if not isinstance(data, dict):
-        raise ValueError(
-            f"Expected YAML at {config_path} to be a mapping (dict), "
-            f"got {type(data).__name__}"
-        )
+        raise ValueError(f"Expected YAML at {config_path} to be a mapping (dict), " f"got {type(data).__name__}")
 
     # Check for unknown top-level keys
     unknown_keys = set(data.keys()) - {"toolkits"}
     if unknown_keys:
-        raise ValueError(
-            f"Unknown top-level keys in {config_path}: {unknown_keys}. "
-            f"Expected only 'toolkits'."
-        )
+        raise ValueError(f"Unknown top-level keys in {config_path}: {unknown_keys}. " f"Expected only 'toolkits'.")
 
     # Extract and validate toolkits section
     toolkits_data = data.get("toolkits", {})
@@ -147,8 +137,7 @@ def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
 
     if not isinstance(toolkits_data, dict):
         raise ValueError(
-            f"Expected 'toolkits:' at {config_path} to be a mapping (dict), "
-            f"got {type(toolkits_data).__name__}"
+            f"Expected 'toolkits:' at {config_path} to be a mapping (dict), " f"got {type(toolkits_data).__name__}"
         )
 
     # Parse and merge file sections
@@ -158,8 +147,6 @@ def load_toolkits_config(root: Path) -> MCPToolkitsConfig:
             section = ToolkitSection.model_validate(toolkit_dict)
             merged[toolkit_name] = section
         except Exception as e:
-            raise ValueError(
-                f"Failed to validate toolkit '{toolkit_name}' in {config_path}: {e}"
-            ) from e
+            raise ValueError(f"Failed to validate toolkit '{toolkit_name}' in {config_path}: {e}") from e
 
     return MCPToolkitsConfig(toolkits=merged)

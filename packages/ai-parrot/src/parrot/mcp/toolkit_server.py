@@ -59,9 +59,7 @@ def create_toolkit_mcp_server(
     # Check for unknown name
     if name not in cfg.toolkits:
         resolvable = list(cfg.toolkits.keys())
-        raise ValueError(
-            f"Unknown toolkit name: '{name}'. Resolvable: {resolvable}"
-        )
+        raise ValueError(f"Unknown toolkit name: '{name}'. Resolvable: {resolvable}")
 
     section = cfg.toolkits[name]
 
@@ -74,20 +72,14 @@ def create_toolkit_mcp_server(
         except ImportError as e:
             # Try to suggest the package extra
             if "parrot_tools" in section.class_path:
-                extra_hint = (
-                    f"  Try: uv pip install ai-parrot-tools[scraping] "
-                    f"or ai-parrot-tools[browsing]"
-                )
+                extra_hint = f"  Try: uv pip install ai-parrot-tools[scraping] " f"or ai-parrot-tools[browsing]"
             else:
                 extra_hint = ""
             raise ImportError(
-                f"Cannot import toolkit '{section.class_path}' for '{name}':{extra_hint}\n"
-                f"  Original error: {e}"
+                f"Cannot import toolkit '{section.class_path}' for '{name}':{extra_hint}\n" f"  Original error: {e}"
             ) from e
         except (ValueError, AttributeError) as e:
-            raise ValueError(
-                f"Invalid class path '{section.class_path}' for toolkit '{name}': {e}"
-            ) from e
+            raise ValueError(f"Invalid class path '{section.class_path}' for toolkit '{name}': {e}") from e
 
         # Wire LLM if configured
         llm_client = None
@@ -105,9 +97,7 @@ def create_toolkit_mcp_server(
                 kwargs["llm_client"] = llm_client
             toolkit = toolkit_cls(**kwargs)
         except TypeError as e:
-            raise ValueError(
-                f"Failed to instantiate toolkit '{name}' with kwargs {section.kwargs}: {e}"
-            ) from e
+            raise ValueError(f"Failed to instantiate toolkit '{name}' with kwargs {section.kwargs}: {e}") from e
 
         # Get and filter tools
         all_tools = toolkit.get_tools()
@@ -127,9 +117,7 @@ def create_toolkit_mcp_server(
             seen_names = {t.name for t in all_tools}
             unknown = include_set - seen_names
             if unknown:
-                logger.warning(
-                    "Toolkit '%s': include names not found: %s", name, unknown
-                )
+                logger.warning("Toolkit '%s': include names not found: %s", name, unknown)
         elif exclude:
             # Blacklist: drop named tools
             exclude_set = set(exclude)
@@ -139,17 +127,13 @@ def create_toolkit_mcp_server(
             seen_names = {t.name for t in all_tools}
             unknown = exclude_set - seen_names
             if unknown:
-                logger.warning(
-                    "Toolkit '%s': exclude names not found: %s", name, unknown
-                )
+                logger.warning("Toolkit '%s': exclude names not found: %s", name, unknown)
 
         # Drop LLM-dependent tools if no LLM
         if drop_tools:
             filtered_tools = [t for t in filtered_tools if t.name not in drop_tools]
 
     # Build and return server
-    server = StdioMCPServer(
-        LocalServerConfig(name=f"parrot-{name}", version="1.0.0")
-    )
+    server = StdioMCPServer(LocalServerConfig(name=f"parrot-{name}", version="1.0.0"))
     server.register_tools(filtered_tools)
     return server

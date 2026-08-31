@@ -42,11 +42,7 @@ def test_new_section_added(tmp_path):
     parrot_dir.mkdir()
     config_file = parrot_dir / "mcp-toolkits.yaml"
     config_file.write_text(
-        "toolkits:\n"
-        "  custom:\n"
-        "    class: my.custom.Toolkit\n"
-        "    kwargs:\n"
-        "      param: value\n"
+        "toolkits:\n" "  custom:\n" "    class: my.custom.Toolkit\n" "    kwargs:\n" "      param: value\n"
     )
     cfg = load_toolkits_config(tmp_path)
     assert "scraping" in cfg.toolkits  # builtins still present
@@ -84,10 +80,7 @@ def test_unknown_top_level_key_raises(tmp_path):
     parrot_dir = tmp_path / ".parrot"
     parrot_dir.mkdir()
     config_file = parrot_dir / "mcp-toolkits.yaml"
-    config_file.write_text(
-        "toolkits: {}\n"
-        "bad_key: value\n"
-    )
+    config_file.write_text("toolkits: {}\n" "bad_key: value\n")
     with pytest.raises(ValueError, match="Unknown top-level keys"):
         load_toolkits_config(tmp_path)
 
@@ -132,11 +125,7 @@ def test_class_alias_yaml(tmp_path):
     parrot_dir = tmp_path / ".parrot"
     parrot_dir.mkdir()
     config_file = parrot_dir / "mcp-toolkits.yaml"
-    config_file.write_text(
-        "toolkits:\n"
-        "  test:\n"
-        "    class: test.Module\n"
-    )
+    config_file.write_text("toolkits:\n" "  test:\n" "    class: test.Module\n")
     cfg = load_toolkits_config(tmp_path)
     assert cfg.toolkits["test"].class_path == "test.Module"
 
