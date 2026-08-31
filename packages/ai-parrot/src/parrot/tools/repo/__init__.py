@@ -1,9 +1,8 @@
 """Read-only, cwd-confined repository access for any ``AbstractClient``.
 
 See ``sdd/specs/readonly-repo-toolkit.spec.md`` (FEAT-484) for the full
-design. This package exposes ``ReadOnlyRepoToolkit`` (added in a later
-task) plus the confinement core and shared data contracts used across
-every tool.
+design. This package exposes ``ReadOnlyRepoToolkit`` plus the confinement
+core and shared data contracts used across every tool.
 """
 from __future__ import annotations
 
@@ -20,9 +19,11 @@ from .models import (
     RepoSearchResult,
     RepoToolError,
 )
+from .toolkit import ReadOnlyRepoToolkit
 
 __all__ = [
     "PathOutsideRootError",
+    "ReadOnlyRepoToolkit",
     "RepoReadResult",
     "RepoSearchHit",
     "RepoSearchResult",
