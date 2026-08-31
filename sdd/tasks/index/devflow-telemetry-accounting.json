@@ -128,7 +128,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -139,8 +139,8 @@
       "parallelism_notes": "Needs both the ContextVars and a per-run registry to emit onto.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2617-cli-dispatchers-emit-usage.md"
+      "completed_at": "2026-08-31T16:31:03+00:00",
+      "file": "sdd/tasks/completed/TASK-2617-cli-dispatchers-emit-usage.md"
     },
     {
       "id": "TASK-2618",

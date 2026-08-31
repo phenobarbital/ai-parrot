@@ -299,14 +299,71 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Added `set_event_registry_resolver(resolver)` +
+`self._event_registry_resolver` to `ClaudeCodeDispatcher` (same shape as
+`LLMCodeDispatcher`'s TASK-2616 resolver, so `DevLoopRunner.__init__`'s
+existing `hasattr`-guarded wiring — unchanged, no `runner.py` edit needed —
+picks it up automatically; verified empirically: constructing a
+`ClaudeCodeDispatcher` and a `DevLoopRunner(dispatcher=...)` shows
+`disp._event_registry_resolver is runner._run_registries.get`). Added a new
+`_emit_usage_event(usage_detail, run_id, node_id, profile)` method, called
+right after the existing `_publish_event(kind="dispatch.completed", ...)`
+call (unchanged): no-ops when `usage_detail` is falsy (no harvest -> no
+event, never a fabricated `0`/`—`-is-honest) or no resolver/registry is
+available, otherwise constructs an `AfterClientCallEvent` (`client_name=
+"claude-code"`, `model=profile.model`, tokens from the harvested
+`usage_detail` dict) inside `usage_attribution(run_id, seat=node_id)` and
+`await registry.emit(...)` (never `emit_nowait` — the whole point per spec
+§2 Exactness). Wrapped in `try/except Exception` logging a warning so a
+telemetry failure never breaks the dispatch. `codex.py` and
+`google_coding.py` were **intentionally left untouched** — see §8 Q4 below.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Wrote `test_cli_dispatcher_usage_events.py` (6 tests, all from the task's
+Test Specification, reusing `test_dispatch_telemetry.py`'s `_ResultMessage`/
+`_UsageObj` fakes and `test_dispatcher.py`'s dispatch harness pattern):
+model+tokens reach the ledger; a pool-worker seat (`"development.w1"`)
+reaches the ledger with `node_id` rolled up to `"development"` (Finding 3
+regression guard); no harvest -> no event; both dict-shaped and
+object-shaped `usage` work; a raising registry doesn't break the dispatch;
+and a dispatcher with no resolver ever wired (not owned by a
+`DevLoopRunner`) still dispatches successfully. Full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (1123 tests, excluding the
+3 pre-existing unrelated failures) passes. `ruff check` clean on both files
+(fixed the import-order/quoted-annotation findings my own new code
+introduced; the `Dict`/`Optional`-style debt already present in the
+unmodified file is left as-is, per the established TASK-2612–2616
+precedent of matching each file's own surrounding convention).
 
 **§8 Q4 — which backends expose model identity / a usage harvest?**
-*(list per backend, with file:line evidence; name any that need a follow-up
-feature to build a harvest at all)*
+- **`claude-code`** (`dispatchers/claude.py`): **has both.** Model identity
+  is `profile.model` (verified: `claude.py:414`/`423`/`450`, unchanged by
+  this task). A usage harvest exists:
+  `_extract_result_usage(messages)` (`claude.py:637-691`, pre-existing,
+  TASK-1927) mines the terminal `ResultMessage` for `input_tokens`/
+  `output_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens`/
+  `total_cost_usd`/`num_turns`/`duration_ms`. This is the only backend
+  wired by this task.
+- **`codex`** (`dispatchers/codex.py`): **neither.** Verified by grep:
+  zero occurrences of `token`, `cost_usd`, `num_turns`, `ResultMessage`, or
+  any `_extract_*_usage`-shaped method anywhere in the file. `dispatch()`
+  publishes no `usage` key in its completed payload at all. Left
+  completely untouched — there is nothing to route. Building a Codex CLI
+  usage harvest (parsing whatever the `codex` CLI's own terminal/JSONL
+  output exposes, if anything) is a follow-up feature, not a mechanical
+  extension of this task.
+- **`google_coding`** (`dispatchers/google_coding.py`, backs `agy`/
+  `google_coding_dispatcher`): **neither**, same verification (zero
+  `token`/`cost_usd`/`num_turns`/`ResultMessage` occurrences). Also left
+  untouched. Same follow-up-feature conclusion as `codex`.
+- `gemini.py` (`GeminiCodeDispatcher`) was not in this task's declared file
+  list and was not investigated — out of scope.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `codex.py` and `google_coding.py` are listed in
+the task's Files-to-Modify table as "MODIFY... Same, only if a usage
+harvest exists" — since neither has one (verified above), the correct
+action per that conditional instruction was to make NO changes to either
+file, not to add speculative infrastructure (e.g. a `set_event_registry_
+resolver` with nothing to call it) ahead of a harvest that doesn't exist
+yet. No other deviations.
