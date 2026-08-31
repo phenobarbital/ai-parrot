@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-484
 **Date**: 2026-08-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/devflow-complementary-research.brainstorm.md` (Option A, Modules 1–2)
 **Split from**: `sdd/specs/devflow-complementary-research.spec.md` (FEAT-482, §8 Q2 resolved)
