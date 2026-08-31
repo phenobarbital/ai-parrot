@@ -113,7 +113,7 @@ cwd-confined, write-free view of a checkout across four grounding axes. Read-onl
 | Structural | `search_code`, `related_code` | `WikiCombinedSearch` (`wiki/search.py:32`) — the AST/tree-sitter plane |
 | Static | `read_file`, `list_files`, `grep_files` (fallback) | Ported from `llm.py:662/677/691` |
 | Historical | `git_log`, `git_show`, `git_blame` | New — local `git` subprocess |
-| External | `web_search` | `DdgSearchTool` (`ddgsearch.py:19`), default off |
+| External | `web_search` | `DdgSearchTool` (`ddgsearch.py:19`), ON by default when the partner is enabled |
 
 `search_code` is graph search, not grep: ranked pages with API outlines and
 `references` edges, token-budgeted, build artifacts excluded via `git ls-files`.
@@ -274,30 +274,12 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
 ## 3. Module Breakdown
 
-### Module 1: `ReadOnlyRepoToolkit` — file, search and history tools
-- **Path**: `packages/ai-parrot/src/parrot/tools/repo/toolkit.py` (+ `__init__.py`)
-- **Responsibility**: cwd-confined `read_file`, `list_files`, `grep_files`,
-  `git_log`, `git_show`, `git_blame`. Path confinement via `Path.resolve()` with a
-  containment check that rejects `..` traversal **and** symlink escape; every result
-  byte-bounded; every subprocess timeout-bounded and `asyncio`-based (no blocking
-  I/O). Port the confinement approach from `llm.py:662/677/691`; do **not** import
-  those private methods.
-- **Placement rationale (§8 Q1, resolved)**: core `parrot/tools/repo/` — core already
-  owns `parrot.knowledge.wiki`, so Module 2 introduces no cross-distribution
-  dependency, and a service-free reusable toolkit qualifies as base machinery.
-- **Depends on**: `AbstractToolkit` (`parrot/tools/toolkit.py`), `@tool_schema`.
+> **Modules 1–2 of the original draft (`ReadOnlyRepoToolkit` and its graph-backed
+> `search_code`) were split into their own spec — `sdd/specs/readonly-repo-toolkit.spec.md`
+> (FEAT-484) — per §8 Q2. This feature CONSUMES that toolkit and does not implement
+> it. FEAT-484 must merge before Module 2 below.**
 
-### Module 2: Graph-backed `search_code` / `related_code`
-- **Path**: `packages/ai-parrot/src/parrot/tools/repo/graph_search.py`
-- **Responsibility**: `search_code(query, top_k)` and `related_code(page_id)` over
-  `WikiCombinedSearch` in **lexical mode** (§8 Q10, resolved — no embedder), packed
-  with `pack_results`. Resolve the plane to the **main checkout's** absolute
-  `storage_dir` when running inside a worktree (§8 Q9, resolved;
-  `wiki/project.py:74`). **Degrade to `grep_files` with a logged warning** when the
-  plane is missing, unbuilt, or errors — never fail.
-- **Depends on**: Module 1.
-
-### Module 3: `AbstractResearchPartner` + factory + config selector
+### Module 1: `AbstractResearchPartner` + factory + config selector
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py`;
   selector triad in `dev_loop/catalog.py`; keys in `conf.py`
 - **Responsibility**: the ABC, the registry, `RESEARCH_PARTNER_BACKEND` /
@@ -306,33 +288,33 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
   config ⇒ disabled ⇒ byte-identical behavior.
 - **Depends on**: none (pure contracts).
 
-### Module 4: `NovaResearchPartner`
+### Module 2: `NovaResearchPartner`
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py`
 - **Responsibility**: register `ReadOnlyRepoToolkit` on a `NovaClient`; issue one
   `ask(..., use_tools=True, thinking_budget=N, structured_output=ResearchFindings,
   max_tokens=…)`; build the **neutral** prompt (brief + repo root + question, never
   Claude's framing); return validated `ResearchFindings`.
-- **Depends on**: Modules 1, 2, 3.
+- **Depends on**: **FEAT-484** (`ReadOnlyRepoToolkit`), Module 1.
 
-### Module 5: `ComplementaryResearchCoordinator`
+### Module 3: `ComplementaryResearchCoordinator`
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/complementary_research.py`
 - **Responsibility**: resolve backend (→ `None` if disabled); run the partner under
   `asyncio.timeout`; render + commit `sdd/proposals/<slug>.research.md` staging
   **only that path**; emit `partner.started` / `partner.completed` /
   `partner.degraded`; return `ComplementaryFindings` or `None`. Catch
   `Exception` broadly — this is the soft-degradation boundary.
-- **Depends on**: Modules 3, 4.
+- **Depends on**: Modules 1, 2.
 
-### Module 6: `IdeationNode` + `ResearchNode` seams
+### Module 4: `IdeationNode` + `ResearchNode` seams
 - **Path**: `dev_flow/nodes/ideation.py`, `dev_loop/nodes/research.py`,
   `dev_flow/factories.py`
 - **Responsibility**: one optional `coordinator` kwarg each; two new
   `_IdeationBrief` fields (`partner_findings`, `partner_findings_path`); call the
   coordinator before the first dispatch on **round 1 only**; wire in
   `build_dev_flow_node_factories` (`factories.py:117`).
-- **Depends on**: Module 5. ⚠️ Coordinate with FEAT-479 on `research.py`.
+- **Depends on**: Module 3. ⚠️ Coordinate with FEAT-479 on `research.py`.
 
-### Module 7: Graph search for the primary Claude seat (Q11)
+### Module 5: Graph search for the primary Claude seat (Q11)
 - **Path**: `dev_loop/models/claude.py`, `dev_loop/dispatchers/claude.py`,
   `dev_flow/nodes/ideation.py`
 - **Responsibility**: add optional `mcp_servers: Optional[Dict[str, Any]] = None` to
@@ -346,7 +328,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 - **Depends on**: none technically; ships with Module 6. ⚠️ FEAT-479 touches
   `dispatchers/claude.py`.
 
-### Module 8: Prompt + documentation
+### Module 6: Prompt + documentation
 - **Path**: `dev_flow/_subagent_data/sdd-ideation.md`, mirrored to
   `.claude/agents/sdd-ideation.md`; `docs/`
 - **Responsibility**: Complementary Research prompt section — read the partner's
@@ -354,7 +336,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
   disagreements explicitly (disagreement is data), never let absence change process.
   Plus graph-search guidance for the new MCP tools, and operator docs for the six
   config keys.
-- **Depends on**: Modules 5, 7.
+- **Depends on**: Modules 3, 5.
 
 ---
 
@@ -364,29 +346,20 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
 | Test | Module | Description |
 |---|---|---|
-| `test_readonly_toolkit_has_no_write_tools` | 1 | `apply_patch`/`run_command`/`write_file` absent from `get_tools()` |
-| `test_read_file_rejects_parent_traversal` | 1 | `../../etc/passwd` rejected as structured tool error |
-| `test_read_file_rejects_symlink_escape` | 1 | Symlink pointing outside `repo_root` rejected |
-| `test_results_are_byte_bounded` | 1 | Oversized file/search truncated at `max_result_bytes` with marker |
-| `test_git_tools_timeout_bounded` | 1 | A hanging `git` subprocess is cancelled, not leaked |
-| `test_search_code_uses_wiki_plane` | 2 | `WikiCombinedSearch.search` called; no `grep` subprocess spawned |
-| `test_search_code_degrades_to_grep_when_plane_missing` | 2 | Missing plane ⇒ grep fallback + warning, no raise |
-| `test_worktree_resolves_main_checkout_plane` | 2 | From a worktree path, absolute `storage_dir` points at the main checkout |
-| `test_search_code_lexical_only_no_embedder` | 2 | No embedder passed ⇒ vector leg skipped |
-| `test_resolve_research_partner_backend_default_disabled` | 3 | Unset config ⇒ disabled |
-| `test_resolve_research_partner_backend_rejects_unknown` | 3 | Invalid value raises naming valid options |
-| `test_nova_partner_passes_thinking_budget` | 4 | `ask()` receives `thinking_budget` and `use_tools=True` |
-| `test_nova_partner_prompt_excludes_primary_reasoning` | 4 | Prompt contains brief/question but no Claude framing — neutrality guard |
-| `test_coordinator_returns_none_when_disabled` | 5 | No partner constructed, no work performed |
-| `test_coordinator_soft_degrades_on_timeout` | 5 | Returns `None`, emits `partner.degraded`, does not raise |
-| `test_coordinator_soft_degrades_on_parse_failure` | 5 | Invalid structured output ⇒ `None` (NOT a passing-verdict analogue) |
-| `test_coordinator_writes_research_md` | 5 | `.research.md` written and committed with only that path staged |
-| `test_coordinator_empty_findings_treated_as_absent` | 5 | Trivial findings ⇒ no file, no empty section |
-| `test_ideation_passes_partner_findings_to_dispatch` | 6 | `_IdeationBrief.partner_findings` populated on round 1 |
-| `test_ideation_resume_round_skips_partner` | 6 | Round 2+ does not re-run the partner (D8) |
-| `test_ideation_unchanged_when_coordinator_none` | 6 | Byte-identical dispatch payload to pre-feature behavior |
-| `test_profile_mcp_servers_defaults_none` | 7 | Omitted ⇒ `ClaudeAgentRunOptions.mcp_servers` is `None` |
-| `test_strict_mcp_config_remains_true` | 7 | Explicit guard: the ideation profile does not flip it to `False` |
+| `test_resolve_research_partner_backend_default_disabled` | 1 | Unset config ⇒ disabled |
+| `test_resolve_research_partner_backend_rejects_unknown` | 1 | Invalid value raises naming valid options |
+| `test_nova_partner_passes_thinking_budget` | 2 | `ask()` receives `thinking_budget` and `use_tools=True` |
+| `test_nova_partner_prompt_excludes_primary_reasoning` | 2 | Prompt contains brief/question but no Claude framing — neutrality guard |
+| `test_coordinator_returns_none_when_disabled` | 3 | No partner constructed, no work performed |
+| `test_coordinator_soft_degrades_on_timeout` | 3 | Returns `None`, emits `partner.degraded`, does not raise |
+| `test_coordinator_soft_degrades_on_parse_failure` | 3 | Invalid structured output ⇒ `None` (NOT a passing-verdict analogue) |
+| `test_coordinator_writes_research_md` | 3 | `.research.md` written and committed with only that path staged |
+| `test_coordinator_empty_findings_treated_as_absent` | 3 | Trivial findings ⇒ no file, no empty section |
+| `test_ideation_passes_partner_findings_to_dispatch` | 4 | `_IdeationBrief.partner_findings` populated on round 1 |
+| `test_ideation_resume_round_skips_partner` | 4 | Round 2+ does not re-run the partner (D8) |
+| `test_ideation_unchanged_when_coordinator_none` | 4 | Byte-identical dispatch payload to pre-feature behavior |
+| `test_profile_mcp_servers_defaults_none` | 5 | Omitted ⇒ `ClaudeAgentRunOptions.mcp_servers` is `None` |
+| `test_strict_mcp_config_remains_true` | 5 | Explicit guard: the ideation profile does not flip it to `False` |
 
 ### Integration Tests
 
@@ -400,10 +373,8 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 ### Test Data / Fixtures
 
 ```python
-@pytest.fixture
-def temp_repo(tmp_path: Path) -> Path:
-    """git-init'd repo with nested dirs, a symlink escaping the root,
-    an oversized file, and two commits — drives Module 1 confinement tests."""
+# NOTE: the temp_repo / confinement fixtures live in FEAT-484's suite
+# (packages/ai-parrot/tests/tools/repo/), not here.
 
 @pytest.fixture
 def fake_partner() -> AbstractResearchPartner:
@@ -411,21 +382,21 @@ def fake_partner() -> AbstractResearchPartner:
     return unparseable output."""
 
 @pytest.fixture
-def stub_wiki_store():
-    """Minimal store answering search_fts; a variant that raises to drive
-    the grep-fallback path."""
+def stub_toolkit() -> ReadOnlyRepoToolkit:
+    """A FEAT-484 toolkit over a tmp repo — this suite asserts the partner
+    REGISTERS and USES it, never re-tests its confinement."""
 ```
 
-New test files: `packages/ai-parrot/tests/tools/repo/test_readonly_toolkit.py`,
-`test_graph_search.py`; `packages/ai-parrot/tests/flows/dev_flow/`
+New test files under `packages/ai-parrot/tests/flows/dev_flow/`:
 `test_research_partner.py`, `test_complementary_research.py`,
-`test_ideation_partner_seam.py`.
+`test_ideation_partner_seam.py`. (Toolkit tests live in FEAT-484's
+`packages/ai-parrot/tests/tools/repo/`.)
 
 ---
 
 ## 5. Acceptance Criteria
 
-- [ ] All unit tests pass (`pytest packages/ai-parrot/tests/tools/repo/ packages/ai-parrot/tests/flows/dev_flow/ -v`)
+- [ ] All unit tests pass (`pytest packages/ai-parrot/tests/flows/dev_flow/ -v`)
 - [ ] All integration tests pass (`pytest packages/ai-parrot/tests/flows/dev_loop/integration/ -v`)
 - [ ] `ruff check` and `mypy` clean on all changed files
 - [ ] **Pure addition**: with every `DEV_FLOW_RESEARCH_PARTNER_*` key unset, the
@@ -433,12 +404,10 @@ New test files: `packages/ai-parrot/tests/tools/repo/test_readonly_toolkit.py`,
       pre-feature behavior (asserted, not assumed)
 - [ ] **Soft-degradation**: partner timeout, credential failure, Bedrock outage, and
       structured-output parse failure each leave the run completing normally
-- [ ] **Read-only by construction**: no write tool is reachable from
-      `ReadOnlyRepoToolkit.get_tools()`; traversal and symlink escape both rejected
-- [ ] **Graph search, not grep**: `search_code` issues no `grep` subprocess on the
-      happy path, and degrades to `grep_files` when the plane is unavailable
-- [ ] **Worktree plane sharing**: from a worktree, the toolkit resolves the main
-      checkout's plane and performs no plane build
+- [ ] **FEAT-484 is merged** and its `ReadOnlyRepoToolkit` is the partner's only
+      repo-access surface (no bespoke file/search/git tool is defined in this feature)
+- [ ] **The partner is given no write capability**: the registered toolkit is
+      FEAT-484's, constructed without any write tool — asserted at the registration site
 - [ ] Claude keeps sole authorship: no code path lets the partner write under `sdd/`
 - [ ] `.research.md` is committed staging **only** that path
 - [ ] Merged document attributes partner insights by finding `id`
@@ -547,7 +516,7 @@ class ClaudeCodeDispatchProfile(BaseModel):                          # line 10
     setting_sources: List[...] = Field(default=lambda: ["project"])  # line 31
     strict_mcp_config: bool = Field(default=True, ...)               # line 32-44
     allow_project_root_cwd: bool = Field(...)                        # line 45
-    # NOTE: there is NO mcp_servers field today — Module 7 adds it.
+    # NOTE: there is NO mcp_servers field today — Module 5 adds it.
 
 # packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py
     return ClaudeAgentRunOptions(                                    # line 440
@@ -655,7 +624,7 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 | `ResearchPartnerFactory` | `CodeReviewDispatcherFactory` shape | mirrored registry | `code_review.py:164,170` |
 | `resolve_research_partner_backend` | `resolve_adversarial_backend` shape | mirrored triad | `catalog.py:54,60,63` |
 | `IdeationNode` | `ComplementaryResearchCoordinator.research()` | optional kwarg, round-1 call | `ideation.py:105,122` |
-| Module 7 `mcp_servers` | `ClaudeAgentRunOptions(...)` | new kwarg passthrough | `claude.py:440-451` |
+| Module 5 `mcp_servers` | `ClaudeAgentRunOptions(...)` | new kwarg passthrough | `claude.py:440-451` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -664,7 +633,7 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 - ~~a `research` node in the dev-flow graph~~ — `dev_flow/definition.py` lists
   `research` among nodes "deliberately absent". The dev-flow research seat is
   `IdeationNode`.
-- ~~`ClaudeCodeDispatchProfile.mcp_servers`~~ — **does not exist today**; Module 7
+- ~~`ClaudeCodeDispatchProfile.mcp_servers`~~ — **does not exist today**; Module 5
   adds it. `_resolve_run_options()` (`claude.py:440-451`) currently passes no MCP
   servers, and `strict_mcp_config` defaults `True` (`models/claude.py:33`), so the
   filesystem `.mcp.json` is **ignored** by dispatched runs. Allow-listing
@@ -736,7 +705,7 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 | Attribution drift (prompt-enforced) | `.research.md` sidecar is the structural backstop; finding `id`s make citation checkable |
 | Findings too large for the dispatch payload | Truncate with an explicit marker; full text stays in `.research.md`, prompt points at the file |
 | Nova 2 Lite may underperform on deep research | Model is config-driven (`DEV_FLOW_RESEARCH_PARTNER_MODEL`); §8 Q4 tracks the empirical comparison |
-| Web search egress | Default off, gated by its own key (§8 Q5) |
+| Web search egress | **ON by default when the partner is enabled** (§8 Q5). Brief content reaches a third party — operators who cannot accept that set `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH=false`. Inert while the partner itself is disabled, so the pure-addition guarantee holds |
 
 ### External Dependencies
 
@@ -759,30 +728,28 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 | `DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET` | `4096` | Converse `thinking_budget` (`bedrock.py:715`) |
 | `DEV_FLOW_RESEARCH_PARTNER_TIMEOUT` | `600` | Hard deadline (seconds) |
 | `DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS` | `16384` | Cost ceiling |
-| `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH` | `false` | Gates external egress independently |
+| `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH` | `true` | External egress; ON when the partner is enabled, independently switchable (§8 Q5) |
 
 ---
 
 ## Worktree Strategy
 
 - **Default isolation unit**: `per-spec` — all tasks run sequentially in one worktree.
-- **Rationale**: Modules 1–2 (the toolkit) are weakly coupled to Modules 3–5 (the
-  partner), and could in principle run in parallel worktrees. Against that: the
-  toolkit's tool-name/schema contract is shared by both and is still settling, so
-  letting it firm up in code beats coordinating it in prose. More decisively,
-  FEAT-479 has 11 `in-progress` tasks on neighboring files — a second concurrent
-  worktree multiplies three-way merge risk on `dispatchers/claude.py`,
-  `nodes/research.py` and `factories.py` for little gain.
-- **If the task count exceeds ~12**, split Modules 1–2 into their own worktree: they
-  are the only pieces with no dev-flow dependency at all.
+- **Rationale**: after the FEAT-484 split this spec is six tightly-coupled modules —
+  the partner contracts, the Nova implementation, the coordinator, and the two node
+  seams all share the `ComplementaryFindings` contract. Splitting further would trade
+  a short sequence for cross-worktree contract coordination. FEAT-484 already absorbed
+  the one genuinely separable piece.
 - **Cross-feature dependencies**:
+  - **FEAT-484** (`readonly-repo-toolkit`) — **hard dependency**. Module 2
+    (`NovaResearchPartner`) registers its toolkit. **FEAT-484 must merge first.**
+    Modules 1, 5 and 6 do not depend on it and can proceed in parallel.
   - **FEAT-480** (`dev-flow-node-caching`) — **merged** (PR #1280, 7/7 done). No
-    longer a constraint; the Option-D collision it would have caused is moot.
-  - **FEAT-479** (`devflow-telemetry-accounting`) — **in progress, 11 tasks**. Not a
-    hard blocker because this spec touches no telemetry rendering, but Modules 6 and
-    7 edit two files FEAT-479 also edits (`nodes/research.py`,
-    `dispatchers/claude.py`). **Prefer merging after FEAT-479**, or keep those two
-    edits strictly additive and coordinate at merge time.
+    longer a constraint.
+  - **FEAT-479** (`devflow-telemetry-accounting`) — **in progress**. Not a hard
+    blocker (this spec touches no telemetry rendering), but Modules 4 and 5 edit two
+    files FEAT-479 also edits (`nodes/research.py`, `dispatchers/claude.py`). Keep
+    those edits strictly additive; **prefer merging after FEAT-479**.
 
 ```bash
 git worktree add -b feat-482-devflow-complementary-research \
@@ -809,32 +776,37 @@ git worktree add -b feat-482-devflow-complementary-research \
   score 0.8–1.0, conceptual scored 0.06/0.00 with no embedder. Reflected in §1
   Non-Goals, §3 Module 2.
 - [x] **Q11 — Graph search for the primary Claude seat too?** — *Resolved*: yes, both
-  seats. Requires the new optional `mcp_servers` profile field (Module 7) because
+  seats. Requires the new optional `mcp_servers` profile field (Module 5) because
   `strict_mcp_config` defaults `True` and there is no such field today.
-- [ ] **Q2 — Should Modules 1–2 be their own capability/spec?** Currently folded in
-  as Modules 1–2. The toolkit is independently valuable and carries the feature's
-  security weight, which argues for its own spec; against, it has no consumer without
-  this feature. Revisit if `/sdd-task` produces more than ~12 tasks. — *Owner: Jesus Lara*
-- [ ] **Q4 — `nova-2-lite` or Nova 2 Pro as the default model?** Lite is the
-  `NovaAdversarialReviewDispatcher` default specifically because `us.anthropic.*` ids
-  are gated behind a per-account Bedrock use-case form. Research is deeper than
-  verdict-rendering, so Lite + a generous thinking budget may underperform. Needs an
-  empirical comparison on 2–3 real dev requests. — *Owner: Jesus Lara*
-- [ ] **Q5 — Should `web_search` default on when the partner is enabled?** Proposed
-  default is off. It is the axis Claude is weakest on, but the only one sending brief
-  content to a third party. Confirm the external-egress posture. — *Owner: Jesus Lara*
-- [ ] **Q6 — Should the partner ever see the human's HITL answers?** D8 says round 1
-  only, so it never does. If an answer materially reframes the problem, the partner's
-  findings go stale and Claude alone absorbs the reframing. Accept, or add a narrow
-  exception when an answer changes document scope? — *Owner: Jesus Lara*
-- [ ] **Q7 — Make attribution structural rather than prompt-enforced?** The
-  `ResearchFinding.id` field in §2 makes citation *checkable*; requiring the merged
-  document to cite ids would make it *enforced*, at the cost of more rigid prose.
-  — *Owner: Jesus Lara*
-- [ ] **Q8 — Annotate `sdd/specs/novaclient-dev-loop.spec.md` (FEAT-405)?** Its
-  "pluggable research seat" non-goal will read as contradicted unless annotated with
-  the contribute-to vs. replace narrowing. Cheap; prevents a future reader concluding
-  one of the two specs is wrong. — *Owner: Jesus Lara*
+- [x] **Q2 — Should the toolkit be its own capability/spec?** — *Resolved*: **yes**.
+  Split into `sdd/specs/readonly-repo-toolkit.spec.md` (**FEAT-484**). It is
+  independently valuable, independently reviewable, and carries this initiative's
+  security weight. Reflected throughout §3 (Modules 1–2 removed, remaining modules
+  renumbered), §4, §5 and Worktree Strategy.
+- [x] **Q4 — `nova-2-lite` or Nova 2 Pro as the default model?** — *Resolved*: start
+  on `us.amazon.nova-2-lite-v1:0`, **configurable** via
+  `DEV_FLOW_RESEARCH_PARTNER_MODEL`. Note the basis for Lite is availability (the
+  `us.anthropic.*` Bedrock use-case form), not measured sufficiency — re-evaluate
+  against Pro after the first real runs.
+- [x] **Q5 — Should `web_search` default on when the partner is enabled?** —
+  *Resolved*: **yes, and configurable**. `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH`
+  defaults to `true`; set `false` to disable. External prior art is the axis the
+  Claude seat is weakest on, so a complementary researcher without it loses much of
+  its point. Consequence accepted and documented in §7: brief content — which may
+  describe unreleased work — reaches a third-party search provider. The key is inert
+  while the partner itself is disabled, so the pure-addition guarantee is unaffected.
+- [x] **Q6 — Should the partner ever see the human's HITL answers?** — *Resolved*:
+  **no**. Round 1 only, confirming D8. If a human answer materially reframes the
+  problem, Claude alone absorbs the reframing and the partner's findings stand as
+  written. Reflected in §1 Non-Goals, §3 Module 4, §5.
+- [x] **Q7 — Make attribution structural rather than prompt-enforced?** — *Resolved*:
+  **prompt-enforced**. `ResearchFinding.id` (§2) keeps citation *checkable* and the
+  `.research.md` sidecar remains the structural backstop, but the merged document is
+  not machine-validated against finding ids. Reflected in §3 Module 6, §7.
+- [x] **Q8 — Annotate `sdd/specs/novaclient-dev-loop.spec.md` (FEAT-405)?** —
+  *Resolved*: **yes**. Its "pluggable research seat" non-goal gains a note recording
+  the contribute-to vs. replace narrowing, so the two specs do not read as
+  contradictory.
 
 ---
 
@@ -843,3 +815,4 @@ git worktree add -b feat-482-devflow-complementary-research \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft from `devflow-complementary-research.brainstorm.md` (D1–D9 carried forward; Q1/Q9/Q10/Q11 resolved during scaffolding; Q3 decided against in-flight FEAT-479) |
+| 0.2 | 2026-08-31 | Jesus Lara | All remaining open questions resolved. Q2: toolkit split out to FEAT-484 (`readonly-repo-toolkit`) — Modules 1–2 removed, 3–8 renumbered 1–6, toolkit tests and acceptance criteria moved. Q5: `web_search` now defaults ON when the partner is enabled. Q4/Q6/Q7/Q8 confirmed as specified. |
