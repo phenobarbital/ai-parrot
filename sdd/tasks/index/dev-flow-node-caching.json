@@ -32,7 +32,7 @@
       "feature_id": "FEAT-480",
       "feature": "dev-flow-node-caching",
       "spec": "sdd/specs/dev-flow-node-caching.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Shares serializer.py, checkpoint/__init__.py, and flow.py with TASK-2622.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:58:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2623-checkpoint-metadata-and-awaited-persistence.md"
+      "completed_at": "2026-08-31T16:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2623-checkpoint-metadata-and-awaited-persistence.md"
     },
     {
       "id": "TASK-2624",

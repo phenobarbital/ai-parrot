@@ -58,7 +58,7 @@ adapter; this task only carries the value).
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/model.py` | MODIFY | `CheckpointInputMetadata`, `FlowCheckpoint.input_metadata` |
-| `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/errors.py` | CREATE | Explicit failure types |
+| `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/errors.py` | MODIFY | Add explicit failure types (file already exists with `FlowLockedError`/`CheckpointNotFoundError`/`FlowNotExportableError` — contract corrected during TASK-2623 implementation) |
 | `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/checkpointer.py` | MODIFY | Awaited `checkpoint()`; keep listener best-effort |
 | `packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/__init__.py` | MODIFY | Export new names |
 | `packages/ai-parrot/src/parrot/bots/flows/flow/flow.py` | MODIFY | `checkpoint_definition` / `checkpoint_shared_data` / `checkpoint_input` params; `expected_input` on resume |
@@ -103,7 +103,11 @@ class FlowCheckpoint(BaseModel): ...  # existing fields unchanged; add optional 
 ```
 
 ### Does NOT Exist
-- ~~`checkpoint/errors.py`~~ — created by THIS task.
+- ~~`CheckpointPersistenceError`~~, ~~`CheckpointFingerprintMismatchError`~~ —
+  added by THIS task to the EXISTING `checkpoint/errors.py` (contract
+  correction: that file already exists with `FlowLockedError`/
+  `CheckpointNotFoundError`/`FlowNotExportableError`, verified via `Read`;
+  the original contract's "CREATE" was stale).
 - ~~`FlowCheckpointer.checkpoint()`~~ — only `make_listener()` exists today.
 - ~~`AgentsFlow(checkpoint_definition=...)`~~, ~~`checkpoint_shared_data=`~~,
   ~~`checkpoint_input=`~~ — added by THIS task.
@@ -171,10 +175,57 @@ completed; index → `done`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-08-31
+**Notes**: Corrected a stale Codebase Contract entry before implementing:
+`checkpoint/errors.py` already exists (`FlowLockedError`,
+`CheckpointNotFoundError`, `FlowNotExportableError`) — the task's "CREATE"
+was wrong; changed to MODIFY and added `CheckpointPersistenceError`/
+`CheckpointFingerprintMismatchError` to the existing file instead.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Added `CheckpointInputMetadata` + `FlowCheckpoint.input_metadata: 
+CheckpointInputMetadata | None = None` (model.py). Added
+`FlowCheckpointer.checkpoint(ctx, *, status="running")` — awaits
+`store.put()` (and durable store in write-through mode), raises
+`CheckpointPersistenceError` on any build/encode/persist failure, and rolls
+back `_last_checkpoint_id`/`_parent_checkpoint_id` to their pre-call values
+on failure so checkpoint numbering only advances after a successful write
+(spec §7 "checkpoint completion monotonic" — verified with a dedicated
+test). The existing fire-and-forget `make_listener()`/`_write()` path is
+untouched. `FlowCheckpointer` also gained `shared_data_projector` (replaces
+`ctx.shared_data` with an allowlisted, type-registry-encoded projection when
+building every checkpoint) and `input_metadata` (embedded on every
+checkpoint this instance builds) constructor params.
 
-**Deviations from spec**: none
+`AgentsFlow.__init__` gained `checkpoint_definition`, `checkpoint_shared_data`,
+`checkpoint_input` (threaded into `FlowCheckpointer` by `_ensure_checkpointer()`
+— an external definition skips `to_definition()` entirely rather than
+falling back to it, so explicit-edge graphs with callable predicates never
+hit `FlowNotExportableError`). Deliberately did NOT add these to
+`from_definition()`'s explicit param list or `**kwargs` — its own contract
+review showed real dev-loop/dev-flow callers build programmatically (per
+TASK-2622), so no spec bullet requires it, and adding it there would be
+undocumented scope creep.
+
+`resume()` gained `expected_input: CheckpointInputMetadata | None`; when
+given, mismatch (including "checkpoint has no input_metadata at all")
+raises `CheckpointFingerprintMismatchError` fail-fast — checked immediately
+after the checkpoint loads, before the lease is acquired or anything is
+rebuilt.
+
+15 new tests in `test_required_persistence.py`: awaited put()
+success/failure, monotonic-rollback-on-failure, input_metadata round-trip,
+old-checkpoint-without-metadata still loads, resume() mismatch/match/no-check
+paths, `checkpoint_definition` letting a `to_definition()`-incompatible
+graph checkpoint anyway, `shared_data_projector` replacing vs. (absent)
+preserving the raw mapping, and the best-effort listener path staying
+unchanged on a failing store. Full `packages/ai-parrot/tests/flows` suite:
+1473 passed (up from 1461 at TASK-2622), same 5 pre-existing failures
+(2 postgres-integration + 3 unrelated dev-loop QA/secondopinion prompt
+tests) confirmed pre-existing on a clean `dev` checkout, not caused by this
+change. `ruff check` clean on all 6 touched checkpoint-plane files; `flow.py`
+carries the same pre-existing `Optional[...]`-style UP045 debt as the rest
+of that file (see TASK-2622's note) — no new lint categories introduced.
+
+**Deviations from spec**: none (one Codebase Contract correction, documented
+above and in the task file itself, per the "stale contract" protocol).
