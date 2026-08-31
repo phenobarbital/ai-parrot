@@ -189,7 +189,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Exercises the whole chain; needs every functional task complete.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2620-integration-tests.md"
+      "completed_at": "2026-08-31T17:01:28+00:00",
+      "file": "sdd/tasks/completed/TASK-2620-integration-tests.md"
     },
     {
       "id": "TASK-2621",
