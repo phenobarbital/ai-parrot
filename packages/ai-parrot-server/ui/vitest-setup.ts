@@ -12,3 +12,22 @@ class ResizeObserverStub implements ResizeObserver {
   disconnect(): void {}
 }
 globalThis.ResizeObserver ??= ResizeObserverStub;
+
+// jsdom has no Web Animations API; Svelte's `slide`/`fade`/etc. transitions
+// (e.g. QuickRating.svelte, vendored FEAT-476 TASK-2594) call
+// `element.animate()` when they run. Stub it as a no-op Animation so any
+// test that mounts a transitioning element doesn't crash — this doesn't
+// need to actually animate, just not throw.
+if (typeof Element !== "undefined" && !Element.prototype.animate) {
+  Element.prototype.animate = function () {
+    return {
+      finished: Promise.resolve(),
+      cancel() {},
+      finish() {},
+      play() {},
+      pause() {},
+      addEventListener() {},
+      removeEventListener() {},
+    } as unknown as Animation;
+  };
+}

@@ -114,6 +114,36 @@ describe("AgentsList", () => {
     expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/new");
   });
 
+  it("renders a Chat button for enabled rows of both sources (TASK-2597)", async () => {
+    mockAgents([dbAgent, registryAgent]);
+
+    const { findByTestId } = render(AgentsList);
+    await findByTestId("agent-row-helpdesk");
+
+    expect(await findByTestId("agent-chat-helpdesk")).toBeTruthy();
+    expect(await findByTestId("agent-chat-cron-sync")).toBeTruthy();
+  });
+
+  it("hides the Chat button for a disabled agent (TASK-2597)", async () => {
+    mockAgents([{ ...dbAgent, enabled: false }]);
+
+    const { findByTestId, queryByTestId } = render(AgentsList);
+    await findByTestId("agent-row-helpdesk");
+
+    expect(queryByTestId("agent-chat-helpdesk")).toBeNull();
+  });
+
+  it("Chat navigates to /admin/agents/{name}/chat without opening the detail dialog (TASK-2597)", async () => {
+    mockAgents([dbAgent]);
+    const navigateSpy = vi.spyOn(router, "navigate");
+
+    const { findByTestId, queryByTestId } = render(AgentsList);
+    await fireEvent.click(await findByTestId("agent-chat-helpdesk"));
+
+    expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/helpdesk/chat");
+    expect(queryByTestId("agent-detail-dialog")).toBeNull();
+  });
+
   it("Edit navigates to /admin/agents/{name} without opening the detail dialog", async () => {
     mockAgents([dbAgent]);
     const navigateSpy = vi.spyOn(router, "navigate");
