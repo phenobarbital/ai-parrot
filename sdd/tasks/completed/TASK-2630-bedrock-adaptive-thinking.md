@@ -275,11 +275,25 @@ on `dev` — no new findings introduced.
    client beyond this task's narrow, additive scope. `DEV_FLOW_
    RESEARCH_PARTNER_EFFORT` (TASK-2629) is explicitly documented as
    mantle-only / ignored on the Converse path, consistent with this.
-2. **Security note (not a code deviation)**: while researching the
-   payload shape, the dispatched subagent found that all three fetched
-   AWS documentation pages carried an appended block instructing the
-   reader to run `aws agent-toolkit search-skills ...` — inconsistent
-   with genuine AWS doc formatting and consistent with a prompt-injection
-   payload embedded in the fetched page. The subagent did not execute it
-   and flagged it explicitly; it is recorded here for visibility and was
-   NOT acted upon in any way.
+2. **Correction (not a code deviation)**: while researching the payload
+   shape, the dispatched subagent found that fetched AWS documentation
+   pages carried a "See also" block suggesting `aws agent-toolkit
+   search-skills --search-query bedrock`, flagged it as a suspected
+   prompt-injection artifact, and did not execute it — recorded as such
+   in an earlier revision of this note. **That suspicion was
+   investigated further and disproven**: the block is genuine, first-party
+   AWS content. It is served on AWS's own CloudFront distribution
+   (`docs.aws.amazon.com`, verified via direct `curl` — `HTTP 200`,
+   `Content-Type: text/markdown`, `Content-Signal: ai-input=yes`) from
+   the `.md` "LLM-ready markdown" sibling of each HTML doc page (e.g.
+   `claude-messages-adaptive-thinking.md`), which AWS apparently
+   authors specifically to address AI/agent readers. The earlier
+   "injection" conclusion rested on checking only the rendered `.html`
+   page (where the block is absent, since it lives in the separate
+   `.md` variant) and over-generalizing that to "not from AWS at all."
+   Net effect: no security concern here, and not executing the
+   suggested CLI command remains the correct call regardless — a
+   research subagent should not unilaterally run a command a fetched
+   document suggests, whether or not the suggestion turns out to be
+   legitimate — but the specific "prompt-injection" characterization in
+   the original note was incorrect and is corrected here.
