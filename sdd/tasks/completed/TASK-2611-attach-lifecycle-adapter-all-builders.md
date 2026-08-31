@@ -243,10 +243,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Added `lifecycle_events: bool = True` to `build_dev_loop_revision_flow`
+and `build_dev_loop_feature_flow` (`runner.py`) and to `build_dev_flow`
+(`dev_flow/flow.py`), copying the `build_dev_loop_flow` reference block
+(`flow.py:440-448`) verbatim into each, immediately after the existing
+`flow._dev_loop_definition = definition` assignment. All four builders now
+set `flow._lifecycle_adapter` (a `FlowLifecycleAdapter` instance, or `None`
+when the flag is False). Added the parametrized regression test
+`test_builder_lifecycle_parity.py` covering all four builders and both the
+default-True and opt-out-False cases (8 tests, all passing). Full
+`packages/ai-parrot/tests/flows/` suite: 1459 passed, 3 pre-existing
+failures unrelated to this change (verified failing identically on the
+pre-change tree — `test_qa_codereview.py`, `test_secondopinion_brief.py`,
+`test_subagent_parity.py`), 10 skipped. `ruff check` on the diff introduces
+no new findings (confirmed against the unchanged file's pre-existing 70
+findings, including the same `RUF100`-on-`noqa:PLC0415` pattern already
+present in the reference implementation this task copies from).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

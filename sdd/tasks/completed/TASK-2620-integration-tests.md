@@ -223,12 +223,124 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Built ONE reusable `_ScriptedDispatcher` fake (module-level in
+the new test file) whose `emit_usage`/`emit_failure` methods construct and
+`await registry.emit(...)` real `AfterClientCallEvent`/`ClientCallFailedEvent`
+objects on the run's injected per-run registry — never `emit_nowait`
+(exactness, spec §2). It exposes `set_event_registry_resolver`, the exact
+same shape `LLMCodeDispatcher`/`ClaudeCodeDispatcher` expose (TASK-2616/
+2617), so `DevLoopRunner.__init__`'s existing `hasattr`-guarded wiring picks
+it up with **zero changes to that wiring code** — passing `dispatcher=fake`
+to `build_dev_flow`/`build_dev_loop_flow`/`DevLoopRunner`/`DevFlowRunner` is
+all that's needed. Each test drives a REAL flow (`build_dev_flow`/
+`build_dev_loop_flow`, so the FlowLifecycleAdapter attachment and the
+per-run `EventRegistry` creation are genuinely exercised) through a REAL
+`DevLoopRunner`/`DevFlowRunner.run()`, with every node's `execute()`
+monkeypatched to bypass real business logic (git/PR/Jira/file I/O) — the
+same stubbing pattern `test_feature_flow.py::_stub_feature_executes`
+already established as this project's own precedent for exercising these
+exact graphs — except each stub explicitly calls `fake.emit_usage(...)`/
+`emit_failure(...)` before returning its scripted Pydantic output, so
+dispatch → event → subscriber → ledger → report is genuinely exercised
+end to end, not assumed. Each test reads the run's persisted
+`{run_id}.usage.json` (via `conftest.py`'s pre-existing autouse
+`_isolate_dev_loop_run_artifacts` fixture, which this new file inherits
+for free by living in the same directory) and asserts on the
+`UsageReport`/`render_usage_markdown(...)` output — the actual deliverable
+— not internal state. No test uses `sleep`; no network/Redis/subprocess/
+real LLM call (the one observed Redis `ConnectionError` traceback in test 4's
+output is `_xadd_envelope`'s own pre-existing swallow-all failure path —
+logged, not raised, and unrelated to this feature).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- `test_dev_flow_run_produces_usage_report`: `FeatureBrief` → `dev_intake`
+  (real, unstubbed — it does no LLM dispatch) → planner/development/
+  synthesis/qa/feature_handoff/close (stubbed, planner/development/
+  synthesis/qa each emit real usage) → asserts `report.agents` non-empty
+  and `"## Usage"`/`"development"` in the rendered markdown.
+- `test_retry_cycle_totals_are_cumulative`: feature-mode
+  (`DevLoopRunner._run_feature`), QA fails cycle 1 → `FeedbackDecision
+  ="retry"` → development re-dispatches with DIFFERENT scripted tokens
+  (1000/500 then 2000/700) → cycle 2's QA passes → escalate-free happy
+  exit. Asserts `calls["development"] == 2` (a real re-entrant loop
+  happened, mirroring `test_feature_flow_feedback_retry`'s own proof
+  pattern) and `dev.input_tokens == 3000` (summed, not 2000 — the last
+  cycle alone).
+- `test_pool_run_attributes_every_worker`: bug-mode, `DevelopmentNode.
+  execute` stubbed to emit TWO separate `AfterClientCallEvent`s under
+  `"development.w1"`/`"development.w2"` seats directly, rather than
+  driving `DevAgentPool`'s real scheduler/task-index machinery (a
+  per-spec task index file + a real worktree-backed scheduler are
+  orthogonal to this feature's accounting fix and would add substantial,
+  unrelated fixture complexity — the worker_id SCHEME itself,
+  `f"development.w{i}"`, is exactly what's under test here, verified
+  against `agent_pool.py:149`). Asserts both seats appear in the rendered
+  markdown with `node_id="development"` and their own distinct token
+  counts (100/— and 200/—).
+- `test_failed_node_reported_with_usage`: bug-mode, QA's stub emits a
+  successful usage record (900/100) THEN a `ClientCallFailedEvent`
+  (`error_type="TimeoutError"`) THEN raises — matching the failure_handler
+  routing path. Asserts `qa.failures >= 1`, the seat's `input_tokens == 900`
+  (surviving from the round before the terminal failure), the failed
+  cycle's `error_type == "TimeoutError"`, and `"Failures"`/`"TimeoutError"`
+  in the rendered markdown.
 
-**Defects found in earlier tasks** *(if any — with the task id that owns each)*:
+**Defects found in earlier tasks** (both fixed here, per the task's own
+explicit instruction: *"the defect belongs to the owning task — fix it
+there and note it here"*):
 
-**Deviations from spec**: none | describe if any
+1. **`DevFlowRunner.run()` never created a per-run registry at all
+   (owning task: TASK-2616).** `dev_flow/runner.py`'s `DevFlowRunner.run()`
+   is a FULL override of `DevLoopRunner.run()` — it re-implements the
+   entire host/semaphore/`run_flow`/`_close_host` lifecycle inline rather
+   than calling `super().run()` — so TASK-2616's `_create_run_registry`/
+   `_discard_run_registry` calls (added only to `DevLoopRunner.run()`/
+   `_run_feature()`/`run_revision()`) never ran for a SINGLE dev-flow run.
+   Confirmed via `grep -n "_create_run_registry\|_discard_run_registry"
+   dev_flow/runner.py` returning nothing before the fix. Consequence: even
+   with TASK-2611's `FlowLifecycleAdapter` fix, `get_run_ledger()` would
+   ALWAYS return `None` for a dev-flow run, so `_close_host` (inherited,
+   unmodified) would ALWAYS fall into TASK-2618's "missing ledger →
+   `mark_partial`" branch — dev-flow's usage report would be **permanently
+   empty AND permanently labelled partial**, silently defeating Finding 1's
+   fix at the one layer that actually owns the run lifecycle. Found while
+   writing `test_dev_flow_run_produces_usage_report` (it would have failed
+   on `assert report.agents` and `assert not report.partial`) — fixed by
+   adding the identical three-call wiring (`_create_run_registry(rid)`
+   after `_register_host(rid)`; `_discard_run_registry(rid)` on both the
+   exception path and after `_close_host`) to `DevFlowRunner.run()`,
+   mirroring TASK-2616's own pattern exactly. Verified: the full
+   `packages/ai-parrot/tests/flows/dev_flow/` suite (172 tests) still
+   passes unmodified after this fix.
+2. No second defect found — Findings 2, 3, and the failure-reporting goal
+   all passed on the first attempt once the fake dispatcher's emission
+   pattern was corrected to match the REAL architecture (see the deviation
+   note below), confirming TASK-2612–2619's wiring is otherwise sound.
+
+Full `packages/ai-parrot/tests/flows/` suite (1475 tests, excluding the 3
+pre-existing unrelated failures) passes. `ruff check` clean on both files.
+
+**Deviations from spec**: My first draft of `test_failed_node_reported_with_
+usage` asserted `failed_cycle.input_tokens == 900` — i.e. that the FAILED
+cycle's own ledger record would carry the tokens burned before failing.
+This is **structurally impossible**: `ClientCallFailedEvent`
+(`core/events/lifecycle/events/client.py:80`) has no `input_tokens`/
+`output_tokens` fields at all (confirmed via `dataclasses.fields()` during
+TASK-2614), and `_on_client_failed` (TASK-2614) therefore always produces
+`usage_reported=False` with `0`-coerced-but-flagged tokens. The task's own
+Test Specification is actually looser than my first draft — it never
+asserts a specific token value on the failed cycle, only `qa.failures >= 1`
+and the rendered Failures section — so I relaxed my assertion to what the
+architecture actually supports: the SEAT-level `input_tokens` (900,
+carried over from the round that succeeded before the terminal failure)
+rather than the individual failed cycle's own (structurally `None`) tokens.
+This is not a loosened assertion to dodge a real bug — it is aligning the
+test with how "tokens burned before failing" is actually represented by
+design (an `AfterClientCallEvent` for the round that reported usage, plus
+a SEPARATE, token-less `ClientCallFailedEvent` for the terminal failure —
+two distinct ledger records, both correctly retained and both contributing
+what they can to the seat's picture). Documented here per the task's own
+"if a test cannot be written without changing production code, that is a
+finding" instruction — no production code changed for this one; the test's
+literal assertion was simply wrong about what a single event can carry.
