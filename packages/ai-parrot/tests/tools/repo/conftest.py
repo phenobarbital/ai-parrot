@@ -40,3 +40,14 @@ def temp_repo(tmp_path: Path) -> Path:
     (root / "pkg" / "sub" / "mod.py").write_text("def alpha():\n    return 42\n")
     subprocess.run(["git", "commit", "-aqm", "second"], cwd=root, check=True)
     return root
+
+
+@pytest.fixture
+def temp_worktree(temp_repo: Path, tmp_path: Path) -> Path:
+    """A real `git worktree add` off temp_repo — drives plane resolution."""
+    wt = tmp_path / "wt"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "-b", "wt-branch", str(wt), "HEAD"],
+        cwd=temp_repo, check=True,
+    )
+    return wt
