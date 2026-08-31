@@ -215,7 +215,7 @@ class RepoReadResult(BaseModel):
 
 class RepoToolError(BaseModel):
     """Structured, model-readable rejection. NEVER raised as an exception."""
-    error: str                    # "path_outside_root" | "not_found" | "timeout" | ...
+    error: str                    # "path_outside_root" | "secret_file" | "not_found" | "timeout" | ...
     detail: str
     path: str = ""
 ```
@@ -233,13 +233,20 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         wiki_store: Optional[object] = None,
         wiki_name: str = "parrot",
         enable_web_search: bool = False,
+        default_search_mode: Literal["lexical", "vector", "combined"] = "lexical",
+        deny_secret_files: bool = True,
         max_result_bytes: int = 64_000,
         max_search_hits: int = 12,
         search_budget_tokens: int = 4_000,
         command_timeout: float = 20.0,
     ) -> None: ...
 
-    async def search_code(self, query: str, top_k: int = 12) -> RepoSearchResult: ...
+    async def search_code(
+        self,
+        query: str,
+        top_k: int = 12,
+        mode: Literal["lexical", "vector", "combined"] | None = None,
+    ) -> RepoSearchResult: ...
     async def related_code(self, page_id: str) -> RepoSearchResult: ...
     async def read_file(self, path: str, start: int = 1, end: int = 0) -> RepoReadResult: ...
     async def list_files(self, path: str = ".", depth: int = 1) -> dict[str, Any]: ...
@@ -256,6 +263,15 @@ def resolve_within_root(root: Path, candidate: str) -> Path:
     Raises:
         PathOutsideRootError: Resolved path (after following symlinks) is not
             inside `root`. Callers convert this to a RepoToolError.
+    """
+
+
+def is_secret_path(rel_path: str) -> bool:
+    """True when `rel_path` matches the secret deny-list (§8 Q1).
+
+    Matched case-insensitively on the repo-relative path. The suffixes
+    `.example`, `.sample`, `.template` and `.dist` override a match, so
+    `.env.example` is readable while `.env` is not.
     """
 
 
@@ -276,9 +292,10 @@ def resolve_plane_root(repo_root: Path) -> Path:
   `confinement.py`, `toolkit.py`
 - **Responsibility**: package scaffold; `resolve_within_root()` with realpath +
   containment (rejecting `..` traversal **and** symlink escape);
-  `PathOutsideRootError`; the `ReadOnlyRepoToolkit` class with `read_file` and
-  `list_files`; byte bounds via `max_result_bytes` with explicit truncation markers;
-  `RepoReadResult` / `RepoToolError`.
+  `PathOutsideRootError`; **`is_secret_path()` deny-list (§8 Q1)** applied in the
+  same code path as containment; the `ReadOnlyRepoToolkit` class with `read_file`
+  and `list_files`; byte bounds via `max_result_bytes` with explicit truncation
+  markers; `RepoReadResult` / `RepoToolError`.
 - **Depends on**: `AbstractToolkit` (`tools/toolkit.py:216`), `tool_schema`
   (`tools/decorators.py:39`).
 
@@ -288,6 +305,8 @@ def resolve_plane_root(repo_root: Path) -> Path:
   bounded, timeout bounded, executed with `asyncio.create_subprocess_exec` (never
   `shell=True`, never blocking `subprocess.run`). Honors `.gitignore` by preferring
   `git grep` when the root is a work tree. Child processes terminated on cancellation.
+  **Hits in deny-listed paths are dropped (§8 Q1)** — a grep must not become a
+  secret-exfiltration side channel.
 - **Depends on**: Module 1.
 
 ### Module 3: Local git history tools
@@ -302,7 +321,10 @@ def resolve_plane_root(repo_root: Path) -> Path:
 - **Path**: `parrot/tools/repo/graph_search.py`
 - **Responsibility**: `resolve_plane_root()` (worktree → main checkout via
   `git rev-parse --git-common-dir`, honoring an absolute `storage_dir`,
-  `project.py:74`); open the plane; query `WikiCombinedSearch` in **lexical** mode;
+  `project.py:74`); open the plane; query `WikiCombinedSearch` in the caller's mode
+  (**`mode` is a tool argument**, §8 Q2, defaulting to
+  `default_search_mode="lexical"`; no embedder ships, so `vector`/`combined`
+  degrade to lexical rather than failing);
   pack with `pack_results` under `search_budget_tokens`; map to
   `RepoSearchHit`/`RepoSearchResult`; delegate `related_code` to `WikiRelatedTool`
   (`wiki/tools.py:225`). **Degrade to `grep_files` with `degraded=True` and a logged
@@ -331,10 +353,14 @@ def resolve_plane_root(repo_root: Path) -> Path:
 | `test_resolve_within_root_rejects_parent_traversal` | 1 | `../../etc/passwd` → `PathOutsideRootError` |
 | `test_resolve_within_root_rejects_symlink_escape` | 1 | Symlink inside root pointing outside → rejected |
 | `test_resolve_within_root_rejects_absolute_outside` | 1 | `/etc/passwd` → rejected |
+| `test_read_file_rejects_secret_file` | 1 | `.env` / `id_rsa` / `*.pem` → `RepoToolError{error: "secret_file"}` (§8 Q1) |
+| `test_read_file_allows_example_suffix` | 1 | `.env.example` reads normally despite matching `.env.*` |
+| `test_list_files_omits_secret_paths` | 1 | Deny-listed names absent from the listing |
 | `test_read_file_truncates_at_byte_bound` | 1 | Oversized file truncated, `truncated=True`, marker present |
 | `test_path_rejection_returns_structured_error` | 1 | Returns `RepoToolError`, does not raise |
 | `test_list_files_confined_and_depth_bounded` | 1 | Does not escape root; respects `depth` |
 | `test_grep_files_respects_gitignore` | 2 | Build artifacts / ignored paths absent from hits |
+| `test_grep_files_omits_secret_file_hits` | 2 | A match inside `.env` is dropped from hits (§8 Q1) |
 | `test_grep_files_no_shell_injection` | 2 | Pattern `; rm -rf /` is a literal pattern, not a shell command |
 | `test_grep_files_timeout_terminates_child` | 2 | Hanging child cancelled; no orphan process |
 | `test_git_log_bounded_and_confined` | 3 | Limit honored; path argument confined |
@@ -342,6 +368,8 @@ def resolve_plane_root(repo_root: Path) -> Path:
 | `test_git_tools_degrade_outside_git_repo` | 3 | Non-repo root → structured error, no raise |
 | `test_search_code_queries_plane_not_grep` | 4 | `WikiCombinedSearch.search` called; no grep subprocess spawned |
 | `test_search_code_lexical_mode_no_embedder` | 4 | Vector leg skipped (`search.py:202`) |
+| `test_search_code_mode_arg_forwarded_to_plane` | 4 | `mode="combined"` reaches `WikiCombinedSearch.search`; tool schema exposes the field (§8 Q2) |
+| `test_search_code_mode_defaults_to_constructor` | 4 | `mode=None` uses `default_search_mode`; `vector` degrades to lexical with no embedder, does not raise |
 | `test_search_code_degrades_to_grep_when_plane_missing` | 4 | `degraded=True`, reason set, hits still returned, warning logged |
 | `test_search_code_respects_token_budget` | 4 | `total_tokens <= search_budget_tokens` |
 | `test_related_code_delegates_to_wiki_related_tool` | 4 | `WikiRelatedTool` invoked |
@@ -403,6 +431,12 @@ New test files under `packages/ai-parrot/tests/tools/repo/`:
       path, and degrades with `degraded=True` when the plane is unavailable
 - [ ] **Worktree sharing**: from a real worktree the toolkit resolves the main
       checkout's plane and performs no plane build
+- [ ] **Secrets denied (§8 Q1)**: `read_file` on a deny-listed path returns
+      `RepoToolError{error: "secret_file"}`; `grep_files` and `list_files` omit
+      deny-listed paths; `.env.example` still reads
+- [ ] **`mode` is a tool argument (§8 Q2)**: exposed in `search_code`'s schema,
+      defaults to `default_search_mode`, and `vector`/`combined` degrade to lexical
+      with no embedder rather than raising
 - [ ] **Web search is absent, not disabled**, when `enable_web_search=False`
 - [ ] Toolkit registers on an `AbstractClient` and every tool dispatches via
       `_execute_tool`
@@ -607,23 +641,37 @@ git worktree add -b feat-484-readonly-repo-toolkit \
 
 ## 8. Open Questions
 
-- [ ] **Q1 — Should the toolkit refuse to read secrets?** `.env`, `env/.env`,
-  `*.pem`, `id_rsa`, `.parrot/wiki.local.json` and similar are inside the repo root
-  and therefore readable under the current design. An ignore list is cheap and
-  defensible; against it, a research agent legitimately benefits from seeing
-  `.env.example` and config *shapes*. Proposed: deny-list actual secret files, allow
-  `*.example` / `*.sample`. — *Owner: Jesus Lara*
-- [ ] **Q2 — Should `search_code` expose `mode` to the model?** Currently lexical is
-  hard-wired. Exposing `mode` would let a future embedder-enabled deployment get
-  combined search with no signature change, but gives the model a knob it has no
-  basis to set. Proposed: keep it a constructor argument, not a tool argument.
-  — *Owner: Jesus Lara*
+- [x] **Q1 — Should the toolkit refuse to read secrets?** — *Resolved*: **yes,
+  deny-list secret files, allow `*.example` / `*.sample`.** Path confinement alone
+  leaves `.env`, `*.pem`, `id_rsa` and friends readable by a hosted model. A
+  deny-list is cheap insurance and is checked in the same single code path as
+  containment. Deny (case-insensitive, matched on the repo-relative path):
+  `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `id_dsa*`,
+  `id_ecdsa*`, `id_ed25519*`, `*.local.json`, `credentials`, `.netrc`,
+  `.pgpass`, `*.keystore`, `*.jks`. Allow-override for the suffixes `.example`,
+  `.sample`, `.template`, `.dist` (so `.env.example` reads fine). Applies to
+  `read_file` (structured `RepoToolError{error: "secret_file"}`), and to
+  `grep_files` / `list_files` (denied paths omitted from results). `search_code`
+  inherits it because it does not return file bodies. — *Owner: Jesus Lara*
+- [x] **Q2 — Should `search_code` expose `mode` to the model?** — *Resolved*:
+  **yes, expose `mode` as a tool argument.** Overrides this question's original
+  proposal (which was to keep it constructor-only). `mode` is a
+  `Literal["lexical", "vector", "combined"]` defaulting to the constructor's
+  `default_search_mode` (itself defaulting to `"lexical"`). With no embedder the
+  vector leg is skipped anyway (`search.py:202`), so `vector`/`combined` degrade
+  to lexical rather than failing — and an embedder-enabled deployment gains
+  combined search with no signature change. The tool docstring must tell the
+  model when each mode is appropriate. — *Owner: Jesus Lara*
 - [x] **Q3 — Own spec, or folded into FEAT-482?** — *Resolved*: own spec (this one).
   The toolkit is independently valuable and carries the security weight; FEAT-482
   §8 Q2 records the decision.
 - [x] **Q4 — Vector leg in scope?** — *Resolved*: no. Lexical FTS5/BM25 only;
   conceptual recall is a follow-up. Measured basis: symbol/topic queries score
   0.8–1.0, conceptual scored 0.06/0.00 with no embedder.
+  *Reconciled with Q2*: exposing `mode` is a **signature** decision, not a
+  capability one. This spec still ships **no embedder**, so `vector` and
+  `combined` are accepted-and-degraded values, not new functionality. Nothing
+  here wires an embedder.
 - [x] **Q5 — Worktree plane strategy?** — *Resolved*: share the main checkout's plane
   via absolute `storage_dir` (`project.py:74`); never build per worktree.
 
@@ -634,4 +682,5 @@ git worktree add -b feat-484-readonly-repo-toolkit \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft — split out of FEAT-482 per its §8 Q2 |
+| 0.3 | 2026-08-31 | Jesus Lara | Resolved §8 Q1 (deny-list secret files, allow `*.example`/`*.sample`) and Q2 (expose `mode` as a `search_code` tool argument, overriding the original proposal). Both fold into Modules 1 and 4 respectively; decomposed into tasks by `/sdd-task`. |
 | 0.2 | 2026-08-31 | Jesus Lara | Added the transport-agnosticism requirement: FEAT-482 now registers this toolkit on both `NovaClient` (Converse) and `BedrockMantleClient` (OpenAI-compatible), so two clients exercise it. Added the guard test, acceptance criterion, and a Does-NOT-Exist entry ruling out a per-transport adapter. |
