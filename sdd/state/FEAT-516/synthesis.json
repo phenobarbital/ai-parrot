@@ -1,0 +1,255 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-516",
+  "mode": "enrichment",
+  "summary_oneline": "Recover dev_flow and dev_loop jobs from typed, run-scoped node checkpoints with artifact-aware continuation.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/flow/flow.py",
+      "symbol": "AgentsFlow.run_flow / AgentsFlow.resume / AgentsFlow._run_flow_scheduler",
+      "lines": "1156-1517",
+      "role": "core checkpoint lifecycle, resume reconstruction, and completed-node skip semantics",
+      "evidence": ["F002", "F007", "F008"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/serializer.py",
+      "symbol": "FlowStateSerializer",
+      "lines": "31-265",
+      "role": "typed checkpoint result serialization and lossy fallback",
+      "evidence": ["F006", "F008"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/flow.py",
+      "symbol": "build_dev_loop_flow",
+      "lines": "285-490",
+      "role": "explicit-edge dev-loop construction and node topology",
+      "evidence": ["F001", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_flow/flow.py",
+      "symbol": "build_dev_flow",
+      "lines": "88-181",
+      "role": "explicit-edge proactive SDD flow construction",
+      "evidence": ["F001", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py",
+      "symbol": "DevLoopRunner.run",
+      "lines": "1028-1148",
+      "role": "job identity, live SessionHost ownership, and execution entrypoint",
+      "evidence": ["F003", "F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_flow/runner.py",
+      "symbol": "DevFlowRunner.run",
+      "lines": "54-183",
+      "role": "dev-flow job identity, live host ownership, and execution entrypoint",
+      "evidence": ["F003", "F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/bug_intake.py",
+      "symbol": "BugIntakeNode.execute",
+      "lines": "85-123",
+      "role": "bug enrichment operation and shared-state projection",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py",
+      "symbol": "ResearchNode.execute",
+      "lines": "257-473",
+      "role": "Jira, logs, SDD research, repository/worktree preparation, and recovery context",
+      "evidence": ["F004", "F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/development.py",
+      "symbol": "DevelopmentNode.execute",
+      "lines": "142-220",
+      "role": "task-index-aware worker dispatch and development result projection",
+      "evidence": ["F004", "F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/task_scheduler.py",
+      "symbol": "TaskScheduler",
+      "lines": "43-236",
+      "role": "worktree task-index recovery that excludes already-done tasks",
+      "evidence": ["F005"]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "AgentsFlow already provides at-least-once node recovery and skips checkpointed completed nodes.",
+      "evidence": ["F002", "F007"],
+      "implication": "Extend and wire checkpointing rather than introduce a second generic node-cache engine."
+    },
+    {
+      "statement": "Dev flows require explicit-edge scheduling with callable predicates and custom nodes carrying live dependencies.",
+      "evidence": ["F001", "F003", "F008"],
+      "implication": "Resume must rebuild through the caller's dev-flow factory; plain from_definition reconstruction is unsafe."
+    },
+    {
+      "statement": "The runners reuse one flow instance while each job has a separate run_id.",
+      "evidence": ["F003"],
+      "implication": "Checkpoint ownership and flow_id must become per-run before checkpointing is enabled."
+    },
+    {
+      "statement": "Target nodes combine external side effects, shared-state mutation, and typed Pydantic outputs.",
+      "evidence": ["F004", "F006"],
+      "implication": "A cache hit must restore required shared keys and validate external artifacts; returning only a scalar result is insufficient."
+    },
+    {
+      "statement": "Development already discovers completed tasks from the per-spec index and research validates reusable worktrees.",
+      "evidence": ["F005"],
+      "implication": "An interrupted in-flight development node should rerun against the same worktree and dispatch only unfinished tasks."
+    },
+    {
+      "statement": "Current checkpoint serialization loses dev-loop Pydantic types and does not safely handle live shared_data objects.",
+      "evidence": ["F006"],
+      "implication": "Dev output types need registration and live shared state must be reconstructed, not blindly deserialized."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "A runner-level restart/resume entrypoint keyed by stable job run_id.",
+      "A dev-flow recovery adapter that rebuilds the explicit graph with live dependencies and rehydrates safe shared-state projections from completed node results.",
+      "Cache-hit, cache-miss, resume-started, resume-completed, and resume-invalidated observability events.",
+      "Artifact validators for recovered research/development state, including worktree branch and per-spec task-index checks."
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/flows/flow/flow.py",
+        "symbol": "AgentsFlow.resume",
+        "change": "Accept a caller flow factory so custom explicit-edge graphs resume with live dependencies and original routing semantics.",
+        "evidence": ["F007", "F008"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/flows/core/checkpoint/serializer.py",
+        "symbol": "FlowStateSerializer",
+        "change": "Support registered dev-flow result types so checkpoint results retain Pydantic identity.",
+        "evidence": ["F006", "F008"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop/flow.py",
+        "symbol": "build_dev_loop_flow",
+        "change": "Expose per-run checkpoint configuration while preserving explicit-edge construction.",
+        "evidence": ["F001", "F002", "F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_flow/flow.py",
+        "symbol": "build_dev_flow",
+        "change": "Expose the same per-run checkpoint configuration for proactive SDD runs.",
+        "evidence": ["F001", "F002", "F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py",
+        "symbol": "DevLoopRunner.run",
+        "change": "Own one checkpointed flow per run_id, detect resumable jobs, rebuild live SessionHost state, and project completed results back into shared_data.",
+        "evidence": ["F003", "F004", "F006"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/flows/dev_flow/runner.py",
+        "symbol": "DevFlowRunner.run",
+        "change": "Apply the same stable run identity and recovery lifecycle to dev_flow.",
+        "evidence": ["F003", "F006"]
+      }
+    ],
+    "untouched": [
+      "No cache reuse across unrelated run_ids by default.",
+      "No replay of nodes that completed successfully in the selected checkpoint.",
+      "No attempt to treat a partially executing node as completed.",
+      "No blind trust of a cached worktree path or task index.",
+      "No replacement of the existing Redis CheckpointStore abstraction."
+    ],
+    "patterns": [
+      {
+        "statement": "Use AgentsFlow's checkpoint listener, completion set, Redis store, history, and resume lease.",
+        "evidence": ["F002", "F007"]
+      },
+      {
+        "statement": "Port or adapt the tested flow_factory and checkpoint-type registration design visible in repository history.",
+        "evidence": ["F008"]
+      },
+      {
+        "statement": "Use ResearchNode worktree validation and TaskScheduler done-state discovery for in-node continuation.",
+        "evidence": ["F005"]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "A shared flow_id can mix job checkpoints.",
+        "mitigation": "Construct or clone a checkpoint-enabled flow per run and namespace flow_id by workflow plus run_id.",
+        "evidence": ["F003"]
+      },
+      {
+        "risk": "A recovered scalar result leaves downstream shared_data keys absent.",
+        "mitigation": "Maintain an explicit node-result-to-shared-key projection and reconstruct live-only objects separately.",
+        "evidence": ["F004", "F006"]
+      },
+      {
+        "risk": "A stale worktree or changed task index makes cached research/development state unsafe.",
+        "mitigation": "Validate branch, registered worktree identity, spec/task artifacts, and optionally head SHA before accepting the checkpoint frontier.",
+        "evidence": ["F005"]
+      },
+      {
+        "risk": "Custom explicit-edge routing is lost during generic resume.",
+        "mitigation": "Require the original builder through a flow_factory and validate checkpointed completed node IDs against the rebuilt graph.",
+        "evidence": ["F007", "F008"]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Core AgentsFlow checkpointing already skips completed nodes on resume.",
+      "evidence": ["F002", "F007"],
+      "confidence": "high",
+      "reasoning": "Direct implementation and unit-test evidence."
+    },
+    {
+      "id": "C2",
+      "statement": "Dev-flow and dev-loop do not currently enable per-run checkpoints.",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "Direct builder and runner reads."
+    },
+    {
+      "id": "C3",
+      "statement": "Blindly enabling checkpointing on the shared flow instance would create an unsafe checkpoint identity boundary.",
+      "evidence": ["F002", "F003"],
+      "confidence": "high",
+      "reasoning": "flow_id is instance-owned while run_id is per execution and the runner reuses self.flow."
+    },
+    {
+      "id": "C4",
+      "statement": "Dev-loop result and shared-state serialization needs explicit recovery handling.",
+      "evidence": ["F004", "F006"],
+      "confidence": "high",
+      "reasoning": "Direct serializer registry, snapshot, and runner shared-state evidence."
+    },
+    {
+      "id": "C5",
+      "statement": "Development can continue an interrupted node without repeating completed indexed tasks.",
+      "evidence": ["F005"],
+      "confidence": "medium",
+      "reasoning": "The scheduler skips tasks persisted as done, but single-agent development has no equivalent task-granular checkpoint."
+    },
+    {
+      "id": "C6",
+      "statement": "A flow_factory-based resume is the lowest-risk core extension for these explicit custom flows.",
+      "evidence": ["F007", "F008"],
+      "confidence": "medium",
+      "reasoning": "A tested implementation exists in non-ancestor history, but it must be reconciled with current dev runner contracts."
+    }
+  ],
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "The implementation boundaries are localized and a tested core precedent exists; the two policy choices can be resolved before formalizing acceptance criteria."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008"],
+    "findings_unused": [],
+    "notes": "Research was not truncated. U1 resolved: reuse is limited to the same caller-supplied stable run_id; a new flow may resume that id. U2 resolved: Redis checkpoint failures are fatal and must stop the job before downstream side effects. research_plan.schema.json v1.0 cannot encode the wiki query types required by its prompt, so wiki orientation is recorded in plan metadata and F001."
+  }
+}

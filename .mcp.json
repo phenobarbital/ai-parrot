@@ -1,11 +1,9 @@
 {
   "mcpServers": {
     "wikitoolkit": {
-      "type": "stdio",
-      "command": "sh",
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit",
       "args": [
-        "-c",
-        "r=\"$CLAUDE_PROJECT_DIR\"; [ -x \"$r/.venv/bin/wikitoolkit\" ] || r=\"$(git rev-parse --show-toplevel 2>/dev/null)\"; [ -x \"$r/.venv/bin/wikitoolkit\" ] || r=\"$(cd \"$(git rev-parse --git-common-dir 2>/dev/null)/..\" 2>/dev/null && pwd)\"; cd \"$r\" && exec \"$r/.venv/bin/wikitoolkit\" mcp"
+        "mcp"
       ],
       "env": {}
     }

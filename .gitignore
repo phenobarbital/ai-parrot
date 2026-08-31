@@ -358,7 +358,10 @@ bin/whatsapp-bridge
 data/whatsapp/whatsapp.db
 sdd/specs/migrate-github-release.spec.md
 packages/ai-parrot/src/parrot/_version.py
-.codex
+.codex/*
+!.codex/
+!.codex/agents/
+!.codex/agents/*.toml
 
 # Downloaded TTS model weights (make install-supertonic) — large LFS assets
 /models/
@@ -395,3 +398,5 @@ packages/ai-parrot-server/src/parrot/server/ui/dist/
 # Embedded Admin UI frontend project deps (TASK-2525) — pnpm-lock.yaml IS
 # committed for reproducible CI builds, but node_modules/ is not.
 packages/ai-parrot-server/ui/node_modules/
+# parrot LLM-wiki state (local retrieval plane)
+.parrot/
