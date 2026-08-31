@@ -123,6 +123,25 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         self._command_timeout = command_timeout
         self._plane_cached: tuple[Any, str] | None = None
         self.logger = logging.getLogger(__name__)
+
+        # Capture the serializable constructor kwargs (mirroring the
+        # `VectorStoreSearchTool` convention) so `build_envelope_from_tool`
+        # can reconstruct this toolkit for remote/off-process execution.
+        # `wiki_store` is deliberately excluded: a live store object cannot
+        # cross a process boundary; the remote side re-resolves its own
+        # plane lazily via `open_plane()` instead.
+        self._init_kwargs.update({
+            "repo_root": str(self._repo_root),
+            "wiki_name": wiki_name,
+            "enable_web_search": enable_web_search,
+            "default_search_mode": default_search_mode,
+            "deny_secret_files": deny_secret_files,
+            "max_result_bytes": max_result_bytes,
+            "max_search_hits": max_search_hits,
+            "search_budget_tokens": search_budget_tokens,
+            "command_timeout": command_timeout,
+        })
+
         if not enable_web_search:
             # Shadow the class attribute with an instance one, before any
             # tool generation. `_generate_tools()` (`toolkit.py:548`) reads
@@ -275,6 +294,18 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                         return
                     if entry.name in _SKIP_DIRS:
                         continue
+                    try:
+                        resolved = entry.resolve()
+                    except OSError:
+                        continue
+                    if resolved != self._repo_root and not resolved.is_relative_to(
+                        self._repo_root
+                    ):
+                        # Symlink escape (spec §7): a symlinked entry whose
+                        # real target is outside repo_root must never be
+                        # listed or descended into — same containment rule
+                        # resolve_within_root enforces for path arguments.
+                        continue
                     rel = self._rel(entry)
                     if is_secret_path(rel):
                         continue
@@ -317,7 +348,13 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             timeout: Seconds; defaults to ``self._command_timeout``.
 
         Returns:
-            Mapping with ``exit_code``, ``stdout``, ``stderr``, ``timed_out``.
+            Mapping with ``exit_code``, ``stdout``, ``stderr``, ``timed_out``,
+            and ``stdout_truncated`` — whether raw stdout exceeded
+            ``max_result_bytes`` before this method clipped it. Callers that
+            do their own additional truncation accounting downstream of an
+            already-clipped ``stdout`` (e.g. `git_show`'s diffstat) must
+            check ``stdout_truncated`` rather than re-measuring the clipped
+            string, which can never itself appear over-length.
         """
         limit = timeout if timeout is not None else self._command_timeout
         proc = await asyncio.create_subprocess_exec(
@@ -336,6 +373,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                 "stdout": "",
                 "stderr": "timeout",
                 "timed_out": True,
+                "stdout_truncated": False,
             }
         except asyncio.CancelledError:
             self._kill(proc)
@@ -346,6 +384,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             "stdout": out[: self._max_result_bytes].decode("utf-8", "replace"),
             "stderr": err[:4096].decode("utf-8", "replace"),
             "timed_out": False,
+            "stdout_truncated": len(out) > self._max_result_bytes,
         }
 
     @staticmethod
@@ -401,6 +440,18 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
                 if glob and not full.match(glob):
                     continue
                 if self._deny_secret_files and is_secret_path(rel):
+                    continue
+                try:
+                    resolved = full.resolve()
+                except OSError:
+                    continue
+                if resolved != self._repo_root and not resolved.is_relative_to(
+                    self._repo_root
+                ):
+                    # A symlinked file whose real target escapes repo_root
+                    # (os.walk's default followlinks=False already keeps
+                    # symlinked *directories* out of this traversal, but a
+                    # symlinked *file* still shows up in `filenames` here).
                     continue
                 try:
                     text = full.read_text(encoding="utf-8", errors="replace")
@@ -558,10 +609,12 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
             )
 
         commit_info, stat_text = split_show_output(res["stdout"])
-        truncated = False
-        if len(stat_text.encode("utf-8", "replace")) > self._max_result_bytes:
-            truncated = True
-            stat_text = stat_text.encode("utf-8", "replace")[: self._max_result_bytes].decode("utf-8", "ignore")
+        # `res["stdout"]` was already clipped to `max_result_bytes` by
+        # `_run_argv`, so re-measuring `stat_text` here can never itself
+        # exceed the bound — `stdout_truncated` is the only reliable signal
+        # that the raw git output was cut off before we ever saw it.
+        truncated = res["stdout_truncated"]
+        if truncated:
             stat_text += "\n... [truncated] ...\n"
         return {"commit_info": commit_info, "stat": stat_text, "truncated": truncated}
 

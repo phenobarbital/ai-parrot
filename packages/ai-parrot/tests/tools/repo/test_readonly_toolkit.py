@@ -114,3 +114,11 @@ class TestListFiles:
     async def test_confined(self, toolkit):
         out = await toolkit.list_files("../..")
         assert isinstance(out, RepoToolError) or out.get("error")
+
+    async def test_rejects_symlinked_directory_escape(self, toolkit):
+        """A symlinked directory pointing outside the root (the `escape`
+        fixture) must be neither listed nor descended into — the same
+        containment rule `resolve_within_root` enforces for path
+        arguments must also apply to `list_files`'s own recursion."""
+        out = await toolkit.list_files(".", depth=5)
+        assert not any(f.startswith("escape") for f in out["files"])

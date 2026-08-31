@@ -79,6 +79,21 @@ class TestGrepFiles:
         assert isinstance(out, RepoSearchResult)
         assert any("a.py" in h.path for h in out.hits)
 
+    async def test_walk_grep_rejects_symlinked_file_escape(self, tmp_path):
+        """The non-git fallback (`_walk_grep`) must not follow a symlinked
+        FILE out of `repo_root` — `os.walk`'s default `followlinks=False`
+        already keeps symlinked directories out of the traversal, but a
+        symlinked file still shows up in `filenames`."""
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.txt").write_text("LEAK_ME=hunter2\n")
+        (plain / "link.txt").symlink_to(outside / "secret.txt")
+        tk = ReadOnlyRepoToolkit(repo_root=plain)
+        out = await tk.grep_files("LEAK_ME")
+        assert out.hits == []
+
 
 class TestNoShellAnywhere:
     def test_package_has_no_shell_true(self):
