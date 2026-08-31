@@ -139,6 +139,7 @@ def build_dev_loop_revision_flow(
     graph_memory: Optional[Any] = None,
     name: str = "dev-loop-revision",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
 ) -> AgentsFlow:
     """Build the short revision-mode ``AgentsFlow`` (FEAT-250 G6).
 
@@ -179,6 +180,16 @@ def build_dev_loop_revision_flow(
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
 
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
+
     for node in nodes.values():
         flow.add_node(node)
 
@@ -207,6 +218,7 @@ def build_dev_loop_feature_flow(
     skip_qa: bool = False,
     name: str = "dev-loop-feature",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
 ) -> AgentsFlow:
     """Build the feature-mode ``AgentsFlow`` (FEAT-378).
 
@@ -260,6 +272,9 @@ def build_dev_loop_feature_flow(
         name: Flow name (default ``"dev-loop-feature"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
+        lifecycle_events: When True (default), also attach a
+            :class:`parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter`
+            (FEAT-479).
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to ``run_flow()``.
@@ -293,6 +308,16 @@ def build_dev_loop_feature_flow(
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
     for node in nodes.values():
         flow.add_node(node)
