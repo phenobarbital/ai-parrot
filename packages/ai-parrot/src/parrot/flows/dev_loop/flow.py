@@ -153,10 +153,7 @@ def _make_qa_retry(max_retries: int) -> Callable[[Any], bool]:
     — G1) still has attempts left → redispatch development."""
 
     def _qa_retry(result: Any) -> bool:
-        return (
-            getattr(result, "passed", True) is False
-            and getattr(result, "attempt", 1) < max_retries
-        )
+        return getattr(result, "passed", True) is False and getattr(result, "attempt", 1) < max_retries
 
     return _qa_retry
 
@@ -166,10 +163,7 @@ def _make_qa_exhausted(max_retries: int) -> Callable[[Any], bool]:
     the failure handler."""
 
     def _qa_exhausted(result: Any) -> bool:
-        return (
-            getattr(result, "passed", True) is False
-            and getattr(result, "attempt", 1) >= max_retries
-        )
+        return getattr(result, "passed", True) is False and getattr(result, "attempt", 1) >= max_retries
 
     return _qa_exhausted
 
@@ -246,25 +240,28 @@ class FlowEventPublisher:
                 session_host = getattr(run_ctx, "shared_data", {}).get("session_host")
             if session_host is not None:
                 action = action_from_flow_event(
-                    event, node_id, ts,
+                    event,
+                    node_id,
+                    ts,
                     error=str(info.get("error", "")),
                     node_result=info.get("node_result"),
                 )
                 if action is not None:
                     session_host.apply(action)
                 node_result = info.get("node_result")
-                if (
-                    event == "node_completed"
-                    and isinstance(node_result, dict)
-                    and node_result.get("pr_url")
-                ):
-                    session_host.apply(PullRequestLinked(
-                        pr_url=str(node_result["pr_url"]),
-                    ))
+                if event == "node_completed" and isinstance(node_result, dict) and node_result.get("pr_url"):
+                    session_host.apply(
+                        PullRequestLinked(
+                            pr_url=str(node_result["pr_url"]),
+                        )
+                    )
         except Exception:  # noqa: BLE001 - session-state fold must never break the run
             _logger.debug(
                 "dev-loop session-state fold failed for event %s (node=%s, run=%s)",
-                event, node_id, run_id, exc_info=True,
+                event,
+                node_id,
+                run_id,
+                exc_info=True,
             )
 
         try:

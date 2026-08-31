@@ -24,6 +24,7 @@ Also covers ``register_checkpoint_type()`` — the process-wide type registry
 that lets an arbitrary Pydantic result type round-trip through every
 ``FlowStateSerializer`` instance, not just one built after registration.
 """
+
 from typing import Any
 
 import pytest

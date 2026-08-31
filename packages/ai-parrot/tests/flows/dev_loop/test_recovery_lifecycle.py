@@ -13,6 +13,7 @@ Reuses the mocked-dispatcher/Jira/worktree-base fixture recipe already
 proven by ``test_runner.py``'s end-to-end suite (same dev-loop topology,
 same mocking strategy) rather than inventing a new one.
 """
+
 from __future__ import annotations
 
 import json
@@ -113,12 +114,18 @@ def test_registered_dev_models_round_trip() -> None:
             reporter="r",
         ),
         ResearchOutput(
-            jira_issue_key="OPS-1", spec_path="s", feat_id="FEAT-1",
-            branch_name="b", worktree_path="/tmp/w",
+            jira_issue_key="OPS-1",
+            spec_path="s",
+            feat_id="FEAT-1",
+            branch_name="b",
+            worktree_path="/tmp/w",
         ),
         PlannerOutput(
-            spec_path="s", task_index_path="t", feat_id="FEAT-1",
-            branch_name="feat-1-x", worktree_path="/tmp/w",
+            spec_path="s",
+            task_index_path="t",
+            feat_id="FEAT-1",
+            branch_name="feat-1-x",
+            worktree_path="/tmp/w",
         ),
         DevelopmentOutput(files_changed=["a.py"], commit_shas=["abc"], summary="done"),
     ]
@@ -151,15 +158,19 @@ def test_scheduler_excludes_done_tasks_after_restart(tmp_path) -> None:
     intact and is what pool recovery relies on.
     """
     index_path = tmp_path / "index.json"
-    index_path.write_text(json.dumps({
-        "tasks": [
-            {"id": "TASK-1", "title": "a", "status": "done", "depends_on": []},
-            {"id": "TASK-2", "title": "b", "status": "done", "depends_on": ["TASK-1"]},
-            {"id": "TASK-3", "title": "c", "status": "pending", "depends_on": ["TASK-2"]},
-            {"id": "TASK-4", "title": "d", "status": "pending", "depends_on": []},
-            {"id": "TASK-5", "title": "e", "status": "pending", "depends_on": ["TASK-4"]},
-        ]
-    }))
+    index_path.write_text(
+        json.dumps(
+            {
+                "tasks": [
+                    {"id": "TASK-1", "title": "a", "status": "done", "depends_on": []},
+                    {"id": "TASK-2", "title": "b", "status": "done", "depends_on": ["TASK-1"]},
+                    {"id": "TASK-3", "title": "c", "status": "pending", "depends_on": ["TASK-2"]},
+                    {"id": "TASK-4", "title": "d", "status": "pending", "depends_on": []},
+                    {"id": "TASK-5", "title": "e", "status": "pending", "depends_on": ["TASK-4"]},
+                ]
+            }
+        )
+    )
 
     scheduler = TaskScheduler.from_index_file(index_path)
     assert scheduler is not None
@@ -207,9 +218,7 @@ def mock_jira():
 @pytest.fixture
 def patch_handoff(monkeypatch):
     monkeypatch.setattr(DeploymentHandoffNode, "_push_branch", AsyncMock(return_value=None))
-    monkeypatch.setattr(
-        DeploymentHandoffNode, "_create_pr", AsyncMock(return_value="https://github.com/x/y/pull/1")
-    )
+    monkeypatch.setattr(DeploymentHandoffNode, "_create_pr", AsyncMock(return_value="https://github.com/x/y/pull/1"))
     # test_single_agent_recovery_is_node_granular materializes a REAL git
     # worktree (for TASK-2625's artifact-validation guard on resume) with
     # no `origin` remote configured — assert_base_is_clean's own,
@@ -302,7 +311,9 @@ def _counting_dispatcher(research_out, *, calls: dict, fail_development: bool = 
             return DevelopmentOutput(files_changed=["x.py"], commit_shas=["abc123"], summary="implemented the fix")
         if output_model is QAReport:
             return QAReport(
-                passed=qa_passed, criterion_results=[], lint_passed=qa_passed,
+                passed=qa_passed,
+                criterion_results=[],
+                lint_passed=qa_passed,
                 attempt=1 if qa_passed else int(conf.DEV_LOOP_QA_MAX_RETRIES),
             )
         raise AssertionError(f"unexpected output_model {output_model}")
@@ -322,9 +333,7 @@ def _dev_loop_flow_kwargs(dispatcher, jira) -> dict[str, Any]:
     }
 
 
-async def test_single_agent_recovery_is_node_granular(
-    brief, mock_jira, patch_handoff, patch_worktree_base
-) -> None:
+async def test_single_agent_recovery_is_node_granular(brief, mock_jira, patch_handoff, patch_worktree_base) -> None:
     """Interrupted single-agent development reruns whole node (at-least-once);
     completed upstream (research) is never redispatched."""
     fake_store = FakeCheckpointStore()
@@ -344,9 +353,7 @@ async def test_single_agent_recovery_is_node_granular(
     dispatcher1 = _counting_dispatcher(research_out, calls=calls, fail_development=True)
     kwargs1 = _dev_loop_flow_kwargs(dispatcher1, mock_jira)
     flow1 = build_dev_loop_flow(**kwargs1)
-    runner1 = DevLoopRunner(
-        flow1, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs1
-    )
+    runner1 = DevLoopRunner(flow1, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs1)
     result1 = await runner1.run(brief, run_id="run-recover-1")
 
     assert "development" in result1.errors
@@ -363,9 +370,7 @@ async def test_single_agent_recovery_is_node_granular(
     dispatcher2 = _counting_dispatcher(research_out, calls=calls, fail_development=False)
     kwargs2 = _dev_loop_flow_kwargs(dispatcher2, mock_jira)
     flow2 = build_dev_loop_flow(**kwargs2)
-    runner2 = DevLoopRunner(
-        flow2, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs2
-    )
+    runner2 = DevLoopRunner(flow2, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs2)
     result2 = await runner2.run(pristine_brief, run_id="run-recover-1")
 
     assert result2.status == FlowStatus.COMPLETED
@@ -397,9 +402,7 @@ async def test_completed_research_not_redispatched_on_matching_resume(
     dispatcher1 = _counting_dispatcher(research_out, calls=calls)
     kwargs1 = _dev_loop_flow_kwargs(dispatcher1, mock_jira)
     flow1 = build_dev_loop_flow(**kwargs1)
-    runner1 = DevLoopRunner(
-        flow1, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs1
-    )
+    runner1 = DevLoopRunner(flow1, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs1)
     result1 = await runner1.run(brief, run_id="run-full-resume")
     assert result1.status == FlowStatus.COMPLETED
     assert calls.get("ResearchOutput") == 1
@@ -412,9 +415,7 @@ async def test_completed_research_not_redispatched_on_matching_resume(
     dispatcher2 = _counting_dispatcher(research_out, calls=calls)
     kwargs2 = _dev_loop_flow_kwargs(dispatcher2, mock_jira)
     flow2 = build_dev_loop_flow(**kwargs2)
-    runner2 = DevLoopRunner(
-        flow2, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs2
-    )
+    runner2 = DevLoopRunner(flow2, max_concurrent_runs=2, checkpoint_store=fake_store, dev_loop_flow_kwargs=kwargs2)
     result2 = await runner2.run(pristine_brief, run_id="run-full-resume")
 
     assert result2.status == FlowStatus.COMPLETED

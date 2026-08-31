@@ -9,6 +9,7 @@ scoped to what THIS task changed rather than re-driving the full real
 dev-flow node graph — that generic checkpoint/resume machinery is already
 exhaustively covered by TASK-2622..2626's suites).
 """
+
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -242,11 +243,17 @@ async def test_dev_flow_restart_after_planner(fake_store, nl_brief, tmp_path) ->
     research_output + ideation_output restored; development is what reruns."""
     worktree_path = _real_worktree(tmp_path, "feat-999-x")
     ideation_out = IdeationOutput(
-        document_path="sdd/proposals/x.proposal.md", document_kind="proposal", slug="x", committed=True,
+        document_path="sdd/proposals/x.proposal.md",
+        document_kind="proposal",
+        slug="x",
+        committed=True,
     )
     planner_out = PlannerOutput(
-        spec_path="sdd/specs/x.spec.md", task_index_path="sdd/tasks/index/x.json",
-        feat_id="FEAT-999", branch_name="feat-999-x", worktree_path=str(worktree_path),
+        spec_path="sdd/specs/x.spec.md",
+        task_index_path="sdd/tasks/index/x.json",
+        feat_id="FEAT-999",
+        branch_name="feat-999-x",
+        worktree_path=str(worktree_path),
     )
     dev_out = DevelopmentOutput(files_changed=["a.py"], commit_shas=["abc"], summary="done")
 
@@ -293,10 +300,17 @@ async def test_dev_flow_restart_after_planner(fake_store, nl_brief, tmp_path) ->
 async def test_dev_flow_namespace_is_disjoint_from_dev_loop(fake_store, nl_brief) -> None:
     """A dev-loop/r1 checkpoint present never satisfies a dev-flow prepare(run_id='r1')."""
     ideation_out = IdeationOutput(
-        document_path="sdd/proposals/x.proposal.md", document_kind="proposal", slug="x", committed=True,
+        document_path="sdd/proposals/x.proposal.md",
+        document_kind="proposal",
+        slug="x",
+        committed=True,
     )
     planner_out = PlannerOutput(
-        spec_path="s", task_index_path="t", feat_id="FEAT-1", branch_name="b", worktree_path="/tmp/w",
+        spec_path="s",
+        task_index_path="t",
+        feat_id="FEAT-1",
+        branch_name="b",
+        worktree_path="/tmp/w",
     )
     dev_out = DevelopmentOutput(files_changed=["a.py"], commit_shas=["abc"], summary="done")
 

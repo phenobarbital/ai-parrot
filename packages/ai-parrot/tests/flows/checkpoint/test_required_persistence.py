@@ -17,6 +17,7 @@ Covers the data/persistence half of spec §3 Module 2:
   call ``to_definition()``) and an allowlisted shared-data projector (so the
   full live ``shared_data`` mapping is never persisted).
 """
+
 from typing import Any
 from unittest.mock import AsyncMock
 

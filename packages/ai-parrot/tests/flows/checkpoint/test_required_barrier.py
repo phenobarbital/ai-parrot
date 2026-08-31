@@ -18,6 +18,7 @@ covered here by re-running TASK-2623's
 through the scheduler once more, plus a dedicated check that required mode
 does NOT attach the fire-and-forget listener at all.
 """
+
 import asyncio
 from typing import Any
 from unittest.mock import AsyncMock

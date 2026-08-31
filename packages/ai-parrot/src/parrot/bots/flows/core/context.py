@@ -21,6 +21,7 @@ FEAT-163 additions:
     ``AgentNotFoundError`` — raised when ``resolve_agent`` cannot find the
         requested agent in the registry.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -153,8 +154,7 @@ class FlowContext:
         agent = self.agent_registry.get_bot_instance(agent_ref)
         if agent is None:
             raise AgentNotFoundError(
-                f"Agent not registered: {agent_ref!r}. "
-                "Ensure the agent is registered before constructing the flow."
+                f"Agent not registered: {agent_ref!r}. " "Ensure the agent is registered before constructing the flow."
             )
         return agent  # type: ignore[return-value]
 
@@ -279,11 +279,7 @@ class FlowContext:
 
         return {
             "task": self.initial_task,
-            "dependencies": {
-                dep: self.results.get(dep)
-                for dep in dependencies
-                if dep in self.results
-            },
+            "dependencies": {dep: self.results.get(dep) for dep in dependencies if dep in self.results},
         }
 
     # ── Checkpointing (FEAT-399) ───────────────────────────────────────────
@@ -329,16 +325,11 @@ class FlowContext:
         responses_safe: Optional[Dict[str, Any]] = None
         responses_lossy = False
         if include_responses:
-            responses_safe, responses_lossy = serializer.to_safe_with_meta(
-                self.responses
-            )
+            responses_safe, responses_lossy = serializer.to_safe_with_meta(self.responses)
         if lossy_out is not None:
             lossy_out.append(results_lossy or responses_lossy)
 
-        errors_structured = {
-            node_id: serializer.encode_error(exc)
-            for node_id, exc in self.errors.items()
-        }
+        errors_structured = {node_id: serializer.encode_error(exc) for node_id, exc in self.errors.items()}
 
         return ContextSnapshot(
             initial_task=self.initial_task,

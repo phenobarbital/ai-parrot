@@ -18,6 +18,7 @@ Snapshot assembly delegates to `FlowContext.to_snapshot()` (added by
 TASK-2052) — this module owns only the `FlowCheckpoint` wrapper
 (checkpoint id/parent chain, definition, node states, memory refs).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -119,9 +120,7 @@ class FlowCheckpointer:
         self._input_metadata = input_metadata
 
         self._last_checkpoint_id: int = starting_checkpoint_id
-        self._parent_checkpoint_id: int | None = (
-            starting_checkpoint_id if starting_checkpoint_id > 0 else None
-        )
+        self._parent_checkpoint_id: int | None = starting_checkpoint_id if starting_checkpoint_id > 0 else None
         self._pending_tasks: set[asyncio.Task] = set()
 
         self._lease_holder: str | None = None
@@ -153,15 +152,12 @@ class FlowCheckpointer:
         """
         if self._lease_lost:
             raise CheckpointPersistenceError(
-                f"FlowCheckpointer: lease for flow_id={self._flow_id!r} was "
-                "lost or failed to renew"
+                f"FlowCheckpointer: lease for flow_id={self._flow_id!r} was " "lost or failed to renew"
             ) from self._lease_lost_exc
 
     # ── Snapshot assembly ──────────────────────────────────────────────────
 
-    def _build_checkpoint(
-        self, ctx: FlowContext, status: str
-    ) -> FlowCheckpoint:
+    def _build_checkpoint(self, ctx: FlowContext, status: str) -> FlowCheckpoint:
         """Assemble a `FlowCheckpoint` from the current `FlowContext` state.
 
         Delegates the `ContextSnapshot` assembly (results/responses
@@ -244,8 +240,7 @@ class FlowCheckpointer:
             await self._store.put(checkpoint)
         except Exception as exc:  # noqa: BLE001 - checkpoint writes must never break the flow
             self.logger.warning(
-                "FlowCheckpointer: ephemeral store put() failed for flow_id=%s "
-                "checkpoint_id=%s: %s",
+                "FlowCheckpointer: ephemeral store put() failed for flow_id=%s " "checkpoint_id=%s: %s",
                 checkpoint.flow_id,
                 checkpoint.checkpoint_id,
                 exc,
@@ -256,8 +251,7 @@ class FlowCheckpointer:
                 await self._durable_store.put(checkpoint)
             except Exception as exc:  # noqa: BLE001 - see above
                 self.logger.warning(
-                    "FlowCheckpointer: durable store put() failed for flow_id=%s "
-                    "checkpoint_id=%s: %s",
+                    "FlowCheckpointer: durable store put() failed for flow_id=%s " "checkpoint_id=%s: %s",
                     checkpoint.flow_id,
                     checkpoint.checkpoint_id,
                     exc,
@@ -316,8 +310,7 @@ class FlowCheckpointer:
             self._last_checkpoint_id = pre_last_id
             self._parent_checkpoint_id = pre_parent_id
             raise CheckpointPersistenceError(
-                f"FlowCheckpointer.checkpoint(): failed to build snapshot for "
-                f"flow_id={self._flow_id!r}: {exc}"
+                f"FlowCheckpointer.checkpoint(): failed to build snapshot for " f"flow_id={self._flow_id!r}: {exc}"
             ) from exc
 
         try:
@@ -334,9 +327,7 @@ class FlowCheckpointer:
 
         return checkpoint
 
-    def make_listener(
-        self, ctx: FlowContext
-    ) -> Callable[[str, str, dict[str, Any]], None]:
+    def make_listener(self, ctx: FlowContext) -> Callable[[str, str, dict[str, Any]], None]:
         """Build a listener compatible with `AgentsFlow.add_node_event_listener()`.
 
         Args:
@@ -391,9 +382,7 @@ class FlowCheckpointer:
 
     # ── Resume lease ─────────────────────────────────────────────────────────
 
-    async def acquire_lease(
-        self, holder: str, ttl: int | None = None
-    ) -> None:
+    async def acquire_lease(self, holder: str, ttl: int | None = None) -> None:
         """Acquire the resume lease and start the heartbeat-renewal task.
 
         Args:
@@ -406,13 +395,9 @@ class FlowCheckpointer:
         ttl = FLOW_CHECKPOINT_LEASE_TTL if ttl is None else ttl
         acquired = await self._store.acquire_lease(self._flow_id, holder, ttl=ttl)
         if not acquired:
-            raise FlowLockedError(
-                f"flow_id={self._flow_id!r} is already locked by another resume"
-            )
+            raise FlowLockedError(f"flow_id={self._flow_id!r} is already locked by another resume")
         self._lease_holder = holder
-        self._lease_heartbeat_task = asyncio.ensure_future(
-            self._heartbeat_loop(holder, ttl)
-        )
+        self._lease_heartbeat_task = asyncio.ensure_future(self._heartbeat_loop(holder, ttl))
 
     async def _heartbeat_loop(self, holder: str, ttl: int) -> None:
         """Renew the lease every ``ttl/3`` seconds until cancelled.

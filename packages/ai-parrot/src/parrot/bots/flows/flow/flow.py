@@ -1337,7 +1337,9 @@ class AgentsFlow(PersistenceMixin):
         # graphs built with callable predicates cannot round-trip through it
         # (spec §7 known risk). Only fall back to the fail-fast
         # to_definition() export when the caller did not supply one.
-        definition = self._checkpoint_definition_arg if self._checkpoint_definition_arg is not None else self.to_definition()
+        definition = (
+            self._checkpoint_definition_arg if self._checkpoint_definition_arg is not None else self.to_definition()
+        )
 
         store = get_checkpoint_store(self._checkpoint_store_arg)
         durable_store: Optional[CheckpointStore] = None

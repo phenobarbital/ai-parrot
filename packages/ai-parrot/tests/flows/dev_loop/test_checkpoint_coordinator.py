@@ -6,6 +6,7 @@ selection, live-object-not-restored, shared-state projection round-trip,
 recovered-worktree validation failure modes, lease-conflict propagation,
 and the structured recovery events (spec §5).
 """
+
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -132,16 +133,28 @@ def _build_flow(definition, *, store, shared_data_projector, worktree_path: str 
         checkpoint_definition=external_definition,
         checkpoint_shared_data=shared_data_projector,
     )
-    flow.add_node(_StepNode(node_id="research", result=ResearchOutput(
-        jira_issue_key="OPS-1",
-        spec_path="sdd/specs/x.spec.md",
-        feat_id="FEAT-130",
-        branch_name="feat-130-x",
-        worktree_path=worktree_path,
-    )))
-    flow.add_node(_StepNode(node_id="development", result=DevelopmentOutput(
-        files_changed=["a.py"], commit_shas=["abc123"], summary="did it",
-    )))
+    flow.add_node(
+        _StepNode(
+            node_id="research",
+            result=ResearchOutput(
+                jira_issue_key="OPS-1",
+                spec_path="sdd/specs/x.spec.md",
+                feat_id="FEAT-130",
+                branch_name="feat-130-x",
+                worktree_path=worktree_path,
+            ),
+        )
+    )
+    flow.add_node(
+        _StepNode(
+            node_id="development",
+            result=DevelopmentOutput(
+                files_changed=["a.py"],
+                commit_shas=["abc123"],
+                summary="did it",
+            ),
+        )
+    )
     flow.add_edge("research", "development", condition="on_success")
     return flow
 
@@ -408,9 +421,7 @@ async def test_prepare_fails_on_invalid_recovered_worktree(fake_store, sample_br
             run_id="run-2",
             brief=sample_brief,
             live_context=FlowContext(initial_task="t"),
-            flow_factory=lambda definition: _build_flow(
-                definition, store=fake_store, shared_data_projector=None
-            ),
+            flow_factory=lambda definition: _build_flow(definition, store=fake_store, shared_data_projector=None),
             execution_policy={},
         )
     assert any("artifact_validation_failure" in r.message for r in caplog.records)
@@ -436,9 +447,7 @@ async def test_lease_conflict_on_concurrent_prepare_raises(fake_store, sample_br
             run_id="run-2",
             brief=sample_brief,
             live_context=FlowContext(initial_task="t"),
-            flow_factory=lambda definition: _build_flow(
-                definition, store=fake_store, shared_data_projector=None
-            ),
+            flow_factory=lambda definition: _build_flow(definition, store=fake_store, shared_data_projector=None),
             execution_policy={},
         )
     assert any("lease_conflict" in r.message for r in caplog.records)

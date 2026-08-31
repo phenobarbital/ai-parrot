@@ -5,6 +5,7 @@ round-trip with type identity via a small type registry; everything else
 degrades to a tagged repr and marks the operation ``lossy`` instead of
 raising. Never pickle (spec §2/§7).
 """
+
 from __future__ import annotations
 
 import logging
@@ -214,16 +215,13 @@ class FlowStateSerializer:
                 }
             lossy_flag[0] = True
             self.logger.debug(
-                "FlowStateSerializer: unregistered Pydantic model %s degraded "
-                "to lossy repr",
+                "FlowStateSerializer: unregistered Pydantic model %s degraded " "to lossy repr",
                 type(value).__name__,
             )
             return {_TYPE_KEY: _LOSSY_TAG, _REPR_KEY: repr(value)}
 
         if isinstance(value, dict):
-            encoded = {
-                str(k): self._encode_value(v, lossy_flag) for k, v in value.items()
-            }
+            encoded = {str(k): self._encode_value(v, lossy_flag) for k, v in value.items()}
             if _TYPE_KEY in encoded:
                 # Collision guard: a real dict from user/tool data happens
                 # to contain our reserved sentinel key (e.g. a tool result
@@ -241,9 +239,7 @@ class FlowStateSerializer:
         # Anything else (arbitrary custom object) degrades to a tagged repr
         # instead of raising — never fail the flow on serialization.
         lossy_flag[0] = True
-        self.logger.debug(
-            "FlowStateSerializer: %s degraded to lossy repr", type(value).__name__
-        )
+        self.logger.debug("FlowStateSerializer: %s degraded to lossy repr", type(value).__name__)
         return {_TYPE_KEY: _LOSSY_TAG, _REPR_KEY: repr(value)}
 
     @staticmethod
@@ -337,9 +333,7 @@ class FlowStateSerializer:
                     return {k: self._decode_value(v) for k, v in inner.items()}
                 model_cls = self._registry.get(tag)
                 if model_cls is not None:
-                    return model_cls.model_validate(
-                        self._decode_value(value.get(_DATA_KEY))
-                    )
+                    return model_cls.model_validate(self._decode_value(value.get(_DATA_KEY)))
                 # Unknown tag: never dynamically import/reconstruct —
                 # return the raw envelope so the caller can inspect it.
                 return {k: self._decode_value(v) for k, v in value.items()}

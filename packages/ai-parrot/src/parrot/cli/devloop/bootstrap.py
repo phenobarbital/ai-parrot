@@ -7,6 +7,7 @@ kwargs needed for both ``run()`` and ``run_revision()``.
 Heavy imports (``parrot.conf``, ``parrot.flows.dev_loop.*``) are deferred
 to function bodies so that ``parrot devloop --help`` stays fast.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,7 +19,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.table import Table
-
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,7 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     # 1. Redis URL
     try:
         from parrot import conf  # noqa: PLC0415
+
         redis_url = getattr(conf, "REDIS_URL", "") or ""
     except Exception:
         redis_url = os.environ.get("REDIS_URL", "")
@@ -98,10 +99,13 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     if redis_url:
         checks.append(PreflightCheck(name="redis", passed=True))
     else:
-        checks.append(PreflightCheck(
-            name="redis", passed=False,
-            hint="Set REDIS_URL in environment or parrot.conf",
-        ))
+        checks.append(
+            PreflightCheck(
+                name="redis",
+                passed=False,
+                hint="Set REDIS_URL in environment or parrot.conf",
+            )
+        )
 
     # 2. Development-agent backend check — backend-aware (FEAT-388 G6).
     # Hard-fails only when the resolved backend is claude-code (byte-
@@ -113,10 +117,9 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
         from parrot import conf  # noqa: PLC0415
         from parrot.flows.dev_loop import catalog  # noqa: PLC0415
 
-        backend_id = str(
-            conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code")
-            or "claude-code"
-        ).strip().lower()
+        backend_id = (
+            str(conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code") or "claude-code").strip().lower()
+        )
         backend = catalog.get_backend(backend_id)
         valid_backend_ids = ", ".join(b.id for b in catalog.BACKENDS)
     except Exception:
@@ -128,20 +131,22 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
         valid_backend_ids = ""
 
     if backend is None and backend_id != "claude-code":
-        checks.append(PreflightCheck(
-            name="dev-agent-backend",
-            passed=False,
-            hint=(
-                f"Unknown DEV_LOOP_DEVELOPMENT_AGENT={backend_id!r}. "
-                f"Valid backends: {valid_backend_ids}"
-            ),
-        ))
+        checks.append(
+            PreflightCheck(
+                name="dev-agent-backend",
+                passed=False,
+                hint=(f"Unknown DEV_LOOP_DEVELOPMENT_AGENT={backend_id!r}. " f"Valid backends: {valid_backend_ids}"),
+            )
+        )
     elif backend is None:
         claude_found = shutil.which("claude") is not None
-        checks.append(PreflightCheck(
-            name="claude-cli", passed=claude_found,
-            hint="" if claude_found else "Install Claude Code CLI: npm i -g @anthropic-ai/claude-code",
-        ))
+        checks.append(
+            PreflightCheck(
+                name="claude-cli",
+                passed=claude_found,
+                hint="" if claude_found else "Install Claude Code CLI: npm i -g @anthropic-ai/claude-code",
+            )
+        )
     elif backend.transport == "cli":
         binary = _cli_binary_for(backend.id)
         found = shutil.which(binary) is not None
@@ -151,16 +156,19 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
             hint = "" if found else f"Install/authenticate: {backend.requires}"
         checks.append(PreflightCheck(name=f"{binary}-cli", passed=found, hint=hint))
     else:
-        checks.append(PreflightCheck(
-            name=f"{backend.id}-credentials",
-            passed=True,
-            hint=f"Ensure credentials are configured: {backend.requires}",
-        ))
+        checks.append(
+            PreflightCheck(
+                name=f"{backend.id}-credentials",
+                passed=True,
+                hint=f"Ensure credentials are configured: {backend.requires}",
+            )
+        )
 
     # 2b. Intake-LLM credentials — soft hint only (FEAT-388 G4/G6): feature-
     # mode intake is optional, --brief runs never need it.
     try:
         from parrot import conf  # noqa: PLC0415
+
         intake_llm = str(
             conf.config.get("DEV_LOOP_INTAKE_LLM", fallback="anthropic:claude-haiku-4-5")
             or "anthropic:claude-haiku-4-5"
@@ -173,8 +181,7 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     intake_hint = ""
     if intake_env_key and not os.environ.get(intake_env_key):
         intake_hint = (
-            f"Feature-mode intake ({intake_llm}) needs {intake_env_key} — "
-            "optional; --brief runs don't need it."
+            f"Feature-mode intake ({intake_llm}) needs {intake_env_key} — " "optional; --brief runs don't need it."
         )
     checks.append(PreflightCheck(name="intake-llm", passed=True, hint=intake_hint))
 
@@ -183,6 +190,7 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     jira_hint = ""
     try:
         from parrot import conf  # noqa: PLC0415
+
         jira_url = getattr(conf, "JIRA_URL", "") or conf.config.get("JIRA_URL", fallback="") or ""
         jira_user = getattr(conf, "JIRA_USERNAME", "") or conf.config.get("JIRA_USERNAME", fallback="") or ""
         jira_token = getattr(conf, "JIRA_API_TOKEN", "") or conf.config.get("JIRA_API_TOKEN", fallback="") or ""
@@ -197,16 +205,20 @@ async def preflight(*, console: Optional[Console] = None) -> PreflightResult:
     # 4. Worktree base path
     try:
         from parrot import conf  # noqa: PLC0415
+
         wt_base = getattr(conf, "WORKTREE_BASE_PATH", "") or ""
     except Exception:
         wt_base = os.environ.get("WORKTREE_BASE_PATH", "")
     if wt_base:
         checks.append(PreflightCheck(name="worktree-base", passed=True))
     else:
-        checks.append(PreflightCheck(
-            name="worktree-base", passed=False,
-            hint="Set WORKTREE_BASE_PATH in parrot.conf (e.g. /home/user/worktrees)",
-        ))
+        checks.append(
+            PreflightCheck(
+                name="worktree-base",
+                passed=False,
+                hint="Set WORKTREE_BASE_PATH in parrot.conf (e.g. /home/user/worktrees)",
+            )
+        )
 
     result = PreflightResult(ok=all(c.passed for c in checks), checks=checks)
 
@@ -267,20 +279,15 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
     # (fallback "claude-code") — homologates the CLI with both. preflight()
     # already validated the backend id above (SystemExit on unknown), so
     # DevAgentSpec's Literal type is guaranteed to accept it here.
-    backend_id = str(
-        conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code")
-        or "claude-code"
-    ).strip().lower()
+    backend_id = (
+        str(conf.config.get("DEV_LOOP_DEVELOPMENT_AGENT", fallback="claude-code") or "claude-code").strip().lower()
+    )
 
     dispatcher, development_profile = build_dispatcher(
         DevAgentSpec(agent=backend_id),
         redis_url=redis_url,
-        max_concurrent=conf.config.get(
-            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3
-        ),
-        stream_ttl_seconds=conf.config.get(
-            "FLOW_STREAM_TTL_SECONDS", fallback=604800
-        ),
+        max_concurrent=conf.config.get("CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3),
+        stream_ttl_seconds=conf.config.get("FLOW_STREAM_TTL_SECONDS", fallback=604800),
     )
 
     # Code-review-review fix (post-review CRITICAL finding): QANode's own
@@ -301,9 +308,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
     # adversarial/parallel reviewer selection is out of this task's scope.
     codereview_dispatcher = None
     if backend_id != "claude-code" and backend_id in catalog.PRIMARY_REVIEW_BACKENDS:
-        codereview_dispatcher = CodeReviewDispatcherFactory.create(
-            backend_id, dispatcher=dispatcher
-        )
+        codereview_dispatcher = CodeReviewDispatcherFactory.create(backend_id, dispatcher=dispatcher)
 
     jira_toolkit = _build_jira_toolkit()
     log_toolkits = _build_log_toolkits()
@@ -317,9 +322,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
 
     # FEAT-377 TASK-1916 (G5): opt-in plan_approval gate. False (default)
     # preserves current behavior exactly.
-    require_plan_approval = bool(
-        getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False)
-    )
+    require_plan_approval = bool(getattr(conf, "DEV_LOOP_REQUIRE_PLAN_APPROVAL", False))
 
     # FEAT-480 (TASK-2628): same pattern as examples/dev_loop/server.py's
     # dev-loop wiring — captured once as the exact kwargs `build_dev_loop_flow`
@@ -433,6 +436,7 @@ def _build_log_toolkits() -> Dict[str, Any]:
         if hasattr(conf, "CLOUDWATCH_LOG_GROUP"):
             try:
                 from parrot.tools.cloudwatch import CloudWatchToolkit  # noqa: PLC0415
+
                 toolkits["cloudwatch"] = CloudWatchToolkit(
                     log_group=conf.CLOUDWATCH_LOG_GROUP,
                 )

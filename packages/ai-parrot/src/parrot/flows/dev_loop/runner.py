@@ -122,14 +122,19 @@ _SWEEP_INTERVAL_SECONDS = 30
 # explicitly rather than rely on `FlowResult.status`/`AgentsFlow`'s
 # completed/failed bookkeeping, which only reflects whether a node raised.
 _TERMINAL_NODE_IDS = (
-    "deployment_handoff", "feature_handoff", "revision_handoff", "failure_handler",
+    "deployment_handoff",
+    "feature_handoff",
+    "revision_handoff",
+    "failure_handler",
 )
-_FAILED_TERMINAL_STATUSES = frozenset({
-    "blocked",                    # all three handoff nodes: nothing delivered
-    "escalated",                  # failure_handler: QA failed, run escalated
-    "escalated_without_ticket",   # failure_handler, no Jira / skip_jira
-    "escalation_failed",          # failure_handler, Jira call raised
-})
+_FAILED_TERMINAL_STATUSES = frozenset(
+    {
+        "blocked",  # all three handoff nodes: nothing delivered
+        "escalated",  # failure_handler: QA failed, run escalated
+        "escalated_without_ticket",  # failure_handler, no Jira / skip_jira
+        "escalation_failed",  # failure_handler, Jira call raised
+    }
+)
 
 
 def build_dev_loop_revision_flow(
@@ -174,9 +179,7 @@ def build_dev_loop_revision_flow(
     nodes = staged._materialize_nodes()
 
     run_id_holder: Dict[str, str] = {}
-    publisher = (
-        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
-    )
+    publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
     flow = AgentsFlow(name=name, on_node_event=publisher)
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
@@ -289,9 +292,7 @@ def build_dev_loop_feature_flow(
     nodes = staged._materialize_nodes()
 
     run_id_holder: Dict[str, str] = {}
-    publisher = (
-        FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
-    )
+    publisher = FlowEventPublisher(redis_url, run_id_holder) if publish_flow_events else None
     flow = AgentsFlow(name=name, on_node_event=publisher)
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
@@ -316,8 +317,13 @@ def build_dev_loop_feature_flow(
     flow.add_edge("feedback_router", "development", predicate=_feedback_retry)
     flow.add_edge("feature_handoff", "close")
     for source in (
-        "intent_classifier", "planner", "development", "synthesis",
-        "qa", "feedback_router", "feature_handoff",
+        "intent_classifier",
+        "planner",
+        "development",
+        "synthesis",
+        "qa",
+        "feedback_router",
+        "feature_handoff",
     ):
         flow.add_edge(source, "failure_handler", condition="on_error")
 
@@ -369,9 +375,7 @@ class DevLoopRunner:
     ) -> None:
         self.flow = flow
         self.max_concurrent_runs = int(
-            max_concurrent_runs
-            if max_concurrent_runs is not None
-            else conf.FLOW_MAX_CONCURRENT_RUNS
+            max_concurrent_runs if max_concurrent_runs is not None else conf.FLOW_MAX_CONCURRENT_RUNS
         )
         self._semaphore = asyncio.Semaphore(self.max_concurrent_runs)
         self._active: Set[str] = set()
@@ -458,9 +462,7 @@ class DevLoopRunner:
     def _run_summary_from_host(self, host: SessionHost) -> RunSummary:
         """Project a host's live state into a display-ready :class:`RunSummary`."""
         state = host.state
-        pending_gates = sum(
-            1 for g in state.gates.values() if g.status == "pending"
-        )
+        pending_gates = sum(1 for g in state.gates.values() if g.status == "pending")
         return RunSummary(
             run_id=state.run_id,
             phase=state.phase,
@@ -492,11 +494,7 @@ class DevLoopRunner:
         run in the root catalogue forever (`RunRemoved` would never fire).
         """
         self._hosts.pop(run_id, None)
-        if (
-            not self._hosts
-            and not self._pending_retention
-            and self._sweep_task is not None
-        ):
+        if not self._hosts and not self._pending_retention and self._sweep_task is not None:
             self._sweep_task.cancel()
             self._sweep_task = None
 
@@ -547,23 +545,15 @@ class DevLoopRunner:
 
             t = envelope.action.type
             if t == "gate/opened":
-                self._pending_gate_count[run_id] = (
-                    self._pending_gate_count.get(run_id, 0) + 1
-                )
+                self._pending_gate_count[run_id] = self._pending_gate_count.get(run_id, 0) + 1
                 if conf.DEV_LOOP_GATE_PARK and self._pending_gate_count[run_id] == 1:
                     self._park(run_id)
             elif t in ("gate/resolved", "gate/expired"):
                 remaining = max(0, self._pending_gate_count.get(run_id, 0) - 1)
                 self._pending_gate_count[run_id] = remaining
-                if (
-                    conf.DEV_LOOP_GATE_PARK
-                    and remaining == 0
-                    and run_id in self._parked
-                ):
+                if conf.DEV_LOOP_GATE_PARK and remaining == 0 and run_id in self._parked:
                     try:
-                        asyncio.get_running_loop().create_task(
-                            self._auto_resume(run_id)
-                        )
+                        asyncio.get_running_loop().create_task(self._auto_resume(run_id))
                     except RuntimeError:
                         pass
 
@@ -595,13 +585,9 @@ class DevLoopRunner:
         queue.put_nowait(envelope)
         writer = self._actions_writers.get(run_id)
         if writer is None or writer.done():
-            self._actions_writers[run_id] = loop.create_task(
-                self._drain_actions_queue(run_id, queue)
-            )
+            self._actions_writers[run_id] = loop.create_task(self._drain_actions_queue(run_id, queue))
 
-    async def _drain_actions_queue(
-        self, run_id: str, queue: "asyncio.Queue[Any]"
-    ) -> None:
+    async def _drain_actions_queue(self, run_id: str, queue: "asyncio.Queue[Any]") -> None:
         """XADD ``run_id``'s envelopes one at a time, in ``server_seq`` order.
 
         Awaiting each XADD before pulling the next entry is the whole point:
@@ -618,9 +604,7 @@ class DevLoopRunner:
                 return
             await self._xadd_envelope(run_id, envelope)
 
-    async def _flush_actions_queue(
-        self, run_id: str, timeout: float = 5.0
-    ) -> None:
+    async def _flush_actions_queue(self, run_id: str, timeout: float = 5.0) -> None:
         """Publish ``run_id``'s remaining envelopes, then retire its writer.
 
         Called from :meth:`_close_host` so a finished run's stream is
@@ -645,13 +629,15 @@ class DevLoopRunner:
             await asyncio.wait_for(asyncio.shield(writer), timeout=timeout)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             self.logger.debug(
-                "dev-loop actions-stream flush for run %s did not finish in "
-                "%.1fs — remaining envelopes dropped", run_id, timeout,
+                "dev-loop actions-stream flush for run %s did not finish in " "%.1fs — remaining envelopes dropped",
+                run_id,
+                timeout,
             )
         except Exception:  # noqa: BLE001 - actions publish must never break a run
             self.logger.debug(
                 "dev-loop actions-stream flush failed for run %s",
-                run_id, exc_info=True,
+                run_id,
+                exc_info=True,
             )
 
     def _retire_actions_writer(self, run_id: str) -> None:
@@ -681,9 +667,7 @@ class DevLoopRunner:
         if self._actions_redis is None:
             import redis.asyncio as aioredis  # noqa: PLC0415 - lazy
 
-            self._actions_redis = aioredis.from_url(
-                self._redis_url, decode_responses=True
-            )
+            self._actions_redis = aioredis.from_url(self._redis_url, decode_responses=True)
         return self._actions_redis
 
     async def _xadd_envelope(self, run_id: str, envelope: ActionEnvelope) -> None:
@@ -702,9 +686,7 @@ class DevLoopRunner:
                 approximate=True,
             )
         except Exception:  # noqa: BLE001 - actions publish must never break a run
-            self.logger.debug(
-                "dev-loop actions XADD failed for run %s", run_id, exc_info=True
-            )
+            self.logger.debug("dev-loop actions XADD failed for run %s", run_id, exc_info=True)
 
     # ── Terminal snapshot + retention (FEAT-322) ────────────────────────────
 
@@ -724,16 +706,20 @@ class DevLoopRunner:
             path.write_text(snapshot.model_dump_json(indent=2))
             self.logger.info(
                 "Persisted terminal snapshot for run %s at %s",
-                host.state.run_id, path,
+                host.state.run_id,
+                path,
             )
         except Exception:  # noqa: BLE001 - artifact persistence must not break a run
             self.logger.warning(
                 "Failed to persist terminal snapshot for run %s",
-                host.state.run_id, exc_info=True,
+                host.state.run_id,
+                exc_info=True,
             )
 
     def _persist_run_bundle(
-        self, host: SessionHost, ctx: Optional[FlowContext],
+        self,
+        host: SessionHost,
+        ctx: Optional[FlowContext],
     ) -> None:
         """Persist the run bundle + markdown closing report (FEAT-378 TASK-1929).
 
@@ -773,26 +759,28 @@ class DevLoopRunner:
             # try/except rather than sharing the outer one's early exit).
             usage_markdown = ""
             try:
-                usage_report = build_usage_report(
-                    host.snapshot(), host.state.run_id, shared=shared
-                )
+                usage_report = build_usage_report(host.snapshot(), host.state.run_id, shared=shared)
                 usage_path.write_text(usage_report.model_dump_json(indent=2))
                 usage_html_path.write_text(render_usage_html(usage_report))
                 usage_markdown = render_usage_markdown(usage_report)
             except Exception:  # noqa: BLE001 - usage export must not break bundle export
                 self.logger.warning(
                     "Failed to persist usage report for run %s",
-                    host.state.run_id, exc_info=True,
+                    host.state.run_id,
+                    exc_info=True,
                 )
             report_path.write_text(render_markdown(bundle, usage_markdown))
             self.logger.info(
                 "Persisted run bundle for run %s at %s and %s",
-                host.state.run_id, bundle_path, report_path,
+                host.state.run_id,
+                bundle_path,
+                report_path,
             )
         except Exception:  # noqa: BLE001 - artifact persistence must not break a run
             self.logger.warning(
                 "Failed to persist run bundle for run %s",
-                host.state.run_id, exc_info=True,
+                host.state.run_id,
+                exc_info=True,
             )
 
     def _schedule_actions_retention(self, run_id: str) -> None:
@@ -808,7 +796,8 @@ class DevLoopRunner:
         self._pending_retention[run_id] = time.time() + retention_seconds
         self.logger.info(
             "Scheduled flow:%s:actions for deletion in %.0fd",
-            run_id, conf.DEV_LOOP_ACTIONS_RETENTION_DAYS,
+            run_id,
+            conf.DEV_LOOP_ACTIONS_RETENTION_DAYS,
         )
 
     async def _sweep_retention_once(self) -> None:
@@ -835,7 +824,8 @@ class DevLoopRunner:
                 except Exception:  # noqa: BLE001 - retention sweep must not raise
                     self.logger.debug(
                         "actions-stream retention delete failed for run %s",
-                        rid, exc_info=True,
+                        rid,
+                        exc_info=True,
                     )
             self._pending_retention.pop(rid, None)
             self._apply_root_action(RunRemoved(run_id=rid))
@@ -850,9 +840,7 @@ class DevLoopRunner:
         """Start the periodic gate-expiry/retention sweep if not running."""
         if self._sweep_task is None or self._sweep_task.done():
             try:
-                self._sweep_task = asyncio.get_running_loop().create_task(
-                    self._sweep_loop()
-                )
+                self._sweep_task = asyncio.get_running_loop().create_task(self._sweep_loop())
             except RuntimeError:
                 # No running loop (e.g. constructed outside async context) —
                 # the sweep starts lazily on the next call from async code.
@@ -875,7 +863,8 @@ class DevLoopRunner:
             except Exception:  # noqa: BLE001 - sweep must never raise
                 self.logger.debug(
                     "gate-expiry sweep failed for run %s",
-                    host.state.run_id, exc_info=True,
+                    host.state.run_id,
+                    exc_info=True,
                 )
         await self._sweep_retention_once()
 
@@ -919,7 +908,11 @@ class DevLoopRunner:
         if host is None:
             raise KeyError(f"no active session host for run_id={run_id!r}")
         return host.resolve_gate(
-            gate_id, resolution, resolved_by, comment, origin=origin,
+            gate_id,
+            resolution,
+            resolved_by,
+            comment,
+            origin=origin,
             answers=answers,
         )
 
@@ -993,7 +986,9 @@ class DevLoopRunner:
         self._semaphore.release()
         self.logger.info(
             "Dev-loop run %s parked (gate opened); slot released (%d/%d active).",
-            run_id, len(self._active), self.max_concurrent_runs,
+            run_id,
+            len(self._active),
+            self.max_concurrent_runs,
         )
 
     async def _auto_resume(self, run_id: str) -> None:
@@ -1007,9 +1002,7 @@ class DevLoopRunner:
         try:
             await self.resume_run(run_id)
         except Exception as exc:  # noqa: BLE001 - never break gate resolution
-            self.logger.warning(
-                "Auto-resume failed for parked run %s: %s", run_id, exc
-            )
+            self.logger.warning("Auto-resume failed for parked run %s: %s", run_id, exc)
 
     async def resume_run(self, run_id: str) -> FlowResult:
         """Re-acquire a slot for a parked run and await its eventual result.
@@ -1053,7 +1046,9 @@ class DevLoopRunner:
                 self._apply_root_action(RunResumed(run_id=run_id))
                 self.logger.info(
                     "Dev-loop run %s resumed; slot re-acquired (%d/%d active).",
-                    run_id, len(self._active), self.max_concurrent_runs,
+                    run_id,
+                    len(self._active),
+                    self.max_concurrent_runs,
                 )
         return await fut
 
@@ -1114,15 +1109,19 @@ class DevLoopRunner:
         # reference — QANode/DeploymentHandoffNode read
         # ``shared["session_host"]``, they never import the runner).
         host = self._register_host(rid)
-        host.apply(RunCreated(
-            run_id=rid, revision=False, work_kind=brief.kind,
-            summary=brief.summary,
-        ))
+        host.apply(
+            RunCreated(
+                run_id=rid,
+                revision=False,
+                work_kind=brief.kind,
+                summary=brief.summary,
+            )
+        )
         self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
 
         shared: Dict[str, Any] = {
-            "bug_brief": brief,    # legacy key — nodes read this
-            "work_brief": brief,   # forward-compat name
+            "bug_brief": brief,  # legacy key — nodes read this
+            "work_brief": brief,  # forward-compat name
             "run_id": rid,
             "session_host": host,
         }
@@ -1151,7 +1150,8 @@ class DevLoopRunner:
             # DevCheckpointCoordinator's own event vocabulary.
             self.logger.info(
                 "Dev-loop run %s: %s execution (checkpoint recovery enabled)",
-                rid, mode,
+                rid,
+                mode,
             )
 
         # FEAT-377 TASK-1917 (G6): a manual acquire/release (not `async
@@ -1172,7 +1172,9 @@ class DevLoopRunner:
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-loop run %s (%d/%d active)",
-            rid, len(self._active), self.max_concurrent_runs,
+            rid,
+            len(self._active),
+            self.max_concurrent_runs,
         )
         try:
             result = await flow.run_flow(ctx)
@@ -1201,9 +1203,7 @@ class DevLoopRunner:
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-loop run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-loop run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
@@ -1340,8 +1340,7 @@ class DevLoopRunner:
         """
         if not all((self._dispatcher, self._redis_url)):
             raise RuntimeError(
-                "feature-mode run requires the runner to be constructed "
-                "with dispatcher and redis_url."
+                "feature-mode run requires the runner to be constructed " "with dispatcher and redis_url."
             )
 
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
@@ -1352,10 +1351,14 @@ class DevLoopRunner:
         # — FeatureBrief carries its own `kind` field instead. "bug" here is
         # a structural placeholder only (never read on this path — no
         # ResearchNode / Jira-issuetype selection happens in feature-mode).
-        host.apply(RunCreated(
-            run_id=rid, revision=False, work_kind="bug",
-            summary=f"Feature: {brief.document_path}",
-        ))
+        host.apply(
+            RunCreated(
+                run_id=rid,
+                revision=False,
+                work_kind="bug",
+                summary=f"Feature: {brief.document_path}",
+            )
+        )
         self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
 
         # Build the feature flow once (fixed topology) and reuse it — fresh
@@ -1412,7 +1415,9 @@ class DevLoopRunner:
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-loop FEATURE run %s (%d/%d active)",
-            rid, len(self._active), self.max_concurrent_runs,
+            rid,
+            len(self._active),
+            self.max_concurrent_runs,
         )
         try:
             result = await feature_flow.run_flow(ctx)
@@ -1430,9 +1435,7 @@ class DevLoopRunner:
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-loop feature run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-loop feature run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
@@ -1465,9 +1468,7 @@ class DevLoopRunner:
             RuntimeError: If the runner was constructed without the deps needed
                 to build the revision flow.
         """
-        if not all(
-            (self._dispatcher, self._jira_toolkit, self._git_toolkit, self._redis_url)
-        ):
+        if not all((self._dispatcher, self._jira_toolkit, self._git_toolkit, self._redis_url)):
             raise RuntimeError(
                 "run_revision requires the runner to be constructed with "
                 "dispatcher, jira_toolkit, git_toolkit and redis_url."
@@ -1477,11 +1478,14 @@ class DevLoopRunner:
 
         # AHP-style host — same lifecycle as ``run()`` (revision=True).
         host = self._register_host(rid)
-        host.apply(RunCreated(
-            run_id=rid, revision=True,
-            work_kind="bug",
-            summary=f"Revision for {brief.jira_issue_key or brief.branch}",
-        ))
+        host.apply(
+            RunCreated(
+                run_id=rid,
+                revision=True,
+                work_kind="bug",
+                summary=f"Revision for {brief.jira_issue_key or brief.branch}",
+            )
+        )
         self._apply_root_action(RunAdded(summary=self._run_summary_from_host(host)))
 
         # Build the revision flow once (fixed topology) and reuse it — fresh
@@ -1545,9 +1549,7 @@ class DevLoopRunner:
             "head_sha": brief.head_sha,
             "session_host": host,
         }
-        ctx = FlowContext(
-            initial_task=brief.feedback or "revision", shared_data=shared
-        )
+        ctx = FlowContext(initial_task=brief.feedback or "revision", shared_data=shared)
 
         # FEAT-377 TASK-1917 (G6): same manual acquire/park-aware structure
         # as `run()` — a revision run's QA can open `manual_criterion`
@@ -1562,7 +1564,9 @@ class DevLoopRunner:
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-loop REVISION run %s (PR #%s, branch %s)",
-            rid, brief.pr_number, brief.branch,
+            rid,
+            brief.pr_number,
+            brief.branch,
         )
         try:
             result = await rev_flow.run_flow(ctx)
@@ -1580,9 +1584,7 @@ class DevLoopRunner:
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-loop revision run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-loop revision run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
@@ -1592,7 +1594,10 @@ class DevLoopRunner:
     # ── Host terminal handling (FEAT-322) ───────────────────────────────────
 
     async def _close_host(
-        self, host: SessionHost, result: FlowResult, ctx: FlowContext,
+        self,
+        host: SessionHost,
+        result: FlowResult,
+        ctx: FlowContext,
     ) -> None:
         """Fold ``run/closed``, persist the terminal snapshot + run bundle,
         and retire the host.
@@ -1624,9 +1629,7 @@ class DevLoopRunner:
         # FEAT-378: feature-mode's handoff node id is "feature_handoff"
         # rather than "deployment_handoff" — check both so this projection
         # generalizes across topologies without a mode flag.
-        handoff_resp = result.responses.get("deployment_handoff") or result.responses.get(
-            "feature_handoff"
-        )
+        handoff_resp = result.responses.get("deployment_handoff") or result.responses.get("feature_handoff")
         pr_url = ""
         if isinstance(handoff_resp, dict):
             pr_url = str(handoff_resp.get("pr_url", "") or "")
@@ -1644,22 +1647,26 @@ class DevLoopRunner:
             _resp = result.responses.get(_nid)
             if isinstance(_resp, dict) and _resp.get("status") in _FAILED_TERMINAL_STATUSES:
                 self.logger.warning(
-                    "Run %s: terminal node %s reported status=%s — recording "
-                    "outcome=failed (FlowResult.status=%s)",
-                    run_id, _nid, _resp.get("status"), result.status,
+                    "Run %s: terminal node %s reported status=%s — recording " "outcome=failed (FlowResult.status=%s)",
+                    run_id,
+                    _nid,
+                    _resp.get("status"),
+                    result.status,
                 )
                 outcome = "failed"
                 break
 
-        host.apply(RunClosed(
-            outcome=outcome, jira_issue_key=jira_issue_key, pr_url=pr_url,
-        ))
+        host.apply(
+            RunClosed(
+                outcome=outcome,
+                jira_issue_key=jira_issue_key,
+                pr_url=pr_url,
+            )
+        )
         self._persist_terminal_snapshot(host)
         self._persist_run_bundle(host, ctx)
         self._schedule_actions_retention(run_id)
-        self._apply_root_action(
-            RunSummaryChanged(summary=self._run_summary_from_host(host))
-        )
+        self._apply_root_action(RunSummaryChanged(summary=self._run_summary_from_host(host)))
         # Every `host.apply` for this run has happened, so `run/closed` is the
         # last thing in the queue. Draining here is what lets a console stop
         # tailing on it without truncating a still-in-flight node event.

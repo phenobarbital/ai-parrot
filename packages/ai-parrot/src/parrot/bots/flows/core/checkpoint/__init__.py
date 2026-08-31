@@ -4,6 +4,7 @@ A sibling of `core/storage/` (the results/audit plane): checkpoints are
 recoverable *state* (expiring by default, opt-in durable), not audit
 *results*. See `sdd/specs/agentsflow-state-checkpointing.spec.md`.
 """
+
 from .checkpointer import FlowCheckpointer
 from .errors import (
     CheckpointFingerprintMismatchError,

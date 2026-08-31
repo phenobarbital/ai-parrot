@@ -270,8 +270,7 @@ async def _verify_recovered_worktree(worktree_path: str, expected_branch: str) -
     """
     if not worktree_path or not os.path.exists(worktree_path):
         raise RecoveredArtifactError(
-            f"Recovered worktree path {worktree_path!r} does not exist; "
-            "cannot resume development/QA against it."
+            f"Recovered worktree path {worktree_path!r} does not exist; " "cannot resume development/QA against it."
         )
 
     try:
@@ -300,14 +299,12 @@ async def _verify_recovered_worktree(worktree_path: str, expected_branch: str) -
     info = _find_worktree_entry(stdout, os.path.abspath(worktree_path))
     if info is None:
         raise RecoveredArtifactError(
-            f"Recovered worktree path {worktree_path!r} exists but is not a "
-            "registered git worktree."
+            f"Recovered worktree path {worktree_path!r} exists but is not a " "registered git worktree."
         )
     actual_branch = info.get("branch")
     if actual_branch != expected_branch:
         raise RecoveredArtifactError(
-            f"Recovered worktree {worktree_path!r} is on branch "
-            f"{actual_branch!r}, expected {expected_branch!r}."
+            f"Recovered worktree {worktree_path!r} is on branch " f"{actual_branch!r}, expected {expected_branch!r}."
         )
 
 
@@ -550,8 +547,7 @@ class DevCheckpointCoordinator:
                 "checkpoint_persistence_failure", flow_id=flow_id, workflow=workflow, run_id=run_id
             )
             raise CheckpointPersistenceError(
-                f"DevCheckpointCoordinator.prepare(): checkpoint lookup failed "
-                f"for flow_id={flow_id!r}: {exc}"
+                f"DevCheckpointCoordinator.prepare(): checkpoint lookup failed " f"for flow_id={flow_id!r}: {exc}"
             ) from exc
 
         if existing is None:

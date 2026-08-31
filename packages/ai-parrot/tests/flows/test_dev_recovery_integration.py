@@ -171,7 +171,10 @@ def fake_store() -> FakeCheckpointStore:
 
 
 def _stub_dev_loop_bug_executes(
-    monkeypatch, calls: dict, *, fail_at: set[str] | None = None,
+    monkeypatch,
+    calls: dict,
+    *,
+    fail_at: set[str] | None = None,
     research_out: ResearchOutput | None = None,
 ) -> None:
     """Stub every bug-mode dev-loop node's ``execute()``.
@@ -198,9 +201,12 @@ def _stub_dev_loop_bug_executes(
         if "research" in fail_at:
             raise RuntimeError("simulated crash: research")
         out = research_out or ResearchOutput(
-            jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md",
-            feat_id="FEAT-130", branch_name="feat-130-fix",
-            worktree_path="/tmp/feat-130-fix", log_excerpts=[],
+            jira_issue_key="OPS-1",
+            spec_path="sdd/specs/x.spec.md",
+            feat_id="FEAT-130",
+            branch_name="feat-130-fix",
+            worktree_path="/tmp/feat-130-fix",
+            log_excerpts=[],
         )
         self.shared_state(ctx)["research_output"] = out
         return out
@@ -263,9 +269,7 @@ def _dev_loop_flow_kwargs() -> dict[str, Any]:
     }
 
 
-def _materialize_real_worktree(
-    worktree_path: str, branch_name: str, *, with_task_index: bool = False
-) -> None:
+def _materialize_real_worktree(worktree_path: str, branch_name: str, *, with_task_index: bool = False) -> None:
     """Turn ``worktree_path`` into a REAL ``git worktree add``.
 
     A resumed run's restored ``ResearchOutput``/``PlannerOutput`` goes
@@ -315,7 +319,10 @@ def _materialize_real_worktree(
 
 
 def _stub_dev_flow_executes(
-    monkeypatch, calls: dict, *, fail_at: set[str] | None = None,
+    monkeypatch,
+    calls: dict,
+    *,
+    fail_at: set[str] | None = None,
     planner_out: PlannerOutput | None = None,
 ) -> None:
     """Stub every dev-flow node's ``execute()`` (dev_intake/ideation are
@@ -339,8 +346,10 @@ def _stub_dev_flow_executes(
         if "ideation" in fail_at:
             raise RuntimeError("simulated crash: ideation")
         out = IdeationOutput(
-            document_path="sdd/proposals/x.proposal.md", document_kind="proposal",
-            slug="x", committed=True,
+            document_path="sdd/proposals/x.proposal.md",
+            document_kind="proposal",
+            slug="x",
+            committed=True,
         )
         self.shared_state(ctx)["ideation_output"] = out
         return out
@@ -350,8 +359,11 @@ def _stub_dev_flow_executes(
         if "planner" in fail_at:
             raise RuntimeError("simulated crash: planner")
         out = planner_out or PlannerOutput(
-            spec_path="sdd/specs/x.spec.md", task_index_path="sdd/tasks/index/x.json",
-            feat_id="FEAT-999", branch_name="feat-999-x", worktree_path="/tmp/feat-999-x",
+            spec_path="sdd/specs/x.spec.md",
+            task_index_path="sdd/tasks/index/x.json",
+            feat_id="FEAT-999",
+            branch_name="feat-999-x",
+            worktree_path="/tmp/feat-999-x",
         )
         self.shared_state(ctx)["planner_output"] = out
         return out
@@ -408,7 +420,8 @@ def _stub_dev_flow_executes(
 
 def _dev_flow_nl_brief() -> DevRequestBrief:
     return DevRequestBrief(
-        kind="enhancement", title="compression budget telemetry",
+        kind="enhancement",
+        title="compression budget telemetry",
         description="Add per-tool telemetry to the compression budget.",
     )
 
@@ -457,9 +470,12 @@ async def test_dev_loop_restart_after_research(monkeypatch, fake_store, tmp_path
     without a live research_output ever being supplied by "process 2")."""
     calls: dict = {}
     research_out = ResearchOutput(
-        jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md",
-        feat_id="FEAT-130", branch_name="feat-130-fix",
-        worktree_path=str(tmp_path / "feat-130-fix"), log_excerpts=[],
+        jira_issue_key="OPS-1",
+        spec_path="sdd/specs/x.spec.md",
+        feat_id="FEAT-130",
+        branch_name="feat-130-fix",
+        worktree_path=str(tmp_path / "feat-130-fix"),
+        log_excerpts=[],
     )
     _stub_dev_loop_bug_executes(monkeypatch, calls, fail_at={"development"}, research_out=research_out)
     kwargs1 = _dev_loop_flow_kwargs()
@@ -491,9 +507,12 @@ async def test_dev_loop_restart_after_development(monkeypatch, fake_store, tmp_p
     """Completed development is not redispatched; execution continues at qa."""
     calls: dict = {}
     research_out = ResearchOutput(
-        jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md",
-        feat_id="FEAT-130", branch_name="feat-130-fix",
-        worktree_path=str(tmp_path / "feat-130-fix"), log_excerpts=[],
+        jira_issue_key="OPS-1",
+        spec_path="sdd/specs/x.spec.md",
+        feat_id="FEAT-130",
+        branch_name="feat-130-fix",
+        worktree_path=str(tmp_path / "feat-130-fix"),
+        log_excerpts=[],
     )
     _stub_dev_loop_bug_executes(monkeypatch, calls, fail_at={"qa"}, research_out=research_out)
     kwargs1 = _dev_loop_flow_kwargs()
@@ -525,8 +544,10 @@ async def test_dev_loop_restart_after_development(monkeypatch, fake_store, tmp_p
 
 def _dev_flow_planner_out(tmp_path) -> PlannerOutput:
     return PlannerOutput(
-        spec_path="sdd/specs/x.spec.md", task_index_path="sdd/tasks/index/x.json",
-        feat_id="FEAT-999", branch_name="feat-999-x",
+        spec_path="sdd/specs/x.spec.md",
+        task_index_path="sdd/tasks/index/x.json",
+        feat_id="FEAT-999",
+        branch_name="feat-999-x",
         worktree_path=str(tmp_path / "feat-999-x"),
     )
 
@@ -644,9 +665,12 @@ async def test_exception_restart_preserves_completed_frontier(monkeypatch, fake_
     """
     calls: dict = {}
     research_out = ResearchOutput(
-        jira_issue_key="OPS-1", spec_path="sdd/specs/x.spec.md",
-        feat_id="FEAT-130", branch_name="feat-130-fix",
-        worktree_path=str(tmp_path / "feat-130-fix"), log_excerpts=[],
+        jira_issue_key="OPS-1",
+        spec_path="sdd/specs/x.spec.md",
+        feat_id="FEAT-130",
+        branch_name="feat-130-fix",
+        worktree_path=str(tmp_path / "feat-130-fix"),
+        log_excerpts=[],
     )
     # development succeeds and is checkpointed BEFORE qa crashes — a wider
     # frontier (bug_intake + research + development, all three explicitly
@@ -727,8 +751,11 @@ async def test_concurrent_resume_lease_conflict(fake_store) -> None:
             edges=[],
         )
         flow = AgentsFlow(
-            name="dev-recovery-lease-test", checkpoint=True, checkpoint_store=fake_store,
-            checkpoint_required=True, checkpoint_definition=external_definition,
+            name="dev-recovery-lease-test",
+            checkpoint=True,
+            checkpoint_store=fake_store,
+            checkpoint_required=True,
+            checkpoint_definition=external_definition,
         )
         flow.add_node(_StepNode(node_id="step_a", result={"ok": True}))
         flow.add_node(_StepNode(node_id="step_b", result={"ok": True}))
@@ -738,8 +765,12 @@ async def test_concurrent_resume_lease_conflict(fake_store) -> None:
     brief = _dev_flow_nl_brief()
     ctx1 = FlowContext(initial_task="t")
     flow1, mode1 = await coordinator.prepare(
-        workflow="dev-flow", run_id="run-lease", brief=brief, live_context=ctx1,
-        flow_factory=_flow_factory, execution_policy={},
+        workflow="dev-flow",
+        run_id="run-lease",
+        brief=brief,
+        live_context=ctx1,
+        flow_factory=_flow_factory,
+        execution_policy={},
     )
     assert mode1 == "fresh"
     await flow1.run_flow(ctx1)
@@ -753,8 +784,12 @@ async def test_concurrent_resume_lease_conflict(fake_store) -> None:
     ctx2 = FlowContext(initial_task="t")
     with pytest.raises(FlowLockedError):
         await coordinator2.prepare(
-            workflow="dev-flow", run_id="run-lease", brief=brief, live_context=ctx2,
-            flow_factory=_flow_factory, execution_policy={},
+            workflow="dev-flow",
+            run_id="run-lease",
+            brief=brief,
+            live_context=ctx2,
+            flow_factory=_flow_factory,
+            execution_policy={},
         )
 
 
@@ -842,9 +877,7 @@ async def test_runtime_entrypoints_build_per_run_flows(monkeypatch) -> None:
         return MagicMock()
 
     ok_result = PreflightResult(ok=True, checks=[])
-    with (
-        pytest.MonkeyPatch.context() as mp2,
-    ):
+    with (pytest.MonkeyPatch.context() as mp2,):
         mp2.setattr(bootstrap_mod, "preflight", AsyncMock(return_value=ok_result))
         mp2.setattr(bootstrap_mod, "_build_jira_toolkit", lambda: None)
         mp2.setattr(bootstrap_mod, "_build_log_toolkits", dict)

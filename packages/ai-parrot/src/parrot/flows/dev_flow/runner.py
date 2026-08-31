@@ -152,7 +152,8 @@ class DevFlowRunner(DevLoopRunner):
             # base class's run() (TASK-2626).
             self.logger.info(
                 "Dev-flow run %s: %s execution (checkpoint recovery enabled)",
-                rid, mode,
+                rid,
+                mode,
             )
 
         # Same manual acquire/park-aware structure as the base class's run()
@@ -173,8 +174,10 @@ class DevFlowRunner(DevLoopRunner):
             holder["run_id"] = rid
         self.logger.info(
             "Starting dev-flow run %s kind=%s (%d/%d active)",
-            rid, getattr(brief, "kind", "?"),
-            len(self._active), self.max_concurrent_runs,
+            rid,
+            getattr(brief, "kind", "?"),
+            len(self._active),
+            self.max_concurrent_runs,
         )
         try:
             result = await flow.run_flow(ctx)
@@ -199,9 +202,7 @@ class DevFlowRunner(DevLoopRunner):
                 self._parked.discard(rid)
             self._pending_gate_count.pop(rid, None)
 
-        self.logger.info(
-            "Dev-flow run %s finished status=%s", rid, result.status
-        )
+        self.logger.info("Dev-flow run %s finished status=%s", rid, result.status)
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
@@ -231,10 +232,7 @@ class DevFlowRunner(DevLoopRunner):
             return brief.title
         if isinstance(brief, FeatureBrief):
             return f"Feature: {brief.document_path}"
-        raise TypeError(
-            "DevFlowRunner.run expects a DevRequestBrief or FeatureBrief; "
-            f"got {type(brief).__name__}."
-        )
+        raise TypeError("DevFlowRunner.run expects a DevRequestBrief or FeatureBrief; " f"got {type(brief).__name__}.")
 
     @staticmethod
     def _work_kind_for(
