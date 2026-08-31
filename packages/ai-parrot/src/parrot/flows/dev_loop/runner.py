@@ -76,6 +76,9 @@ from parrot.flows.dev_loop.session_state import (
     SessionHost,
     reduce_root,
 )
+from parrot.core.events.lifecycle import EventRegistry
+from parrot.observability.recorders.run_ledger import RunLedgerRecorder
+from parrot.observability.recorders.subscriber import UsageRecordingSubscriber
 
 # ---------------------------------------------------------------------------
 # Gate TTL policy (FEAT-322 §2, §8) — conf-overridable per kind, seconds.
@@ -386,10 +389,25 @@ class DevLoopRunner:
         self._parked: Set[str] = set()
         self._pending_gate_count: Dict[str, int] = {}
         self._run_completion: Dict[str, "asyncio.Future[FlowResult]"] = {}
+        # FEAT-479 M5: per-run EventRegistry + usage ledger, keyed by
+        # run_id — NEVER shared, NEVER the global registry (§8 Q2). Declared
+        # before ``self._dispatcher`` below because the resolver wiring
+        # right after it captures ``self._run_registries.get`` as a live
+        # bound method.
+        self._run_registries: Dict[str, EventRegistry] = {}
+        self._run_ledgers: Dict[str, RunLedgerRecorder] = {}
+
         # Deps needed to build the revision-mode flow on demand (FEAT-250 G6).
         # Optional so the legacy ``DevLoopRunner(flow)`` construction keeps
         # working; ``run_revision`` raises a clear error when they are absent.
         self._dispatcher = dispatcher
+        # FEAT-479 M5: wire the per-run registry resolver into the shared
+        # dispatcher (if it supports it — duck-typed, since ``dispatcher``
+        # may be any CLI-backed dispatcher that never touches
+        # EventRegistry at all). ``self._run_registries.get`` is a live
+        # bound method, so later runs added to the dict are resolved too.
+        if hasattr(self._dispatcher, "set_event_registry_resolver"):
+            self._dispatcher.set_event_registry_resolver(self._run_registries.get)
         self._jira_toolkit = jira_toolkit
         self._git_toolkit = git_toolkit
         self._wiki_toolkit = wiki_toolkit
@@ -490,6 +508,55 @@ class DevLoopRunner:
         ):
             self._sweep_task.cancel()
             self._sweep_task = None
+
+    # ── Per-run usage ledger (FEAT-479 M5) ──────────────────────────────────
+
+    def _create_run_registry(self, run_id: str) -> None:
+        """Create this run's :class:`EventRegistry` + usage-ledger sink.
+
+        Registers a ``UsageRecordingSubscriber(recorders=[RunLedgerRecorder
+        (run_id)], cost_calculator=None)`` on a fresh, run-owned
+        ``EventRegistry`` — **never** on the global registry (spec §8 Q2).
+        ``cost_calculator=None`` is deliberate: pricing is a spec Non-Goal.
+
+        The registry is constructed with ``forward_to_global=False``,
+        matching ``AbstractClient``'s own per-instance default
+        (``clients/base.py:372``). ``AbstractClient._emit_after_call``/
+        ``_emit_round_event`` already forward explicitly and
+        unconditionally to the global registry regardless of this flag
+        (``clients/base.py:634`` / ``:582``) — auto-forwarding here too
+        (``forward_to_global=True``) would double-schedule that forward
+        for every client-emitted event once this registry is injected as
+        the client's own (see :meth:`LLMCodeDispatcher._create_client`),
+        double-counting on every GLOBAL subscriber (OTel metrics, the
+        global usage recorders). Emitters with no such explicit-forward
+        habit of their own (e.g. a future non-client emitter) must call
+        ``registry.forward_to_global(event)`` themselves, mirroring the
+        client convention, to stay visible to global observers.
+        """
+        ledger = RunLedgerRecorder(run_id=run_id)
+        subscriber = UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None)
+        registry = EventRegistry(forward_to_global=False)
+        registry.add_provider(subscriber)
+        self._run_registries[run_id] = registry
+        self._run_ledgers[run_id] = ledger
+
+    def _discard_run_registry(self, run_id: str) -> None:
+        """Release ``run_id``'s per-run registry + ledger (no leak across runs)."""
+        self._run_registries.pop(run_id, None)
+        self._run_ledgers.pop(run_id, None)
+
+    def get_run_ledger(self, run_id: str) -> Optional[RunLedgerRecorder]:
+        """Return the per-run usage ledger for ``run_id``, if tracked.
+
+        ``None`` when no ledger is tracked for this run — e.g. a run that
+        never went through this runner instance, or a cross-process resume
+        that lost its in-memory ledger (spec §8 Q1). Report building
+        (rendering, §8 Q1's ``mark_partial`` labelling) is out of scope for
+        this method; callers detecting a missing ledger decide how to
+        render that.
+        """
+        return self._run_ledgers.get(run_id)
 
     @staticmethod
     def _outcome_from_status(status: Any) -> str:
@@ -1096,6 +1163,7 @@ class DevLoopRunner:
         # reference — QANode/DeploymentHandoffNode read
         # ``shared["session_host"]``, they never import the runner).
         host = self._register_host(rid)
+        self._create_run_registry(rid)  # FEAT-479 M5
         host.apply(RunCreated(
             run_id=rid, revision=False, work_kind=brief.kind,
             summary=brief.summary,
@@ -1146,6 +1214,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -1170,6 +1239,7 @@ class DevLoopRunner:
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
     def _feature_codereview_dispatcher(self) -> Any:
@@ -1238,6 +1308,7 @@ class DevLoopRunner:
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
 
         host = self._register_host(rid)
+        self._create_run_registry(rid)  # FEAT-479 M5
         # NOTE: RunCreated.work_kind is a closed Literal["bug","enhancement",
         # "new_feature"] deliberately NOT extended with "feature" (TASK-1918)
         # — FeatureBrief carries its own `kind` field instead. "bug" here is
@@ -1311,6 +1382,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -1328,6 +1400,7 @@ class DevLoopRunner:
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
     async def run_revision(
@@ -1368,6 +1441,7 @@ class DevLoopRunner:
 
         # AHP-style host — same lifecycle as ``run()`` (revision=True).
         host = self._register_host(rid)
+        self._create_run_registry(rid)  # FEAT-479 M5
         host.apply(RunCreated(
             run_id=rid, revision=True,
             work_kind="bug",
@@ -1461,6 +1535,7 @@ class DevLoopRunner:
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -1478,6 +1553,7 @@ class DevLoopRunner:
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
     # ── Host terminal handling (FEAT-322) ───────────────────────────────────

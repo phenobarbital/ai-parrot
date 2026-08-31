@@ -17,7 +17,7 @@ import logging
 import os
 import shlex
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Type
 
 from pydantic import BaseModel, ValidationError
 
@@ -35,6 +35,10 @@ from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchEvent, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.models.basic import CompletionUsage
+from parrot.observability.context import usage_attribution
+
+if TYPE_CHECKING:
+    from parrot.core.events.lifecycle import EventRegistry
 
 
 class LLMCodeDispatcher:
@@ -62,6 +66,32 @@ class LLMCodeDispatcher:
         self.stream_ttl_seconds = stream_ttl_seconds
         self._client_factory = client_factory
         self._redis: Any = None
+        # FEAT-479 M5: resolves run_id -> the run's per-run EventRegistry, so
+        # constructed clients emit on it (exactness) instead of degrading to
+        # fire-and-forget on a lazily self-created registry. None (default)
+        # when no owner (e.g. DevLoopRunner) has wired one in — see
+        # set_event_registry_resolver.
+        self._event_registry_resolver: Optional[
+            Callable[[str], Optional["EventRegistry"]]
+        ] = None
+
+    def set_event_registry_resolver(
+        self, resolver: Callable[[str], Optional["EventRegistry"]]
+    ) -> None:
+        """Wire a ``run_id -> EventRegistry`` lookup (FEAT-479 M5).
+
+        Called once by the owning :class:`DevLoopRunner` so
+        :meth:`_create_client` can inject the run's per-run registry into
+        every client it builds for that run, instead of letting the client
+        lazily self-create an isolated one (which would degrade delivery to
+        fire-and-forget — see spec §2 Exactness).
+
+        Args:
+            resolver: A callable returning the live :class:`EventRegistry`
+                for a given ``run_id``, or ``None`` if that run has no
+                tracked registry (e.g. never wired, or already closed).
+        """
+        self._event_registry_resolver = resolver
 
     async def dispatch(
         self,
@@ -181,113 +211,73 @@ class LLMCodeDispatcher:
         stream_key: str,
         cwd: str,
     ) -> T:
-        client = self._create_client(profile)
-        await self._ensure_client_ready(client)
-        model = self._resolve_model(profile, client)
-        messages = self._initial_messages(profile, brief, output_model)
-        tools = self._tool_schemas(output_model)
-        args = self._completion_args(profile, tools)
+        # FEAT-479 M5: bind run/seat attribution for the whole dispatch —
+        # UsageRecordingSubscriber._on_client_after reads these ContextVars
+        # when the per-run registry's emit() invokes it synchronously.
+        # `node_id` IS the seat here: DevAgentPool already passes
+        # "development.w1"-style worker ids as `node_id` (agent_pool.py).
+        with usage_attribution(run_id, node_id):
+            client = self._create_client(profile, run_id=run_id)
+            await self._ensure_client_ready(client)
+            model = self._resolve_model(profile, client)
+            messages = self._initial_messages(profile, brief, output_model)
+            tools = self._tool_schemas(output_model)
+            args = self._completion_args(profile, tools)
 
-        # FEAT-405 Module 6: drive the same FEAT-397 emitter trio every
-        # client's own ask() loop uses. This loop never calls ask(), so
-        # without this, per-round usage/telemetry never reaches the
-        # dev-loop dispatch path for ANY backend (nvidia/zai/moonshot/grok/
-        # nova all report None tokens otherwise). Underscore-private
-        # methods — a deliberate, documented choice at the same level of
-        # intimacy this loop already has with client._chat_completion
-        # below. Per-round events are still one-per-round and are NOT
-        # summed for that purpose. FEAT-479 additionally accumulates a
-        # per-call total here (via ``CompletionUsage.__add__``) solely to
-        # populate the awaited ``AfterClientCallEvent`` — see
-        # sdd/specs/devflow-telemetry-accounting.spec.md §3 Module 3 for
-        # why FEAT-405 R4 is deliberately overridden on this path.
-        tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
-        loop_t0 = time.perf_counter()
-        accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
-        try:
-            for turn_index in range(profile.max_turns):
-                round_t0 = time.perf_counter()
-                response = await self._chat_completion(
-                    client=client,
-                    model=model,
-                    messages=messages,
-                    args=args,
-                )
-                round_duration_ms = (time.perf_counter() - round_t0) * 1000
-                message = self._response_message(response)
-                content = self._message_content(message)
-                tool_calls = self._message_tool_calls(message)
-                usage, raw_usage = self._extract_usage(response)
-                if usage is not None:
-                    accumulated = usage if accumulated is None else accumulated + usage
-                self._safe_emit_round_event(
-                    client,
-                    tc,
-                    model=model,
-                    round_number=turn_index + 1,
-                    usage=usage,
-                    raw_usage=raw_usage,
-                    tool_calls=[self._tool_call_name(call) for call in tool_calls],
-                    duration_ms=round_duration_ms,
-                )
-
-                if content:
-                    await self._publish_event(
-                        stream_key,
-                        kind="dispatch.message",
-                        run_id=run_id,
-                        node_id=node_id,
-                        payload={"turn": turn_index, "text": content[:4000]},
+            # FEAT-405 Module 6: drive the same FEAT-397 emitter trio every
+            # client's own ask() loop uses. This loop never calls ask(), so
+            # without this, per-round usage/telemetry never reaches the
+            # dev-loop dispatch path for ANY backend (nvidia/zai/moonshot/grok/
+            # nova all report None tokens otherwise). Underscore-private
+            # methods — a deliberate, documented choice at the same level of
+            # intimacy this loop already has with client._chat_completion
+            # below. Per-round events are still one-per-round and are NOT
+            # summed for that purpose. FEAT-479 additionally accumulates a
+            # per-call total here (via ``CompletionUsage.__add__``) solely to
+            # populate the awaited ``AfterClientCallEvent`` — see
+            # sdd/specs/devflow-telemetry-accounting.spec.md §3 Module 3 for
+            # why FEAT-405 R4 is deliberately overridden on this path.
+            tc = self._safe_emit_before_call(client, model=model, has_tools=bool(tools))
+            loop_t0 = time.perf_counter()
+            accumulated: Optional[CompletionUsage] = None  # LOCAL, never self.*
+            try:
+                for turn_index in range(profile.max_turns):
+                    round_t0 = time.perf_counter()
+                    response = await self._chat_completion(
+                        client=client,
+                        model=model,
+                        messages=messages,
+                        args=args,
+                    )
+                    round_duration_ms = (time.perf_counter() - round_t0) * 1000
+                    message = self._response_message(response)
+                    content = self._message_content(message)
+                    tool_calls = self._message_tool_calls(message)
+                    usage, raw_usage = self._extract_usage(response)
+                    if usage is not None:
+                        accumulated = usage if accumulated is None else accumulated + usage
+                    self._safe_emit_round_event(
+                        client,
+                        tc,
+                        model=model,
+                        round_number=turn_index + 1,
+                        usage=usage,
+                        raw_usage=raw_usage,
+                        tool_calls=[self._tool_call_name(call) for call in tool_calls],
+                        duration_ms=round_duration_ms,
                     )
 
-                if not tool_calls:
-                    result = self._validate_text_output(content, output_model)
-                    await self._publish_event(
-                        stream_key,
-                        kind="dispatch.completed",
-                        run_id=run_id,
-                        node_id=node_id,
-                        payload={"output_model": output_model.__name__},
-                    )
-                    return result
-
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": [self._tool_call_to_openai_dict(call) for call in tool_calls],
-                    }
-                )
-
-                for call in tool_calls:
-                    tool_call_id = self._tool_call_id(call)
-                    tool_name = self._tool_call_name(call)
-                    tool_args = self._tool_call_arguments(call)
-                    await self._publish_event(
-                        stream_key,
-                        kind="dispatch.tool_use",
-                        run_id=run_id,
-                        node_id=node_id,
-                        payload={
-                            "tool_call_id": tool_call_id,
-                            "tool_name": tool_name,
-                            "arguments": tool_args,
-                        },
-                    )
-
-                    if tool_name == "final_output":
-                        result = self._validate_final_tool(tool_args, output_model)
+                    if content:
                         await self._publish_event(
                             stream_key,
-                            kind="dispatch.tool_result",
+                            kind="dispatch.message",
                             run_id=run_id,
                             node_id=node_id,
-                            payload={
-                                "tool_call_id": tool_call_id,
-                                "tool_name": tool_name,
-                                "result": {"ok": True},
-                            },
+                            payload={"turn": turn_index, "text": content[:4000]},
                         )
+
+                    if not tool_calls:
+                        result = self._validate_text_output(content, output_model)
                         await self._publish_event(
                             stream_key,
                             kind="dispatch.completed",
@@ -297,49 +287,114 @@ class LLMCodeDispatcher:
                         )
                         return result
 
-                    tool_result = await self._run_tool(
-                        tool_name=tool_name,
-                        tool_args=tool_args,
-                        cwd=cwd,
-                        profile=profile,
-                    )
-                    await self._publish_event(
-                        stream_key,
-                        kind="dispatch.tool_result",
-                        run_id=run_id,
-                        node_id=node_id,
-                        payload={
-                            "tool_call_id": tool_call_id,
-                            "tool_name": tool_name,
-                            "result": tool_result,
-                        },
-                    )
                     messages.append(
                         {
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "name": tool_name,
-                            "content": json.dumps(tool_result, ensure_ascii=False),
+                            "role": "assistant",
+                            "content": content,
+                            "tool_calls": [self._tool_call_to_openai_dict(call) for call in tool_calls],
                         }
                     )
 
-            raise DispatchExecutionError(f"LLM code dispatch exceeded max_turns={profile.max_turns}")
-        finally:
-            await self._safe_emit_after_call(
-                client,
-                tc,
-                model=model,
-                duration_ms=(time.perf_counter() - loop_t0) * 1000,
-                input_tokens=accumulated.prompt_tokens if accumulated else None,
-                output_tokens=accumulated.completion_tokens if accumulated else None,
-            )
+                    for call in tool_calls:
+                        tool_call_id = self._tool_call_id(call)
+                        tool_name = self._tool_call_name(call)
+                        tool_args = self._tool_call_arguments(call)
+                        await self._publish_event(
+                            stream_key,
+                            kind="dispatch.tool_use",
+                            run_id=run_id,
+                            node_id=node_id,
+                            payload={
+                                "tool_call_id": tool_call_id,
+                                "tool_name": tool_name,
+                                "arguments": tool_args,
+                            },
+                        )
 
-    def _create_client(self, profile: LLMCodeDispatchProfile) -> Any:
+                        if tool_name == "final_output":
+                            result = self._validate_final_tool(tool_args, output_model)
+                            await self._publish_event(
+                                stream_key,
+                                kind="dispatch.tool_result",
+                                run_id=run_id,
+                                node_id=node_id,
+                                payload={
+                                    "tool_call_id": tool_call_id,
+                                    "tool_name": tool_name,
+                                    "result": {"ok": True},
+                                },
+                            )
+                            await self._publish_event(
+                                stream_key,
+                                kind="dispatch.completed",
+                                run_id=run_id,
+                                node_id=node_id,
+                                payload={"output_model": output_model.__name__},
+                            )
+                            return result
+
+                        tool_result = await self._run_tool(
+                            tool_name=tool_name,
+                            tool_args=tool_args,
+                            cwd=cwd,
+                            profile=profile,
+                        )
+                        await self._publish_event(
+                            stream_key,
+                            kind="dispatch.tool_result",
+                            run_id=run_id,
+                            node_id=node_id,
+                            payload={
+                                "tool_call_id": tool_call_id,
+                                "tool_name": tool_name,
+                                "result": tool_result,
+                            },
+                        )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "name": tool_name,
+                                "content": json.dumps(tool_result, ensure_ascii=False),
+                            }
+                        )
+
+                raise DispatchExecutionError(f"LLM code dispatch exceeded max_turns={profile.max_turns}")
+            finally:
+                await self._safe_emit_after_call(
+                    client,
+                    tc,
+                    model=model,
+                    duration_ms=(time.perf_counter() - loop_t0) * 1000,
+                    input_tokens=accumulated.prompt_tokens if accumulated else None,
+                    output_tokens=accumulated.completion_tokens if accumulated else None,
+                )
+
+    def _create_client(
+        self, profile: LLMCodeDispatchProfile, *, run_id: Optional[str] = None
+    ) -> Any:
         model_args = {
             "temperature": profile.temperature,
             "max_tokens": profile.max_tokens,
         }
-        return self._client_factory(profile.llm, model_args=model_args)
+        client = self._client_factory(profile.llm, model_args=model_args)
+        # FEAT-479 M5: thread the run's per-run EventRegistry into the
+        # constructed client so its `await self.events.emit(...)` calls
+        # (clients/base.py:630) reach the run's ledger subscriber
+        # synchronously (exactness) instead of the client lazily
+        # self-creating its own isolated registry (mixin.py:113), which
+        # would degrade delivery to fire-and-forget. §8 open question,
+        # resolved: LLMFactory.create / _client_factory does NOT propagate
+        # any registry — verified by reading factory.py's signature and
+        # AbstractClient.__init__ (clients/base.py:372), which
+        # unconditionally calls `self._init_events(forward_to_global=False)`,
+        # always constructing a fresh, isolated registry. Threading it
+        # explicitly here, post-construction, is therefore required.
+        if run_id is not None and self._event_registry_resolver is not None:
+            registry = self._event_registry_resolver(run_id)
+            if registry is not None and hasattr(client, "_events_registry"):
+                client._events_registry = registry  # the documented injection point
+        return client
 
     @staticmethod
     async def _ensure_client_ready(client: Any) -> None:
