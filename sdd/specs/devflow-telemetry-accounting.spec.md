@@ -157,6 +157,16 @@ Consequently `ClientRoundEvent` (emitted via `emit_nowait`,
 `clients/base.py:582`) is treated as **best-effort enrichment**;
 the awaited `AfterClientCallEvent` is the authoritative per-call record.
 
+**Scope: per-run only** (§8 Q1/Q2, resolved). `RunUsageSubscriber` is
+registered on the per-run registry and **never on the global registry**.
+Long-lived aggregate metrics are already `MetricsSubscriber`'s
+responsibility (`observability/subscribers/metrics.py:50`, globally
+registered today); a second global accumulator would duplicate it with
+weaker fire-and-forget delivery and would make per-run totals
+unreproducible — defeating the point of this feature. Cross-run
+aggregation is done by querying emitted `usage.json` artifacts, not by a
+second live subscriber.
+
 **Seat attribution.** A `current_run_id` / `current_seat` ContextVar
 pair, read at event-construction time, following the FEAT-228 precedent
 already established by `current_agent_name` / `current_user_id` /
@@ -254,10 +264,18 @@ class RunUsageLedger(BaseModel):
 
     run_id: str
     records: list[UsageRecord] = Field(default_factory=list)
+    # §8 Q1 (resolved): the ledger is in-memory and per-run, so a run that
+    # parks on a gate and resumes in ANOTHER process loses its pre-park
+    # records. That is accepted for v1 — but the report must SAY SO rather
+    # than print a total that silently omits them. Set when a resumed run
+    # finds no ledger for its run_id.
+    partial: bool = False
+    partial_reason: str = ""
 
     def append(self, record: UsageRecord) -> None: ...
     def by_seat(self) -> list[SeatUsage]: ...
     def next_cycle(self, seat: str) -> int: ...
+    def mark_partial(self, reason: str) -> None: ...
 ```
 
 ### New Public Interfaces
@@ -329,7 +347,8 @@ class RunUsageSubscriber:
 - **Path**: `parrot/flows/dev_loop/runner.py`
 - **Responsibility**: `DevLoopRunner` creates one `EventRegistry` per run,
   registers a `RunUsageSubscriber` on it via `add_provider`
-  (`registry.py:200`), keeps it on the `SessionHost` registry entry, and
+  (`registry.py:200`) — **on that per-run registry only, never on the global
+  one** (§8 Q2) — keeps it on the `SessionHost` registry entry, and
   injects it into the clients/dispatchers built for that run
   (`EventEmitterMixin` eager init, `mixin.py:74-82`). Must verify the
   `_client_factory` path (`llm.py:326`) actually receives it — any path
@@ -385,6 +404,8 @@ class RunUsageSubscriber:
 | `test_recorder_receives_before_call_returns` | M5 | **The exactness constraint.** Awaiting `_emit_after_call` on the per-run registry leaves the ledger already populated — no sleep, no drain. |
 | `test_report_renders_node_cycle_worker` | M7 | Table contains the parent node row, its cycle rows and the worker rows. |
 | `test_report_failures_section` | M7 | Failed seats appear with error text and burned tokens. |
+| `test_subscriber_not_registered_globally` | M5 | **§8 Q2 guard.** After a full run the global registry has no `RunUsageSubscriber` subscription — per-run scope only. |
+| `test_partial_ledger_is_labelled` | M7 | **§8 Q1 guard.** A ledger with `partial=True` renders a visible partial marker; markdown and HTML both carry it, and no total is presented as complete. |
 
 ### Integration Tests
 
@@ -429,6 +450,13 @@ def ledger_subscriber(isolated_registry) -> RunUsageSubscriber:
       error and the tokens burned before failing.
 - [ ] Unreported values render `—`, never `0`, in markdown and HTML.
 - [ ] No pricing or cost figure appears in any rendered output.
+- [ ] **(§8 Q2)** `RunUsageSubscriber` is registered on the per-run registry
+      only. A test asserts it is absent from the global registry's
+      subscriptions after a full run, so global aggregation stays
+      `MetricsSubscriber`'s sole responsibility.
+- [ ] **(§8 Q1)** A run whose ledger is missing at report time (simulating
+      cross-process resume) renders a visible "partial" marker and does **not**
+      print a total presented as complete.
 - [ ] `session_state.py` is unmodified (`git diff --stat` shows no change) —
       no `NodeId` widening, no `DispatchState` field added.
 - [ ] Existing FEAT-405 tests (`test_usage_report.py`,
@@ -605,6 +633,11 @@ class WorkerSummary(BaseModel):                                        # line 47
   `client_name`. Verified via `dataclasses.fields()`.
 - ~~`AfterClientCallEvent.model_dump()` / `.model_fields`~~ — lifecycle events are
   frozen dataclasses, not Pydantic. Use `to_dict()`.
+- ~~A global registration of `RunUsageSubscriber`~~ — explicitly rejected (§8 Q2).
+  Do NOT call `get_global_registry().add_provider(RunUsageSubscriber(...))`.
+  Global aggregation belongs to `MetricsSubscriber` alone.
+- ~~Ledger persistence to Redis / the session-state envelope~~ — out of scope for
+  v1 (§8 Q1). Do not add a persisted ledger; call `mark_partial()` instead.
 
 ---
 
@@ -645,10 +678,18 @@ class WorkerSummary(BaseModel):                                        # line 47
   builds a client that lazily self-creates a registry (`mixin.py:113`), that
   path silently degrades to fire-and-forget. M5 must verify this explicitly
   rather than assume it — see §8.
-- **Ledger lifetime.** The ledger is per-run and in-memory. A run parked on an
-  ideation `open_questions` gate can resume in a different process, losing it.
-  Scope decision: accept partial loss on cross-process resume for v1 and state
-  it in the report rather than silently under-reporting. See §8.
+- **Ledger lifetime — resolved, §8 Q1.** The ledger is per-run and in-memory. A
+  run parked on an ideation `open_questions` gate can resume in a **different
+  process**, losing its pre-park records. This matters because ideation gates
+  are the *normal* path for `new_feature`/`enhancement` briefs, so parked runs
+  are long and expensive — exactly the ones worth accounting. **Decision:
+  accept the loss for v1, but never hide it.** A resumed run that finds no
+  ledger for its `run_id` calls `mark_partial(...)`, and the rendered report
+  must carry a visible "partial" marker instead of a total that silently omits
+  pre-park usage. This preserves the FEAT-405 principle already enforced for
+  `—`: never print a number you cannot stand behind. Persisting the ledger
+  alongside the session-state envelope is a clean additive follow-up if parked
+  runs prove common.
 - **Cycle numbering under concurrency.** A pool wave dispatches workers
   concurrently; `next_cycle(seat)` must be computed per distinct seat, and
   distinct workers are distinct seats, so concurrent waves do not contend.
@@ -674,11 +715,20 @@ No new third-party dependency is introduced.
       lazily self-create one (`mixin.py:113`)? If the latter, M5 must thread it
       explicitly. **Must be resolved by reading the factory during M5 — not
       assumed.** — *Owner: implementer*
-- [ ] Cross-process park/resume: is losing the in-memory ledger acceptable for
-      v1 (report states "partial — run resumed in a new process"), or must the
-      ledger be persisted alongside the session-state envelope? — *Owner: Jesus*
-- [ ] Should `RunUsageSubscriber` also be registered on the global registry for
-      long-lived aggregate metrics, or is per-run scope sufficient? — *Owner: Jesus*
+- [x] Cross-process park/resume: is losing the in-memory ledger acceptable for
+      v1, or must the ledger be persisted alongside the session-state envelope?
+      — *Resolved*: **accept partial for v1**, on the hard condition that the
+      report *labels itself partial* rather than printing a silently-wrong
+      total. Persisting the ledger is an additive follow-up feature, not a
+      prerequisite. Routed into §2 Data Models (`RunUsageLedger.partial` /
+      `.partial_reason`), §5 (acceptance criteria), §7 (Known Risks).
+- [x] Should `RunUsageSubscriber` also be registered on the global registry for
+      long-lived aggregate metrics, or is per-run scope sufficient?
+      — *Resolved*: **per-run scope only.** Global aggregates are already
+      `MetricsSubscriber`'s job (`metrics.py:50`, already globally registered);
+      a second global accumulator would duplicate it with weaker
+      (fire-and-forget) delivery and would make per-run totals unreproducible.
+      Routed into §2 Overview, §3 Module 5, §5, §6 (Does NOT Exist).
 - [ ] Do `codex` and `agy` dispatchers expose model identity in their
       terminal payload, or only `claude-code`? If a backend cannot report a
       model, the seat renders `—` rather than guessing. — *Owner: implementer*
@@ -711,3 +761,4 @@ git worktree add -b feat-479-devflow-telemetry-accounting \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft — findings 1–4 verified empirically against `dev`; two suspected gaps (direct `client.ask`, event drain) disproved by source reading and recorded as non-gaps. |
+| 0.2 | 2026-08-31 | Jesus Lara | §8 Q1/Q2 resolved: ledger stays in-memory and per-run (partial runs must self-label, `RunUsageLedger.partial`); `RunUsageSubscriber` is per-run only, never global. Routed into §2, §3 M5, §4, §5, §6, §7. |
