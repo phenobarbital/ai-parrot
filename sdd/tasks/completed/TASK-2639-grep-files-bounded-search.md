@@ -430,3 +430,17 @@ a snapshot that this task's own acceptance criterion ("Tests pass:
 pytest packages/ai-parrot/tests/tools/repo/ -v") requires to stay green.
 Updated that one assertion to include `grep_files`, with a comment noting
 later tasks add more tools to the same set. No other change to that file.
+
+**Post-completion fix (2026-09-01, commit c47a252e3)**: the feature-level
+adversarial code review (after TASK-2643) found that `_walk_grep` (the
+non-git fallback) followed a symlinked FILE out of `repo_root` and
+returned its content as a search hit — a CRITICAL confinement bypass,
+reachable when `repo_root` isn't a git work tree or `git` is unavailable
+(`git grep` itself does not follow symlinks, even with `--untracked`, so
+the primary path was never affected). Fixed by resolving each candidate
+file and skipping it before `read_text()` when its real target is
+outside `repo_root`. Regression test added:
+`test_walk_grep_rejects_symlinked_file_escape`. Also fixed (IMPORTANT):
+`_run_argv` now reports `stdout_truncated` so `git_show` (TASK-2640) can
+report truncation accurately instead of re-measuring stdout `_run_argv`
+had already clipped to the same bound.

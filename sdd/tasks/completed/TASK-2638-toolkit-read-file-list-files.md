@@ -479,3 +479,22 @@ never exposed as tools), and the `read_file` / `list_files` tools with
 write-shaped name under any constructor configuration.
 
 **Deviations from spec**: none
+
+**Post-completion fix (2026-09-01, commit c47a252e3)**: the feature-level
+adversarial code review (after TASK-2643) found that `list_files`'s
+bespoke recursion (`entry.is_dir()`) followed symlinked directories out
+of `repo_root` without a containment check — a CRITICAL confinement
+bypass reachable in every deployment. Fixed by resolving each entry and
+skipping it (never listing, never recursing) when its real target is
+outside `repo_root`, reusing the same containment rule
+`resolve_within_root` already enforces. Regression test added:
+`test_rejects_symlinked_directory_escape`.
+
+Same review pass (IMPORTANT): `ReadOnlyRepoToolkit.__init__` did not
+update `self._init_kwargs` with its named constructor arguments, so
+`build_envelope_from_tool` could not reconstruct this toolkit for
+remote/off-process execution (a bare `ReadOnlyRepoToolkit()` would raise
+`TypeError` for the missing `repo_root`). Fixed by updating
+`_init_kwargs` with the serializable subset (mirroring
+`VectorStoreSearchTool`'s convention); `wiki_store` is deliberately
+excluded since a live store object cannot cross a process boundary.
