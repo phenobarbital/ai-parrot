@@ -32,7 +32,7 @@
       "feature_id": "FEAT-482",
       "feature": "devflow-complementary-research",
       "spec": "sdd/specs/devflow-complementary-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only clients/bedrock.py — no overlap with any other task in this feature. Fully parallel with TASK-2629.",
       "assigned_to": null,
       "started_at": "2026-08-31T21:40:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2630-bedrock-adaptive-thinking.md"
+      "completed_at": "2026-08-31T21:59:53+00:00",
+      "file": "sdd/tasks/completed/TASK-2630-bedrock-adaptive-thinking.md"
     },
     {
       "id": "TASK-2631",
