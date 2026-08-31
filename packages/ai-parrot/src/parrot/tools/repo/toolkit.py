@@ -53,6 +53,7 @@ from .schemas import (
     ReadFileInput,
     RelatedCodeInput,
     SearchCodeInput,
+    WebSearchInput,
 )
 
 #: Directories never descended into by `list_files`, regardless of depth.
@@ -112,6 +113,12 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
         self._command_timeout = command_timeout
         self._plane_cached: tuple[Any, str] | None = None
         self.logger = logging.getLogger(__name__)
+        if not enable_web_search:
+            # Shadow the class attribute with an instance one, before any
+            # tool generation. `_generate_tools()` (`toolkit.py:548`) reads
+            # `self.exclude_tools`, so `web_search` is never turned into a
+            # tool at all — spec §3 Module 5: absent, not disabled.
+            self.exclude_tools = (*self.exclude_tools, "web_search")
 
     def _error(self, exc: Exception, path: str = "") -> RepoToolError:
         """Convert a confinement exception into a model-readable error.
@@ -703,3 +710,36 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 
         hits = [map_neighbor_hit(edge) for edge in edges]
         return RepoSearchResult(query=page_id, hits=hits, degraded=False)
+
+    @tool_schema(WebSearchInput)
+    async def web_search(self, query: str, max_results: int = 5) -> dict[str, Any]:
+        """Search the public web.
+
+        Use only for information outside this repository — library
+        documentation, error messages, upstream changes. For anything
+        about this codebase, use `search_code` instead.
+
+        Args:
+            query: What to search the web for.
+            max_results: Maximum results to return.
+
+        Returns:
+            Mapping with a `results` list, or an `error` key when web
+            search is unavailable.
+        """
+        try:
+            from parrot_tools.ddgsearch import DdgSearchTool
+        except ImportError as exc:
+            self.logger.warning("web_search unavailable: %s", exc)
+            return {
+                "error": "web_search_unavailable", "detail": str(exc), "results": [],
+            }
+        try:
+            tool = DdgSearchTool()
+            result = await tool.execute(query=query, max_results=max_results)
+            return {"results": getattr(result, "result", result)}
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("web_search failed: %s", exc)
+            return {
+                "error": "web_search_failed", "detail": str(exc), "results": [],
+            }

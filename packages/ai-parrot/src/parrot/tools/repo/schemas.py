@@ -110,3 +110,12 @@ class RelatedCodeInput(BaseModel):
     page_id: str = Field(
         ..., description="A page id previously returned by search_code."
     )
+
+
+class WebSearchInput(BaseModel):
+    """Arguments for ``web_search`` (only exposed when opted in)."""
+
+    query: str = Field(..., description="What to search the web for.")
+    max_results: int = Field(
+        default=5, ge=1, description="Maximum results to return."
+    )
