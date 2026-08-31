@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shutil
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -70,6 +72,41 @@ _MODE_FOR_KIND: dict[str, str] = {
     "new_feature": "brainstorm",
     "enhancement": "proposal",
 }
+
+
+#: FEAT-482 Module 6 (§8 Q11): read-only wiki graph-search tools exposed to
+#: the primary ideation seat. Deliberately excludes the write tools
+#: (`wiki_remember` / `wiki_note`) — the primary seat may read the graph,
+#: never mutate it via this seam.
+_WIKI_MCP_TOOLS: tuple[str, ...] = (
+    "mcp__wikitoolkit__wiki_query",
+    "mcp__wikitoolkit__wiki_page",
+    "mcp__wikitoolkit__wiki_related",
+)
+
+
+def _resolve_wikitoolkit_command() -> str:
+    """Resolve the ``wikitoolkit`` CLI path robustly.
+
+    The repo's own ``.mcp.json`` hardcodes an absolute venv path, which
+    would break in any other checkout/environment. Resolve it the same
+    way any other console-script installed into the running
+    interpreter's venv is found: ``PATH`` first (``shutil.which``), then
+    a same-directory-as-``sys.executable`` fallback (covers a venv whose
+    ``bin/`` is not on ``PATH`` but IS where the running Python lives).
+
+    Returns:
+        The resolved ``wikitoolkit`` command path, or the bare
+        ``"wikitoolkit"`` string as a last resort (lets the CLI's own
+        "not found" error surface instead of silently omitting the tool).
+    """
+    found = shutil.which("wikitoolkit")
+    if found:
+        return found
+    candidate = Path(sys.executable).parent / "wikitoolkit"
+    if candidate.is_file():
+        return str(candidate)
+    return "wikitoolkit"
 
 
 def _slugify(title: str) -> str:
@@ -419,13 +456,28 @@ class IdeationNode(DevLoopNode):
             permission_mode="acceptEdits",
             # Read/Grep/Glob to verify Code Context claims, Write/Edit for
             # the document itself, Bash for the explicit-path git commit.
-            allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit"],
+            # FEAT-482 Module 6 (§8 Q11): plus the three read-only wiki
+            # graph-search tools — the primary seat does the deepest
+            # research in the pipeline and benefits most from it.
+            allowed_tools=["Read", "Grep", "Glob", "Bash", "Write", "Edit", *_WIKI_MCP_TOOLS],
             # The dispatch is write-capable AND runs at the base checkout
             # (see _dispatch_cwd), so it needs the dispatcher's narrow
             # PROJECT_ROOT waiver of the WORKTREE_BASE_PATH confinement —
             # ideation predates the feature worktree by construction.
             allow_project_root_cwd=True,
-            model="claude-sonnet-4-6",
+            model=conf.DEV_FLOW_IDEATION_MODEL,
+            # FEAT-482 Module 6: strict_mcp_config stays at its True
+            # default (NOT overridden here) — the field's own docstring
+            # records that flipping it makes non-interactive runs exit
+            # with an empty error result. Passing the server explicitly
+            # is the correct way to reach it under that isolation.
+            mcp_servers={
+                "wikitoolkit": {
+                    "command": _resolve_wikitoolkit_command(),
+                    "args": ["mcp"],
+                    "env": {},
+                }
+            },
         )
         return await self._dispatcher.dispatch(
             brief=dispatch_brief,

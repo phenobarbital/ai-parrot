@@ -1,8 +1,9 @@
-import sys
-import os
 import base64
+import os
+import sys
 from pathlib import Path
-from navconfig import config, BASE_DIR
+
+from navconfig import BASE_DIR, config
 from navconfig.logging import logging
 
 # # disable debug on some libraries:
@@ -970,6 +971,12 @@ DEV_FLOW_GATE_TTL_QUESTIONS: int = config.getint("DEV_FLOW_GATE_TTL_QUESTIONS", 
 # carried into the spec's §8 by the planner. Read at execute() time (not
 # import time) so tests can monkeypatch it per-case.
 DEV_FLOW_IDEATION_MAX_ROUNDS: int = config.getint("DEV_FLOW_IDEATION_MAX_ROUNDS", fallback=2)
+# FEAT-482 §8 Q13: the primary dev-flow research seat's model, replacing
+# the hardwired `claude-sonnet-4-6` in `IdeationNode._dispatch`
+# (`nodes/ideation.py`). Configurable because the primary seat does the
+# deepest reasoning in the pipeline and its output constrains every
+# downstream phase — `claude-fable-5` is one env var away for comparison.
+DEV_FLOW_IDEATION_MODEL: str = config.get("DEV_FLOW_IDEATION_MODEL", fallback="claude-opus-5")
 # Target ref for the adversarial reviewer when DEV_LOOP_ADVERSARIAL_SCOPE is
 # "base" (e.g. "dev" or "origin/main"). Required in that case — the server
 # bootstrap raises at startup rather than silently degrading every review if
