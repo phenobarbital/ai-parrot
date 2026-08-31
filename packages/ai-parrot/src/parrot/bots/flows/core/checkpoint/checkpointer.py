@@ -126,8 +126,36 @@ class FlowCheckpointer:
 
         self._lease_holder: str | None = None
         self._lease_heartbeat_task: asyncio.Task | None = None
+        # Set by _heartbeat_loop() on a renewal failure/loss (spec §7:
+        # "Lease heartbeat loss is a Redis failure. Required mode must
+        # surface it to the active job rather than only logging from a
+        # background task."). Generic (non-required) callers never read
+        # this — logging-only behavior is unchanged for them.
+        self._lease_lost: bool = False
+        self._lease_lost_exc: BaseException | None = None
 
         self.logger = logging.getLogger("parrot.flows.checkpoint.checkpointer")
+
+    @property
+    def lease_lost(self) -> bool:
+        """True if the background heartbeat lost or failed to renew the lease."""
+        return self._lease_lost
+
+    def raise_if_lease_lost(self) -> None:
+        """Raise `CheckpointPersistenceError` if the heartbeat lost the lease.
+
+        Required mode calls this at every checkpoint barrier (spec §7); a
+        generic non-required caller never calls it, so the historical
+        logging-only heartbeat behavior is unchanged for them.
+
+        Raises:
+            CheckpointPersistenceError: If ``lease_lost`` is True.
+        """
+        if self._lease_lost:
+            raise CheckpointPersistenceError(
+                f"FlowCheckpointer: lease for flow_id={self._flow_id!r} was "
+                "lost or failed to renew"
+            ) from self._lease_lost_exc
 
     # ── Snapshot assembly ──────────────────────────────────────────────────
 
@@ -272,8 +300,14 @@ class FlowCheckpointer:
         Raises:
             CheckpointPersistenceError: If assembling the snapshot or
                 writing it to the store (ephemeral, or durable in
-                write-through mode) fails for any reason.
+                write-through mode) fails for any reason, or if the resume
+                lease was already lost/failed to renew (spec §7 — a lost
+                lease means another process may already be resuming this
+                same flow, a split-brain risk this write must not paper
+                over).
         """
+        self.raise_if_lease_lost()
+
         pre_last_id = self._last_checkpoint_id
         pre_parent_id = self._parent_checkpoint_id
         try:
@@ -381,19 +415,35 @@ class FlowCheckpointer:
         )
 
     async def _heartbeat_loop(self, holder: str, ttl: int) -> None:
-        """Renew the lease every ``ttl/3`` seconds until cancelled."""
+        """Renew the lease every ``ttl/3`` seconds until cancelled.
+
+        A renewal exception, or a renewal that returns ``False`` (the lease
+        expired and another holder may already have acquired it — a
+        split-brain risk), both set ``self._lease_lost``. This method itself
+        never raises: it stays a purely logging background task for generic
+        (non-required-mode) callers, exactly as before. Required mode reads
+        ``lease_lost`` from the scheduler's barrier instead (spec §7).
+        """
         interval = max(ttl / 3, 1)
         try:
             while True:
                 await asyncio.sleep(interval)
                 try:
-                    await self._store.renew_lease(self._flow_id, holder, ttl=ttl)
+                    renewed = await self._store.renew_lease(self._flow_id, holder, ttl=ttl)
+                    if not renewed:
+                        raise FlowLockedError(
+                            f"FlowCheckpointer: lease renewal for flow_id="
+                            f"{self._flow_id!r} returned False — lease "
+                            "expired or held by another holder"
+                        )
                 except Exception as exc:  # noqa: BLE001 - heartbeat must never crash the flow
                     self.logger.warning(
                         "FlowCheckpointer: lease renewal failed for flow_id=%s: %s",
                         self._flow_id,
                         exc,
                     )
+                    self._lease_lost = True
+                    self._lease_lost_exc = exc
         except asyncio.CancelledError:
             pass
 

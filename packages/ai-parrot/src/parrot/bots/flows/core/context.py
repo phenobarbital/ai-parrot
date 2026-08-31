@@ -203,6 +203,36 @@ class FlowContext:
         if metadata is not None:
             self.node_metadata[node_id] = metadata
 
+    def reset_completed(self, node_ids: Set[str]) -> None:
+        """Remove invalidated retry-loop nodes from recoverable state.
+
+        Used by a bounded back-edge (repair/retry loop) reset: when a
+        cyclic edge fires and re-enters the loop, every node on the cycle
+        must leave both the scheduler's local state (handled by the
+        scheduler itself) AND this context's recoverable state — otherwise
+        a checkpoint taken after the reset would still show the invalidated
+        nodes as completed, and a resumed run would restore stale
+        completions instead of requesting the next repair attempt (spec §2
+        Overview, §7 "Retry-safe snapshot").
+
+        Removes ``node_id`` from ``completed_tasks``/``completion_order``/
+        ``active_tasks``/``results``/``responses``/``node_metadata``/
+        ``errors`` for every id in ``node_ids``. A no-op for any id that
+        was never completed.
+
+        Args:
+            node_ids: The node ids to invalidate (the back-edge's cycle
+                members, target through source inclusive).
+        """
+        for node_id in node_ids:
+            self.completed_tasks.discard(node_id)
+            self.completion_order[:] = [nid for nid in self.completion_order if nid != node_id]
+            self.active_tasks.discard(node_id)
+            self.results.pop(node_id, None)
+            self.responses.pop(node_id, None)
+            self.node_metadata.pop(node_id, None)
+            self.errors.pop(node_id, None)
+
     def mark_failed(
         self,
         node_id: str,
