@@ -1162,6 +1162,8 @@ Every major statement must link to supporting pages.
 
 ## 25. Processed Source Registry
 
+The `MeetingRegistry` in `wiki.db` (FEAT-472) is the operational authority for processed-source identity; `Wiki/Registry/processed-sources.md` is its derived, human-readable mirror — a lost or stale mirror must never cause a re-download or a wrong skip.
+
 `Wiki/Registry/processed-sources.md` is the fast duplicate-detection registry. It is append-only except for correcting a malformed entry.
 
 Each source gets one grep-friendly line:
