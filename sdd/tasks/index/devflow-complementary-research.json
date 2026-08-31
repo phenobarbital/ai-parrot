@@ -1,0 +1,170 @@
+{
+  "feature": "devflow-complementary-research",
+  "feature_id": "FEAT-482",
+  "spec": "sdd/specs/devflow-complementary-research.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-08-31T21:25:31.585492+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-2629",
+      "slug": "research-partner-contracts",
+      "title": "ResearchPartner contracts, factory, selector and family guard",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "New file (research_partner.py) plus additive edits to catalog.py/conf.py. Shares no code with TASK-2630. Can start immediately.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2629-research-partner-contracts.md"
+    },
+    {
+      "id": "TASK-2630",
+      "slug": "bedrock-adaptive-thinking",
+      "title": "Adaptive-thinking support in BedrockConverseBase",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only clients/bedrock.py \u2014 no overlap with any other task in this feature. Fully parallel with TASK-2629.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2630-bedrock-adaptive-thinking.md"
+    },
+    {
+      "id": "TASK-2631",
+      "slug": "bedrock-research-partner",
+      "title": "BedrockResearchPartner \u2014 gpt-5.6-sol and nova-2-lite on one implementation",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2629",
+        "TASK-2630"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends TASK-2629's module and relies on TASK-2630's thinking fix. ALSO BLOCKED ON FEAT-484 (readonly-repo-toolkit) merging \u2014 it registers that toolkit.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2631-bedrock-research-partner.md"
+    },
+    {
+      "id": "TASK-2632",
+      "slug": "complementary-research-coordinator",
+      "title": "ComplementaryResearchCoordinator \u2014 parallel fan-out, soft degradation, .research.md",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-2629",
+        "TASK-2631"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file but calls the partner from TASK-2631 and the contracts from TASK-2629.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2632-complementary-research-coordinator.md"
+    },
+    {
+      "id": "TASK-2633",
+      "slug": "ideation-node-seam",
+      "title": "IdeationNode partner seam and factory wiring",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2632"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes the coordinator. Shares ideation.py with TASK-2635, which must follow it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2633-ideation-node-seam.md"
+    },
+    {
+      "id": "TASK-2634",
+      "slug": "research-node-seam",
+      "title": "ResearchNode partner seam (dev_loop)",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-2632"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Parallel with TASK-2633: different file (dev_loop/nodes/research.py vs dev_flow/nodes/ideation.py). Both need TASK-2632. NOTE: FEAT-479 is editing research.py concurrently.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2634-research-node-seam.md"
+    },
+    {
+      "id": "TASK-2635",
+      "slug": "primary-seat-graph-search",
+      "title": "Graph search and configurable model for the primary Claude seat",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2633"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the same ideation.py _dispatch profile as TASK-2633, so it must follow it. Also edits dispatchers/claude.py, which FEAT-479 is editing.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2635-primary-seat-graph-search.md"
+    },
+    {
+      "id": "TASK-2636",
+      "slug": "prompt-and-docs",
+      "title": "sdd-ideation Complementary Research prompt and operator docs",
+      "feature_id": "FEAT-482",
+      "feature": "devflow-complementary-research",
+      "spec": "sdd/specs/devflow-complementary-research.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-2632",
+        "TASK-2635"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Documents the tools added by TASK-2635 and the artifact produced by TASK-2632.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-2636-prompt-and-docs.md"
+    }
+  ]
+}
