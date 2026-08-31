@@ -108,7 +108,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Wires the TASK-2615 sink. Carries the feature's exactness constraint and resolves spec §8's _client_factory question.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2616-per-run-event-registry.md"
+      "completed_at": "2026-08-31T16:22:07+00:00",
+      "file": "sdd/tasks/completed/TASK-2616-per-run-event-registry.md"
     },
     {
       "id": "TASK-2617",
