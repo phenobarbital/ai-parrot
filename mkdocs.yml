@@ -135,6 +135,7 @@ nav:
       - OpenAI-Compatible Base Client: clients/openai-compatible.md
       - Bedrock Mantle Client: clients/bedrock-mantle.md
       - Per-loop Caching: clients/per-loop-cache.md
+      - Self-hosted llama-server (Qwen3.6): llama-server-qwen3.6.md
       - Contextual Embedding: contextual-embedding.md
       - Matryoshka Embeddings: matryoshka-embeddings.md
   - Bots & Agents:
@@ -312,6 +313,7 @@ nav:
       - Style Guide: STYLE_GUIDE.md
       - SDD Workflow: sdd/WORKFLOW.md
       - SDD Guide: sdd/GUIDE.md
+      - SDD Codex Guide: sdd/CODEX.md
       - SDD Platform: sdd/PLATFORM.md
       - Product Analysis - Structured Table: product-analysis/structured-table.analysis.md
       - Feature Notes:

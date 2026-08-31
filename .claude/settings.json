@@ -20,6 +20,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Grep|Glob|Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/wikitoolkit claude-hook",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStop": [

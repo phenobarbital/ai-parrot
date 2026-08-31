@@ -6,8 +6,17 @@
 #
 # Uso:
 #   cp docker/llama/.env.example docker/llama/.env   # primera vez
-#   docker compose -f docker-compose.llama.yml up -d  # encender
-#   docker compose -f docker-compose.llama.yml down   # apagar (libera la VRAM)
+#   docker compose --env-file docker/llama/.env -f docker-compose.llama.yml up -d
+#   docker compose --env-file docker/llama/.env -f docker-compose.llama.yml down
+#
+# IMPORTANTE: el `--env-file` NO es opcional. La directiva `env_file:` de
+# abajo solo inyecta variables DENTRO del contenedor; no alimenta la
+# interpolación `${...}` de este fichero, que Compose resuelve únicamente
+# desde el entorno del shell, desde el `.env` de la raíz del proyecto o
+# desde `--env-file`. Sin él, `docker/llama/.env` se ignora en silencio y
+# el stack arranca siempre con los valores por defecto (modelo 4B, ctx
+# 8192, --parallel 2, sin LLAMA_EXTRA_ARGS). Comprobar antes de arrancar:
+#   docker compose --env-file docker/llama/.env -f docker-compose.llama.yml config
 #
 # Endpoint OpenAI-compatible: http://localhost:${LLAMA_PORT}/v1
 # (LocalLLMClient de ai-parrot funciona apuntando base_url ahí; el
@@ -38,6 +47,15 @@ services:
       ${LLAMA_EXTRA_ARGS:-}
     environment:
       - LLAMA_API_KEY=${LLAMA_API_KEY:-}
+    # /health devuelve 503 mientras el modelo carga. El Dockerfile trae un
+    # start-period de 900s (suficiente para un MoE de 22 GB ya cacheado);
+    # súbelo a 30m para la primera descarga con -hf de un modelo grande.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: ${LLAMA_HEALTH_START:-900s}
     deploy:
       resources:
         reservations:
