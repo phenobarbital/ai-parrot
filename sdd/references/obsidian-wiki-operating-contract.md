@@ -491,7 +491,7 @@ At the beginning of a Wiki operation:
 1. Read this `CLAUDE.md`.
 2. Read `Wiki/index.md`.
 3. Read `Wiki/overview.md`.
-4. Read the relevant section of `Wiki/Registry/processed-sources.md` when ingesting.
+4. Consult the `MeetingRegistry` (`wiki.db`) — the processed-source authority — when ingesting (its `Wiki/Registry/processed-sources.md` mirror is for human reading, not the gate).
 5. Check `Wiki/Review Queue.md` for unresolved items relevant to the request.
 6. Inspect version-control status when available so unrelated human changes are not overwritten.
 7. Do not perform a full lint unless requested.
@@ -550,8 +550,8 @@ fireflies:<meeting-id>
 
 Compute SHA-256 hashes for the raw summary and transcript before moving them. Record the hashes in:
 
+- The `MeetingRegistry` (`wiki.db`) — the authority — and its `Wiki/Registry/processed-sources.md` mirror
 - The canonical meeting source page
-- `Wiki/Registry/processed-sources.md`
 
 After moving the bundle, recompute the hashes and verify an exact match.
 
@@ -1164,7 +1164,7 @@ Every major statement must link to supporting pages.
 
 The `MeetingRegistry` in `wiki.db` (FEAT-472) is the operational authority for processed-source identity; `Wiki/Registry/processed-sources.md` is its derived, human-readable mirror — a lost or stale mirror must never cause a re-download or a wrong skip.
 
-`Wiki/Registry/processed-sources.md` is the fast duplicate-detection registry. It is append-only except for correcting a malformed entry.
+`Wiki/Registry/processed-sources.md` is that mirror: a human-readable, grep-friendly view **regenerated from the `MeetingRegistry` at the end of every successful ingest**, so it never lags the authority. Treat it as append-only in effect — never hand-edit or delete lines except to correct a malformed one; because it is regenerated from the DB it always reconciles.
 
 Each source gets one grep-friendly line:
 
@@ -1174,10 +1174,11 @@ Each source gets one grep-friendly line:
 
 Rules:
 
-- Search this registry before semantic processing.
+- The dedup gate queries the `MeetingRegistry` (`wiki.db`) ∪ a scan of `Raw/` before semantic processing — **not** this mirror.
 - Also verify the canonical source page frontmatter.
 - Never add a second processed entry for an exact duplicate.
 - Record revisions as separate `revision-detected` log entries, not as successful ingests.
+- Regenerate this mirror from the DB at the end of every successful ingest.
 
 ---
 
