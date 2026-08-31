@@ -56,10 +56,13 @@ Two further gaps make a naive implementation the wrong answer:
 So the gap is not "we need a grep tool". It is: **a read-only, cwd-confined toolkit
 that prefers the existing code graph over grep, and that any client can be given.**
 
-Its first consumer is FEAT-482 (`devflow-complementary-research`), whose Nova 2
-research partner needs exactly this. It is specified separately because it is
-independently valuable, independently reviewable, and carries this initiative's real
-security weight: it grants a hosted model read access to a checkout.
+Its first consumer is FEAT-482 (`devflow-complementary-research`), whose research
+partner needs exactly this — on **two** clients: `gpt-5.6-sol` over bedrock-mantle
+(OpenAI-compatible) and `nova-2-lite` over Bedrock Converse. Two consumers on two
+transports is why the transport-agnosticism goal below is testable rather than
+aspirational. It is specified separately because it is independently valuable,
+independently reviewable, and carries this initiative's real security weight: it
+grants a hosted model read access to a checkout.
 
 ### Goals
 
@@ -72,6 +75,9 @@ security weight: it grants a hosted model read access to a checkout.
 - Degrade, never fail: a missing plane, a broken git, or a blocked network reduces
   capability without raising.
 - Be usable by consumers beyond FEAT-482 with no dev-flow coupling.
+- Be **transport-agnostic**: work unchanged on a Bedrock **Converse** client
+  (`NovaClient`) and an **OpenAI-compatible** one (`BedrockMantleClient`), since
+  FEAT-482 registers it on both.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -174,6 +180,8 @@ this toolkit is later reused by a reviewer.
 | `WikiProjectConfig` | **uses** | `wiki/project.py:402/457` for plane resolution |
 | `DdgSearchTool` | **wraps** | `parrot_tools/ddgsearch.py:19`, only when `enable_web_search=True` |
 | `AbstractClient.tools` | **registered into** | `clients/base.py:355`; executed via `_execute_tool` (`:1454`) |
+| `NovaClient` (Converse) | **consumer** | `nova/client.py:31` — `BedrockConverseBase.ask(use_tools=True)` |
+| `BedrockMantleClient` (OpenAI-compatible) | **consumer** | `nova/mantle.py:32` -> `OpenAIBaseClient` (`openai_base.py:53`), `_execute_tool` at `openai_base.py:421` |
 | `LLMCodeDispatcher._tool_*` | **pattern source only — unmodified** | Confinement approach ported, not imported (they are private) |
 
 ### Data Models
@@ -347,6 +355,7 @@ def resolve_plane_root(repo_root: Path) -> Path:
 | Test | Description |
 |---|---|
 | `test_toolkit_registers_on_client` | Registered on a stub `AbstractClient`; `_execute_tool` dispatches each tool by name |
+| `test_toolkit_works_on_converse_and_openai_clients` | **Transport-agnosticism guard**: the same toolkit instance registers and dispatches on both a `BedrockConverseBase`-shaped and an `OpenAIBaseClient`-shaped stub, with no per-transport branching in the toolkit |
 | `test_search_then_read_flow` | `search_code` hit → `read_file` on its path succeeds within bounds |
 | `test_toolkit_against_real_plane` | **Opt-in**, skipped when `.parrot/wiki` is absent: real query returns ranked hits excluding `build/` artifacts |
 | `test_worktree_shares_main_plane` | Real `git worktree add` in a tmp repo; toolkit resolves the main plane |
@@ -397,6 +406,10 @@ New test files under `packages/ai-parrot/tests/tools/repo/`:
 - [ ] **Web search is absent, not disabled**, when `enable_web_search=False`
 - [ ] Toolkit registers on an `AbstractClient` and every tool dispatches via
       `_execute_tool`
+- [ ] **Transport-agnostic**: the same toolkit works unchanged on a Converse client
+      and an OpenAI-compatible one, with no transport-specific branching in the
+      toolkit itself (FEAT-482 registers it on both `NovaClient` and
+      `BedrockMantleClient`)
 - [ ] No dev-flow / dev-loop import anywhere in `parrot/tools/repo/`
 - [ ] No new required dependency
 - [ ] Documentation added in `docs/` covering bounds, degradation, and worktree behavior
@@ -519,6 +532,10 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked / 229 stale
 - ~~`wiki_query` tools being absent~~ — **they exist**: `WikiQueryTool`
   (`wiki/tools.py:155`) and five siblings, plus `create_wiki_tools()` (`:541`) and
   `LLMWikiToolkit` (`wiki/toolkit.py:54`). Bind them; do not write new wiki tools.
+- ~~a transport-specific tool adapter~~ — none is needed and none should be written.
+  `BedrockConverseBase` and `OpenAIBaseClient` are both `AbstractClient` subclasses
+  sharing one tool registry (`base.py:355`) and one execution path (`_execute_tool`,
+  `base.py:1454` / `openai_base.py:421`). Register the toolkit; both transports work.
 - ~~an embedder wired into `DevLoopWikiSearch`~~ — none is passed, so the vector leg
   is skipped (`search.py:202`). Lexical only.
 
@@ -575,8 +592,11 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked / 229 stale
 - **Cross-feature dependencies**: **none**. This spec imports nothing from
   `dev_flow`/`dev_loop` and touches no file that FEAT-479 is editing. It can proceed
   fully in parallel with FEAT-479 and FEAT-482's non-toolkit modules.
-- **Downstream**: **FEAT-482 depends on this spec** — its research partner registers
-  this toolkit. **Merge FEAT-484 before FEAT-482's Module 2** (`NovaResearchPartner`).
+- **Downstream**: **FEAT-482 depends on this spec** — its `BedrockResearchPartner`
+  registers this toolkit on **both** a Converse client and an OpenAI-compatible one.
+  **Merge FEAT-484 before FEAT-482's Module 2.** Having two different clients as
+  consumers is what actually demonstrates the transport-agnosticism claim above,
+  rather than leaving it asserted.
 
 ```bash
 git worktree add -b feat-484-readonly-repo-toolkit \
@@ -614,3 +634,4 @@ git worktree add -b feat-484-readonly-repo-toolkit \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft — split out of FEAT-482 per its §8 Q2 |
+| 0.2 | 2026-08-31 | Jesus Lara | Added the transport-agnosticism requirement: FEAT-482 now registers this toolkit on both `NovaClient` (Converse) and `BedrockMantleClient` (OpenAI-compatible), so two clients exercise it. Added the guard test, acceptance criterion, and a Does-NOT-Exist entry ruling out a per-transport adapter. |

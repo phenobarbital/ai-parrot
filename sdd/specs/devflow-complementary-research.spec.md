@@ -58,8 +58,12 @@ it (see §8 Q8).
 ### Goals
 
 - Add an opt-in, configurable, **read-only collaborative research partner** that
-  investigates a dev request in parallel with the primary Claude seat, starting with
-  Amazon Nova 2 on Bedrock with extended thinking.
+  investigates a dev request in parallel with the primary Claude seat. Two Bedrock
+  backends on one AWS credential: `gpt-5.6-sol` via bedrock-mantle (default) and
+  `us.amazon.nova-2-lite-v1:0` via Converse.
+- Raise the **primary** research seat to `claude-opus-5` (configurable), and keep the
+  partner in a **different model family** so the second opinion decorrelates from the
+  first rather than confirming it.
 - Give the partner a **genuine multi-round repo tool loop**, not a static context
   pack, so it can follow its own line of inquiry.
 - Make code search **graph-backed over the existing AST/tree-sitter wiki plane**
@@ -124,10 +128,49 @@ multi-language for free.
 **`AbstractResearchPartner` + `ResearchPartnerFactory`** — mirrors
 `AbstractCodeReviewDispatcher` (`code_review.py:85`) and
 `CodeReviewDispatcherFactory` (`code_review.py:164`), including the `advisory = True`
-marker (`code_review.py:100`). Sole implementation `NovaResearchPartner` drives
-`NovaClient.ask(use_tools=True, thinking_budget=N, structured_output=ResearchFindings)`
-over the **existing** multi-round Converse tool loop (`bedrock.py:699`). No new
-agentic loop is written.
+marker (`code_review.py:100`).
+
+**Two backends, both on Bedrock, one call shape.** Both partners authenticate with
+the same `AWS_NOVA_API_KEY` Bedrock credential — no second vendor key — and both are
+driven through the identical `AbstractClient` surface:
+
+```python
+client.ask(prompt, use_tools=True, structured_output=ResearchFindings, ...)
+```
+
+| Backend | Default model | Client | Transport | Reasoning knob |
+|---|---|---|---|---|
+| `gpt` (**default**) | `gpt-5.6-sol` | `BedrockMantleClient` (`nova/mantle.py:32`) | bedrock-mantle, OpenAI chat-completions | OpenAI-shaped effort/reasoning |
+| `nova` | `us.amazon.nova-2-lite-v1:0` | `NovaClient` (`nova/client.py:31`) | Bedrock Converse | `thinking_budget` (`bedrock.py:715`) |
+
+This works because `OpenAIBaseClient` (`openai_base.py:53`) and
+`BedrockConverseBase` (`bedrock.py:114`) are both `AbstractClient` subclasses sharing
+one tool registry (`base.py:355`) and one execution path (`_execute_tool`,
+`base.py:1454`; mantle side at `openai_base.py:421`). So **one**
+`BedrockResearchPartner` implementation covers both transports — no adapter, no
+second tool surface, and no new agentic loop. It also means FEAT-484's toolkit is
+exercised by two different clients, which is what actually demonstrates it is
+client-agnostic rather than accidentally Nova-shaped.
+
+**Why `gpt-5.6-sol` is the default.** The seat exists to break confirmation bias, and
+decorrelation is the property being bought. With governance neutral (both backends on
+one AWS credential and one bill), the remaining discriminator is training-lineage
+distance from the primary Claude seat — where `gpt-5.6-sol` is furthest.
+`nova-2-lite` stays selectable as the cheap option and as the Converse-path test case;
+note it was originally chosen for verdict-rendering in the review seat, not for
+research depth.
+
+**Anthropic partner models are rejected** (§8 Q12). Now that Bedrock's
+`us.anthropic.*` use-case form is cleared, `us.anthropic.claude-opus-5` is
+*selectable* — and is wrong twice over: it correlates priors with the primary seat,
+defeating the seat's purpose, and it would 400 on the thinking path (see Module 3).
+`resolve_research_partner_backend()` refuses it and names both reasons.
+
+**Terminology**: this is the research-phase analogue of
+`ModelSwitchMode.CONTRASTIVE` (`bots/mixins/model_switching.py:54`), where "both
+clients answer the same prompt concurrently" and metadata attributes each answer to
+its model. Same shape one layer down; the spec uses *complementary* for the
+cooperative merge and reserves *contrastive* for that existing mixin.
 
 **`ComplementaryResearchCoordinator`** — the shared seam both nodes call. Fans the
 partner out concurrently with the primary seat under a deadline, writes
@@ -196,7 +239,9 @@ conclusions produces ratification, not independent research.
 | `ClaudeCodeDispatcher._resolve_run_options()` | **modifies** | Pass `mcp_servers` into `ClaudeAgentRunOptions`. ⚠️ FEAT-479 touches this file |
 | `dev_flow/factories.py` | **modifies** | Build + inject the coordinator at `factories.py:117` |
 | `catalog.py` | **extends** | Research-partner selector triad mirroring `catalog.py:54/60/63` |
-| `conf.py` | **extends** | Six new `DEV_FLOW_RESEARCH_PARTNER_*` keys, all defaulted off |
+| `conf.py` | **extends** | New `DEV_FLOW_RESEARCH_PARTNER_*` keys (partner disabled by default) plus `DEV_FLOW_IDEATION_MODEL` |
+| `BedrockMantleClient` | **uses (unmodified)** | `nova/mantle.py:32` — OpenAI-compatible Bedrock endpoint, same `AWS_NOVA_API_KEY` credential |
+| `BedrockConverseBase` thinking | **modifies** | Module 3 adds the adaptive-thinking shape alongside `budget_tokens`. ⚠️ Shared client |
 | `code_review.py` | **none — unmodified** | Pattern source only |
 | `usage_report.py` / `run_bundle.py` | **none — unmodified** | Deliberate: FEAT-479 owns these |
 
@@ -282,21 +327,47 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 ### Module 1: `AbstractResearchPartner` + factory + config selector
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py`;
   selector triad in `dev_loop/catalog.py`; keys in `conf.py`
-- **Responsibility**: the ABC, the registry, `RESEARCH_PARTNER_BACKEND` /
-  `_RESEARCH_PARTNER_CHOICES` / `resolve_research_partner_backend()` mirroring
-  `catalog.py:54/60/63`, and the six `DEV_FLOW_RESEARCH_PARTNER_*` conf keys. Unset
-  config ⇒ disabled ⇒ byte-identical behavior.
+- **Responsibility**: the ABC, the registry, `RESEARCH_PARTNER_BACKEND` (default
+  `"gpt"`) / `_RESEARCH_PARTNER_CHOICES` (`("gpt", "nova")`) /
+  `resolve_research_partner_backend()` mirroring `catalog.py:54/60/63`, and the
+  `DEV_FLOW_RESEARCH_PARTNER_*` conf keys. Unset config ⇒ disabled ⇒
+  byte-identical behavior.
+  **Family guard (§8 Q12)**: the resolver REJECTS an Anthropic partner model
+  (`us.anthropic.*` / `global.anthropic.*` / `claude-*`) with an error naming both
+  reasons — correlated priors defeat the seat's purpose, and the Converse thinking
+  path would 400. Add a `BackendInfo` `roles=("research_partner",)` entry so the
+  catalog surfaces the seat.
 - **Depends on**: none (pure contracts).
 
-### Module 2: `NovaResearchPartner`
+### Module 2: `BedrockResearchPartner` — both backends, one implementation
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py`
-- **Responsibility**: register `ReadOnlyRepoToolkit` on a `NovaClient`; issue one
-  `ask(..., use_tools=True, thinking_budget=N, structured_output=ResearchFindings,
-  max_tokens=…)`; build the **neutral** prompt (brief + repo root + question, never
-  Claude's framing); return validated `ResearchFindings`.
-- **Depends on**: **FEAT-484** (`ReadOnlyRepoToolkit`), Module 1.
+- **Responsibility**: one implementation covering both Bedrock transports. Build the
+  client for the resolved backend — `BedrockMantleClient` (`nova/mantle.py:32`) for
+  `gpt-5.6-sol`, `NovaClient` (`nova/client.py:31`) for `nova-2-lite`; register
+  FEAT-484's `ReadOnlyRepoToolkit` on it; issue one
+  `ask(prompt, use_tools=True, structured_output=ResearchFindings, max_tokens=…)`
+  plus the backend-appropriate reasoning knob (`thinking_budget` on Converse,
+  OpenAI-shaped effort on mantle); build the **neutral** prompt (brief + repo root +
+  question, never the primary seat's framing); return validated `ResearchFindings`.
+  Both paths share `AbstractClient`'s tool registry and `_execute_tool`, so there is
+  no per-transport tool adapter.
+- **Depends on**: **FEAT-484** (`ReadOnlyRepoToolkit`), Modules 1, 3.
 
-### Module 3: `ComplementaryResearchCoordinator`
+### Module 3: Adaptive-thinking support in `BedrockConverseBase`
+- **Path**: `packages/ai-parrot/src/parrot/clients/bedrock.py`
+- **Responsibility**: `bedrock.py:831-835` emits exactly one thinking shape,
+  `{"type": "enabled", "budget_tokens": N}`. That shape is **removed and returns 400**
+  on Claude Opus 5, Fable 5, Opus 4.8/4.7 and Sonnet 5, which use adaptive thinking
+  (`{"type": "adaptive"}`) plus `output_config.effort`. Teach the client to emit the
+  adaptive shape for models that require it and keep `budget_tokens` for models that
+  still accept it (Amazon Nova, older Anthropic). Latent defect, not caused by this
+  feature — it became reachable when Bedrock's `us.anthropic.*` use-case form was
+  cleared. Purely additive: a `thinking_budget` call against a Nova model must be
+  byte-identical to today.
+- **Depends on**: none. ⚠️ Touches a **shared client** used well beyond dev-flow —
+  keep the change narrow and reviewed accordingly.
+
+### Module 4: `ComplementaryResearchCoordinator`
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_flow/complementary_research.py`
 - **Responsibility**: resolve backend (→ `None` if disabled); run the partner under
   `asyncio.timeout`; render + commit `sdd/proposals/<slug>.research.md` staging
@@ -305,16 +376,16 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
   `Exception` broadly — this is the soft-degradation boundary.
 - **Depends on**: Modules 1, 2.
 
-### Module 4: `IdeationNode` + `ResearchNode` seams
+### Module 5: `IdeationNode` + `ResearchNode` seams
 - **Path**: `dev_flow/nodes/ideation.py`, `dev_loop/nodes/research.py`,
   `dev_flow/factories.py`
 - **Responsibility**: one optional `coordinator` kwarg each; two new
   `_IdeationBrief` fields (`partner_findings`, `partner_findings_path`); call the
   coordinator before the first dispatch on **round 1 only**; wire in
   `build_dev_flow_node_factories` (`factories.py:117`).
-- **Depends on**: Module 3. ⚠️ Coordinate with FEAT-479 on `research.py`.
+- **Depends on**: Module 4. ⚠️ Coordinate with FEAT-479 on `research.py`.
 
-### Module 5: Graph search for the primary Claude seat (Q11)
+### Module 6: Graph search for the primary Claude seat (Q11)
 - **Path**: `dev_loop/models/claude.py`, `dev_loop/dispatchers/claude.py`,
   `dev_flow/nodes/ideation.py`
 - **Responsibility**: add optional `mcp_servers: Optional[Dict[str, Any]] = None` to
@@ -328,7 +399,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 - **Depends on**: none technically; ships with Module 6. ⚠️ FEAT-479 touches
   `dispatchers/claude.py`.
 
-### Module 6: Prompt + documentation
+### Module 7: Prompt + documentation
 - **Path**: `dev_flow/_subagent_data/sdd-ideation.md`, mirrored to
   `.claude/agents/sdd-ideation.md`; `docs/`
 - **Responsibility**: Complementary Research prompt section — read the partner's
@@ -336,7 +407,7 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
   disagreements explicitly (disagreement is data), never let absence change process.
   Plus graph-search guidance for the new MCP tools, and operator docs for the six
   config keys.
-- **Depends on**: Modules 3, 5.
+- **Depends on**: Modules 4, 6.
 
 ---
 
@@ -348,7 +419,13 @@ class ReadOnlyRepoToolkit(AbstractToolkit):
 |---|---|---|
 | `test_resolve_research_partner_backend_default_disabled` | 1 | Unset config ⇒ disabled |
 | `test_resolve_research_partner_backend_rejects_unknown` | 1 | Invalid value raises naming valid options |
-| `test_nova_partner_passes_thinking_budget` | 2 | `ask()` receives `thinking_budget` and `use_tools=True` |
+| `test_gpt_partner_uses_mantle_client` | 2 | Default backend builds `BedrockMantleClient`, not `NovaClient`; no `OPENAI_API_KEY` read |
+| `test_nova_partner_uses_converse_client` | 2 | `nova` backend builds `NovaClient` and passes `thinking_budget` |
+| `test_both_backends_share_one_call_shape` | 2 | Both invoke `ask(use_tools=True, structured_output=ResearchFindings)`; toolkit registered on both |
+| `test_reasoning_knob_is_backend_appropriate` | 2 | `thinking_budget` only on Converse; effort only on mantle |
+| `test_partner_rejects_anthropic_model` | 1 | `us.anthropic.claude-opus-5` refused; error names decorrelation AND the 400 |
+| `test_adaptive_thinking_shape_for_modern_anthropic` | 3 | Opus 5 / Fable 5 / Sonnet 5 emit `{"type": "adaptive"}`, never `budget_tokens` |
+| `test_budget_tokens_unchanged_for_nova` | 3 | Nova model still emits `{"type": "enabled", "budget_tokens": N}` byte-identically |
 | `test_nova_partner_prompt_excludes_primary_reasoning` | 2 | Prompt contains brief/question but no Claude framing — neutrality guard |
 | `test_coordinator_returns_none_when_disabled` | 3 | No partner constructed, no work performed |
 | `test_coordinator_soft_degrades_on_timeout` | 3 | Returns `None`, emits `partner.degraded`, does not raise |
@@ -408,6 +485,19 @@ New test files under `packages/ai-parrot/tests/flows/dev_flow/`:
       repo-access surface (no bespoke file/search/git tool is defined in this feature)
 - [ ] **The partner is given no write capability**: the registered toolkit is
       FEAT-484's, constructed without any write tool — asserted at the registration site
+- [ ] **One implementation, two transports**: `gpt-5.6-sol` (mantle) and
+      `nova-2-lite` (Converse) both run through the same
+      `ask(use_tools=True, structured_output=…)` call with the same registered
+      toolkit — no per-transport tool adapter exists
+- [ ] **No new credential**: the partner reads only `AWS_NOVA_API_KEY`; no
+      `OPENAI_API_KEY` and no Codex CLI dependency is introduced
+- [ ] **Family guard**: an Anthropic partner model is rejected with an error naming
+      both the decorrelation reason and the thinking-shape 400
+- [ ] **Module 3 is additive**: a `thinking_budget` call against a Nova model
+      produces a byte-identical Bedrock payload to pre-feature behavior, and modern
+      Anthropic models emit `{"type": "adaptive"}` instead of 400-ing
+- [ ] **Primary seat is configurable**: `DEV_FLOW_IDEATION_MODEL` defaults to
+      `claude-opus-5`; `claude-fable-5` selectable without a code change
 - [ ] Claude keeps sole authorship: no code path lets the partner write under `sdd/`
 - [ ] `.research.md` is committed staging **only** that path
 - [ ] Merged document attributes partner insights by finding `id`
@@ -431,6 +521,10 @@ New test files under `packages/ai-parrot/tests/flows/dev_flow/`:
 ```python
 from parrot.clients.nova.client import NovaClient                    # nova/client.py:31
 from parrot.clients.bedrock import BedrockConverseBase               # bedrock.py:114
+from parrot.clients.nova.mantle import BedrockMantleClient           # nova/mantle.py:32
+from parrot.clients.openai_base import OpenAIBaseClient              # openai_base.py:53
+from parrot.models.openai import OpenAIModel                         # models/openai.py
+from parrot.bots.mixins.model_switching import ModelSwitchMode       # model_switching.py:54
 from parrot.flows.dev_loop.code_review import (
     AbstractCodeReviewDispatcher,                                    # code_review.py:85
     CodeReviewDispatcherFactory,                                     # code_review.py:164
@@ -480,6 +574,36 @@ class NovaClient(BedrockConverseBase, NovaAudio, NovaGeneration):    # line 31
     _default_model: str = "nova-2-lite"                              # line 65
     _fallback_model: str = "nova-lite"                               # line 66
 
+# packages/ai-parrot/src/parrot/clients/nova/mantle.py
+class BedrockMantleClient(OpenAIBaseClient):                         # line 32
+    # OpenAI-compatible Bedrock endpoint. Endpoint resolution: explicit base_url ->
+    # BEDROCK_MANTLE_BASE_URL -> https://bedrock-mantle.{region}.api.aws/v1 (:40-44).
+    # Auth reuses the SAME AWS_NOVA_API_KEY bearer token the Converse seats use —
+    # not a duplicate secret (conf.py:1030-1034).
+
+# packages/ai-parrot/src/parrot/clients/openai_base.py
+class OpenAIBaseClient(AbstractClient):                              # line 53
+    async def ask(..., structured_output=None, use_tools=None, ...)  # line 507
+    tool_result = await self._execute_tool(tool_name, tool_args)     # line 421
+    if self.tools:                                                   # line 960
+    # => same AbstractClient tool registry + execution path as BedrockConverseBase,
+    #    which is why ONE partner implementation serves both transports.
+
+# packages/ai-parrot/src/parrot/models/openai.py
+class OpenAIModel(...):
+    GPT5_6 = "gpt-5.6"                                               # line 21
+    GPT5_6_SOL = "gpt-5.6-sol"                                       # line 22   <- partner default
+    GPT5_5 = "gpt-5.5"                                               # line 27
+# gpt.py:52-60 STRUCTURED_OUTPUT_COMPATIBLE_MODELS includes GPT5_6_SOL (gpt.py:54)
+#   -> structured_output=ResearchFindings is supported on the default partner model.
+
+# packages/ai-parrot/src/parrot/bots/mixins/model_switching.py
+class ModelSwitchMode(...):
+    FALLBACK = "fallback"                                            # line 53
+    CONTRASTIVE = "contrastive"                                      # line 54
+# Existing precedent: "both clients answer the same prompt concurrently"; metadata
+# attributes each answer to its model. Terminology anchor only — not reused here.
+
 # packages/ai-parrot/src/parrot/flows/dev_loop/code_review.py
 class AbstractCodeReviewDispatcher(ABC):                             # line 85
     advisory: bool = False                                           # line 100
@@ -516,7 +640,7 @@ class ClaudeCodeDispatchProfile(BaseModel):                          # line 10
     setting_sources: List[...] = Field(default=lambda: ["project"])  # line 31
     strict_mcp_config: bool = Field(default=True, ...)               # line 32-44
     allow_project_root_cwd: bool = Field(...)                        # line 45
-    # NOTE: there is NO mcp_servers field today — Module 5 adds it.
+    # NOTE: there is NO mcp_servers field today — Module 6 adds it.
 
 # packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/claude.py
     return ClaudeAgentRunOptions(                                    # line 440
@@ -624,7 +748,7 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 | `ResearchPartnerFactory` | `CodeReviewDispatcherFactory` shape | mirrored registry | `code_review.py:164,170` |
 | `resolve_research_partner_backend` | `resolve_adversarial_backend` shape | mirrored triad | `catalog.py:54,60,63` |
 | `IdeationNode` | `ComplementaryResearchCoordinator.research()` | optional kwarg, round-1 call | `ideation.py:105,122` |
-| Module 5 `mcp_servers` | `ClaudeAgentRunOptions(...)` | new kwarg passthrough | `claude.py:440-451` |
+| Module 6 `mcp_servers` | `ClaudeAgentRunOptions(...)` | new kwarg passthrough | `claude.py:440-451` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -633,7 +757,7 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 - ~~a `research` node in the dev-flow graph~~ — `dev_flow/definition.py` lists
   `research` among nodes "deliberately absent". The dev-flow research seat is
   `IdeationNode`.
-- ~~`ClaudeCodeDispatchProfile.mcp_servers`~~ — **does not exist today**; Module 5
+- ~~`ClaudeCodeDispatchProfile.mcp_servers`~~ — **does not exist today**; Module 6
   adds it. `_resolve_run_options()` (`claude.py:440-451`) currently passes no MCP
   servers, and `strict_mcp_config` defaults `True` (`models/claude.py:33`), so the
   filesystem `.mcp.json` is **ignored** by dispatched runs. Allow-listing
@@ -658,6 +782,20 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
   `LLMWikiToolkit(AbstractToolkit)` (`wiki/toolkit.py:54`). An earlier brainstorm
   revision wrongly listed this as missing; corrected there and here. **Bind these;
   do not write new wiki tools.**
+- ~~`gpt-5.5-sol`~~ — **does not exist.** The real model string is **`gpt-5.6-sol`**
+  (`OpenAIModel.GPT5_6_SOL`, `models/openai.py:22`). `gpt-5.5` and `gpt-5.5-codex`
+  exist (`catalog.py:153-154`) but there is no `-sol` variant at 5.5.
+- ~~adaptive-thinking support in `BedrockConverseBase`~~ — **does not exist today.**
+  `bedrock.py:831-835` emits only `{"type": "enabled", "budget_tokens": N}`. That
+  shape returns **400 on Claude Opus 5, Fable 5, Opus 4.8/4.7 and Sonnet 5**, which
+  require `{"type": "adaptive"}` + `output_config.effort`. Module 3 adds it. Do not
+  assume a `thinking_budget` call works against an Anthropic model on Bedrock.
+- ~~a `gpt` / OpenAI backend in the dev-loop catalog~~ — `catalog.py` has `codex`
+  (CLI transport, `gpt-5.5`/`gpt-5.5-codex`, `:149-159`) and `nova`, but **no
+  mantle-served OpenAI backend**. Module 1 adds the `research_partner` role entry.
+- ~~an OpenAI API key requirement~~ — the partner reaches `gpt-5.6-sol` through
+  bedrock-mantle on the existing `AWS_NOVA_API_KEY`. Do **not** introduce
+  `OPENAI_API_KEY`, and do **not** route this seat through the Codex CLI.
 - ~~a Chat Completions endpoint for `us.amazon.nova-*` / `us.anthropic.*` on
   Bedrock~~ — does not exist (`dispatchers/nova.py` module docstring;
   `catalog.py:246-251`). `NovaCodeDispatcher`/bedrock-mantle therefore **cannot**
@@ -704,7 +842,9 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 | Plane staleness inside a worktree | Accepted: the partner researches the codebase, not a diff. `git_*`/`read_file` cover uncommitted edits |
 | Attribution drift (prompt-enforced) | `.research.md` sidecar is the structural backstop; finding `id`s make citation checkable |
 | Findings too large for the dispatch payload | Truncate with an explicit marker; full text stays in `.research.md`, prompt points at the file |
-| Nova 2 Lite may underperform on deep research | Model is config-driven (`DEV_FLOW_RESEARCH_PARTNER_MODEL`); §8 Q4 tracks the empirical comparison |
+| Nova 2 Lite may underperform on deep research | It is no longer the default (`gpt-5.6-sol` is) and stays fully config-driven; §8 Q4 tracks the comparison |
+| **Module 3 touches a shared client** (`bedrock.py`) used far beyond dev-flow | Keep the change strictly additive: `budget_tokens` behavior for Nova/older-Anthropic models must be byte-identical, asserted by test. This module warrants its own adversarial review |
+| An operator selects an Anthropic partner now that the Bedrock form is cleared | Hard-rejected by `resolve_research_partner_backend()` naming both reasons (§8 Q12) |
 | Web search egress | **ON by default when the partner is enabled** (§8 Q5). Brief content reaches a third party — operators who cannot accept that set `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH=false`. Inert while the partner itself is disabled, so the pure-addition guarantee holds |
 
 ### External Dependencies
@@ -723,11 +863,14 @@ pages / 18844 edges, 548 MB at `.parrot/wiki`, 10442 sources tracked,
 
 | Key | Default | Purpose |
 |---|---|---|
-| `DEV_FLOW_RESEARCH_PARTNER` | `""` (disabled) | Backend selector; `"nova"` initially |
-| `DEV_FLOW_RESEARCH_PARTNER_MODEL` | `us.amazon.nova-2-lite-v1:0` | Mirrors `DEV_LOOP_NOVA_REVIEW_MODEL` (`conf.py:1069`) |
-| `DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET` | `4096` | Converse `thinking_budget` (`bedrock.py:715`) |
+| `DEV_FLOW_RESEARCH_PARTNER` | `""` (disabled) | Backend selector; `"gpt"` or `"nova"` |
+| `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` | `gpt-5.6-sol` | Mantle model (`OpenAIModel.GPT5_6_SOL`, `models/openai.py:22`) |
+| `DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL` | `us.amazon.nova-2-lite-v1:0` | Converse model; mirrors `DEV_LOOP_NOVA_REVIEW_MODEL` (`conf.py:1069`) |
+| `DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET` | `4096` | Converse-only reasoning knob (`bedrock.py:715`); ignored on the mantle path |
+| `DEV_FLOW_RESEARCH_PARTNER_EFFORT` | `high` | Mantle-only reasoning knob (OpenAI-shaped); ignored on the Converse path |
 | `DEV_FLOW_RESEARCH_PARTNER_TIMEOUT` | `600` | Hard deadline (seconds) |
 | `DEV_FLOW_RESEARCH_PARTNER_MAX_TOKENS` | `16384` | Cost ceiling |
+| `DEV_FLOW_IDEATION_MODEL` | `claude-opus-5` | Primary research seat (§8 Q13). Replaces the hardwired `claude-sonnet-4-6` at `ideation.py:338`; set `claude-fable-5` to trade cost for capability |
 | `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH` | `true` | External egress; ON when the partner is enabled, independently switchable (§8 Q5) |
 
 ---
@@ -776,18 +919,22 @@ git worktree add -b feat-482-devflow-complementary-research \
   score 0.8–1.0, conceptual scored 0.06/0.00 with no embedder. Reflected in §1
   Non-Goals, §3 Module 2.
 - [x] **Q11 — Graph search for the primary Claude seat too?** — *Resolved*: yes, both
-  seats. Requires the new optional `mcp_servers` profile field (Module 5) because
+  seats. Requires the new optional `mcp_servers` profile field (Module 6) because
   `strict_mcp_config` defaults `True` and there is no such field today.
 - [x] **Q2 — Should the toolkit be its own capability/spec?** — *Resolved*: **yes**.
   Split into `sdd/specs/readonly-repo-toolkit.spec.md` (**FEAT-484**). It is
   independently valuable, independently reviewable, and carries this initiative's
   security weight. Reflected throughout §3 (Modules 1–2 removed, remaining modules
   renumbered), §4, §5 and Worktree Strategy.
-- [x] **Q4 — `nova-2-lite` or Nova 2 Pro as the default model?** — *Resolved*: start
-  on `us.amazon.nova-2-lite-v1:0`, **configurable** via
-  `DEV_FLOW_RESEARCH_PARTNER_MODEL`. Note the basis for Lite is availability (the
-  `us.anthropic.*` Bedrock use-case form), not measured sufficiency — re-evaluate
-  against Pro after the first real runs.
+- [x] **Q4 — Which model for the partner seat?** — *Revised 2026-08-31 (v0.3)*.
+  Originally resolved as `nova-2-lite` "because the `us.anthropic.*` Bedrock
+  use-case form gates the alternatives". **That constraint is gone — the form is
+  cleared.** New resolution: default **`gpt-5.6-sol`** via bedrock-mantle, with
+  `nova-2-lite` selectable via Converse. Both reach Bedrock on the existing
+  `AWS_NOVA_API_KEY`, so governance is neutral between them and the discriminator is
+  training-lineage distance from the primary Claude seat — which is the property the
+  seat exists to buy. Note the form being cleared does **not** make an Anthropic
+  partner acceptable; see Q12.
 - [x] **Q5 — Should `web_search` default on when the partner is enabled?** —
   *Resolved*: **yes, and configurable**. `DEV_FLOW_RESEARCH_PARTNER_WEB_SEARCH`
   defaults to `true`; set `false` to disable. External prior art is the axis the
@@ -808,6 +955,22 @@ git worktree add -b feat-482-devflow-complementary-research \
   the contribute-to vs. replace narrowing, so the two specs do not read as
   contradictory.
 
+- [x] **Q12 — What if an Anthropic model is configured as the partner?** —
+  *Resolved*: **hard-reject, and fix the underlying defect here.**
+  `resolve_research_partner_backend()` refuses `us.anthropic.*` / `global.anthropic.*`
+  / `claude-*` for the partner seat, naming both reasons. Separately, Module 3 teaches
+  `BedrockConverseBase` to emit `{"type": "adaptive"}` for models that require it —
+  `bedrock.py:831-835` currently emits only `budget_tokens`, which returns 400 on
+  Opus 5 / Fable 5 / Opus 4.8/4.7 / Sonnet 5. That defect is latent and independent of
+  this feature; it became reachable when the Bedrock use-case form was cleared, and
+  fixing it here prevents every other Bedrock Anthropic seat from tripping over it.
+- [x] **Q13 — Which model for the primary research seat?** — *Resolved*:
+  **configurable, `claude-opus-5` by default.** New `DEV_FLOW_IDEATION_MODEL` key
+  replaces the hardwired `claude-sonnet-4-6` (`ideation.py:338`), so `claude-fable-5`
+  is one env var away and the two can be compared on real requests. Rationale: the
+  primary seat does the deepest reasoning in the pipeline and its output constrains
+  every downstream phase.
+
 ---
 
 ## Revision History
@@ -815,4 +978,5 @@ git worktree add -b feat-482-devflow-complementary-research \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft from `devflow-complementary-research.brainstorm.md` (D1–D9 carried forward; Q1/Q9/Q10/Q11 resolved during scaffolding; Q3 decided against in-flight FEAT-479) |
+| 0.3 | 2026-08-31 | Jesus Lara | Bedrock `us.anthropic.*` use-case form reported cleared, invalidating Q4's original rationale. Partner default changed to `gpt-5.6-sol` via bedrock-mantle (`nova-2-lite` still selectable); one `BedrockResearchPartner` now serves both transports through the shared `AbstractClient.ask(use_tools=…)` surface. Added Module 3 (adaptive-thinking fix in `BedrockConverseBase` — `budget_tokens` 400s on Opus 5 / Fable 5 / Sonnet 5); modules renumbered 3–6 → 4–7. Q12 (Anthropic-partner family guard) and Q13 (primary seat → configurable `claude-opus-5`) resolved. Corrected `gpt-5.5-sol` → `gpt-5.6-sol`. |
 | 0.2 | 2026-08-31 | Jesus Lara | All remaining open questions resolved. Q2: toolkit split out to FEAT-484 (`readonly-repo-toolkit`) — Modules 1–2 removed, 3–8 renumbered 1–6, toolkit tests and acceptance criteria moved. Q5: `web_search` now defaults ON when the partner is enabled. Q4/Q6/Q7/Q8 confirmed as specified. |
