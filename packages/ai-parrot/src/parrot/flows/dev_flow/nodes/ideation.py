@@ -43,6 +43,8 @@ Design notes:
 
 from __future__ import annotations
 
+import asyncio
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -52,7 +54,11 @@ from parrot import conf
 from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.types import DependencyResults
 from parrot.flows.dev_flow._subagent_defs import load_subagent_definition
+from parrot.flows.dev_flow.complementary_research import (
+    ComplementaryResearchCoordinator,
+)
 from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
+from parrot.flows.dev_flow.research_partner import ComplementaryFindings
 from parrot.flows.dev_loop.dispatchers import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, FeatureBrief
 from parrot.flows.dev_loop.nodes.base import DevLoopNode, register_dev_loop_node
@@ -64,6 +70,19 @@ _MODE_FOR_KIND: dict[str, str] = {
     "new_feature": "brainstorm",
     "enhancement": "proposal",
 }
+
+
+def _slugify(title: str) -> str:
+    """Kebab-case a title, mirroring the ``sdd-ideation`` prompt's own Step 1
+    algorithm ("lowercase, non-alphanumerics -> single hyphens, no leading
+    or trailing hyphen") so the coordinator's provisional
+    ``sdd/proposals/<slug>.research.md`` name matches the document the
+    subagent independently derives from the SAME title, without waiting
+    for the subagent's own dispatch to report it (FEAT-482 Module 5 — the
+    coordinator must run BEFORE the first dispatch, so the real
+    ``IdeationOutput.slug`` is not available yet).
+    """
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
 
 class _IdeationBrief(BaseModel):
@@ -85,6 +104,15 @@ class _IdeationBrief(BaseModel):
     # Set on resume rounds so the subagent extends the same document.
     document_path: str = ""
     round: int = 1
+    # FEAT-482 Module 5: the complementary research partner's findings,
+    # rendered markdown (already truncation-bounded) and its
+    # `.research.md` sidecar path. Populated on round 1 only — resume
+    # rounds pass both empty (the findings are already folded into the
+    # document by then). Both default to "" so a run with no coordinator
+    # injected, or with the research-partner seat disabled/degraded,
+    # carries an inert, empty partner section.
+    partner_findings: str = ""
+    partner_findings_path: str = ""
 
 
 @register_dev_loop_node("dev_flow.ideation")
@@ -99,6 +127,13 @@ class IdeationNode(DevLoopNode):
             search, or a search that finds nothing, simply yields no context.
         ideation_max_rounds: Override for ``conf.DEV_FLOW_IDEATION_MAX_ROUNDS``.
             ``None`` (default) reads the conf key at execute time.
+        coordinator: Optional :class:`ComplementaryResearchCoordinator`
+            (FEAT-482). ``None`` (default) means no complementary research
+            partner ever runs — the dispatch payload's partner fields stay
+            empty, matching pre-feature behavior exactly. When provided,
+            it is called on round 1 only; it never raises (it owns its own
+            degradation), so a disabled/degraded/timed-out partner simply
+            yields empty partner fields too.
         name: Node id, default ``"ideation"``.
     """
 
@@ -108,12 +143,14 @@ class IdeationNode(DevLoopNode):
         dispatcher: ClaudeCodeDispatcher,
         wiki_search: DevLoopWikiSearch | None = None,
         ideation_max_rounds: int | None = None,
+        coordinator: ComplementaryResearchCoordinator | None = None,
         name: str = "ideation",
     ) -> None:
         super().__init__(node_id=name)
         object.__setattr__(self, "_dispatcher", dispatcher)
         object.__setattr__(self, "_wiki_search", wiki_search)
         object.__setattr__(self, "_max_rounds", ideation_max_rounds)
+        object.__setattr__(self, "_coordinator", coordinator)
 
     # ------------------------------------------------------------------
     # Execute
@@ -152,7 +189,13 @@ class IdeationNode(DevLoopNode):
         brief = self._load_request_brief(shared)
         mode = _MODE_FOR_KIND[brief.kind]
 
-        graph_context = await self._build_wiki_context(brief)
+        # FEAT-482: the complementary research partner (if any) runs
+        # concurrently with the existing best-effort wiki-context build —
+        # both feed the FIRST dispatch only, neither delays the other.
+        graph_context, partner_findings = await asyncio.gather(
+            self._build_wiki_context(brief),
+            self._run_coordinator(brief=brief, shared=shared),
+        )
         max_rounds = self._resolve_max_rounds()
 
         self.logger.info(
@@ -163,6 +206,8 @@ class IdeationNode(DevLoopNode):
         output = await self._dispatch(
             shared=shared, brief=brief, mode=mode,
             graph_context=graph_context, answers={}, document_path="", round_=1,
+            partner_findings=partner_findings.rendered if partner_findings else "",
+            partner_findings_path=partner_findings.document_path if partner_findings else "",
         )
 
         host = shared.get("session_host")
@@ -186,6 +231,9 @@ class IdeationNode(DevLoopNode):
                 shared=shared, brief=brief, mode=mode,
                 graph_context=graph_context, answers=answers,
                 document_path=output.document_path, round_=rounds_used + 1,
+                # Round 1 only (spec §1 Non-Goals, D8): the partner's
+                # findings are already folded into the document by now.
+                partner_findings="", partner_findings_path="",
             )
 
         if output.open_questions:
@@ -279,6 +327,39 @@ class IdeationNode(DevLoopNode):
             return ""
         return context or ""
 
+    async def _run_coordinator(
+        self, *, brief: DevRequestBrief, shared: dict[str, Any]
+    ) -> ComplementaryFindings | None:
+        """Run the complementary research partner, or skip if not wired.
+
+        FEAT-482: no defensive try/except here — the coordinator already
+        owns degradation end-to-end (spec §3 Module 4) and is contracted
+        to never raise; wrapping it again would only risk masking a
+        genuine bug in that contract.
+
+        Args:
+            brief: The natural-language request driving this ideation run.
+            shared: The flow's shared state (supplies ``run_id`` and the
+                optional ``session_host``).
+
+        Returns:
+            ``ComplementaryFindings`` on success, or ``None`` when no
+            coordinator is wired, the seat is disabled, or it degraded.
+        """
+        if self._coordinator is None:
+            return None
+        slug = _slugify(brief.title)
+        question = f"{brief.title}\n\n{brief.description}".strip()
+        return await self._coordinator.research(
+            brief=brief,
+            question=question,
+            cwd=self._dispatch_cwd(),
+            slug=slug,
+            run_id=shared.get("run_id", ""),
+            node_id=self.name,
+            session_host=shared.get("session_host"),
+        )
+
     # ------------------------------------------------------------------
     # Internal — dispatch
     # ------------------------------------------------------------------
@@ -293,6 +374,8 @@ class IdeationNode(DevLoopNode):
         answers: dict[str, str],
         document_path: str,
         round_: int,
+        partner_findings: str = "",
+        partner_findings_path: str = "",
     ) -> IdeationOutput:
         """Dispatch ``sdd-ideation`` once and validate its final JSON.
 
@@ -305,6 +388,11 @@ class IdeationNode(DevLoopNode):
             answers: Prior-round answers (empty on round 1).
             document_path: The document to resume (empty on round 1).
             round_: 1-based round counter, for the subagent's own logging.
+            partner_findings: FEAT-482 — the complementary research
+                partner's rendered findings. Non-empty only on round 1's
+                call; resume rounds must pass ``""``.
+            partner_findings_path: FEAT-482 — the partner's
+                ``.research.md`` sidecar path, or ``""``.
 
         Returns:
             The validated :class:`IdeationOutput`.
@@ -318,6 +406,8 @@ class IdeationNode(DevLoopNode):
             answers=dict(answers),
             document_path=document_path,
             round=round_,
+            partner_findings=partner_findings,
+            partner_findings_path=partner_findings_path,
         )
         profile = ClaudeCodeDispatchProfile(
             # NOT profile.subagent: that path resolves the prompt through
