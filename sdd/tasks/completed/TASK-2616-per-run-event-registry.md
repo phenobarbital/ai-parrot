@@ -280,13 +280,123 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: `DevLoopRunner` now owns `self._run_registries: Dict[str, EventRegistry]`
+and `self._run_ledgers: Dict[str, RunLedgerRecorder]`, populated by a new
+`_create_run_registry(run_id)` (builds a fresh `RunLedgerRecorder` +
+`UsageRecordingSubscriber(recorders=[ledger], cost_calculator=None)` +
+`EventRegistry`, `add_provider`s the subscriber) called right after each of
+the three `_register_host(rid)` call sites (`run`, `_run_feature`,
+`run_revision`), and released by `_discard_run_registry(run_id)` called
+after `_close_host` on both the success and exception paths of all three
+methods — matching the existing `_run_completion.pop`/`_pending_gate_count.pop`
+cleanup idiom, so the ledger stays reachable for `_close_host`/`_persist_run_bundle`
+(TASK-2618) but never leaks across runs. A new public `get_run_ledger(run_id)`
+returns `None` when untracked (never wired, already closed, or — §8 Q1 — a
+cross-process resume that lost the in-memory ledger); the `mark_partial()`
+call and the "partial" render decision are deliberately left to TASK-2618
+(rendering is explicitly out of this task's scope), which detects the
+`None` and decides how to label the report.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+`LLMCodeDispatcher` gained `set_event_registry_resolver(resolver)` (a
+`run_id -> Optional[EventRegistry]` callable) and now threads `run_id`
+through `_create_client`, which — when a resolver is wired and it resolves
+a registry for that `run_id` — sets `client._events_registry` directly to
+that shared registry (the documented injection point) instead of leaving
+the client to lazily self-create its own. `DevLoopRunner.__init__` wires
+`self._dispatcher.set_event_registry_resolver(self._run_registries.get)`
+once, duck-typed (`hasattr` guard) since `self._dispatcher` may be any
+CLI-backed dispatcher that never touches `EventRegistry` at all — those are
+simply left unwired (no-op). `_dispatch_loop` now also wraps its whole body
+in `with usage_attribution(run_id, node_id):` — `node_id` IS the seat for
+this dispatcher (`DevAgentPool` already passes `"development.w1"`-style
+worker ids as `node_id`), which is what makes `UsageRecord.run_id`/`.seat`/
+`.node_id` non-`None` for this path at all; without it the injected
+registry would still receive records, just permanently unattributed. This
+wiring wasn't listed as an explicit acceptance criterion of any task, but
+sits squarely inside this task's own stated scope ("injection... into the
+clients/dispatchers built for the run") and is a necessary completion of
+it — flagging this judgment call per the Agent Instructions.
 
 **§8 open question — does `_client_factory` propagate the injected registry?**
-*(answer here, with file:line evidence)*
+Resolved: **No.** `LLMFactory.create` (`clients/factory.py:193-276`, the
+default `client_factory`) has no registry/events parameter at all — its
+signature is `create(llm, model_args=None, tool_manager=None, **kwargs)` and
+nothing in its body touches lifecycle events. More decisively,
+`AbstractClient.__init__` (`clients/base.py:372`) **unconditionally** calls
+`self._init_events(forward_to_global=False)`, which (`navigator_eventbus/
+lifecycle/mixin.py:82-85`) **always constructs a brand-new**
+`EventRegistry(forward_to_global=False)` — there is no constructor kwarg or
+factory parameter that could short-circuit this. Every client built via
+`_create_client` therefore self-creates an isolated registry unless
+`_create_client` overwrites `client._events_registry` post-construction,
+which is exactly what this task's new code does.
 
-**Deviations from spec**: none | describe if any
+**A second, unplanned finding surfaced while resolving §8 — a latent
+double-forward bug the task's own illustrative wiring snippet would have
+introduced.** The task's "Implementation Notes → The wiring" section shows
+`run_registry = EventRegistry(forward_to_global=True)`. Constructing the
+*shared, client-injected* registry with `forward_to_global=True` is
+**incorrect**: `AbstractClient._emit_after_call` (`clients/base.py:630-634`)
+and `_emit_round_event` (`clients/base.py:582-587`) **always** call
+`self.events.forward_to_global(event)` explicitly and unconditionally,
+specifically because clients are documented to carry an isolated
+(`forward_to_global=False`) registry (see the inline comment at
+`clients/base.py:583-586`: *"Client registries are isolated
+(forward_to_global=False). Forward the LLM-call lifecycle events explicitly
+..."*). If the injected registry also auto-forwards
+(`forward_to_global=True`), `EventRegistry.emit()` (`registry.py:254-255`
+and `:294-295`) schedules its OWN automatic forward **in addition to** that
+explicit call — every client-emitted `AfterClientCallEvent`/
+`ClientRoundEvent` would be forwarded to the global registry TWICE,
+double-counting on every global subscriber (OTel `MetricsSubscriber`, the
+global `UsageRecordingSubscriber` from `bootstrap.py:138`). I constructed
+`_create_run_registry`'s registry with `forward_to_global=False` instead —
+this preserves single-delivery to global (via the client's own existing
+explicit-forward calls, unchanged) while still satisfying "OTel fed exactly
+as today." `test_subscriber_not_registered_globally` and
+`test_create_client_injects_the_resolved_run_registry` both pass with this
+choice; I did not empirically reproduce the double-forward with `True` (it
+would require asserting on `create_task` call counts), but the mechanism is
+unambiguous from reading `registry.py` — documented here as a deviation
+with reasoning rather than silently "fixed."
+
+Verified all acceptance criteria: `test_recorder_receives_before_call_returns`
+(no sleep, no drain — exactness), `test_subscriber_not_registered_globally`
+(a full `DevLoopRunner.run()` end-to-end, comparing
+`get_global_registry()._subscriptions` before/after), `test_run_registry_created_and_discarded`
+(no leak), `test_per_run_registries_are_distinct_instances` (never a
+singleton), and the two `_create_client` injection tests (exactness +
+correct attribution end-to-end through a real `AbstractClient`, and a
+graceful no-resolver fallback). Full `tests/flows/dev_loop/` suite (1117
+tests, excluding the 3 pre-existing unrelated failures) + `tests/observability/`
++ `tests/unit/observability/` (198 tests) all pass. `ruff check` on the
+diff: the two new "documentation" `noqa` comments I initially added
+(`SLF001`, `N801`) were removed since neither rule is enabled project-wide
+(matching the project's existing tolerance for that pattern elsewhere);
+remaining new findings are `UP006`/`UP037`/`UP045` on the new lines,
+matching `runner.py`/`llm.py`'s own pre-existing `Dict`/`Optional`
+convention throughout (134→144 combined, +10, all pre-existing categories),
+per the TASK-2612/2613/2614 precedent of following the surrounding file's
+style rather than modernizing unrelated code.
+
+**Deviations from spec**: (1) The shared per-run `EventRegistry` is
+constructed with `forward_to_global=False`, not `forward_to_global=True` as
+literally shown in the task's own illustrative code — required to avoid the
+double-forward bug detailed above; global OTel/usage-recorder visibility is
+unaffected since `AbstractClient`'s own explicit `forward_to_global(event)`
+calls are unconditional and unchanged. (2) `_dispatch_loop` was wrapped in
+`usage_attribution(run_id, node_id)`, which is not itself one of this
+task's listed files-to-modify bullet points but IS within `dispatchers/llm.py`
+(an explicitly listed file) and is necessary for the injected registry to
+produce attributed records at all — noted as a scope judgment call per
+Cardinal Rule 4. (3) `agent_builder.py`'s pool-worker dispatcher factory
+(`build_dispatcher`, used by `DevAgentPool` for `nvidia`/`grok`/`zai`/
+`moonshot` pool-worker instances) is **not** wired with
+`set_event_registry_resolver` — that file is outside this task's declared
+scope. Pool workers spawned through that path will still self-create
+isolated registries and fall back to fire-and-forget forwarding; their
+`AfterClientCallEvent`s reach the global registry but not the per-run
+ledger. This is a known, explicitly out-of-scope gap for a future increment,
+not silently swept under the rug.

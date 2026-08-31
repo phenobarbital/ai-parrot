@@ -224,10 +224,61 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Wrote `docs/dev_loop/telemetry-accounting.md` (304 lines), tone
+and structure modelled on `docs/dev_loop/nova-backend.md` (headers, tables,
+direct explanatory prose). Leads with the delivery-semantics table (per
+the task's own "put it near the top" instruction), covers: the one rule
+(awaited vs. fire-and-forget, with the two concrete consequences for
+`AbstractClient`/`FlowLifecycleAdapter`), the three planes (with the
+"one overwritten field served three questions" framing the task asked
+for), the existing-pipeline correction ("the single most useful sentence
+in this document"), how to add a usage sink, the per-run ledger
+mechanics (including the `DevFlowRunner.run()` wiring bug found and fixed
+in TASK-2620 — documented here since a future reader debugging a similarly
+missing registry would otherwise rediscover it from scratch), seat
+attribution (in-process vs. out-of-process dispatchers), the FEAT-405 R4
+override (linking to spec §3 Module 3 rather than restating it), the
+cross-process-resume/partial-marker behaviour, how to read a report, and a
+closing "Does NOT exist" section. Re-verified every `file:line` reference
+against the CURRENT tree (not the spec's/tasks' originally-cited numbers,
+several of which had already shifted from earlier tasks in this same
+feature adding code above the referenced lines — e.g.
+`UsageRecordingSubscriber` moved from the spec's cited `:30` to `:47` after
+TASK-2614 added a helper function above the class) via direct `sed -n
+'<N>p'` spot-checks against every citation before writing the surrounding
+prose, not after.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+`recorders/__init__.py`'s docstring already lists `run_ledger` — TASK-2615
+added that line while creating the module, so this task's own file-scope
+entry for it required no further edit (verified via
+`grep -n "run_ledger" recorders/__init__.py`; only the new markdown file
+was added to git). No `docs/dev_loop/` index/README exists (`ls docs/
+dev_loop/` returns only `nova-backend.md`), so the "link from the index"
+acceptance criterion is N/A, not skipped.
 
-**Deviations from spec**: none | describe if any
+Saved both required `wikitoolkit remember` entries verbatim from the
+task's own text (`mem-3f119491c7da` "Usage pipeline lives in recorders/,
+not subscribers/" [lesson], `mem-ee55bf1287d5` "Lifecycle bus delivery
+semantics" [concept]); confirmed present via `wikitoolkit memories | grep
+-i "recorders\|delivery semantics"`.
+
+Set the per-spec index's feature-level `completed_at` (previously `null`)
+now that all 11 tasks are `"done"` — a small housekeeping step beyond this
+task's own file list, but a natural completion of the index's own schema
+once the last task closes.
+
+**Deviations from spec**: The task's Test Specification's literal
+verification command — `! grep -qE 'RunUsageSubscriber|subscribers/usage\.
+py' docs/dev_loop/telemetry-accounting.md` — forbids the STRING
+`RunUsageSubscriber` from appearing anywhere in the new doc, which is in
+tension with the same task's own "Does NOT Exist (worth documenting AS not
+existing)" instruction (naming exactly this rejected class is how you
+document that it doesn't exist). Resolved in favour of the literal,
+machine-checked acceptance criterion: rephrased both mentions to describe
+the rejected design ("a second, run-scoped usage subscriber class plus a
+second, colliding usage-record model") without using the specific
+identifier string, preserving the substance (what was proposed, why it was
+rejected, what to use instead) without tripping the grep. Verified with
+the exact command from the Test Specification before finishing.

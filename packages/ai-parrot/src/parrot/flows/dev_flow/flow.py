@@ -99,6 +99,7 @@ def build_dev_flow(
     ideation_max_rounds: int | None = None,
     name: str = "dev-flow",
     publish_flow_events: bool = True,
+    lifecycle_events: bool = True,
     checkpoint: bool = False,
     checkpoint_required: bool = False,
     checkpoint_store: str | CheckpointStore | None = None,
@@ -135,6 +136,9 @@ def build_dev_flow(
         name: Flow name (default ``"dev-flow"``).
         publish_flow_events: When True (default), attach a
             :class:`FlowEventPublisher` to the engine's ``on_node_event`` hook.
+        lifecycle_events: When True (default), also attach a
+            :class:`parrot.bots.flows.flow.telemetry.FlowLifecycleAdapter`
+            (FEAT-479).
         checkpoint: FEAT-480 — enable AgentsFlow state checkpointing.
             ``False`` (default) is byte-identical to pre-FEAT-480 behavior.
         checkpoint_required: FEAT-480 — when ``True`` (with ``checkpoint``),
@@ -196,6 +200,16 @@ def build_dev_flow(
     flow._run_id_holder = run_id_holder  # type: ignore[attr-defined]
     flow._event_publisher = publisher  # type: ignore[attr-defined]
     flow._dev_loop_definition = definition  # type: ignore[attr-defined]
+
+    lifecycle_adapter = None
+    if lifecycle_events:
+        from parrot.bots.flows.flow.telemetry import (  # noqa: PLC0415
+            FlowLifecycleAdapter,
+        )
+
+        lifecycle_adapter = FlowLifecycleAdapter()
+        flow.add_node_event_listener(lifecycle_adapter)
+    flow._lifecycle_adapter = lifecycle_adapter  # type: ignore[attr-defined]
 
     for node in nodes.values():
         flow.add_node(node)

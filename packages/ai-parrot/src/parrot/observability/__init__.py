@@ -39,6 +39,12 @@ Per-agent attribution (FEAT-228):
     the invoking agent's ``self.name``.
   * ``agent_identity(name)`` — context-manager that binds the active agent name
     for the duration of a bot invocation (token-based; nested-safe).
+
+Per-run/seat attribution (FEAT-479):
+  * ``current_run_id`` / ``current_seat`` — task-local ``ContextVar``s
+    carrying the dev-loop / dev-flow run id and accounting seat.
+  * ``usage_attribution(run_id, seat)`` — context-manager that binds both
+    (token-based; nested-safe).
 """
 
 from parrot.observability.bootstrap import (
@@ -46,8 +52,14 @@ from parrot.observability.bootstrap import (
     shutdown_observability,
     shutdown_usage_recording,
 )
-from parrot.observability.context import agent_identity, current_agent_name
 from parrot.observability.config import ObservabilityConfig, OtlpTarget
+from parrot.observability.context import (
+    agent_identity,
+    current_agent_name,
+    current_run_id,
+    current_seat,
+    usage_attribution,
+)
 from parrot.observability.cost.calculator import CostCalculator
 from parrot.observability.errors import ConfigurationError
 from parrot.observability.provider import ParrotTelemetryProvider
@@ -83,4 +95,8 @@ __all__: list[str] = [
     # FEAT-228: per-agent attribution
     "current_agent_name",
     "agent_identity",
+    # FEAT-479: per-run/seat attribution
+    "current_run_id",
+    "current_seat",
+    "usage_attribution",
 ]

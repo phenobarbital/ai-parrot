@@ -260,10 +260,75 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Both renderers gained three additions, sharing all new helpers
+between markdown and HTML so they cannot drift:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- **Cycle rows**: `_cycle_markdown_row`/`_cycle_html_row` emit one indented
+  `└ cycle N` row per `AgentUsage.cycles` entry, but ONLY when
+  `len(agent.cycles) > 1` — a seat with exactly one cycle shows no
+  sub-rows, since the parent row already carries that cycle's numbers
+  (verified by `test_single_cycle_seat_has_no_cycle_rows` in both files).
+  HTML uses `<tr class="cycle">` with a CSS indent rule
+  (`tr.cycle td:first-child { padding-left: ... }`) rather than nested
+  tables, per the task's explicit guidance. Token/duration formatting is
+  now shared via new `_fmt_tokens`/`_fmt_tokens_html` helpers (parameterized
+  on a bare input/output pair) so `_fmt_agent_tokens`/`_fmt_agent_tokens_html`
+  became one-line wrappers around them — no behavior change for existing
+  callers, just de-duplication ahead of the cycle/failure rows needing the
+  same formatting.
+- **Failures section**: a new `_failed_cycles(report)` helper collects
+  every `(agent, cycle)` pair with `cycle.status == "failed"`, shared by
+  both renderers. Markdown emits a `### Failures` table (Seat/Cycle/Error/
+  Tokens burned) with the required closing line verbatim ("_Error messages
+  are not shown here — see the run bundle's per-node errors._"); HTML
+  emits an equivalent `<h2>Failures</h2>` table via a new
+  `_failures_table_html` helper. Both are omitted entirely (empty string /
+  no section) when `_failed_cycles` returns empty — verified by
+  `test_no_failures_section_when_clean` in both files. Only `cycle.error_type`
+  is ever interpolated, never a message — `CycleUsage` (TASK-2618) has no
+  message field to begin with, so this is structurally enforced, not just
+  a convention (`test_no_error_message_in_failures_section` asserts
+  `not hasattr(CycleUsage, "error_message")` alongside the footnote text).
+- **Partial marker**: markdown gets a `⚠️ **Partial** — {reason}. Totals
+  below are a lower bound.` line above the table (only when
+  `report.partial`), and the totals line's own label switches to
+  `**Totals (partial)**`. HTML gets an equivalent styled `<p>` banner and a
+  `Totals (partial)` label. Both verified by
+  `test_partial_ledger_is_labelled` (from the task's own Test
+  Specification) checking the word "partial" appears both above the table
+  and within the first 40 characters after the totals marker, in both
+  formats.
 
-**Deviations from spec**: none | describe if any
+Extended `test_usage_report.py` (markdown) and `test_usage_report_html.py`
+(HTML) with the task's Test Specification, split per its own Files table
+(markdown assertions in the former, HTML + the dual-format partial check in
+the latter) — fixtures (`report_with_cycles_and_workers`,
+`report_single_cycle`/`report`, `report_with_failure`, `report_clean`,
+`report_partial`, `report_with_hostile_names`) duplicated locally per file
+rather than introducing a shared conftest fixture (no conftest changes
+needed, matching the existing per-file self-containment convention in this
+test directory). One test from the task's own spec had a flawed literal
+assertion — `test_no_error_message_in_failures_section`'s
+`assert "message" not in md.lower()` would have failed against the
+renderer's OWN required footnote text (which legitimately contains the
+word "messages"); rewrote it to assert the privacy property that actually
+matters (`error_type` only, no message field exists, footnote text
+present) rather than a word-search that conflated the disclaimer with a
+violation. 46 tests total across both files (27 + 19), all pass. Full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (1142 tests, excluding the
+3 pre-existing unrelated failures) passes. `ruff check` and `mypy` both
+clean.
+
+**Deviations from spec**: The illustrative table in the task's
+Implementation Notes shows a simplified 5-column shape (Seat/Model/Rounds/
+Tokens/Duration); the actual `usage_report.py` column set (per the
+Codebase Contract's own "Current columns" note and TASK-2618, unchanged by
+this task) is 7 columns (Seat/Node/Backend/Model/Rounds/Tokens/Duration).
+Followed the Codebase Contract's authoritative column list, not the
+illustration — cycle rows render `—` for the Backend/Rounds cells that
+don't meaningfully apply at cycle granularity, but repeat the parent's
+`node_id` in the Node cell (still meaningful context), keeping the column
+COUNT identical between parent and cycle rows so the table stays a single
+coherent grid. No other deviations.

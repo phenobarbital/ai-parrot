@@ -34,9 +34,6 @@ from parrot.flows.dev_loop.models import (
 from parrot.flows.dev_loop.run_bundle import build_run_bundle
 from parrot.flows.dev_loop.session_state import (
     DevLoopSessionState,
-    DispatchCompleted,
-    DispatchQueued,
-    DispatchStarted,
     NodeCompleted,
     NodeStarted,
     RunClosed,
@@ -51,6 +48,8 @@ from parrot.flows.dev_loop.usage_report import (
     render_usage_html,
     render_usage_markdown,
 )
+from parrot.observability.recorders.models import UsageRecord
+from parrot.observability.recorders.run_ledger import RunLedgerRecorder
 
 COMMON = {"redis_url": "redis://localhost:6379/0", "max_concurrent": 1, "stream_ttl_seconds": 60}
 RUN_ID = "run-nova-integration-0001"
@@ -84,9 +83,7 @@ class TestNovaDevSeat:
         """Pool spec ``{"agent": "nova"}`` -> dispatcher -> loop (mocked
         bedrock-mantle client, never real Bedrock) -> validated
         DevelopmentOutput."""
-        pool = DevAgentPoolConfig(
-            agents=[DevAgentSpec(agent="nova", model="minimax.minimax-m2.5", count=1)]
-        )
+        pool = DevAgentPoolConfig(agents=[DevAgentSpec(agent="nova", model="minimax.minimax-m2.5", count=1)])
         assert pool.agents[0].agent == "nova"
 
         dispatcher, profile = build_dispatcher(pool.agents[0], **COMMON)
@@ -100,9 +97,7 @@ class TestNovaDevSeat:
         class _ToolCall:
             def __init__(self, name, arguments):
                 self.id = "call_1"
-                self.function = SimpleNamespace(
-                    name=name, arguments=json.dumps(arguments)
-                )
+                self.function = SimpleNamespace(name=name, arguments=json.dumps(arguments))
 
         class _Message:
             def __init__(self, tool_calls):
@@ -163,9 +158,7 @@ class TestNovaAdversarial:
         async def _fake_collect_diff(self, cwd, profile):
             return "diff --git a/foo.py b/foo.py\n+print('hi')\n"
 
-        monkeypatch.setattr(
-            NovaAdversarialReviewDispatcher, "_collect_diff", _fake_collect_diff
-        )
+        monkeypatch.setattr(NovaAdversarialReviewDispatcher, "_collect_diff", _fake_collect_diff)
 
         fake_ask = AsyncMock(
             return_value=SimpleNamespace(
@@ -184,43 +177,51 @@ class TestNovaAdversarial:
             def model_dump_json(self):
                 return "{}"
 
-        verdict = await reviewer.review(
-            brief=_Brief(), run_id=RUN_ID, node_id="qa", cwd="."
-        )
+        verdict = await reviewer.review(brief=_Brief(), run_id=RUN_ID, node_id="qa", cwd=".")
 
         assert verdict.files_modified == []
-        assert all(
-            isinstance(f, AdversarialFinding) and f.source == "nova-adversarial"
-            for f in verdict.findings
-        )
+        assert all(isinstance(f, AdversarialFinding) and f.source == "nova-adversarial" for f in verdict.findings)
         # no tools passed at all — verified directly on the call kwargs
         assert "tools" not in fake_ask.await_args.kwargs
         assert fake_ask.await_args.kwargs.get("use_tools") is False
 
 
 class TestUsageArtifacts:
-    """spec §4: test_usage_report_written_at_run_end."""
+    """spec §4: test_usage_report_written_at_run_end.
+
+    FEAT-479 M7a: ``build_usage_report`` now sources from the run's
+    ``RunLedgerRecorder`` rather than a session-state ``Snapshot``.
+    """
 
     def _completed_snapshot(self) -> Snapshot:
+        """A minimal terminal Snapshot with one node, used only to prove
+        the (unrelated) run_bundle path still builds — build_usage_report
+        itself no longer reads this."""
         state = DevLoopSessionState(run_id=RUN_ID, channel=session_channel(RUN_ID))
         state = reduce(state, RunCreated(run_id=RUN_ID, work_kind="bug", summary="fix x"))
         state = reduce(state, NodeStarted(node_id="development", ts=1.0))
-        state = reduce(state, DispatchQueued(node_id="development", dispatcher="nova"))
-        state = reduce(state, DispatchStarted(node_id="development", ts=1.0))
-        state = reduce(
-            state,
-            DispatchCompleted(
-                node_id="development", ts=5.0,
-                input_tokens=1000, output_tokens=250, num_turns=7, duration_ms=4000,
-            ),
-        )
         state = reduce(state, NodeCompleted(node_id="development", ts=5.0))
         state = reduce(state, RunClosed(outcome="succeeded"))
         return Snapshot(channel=state.channel, state=state, from_seq=0)
 
-    def test_usage_report_written_at_run_end(self, tmp_path):
-        snapshot = self._completed_snapshot()
-        report = build_usage_report(snapshot, run_id=RUN_ID)
+    async def _completed_ledger(self) -> RunLedgerRecorder:
+        ledger = RunLedgerRecorder(run_id=RUN_ID)
+        await ledger.record(
+            UsageRecord(
+                provider="nova",
+                client_name="nova",
+                seat="development",
+                node_id="development",
+                input_tokens=1000,
+                output_tokens=250,
+                duration_ms=4000,
+            )
+        )
+        return ledger
+
+    async def test_usage_report_written_at_run_end(self, tmp_path):
+        ledger = await self._completed_ledger()
+        report = build_usage_report(ledger, run_id=RUN_ID)
 
         usage_json_path = tmp_path / "usage.json"
         usage_html_path = tmp_path / "usage.html"
@@ -236,7 +237,7 @@ class TestUsageArtifacts:
         assert rep.agents[0].backend == "nova"
 
         # markdown section (folded into the bundle) agrees with the same report
-        bundle = build_run_bundle(snapshot, [], {})
+        bundle = build_run_bundle(self._completed_snapshot(), [], {})
         md_section = render_usage_markdown(report)
         assert "## Usage" in md_section
         assert bundle.nodes  # bundle itself still builds unaffected
@@ -260,9 +261,7 @@ class TestOptInRegression:
     def test_research_node_untouched(self):
         """[R7] guard: the research seat must stay Claude Code only — fails
         loudly if a future change widens ResearchNode's dispatcher type."""
-        src = Path(
-            "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py"
-        ).read_text()
+        src = Path("packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py").read_text()
         assert "dispatcher: ClaudeCodeDispatcher" in src
         assert 'subagent="sdd-research"' in src
         assert "nova" not in src.lower()

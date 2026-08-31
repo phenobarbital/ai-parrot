@@ -296,10 +296,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Created `RunLedgerRecorder(AbstractLogger)` and `SeatUsage`
+(frozen, `extra="forbid"` Pydantic model) in new
+`recorders/run_ledger.py`. `record()` assigns `cycle` via `next_cycle(seat)`
+only when the incoming record's `cycle is None`, copies via
+`record.model_copy(update=...)` (never mutates the shared incoming
+instance), appends under a `threading.Lock` (matching
+`UsageRecordingSubscriber`'s own lock precedent), and never raises —
+wrapped in `try/except Exception` with `logger.exception` (no bare
+`pass`, since `ruff` doesn't have `BLE001` enabled project-wide but
+silent swallowing without logging is still worse practice). `by_seat()`
+groups by seat, rolls up `node_id` (from the record's own `node_id`,
+falling back to `seat.split(".", 1)[0]`), sums `input_tokens`/
+`output_tokens` skipping `usage_reported=False` records (`None` when the
+seat's cycles are entirely unreported — never a fabricated `0`), and
+counts `status="failed"` cycles into `failures`. `mark_partial()` is
+idempotent (keeps the first reason). No `register()` method exists — this
+is a sink, not an `EventProvider`, confirmed by
+`test_has_no_register_method`. Exported `RunLedgerRecorder`/`SeatUsage`
+from `recorders/__init__.py` (also fixed the pre-existing unsorted
+`__all__` while adding the two new names, since `ruff`'s `RUF022`
+flagged the block I was editing anyway). Wrote 11 unit tests in
+`test_run_ledger_recorder.py` — the 7 from the task's Test Specification
+verbatim, plus 4 extra covering a record without any seat at all,
+`next_cycle`'s 1-based/seat-scoped counting in isolation, that the public
+`records` property returns a defensive copy, and that `aclose()` is a
+genuine no-op — all pass. Since this is a brand-new file with no
+pre-existing style debt to match, wrote it fully `ruff`-clean (modern
+`list`/`X | None` typing throughout, sorted `__all__`, no unused `noqa`)
+rather than importing `Optional`/`List` the way older files in this
+package do — a deliberate departure from the "match existing convention"
+precedent set in TASK-2612/2613/2614, justified because there IS no
+existing convention *in this specific file* to match; `mypy` and `ruff`
+both clean. Full `tests/observability/` + `tests/unit/observability/`
+suite (198 tests) passes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

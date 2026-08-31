@@ -311,10 +311,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Added a local `accumulated: Optional[CompletionUsage] = None`
+variable in `_dispatch_loop`, updated once per round via
+`CompletionUsage.__add__` (never a hand-rolled field sum), and forwarded
+`accumulated.prompt_tokens` / `accumulated.completion_tokens` (mapped to
+`input_tokens`/`output_tokens` — the existing `_emit_round_event` field-name
+mapping) into the `finally` block's `_safe_emit_after_call` call. Extended
+`_safe_emit_after_call`'s signature with `input_tokens`/`output_tokens`
+(both `Optional[int] = None`) and forwarded them to
+`client._emit_after_call`. Updated the stale `llm.py:191-200` comment to
+point at spec §3 Module 3's override instead of saying "forbidden".
+Extended the existing `test_dispatch_round_events.py` (did not create a new
+file, per scope) with a new `_AfterCallCollector` harness and a
+`TestAfterCallTokens` class covering: tokens summed across rounds (not last
+round), `None` when unreported (never fabricated `0`), partial tokens
+preserved when the loop raises via `max_turns` exhaustion, and a regression
+guard that round events remain one-per-round (not summed) — 4 new tests,
+14/14 in the file passing. `TestNoAccumulation.test_source_contains_no_summing`
+(the pre-existing FEAT-405 R4 guard) still passes unmodified: my local
+variable is named `accumulated`, not `_accumulated_usage`, and no
+`total_usage` string appears — consistent with the task's explicit
+constraint that accumulation must be a local, never `self.*`. Full
+`packages/ai-parrot/tests/flows/dev_loop/` suite (excluding the 3
+pre-existing unrelated failures) passes: 1111 passed, 5 skipped. `ruff
+check` adds 3 new `UP045` (`Optional[X]` vs `X | None`) findings on my new
+lines, matching the file's own pre-existing `Optional` convention
+throughout (`_extract_usage`'s return type, etc.) — left as-is, consistent
+with TASK-2612's precedent of following existing style rather than
+modernizing unrelated code. No other new findings; the new test-file
+additions are fully `ruff`-clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -106,6 +106,7 @@ class DevFlowRunner(DevLoopRunner):
         # shared["session_host"] to open its open_questions gates; it never
         # imports the runner).
         host = self._register_host(rid)
+        self._create_run_registry(rid)  # FEAT-479 M5 — see TASK-2620 Completion Note
         host.apply(
             RunCreated(
                 run_id=rid,
@@ -188,6 +189,7 @@ class DevFlowRunner(DevLoopRunner):
             if not completion.done():
                 completion.set_exception(exc)
             self._run_completion.pop(rid, None)
+            self._discard_run_registry(rid)  # FEAT-479 M5
             self._retire_actions_writer(rid)
             raise
         finally:
@@ -207,6 +209,7 @@ class DevFlowRunner(DevLoopRunner):
         if not completion.done():
             completion.set_result(result)
         self._run_completion.pop(rid, None)
+        self._discard_run_registry(rid)  # FEAT-479 M5
         return result
 
     # ------------------------------------------------------------------

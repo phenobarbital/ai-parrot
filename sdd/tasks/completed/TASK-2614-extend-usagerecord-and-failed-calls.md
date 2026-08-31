@@ -315,10 +315,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Added the seven additive/optional fields from spec §2 Data
+Model A to the existing `UsageRecord` (`run_id`, `seat`, `node_id`,
+`cycle`, `usage_reported`, `status`, `error_type`) with full docstrings;
+`input_tokens`/`output_tokens` remain `int = 0` and `total_tokens`
+unchanged. In `UsageRecordingSubscriber`: `_on_client_after` now reads
+`current_run_id`/`current_seat` (TASK-2612) and computes `usage_reported`
+from whether the event reported either token count; added a module-level
+`_node_id_from_seat()` helper (`"development.w1"` -> `"development"`) used
+by both handlers. `register()` now also subscribes `ClientCallFailedEvent`
+via a new `_on_client_failed` handler building a `status="failed"` record
+with `error_type` (class name only, matching the privacy contract — no
+`error_message` field exists on `UsageRecord`) and `usage_reported=False`
+(the event carries no token fields at all). Extracted the shared
+error-isolated fan-out loop into a private `_fan_out()` helper reused by
+both handlers, rather than duplicating it — an internal-only refactor, no
+public interface change. Created
+`tests/observability/test_usage_record_attribution.py` with 9 tests
+covering back-compat construction, ContextVar attribution (incl. the
+unattributed case), the `usage_reported` flag on both the success and
+0-coercion paths, the failed-call path (with and without attribution), the
+privacy-contract guard, the `register()` subscription-set guard (after +
+failed, never stream-chunk), and back-compat with `LoggingUsageRecorder` —
+all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One file outside the task's declared scope was
+touched: `tests/unit/observability/test_bootstrap.py`. Its
+`test_enabled_defaults_to_logging` and `test_bootstrap_is_idempotent`
+asserted the global bootstrap subscriber adds exactly 1 registry
+subscription; since `register()` now legitimately subscribes to 2 event
+types (a direct, spec-mandated consequence of this task's acceptance
+criteria, not an implementation defect), both counts changed from `+1` to
+`+2`. Updated both assertions with an inline comment pointing at the
+cause, per the CLAUDE.md/WORKFLOW.md "run pytest after any logic change —
+no exceptions" rule and the spec's own precedent of allowing existing
+tests to be "updated with a stated rationale." No other files outside
+scope were touched; full `packages/ai-parrot/tests/observability/` +
+`tests/unit/observability/` (187 tests) and the FEAT-405
+`test_usage_report.py`/`test_usage_report_html.py` (27 tests) all pass
+unmodified otherwise.
