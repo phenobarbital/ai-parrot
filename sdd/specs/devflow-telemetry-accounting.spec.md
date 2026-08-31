@@ -378,11 +378,44 @@ class RunLedgerRecorder(AbstractLogger):
 ### Module 3: Carry tokens on the dispatcher's after-call event
 - **Path**: `parrot/flows/dev_loop/dispatchers/llm.py`
 - **Responsibility**: Accumulate per-round usage across the tool loop
-  (`_extract_usage`, `llm.py:497` already parses it per turn) and pass
+  (`_extract_usage`, `llm.py:497` already parses it per turn) **using
+  `CompletionUsage.__add__`** (`models/basic.py:273`) and pass
   `input_tokens`/`output_tokens` into `_safe_emit_after_call`
   (`llm.py:483`), which forwards them to `_emit_after_call`. Fixes
   Finding 4. **Standalone bug fix** — valuable even without the rest.
+  Also update the now-stale comment at `llm.py:198-200`.
 - **Depends on**: nothing.
+
+> **⚠ Deliberate override of FEAT-405 R4 — decided 2026-08-31.**
+> `novaclient-dev-loop.brainstorm.md:107-111` (R4) states the feature "must
+> NOT add a summing loop inside any dev-loop dispatcher", and `llm.py:198-200`
+> repeats it as "a summing loop here is forbidden". **This module overrides
+> that for the after-call event only.**
+>
+> *Why R4 exists*: FEAT-397 already accumulates rounds inside
+> `AbstractClient.ask()` via `CompletionUsage.__add__`, surfacing the total on
+> `AIMessage.total_usage()` (`models/responses.py:281`) and the round count at
+> `usage.extra_usage["rounds"]`. R4's intent is **"reuse that primitive, don't
+> hand-roll a sum."**
+>
+> *Why it cannot be honoured literally here*: `LLMCodeDispatcher` never calls
+> `ask()` — it drives `client._chat_completion(...)` in its own turn loop
+> (FEAT-405's own "Gap B"). FEAT-405 closed Gap B with per-round
+> `ClientRoundEvent`s, but those are emitted via `emit_nowait`
+> (`clients/base.py:582`) and are therefore **fire-and-forget**. Accounting
+> that must be complete at run close cannot depend on them (§2 Exactness).
+> The result is Finding 4: the one awaited event reports `None` tokens.
+>
+> *Resolution*: accumulate **with `CompletionUsage.__add__`**, the same
+> sanctioned primitive FEAT-397 uses — honouring R4's intent (reuse, don't
+> hand-roll) while departing from its letter. Rejected alternatives:
+> refactoring the loop onto `ask()` (large change to a hot file; the loop
+> drives `_chat_completion` precisely to control tool schemas and structured
+> output), and accepting fire-and-forget for this path (surrenders the
+> exactness the whole feature rests on).
+>
+> **M3 MUST update the `llm.py:198-200` comment** to point here. Leaving it
+> saying "forbidden" would send the next reader to the wrong conclusion.
 
 ### Module 4a: Extend `UsageRecord` + record failed calls
 - **Path**: `parrot/observability/recorders/models.py`,
@@ -913,5 +946,6 @@ git worktree add -b feat-479-devflow-telemetry-accounting \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-08-31 | Jesus Lara | Initial draft — findings 1–4 verified empirically against `dev`; two suspected gaps (direct `client.ask`, event drain) disproved by source reading and recorded as non-gaps. |
+| 0.4 | 2026-08-31 | Jesus Lara | M3 resolves a conflict with FEAT-405 R4 ("no summing loop inside any dev-loop dispatcher"). R4 cannot be honoured literally because `LLMCodeDispatcher` bypasses `ask()` (FEAT-405's own Gap B) and its per-round events are fire-and-forget, which accounting cannot depend on. Overridden for the after-call event only, accumulating via the sanctioned `CompletionUsage.__add__` primitive — R4's intent (reuse, don't hand-roll) preserved. M3 must also update the stale `llm.py:198-200` comment. |
 | 0.3 | 2026-08-31 | Jesus Lara | **Corrected a false premise.** v0.1-0.2 claimed no usage-recording subscriber existed (based on `ls observability/subscribers/`, having never checked `observability/recorders/`). `UsageRecordingSubscriber`, `UsageRecord`, `AbstractLogger` and three concrete sinks already exist and already consume `AfterClientCallEvent`. Withdrew the invented `RunUsageSubscriber`/`UsageRecord` (the latter a direct name collision); the per-run ledger is now a new `AbstractLogger` sink. M4 split into M4a (extend `UsageRecord` + record failed calls) and M4b (`RunLedgerRecorder`). |
 | 0.2 | 2026-08-31 | Jesus Lara | §8 Q1/Q2 resolved: ledger stays in-memory and per-run (partial runs must self-label, `RunUsageLedger.partial`); `RunUsageSubscriber` is per-run only, never global. Routed into §2, §3 M5, §4, §5, §6, §7. |
