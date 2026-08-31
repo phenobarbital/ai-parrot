@@ -831,9 +831,19 @@ class DevLoopRunner:
             # try/except rather than sharing the outer one's early exit).
             usage_markdown = ""
             try:
-                usage_report = build_usage_report(
-                    host.snapshot(), host.state.run_id, shared=shared
-                )
+                # FEAT-479 M7a: source from the run's usage ledger, not the
+                # session-state Snapshot. A missing ledger (e.g. a
+                # cross-process resume that lost the in-memory ledger — §8
+                # Q1) gets a fresh, explicitly-marked-partial one rather
+                # than silently reporting an empty total as complete.
+                ledger = self.get_run_ledger(host.state.run_id)
+                if ledger is None:
+                    ledger = RunLedgerRecorder(run_id=host.state.run_id)
+                    ledger.mark_partial(
+                        "no per-run usage ledger tracked at report-build "
+                        "time (e.g. a cross-process resume)"
+                    )
+                usage_report = build_usage_report(ledger, host.state.run_id)
                 usage_path.write_text(usage_report.model_dump_json(indent=2))
                 usage_html_path.write_text(render_usage_html(usage_report))
                 usage_markdown = render_usage_markdown(usage_report)
