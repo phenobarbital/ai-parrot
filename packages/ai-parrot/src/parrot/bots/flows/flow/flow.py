@@ -1338,14 +1338,16 @@ class AgentsFlow(PersistenceMixin):
         agent_registry: AgentRegistry,
         store: Optional[Union[str, CheckpointStore]] = None,
         durable_store: Optional[Union[str, CheckpointStore]] = None,
+        flow_factory: Optional[Callable[[FlowDefinition], "AgentsFlow"]] = None,
+        seed_context: Optional[FlowContext] = None,
     ) -> "AgentsFlow":
         """Reconstruct and resume a checkpointed flow (spec §3 Module 7).
 
         Loads the checkpoint (durable store first, ephemeral fallback),
         acquires the resume lease fail-fast, rebuilds the flow via
-        ``from_definition()``, and seeds a fresh ``FlowContext`` from the
-        checkpoint so completed nodes are never re-executed when the
-        returned flow's ``run_flow()`` is called.
+        ``from_definition()`` (or ``flow_factory``, see below), and seeds a
+        ``FlowContext`` from the checkpoint so completed nodes are never
+        re-executed when the returned flow's ``run_flow()`` is called.
 
         Args:
             flow_id: The flow run's identifier (checkpoint key).
@@ -1357,6 +1359,37 @@ class AgentsFlow(PersistenceMixin):
                 fallback).
             durable_store: Durable ``CheckpointStore`` name/instance/None.
                 Checked first when given; falls back to the ephemeral store.
+            flow_factory: Optional ``(definition) -> AgentsFlow`` that rebuilds
+                the graph instead of ``from_definition()``. **Required for any
+                flow whose routing depends on more than the node topology**,
+                for two reasons that compound:
+
+                * ``from_definition()`` reconstructs a custom node type through
+                  the generic fallback ``cls(node_id=…, dependencies=…,
+                  successors=…)``. For a node whose fields all have defaults
+                  that does not raise — it silently produces a node with every
+                  live dependency (agents, repositories, clients) set to
+                  ``None``. Passing ``node_factories`` would fix this half.
+                * A flow rebuilt from a definition has ``self._definition`` set,
+                  and ``run_flow()`` selects the explicit-edge scheduler with
+                  ``self._definition is None and bool(self._edges)``. So a
+                  resumed flow silently drops to AND-join semantics with no
+                  back-edge detection and **no predicate evaluation at all**,
+                  however the original was built. ``node_factories`` cannot fix
+                  this half.
+
+                Handing the caller its own builder back fixes both at once: it
+                already has a function that produces the graph exactly as it
+                was. ``None`` keeps the historical behaviour.
+            seed_context: Optional caller-created live ``FlowContext`` (e.g.
+                one already bound to a fresh ``SessionHost``, dispatcher, or
+                trace context for this process). When given, resume seeds
+                *this* context in place — via ``mark_completed()`` only, which
+                never touches ``shared_data``/``agent_registry``/
+                ``synthesis_client``/``trace_context`` — instead of building a
+                brand-new internal ``FlowContext``. The caller's live objects
+                are therefore never overwritten by checkpoint data. ``None``
+                keeps the historical behaviour of seeding a fresh context.
 
         Returns:
             A configured ``AgentsFlow`` instance ready for ``run_flow()``
@@ -1368,6 +1401,8 @@ class AgentsFlow(PersistenceMixin):
                 (missing or TTL-expired).
             FlowLockedError: If another holder already holds the resume
                 lease for ``flow_id``.
+            ValueError: If ``flow_factory`` returns a graph missing a node the
+                checkpoint recorded as completed.
         """
         ephemeral_store = get_checkpoint_store(store)
         durable: Optional[CheckpointStore] = get_checkpoint_store(durable_store) if durable_store is not None else None
@@ -1416,23 +1451,35 @@ class AgentsFlow(PersistenceMixin):
         holder = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         await checkpointer.acquire_lease(holder)
 
-        flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+        if flow_factory is not None:
+            flow = flow_factory(checkpoint.definition)
+        else:
+            flow = cls.from_definition(checkpoint.definition, agent_registry=agent_registry)
+
+        # A factory is free to return any graph; if it returns one that does
+        # not contain a node the checkpoint says finished, the seeding below
+        # would mark a node that does not exist and the run would restart
+        # from the wrong frontier — silently, and looking like a successful
+        # resume. Both shapes count as "known": a programmatic flow holds its
+        # nodes in ``_nodes``, while a definition-bound one materializes them
+        # per run and knows them only through the definition.
+        known_ids = set(flow._nodes)
+        if flow._definition is not None:
+            known_ids |= {node_def.id for node_def in (flow._definition.nodes or ())}
+        missing = [node_id for node_id in checkpoint.context.completion_order if node_id not in known_ids]
+        if missing:
+            raise ValueError(
+                f"Cannot resume flow_id={flow_id!r}: the rebuilt graph is "
+                f"missing node(s) recorded as completed: {sorted(missing)}. "
+                "The flow_factory must produce the same node ids as the "
+                "checkpointed run."
+            )
+
         flow.flow_id = flow_id
         flow._checkpoint_enabled = True
         flow._checkpointer = checkpointer
         flow._resume_starting_checkpoint_id = checkpoint.checkpoint_id
         flow._checkpoint_memory_refs = checkpoint.memory_refs
-
-        # Seed a fresh FlowContext from the checkpoint (spec §2 step 4):
-        # decode results (+responses when present) via the serializer, then
-        # mark_completed() each node in completion_order — never re-execute
-        # completed nodes. agent_registry/synthesis_client/trace_context are
-        # re-bound here, not restored from the checkpoint (spec §7).
-        seed_ctx = FlowContext(
-            initial_task=checkpoint.context.initial_task,
-            agent_registry=agent_registry,
-        )
-        seed_ctx.shared_data.update(checkpoint.context.shared_data)
 
         decoded_results = {
             node_id: serializer.from_safe(value) for node_id, value in checkpoint.context.results.items()
@@ -1442,12 +1489,37 @@ class AgentsFlow(PersistenceMixin):
             if checkpoint.context.responses is not None
             else {}
         )
-        for node_id in checkpoint.context.completion_order:
-            seed_ctx.mark_completed(
-                node_id,
-                result=decoded_results.get(node_id),
-                response=decoded_responses.get(node_id),
+
+        if seed_context is not None:
+            # Seed the caller's own live context in place (spec §2 step 4):
+            # mark_completed() only touches completed_tasks/completion_order/
+            # active_tasks/results/responses/node_metadata — never
+            # shared_data/agent_registry/synthesis_client/trace_context — so
+            # whatever live objects the caller already wired onto this
+            # context (a fresh SessionHost, dispatchers, toolkits, ...) are
+            # never overwritten by checkpoint data.
+            seed_ctx = seed_context
+            for node_id in checkpoint.context.completion_order:
+                seed_ctx.mark_completed(
+                    node_id,
+                    result=decoded_results.get(node_id),
+                    response=decoded_responses.get(node_id),
+                )
+        else:
+            # Historical behaviour: seed a fresh FlowContext from the
+            # checkpoint. agent_registry/synthesis_client/trace_context are
+            # re-bound here, not restored from the checkpoint (spec §7).
+            seed_ctx = FlowContext(
+                initial_task=checkpoint.context.initial_task,
+                agent_registry=agent_registry,
             )
+            seed_ctx.shared_data.update(checkpoint.context.shared_data)
+            for node_id in checkpoint.context.completion_order:
+                seed_ctx.mark_completed(
+                    node_id,
+                    result=decoded_results.get(node_id),
+                    response=decoded_responses.get(node_id),
+                )
 
         flow._resume_seed_context = seed_ctx
         return flow

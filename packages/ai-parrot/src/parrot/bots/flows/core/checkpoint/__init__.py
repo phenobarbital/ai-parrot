@@ -17,7 +17,7 @@ from .model import (
     NodeStateSnapshot,
 )
 from .recovery import FlowRecoveryService, get_recovery_service
-from .serializer import FlowStateSerializer
+from .serializer import FlowStateSerializer, register_checkpoint_type
 from .store import (
     CheckpointStore,
     DurableCheckpointStore,
@@ -41,4 +41,5 @@ __all__ = [
     "RedisCheckpointStore",
     "get_checkpoint_store",
     "get_recovery_service",
+    "register_checkpoint_type",
 ]
