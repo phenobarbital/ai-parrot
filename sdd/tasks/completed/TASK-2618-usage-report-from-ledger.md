@@ -287,12 +287,102 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.5)
+**Date**: 2026-08-31
+**Notes**: Reshaped `usage_report.py` to node → cycle → worker: added
+`CycleUsage` (one retained ledger record: `cycle`, `model`, tokens,
+`duration_seconds`, `status`, `error_type`), reshaped `AgentUsage` to add
+`cycles: list[CycleUsage]` and `failures: int`, and added `partial`/
+`partial_reason` to `UsageReport` (§8 Q1). Deleted
+`_single_worker_summary_for_node` entirely (its only caller was the old
+`build_usage_report`, also rewritten) — `grep -rn
+_single_worker_summary_for_node` across `packages/ai-parrot/` now returns
+nothing. Rewrote `build_usage_report(ledger: RunLedgerRecorder, run_id: str)
+-> UsageReport`: iterates `ledger.by_seat()` through a new `_ordered_seats()`
+helper (stable order — groups by `node_id` in first-appearance order, bare
+node before its pool workers, workers sorted by seat name), maps each
+`SeatUsage` to an `AgentUsage` (`backend` sourced from `SeatUsage.provider`
+— see cache-token note below for why not `client_name`) and each of its
+retained `UsageRecord` cycles to a `CycleUsage` (tokens null'd out when
+`usage_reported=False`, never coerced), and reads `ledger.partial`/
+`.partial_reason` straight onto the report. Totals still use the existing
+`_sum_optional_int` (`run_bundle.py`); added a `duration_seconds` sum via
+the existing `_sum_optional_float` (also `run_bundle.py`, already existed —
+not newly added). `render_usage_markdown`/`render_usage_html` both gained a
+visible "⚠️ Partial usage report" banner when `report.partial` (§8 Q1's
+"never present a short total as complete"); the column set (Seat/Node/
+Backend/Model/Rounds/Tokens/Duration) is otherwise unchanged, satisfying
+"keep renderers importable and passing, even if temporarily rendering the
+totals row only" without actually needing to fall back to a totals-only
+render — TASK-2619's Failures section is additive on top of this.
+`_persist_run_bundle`'s call site now does `ledger = self.get_run_ledger
+(host.state.run_id)`; when `None` (cross-process resume, §8 Q1), constructs
+a fresh `RunLedgerRecorder` and calls `mark_partial(...)` on it before
+passing it to `build_usage_report` — this task's own "missing ledger"
+handling lives at the call site, not inside `build_usage_report` itself
+(kept pure, per the Key Constraints). Verified the ledger is still present
+at this point because `_discard_run_registry` (TASK-2616) runs strictly
+*after* `_close_host`/`_persist_run_bundle` returns in all three of
+`run()`/`_run_feature()`/`run_revision()`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Rewrote `test_usage_report.py` fully onto ledger-based fixtures: kept
+`TestRendering`/`TestSerialization` unchanged (they exercise `UsageReport`/
+renderers directly, not the builder); rewrote `TestBuild` onto a new
+`ledger_with_two_agents` async fixture plus the task's own 6-test Test
+Specification verbatim (`test_report_sums_cycles_per_seat`,
+`test_report_includes_pool_workers`, `test_report_never_fabricates_zero`,
+`test_empty_ledger_yields_valid_report`, `test_partial_flag_propagates`,
+`test_single_worker_summary_helper_is_gone`), plus one extra
+(`test_failed_cycle_retained_and_counted`); **deleted**
+`test_single_worker_summary_supplies_model`,
+`test_ambiguous_multi_worker_leaves_model_blank`, and
+`test_no_shared_leaves_model_blank` — all three tested the now-deleted
+pool-size-1 heuristic directly, and are obsolete by design (the model
+arrives as real per-seat data now, not a guess); `TestBundleIntegration`
+kept its own `Snapshot` fixture (unrelated to usage_report — it exercises
+`build_run_bundle`) but now builds the usage half from
+`ledger_with_two_agents`. All 20 tests pass.
 
-**Cache-token columns**: dropped | sourced from session state — *(rationale)*
+**Deviation not in the task's declared scope**: `test_nova_integration.py`
+(`TestUsageArtifacts::test_usage_report_written_at_run_end`) called
+`build_usage_report(snapshot, run_id=...)` with the OLD signature and broke
+immediately (`AttributeError: 'Snapshot' object has no attribute
+'by_seat'`) — a direct, unavoidable consequence of this task's required
+signature change, not a pre-existing issue. Rewrote its `_completed_snapshot`
+usage into an async `_completed_ledger()` helper feeding
+`build_usage_report`, and kept a slimmed-down `_completed_snapshot()` (now
+just `RunCreated`/`NodeStarted`/`NodeCompleted`/`RunClosed`, no `Dispatch*`
+actions — `DevLoopSessionState.nodes` verified empty-by-default, so a bare
+lifecycle sequence is enough) purely to keep the test's OWN separate
+`build_run_bundle(...)` sanity assertion (`bundle.nodes` truthy, unrelated
+to usage_report) working. Removed the now-unused `DispatchCompleted`/
+`DispatchQueued`/`DispatchStarted` imports. All 7 tests in that file pass.
+Per CLAUDE.md/WORKFLOW.md "run pytest after any logic change — no
+exceptions" and this feature's own precedent (TASK-2614's `test_bootstrap.py`
+fix), documented here rather than silently expanding the task's file list.
 
-**Deviations from spec**: none | describe if any
+**Cache-token columns**: **dropped** (option 1, the task's stated
+preference). `UsageRecord` (the ledger's per-cycle unit) does not carry
+`cache_creation_input_tokens`/`cache_read_input_tokens` at all
+(`recorders/models.py`) — only `DispatchState` did, and that plane is
+explicitly out of scope for this feature (session state stays the
+live-UI-only projection). Neither `AgentUsage` nor `CycleUsage` carries
+these fields; `render_usage_markdown`/`render_usage_html`'s column sets are
+unchanged (they never rendered these columns as their own — they were
+folded into the combined "Tokens" cell's underlying `input_tokens`/
+`output_tokens` only, per the pre-existing `_fmt_agent_tokens`/
+`_fmt_agent_tokens_html` helpers, both untouched). No renderer change was
+needed to honor this decision — it falls out naturally from `CycleUsage`
+simply not having the fields to render.
+
+**Deviations from spec**: `AgentUsage.backend` is sourced from
+`SeatUsage.provider` (`recorders/run_ledger.py`'s roll-up), not from a raw
+`client_name`-equivalent — `SeatUsage` (a file NOT in this task's declared
+scope) does not expose `client_name`, only the normalized `provider` (the
+`gen_ai.system` value, e.g. `"anthropic"`/`"openai"`, resolved via
+`resolve_gen_ai_system`). This is a slightly different identifier than the
+pre-FEAT-479 report's `backend` (which came from `DispatchState.dispatcher`,
+e.g. `"claude-code"`/`"nova"` — the dispatcher class name). Both answer
+"which backend served this seat," just at a different normalization layer;
+widening `SeatUsage` to also carry `client_name` would require touching
+`recorders/run_ledger.py`, outside this task's file list.

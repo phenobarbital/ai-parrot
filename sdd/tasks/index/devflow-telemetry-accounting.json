@@ -149,7 +149,7 @@
       "feature_id": "FEAT-479",
       "feature": "devflow-telemetry-accounting",
       "spec": "sdd/specs/devflow-telemetry-accounting.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,8 +159,8 @@
       "parallelism_notes": "Depends only on the ledger model, and touches usage_report.py — no file overlap with TASK-2616/2617, so it can run in parallel with them once TASK-2615 lands.",
       "assigned_to": null,
       "started_at": "2026-08-31T15:40:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2618-usage-report-from-ledger.md"
+      "completed_at": "2026-08-31T16:41:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2618-usage-report-from-ledger.md"
     },
     {
       "id": "TASK-2619",
