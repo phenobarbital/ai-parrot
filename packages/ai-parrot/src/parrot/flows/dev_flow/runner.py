@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Callable
 from typing import Any, Literal
 
+from parrot.bots.flows import AgentsFlow
 from parrot.bots.flows.core.context import FlowContext
 
 # Same module the base runner imports FlowResult from (runner.py:36).
 from parrot.bots.flows.core.result import FlowResult
+from parrot.flows.dev_flow.flow import build_dev_flow
 from parrot.flows.dev_flow.models import DevRequestBrief
 from parrot.flows.dev_loop.models import FeatureBrief
 from parrot.flows.dev_loop.runner import DevLoopRunner
@@ -92,6 +95,11 @@ class DevFlowRunner(DevLoopRunner):
         """
         summary = self._summary_for(brief)
         rid = run_id or f"run-{uuid.uuid4().hex[:8]}"
+        # FEAT-480 spec §8 OQ1 / §3 Module 5: same recovery gate as the base
+        # class's run() (TASK-2626) — a caller-supplied stable run_id with
+        # dev_loop_flow_kwargs configured is the recovery identity; an
+        # auto-generated one never reaches the coordinator at all.
+        recovery_enabled = run_id is not None and self._dev_loop_flow_kwargs is not None
 
         # AHP-style host: created + registered BEFORE the flow runs and seeded
         # into shared state, so nodes resolve it per-run (IdeationNode reads
@@ -129,6 +137,24 @@ class DevFlowRunner(DevLoopRunner):
             shared_data=shared,
         )
 
+        flow = self.flow
+        if recovery_enabled:
+            flow, mode = await self._checkpoint_coordinator.prepare(
+                workflow="dev-flow",
+                run_id=rid,
+                brief=brief,
+                live_context=ctx,
+                flow_factory=self._dev_loop_flow_factory(),
+                execution_policy=self._execution_policy_for_fingerprint(),
+            )
+            # spec §5: recovered runs must be distinguishable in session
+            # timeline events — same structured-logging approach as the
+            # base class's run() (TASK-2626).
+            self.logger.info(
+                "Dev-flow run %s: %s execution (checkpoint recovery enabled)",
+                rid, mode,
+            )
+
         # Same manual acquire/park-aware structure as the base class's run()
         # (FEAT-377 TASK-1917 / G6), and mandatory here: an ideation
         # open_questions gate can park the run for hours, releasing the slot
@@ -142,7 +168,7 @@ class DevFlowRunner(DevLoopRunner):
         await self._semaphore.acquire()
         self._active.add(rid)
         # Point the flow's event publisher at this run's stream.
-        holder = getattr(self.flow, "_run_id_holder", None)
+        holder = getattr(flow, "_run_id_holder", None)
         if isinstance(holder, dict):
             holder["run_id"] = rid
         self.logger.info(
@@ -151,7 +177,7 @@ class DevFlowRunner(DevLoopRunner):
             len(self._active), self.max_concurrent_runs,
         )
         try:
-            result = await self.flow.run_flow(ctx)
+            result = await flow.run_flow(ctx)
         except BaseException as exc:
             # Propagate to any resume_run() awaiter too — a future that never
             # resolves would hang them forever. Popped here (not in `finally`)
@@ -233,6 +259,68 @@ class DevFlowRunner(DevLoopRunner):
         if isinstance(brief, DevRequestBrief):
             return brief.kind
         return "bug"
+
+    # ------------------------------------------------------------------
+    # FEAT-480 — checkpoint recovery: dev-flow-specific factory/policy
+    # ------------------------------------------------------------------
+    #
+    # The base class's DevLoopRunner._dev_loop_flow_factory()/
+    # _execution_policy_for_fingerprint() (TASK-2626) are hardcoded to
+    # `build_dev_loop_flow` and its kwarg shape — overridden here to call
+    # `build_dev_flow` instead, reusing the SAME inherited
+    # `self._dev_loop_flow_kwargs`/`self._checkpoint_store` state (the
+    # attribute name stays generic across both workflows; only the
+    # factory function it is applied to differs).
+
+    def _dev_loop_flow_factory(self) -> Callable[[Any], AgentsFlow]:
+        """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
+
+        See ``DevLoopRunner._dev_loop_flow_factory()`` for the full
+        rationale — identical here except it calls ``build_dev_flow``.
+
+        Returns:
+            A ``(definition) -> AgentsFlow`` callable.
+
+        Raises:
+            ValueError: If ``dev_loop_flow_kwargs`` was never supplied to
+                ``__init__``.
+        """
+        if self._dev_loop_flow_kwargs is None:
+            raise ValueError(
+                "DevCheckpointCoordinator recovery requires dev_loop_flow_kwargs "
+                "to have been passed to DevFlowRunner.__init__()."
+            )
+        kwargs = dict(self._dev_loop_flow_kwargs)
+
+        def _factory(_definition: Any) -> AgentsFlow:
+            return build_dev_flow(
+                **kwargs,
+                checkpoint=True,
+                checkpoint_required=True,
+                checkpoint_store=self._checkpoint_store,
+            )
+
+        return _factory
+
+    def _execution_policy_for_fingerprint(self) -> dict[str, Any]:
+        """Routing-relevant policy dict for the checkpoint input fingerprint.
+
+        See ``DevLoopRunner._execution_policy_for_fingerprint()`` for the
+        full rationale — identical here except derived from
+        ``build_dev_flow``'s kwarg shape (no ``development_pool_config``/
+        ``repos`` — dev-flow's builder does not accept either).
+
+        Returns:
+            The policy dict passed to ``DevCheckpointCoordinator.prepare(
+            execution_policy=...)``.
+        """
+        kwargs = self._dev_loop_flow_kwargs or {}
+        return {
+            "skip_qa": kwargs.get("skip_qa", False),
+            "require_plan_approval": kwargs.get("require_plan_approval", False),
+            "development_pool_max": kwargs.get("development_pool_max", 4),
+            "ideation_max_rounds": kwargs.get("ideation_max_rounds"),
+        }
 
 
 __all__ = ["DevFlowRunner"]

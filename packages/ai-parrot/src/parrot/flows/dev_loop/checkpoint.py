@@ -100,22 +100,45 @@ TOPOLOGY_VERSION = "1"
 #: persisted by the checkpoint_shared_data projector or restored on resume
 #: (spec §3 Module 3 scope bullet). Anything else in live shared_data (a
 #: SessionHost, dispatchers, toolkits, trace context) never reaches the
-#: store and is never restored from it.
+#: store and is never restored from it. Shared by BOTH workflows this
+#: coordinator serves (spec §3 Module 5: "reuse DevCheckpointCoordinator
+#: with workflow='dev-flow'; do not fork it") — dev-loop only ever
+#: populates the first five keys, dev-flow only the last three
+#: (``dev_brief``/``feature_brief``/``ideation_output``), plus the shared
+#: ``planner_output``/``research_output`` (the derived bridge PlannerNode
+#: projects, spec §3 Module 5) and ``development_output`` bridge.
 _SHARED_DATA_ALLOWLIST: tuple[str, ...] = (
     "bug_brief",
     "bug_findings",
     "research_output",
     "planner_output",
     "development_output",
+    "dev_brief",
+    "feature_brief",
+    "ideation_output",
 )
 
 #: Registered result types whose values, when found in a resumed node's
 #: results, get projected onto their corresponding shared_data key.
+#: ``IdeationOutput`` is added lazily by ``_result_key_by_type()`` below
+#: (NOT a module-level import: `parrot.flows.dev_flow.models` imports
+#: `dev_loop.models`, which triggers EAGER execution of `dev_loop/
+#: __init__.py` -> ... -> this module — a module-level import here would
+#: be a genuine import cycle, not just a style preference).
 _RESULT_KEY_BY_TYPE: dict[type, str] = {
     ResearchOutput: "research_output",
     PlannerOutput: "planner_output",
     DevelopmentOutput: "development_output",
 }
+
+
+def _result_key_by_type() -> dict[type, str]:
+    """``_RESULT_KEY_BY_TYPE`` plus the dev-flow-only entry, resolved lazily."""
+    from parrot.flows.dev_flow.models import (
+        IdeationOutput,
+    )
+
+    return {**_RESULT_KEY_BY_TYPE, IdeationOutput: "ideation_output"}
 
 
 class RecoveredArtifactError(RuntimeError):
@@ -397,7 +420,7 @@ class DevCheckpointCoordinator:
                 with typed per-node results.
         """
         for result in live_context.results.values():
-            for model_cls, key in _RESULT_KEY_BY_TYPE.items():
+            for model_cls, key in _result_key_by_type().items():
                 if isinstance(result, model_cls) and key not in live_context.shared_data:
                     live_context.shared_data[key] = result
 
