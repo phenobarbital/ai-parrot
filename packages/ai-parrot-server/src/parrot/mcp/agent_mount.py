@@ -9,8 +9,11 @@ its own ``tool_manager`` tools, minus internal plumbing.
 Optionally publishes an aggregate ``/mcp`` endpoint (spec §2 Overview #2)
 exposing every agent's tools as ``{agent}__{tool}``. Both name forms resolve
 to the same canonical PBAC resource, ``mcp:agent:{name}:tool:{tool}`` — the
-aggregate is naming sugar, never its own authorization path (OQ2-adjacent
-invariant; PBAC enforcement itself is TASK-2604/2605's job).
+aggregate is naming sugar, never its own authorization path. This is
+enforced, not just documented: ``_AggregateMCPServer`` runs through the
+same ``_guard()``/``PBACGuard`` gate as every per-agent
+``_AgentBoundMCPServer`` (see "Identity + PBAC wiring" below) — an
+aggregate name never bypasses the per-agent decision.
 
 **OQ5 — agent reload.** Agents are held **by name only** and resolved through
 ``BotManager.get_bots()`` on every ``tools/list``/``tools/call``. When
@@ -51,6 +54,7 @@ from parrot.mcp.principal_guard import (
     PBACGuard,
     PBACResolver,
     resolve_principal,
+    resource_from_aggregate,
 )
 from parrot.mcp.server_base import MCPServerBase as _CoreMCPServerBase
 from parrot.mcp.transports.streamable_http import StreamableHttpMCPServer
@@ -194,6 +198,17 @@ class _AggregateMCPServer(StreamableHttpMCPServer):
     Rebuilds its full tool set (across all configured agents) before every
     dispatch — the multi-agent analogue of `_AgentBoundMCPServer`'s OQ5
     rebuild, since the aggregate has no single owning agent to diff against.
+
+    **Security note (post-review fix):** the aggregate is documented as
+    "naming sugar, never its own authorization path" — that promise only
+    holds if this server enforces identity/PBAC exactly like a per-agent
+    `_AgentBoundMCPServer` does. It now does: `_guard()` resolves the
+    caller and publishes `_pctx_var` the same way, and `tools_list`/
+    `tools_call` route through a `PBACGuard` whose `resource_resolver` is
+    `resource_from_aggregate` — so an aggregate name `{agent}__{tool}`
+    re-verifies against the *same* canonical resource
+    (`mcp:agent:{agent}:tool:{tool}`) the equivalent per-agent call would,
+    never a separate, unguarded access path.
     """
 
     def __init__(
@@ -204,14 +219,47 @@ class _AggregateMCPServer(StreamableHttpMCPServer):
     ) -> None:
         super().__init__(config, parent_app=parent_app)
         self._mount = mount
+        self._pbac_guard = PBACGuard(
+            _AGGREGATE_KEY,
+            _CoreDispatchProxy(self),
+            resolver=mount._pbac_resolver,
+            audit_sink=mount._audit_sink,
+            mount_config=mount._config,
+            resource_resolver=resource_from_aggregate,
+        )
+
+    async def _guard(self, request: web.Request) -> web.Response | None:
+        """Auth (inherited) + principal resolution, published on `_pctx_var`.
+
+        See `_AgentBoundMCPServer._guard` — identical mechanism, applied
+        to the aggregate so it is never an unguarded bypass of the
+        per-agent mounts' identity/PBAC enforcement.
+        """
+        error = await super()._guard(request)
+        if error:
+            return error
+        resolved = await resolve_principal(request, self._mount._config, audit_hook=self._mount._audit_sink)
+        if isinstance(resolved, web.Response):
+            return resolved
+        _pctx_var.set(resolved)
+        return None
 
     async def handle_tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
         self._mount._rebuild_aggregate(self)
-        return await super().handle_tools_list(params)
+        pctx = _pctx_var.get()
+        if pctx is None:
+            return {"tools": []}
+        return await self._pbac_guard.tools_list(params, pctx)
 
     async def handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         self._mount._rebuild_aggregate(self)
-        return await super().handle_tools_call(params)
+        pctx = _pctx_var.get()
+        if pctx is None:
+            return {
+                "content": [{"type": "text", "text": "No authenticated principal for this call"}],
+                "isError": True,
+            }
+        return await self._pbac_guard.tools_call(params, pctx)
 
 
 class AgentMCPMount:
@@ -323,10 +371,7 @@ class AgentMCPMount:
 
         if self._config.aggregate_enabled:
             self._reject_if_path_claimed(app, _AGGREGATE_BASE_PATH)
-            agg_config = MCPServerConfig(
-                name="agent-mcp-mount-aggregate",
-                base_path=_AGGREGATE_BASE_PATH,
-            )
+            agg_config = self._build_server_config("aggregate", _AGGREGATE_BASE_PATH)
             aggregate = _AggregateMCPServer(agg_config, mount=self, parent_app=app)
             self._rebuild_aggregate(aggregate)
             aggregate._register_routes(app.router, _AGGREGATE_BASE_PATH)
@@ -362,6 +407,57 @@ class AgentMCPMount:
             self._last_agent_id[name] = id(agent)
         return agent
 
+    def _effective_policy_filter(self) -> ToolPolicyFilter | None:
+        """Resolve the tool-catalog resource's filter (post-review fix).
+
+        An explicit `policy_filter` always wins. Otherwise, when a real
+        `pbac_resolver` is configured, derive one from it via
+        `_policy_filter_from_pbac` so the tool-catalog resource is
+        filtered by the *same* PBAC decision `tools/list` uses — without
+        this, following the docs' own "Minimal mount" example (which
+        wires `pbac_resolver` but never mentions `policy_filter`) left the
+        catalog listing every tool to every authenticated principal
+        regardless of PBAC scope, contradicting its own advertised
+        description ("Policy-filtered tool catalog...", `agent_resources
+        .py`). `None` only when neither is configured — matches
+        `register_agent_resources`'s own documented "everything visible"
+        stub behavior.
+
+        Returns:
+            The filter to pass to `register_agent_resources`.
+        """
+        if self._policy_filter is not None:
+            return self._policy_filter
+        if self._pbac_resolver is not None:
+            return self._policy_filter_from_pbac
+        return None
+
+    async def _policy_filter_from_pbac(self, agent_name: str, tool_name: str) -> bool:
+        """Bridge the tool-catalog resource's `(agent_name, tool_name) ->
+        bool` filter to the real `pbac_resolver`.
+
+        Resource reads (`resources/read`) happen within the same guarded
+        request cycle as `tools/list`/`tools/call` — `_guard()` already
+        published the caller's `PermissionContext` on `_pctx_var` before
+        any handler runs. Deny-by-default when it is somehow unset.
+
+        Args:
+            agent_name: Configured agent name.
+            tool_name: Candidate tool name.
+
+        Returns:
+            Whether the calling principal (from `_pctx_var`) may see
+            `tool_name` per `pbac_resolver`.
+        """
+        pctx = _pctx_var.get()
+        if pctx is None or self._pbac_resolver is None:
+            return False
+        resource = self.canonical_resource(agent_name, tool_name)
+        result = self._pbac_resolver(pctx, resource, set())
+        if hasattr(result, "__await__"):
+            return bool(await result)
+        return bool(result)
+
     def _register_agent_tools(self, server: StreamableHttpMCPServer, name: str, agent: Any = None) -> None:
         """(Re)register `name`'s exposure set plus its own tools onto `server`.
 
@@ -393,7 +489,7 @@ class AgentMCPMount:
             name,
             agent,
             exposure_names=[tool.name for tool in exposure_set],
-            policy_filter=self._policy_filter,
+            policy_filter=self._effective_policy_filter(),
         )
 
     def _rebuild_aggregate(self, server: StreamableHttpMCPServer) -> None:

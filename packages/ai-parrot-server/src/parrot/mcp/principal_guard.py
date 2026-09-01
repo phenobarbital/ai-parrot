@@ -411,6 +411,14 @@ class PBACGuard:
             `call_deadline_seconds` (spec §3 Module 3, goals G7/G8 —
             TASK-2606). `None` falls back to `result_policy`'s own
             defaults (`DEFAULT_MAX_RESULT_TOKENS`, 240s).
+        resource_resolver: Optional `(tool_name) -> str` overriding how a
+            tool name is turned into a canonical PBAC resource. Defaults
+            to `resource_for(agent_name, tool_name)` — the single-agent
+            shape. Pass `resource_from_aggregate` (or an equivalent) for a
+            guard wrapping an *aggregate* server, whose tool names already
+            carry the owning agent as a `{agent}__{tool}` prefix; without
+            this override an aggregate guard would double-prefix its own
+            `agent_name` and never resolve to the real per-agent resource.
     """
 
     #: Fallback deadline when `mount_config` carries none — matches
@@ -424,15 +432,24 @@ class PBACGuard:
         resolver: PBACResolver | None = None,
         audit_sink: AuditSink | None = None,
         mount_config: Any = None,
+        resource_resolver: "Callable[[str], str] | None" = None,
     ) -> None:
         self._agent_name = agent_name
         self._server = server
         self._resolver = resolver
         self._audit_sink = audit_sink
         self._mount_config = mount_config
+        self._resource_resolver = resource_resolver
 
     def resource_for(self, tool_name: str) -> str:
-        """See module-level `resource_for` — bound to this guard's agent."""
+        """Build the canonical PBAC resource for `tool_name`.
+
+        Uses `resource_resolver` when this guard was built with one
+        (e.g. an aggregate guard's `resource_from_aggregate`); otherwise
+        the module-level `resource_for`, bound to this guard's agent.
+        """
+        if self._resource_resolver is not None:
+            return self._resource_resolver(tool_name)
         return resource_for(self._agent_name, tool_name)
 
     def resource_from_aggregate(self, aggregate_name: str) -> str:

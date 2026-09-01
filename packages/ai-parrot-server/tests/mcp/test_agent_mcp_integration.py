@@ -7,6 +7,8 @@ merge time. The OAuth path is tested with the introspection and PRM legs
 is a post-release gate, not a merge blocker.
 """
 
+import json
+
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from parrot.a2a.server import A2AServer
@@ -306,3 +308,106 @@ class TestAgentMCPIntegration:
         a2a_server = A2AServer(agent)
         card = a2a_server.get_agent_card()
         assert "forecast" in [s.id for s in card.skills]
+
+    async def test_aggregate_endpoint_requires_auth_and_pbac(self):
+        """Post-review fix: the aggregate `/mcp` endpoint is never a bypass
+        of the per-agent identity/PBAC gate — "naming sugar, never its own
+        authorization path" must be enforced, not just documented.
+        """
+        api_key_store = APIKeyStore()
+        record = api_key_store.issue_key(user_id="dev-user")
+        auth_template = MCPServerConfig(
+            auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
+        )
+
+        async def deny_restricted(pctx, resource: str, required_permissions) -> bool:
+            return "restricted" not in resource
+
+        bot_manager = _FakeBotManager({"finance": _FinanceAgent()})
+        cfg = AgentMCPMountConfig(
+            agents=["finance"],
+            resource_server_url="https://h/mcp/agents/finance",
+            default_tenant_id="acme",
+            aggregate_enabled=True,
+        )
+        mount = AgentMCPMount(
+            bot_manager, cfg, pbac_resolver=deny_restricted, auth_template=auth_template
+        )
+        app = web.Application()
+        mount.setup(app)
+
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            # No credentials at all -> the aggregate must reject, exactly
+            # like a per-agent mount would.
+            r = await client.post("/mcp", json=_INIT_REQ)
+            assert r.status == 401
+
+            headers = {"X-API-Key": record.key}
+            r = await client.post("/mcp", json=_INIT_REQ, headers=headers)
+            assert r.status == 200
+
+            listed = await (
+                await client.post("/mcp", json=_LIST_REQ, headers=headers)
+            ).json()
+            assert "finance__forecast" in [t["name"] for t in listed["result"]["tools"]]
+
+            called = await (
+                await client.post(
+                    "/mcp",
+                    json=_call_req("finance__forecast", {"q": "x"}),
+                    headers=headers,
+                )
+            ).json()
+            assert called["result"]["isError"] is False
+        finally:
+            await client.close()
+
+    async def test_tool_catalog_resource_is_pbac_filtered_by_default(self):
+        """Post-review fix: following the docs' own "Minimal mount" example
+        exactly — `pbac_resolver` wired, `policy_filter` never mentioned —
+        must still filter the tool-catalog resource by the same PBAC
+        decision `tools/list` uses. Before the fix, `policy_filter`
+        silently stayed `None` and the catalog listed every tool to every
+        authenticated principal regardless of PBAC scope.
+        """
+        api_key_store = APIKeyStore()
+        record = api_key_store.issue_key(user_id="dev-user")
+        auth_template = MCPServerConfig(
+            auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
+        )
+
+        async def deny_forecast(pctx, resource: str, required_permissions) -> bool:
+            return "forecast" not in resource
+
+        bot_manager = _FakeBotManager({"finance": _FinanceAgent()})
+        cfg = AgentMCPMountConfig(
+            agents=["finance"],
+            resource_server_url="https://h/mcp/agents/finance",
+            default_tenant_id="acme",
+        )
+        # No `policy_filter=` here — exactly the docs' worked example.
+        mount = AgentMCPMount(
+            bot_manager, cfg, pbac_resolver=deny_forecast, auth_template=auth_template
+        )
+        app = web.Application()
+        mount.setup(app)
+
+        client = TestClient(TestServer(app))
+        await client.start_server()
+        try:
+            headers = {"X-API-Key": record.key}
+            read_req = {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "resources/read",
+                "params": {"uri": "agent://finance/tools"},
+            }
+            resp = await (
+                await client.post("/mcp/agents/finance", json=read_req, headers=headers)
+            ).json()
+            catalog = json.loads(resp["result"]["contents"][0]["text"])
+            assert "forecast" not in catalog["tools"]
+        finally:
+            await client.close()

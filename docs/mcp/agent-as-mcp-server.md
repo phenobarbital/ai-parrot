@@ -183,7 +183,11 @@ is never trusted as an authorization record, since policy may have changed
 between the two calls. Every `tools/call` is audited (principal, agent,
 tool, a hash of the arguments — never the raw values — decision, duration)
 via `audit_sink`. With no `pbac_resolver` configured, every call is denied
-by default.
+by default. The `agent://{name}/tools` resource (the browsable tool
+catalog, distinct from `tools/list` itself) is filtered by that same
+`pbac_resolver` automatically — you do not need to configure anything
+extra for it; pass an explicit `policy_filter` to the mount only if you
+want the catalog's visibility rule to differ from `tools/list`'s.
 
 ### Result size and deadlines
 
