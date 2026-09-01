@@ -164,7 +164,17 @@ Two paths are supported end to end:
   share the same `auth_template`. A 401 always carries a `resource_metadata`
   challenge parameter (RFC 9728) so the client can discover the
   authorization server; `GET /.well-known/oauth-protected-resource` serves
-  that document directly.
+  that document directly. **Audience scoping does not distinguish between
+  agents listed in the same mount's `agents` list** — they share one
+  `resource_server_url`, so a token valid for that mount is audience-valid
+  for every agent in it. Isolating agents mounted together therefore
+  depends entirely on `pbac_resolver` scoping
+  `mcp:agent:{name}:tool:{tool}` correctly per agent (this is intentional:
+  OQ6 already establishes PBAC as the *only* place per-agent authorization
+  exists, not defense-in-depth against a misconfigured resolver). Mount
+  agents that must be strictly isolated from each other under separate
+  `AgentMCPMount`/`resource_server_url` configurations if you want audience
+  checking itself to be the isolation boundary between them.
 
 Both paths converge on the same `PermissionContext` shape, published on the
 same contextvar every other PBAC-aware component in the codebase already
