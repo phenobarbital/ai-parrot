@@ -629,21 +629,23 @@ Two behaviours worth knowing:
   break every run. `kimi-k3` is reachable via the `moonshot` backend, not
   via NIM.
 
-> **Two limitations, stated plainly.**
-> 1. `model_plan` is a **build-time** input for the ideation and review
->    seats — those are baked into node constructors, and this console
->    builds one flow at startup. **The development pool is the exception:
->    it is per-run.** The console's `dev_agents` rows also travel on the
->    brief, `IdeationNode` forwards them, and
->    `DevelopmentNode._resolve_pool_config` reads the brief before its
->    injected config — so changing the pool for a single run works and is
->    never reported as ignored. A submitted plan is fully validated and echoed back in the
->    run response, and any difference from the server's plan is logged as
->    a warning — **field by field**, naming each seat, and only for fields
->    the console actually expressed (a blank input means "server default",
->    never an ignored choice) — and returned as `model_plan_ignored` for
->    the UI banner. The run still uses the **server's** plan. Restart the
->    console with the desired `DEV_FLOW_*` keys to change seats.
+> **Two things worth knowing, stated plainly.**
+> 1. **`model_plan` is per-run (FEAT-490).** Every seat — ideation model,
+>    review pair, and the development pool — takes effect for a single
+>    submitted run, with no server restart. A submitted plan is fully
+>    validated and echoed back in the run response as the plan that will
+>    REALLY run. **The one case that does not apply a new submission is a
+>    resume**: `POST /api/flow/run` with an explicit `run_id` that
+>    preflights as resumable continues that run on the seats it was
+>    created with (a resumed run's completed nodes already ran under
+>    them — adopting a different plan mid-history would make the run
+>    self-contradictory). A submission that differs from a resumed run's
+>    seats is still fully validated and echoed back, and any difference is
+>    logged as a warning — **field by field**, naming each seat, and only
+>    for fields the console actually expressed (a blank input means
+>    "keep the resumed run's seat", never an ignored choice) — and
+>    returned as `model_plan_ignored` for the UI banner. Start a fresh run
+>    (omit `run_id`) to use a different plan.
 > 2. By default this console wires the FEAT-378 **judge panel** as its QA
 >    reviewer, and an explicit reviewer wins over the plan by design. The
 >    review pair is therefore configured and validated but not the active

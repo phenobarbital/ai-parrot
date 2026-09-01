@@ -1756,11 +1756,13 @@ function applyRequestCollapse() {
   }
 }
 
-/* FEAT-486 code-review fix: `model_plan` is a BUILD-time input, so a
-   per-run selection that differs from the server's plan does NOT take
-   effect. The server already logs that and echoes the EFFECTIVE plan back
-   in the run response — this surfaces it to the operator too, instead of
-   letting a changed selector silently do nothing.
+/* FEAT-490: `model_plan` is now a PER-RUN input — a fresh run (the common
+   case: no `run_id` submitted, or one the server has never seen) genuinely
+   applies whatever is selected here, no server restart required. The ONE
+   case that remains is a RESUME (an explicit `run_id` that preflights as
+   resumable): that run keeps the seats it was created with, so a newly
+   submitted selection does not take effect — the server reports exactly
+   that via `model_plan_ignored`, which is always `[]` for a fresh run.
 
    The diff itself is the SERVER's (`model_plan_ignored`), not a second
    one computed here: the first version of this function compared four
@@ -1771,8 +1773,8 @@ function planMismatchWarning(response) {
   const ignored = (response && response.model_plan_ignored) || [];
   if (!ignored.length) return "";
   return `Model selection not applied to this run: ${ignored.join("; ")}. `
-    + `The per-seat plan is fixed when the server builds its flow, so restart `
-    + `the console with the DEV_FLOW_* env keys to change these seats.`;
+    + `This run resumed a checkpoint, and a resumed run keeps the seats it `
+    + `was created with. Start a fresh run (no run_id) to use these seats.`;
 }
 
 function showPlanWarning(message) {

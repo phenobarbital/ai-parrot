@@ -550,3 +550,24 @@ class TestUiSurfacesTheOverride:
         warn_fn = warn_fn[: warn_fn.index("\nasync function submit")]
         assert "form-err" not in warn_fn
         assert "exec-section" in warn_fn
+
+    def test_ui_banner_no_longer_tells_operators_to_restart(self):
+        """FEAT-490 TASK-2689: seats are per-run now — the banner must stop
+        telling operators to restart the console with DEV_FLOW_* env keys,
+        and must instead name the one case that remains (a resumed run
+        keeping its original seats)."""
+        source = self._dev_html()
+        warn_fn = source[source.index("function planMismatchWarning(") :]
+        warn_fn = warn_fn[: warn_fn.index("\nfunction showPlanWarning(")]
+        assert "restart" not in warn_fn.lower()
+        assert "DEV_FLOW_*" not in warn_fn
+        assert "resumed a checkpoint" in warn_fn
+
+    def test_readme_no_longer_tells_operators_to_restart(self):
+        """Same correction applied to the README's model-plan section."""
+        source = (_REPO_ROOT / "examples" / "dev_loop" / "README.md").read_text(encoding="utf-8")
+        section = source[source.index("### Per-seat LLM selectors") :]
+        section = section[: section.index("### New configuration keys")]
+        assert "restart the console" not in section
+        assert "per-run" in section
+        assert "resumed run" in section
