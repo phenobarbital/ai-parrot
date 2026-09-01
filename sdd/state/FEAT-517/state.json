@@ -64,7 +64,7 @@
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/flex-agent-infographic-a2ui.proposal.md",
-      "commit_sha": "fb6b2363545f75ce76238c411af75ceb7b910694",
+      "commit_sha": "a52a23412",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "High-confidence localization; architecture predetermined by FinanceReporter + deterministic-refresh precedents."
     }
