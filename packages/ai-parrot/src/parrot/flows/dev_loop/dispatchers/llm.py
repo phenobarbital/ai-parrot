@@ -393,18 +393,44 @@ class LLMCodeDispatcher:
                     output_tokens=accumulated.completion_tokens if accumulated else None,
                 )
 
-    #: Sent as the final user turn when the budget is exhausted. Deliberately
-    #: instructs the model to be HONEST about partial work: a salvaged output
-    #: that names its own task in ``incomplete_tasks`` is treated as a failure
-    #: by ``DevAgentPool._dispatch_one``, so claiming completion buys nothing.
-    _SALVAGE_NUDGE: str = (
-        "Your turn budget is exhausted. Stop working now: do not read, patch "
-        "or run anything else. Call `final_output` with the result of the work "
-        "you have ALREADY completed — the files you changed and the commits you "
-        "actually made. If the task is not fully finished, say so plainly in "
-        "`summary` and list its TASK id in `incomplete_tasks`; do not claim work "
-        "you did not do."
-    )
+    def _salvage_nudge(self, output_model: Type[BaseModel]) -> str:
+        """Build the final user turn sent when the budget is exhausted.
+
+        Covers BOTH ways a backend can answer, in one round. Forcing
+        ``tool_choice`` is a request, not a guarantee: a Bedrock Mantle
+        seat (zai.glm-5) answered a forced ``final_output`` with prose,
+        and the salvage failed with "Could not locate a JSON object in the
+        assistant output" — the model had the answer and no accepted way
+        to give it. Naming the raw-JSON fallback costs nothing (the caller
+        already tries ``_validate_text_output`` on the text) and turns
+        that dead end into a recovery.
+
+        Deliberately instructs the model to be HONEST about partial work:
+        a salvaged output naming its own task in ``incomplete_tasks`` is
+        treated as a failure by ``DevAgentPool._dispatch_one``, so claiming
+        completion buys nothing.
+
+        Args:
+            output_model: The structured output model to describe.
+
+        Returns:
+            The nudge text.
+        """
+        fields_block, required_block = self._output_field_blocks(output_model)
+        return (
+            "Your turn budget is exhausted. Stop working now: do not read, patch "
+            "or run anything else. Report the result of the work you have ALREADY "
+            "completed — the files you changed and the commits you actually made.\n\n"
+            "Call `final_output`. If you cannot call a tool on this turn, reply "
+            f"with ONLY a raw JSON object matching the `{output_model.__name__}` "
+            "schema — no prose, no explanation, no markdown fences around it. "
+            "Use these EXACT field names:\n"
+            f"{fields_block}\n\n"
+            f"Required fields: {required_block}.\n\n"
+            "If the task is not fully finished, say so plainly in `summary` and "
+            "list its TASK id in `incomplete_tasks`; do not claim work you did "
+            "not do."
+        )
 
     async def _salvage_final_output(
         self,
@@ -445,7 +471,7 @@ class LLMCodeDispatcher:
             could be recovered, in which case ``error`` says why; ``usage``
             is whatever the round reported, so the caller can still bill it.
         """
-        salvage_messages = [*messages, {"role": "user", "content": self._SALVAGE_NUDGE}]
+        salvage_messages = [*messages, {"role": "user", "content": self._salvage_nudge(output_model)}]
         salvage_args = dict(args)
         salvage_args["tool_choice"] = {
             "type": "function",
@@ -1209,12 +1235,20 @@ class LLMCodeDispatcher:
             },
         }
 
-    def _build_prompt(
-        self,
-        brief: BaseModel,
-        output_model: Type[BaseModel],
-    ) -> str:
-        brief_json = brief.model_dump_json()
+    @staticmethod
+    def _output_field_blocks(output_model: Type[BaseModel]) -> Tuple[str, str]:
+        """Render an output model's fields for a prompt.
+
+        Shared by the opening prompt and the salvage nudge so the two can
+        never describe the same model differently.
+
+        Args:
+            output_model: The structured output model.
+
+        Returns:
+            ``(fields_block, required_block)`` — an indented per-field
+            listing, and a comma-separated list of the required names.
+        """
         schema = output_model.model_json_schema()
         properties = schema.get("properties", {}) or {}
         required = schema.get("required", []) or []
@@ -1227,8 +1261,18 @@ class LLMCodeDispatcher:
             if fdesc:
                 line += f" — {fdesc}"
             field_lines.append(line)
-        fields_block = "\n".join(field_lines) or "  (no fields)"
-        required_block = ", ".join(required) if required else "(none)"
+        return (
+            "\n".join(field_lines) or "  (no fields)",
+            ", ".join(required) if required else "(none)",
+        )
+
+    def _build_prompt(
+        self,
+        brief: BaseModel,
+        output_model: Type[BaseModel],
+    ) -> str:
+        brief_json = brief.model_dump_json()
+        fields_block, required_block = self._output_field_blocks(output_model)
         return (
             f"Input brief:\n{brief_json}\n\n"
             f"Use tools to inspect and edit files as needed. When the work is "

@@ -294,6 +294,48 @@ async def test_exhausted_turns_are_salvaged_by_forcing_final_output(
 
 
 @pytest.mark.asyncio
+async def test_salvage_nudge_offers_the_raw_json_fallback(
+    monkeypatch,
+    brief,
+    _patch_worktree_base,
+):
+    """Forcing `tool_choice` is a request, not a guarantee.
+
+    A Bedrock Mantle seat answered a forced `final_output` with prose and
+    the salvage died on "Could not locate a JSON object in the assistant
+    output" — the model had the answer and no accepted way to give it. The
+    nudge must name the raw-JSON escape and the exact field names.
+    """
+    (_patch_worktree_base / "app.py").write_text("x\n", encoding="utf-8")
+    client = _FakeClient(
+        [
+            _Message(tool_calls=[_ToolCall("c1", "read_file", {"path": "app.py"})]),
+            _Message(content=json.dumps({"files_changed": [], "commit_shas": [], "summary": "done"})),
+        ]
+    )
+    dispatcher = _dispatcher(monkeypatch, client)
+
+    await dispatcher.dispatch(
+        brief=brief,
+        profile=LLMCodeDispatchProfile(max_turns=1),
+        output_model=DevelopmentOutput,
+        run_id="r1",
+        node_id="development.w1",
+        cwd=str(_patch_worktree_base),
+    )
+
+    nudge = client.calls[-1]["messages"][-1]["content"]
+    assert "cannot call a tool" in nudge
+    assert "ONLY a raw JSON object" in nudge
+    assert "DevelopmentOutput" in nudge
+    # The exact field names, not a hand-written list that can drift.
+    for field in ("files_changed", "commit_shas", "summary", "incomplete_tasks"):
+        assert field in nudge
+    # ...and it still tells the model to be honest about partial work.
+    assert "do not claim work you did" in nudge
+
+
+@pytest.mark.asyncio
 async def test_salvage_accepts_plain_text_answer(
     monkeypatch,
     brief,
