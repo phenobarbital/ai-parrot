@@ -88,7 +88,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Joins the plan (2651/2652) with the Mantle adversary (2654) in factories.py.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2655-review-pair-assembly.md"
+      "completed_at": "2026-09-01T00:42:08+00:00",
+      "file": "sdd/tasks/completed/TASK-2655-review-pair-assembly.md"
     },
     {
       "id": "TASK-2656",
