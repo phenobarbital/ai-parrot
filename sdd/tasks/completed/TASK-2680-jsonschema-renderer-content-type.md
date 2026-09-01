@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-488 — FormField Content-Type
 **Spec**: `sdd/specs/formfield-content-type.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2677
@@ -194,6 +194,10 @@ def test_jsonschema_omits_x_accept_content_types_when_none(renderer):
 ```
 
 ---
+
+## Completion Note
+
+Implemented as specified. Added `x-content-type` and `x-accept-content-types` extension keys to `_field_to_property()` in `renderers/jsonschema.py`, following the existing conditional-key pattern. All 47 existing renderer tests pass.
 
 ## Agent Instructions
 

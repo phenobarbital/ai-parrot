@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-488 — FormField Content-Type
 **Spec**: `sdd/specs/formfield-content-type.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-2677
@@ -220,3 +220,11 @@ def test_coerce_value_string_still_coerced_even_with_accept_content_types():
 **Date**: —
 **Notes**: —
 **Deviations from spec**: none
+
+
+---
+
+## Completion Note
+
+**Implemented**: 2026-09-01
+**Verification**: All existing validator tests pass. The guard correctly passes dict values through when `accept_content_types` is set, and existing string coercion is unaffected.

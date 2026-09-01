@@ -216,3 +216,41 @@ class TestVoiceAnswerEnvelope:
 **Date**: —
 **Notes**: —
 **Deviations from spec**: none
+
+
+---
+
+## Completion Note
+
+**Completed**: 2026-09-01
+**Status**: done
+
+### Summary
+Successfully implemented the VoiceAnswerEnvelope Pydantic model for FEAT-488.
+
+### Files Created/Modified
+- `packages/parrot-formdesigner/src/parrot_formdesigner/core/voice_answer.py` (NEW)
+  - Created VoiceAnswerEnvelope class with model_config = ConfigDict(extra="forbid")
+  - Defined fields: answer (required str), blob_ref (str|None), data_url (str|None)
+  - Added module docstring explaining the purpose and usage
+  
+- `packages/parrot-formdesigner/src/parrot_formdesigner/core/__init__.py` (MODIFIED)
+  - Added import: `from .voice_answer import VoiceAnswerEnvelope`
+  - Added VoiceAnswerEnvelope to __all__ exports
+
+### Verification
+All acceptance criteria verified:
+- ✅ core/voice_answer.py exists with VoiceAnswerEnvelope class
+- ✅ VoiceAnswerEnvelope has model_config = ConfigDict(extra="forbid")
+- ✅ VoiceAnswerEnvelope.answer is a required str field
+- ✅ VoiceAnswerEnvelope.blob_ref and .data_url are str | None with default=None
+- ✅ from parrot_formdesigner.core import VoiceAnswerEnvelope resolves without error
+- ✅ from parrot_formdesigner.core.voice_answer import VoiceAnswerEnvelope resolves without error
+- ✅ VoiceAnswerEnvelope(answer="hello") creates a valid instance
+- ✅ VoiceAnswerEnvelope(answer="hi", extra="boom") raises Pydantic validation error
+- ✅ No linting errors from ruff check
+
+### Implementation Notes
+- Followed the FileEnvelope pattern from FEAT-460 exactly
+- No content_type field added (implicitly "application/json")
+- All imports verified against existing codebase
