@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-492
 **Date**: 2026-09-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -711,15 +711,15 @@ No new third-party dependencies.
       lanes in v1).
 - [x] HTML production — *Resolved in brainstorm*: on-the-fly render with
       `InteractiveHTMLRenderer` (no pre-baked HTML, no cache in v1).
-- [ ] Share-token default TTL: none (live until revoked) vs a default expiry
+- [x] Share-token default TTL: none (live until revoked) vs a default expiry
       (e.g. 90 days)? Implementation default: `expires_at NULL` (no expiry)
-      with the column ready — *Owner: Jesus Lara*
-- [ ] Should `GET /api/v1/ui/surfaces` (list) include shared-with-me surfaces
+      with the column ready — *Owner: Jesus Lara*: default: no expiry with the column with TTL if enabled at 90 days
+- [x] Should `GET /api/v1/ui/surfaces` (list) include shared-with-me surfaces
       in v1, or owner-only? Implementation default: owner-only —
-      *Owner: Jesus Lara*
-- [ ] DSN/config source: same `parrot.conf.default_dsn` used by
+      *Owner: Jesus Lara*: yes, shared-with-me surfaces
+- [x] DSN/config source: same `parrot.conf.default_dsn` used by
       comm_center/bots handlers, or a dedicated `UI_SURFACES_DSN` override?
-      Implementation default: `default_dsn` — *Owner: Jesus Lara*
+      Implementation default: `default_dsn` — *Owner: Jesus Lara*: uses default_dsn for now
 - [ ] Exact injection seam for the store in the core-side mixin
       (constructor kwarg vs lazy import) — decide at implementation
       respecting the one-way import rule — *Owner: implementer*
