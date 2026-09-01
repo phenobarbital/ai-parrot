@@ -228,3 +228,107 @@ class TestRefreshDashboardTool:
 
     def test_distinct_recipe_name_constant(self, flex_dashboard_module):
         assert flex_dashboard_module.FlexDashboard.DASHBOARD_RECIPE_NAME == "flex-program-dashboard"
+
+    @pytest.mark.asyncio
+    async def test_per_call_pctx_wins_over_constructor_pctx(self, flex_dashboard_module):
+        """Code-review finding (adopted): on a shared/pooled agent, the
+        PER-CALL PermissionContext (injected by ``AbstractTool.execute()``
+        onto ``self._current_pctx`` from the ``_permission_context`` kwarg
+        — e.g. via ``ToolManagerExecutor.call`` ->
+        ``ToolManager.execute_tool``) must win over the ``pctx`` captured
+        when the tool was built, so a refresh never runs under a stale or
+        another caller's principal."""
+        RefreshDashboardTool = flex_dashboard_module.RefreshDashboardTool
+
+        fake_artifact = SimpleNamespace(artifact_id="art-3", content=b"<html/>")
+        runner = SimpleNamespace(run=AsyncMock(return_value=fake_artifact))
+        tool = RefreshDashboardTool(runner=runner, pctx="construction-time-pctx")
+
+        original = flex_dashboard_module.current_a2ui_surface_state
+        flex_dashboard_module.current_a2ui_surface_state = lambda: None
+        try:
+            # Simulate what AbstractTool.execute() does before calling
+            # _execute(): stash the per-call pctx on the instance.
+            tool._current_pctx = "per-call-pctx"
+            await tool._execute()
+        finally:
+            flex_dashboard_module.current_a2ui_surface_state = original
+
+        _, kwargs = runner.run.call_args
+        assert kwargs["pctx"] == "per-call-pctx"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_constructor_pctx_without_per_call_context(
+        self, flex_dashboard_module
+    ):
+        """Direct/demo calls (never routed through ToolManager.execute_tool)
+        never get `_current_pctx` set — the constructor pctx is the only
+        one available and must still be used."""
+        RefreshDashboardTool = flex_dashboard_module.RefreshDashboardTool
+
+        fake_artifact = SimpleNamespace(artifact_id="art-4", content=b"<html/>")
+        runner = SimpleNamespace(run=AsyncMock(return_value=fake_artifact))
+        tool = RefreshDashboardTool(runner=runner, pctx="construction-time-pctx")
+
+        original = flex_dashboard_module.current_a2ui_surface_state
+        flex_dashboard_module.current_a2ui_surface_state = lambda: None
+        try:
+            await tool._execute()
+        finally:
+            flex_dashboard_module.current_a2ui_surface_state = original
+
+        _, kwargs = runner.run.call_args
+        assert kwargs["pctx"] == "construction-time-pctx"
+
+
+class TestPublishDashboardRecipe:
+    @pytest.mark.asyncio
+    async def test_publish_dashboard_recipe_persists_params(self, flex_dashboard_module):
+        """Code-review finding (adopted): `publish_recipe()` alone never
+        persists `RecipeParam` declarations — `publish_dashboard_recipe()`
+        must do both steps atomically."""
+        FlexDashboard = flex_dashboard_module.FlexDashboard
+
+        published = SimpleNamespace(params=[])
+        recipe_store = SimpleNamespace(save=AsyncMock())
+
+        class _FakeAgent:
+            DASHBOARD_RECIPE_NAME = FlexDashboard.DASHBOARD_RECIPE_NAME
+            dashboard_descriptor = staticmethod(FlexDashboard.dashboard_descriptor)
+            recipe_params = staticmethod(FlexDashboard.recipe_params)
+            publish_recipe = AsyncMock(return_value=published)
+            _require_recipe_store = lambda self: recipe_store
+
+            publish_dashboard_recipe = FlexDashboard.publish_dashboard_recipe
+
+        agent = _FakeAgent()
+        result = await agent.publish_dashboard_recipe(overwrite=True)
+
+        assert result is published
+        assert result.params == FlexDashboard.recipe_params()
+        recipe_store.save.assert_awaited_once_with(published)
+
+    @pytest.mark.asyncio
+    async def test_publish_dashboard_recipe_returns_gap_report_unsaved(
+        self, flex_dashboard_module
+    ):
+        FlexDashboard = flex_dashboard_module.FlexDashboard
+        GapReport = flex_dashboard_module.GapReport
+
+        gap_report = GapReport(gaps=[], covered=[])
+        recipe_store = SimpleNamespace(save=AsyncMock())
+
+        class _FakeAgent:
+            DASHBOARD_RECIPE_NAME = FlexDashboard.DASHBOARD_RECIPE_NAME
+            dashboard_descriptor = staticmethod(FlexDashboard.dashboard_descriptor)
+            recipe_params = staticmethod(FlexDashboard.recipe_params)
+            publish_recipe = AsyncMock(return_value=gap_report)
+            _require_recipe_store = lambda self: recipe_store
+
+            publish_dashboard_recipe = FlexDashboard.publish_dashboard_recipe
+
+        agent = _FakeAgent()
+        result = await agent.publish_dashboard_recipe()
+
+        assert result is gap_report
+        recipe_store.save.assert_not_awaited()

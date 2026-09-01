@@ -102,6 +102,35 @@ class TestPayrollHero:
         wrong_pct = payroll_total / (revenue_total + pc_revenue_total)
         assert out["payroll_pct"] != pytest.approx(wrong_pct, rel=1e-6)
 
+    def test_payroll_hero_reflects_active_filters(self, loaded_flex_transformers, flex_frames):
+        """Code-review finding (adopted): the hero row must narrow with the
+        SAME filters as the rest of the dashboard — a month-filtered replay
+        must not show all-time totals in the hero cards."""
+        payroll_hero = loaded_flex_transformers.payroll_hero
+        unfiltered = payroll_hero(
+            {"hours": flex_frames["hours"], "finance": flex_frames["finance"]}, {}
+        )
+        filtered = payroll_hero(
+            {"hours": flex_frames["hours"], "finance": flex_frames["finance"]},
+            {"month": "2025-10"},
+        )
+
+        assert filtered["worked_hours_total"] == pytest.approx(30.199996 + 1900.0)
+        assert filtered["payroll_total"] == pytest.approx(20682.27)
+        assert filtered["revenue_total"] == pytest.approx(137456.85)
+        assert filtered["worked_hours_total"] != pytest.approx(unfiltered["worked_hours_total"])
+
+    def test_payroll_hero_pay_code_filter(self, loaded_flex_transformers, flex_frames):
+        payroll_hero = loaded_flex_transformers.payroll_hero
+        out = payroll_hero(
+            {"hours": flex_frames["hours"], "finance": flex_frames["finance"]},
+            {"pay_code": "Admin Time"},
+        )
+        # Only Admin Time hours narrow; finance has no pay_code column, so
+        # its totals stay at the full (unfiltered) amount.
+        assert out["worked_hours_total"] == pytest.approx(25.0 + 30.199996)
+        assert out["payroll_total"] == pytest.approx(18000.0 + 20682.27)
+
 
 class TestMonthSeriesTransformers:
     def test_worked_hours_by_month(self, loaded_flex_transformers, flex_frames):
@@ -148,6 +177,17 @@ class TestPayCodeSections:
         out = loaded_flex_transformers.pay_code_allocation({"hours": flex_frames["hours"]}, {})
         shares = {row["pay_code"]: row["share_pct"] for row in out["records"]}
         assert sum(shares.values()) == pytest.approx(100.0, abs=0.01)
+
+    def test_pay_code_allocation_honors_pay_code_filter(self, loaded_flex_transformers, flex_frames):
+        """Code-review finding (adopted): consistent with the sibling
+        pay_code_hours table — a pay_code filter narrows the allocation
+        base too (trivially 100% for the one selected code)."""
+        out = loaded_flex_transformers.pay_code_allocation(
+            {"hours": flex_frames["hours"]}, {"pay_code": "Admin Time"}
+        )
+        assert [r["pay_code"] for r in out["records"]] == ["Admin Time"]
+        assert out["records"][0]["share_pct"] == pytest.approx(100.0)
+        assert out["total_hours"] == pytest.approx(25.0 + 30.199996)
 
     def test_per_section_filters(self, loaded_flex_transformers, flex_frames):
         """A flex_type param must never reach/alter a finance-only transformer."""

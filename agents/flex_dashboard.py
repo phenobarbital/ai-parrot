@@ -15,6 +15,14 @@ transformers`), the kb docs (``kb/*.md``), and the composite skills
 
     agent = FlexDashboard(name="flex-dashboard", recipe_store=store)
     await agent.configure()
+    recipe = await agent.publish_dashboard_recipe(overwrite=True)
+
+Prefer :meth:`FlexDashboard.publish_dashboard_recipe` over calling the
+inherited ``publish_recipe()`` directly for ``DASHBOARD_RECIPE_NAME`` — the
+base mixin has no ``params=`` argument, so a bare ``publish_recipe()`` call
+leaves the recipe's declared ``RecipeParam`` overrides unset, which breaks
+even the unfiltered default replay (see ``publish_dashboard_recipe``'s own
+docstring for the full reasoning).
 
 See ``sdd/specs/flex-agent-infographic-a2ui.spec.md`` for the full design.
 """
@@ -35,7 +43,7 @@ from parrot.tools.abstract import (
     current_a2ui_surface_state,
 )
 from parrot.tools.infographic_recipes.runner import RecipeRunner
-from parrot.tools.infographic_sections import SectionDescriptor, SectionSpec
+from parrot.tools.infographic_sections import GapReport, SectionDescriptor, SectionSpec
 from parrot.tools.working_memory import WorkingMemoryToolkit
 from pydantic import Field
 
@@ -590,6 +598,41 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
             narrative=cls._narrative_spec(),
         )
 
+    async def publish_dashboard_recipe(self, *, overwrite: bool = False) -> Any:
+        """Publish the dashboard recipe AND persist its declared filter params.
+
+        Code-review finding (adopted): ``InfographicAuthoringMixin
+        .publish_recipe()`` has no ``params=`` argument — it never persists
+        ``RecipeParam`` declarations on its own. A caller that publishes via
+        the base ``publish_recipe()`` directly and forgets the follow-up
+        ``recipe.params = FlexDashboard.recipe_params(); await
+        recipe_store.save(recipe)`` step gets a recipe with `params=[]`,
+        which makes EVERY replay fail — even the unfiltered default one —
+        because ``dashboard_descriptor()``'s ``{month}``/etc. placeholders
+        have nothing to resolve against (``resolve_params`` raises). This
+        wraps both steps atomically so that footgun cannot happen; prefer
+        this over calling ``publish_recipe`` directly for
+        ``DASHBOARD_RECIPE_NAME``.
+
+        Args:
+            overwrite: Forwarded to ``publish_recipe`` — replace an
+                existing ``(name, owner)`` recipe when True.
+
+        Returns:
+            The saved :class:`~parrot.outputs.a2ui.recipes.models.InfographicRecipe`,
+            or a :class:`~parrot.tools.infographic_sections.GapReport` on
+            partial transformer coverage (nothing is saved in that case,
+            matching ``publish_recipe``'s own contract).
+        """
+        recipe = await self.publish_recipe(
+            self.DASHBOARD_RECIPE_NAME, self.dashboard_descriptor(), overwrite=overwrite
+        )
+        if isinstance(recipe, GapReport):
+            return recipe
+        recipe.params = self.recipe_params()
+        await self._require_recipe_store().save(recipe)
+        return recipe
+
     # ── Refresh lane (FEAT-469 pattern) ─────────────────────────────────
 
     def build_refresh_tool(self, pctx: Any) -> RefreshDashboardTool:
@@ -633,6 +676,18 @@ class RefreshDashboardTool(AbstractTool):
     (the renderer's inline filter widget) → the surface's last persisted
     ``dataModel.filters`` (read via ``current_a2ui_surface_state()``) →
     the recipe's own declared defaults (empty-string "no filter" / 50 / 3).
+
+    Permission-context precedence (code-review finding, adopted): the
+    PER-CALL ``PermissionContext`` — injected by ``AbstractTool.execute()``
+    onto ``self._current_pctx`` whenever the caller (e.g.
+    ``ToolManagerExecutor.call`` → ``ToolManager.execute_tool``) supplies
+    one via the ``_permission_context`` kwarg — always wins over the
+    ``pctx`` captured at construction time. On a shared/pooled agent
+    instance serving multiple callers, always using the CONSTRUCTION-time
+    ``pctx`` would let one user's DatasetManager PBAC/tenant scope leak
+    into another user's refresh. The constructor ``pctx`` is kept only as
+    the fallback for direct/demo calls that never go through
+    ``ToolManager.execute_tool`` (e.g. this feature's own example runner).
     """
 
     name = "refresh_dashboard"
@@ -683,7 +738,13 @@ class RefreshDashboardTool(AbstractTool):
             if value is not None:
                 params[key] = value
 
-        artifact = await self._runner.run(FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=self._pctx)
+        # Per-call pctx (set by AbstractTool.execute() from the
+        # `_permission_context` kwarg) wins over the constructor-captured
+        # one — see the class docstring.
+        effective_pctx = getattr(self, "_current_pctx", None) or self._pctx
+        artifact = await self._runner.run(
+            FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=effective_pctx
+        )
         return {
             "filters": params,
             "filter_source": (

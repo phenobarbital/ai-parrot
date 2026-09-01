@@ -146,13 +146,16 @@ def pctx():
 
 
 @pytest.fixture
-async def published_recipe(wired_agent, recipe_store):
-    recipe = await wired_agent.publish_recipe(RECIPE_NAME, FlexDashboard.dashboard_descriptor(), overwrite=True)
+async def published_recipe(wired_agent):
+    # `publish_dashboard_recipe` wraps `publish_recipe` + the
+    # `recipe.params = recipe_params(); recipe_store.save(...)` follow-up
+    # atomically (code-review finding, TASK-2699 amendment) — see its
+    # docstring for why skipping the follow-up breaks even the unfiltered
+    # default replay.
+    recipe = await wired_agent.publish_dashboard_recipe(overwrite=True)
     assert not isinstance(
         recipe, GapReport
     ), f"expected a full recipe, got a GapReport: {getattr(recipe, 'gaps', None)}"
-    recipe.params = FlexDashboard.recipe_params()
-    await recipe_store.save(recipe)
     return recipe
 
 

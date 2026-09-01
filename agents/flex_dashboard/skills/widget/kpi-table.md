@@ -7,16 +7,16 @@ A2UI output mode, and supported filters (per-section filter rule).
 
 | KPI | Transformer | Dataset alias(es) | Recipe path | Output mode | Supported filters |
 |---|---|---|---|---|---|
-| Worked Hours (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/worked_hours_total` | `KPICard` hero | none |
-| Payroll (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/payroll_total` | `KPICard` hero | none |
-| P&L Revenue (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/revenue_total` | `KPICard` hero | none |
-| Payroll % to Revenue (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/payroll_pct` | `KPICard` hero | none |
+| Worked Hours (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/worked_hours_total` | `KPICard` hero | month, pay_code, cost_center |
+| Payroll (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/payroll_total` | `KPICard` hero | month, pay_code, cost_center |
+| P&L Revenue (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/revenue_total` | `KPICard` hero | month |
+| Payroll % to Revenue (total) | `payroll_hero` | `hours`, `finance` | `/payroll_hero/payroll_pct` | `KPICard` hero | month |
 | Worked Hours by Month | `worked_hours_by_month` | `hours` | `/worked_hours_by_month/series` | `STRUCTURED_CHART` | month, pay_code, cost_center |
 | Payroll by Month | `payroll_by_month` | `finance` | `/payroll_by_month/series` | `STRUCTURED_CHART` | month |
 | P&L Revenue by Month | `revenue_by_month` | `finance` | `/revenue_by_month/series` | `STRUCTURED_CHART` | month |
 | Payroll % to Revenue by Month | `payroll_pct_by_month` | `finance` | `/payroll_pct_by_month/series` | `STRUCTURED_CHART` | month |
 | Pay Code Hours | `pay_code_hours` | `hours` | `/pay_code_hours/records` | `STRUCTURED_TABLE` | month, pay_code, cost_center |
-| Worked Hours by Pay Code Allocation | `pay_code_allocation` | `hours` | `/pay_code_allocation/records` | `STRUCTURED_TABLE` | month, cost_center |
+| Worked Hours by Pay Code Allocation | `pay_code_allocation` | `hours` | `/pay_code_allocation/records` | `STRUCTURED_TABLE` | month, pay_code, cost_center |
 | Rep Utilization by Region | `rep_utilization_by_region` | `rep_utilization`, `region_utilization` | `/rep_utilization_by_region/records` | `STRUCTURED_TABLE` | month, category |
 | Proximity Staffing | `proximity_staffing` | `msl`, `employees` | `/proximity_staffing/{store_layer,employee_layer,coverage}` | `STRUCTURED_MAP` | flex_type, radius_miles, nearest_n |
 

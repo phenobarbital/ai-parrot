@@ -230,20 +230,18 @@ async def lane_publish(agent: FlexDashboard, recipe_store: FileRecipeStore) -> b
     """Publish the dashboard recipe and declare its run-time filter params."""
     rule("1 — publish_recipe: sections → registered transformers → recipe")
 
-    recipe = await agent.publish_recipe(RECIPE_NAME, FlexDashboard.dashboard_descriptor(), overwrite=True)
+    # `publish_dashboard_recipe` wraps `publish_recipe` + the
+    # `recipe.params = FlexDashboard.recipe_params(); recipe_store.save(...)`
+    # follow-up atomically (code-review finding, TASK-2699 amendment) — the
+    # base `publish_recipe()` has no `params=` argument, so skipping the
+    # follow-up would leave every `{month}`-style placeholder unresolved on
+    # replay, even the unfiltered default one.
+    recipe = await agent.publish_dashboard_recipe(overwrite=True)
     if isinstance(recipe, GapReport):
         print("  ✗ GAPS — unregistered transformers:")
         for gap in recipe.gaps:
             print(f"    - {gap.section}")
         return False
-
-    # publish_recipe carries descriptor.params onto every TransformStep, but
-    # the DECLARED run-time params (name/default, override whitelist) are the
-    # recipe author's call — declare them and re-save (FlexDashboard.
-    # recipe_params(), TASK-2697). An override for an undeclared name raises
-    # (typo protection).
-    recipe.params = FlexDashboard.recipe_params()
-    await recipe_store.save(recipe)
 
     print(f"  recipe        : {recipe.name}")
     print(f"  transforms    : {[t.transformer for t in recipe.transforms]}")

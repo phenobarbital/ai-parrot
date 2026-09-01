@@ -115,18 +115,41 @@ def _haversine_miles(lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2:
 
 @infographic_transformer(
     "payroll_hero",
-    requires_columns={"hours": ["hours"], "finance": ["Payroll", "Revenue"]},
+    requires_columns={"hours": ["month_start", "hours"], "finance": ["month", "Payroll", "Revenue"]},
     description=(
         "Hero-row totals: Worked Hours (sum of hours.hours), Payroll and "
         "Revenue totals (sum of finance.Payroll / finance.Revenue), and "
         "Payroll % to Revenue = payroll_total / revenue_total (Revenue "
-        "ALONE as denominator — spec §2 resolved Q&A)."
+        "ALONE as denominator — spec §2 resolved Q&A). Reflects the SAME "
+        "active filters as the rest of the dashboard."
     ),
+    params_schema={
+        "month": {"type": "string", "description": "YYYY-MM filter."},
+        "pay_code": {"type": "string"},
+        "cost_center": {"type": "string"},
+    },
 )
 def payroll_hero(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
-    hours = inputs["hours"]
-    finance = normalize_currency_columns(inputs["finance"], ["Payroll", "Revenue"])
+    # Code-review finding (external `codex` review, adopted): the hero row
+    # must reflect the SAME active filters as the rest of the dashboard —
+    # otherwise a month/pay_code-filtered replay shows all-time totals in
+    # the hero cards next to a filtered month-series chart, an internally
+    # inconsistent dashboard. `month`/`pay_code`/`cost_center` narrow
+    # `hours`; `month` narrows `finance` (finance has no pay_code/
+    # cost_center column, so those two are naturally no-ops there).
+    hours = month_period(inputs["hours"], source="hours")
+    hours = _apply_filters(
+        hours,
+        {
+            "month": params.get("month"),
+            "pay_code": params.get("pay_code"),
+            "cost_center": params.get("cost_center"),
+        },
+    )
+    finance = month_period(inputs["finance"], source="finance")
+    finance = normalize_currency_columns(finance, ["Payroll", "Revenue"])
+    finance = _apply_filters(finance, {"month": params.get("month")})
 
     worked_hours_total = float(hours["hours"].sum())
     payroll_total = float(finance["Payroll"].sum())
@@ -260,16 +283,30 @@ def pay_code_hours(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> d
 @infographic_transformer(
     "pay_code_allocation",
     requires_columns={"hours": ["pay_code", "hours"]},
-    description=("Worked Hours by Pay Code Allocation: each pay_code's share (%) of " "total worked hours."),
+    description=(
+        "Worked Hours by Pay Code Allocation: each pay_code's share (%) of "
+        "total worked hours. A pay_code filter narrows the allocation base "
+        "itself (consistent with the sibling pay_code_hours table) — with "
+        "one pay_code selected, its share is trivially 100%, same as "
+        "filtering any breakdown to a single category."
+    ),
     params_schema={
         "month": {"type": "string", "description": "YYYY-MM filter."},
+        "pay_code": {"type": "string"},
         "cost_center": {"type": "string"},
     },
 )
 def pay_code_allocation(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
     df = month_period(inputs["hours"], source="hours")
-    df = _apply_filters(df, {"month": params.get("month"), "cost_center": params.get("cost_center")})
+    df = _apply_filters(
+        df,
+        {
+            "month": params.get("month"),
+            "pay_code": params.get("pay_code"),
+            "cost_center": params.get("cost_center"),
+        },
+    )
     total_hours = float(df["hours"].sum())
     grouped = df.groupby("pay_code", as_index=False)["hours"].sum().sort_values("pay_code")
     records = [
