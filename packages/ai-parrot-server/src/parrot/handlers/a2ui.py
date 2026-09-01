@@ -37,6 +37,8 @@ from navconfig.logging import logging
 from parrot.a2a.models import A2UI_MEDIA_TYPE
 from parrot.auth.permission import build_principal_context
 from parrot.handlers.agent import AgentTalk
+from parrot.handlers.models.ui_surfaces import PgUISurfaceStore, UISurfaceRecord
+from parrot.handlers.ui_surfaces import SurfaceNegotiationService
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
 from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
 from parrot.outputs.a2ui.catalog.export import agent_capabilities
@@ -54,6 +56,38 @@ from parrot.outputs.a2ui.runtime.models import (
 from parrot.outputs.a2ui.serialization import iter_jsonl, serialize
 
 __all__ = ["A2UIHandler"]
+
+
+async def _resolve_ui_surface_access(
+    store: PgUISurfaceStore,
+    surface_id: str,
+    user_id: str | None,
+    token: str | None,
+) -> tuple[UISurfaceRecord | None, tuple[str, int] | None]:
+    """Same owner/share access rules as ``UISurfacesHandler._resolve_surface_for_access``
+    (FEAT-492 TASK-2702) — kept as a standalone function here (rather than
+    imported) so this task's file-modify scope stays limited to ``a2ui.py``/
+    ``manager.py`` (``ui_surfaces.py`` is not listed in TASK-2703's Files to
+    Create/Modify). Returns ``(record, None)`` on success, or
+    ``(None, (message, status))`` on failure — the caller builds the actual
+    ``web.Response`` with its own ``json_response`` helper.
+
+    Unknown/foreign-without-token id -> 404 (no existence oracle).
+    Revoked/expired/missing token (when one WAS supplied) -> 410.
+    """
+    record = await store.get(surface_id)
+    if record is None:
+        return None, ("Surface not found", 404)
+    if record.user_id == user_id:
+        return record, None
+    if token:
+        share = await store.resolve_share(token)
+        if share is None or share.surface_id != surface_id:
+            return None, ("Share link invalid or expired", 410)
+        if user_id:
+            await store.claim_share(token, user_id)
+        return record, None
+    return None, ("Surface not found", 404)
 
 logger = logging.getLogger(__name__)
 
@@ -198,14 +232,74 @@ class A2UIHandler(AgentTalk):
         return self.json_response({"messages": messages}, status=200)
 
     async def get(self) -> web.StreamResponse:
-        """GET — SSE stream (default path) or the capabilities document (``/capabilities``)."""
+        """GET — SSE stream (default), the capabilities document (``/capabilities``),
+        or the FEAT-492 surfaces mirror (``/surfaces/{surface_id}``).
+
+        Path dispatch happens BEFORE any ``StreamResponse`` preparation —
+        ``/capabilities`` and ``/surfaces/{surface_id}`` both return a plain
+        ``web.Response``; only the default branch prepares an SSE stream.
+        """
         if self.request.path.rstrip("/").endswith("/capabilities"):
             return await self._get_capabilities()
+        if "surface_id" in self.request.match_info:
+            return await self._get_surface()
         return await self._get_stream()
 
     async def _get_capabilities(self) -> web.Response:
         """GET .../a2ui/capabilities — the same document published on the Agent Card."""
         return self.json_response(agent_capabilities([DEFAULT_CATALOG_ID, BASIC_CATALOG_ID]), status=200)
+
+    def _ui_surfaces_store(self) -> PgUISurfaceStore:
+        """Reuse (or lazily create) the app-wide ``PgUISurfaceStore`` — shared
+        with ``UISurfacesHandler`` via ``app["ui_surfaces_store"]`` so both
+        routes hit the same store instance when mounted on the same app.
+        """
+        store = self.request.app.get("ui_surfaces_store")
+        if store is None:
+            store = PgUISurfaceStore()
+            self.request.app["ui_surfaces_store"] = store
+        return store
+
+    def _ui_surfaces_negotiation(self) -> SurfaceNegotiationService:
+        """Reuse (or lazily create) the app-wide ``SurfaceNegotiationService``
+        — the SAME service ``UISurfacesHandler`` uses, so negotiation cannot
+        drift between the REST lane and this mirror route.
+        """
+        service = self.request.app.get("ui_surfaces_negotiation")
+        if service is None:
+            service = SurfaceNegotiationService()
+            self.request.app["ui_surfaces_negotiation"] = service
+        return service
+
+    async def _get_surface(self) -> web.Response:
+        """GET .../a2ui/surfaces/{surface_id} — mirror of the ui_surfaces REST
+        lane's negotiated GET (FEAT-492 TASK-2703, spec §3 Module 4, G6).
+
+        Not protocol-strict: negotiates JSON/HTML exactly like
+        ``UISurfacesHandler`` via the SAME ``SurfaceNegotiationService``
+        instance (resolved decision — spec §2). ``agent_id`` is resolved via
+        the existing ``_authenticate()`` for auth/consistency with every
+        other route on this handler, but the surface lookup itself is by
+        ``surface_id`` alone (same as the REST lane).
+        """
+        _agent, user_id, _session_id, err = await self._authenticate(self._resolution_data())
+        if err is not None:
+            return err
+
+        surface_id = self.request.match_info["surface_id"]
+        qs = self.query_parameters(self.request)
+        token = qs.get("share")
+
+        record, error = await _resolve_ui_surface_access(
+            self._ui_surfaces_store(), surface_id, user_id, token
+        )
+        if error is not None:
+            message, status = error
+            return self.json_response({"status": "error", "message": message}, status=status)
+
+        negotiation = self._ui_surfaces_negotiation()
+        accept = negotiation.negotiate(self.request)
+        return await negotiation.respond(record, accept)
 
     async def _get_stream(self) -> web.StreamResponse:
         """GET — SSE stream of queued ``callRendererFunction`` envelopes for the session.
