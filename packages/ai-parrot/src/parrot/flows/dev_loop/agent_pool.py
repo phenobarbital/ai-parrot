@@ -45,6 +45,23 @@ from parrot.flows.dev_loop.models import (
 )
 from parrot.flows.dev_loop.task_scheduler import TaskRef
 
+#: Marks a ``_dispatch_one`` failure as an error in THIS codebase rather
+#: than a failed dispatch. Retrying one on another worker re-runs the same
+#: bad call for the same result, so ``run_wave`` skips the retry.
+INTERNAL_ERROR_PREFIX = "internal error:"
+
+
+def is_internal_error(error: Optional[str]) -> bool:
+    """Whether a ``_dispatch_one`` error string reports a bug on our side.
+
+    Args:
+        error: The error string from a dispatch attempt, if any.
+
+    Returns:
+        True when the failure was an internal error, not a failed dispatch.
+    """
+    return bool(error) and error.startswith(INTERNAL_ERROR_PREFIX)
+
 logger = logging.getLogger(__name__)
 
 # ``(task_id, worker_id, output_or_None, error_message_or_None)``.
@@ -290,6 +307,33 @@ class DevAgentPool:
                 exc,
             )
             return task.id, worker.worker_id, None, str(exc)
+        except (TypeError, AttributeError, NameError, ImportError) as exc:
+            # OUR bug, not the model's. A dispatcher wraps everything that
+            # goes wrong inside a dispatch in DispatchExecutionError, so an
+            # unwrapped TypeError/AttributeError reaching here is almost
+            # always a bad call on this side of the boundary — a signature
+            # that drifted, a missing attribute, an optional dependency.
+            #
+            # Swallowed as "task failed" it is invisible AND expensive: it
+            # does not fail one task, it fails EVERY task on EVERY worker,
+            # each one burning a retry dispatch, until the wave reports
+            # PARTIAL half an hour later. That is why it is logged at ERROR
+            # with a traceback and marked non-retryable — a stack trace
+            # would have said instantly what the retries never will.
+            self.logger.error(
+                "Task %s hit an internal error on %s (%s): %s",
+                task.id,
+                worker.worker_id,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
+            return (
+                task.id,
+                worker.worker_id,
+                None,
+                f"{INTERNAL_ERROR_PREFIX} {type(exc).__name__}: {exc}",
+            )
         except Exception as exc:  # noqa: BLE001 - a single dispatch must never kill the wave
             self.logger.warning(
                 "Task %s failed on %s (unexpected %s): %s",
@@ -358,14 +402,18 @@ class DevAgentPool:
         retry_targets: List[Tuple[TaskRef, PoolWorker]] = []
         tasks_by_id = {t.id: t for t in tasks}
 
-        for task_id, worker_id, output, _error in first_attempts:
+        failed: List[str] = []
+        for task_id, worker_id, output, error in first_attempts:
             if output is not None:
                 completed[task_id] = output
                 per_worker_completed[worker_id].append(task_id)
+            elif is_internal_error(error):
+                # A second dispatch would re-run the same bad call.
+                failed.append(task_id)
+                per_worker_failed[worker_id].append(task_id)
             else:
                 retry_targets.append((tasks_by_id[task_id], assignments[task_id]))
 
-        failed: List[str] = []
         if retry_targets:
             retry_workers = [self._next_worker(fw) for _task, fw in retry_targets]
             retry_attempts = await asyncio.gather(

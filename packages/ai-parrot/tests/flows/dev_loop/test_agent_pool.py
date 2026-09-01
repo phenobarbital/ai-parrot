@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
-from parrot.flows.dev_loop.agent_pool import DevAgentPool, aggregate_outputs
+from parrot.flows.dev_loop.agent_pool import (
+    DevAgentPool,
+    aggregate_outputs,
+    is_internal_error,
+)
 from parrot.flows.dev_loop.models import (
     DevAgentPoolConfig,
     DevAgentSpec,
@@ -426,3 +432,86 @@ class TestAggregate:
         merged = agg.worker_summaries[0]
         assert merged.tasks_completed == ["TASK-1", "TASK-2"]
         assert "wave1" in merged.summary and "wave2" in merged.summary
+
+# ---------------------------------------------------------------------------
+# An internal error is OUR bug, not a failed dispatch. Swallowed as "task
+# failed" it fails every task on every worker, each burning a retry, and the
+# wave reports PARTIAL half an hour later instead of saying what broke.
+# ---------------------------------------------------------------------------
+
+
+class BrokenSignatureDispatcher:
+    """A dispatcher whose call signature drifted from the pool's call.
+
+    Models the real incident: the pool started passing ``session_host=``
+    and this side had not caught up, so every dispatch raised TypeError.
+    """
+
+    def __init__(self):
+        self.calls = []
+
+    async def dispatch(self, *, brief, profile, output_model, run_id, node_id, cwd, **_kw):
+        self.calls.append((brief.task_id, node_id))
+        raise TypeError(
+            "dispatch() got an unexpected keyword argument 'session_host'"
+        )
+
+
+@pytest.mark.asyncio
+async def test_internal_error_is_not_retried_on_another_worker():
+    d1, d2 = BrokenSignatureDispatcher(), BrokenSignatureDispatcher()
+    pool = _build_pool([d1, d2])
+
+    result = await pool.run_wave(
+        _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+    )
+
+    assert result.failed == ["TASK-1"]
+    # ONE attempt in total: a retry would re-run the same bad call.
+    assert len(d1.calls) + len(d2.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_internal_error_is_logged_at_error_with_a_traceback(caplog):
+    pool = _build_pool([BrokenSignatureDispatcher()])
+
+    with caplog.at_level(logging.ERROR):
+        await pool.run_wave(
+            _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+        )
+
+    records = [r for r in caplog.records if "internal error" in r.getMessage()]
+    assert records, "the internal error must be logged at ERROR"
+    assert records[0].exc_info is not None, "a traceback is the whole point"
+
+
+@pytest.mark.asyncio
+async def test_internal_error_is_marked_in_the_returned_reason():
+    dispatcher = BrokenSignatureDispatcher()
+    pool = _build_pool([dispatcher])
+
+    _task_id, _worker_id, output, error = await pool._dispatch_one(
+        _tasks("TASK-1")[0],
+        pool.workers[0],
+        research=_research(),
+        run_id="run-1",
+        cwd_for=_cwd_for,
+    )
+
+    assert output is None
+    assert is_internal_error(error)
+    assert "TypeError" in error
+
+
+@pytest.mark.asyncio
+async def test_a_failed_dispatch_is_still_retried():
+    """Contrast: a dispatch that merely FAILED keeps its second chance."""
+    d1, d2 = AlwaysFailDispatcher(), AlwaysFailDispatcher()
+    pool = _build_pool([d1, d2])
+
+    result = await pool.run_wave(
+        _tasks("TASK-1"), research=_research(), run_id="run-1", cwd_for=_cwd_for
+    )
+
+    assert result.failed == ["TASK-1"]
+    assert len(d1.calls) + len(d2.calls) == 2
