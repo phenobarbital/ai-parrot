@@ -40,6 +40,7 @@ from ..handlers.agents.factory import AgentFactoryHandler
 from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.infographic_recipes import RecipeHandler
+from ..handlers.ui_surfaces import UISurfacesHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
     DatabaseFormatsHandler,
@@ -2039,15 +2040,28 @@ class BotManager:
         # A2UI Agent Functions runtime (FEAT-469 TASK-2573, spec §3 Module 6, G6) —
         # a DEDICATED endpoint for renderer->agent envelopes, deliberately NOT
         # routed through the AgentTalk POST above (spec §8). The literal
-        # "/capabilities" sub-route is registered first so aiohttp resolves it
-        # before matching it as part of the bare "{agent_id}/a2ui" pattern,
-        # mirroring the knowledge-router precedent below.
+        # "/capabilities" and "/surfaces/{surface_id}" sub-routes are
+        # registered first so aiohttp resolves them before matching either as
+        # part of the bare "{agent_id}/a2ui" pattern, mirroring the
+        # knowledge-router precedent below.
         router.add_view("/api/v1/agents/{agent_id}/a2ui/capabilities", A2UIHandler)
+        # FEAT-492 (TASK-2703): mirror of the ui_surfaces REST lane's
+        # negotiated GET — same SurfaceNegotiationService, no duplicated
+        # negotiation logic.
+        router.add_view("/api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}", A2UIHandler)
         router.add_view("/api/v1/agents/{agent_id}/a2ui", A2UIHandler)
         # A2UI deep-link web resume route (FEAT-469 TASK-2574, spec §3 Module 7) —
         # still unmounted before this task; guards internally on Redis
         # availability and on double registration.
         self._register_a2ui_deeplink_routes()
+        # FEAT-492: persistent ui_surfaces plane (bookmarkable A2UI surfaces,
+        # spec §3 Module 4) — one UISurfacesHandler dispatching on match_info/
+        # path suffix (InfographicTalk/RecipeHandler idiom), five URL shapes.
+        router.add_view("/api/v1/ui/surfaces", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/refresh", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
         # Literal action sub-route ({action}: search|ask) MUST be registered
         # before the bare {agent_id} route so aiohttp resolves /search and /ask

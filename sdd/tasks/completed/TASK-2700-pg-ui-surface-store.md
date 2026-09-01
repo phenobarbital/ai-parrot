@@ -201,10 +201,36 @@ async def test_list_shared_with_claimed_only(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
 **Notes**:
+Implemented `PgUISurfaceStore`, `UISurfaceRecord`, `UISurfaceShare`,
+`UISurfaceKind` and the auto-create DDL in
+`packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py`,
+following the `comm_center.py` `_get_db()` + `AsyncDB("pg", dsn=default_dsn)`
++ `async with await db.connection() as conn:` idiom, and the
+`autonomous/ledger.py` idempotent-statement-list DDL pattern (tolerates
+"already exists" races). All 11 unit tests pass against an in-memory fake
+connection that matches on the module's own SQL constants (no live
+Postgres required), mirroring `test_comm_center_dispatch.py`'s
+`_FakeAsyncDB`/`_FakeConnCtx` idiom. `ruff check` is clean.
 
 **Deviations from spec**:
+- `mint_share()` signature gained an extra keyword `use_default_ttl: bool =
+  False` beyond the spec's documented `(surface_id, *, expires_at=None)`.
+  The spec's resolved Open Question ("no expiry by default; 90 days when a
+  TTL is enabled") requires a caller-supplied signal distinct from an
+  explicit date, and the New Public Interfaces code block doesn't name one
+  — `use_default_ttl` is the minimal, additive way to satisfy both the
+  "no expiry by default" and "90-day default when TTL requested" acceptance
+  criteria without overloading `expires_at` with a sentinel value. Purely
+  additive (keyword-only, defaults preserve the no-TTL behavior) — will not
+  break TASK-2702's handler, which can pass it through from the REST body.
+- Surface ids are generated as `str(uuid.uuid4())` (hyphenated canonical
+  form) rather than the literal "uuid4 hex" phrasing in the spec's Data
+  Models section — the `surface_id UUID PRIMARY KEY` column round-trips
+  through asyncpg as a canonical hyphenated string, so hex-without-dashes
+  input would not survive a save/get round-trip byte-for-byte. ID
+  generation itself lives with the caller (mixin, TASK-2704), not the
+  store — `save()` persists whatever `UISurfaceRecord.surface_id` it is
+  given.

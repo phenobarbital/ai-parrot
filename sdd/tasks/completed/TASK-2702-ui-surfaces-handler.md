@@ -226,10 +226,66 @@ async def test_share_revoke_owner_only(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
 **Notes**:
+Implemented `SurfaceNegotiationService` (negotiate/respond, `?format=` wins
+over `Accept`, default JSON, guarded `InteractiveHTMLRenderer` import → 501
+with install hint) and `UISurfacesHandler` (`BaseView` +
+`@is_authenticated()`/`@user_session()`, path/match_info dispatch) in
+`packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py`. Reuses the
+process-wide `RecipeRunner` wired by `register_recipe_routes()`
+(`parrot.handlers.infographic_recipes.get_recipe_runner()`) rather than
+constructing a second one. Refresh builds the OWNER's `PermissionContext`
+via `build_principal_context(record.user_id, channel="ui_surfaces")`
+regardless of caller identity; `RecipeRunException` maps to 422 (or 502 for
+`stage="data"`), never a raw 500. 404-vs-410 discipline implemented via a
+shared `_resolve_surface_for_access()` helper (unknown/foreign-without-token
+→ 404; bad/revoked/expired token → 410, no oracle).
+
+27 unit tests in `test_ui_surfaces_handler.py`, all mocking
+`PgUISurfaceStore`/`RecipeRunner`, following `test_infographic_recipes.py`'s
+established idiom for this exact handler shape (`BaseView` +
+`@is_authenticated()`/`@user_session()`): construct via
+`UISurfacesHandler.__new__`, set `_request` to a lightweight fake, and fully
+unwrap both decorator layers via `__wrapped__` chains to test the handler's
+own request-handling logic (auth enforcement itself is out of this task's
+scope — it needs real aiohttp session/auth middleware). All pass; also
+reran `test_infographic_recipes.py` + `test_ui_surfaces_store.py` alongside
+(54 total) to confirm no collateral breakage, and the wider
+`tests/handlers/` suite (442/444 — the 2 failures are
+`test_agent_a2ui_stream.py`'s source-text assertions against `agent.py`,
+confirmed pre-existing/unrelated: that file is untouched by this task and
+the failures reproduce identically with this task's two new files absent
+from the tree). `ruff check` is clean.
+
+**Bug caught and fixed during implementation**: `BaseView.error()`
+(`navigator/views/base.py`) only recognizes a status whitelist
+(400/401/403/404/406/412/428) and silently downgrades any other status to
+400 — the same landmine `handlers/comm_center.py::_map_error`'s docstring
+already documents. My first draft used `self.error(status=410/500/503)` for
+share-expiry/runner-missing/artifact-store-missing, which would have
+silently shipped as 400s. Fixed by adding a `_error()` helper that always
+goes through `self.json_response(...)` directly (mirrors
+`RecipeHandler._error_response` in the sibling `infographic_recipes.py`)
+for every status this handler needs. Caught because `self.error()` also
+needs `self._json` (set by `BaseView.__init__`, skipped by the `__new__`
+test construction) — the AttributeError surfaced it immediately during
+test-writing, not silently in production.
 
 **Deviations from spec**:
+- `PublishSurfaceRequest` gained a `session_id: Optional[str] = None` field
+  beyond the spec's Data Models block — copying from `ArtifactStore`
+  requires the full `(user_id, agent_id, session_id, artifact_id)`
+  composite key (`storage/artifacts.py`); `user_id` comes from the
+  authenticated session but `session_id` has no other source. Optional and
+  additive; inline-envelope publishes never need it.
+- Added a local `MintShareRequest` Pydantic model (not named in the spec's
+  New Public Interfaces block, which only prescribes the store's
+  `mint_share` signature) to validate the share-mint POST body
+  (`expires_at`/`ttl`) per the "all wire bodies are Pydantic models" key
+  constraint.
+- List endpoint items carry the shared `_surface_metadata()` block (surface_id,
+  kind, title, refreshable, created_at, updated_at, catalog_id, agent_id) +
+  `access`, omitting the full `envelope` for list efficiency — the spec's
+  route table only says "each item tagged access", not the exact item shape.
