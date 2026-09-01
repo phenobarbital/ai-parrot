@@ -200,8 +200,57 @@ class TestPRM:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `oauth_server.py` gains `WELL_KNOWN_PRM_PATH` and
+`_build_protected_resource_metadata(resource, auth_servers, scopes)` — a thin
+wrapper preferring navigator-auth's real `build_protected_resource_metadata`
+(unmerged branch, not importable in CI today) and falling back to a
+hand-rolled document with the identical shape (`scopes_supported` omitted
+when empty), exactly as the Codebase Contract's "Pattern to Follow" specifies.
+`OAuthRoutesMixin._oauth_paths()` gained a `"protected_resource"` key
+(`{base_path}{WELL_KNOWN_PRM_PATH}`), registered in `_add_oauth_routes`
+alongside the existing RFC 8414 route (unchanged, G11 — verified by
+`test_rfc8414_route_unchanged`), served by the new
+`_handle_protected_resource_metadata` handler using
+`self.config.oauth2_resource_server_url` as the resource (falling back to
+`{base_url}{base_path}`) and `self.config.oauth2_issuer_url` as the
+authorization server (falling back to the request's own origin).
+`transports/base.py`'s `_unauthorized_response` gained an optional
+`request: web.Request | None` keyword param; when given, a new
+`_resource_metadata_url(request)` helper builds the absolute PRM URL (via
+`self._oauth_paths()` when `OAuthRoutesMixin` is mixed in — true for every
+HTTP-like transport — else the bare `WELL_KNOWN_PRM_PATH`, since
+Unix/QUIC transports register no OAuth routes to prefix) and appends
+`resource_metadata="..."` to the challenge. All 6 existing 401 call sites in
+this file were updated to pass `request=request` — including the two
+`_authenticate_bearer` sites that previously built their own inline
+`web.json_response(...)` (now reusing `_unauthorized_response`, also
+de-duplicating that envelope construction). **G3 needed no new code**: the
+audience-rejection hook (`ExternalOAuthValidator.validate_token`,
+`oauth_server.py:262-267`) already existed and already reads
+`self.config.oauth2_resource_server_url` — verified as still correctly
+rejecting a foreign-audience token (`test_audience_rejects_foreign_token`).
+7/7 new tests pass (using a real `aiohttp.test_utils.TestClient`/`TestServer`
+round trip for the PRM document and 401-header assertions); full
+`packages/ai-parrot-server/tests/mcp/` suite (150 tests, up from 143) stays
+green — confirming the `_unauthorized_response` signature change is fully
+backward compatible (`request=None` preserves the old bare-challenge
+behavior). `ruff check` on the new test file is clean; `oauth_server.py`
+picked up exactly 1 new pre-existing-style finding (`Dict[str, Any]` vs
+`dict[str, Any]` on the new function's return annotation, matching this
+700-line legacy file's own established, unconverted style throughout —
+confirmed via `git stash` diff: 51 baseline findings, 52 after).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec — flagging for the Planner/next iteration:** per-mount
+audience enforcement (G3) requires `MCPServerConfig.oauth2_resource_server_url`
+to actually be SET to each agent mount's own `AgentMCPMountConfig
+.resource_server_url` when `agent_mount.py` builds each per-agent
+`MCPServerConfig` (TASK-2602) — that wiring does not exist yet, since
+`agent_mount.py` is not in this task's file list and TASK-2602 (already
+completed) did not set it either. The audience-check MACHINERY is real and
+tested directly against `ExternalOAuthValidator`, but nothing in the current
+tree yet plumbs a per-agent resource URL into it end-to-end. Flagging as a
+concrete, scoped follow-up (a one-line addition to `AgentMCPMount`'s
+per-agent `MCPServerConfig` construction) rather than reaching into
+`agent_mount.py` here, which is outside this task's declared scope.
