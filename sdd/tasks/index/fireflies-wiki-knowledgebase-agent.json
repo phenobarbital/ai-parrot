@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T02:29:40+00:00",
-      "file": "sdd/tasks/completed/TASK-2660-scaffolding-config-agent-facade.md"
+      "file": "sdd/tasks/completed/TASK-2660-scaffolding-config-agent-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2661",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T02:34:13+00:00",
-      "file": "sdd/tasks/completed/TASK-2661-frontmatter-schemas-and-validation.md"
+      "file": "sdd/tasks/completed/TASK-2661-frontmatter-schemas-and-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2662",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T02:46:02+00:00",
-      "file": "sdd/tasks/completed/TASK-2662-vault-access-init-mirror-naming.md"
+      "file": "sdd/tasks/completed/TASK-2662-vault-access-init-mirror-naming.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2663",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T02:53:17+00:00",
-      "file": "sdd/tasks/completed/TASK-2663-fetch-gate-and-scheduling.md"
+      "file": "sdd/tasks/completed/TASK-2663-fetch-gate-and-scheduling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2664",
@@ -105,7 +109,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T02:57:26+00:00",
-      "file": "sdd/tasks/completed/TASK-2664-raw-bundle-provenance.md"
+      "file": "sdd/tasks/completed/TASK-2664-raw-bundle-provenance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2665",
@@ -127,7 +132,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T03:00:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2665-classification.md"
+      "file": "sdd/tasks/completed/TASK-2665-classification.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2666",
@@ -149,7 +155,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T03:08:41+00:00",
-      "file": "sdd/tasks/completed/TASK-2666-meeting-source-page-renderer.md"
+      "file": "sdd/tasks/completed/TASK-2666-meeting-source-page-renderer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2667",
@@ -171,7 +178,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T03:13:56+00:00",
-      "file": "sdd/tasks/completed/TASK-2667-project-reconciler-and-new-project.md"
+      "file": "sdd/tasks/completed/TASK-2667-project-reconciler-and-new-project.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2668",
@@ -193,7 +201,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T03:53:25+00:00",
-      "file": "sdd/tasks/completed/TASK-2668-entity-concept-resolvers.md"
+      "file": "sdd/tasks/completed/TASK-2668-entity-concept-resolvers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2669",
@@ -215,7 +224,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T03:56:00+00:00",
-      "file": "sdd/tasks/completed/TASK-2669-contradiction-protocol.md"
+      "file": "sdd/tasks/completed/TASK-2669-contradiction-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2670",
@@ -237,7 +247,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T04:01:24+00:00",
-      "file": "sdd/tasks/completed/TASK-2670-daily-indexes-review-log.md"
+      "file": "sdd/tasks/completed/TASK-2670-daily-indexes-review-log.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2671",
@@ -258,7 +269,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T04:07:15+00:00",
-      "file": "sdd/tasks/completed/TASK-2671-graphindex-rebuild-and-query.md"
+      "file": "sdd/tasks/completed/TASK-2671-graphindex-rebuild-and-query.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2672",
@@ -285,7 +297,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T04:35:48+00:00",
-      "file": "sdd/tasks/completed/TASK-2672-ingest-orchestrator.md"
+      "file": "sdd/tasks/completed/TASK-2672-ingest-orchestrator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2673",
@@ -307,7 +320,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T04:42:57+00:00",
-      "file": "sdd/tasks/completed/TASK-2673-health-lint-archive-graph-workflows.md"
+      "file": "sdd/tasks/completed/TASK-2673-health-lint-archive-graph-workflows.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2674",
@@ -327,7 +341,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T04:46:45+00:00",
-      "file": "sdd/tasks/completed/TASK-2674-email-digests-disabled.md"
+      "file": "sdd/tasks/completed/TASK-2674-email-digests-disabled.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2675",
@@ -361,7 +376,8 @@
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
       "completed_at": "2026-09-01T04:53:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2675-contract-conformance-suite.md"
+      "file": "sdd/tasks/completed/TASK-2675-contract-conformance-suite.md",
+      "verification": "verified"
     }
   ]
 }
