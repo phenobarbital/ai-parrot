@@ -32,7 +32,7 @@
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-2677 (FormField must exist). Independent of TASK-2679/2680/2682/2683 so could run in parallel with them after TASK-2677 completes, but single-worktree sequential execution is the default.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2678-voice-answer-envelope.md"
+      "completed_at": "2026-09-01T18:27:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2678-voice-answer-envelope.md"
     },
     {
       "id": "TASK-2679",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-488",
       "feature": "formfield-content-type",
       "spec": "sdd/specs/formfield-content-type.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on TASK-2677 only; independent of TASK-2678/2679/2682/2683. Priority renderer \u2014 ordered before audio and xforms.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2680-jsonschema-renderer-content-type.md"
+      "completed_at": "2026-09-01T20:25:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2680-jsonschema-renderer-content-type.md"
     },
     {
       "id": "TASK-2681",
