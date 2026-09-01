@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T21:25:31.585492+00:00",
-  "completed_at": "2026-08-31T23:53:18+00:00",
+  "completed_at": "2026-09-01T01:06:44+00:00",
   "tasks": [
     {
       "id": "TASK-2629",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:40:02+00:00",
       "completed_at": "2026-08-31T21:51:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2629-research-partner-contracts.md"
+      "file": "sdd/tasks/completed/TASK-2629-research-partner-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2630",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T21:40:02+00:00",
       "completed_at": "2026-08-31T21:59:53+00:00",
-      "file": "sdd/tasks/completed/TASK-2630-bedrock-adaptive-thinking.md"
+      "file": "sdd/tasks/completed/TASK-2630-bedrock-adaptive-thinking.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2631",
@@ -62,7 +64,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T23:04:20+00:00",
       "completed_at": "2026-08-31T23:13:04+00:00",
-      "file": "sdd/tasks/completed/TASK-2631-bedrock-research-partner.md"
+      "file": "sdd/tasks/completed/TASK-2631-bedrock-research-partner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2632",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T23:15:14+00:00",
       "completed_at": "2026-08-31T23:18:32+00:00",
-      "file": "sdd/tasks/completed/TASK-2632-complementary-research-coordinator.md"
+      "file": "sdd/tasks/completed/TASK-2632-complementary-research-coordinator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2633",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T23:18:49+00:00",
       "completed_at": "2026-08-31T23:31:46+00:00",
-      "file": "sdd/tasks/completed/TASK-2633-ideation-node-seam.md"
+      "file": "sdd/tasks/completed/TASK-2633-ideation-node-seam.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2634",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T23:32:15+00:00",
       "completed_at": "2026-08-31T23:40:03+00:00",
-      "file": "sdd/tasks/completed/TASK-2634-research-node-seam.md"
+      "file": "sdd/tasks/completed/TASK-2634-research-node-seam.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2635",
@@ -143,7 +149,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T23:40:22+00:00",
       "completed_at": "2026-08-31T23:47:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2635-primary-seat-graph-search.md"
+      "file": "sdd/tasks/completed/TASK-2635-primary-seat-graph-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2636",
@@ -164,7 +171,8 @@
       "assigned_to": null,
       "started_at": "2026-08-31T23:47:40+00:00",
       "completed_at": "2026-08-31T23:53:18+00:00",
-      "file": "sdd/tasks/completed/TASK-2636-prompt-and-docs.md"
+      "file": "sdd/tasks/completed/TASK-2636-prompt-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
