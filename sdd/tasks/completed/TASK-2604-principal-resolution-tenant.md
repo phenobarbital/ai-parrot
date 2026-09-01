@@ -206,8 +206,32 @@ class TestPrincipalResolution:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `principal_guard.py` implements `resolve_tenant(token_info, mount_config)`
+with the exact spec §8 precedence (`tenant_id` claim -> `org_id` claim -> mount
+`default_tenant_id` -> `None`; `client_id` never consulted), and
+`resolve_principal(request, mount_config, *, audit_hook=None)` which reads
+`request["mcp_user"]` (populated identically by `_authenticate_api_key` and
+`_authenticate_oauth_external`, `transports/base.py:226`/`263`), fails closed
+with a 401 (`_unauthorized`, matching `_unauthorized_response`'s exact JSON
+envelope) both when no principal is present and when no tenant resolves, and
+otherwise returns a `PermissionContext` via `build_principal_context(principal,
+channel="mcp", tenant_id=tenant, roles=frozenset(scopes))` — the **same** call
+for both auth paths, so OAuth and API-key callers get an equivalent context
+shape (verified by `test_principal_from_oauth_and_api_key`). `published_principal()`
+is an `asynccontextmanager` that `_pctx_var.set()`s then `.reset()`s in a
+`finally` (verified reset-on-exception too). `runtime_key(pctx)` returns
+`(tenant_id, principal)` per the spec's binding requirement. Audit-ledger
+persistence is deliberately NOT implemented here (out of scope, TASK-2605) —
+an injectable `audit_hook: Callable[[dict], None | Awaitable[None]] | None`
+parameter is called with `{"decision": "principal_unresolved", ...}` on every
+failure path, giving TASK-2605 a concrete hook without this module importing
+`security/audit_ledger.py` (not in this task's Verified Imports). 11/11 new
+tests pass; full `packages/ai-parrot-server/tests/mcp/` suite (117 tests) stays
+green; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The `audit_hook` parameter is not itself named
+in the spec (audit is explicitly TASK-2605's job) but is the natural minimal
+seam for "audited as `principal_unresolved`" to be true once TASK-2605 wires
+the real `AuditLedger` in — same pattern as TASK-2603's `policy_filter` stub.

@@ -1,5 +1,7 @@
 """MCP integration for AI-Parrot."""
+
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
 # FEAT-403: local MCP server hierarchy (tool adapter, resources, JSON-RPC
@@ -9,6 +11,17 @@ from .adapter import MCPToolAdapter
 from .resources import MCPResource
 from .server_base import MCPServerBase, LocalServerConfig
 from .local_server import LocalMCPServerBase, StdioMCPServer
+
+# FEAT-477: agent-method MCP exposure declaration + reification. Core-only
+# (G9) — zero ai-parrot-server deps, so eager alongside the other zero-dep
+# modules above.
+from .agent_tools import (
+    MCP_TOOL_ATTR,
+    AgentMethodTool,
+    MCPToolDeclaration,
+    build_exposure_set,
+    mcp_tool,
+)
 
 # Consumer-side classes (stay in core) — resolved lazily via __getattr__
 # below. `.integration` imports `navconfig` (which chdir()s to the
@@ -64,15 +77,14 @@ _SERVER_CLASSES = {
 def __getattr__(name: str):
     if name in _CORE_CLASSES:
         import importlib
+
         mod = importlib.import_module(_CORE_CLASSES[name], package=__name__)
         return getattr(mod, name)
     if name in _SERVER_CLASSES:
         from parrot._imports import load_satellite_attr
 
         module_path, cls_name = _SERVER_CLASSES[name]
-        return load_satellite_attr(
-            name, module_path, install="ai-parrot-server", attr=cls_name
-        )
+        return load_satellite_attr(name, module_path, install="ai-parrot-server", attr=cls_name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -84,6 +96,12 @@ __all__ = [
     "LocalServerConfig",
     "LocalMCPServerBase",
     "StdioMCPServer",
+    # FEAT-477: agent-method MCP exposure declaration + reification
+    "MCP_TOOL_ATTR",
+    "MCPToolDeclaration",
+    "mcp_tool",
+    "AgentMethodTool",
+    "build_exposure_set",
     "MCPEnabledMixin",
     "MCPServerConfig",
     "MCPClient",

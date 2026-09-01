@@ -159,8 +159,37 @@ class TestAgentResources:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `agent_resources.py` builds exactly three resources per agent via
+`register_agent_resources(server, agent_name, agent, exposure_names, policy_filter=None)`:
+`agent://{name}/identity` (allowlist: `name`, `role`, `goal`, `capabilities`,
+`description` — matches the fields `A2AServer.get_agent_card()` already treats as
+publishable, `a2a/server.py:334-361`), `agent://{name}/tools` (merges TASK-2600's
+exposure-set names with `agent.tool_manager.list_tools()`, filtered through an
+optional `(agent_name, tool_name) -> bool` `policy_filter` hook — same decision
+path as `tools/list`; `None` means everything visible, the documented stub until
+TASK-2605's PBAC guard wires in), and `agent://{name}/kbs` (from
+`AbstractBot.knowledge_bases`, `bots/abstract.py:554`). Each read handler returns
+`json.dumps(...)` so the MCP `resources/read` envelope carries it as `text`.
+Wired into `agent_mount.py`'s `_register_agent_tools()` (called once at initial
+mount and again on every OQ5 rebuild, so a `reload_agent()` swap gets fresh
+resource closures too — verified by `test_reregistration_overwrites_stale_agent_closures`).
+`AgentMCPMount.__init__` gained an optional `policy_filter` parameter threaded
+through to `register_agent_resources`, giving TASK-2605 a concrete hook to wire
+into without needing to touch `agent_mount.py` again.
+**OQ8 invariant**: `backstory`/`rationale`/`system_prompt` are never referenced by
+name in any resource builder (allowlist-only field construction) —
+`test_resources_exclude_system_prompt` asserts the strings are absent from both
+`resources/list` and every `resources/read` body (merge blocker, green). 7/7 new
+tests pass; full `packages/ai-parrot-server/tests/mcp/` suite (106 tests, up from
+99) stays green, including the existing `test_agent_mount.py` cases (resource
+registration is additive to tool registration, no behavior change there).
+`ruff check` clean on all three files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. The task said "consume the filter hook it exposes,
+or a stub if 2605 is not yet done" (TASK-2605 not yet done) — the stub is a
+`policy_filter: ToolPolicyFilter | None = None` parameter on both
+`register_agent_resources()` and `AgentMCPMount.__init__`, not prescribed by the
+spec in this exact shape but the natural minimal extension point matching the
+task's own instruction to design one.

@@ -205,10 +205,16 @@ class TestMcpToolDecorator:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Sonnet 5)
+**Date**: 2026-08-31
+**Notes**: Implemented `MCPToolDeclaration` (Pydantic v2, `field_validator`s
+enforcing non-empty `name`/`description`/`scope` and `BaseModel` subclass
+for `args_schema`/`returns`) and the `mcp_tool` decorator marking async
+methods only. Attached via `MCP_TOOL_ATTR` dunder. Exported eagerly from
+`parrot.mcp.__init__` alongside the other zero-dep FEAT-403 modules (core,
+no `ai-parrot-server` import — G9 verified live). All 11 unit tests pass,
+`ruff check` clean. Worktree lacked compiled Cython `.so` build artifacts
+(gitignored, not carried by `git worktree add`) needed to import `parrot`
+at all — copied them from the main checkout to unblock test execution;
+no source files affected.
+**Deviations from spec**: none
