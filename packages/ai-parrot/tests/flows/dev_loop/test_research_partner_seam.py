@@ -248,8 +248,7 @@ class TestResearchNodePartnerSeam:
         # Sequential would take >= 3 * delay (0.3s); concurrent stays close
         # to one delay (0.1s). 2 * delay is a comfortable, non-flaky cutoff.
         assert elapsed < 2 * delay, (
-            f"expected concurrent context-gathering (~{delay}s), "
-            f"took {elapsed:.3f}s — looks sequential"
+            f"expected concurrent context-gathering (~{delay}s), " f"took {elapsed:.3f}s — looks sequential"
         )
         sent_brief = dispatcher.dispatch.call_args.kwargs["brief"]
         assert "## Wiki context\nwiki context" in sent_brief.description
