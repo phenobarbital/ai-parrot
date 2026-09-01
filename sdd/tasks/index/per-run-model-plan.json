@@ -131,7 +131,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Shares dev_loop/runner.py with TASK 1; needs the TASK 6 builder kwarg.",
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2691-ops-runner-per-run-plan.md"
+      "completed_at": "2026-09-01T16:33:21+00:00",
+      "file": "sdd/tasks/completed/TASK-2691-ops-runner-per-run-plan.md"
     },
     {
       "id": "TASK-2692",

@@ -97,10 +97,53 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: The wiring itself was ALREADY functionally complete as a side
+effect of the two dependency tasks: TASK-2685 added the generic
+`flow_kwargs_overrides` seam to `DevLoopRunner.run()` (merged into
+`_dev_loop_flow_factory(overrides)`'s kwargs, unpacked via `**kwargs` into
+whatever builder function is called), and TASK-2690 added the `model_plan`
+kwarg to `build_dev_loop_flow`. I verified this composes correctly with a
+standalone script BEFORE writing any test (patched `build_dev_loop_flow`
+via `__globals__`, called `runner._dev_loop_flow_factory({"model_plan":
+"SENTINEL_PLAN"})`, confirmed `SENTINEL_PLAN` reached the captured kwargs)
+— no `dev_loop/runner.py` behavioural change was needed, and per the
+task's own "Does NOT Exist" list a typed `model_plan` parameter on
+`DevLoopRunner.run()` must NOT be added (spec §8 Q5: the plan travels
+through the generic overrides mapping so a dev-flow concept stays out of
+the base class).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+TASK-2691's real remaining deliverable, given the mechanism already
+existed: (1) a documentation-only addition to `run()`'s
+`flow_kwargs_overrides` docstring, explicitly naming the pattern an ops
+embedder uses (`flow_kwargs_overrides={"model_plan": plan}`) and citing
+TASK-2690/spec §8 Q5 so a future reader does not mistake the missing typed
+parameter for an oversight; (2) the integration tests this task's own
+Test Specification names — `test_dev_loop_runner_threads_a_per_run_plan`
+and `test_ops_path_without_a_plan_is_byte_identical` — plus a third,
+`test_no_per_run_plan_state_leaks_across_concurrent_ops_runs`, covering
+the acceptance criterion "No per-run state on the instance; concurrent
+runs stay isolated." All three exercise the FULL public `run()` API (not
+`_dev_loop_flow_factory()` directly, unlike TASK-2685's tests) with a
+lightweight `_StubOpsFlow` standing in for the real eight-node graph
+(already exhaustively covered elsewhere in this suite) — proving the seam
+end to end from an ops embedder's actual call site. Same `__globals__`-
+patching technique as every prior task in this feature, for the same
+`test_lazy_import.py` orphaned-module reason.
 
-**Deviations from spec**: none | describe if any
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_recovery_lifecycle.py -q`:
+12 passed (9 pre-existing + 3 new). `pytest
+packages/ai-parrot/tests/flows/dev_loop -q`: 1318 passed, 3 pre-existing
+unrelated failures (same three as every other task in this feature).
+`pytest packages/ai-parrot/tests/flows/dev_flow -q`: 449 passed (untouched
+by this task, confirms no cross-topology regression). `ruff check`: test
+file clean; `runner.py` unchanged error count (91, matching the count
+after TASK-2685 — this task's docstring-only addition introduced zero new
+violations).
+
+**Deviations from spec**: none — the task's Codebase Contract line
+describing `_dev_loop_flow_factory()` as "hardcoded to build_dev_loop_flow
++ self._dev_loop_flow_kwargs" was already stale by the time this task
+started (TASK-2685, its own listed dependency, changed exactly that), which
+is precisely why no further runner code change was needed here.
