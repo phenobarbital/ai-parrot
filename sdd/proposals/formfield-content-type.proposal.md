@@ -55,16 +55,24 @@ where a voice note must be stored alongside the transcribed text answer.
     When set, the validator enforces that the submitted value's shape matches one
     of the declared types.
 
-- **`FormValidator._coerce_value()`** (`services/validators.py`): when
-  `field.content_type` is `"application/json"` and the raw value is a `str`,
-  attempt `json.loads()`; when it is `"text/yaml"`, attempt YAML parsing.  
-  When `field.accept_content_types` is set and the submission contains a
-  `dict` payload, accept it without stripping to `str` (so the voice-note
-  envelope can pass through).
+- **`FormValidator._coerce_value()`** (`services/validators.py`):
+  `content_type` is **not** used for eager parsing inside the validator —
+  parsing responsibility belongs to the consumer (*resolved: leave parsing
+  to the consumer*). The only change to `_coerce_value()` is a dict
+  pass-through: when `field.accept_content_types` is set and the submission
+  is a `dict` (e.g. a `VoiceAnswerEnvelope` payload), the validator accepts
+  it without coercing to `str`. The `content_type` and `accept_content_types`
+  values are surfaced as annotation only (present in the `FormField` schema
+  that the consumer already reads).
 
-- **Renderers** (`renderers/jsonschema.py`, `renderers/audio.py`): emit
-  `content_type` and `accept_content_types` when present, so downstream
-  consumers (front-end, AI agents, audio pipeline) know what shape to expect.
+- **Renderers** — all three existing renderers emit `content_type` and
+  `accept_content_types` when present (*resolved: all existing renderers, JSON
+  Schema renderer is prioritary*):
+  - `renderers/jsonschema.py` — primary; first to ship.
+  - `renderers/audio.py` — reads `accept_content_types` to decide submission
+    shape (`VoiceAnswerEnvelope` vs plain string).
+  - `renderers/xforms.py` — emits the metadata in the `bind` element when a
+    natural XForms mapping exists (removed from Non-Goals in v1).
 
 ### What's New
 
@@ -81,10 +89,12 @@ where a voice note must be stored alongside the transcribed text answer.
   contains `"application/json"` alongside `"text/plain"`.  
   Its MIME type from the consumer's perspective is `"application/json"`.
 
-- **Validator coercion for `accept_content_types`**: when the submitted value
+- **Validator pass-through for `accept_content_types`**: when the submitted value
   is a `dict` and `"application/json"` is in `accept_content_types`, the
-  validator tries to parse the value as a `VoiceAnswerEnvelope` (or accepts the
-  raw dict if the field does not declare a specific JSON sub-schema).
+  validator passes the dict through unchanged (no eager Pydantic coercion to
+  `VoiceAnswerEnvelope` — the consumer is responsible for parsing/validation).
+  MIME-type mismatch enforcement is **advisory-only in v1** (*resolved:
+  advisory-only; hard enforcement is a follow-up for build validators*).
 
 ### What's Untouched (Non-Goals)
 
@@ -97,8 +107,10 @@ where a voice note must be stored alongside the transcribed text answer.
 - `FormSubmission.data` outer shape — the value for a field is still keyed by
   `field_id`; the content shifts from `str` to `str | dict` for fields
   that declare `"application/json"` as an accepted type.
-- XForms renderer — content-type metadata is recorded in the XForms `bind`
-  element only if a natural mapping exists; out of scope for v1.
+- XForms renderer full enforcement — `renderers/xforms.py` emits
+  `content_type`/`accept_content_types` metadata in v1 (moved to in-scope;
+  see What Changes above). Hard MIME-type validation at submission time
+  remains a non-goal for v1.
 - Server-side audio recording/storage pipeline — `VoiceAnswerEnvelope.blob_ref`
   is expected to be pre-populated by the audio-renderer session before
   submission; this proposal only defines the schema and the validator pass-
@@ -130,8 +142,9 @@ base `FieldType`.
 | `core/schema.py` — `FormField` | Add `content_type`, `accept_content_types` fields |
 | `core/voice_answer.py` (new) | Define `VoiceAnswerEnvelope` |
 | `services/validators.py` — `_coerce_value()` | JSON/YAML parse branch for `content_type`; dict pass-through for `accept_content_types` |
-| `renderers/jsonschema.py` | Emit `content_type`/`accept_content_types` in JSON Schema output |
-| `renderers/audio.py` | Read `accept_content_types` to decide whether to submit `VoiceAnswerEnvelope` or plain string |
+| `renderers/jsonschema.py` | Emit `content_type`/`accept_content_types` in JSON Schema output (prioritary) |
+| `renderers/audio.py` | Read `accept_content_types` to decide submission shape (`VoiceAnswerEnvelope` vs plain `str`) |
+| `renderers/xforms.py` | Emit `content_type`/`accept_content_types` in XForms `bind` element (v1, all renderers in-scope) |
 | `tools/field_helpers.py` | Update `_FIELD_SCHEMA_SNIPPETS` examples for `TEXT_AREA` with `content_type` |
 | Tests | New unit tests for `_coerce_value()` with `content_type`; VoiceAnswerEnvelope round-trip |
 
@@ -175,10 +188,10 @@ for `FileEnvelope` fields.
 
 ## Open Questions
 
-- [ ] Should the validator actively parse `"application/json"` / `"text/yaml"` submissions in `_coerce_value()`, or only annotate the value and leave parsing to the consumer? Eager parsing makes the coerced value a `dict`/`Any`, which is a type change for `FormSubmission.data[field_id]`. — *Owner: user*
+- [x] Should the validator actively parse `"application/json"` / `"text/yaml"` submissions in `_coerce_value()`, or only annotate the value and leave parsing to the consumer? Eager parsing makes the coerced value a `dict`/`Any`, which is a type change for `FormSubmission.data[field_id]`. — *Resolved*: leave the parsing to the consumer.
 
-- [ ] Should `VoiceAnswerEnvelope` live in `core/voice_answer.py` (formdesigner core) or in the audio renderer package (`audio/models.py` already has `AudioFormManifest`, `AudioQuestion`)? — *Owner: user*
+- [x] Should `VoiceAnswerEnvelope` live in `core/voice_answer.py` (formdesigner core) or in the audio renderer package (`audio/models.py` already has `AudioFormManifest`, `AudioQuestion`)? — *Resolved*: in core/voice_answer.py, the audio renderer only consumes from there.
 
-- [ ] For `accept_content_types`, should the validator enforce that the submission actually matches one of the declared MIME types (rejecting mismatches), or is it advisory-only (hints for consumers)? — *Owner: user*
+- [x] For `accept_content_types`, should the validator enforce that the submission actually matches one of the declared MIME types (rejecting mismatches), or is it advisory-only (hints for consumers)? — *Resolved*: current is advisory-only (with hints for consumers), follow-up for build validators.
 
-- [ ] Which renderers need to emit `content_type` / `accept_content_types` in v1: JSON Schema renderer only, or also audio renderer and XForms renderer? — *Owner: user*
+- [x] Which renderers need to emit `content_type` / `accept_content_types` in v1: JSON Schema renderer only, or also audio renderer and XForms renderer? — *Resolved*: all existing renderers, but JSON schema renderer is prioritary.
