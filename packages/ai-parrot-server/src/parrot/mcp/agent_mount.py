@@ -22,6 +22,7 @@ import logging
 from typing import Any
 
 from aiohttp import web
+from parrot.mcp.agent_resources import ToolPolicyFilter, register_agent_resources
 from parrot.mcp.agent_tools import build_exposure_set
 from parrot.mcp.config import AgentMCPMountConfig, MCPServerConfig
 from parrot.mcp.transports.streamable_http import StreamableHttpMCPServer
@@ -126,11 +127,23 @@ class AgentMCPMount:
             never a cached agent instance (OQ5).
         config: The `AgentMCPMountConfig` describing which agents to mount,
             under which base path, and whether the aggregate is enabled.
+        policy_filter: Optional `(agent_name, tool_name) -> bool` (or
+            awaitable) hook used to filter the per-agent tool-catalog
+            resource (TASK-2603) by the calling principal's policy — the
+            same decision path as `tools/list`. `None` (default) means
+            everything is visible; TASK-2605's PBAC guard wires in the
+            real implementation.
     """
 
-    def __init__(self, bot_manager: Any, config: AgentMCPMountConfig) -> None:
+    def __init__(
+        self,
+        bot_manager: Any,
+        config: AgentMCPMountConfig,
+        policy_filter: ToolPolicyFilter | None = None,
+    ) -> None:
         self._bots = bot_manager
         self._config = config
+        self._policy_filter = policy_filter
         self._servers: dict[str, StreamableHttpMCPServer] = {}
         #: Last-seen `id()` of each agent instance, used to detect a
         #: `reload_agent()` swap without holding a strong reference to the
@@ -229,7 +242,8 @@ class AgentMCPMount:
         if agent is None:
             agent = self._bots.get_bots()[name]
         server.tools.clear()
-        for tool in build_exposure_set(agent):
+        exposure_set = build_exposure_set(agent)
+        for tool in exposure_set:
             server.register_tool(tool)
         tool_manager = getattr(agent, "tool_manager", None)
         if tool_manager is not None:
@@ -239,6 +253,16 @@ class AgentMCPMount:
                 own_tool = tool_manager.get_tool(tool_name)
                 if own_tool is not None:
                     server.register_tool(own_tool)
+        # FEAT-477 TASK-2603: identity card, tool catalog, KB descriptors.
+        # Re-registering overwrites the same three URIs with handlers
+        # closing over the (possibly new, post-OQ5-rebuild) `agent`.
+        register_agent_resources(
+            server,
+            name,
+            agent,
+            exposure_names=[tool.name for tool in exposure_set],
+            policy_filter=self._policy_filter,
+        )
 
     def _rebuild_aggregate(self, server: StreamableHttpMCPServer) -> None:
         """Rebuild the aggregate server's tool set from every configured agent.
