@@ -226,8 +226,45 @@ class TestAgentMCPMount:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `AgentMCPMount` created in `agent_mount.py`, mirroring `A2AServer.setup()`'s
+mount pattern. Per agent: builds a `_AgentBoundMCPServer(StreamableHttpMCPServer)`,
+registers `build_exposure_set(agent)` plus `agent.tool_manager`'s own tools (excluding
+`_INTERNAL_TOOL_NAMES = frozenset({"to_json"})`, mirroring `A2AServer`'s constant), then
+calls `server._register_routes(app.router, f"{base_path}/{name}")` directly (bypassing
+the async `start()`, matching the task's own synchronous sample). Optional aggregate
+server at the fixed `/mcp` path (spec §2 Overview #2 — deliberately not derived from
+`AgentMCPMountConfig.base_path`) publishes `{agent}__{tool}` via a small
+`_AggregateToolProxy` that renames a tool without mutating the shared instance
+registered under the per-agent server. `canonical_resource()` /
+`canonical_resource_from_aggregate()` both funnel to `mcp:agent:{name}:tool:{tool}`.
+**OQ5**: `_resolve()`/`_ensure_current()` do a fresh `BotManager.get_bots()[name]`
+lookup on every call, tracked via `id()` (not a strong reference) so a
+`reload_agent()` swap is detected and that agent's registrations are rebuilt before
+the next `tools/list`/`tools/call` (hooked via `_AgentBoundMCPServer`/`_AggregateMCPServer`
+overrides of those two handlers — the only request-time hook this task adds; PBAC/audit
+guards remain out of scope for TASK-2604+). Base-path collisions are rejected by
+inspecting both `app.router.routes()` (already-registered routes) and, when present,
+`app["parrot_mcp_server"].transport_configs` (`ParrotMCPServer` defers its own route
+registration to `on_startup`, so its configured-but-not-yet-started transports would
+otherwise be invisible). Wired into `BotManager.setup()` via a new keyword-only
+`agent_mount_config: Optional[AgentMCPMountConfig] = None` parameter — `None` by
+default, so existing callers (`self.bot_manager.setup(self.app)`) are unaffected (G11).
+9/9 new tests pass; full `packages/ai-parrot-server/tests/mcp/` (99 tests) and
+`tests/manager/` + `test_botmanager_ephemeral_owner.py` (19 tests) suites stay green.
+`ruff check agent_mount.py test_agent_mount.py` clean; `manager.py`'s one new lint
+finding (`Optional[...]` vs `X | None` on the new parameter) matches the file's
+pre-existing, unconverted style (97 baseline findings, confirmed via `git stash`
+diff before/after).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none of substance. Two implementation choices not
+prescribed by the spec, both scoped entirely within this task's own file:
+(1) `BotManager.setup()` gained a keyword-only `agent_mount_config` parameter (the
+task said only "wire the mount into `BotManager.setup()`" without specifying the
+call convention — a default-`None`, opt-in keyword-only param was the only way to
+do so without changing `setup()`'s existing positional signature or its return
+convention); (2) the aggregate's request-time rebuild always rebuilds the full
+tool set on every `tools/list`/`tools/call` rather than diffing per agent first —
+simpler and correct, at the cost of doing that work on every aggregate call rather
+than only when an agent actually reloaded.
