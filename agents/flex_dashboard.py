@@ -10,12 +10,42 @@ Sibling package ``agents/flex_dashboard/`` holds the pure normalization
 layer (:mod:`agents.flex_dashboard.normalize`), the registered
 ``@infographic_transformer`` functions (:mod:`agents.flex_dashboard.
 transformers`), the kb docs (``kb/*.md``), and the composite skills
-(``skills/``) — same file+package coexistence pattern as
-``agents/finance_reporter.py``::
+(``skills/``)::
 
     agent = FlexDashboard(name="flex-dashboard", recipe_store=store)
     await agent.configure()
     recipe = await agent.publish_dashboard_recipe(overwrite=True)
+
+.. warning::
+
+   **Known, confirmed limitation (external code review finding)**: because
+   ``agents/flex_dashboard/`` is a REGULAR package (has its own
+   ``__init__.py``), Python's ``FileFinder`` always resolves a plain
+   ``import agents.flex_dashboard`` — or ``from agents.flex_dashboard
+   import FlexDashboard`` — to that PACKAGE, never to THIS file, even
+   though ``FlexDashboard`` is only ever defined here. This is reproducible
+   directly (``python -c "from agents.flex_dashboard import
+   FlexDashboard"`` raises ``ImportError``). It does NOT affect the
+   application as actually deployed: ``parrot.registry.registry
+   .AgentRegistry._load_modules_from_directory`` — the real production
+   agent-discovery path — globs ``agents/*.py`` and loads each file via
+   ``importlib.util.spec_from_file_location`` under a synthetic name,
+   never a plain dotted import, so ``@register_agent(name="flex_dashboard")``
+   fires correctly at boot. Every test file and the example runner in this
+   feature load this module the SAME way for the same reason (see any
+   test file's ``_load_module``/``_load_package`` helpers). A caller that
+   writes the natural ``from agents.flex_dashboard import FlexDashboard``
+   in a notebook, script, or a future ``agents.yaml``-driven
+   ``config.module`` entry WILL hit this ``ImportError`` — there is no
+   compositional fix available from within this agent's own file(s) that
+   preserves both "the class is importable via the natural path" and "the
+   sibling package's submodules (``normalize``/``transformers``) are
+   importable" simultaneously with this exact file/directory naming.
+   Resolving it for real requires renaming the sibling package (e.g. to
+   ``agents/flex_dashboard_kit/``) and updating every internal reference —
+   out of scope for this feature to do unilaterally, since the spec's own
+   Module 3 architecture mandates the current name; flagged here for the
+   PR reviewer to decide.
 
 Prefer :meth:`FlexDashboard.publish_dashboard_recipe` over calling the
 inherited ``publish_recipe()`` directly for ``DASHBOARD_RECIPE_NAME`` — the

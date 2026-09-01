@@ -405,8 +405,18 @@ def rep_utilization_by_region(inputs: dict[str, pd.DataFrame], params: dict[str,
 )
 def proximity_staffing(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
-    radius_miles = float(params.get("radius_miles") or 50)
-    nearest_n = int(params.get("nearest_n") or 3)
+    # Code-review finding (adopted): `or 50`/`or 3` would silently replace an
+    # explicit `radius_miles=0`/`nearest_n=0` with the default, since
+    # `bool(0)` is False — a real, reachable path (transformers are called
+    # directly with native Python ints/floats, not just RecipeRunner's
+    # resolved strings, e.g. from a `/widget` skill invocation). Use an
+    # explicit `is None` check instead. `""`/`None` (the recipe's own "no
+    # override" sentinel — see `agents/flex_dashboard.py::recipe_params()`)
+    # both correctly fall through to the default via this check.
+    raw_radius = params.get("radius_miles")
+    radius_miles = float(raw_radius) if raw_radius not in (None, "") else 50.0
+    raw_nearest_n = params.get("nearest_n")
+    nearest_n = int(raw_nearest_n) if raw_nearest_n not in (None, "") else 3
 
     stores = inputs["msl"].sort_values("store_name").reset_index(drop=True)
     employees = canonicalize_columns(inputs["employees"], source="employees")

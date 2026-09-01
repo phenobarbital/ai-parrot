@@ -282,6 +282,23 @@ class TestProximityStaffing:
         for row in out["coverage"]:
             assert len(row["nearest_employees"]) <= 1
 
+    def test_proximity_staffing_zero_radius_and_nearest_n_are_explicit_values(
+        self, loaded_flex_transformers, flex_frames
+    ):
+        """Code-review finding (adopted): `radius_miles=0`/`nearest_n=0` are
+        legitimate explicit overrides ("exact location only" / "no nearest
+        list"), not "unset" — must NOT silently fall back to the defaults
+        (50 / 3) the way a naive `params.get(...) or default` would."""
+        out = loaded_flex_transformers.proximity_staffing(
+            {"msl": flex_frames["msl"], "employees": flex_frames["employees"]},
+            {"radius_miles": 0, "nearest_n": 0},
+        )
+        assert out["radius_miles"] == 0
+        assert out["nearest_n"] == 0
+        for row in out["coverage"]:
+            assert row["nearest_employees"] == []
+            assert row["employees_within_radius"] == 0
+
     def test_proximity_staffing_flex_type_filter(self, loaded_flex_transformers, flex_frames):
         out = loaded_flex_transformers.proximity_staffing(
             {"msl": flex_frames["msl"], "employees": flex_frames["employees"]},
