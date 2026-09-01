@@ -114,7 +114,7 @@
       "feature_id": "FEAT-485",
       "feature": "expose-toolkits-as-local-mcp",
       "spec": "sdd/specs/expose-toolkits-as-local-mcp.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,7 +124,7 @@
       "parallel": false,
       "parallelism_notes": "No file overlap with TASK-2648 (codex/ vs claude_code/); sequential per the spec's Worktree Strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T00:05:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2649-codex-installer-parity.md"
     },
