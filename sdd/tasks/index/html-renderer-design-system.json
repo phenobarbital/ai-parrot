@@ -132,7 +132,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Sole owner of formats/infographic_html.py — no file overlap with 2713/2714.",
       "assigned_to": null,
       "started_at": "2026-09-01T20:42:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2712-infographic-html-migration.md"
+      "completed_at": "2026-09-01T23:45:38+00:00",
+      "file": "sdd/tasks/completed/TASK-2712-infographic-html-migration.md"
     },
     {
       "id": "TASK-2713",

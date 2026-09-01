@@ -198,10 +198,47 @@ class TestInfographicLayouts:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-02
+**Notes**: `render()`/`render_to_html()` gained a `layout: str = "analytics"`
+parameter. `render_to_html()` resolves it against `DesignSystem.LAYOUTS`
+(unknown -> `DesignSystem.DEFAULT_LAYOUT`, warn-free — matches the
+existing theme-resolution convention at `:966-971`, not duplicated).
+`_assemble_document()` now takes `style` (the full composed sheet from
+`DesignSystem.stylesheet(theme_cfg, layout_name)`, passing the
+already-resolved `ThemeConfig` directly rather than a name, so the
+existing try/except theme fallback isn't re-run) plus `theme_name`/
+`layout` for the wrapper's `data-theme`/`data-layout` attributes. Wrapper
+is now `<div class="ds-page container" data-layout="..."
+data-theme="...">` — both classes ALWAYS present (per the task's literal
+instruction): `container` is a no-op class on any layout OTHER than
+`report` (no matching CSS rule loads), so uniform markup is safe.
+`self._theme_cfg` assignment untouched — verified still read by the
+chart-styling call sites. Deleted `BASE_CSS` (~630 lines).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Tests: this task's new
+`packages/ai-parrot-visualizations/tests/outputs/test_infographic_html_layouts.py`
+(25 tests) passes; the full `packages/ai-parrot-visualizations/tests/`
+suite (199 tests) passes; `packages/ai-parrot/tests/outputs/formats/`
+(256 tests) shows the SAME 13 pre-existing failures with and without this
+task's changes (verified via `git show origin/dev:.../infographic_html.py`
+side-by-side — `test_jinja2.py`/`test_template_report.py`/2
+`test_pep420_integration.py` node-id-suffix cases /2
+`test_renderer_registry.py` cases; the registry ones are a renderer
+registration ORDER issue pre-dating this feature, unrelated to CSS/layout).
+`ruff check` on `infographic_html.py`: identical 42 pre-existing errors
+before and after (0 new); the two test files are ruff-clean. `mypy` cannot
+standalone-check this file (relative-import parent-module error,
+reproduced identically on the pre-change file) — not a regression.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Modified
+`packages/ai-parrot-visualizations/tests/outputs/test_design_system_layouts.py`
+(TASK-2708), which is NOT in this task's own file list — a necessary,
+unavoidable consequence of this task's own `BASE_CSS`-deletion acceptance
+criterion: that file imported `BASE_CSS` directly for its report-layout
+parity guard (`test_report_layout_matches_legacy_selectors`). Replaced the
+dynamic `_legacy_selectors()`-from-`BASE_CSS` extraction with a frozen,
+172-entry selector snapshot captured from `BASE_CSS` immediately before
+deleting it (`git show origin/dev:...` diffed to confirm the exact set),
+so the parity guard keeps functioning without the now-removed constant.
+No other deviations.
