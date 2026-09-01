@@ -14,14 +14,14 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation for TASK 2 and 7; edits dev_loop/runner.py, which TASK 7 also touches.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2685-runner-flow-kwargs-overrides-seam.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Builds on the TASK 1 seam; same file family.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2686-dev-flow-runner-per-run-plan.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on the per-run plan existing; same file as TASK 2.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2687-resume-keeps-original-seats.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": false,
       "parallelism_notes": "Needs the runner parameter (TASK 2) and the reporting semantics (TASK 3).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2688-dev-console-per-run-plan-wiring.md"
     },
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": false,
       "parallelism_notes": "Copy follows the behaviour change in TASK 4.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2689-console-copy-per-run-seats.md"
     },
@@ -113,14 +113,14 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "File-disjoint from TASKS 1-5 (dev_loop/flow.py only), so it CAN run in a separate worktree. The spec's Worktree Strategy still recommends one sequential worktree: TASK 7 shares dev_loop/runner.py with TASK 1, so a second worktree buys little on a chain this short.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2690-ops-builder-model-plan-seam.md"
     },
@@ -131,7 +131,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -141,7 +141,7 @@
       "parallel": false,
       "parallelism_notes": "Shares dev_loop/runner.py with TASK 1; needs the TASK 6 builder kwarg.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2691-ops-runner-per-run-plan.md"
     },
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": false,
       "parallelism_notes": "Documents the finished behaviour; must land last.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T15:43:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2692-per-run-plan-docs-and-integration.md"
     }
