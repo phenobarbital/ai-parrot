@@ -113,7 +113,7 @@
       "feature_id": "FEAT-490",
       "feature": "per-run-model-plan",
       "spec": "sdd/specs/per-run-model-plan.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [],
@@ -121,8 +121,8 @@
       "parallelism_notes": "File-disjoint from TASKS 1-5 (dev_loop/flow.py only), so it CAN run in a separate worktree. The spec's Worktree Strategy still recommends one sequential worktree: TASK 7 shares dev_loop/runner.py with TASK 1, so a second worktree buys little on a chain this short.",
       "assigned_to": null,
       "started_at": "2026-09-01T15:43:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2690-ops-builder-model-plan-seam.md"
+      "completed_at": "2026-09-01T16:29:12+00:00",
+      "file": "sdd/tasks/completed/TASK-2690-ops-builder-model-plan-seam.md"
     },
     {
       "id": "TASK-2691",
