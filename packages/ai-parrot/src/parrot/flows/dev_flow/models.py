@@ -86,8 +86,7 @@ class DevRequestBrief(BaseModel):
         ...,
         min_length=1,
         description=(
-            "Short human name for the request. Slug source for the "
-            "``sdd/proposals/<slug>.*.md`` document path."
+            "Short human name for the request. Slug source for the " "``sdd/proposals/<slug>.*.md`` document path."
         ),
     )
     description: str = Field(
@@ -118,8 +117,7 @@ class DevRequestBrief(BaseModel):
     judge_panel: JudgePanelConfig | None = Field(
         default=None,
         description=(
-            "Optional QA judge-panel override, passed through to the "
-            "``FeatureBrief`` that ``IdeationNode`` emits."
+            "Optional QA judge-panel override, passed through to the " "``FeatureBrief`` that ``IdeationNode`` emits."
         ),
     )
 
@@ -127,9 +125,7 @@ class DevRequestBrief(BaseModel):
 # Discriminated brief union on ``kind`` — mirrors ``dev_loop.models.Brief``.
 # Three admissible kinds: "enhancement" / "new_feature" (DevRequestBrief)
 # and "feature" (FeatureBrief, the document-based FEAT-378 intake).
-DevFlowBrief = Annotated[
-    DevRequestBrief | FeatureBrief, Field(discriminator="kind")
-]
+DevFlowBrief = Annotated[DevRequestBrief | FeatureBrief, Field(discriminator="kind")]
 
 
 def parse_dev_brief(data: dict[str, Any]) -> DevRequestBrief | FeatureBrief:
@@ -163,8 +159,7 @@ def parse_dev_brief(data: dict[str, Any]) -> DevRequestBrief | FeatureBrief:
     if kind in ("enhancement", "new_feature"):
         return DevRequestBrief(**data)
     raise ValueError(
-        "dev-flow brief requires an explicit kind of 'enhancement', "
-        f"'new_feature' or 'feature'; got {kind!r}"
+        "dev-flow brief requires an explicit kind of 'enhancement', " f"'new_feature' or 'feature'; got {kind!r}"
     )
 
 

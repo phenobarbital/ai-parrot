@@ -472,9 +472,7 @@ class DevelopmentNode(DevLoopNode):
             collapsed.model or "<backend default>",
             "planner suggested_pool" if suggested is not None else "configured pool",
         )
-        return DevAgentPoolConfig(
-            agents=[collapsed], isolation_mode=pool_cfg.isolation_mode
-        )
+        return DevAgentPoolConfig(agents=[collapsed], isolation_mode=pool_cfg.isolation_mode)
 
     @staticmethod
     def _first_suggested_spec(shared: dict[str, Any]) -> DevAgentSpec | None:

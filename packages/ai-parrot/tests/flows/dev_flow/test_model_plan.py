@@ -69,15 +69,11 @@ class TestDevPoolValidation:
 
     def test_unknown_backend_fails_fast(self):
         with pytest.raises(ValueError, match="claude-code"):
-            DevFlowModelPlan.model_validate(
-                {"dev_pool": [{"agent": "not-a-backend", "model": "x"}]}
-            )
+            DevFlowModelPlan.model_validate({"dev_pool": [{"agent": "not-a-backend", "model": "x"}]})
 
     def test_unknown_backend_message_names_the_offender(self):
         with pytest.raises(ValueError, match="not-a-backend"):
-            DevFlowModelPlan.model_validate(
-                {"dev_pool": [{"agent": "not-a-backend"}]}
-            )
+            DevFlowModelPlan.model_validate({"dev_pool": [{"agent": "not-a-backend"}]})
 
     def test_supported_backends_match_the_literal(self):
         supported = supported_dev_pool_backends()
@@ -92,9 +88,7 @@ class TestDevPoolValidation:
 
     def test_models_are_never_validated(self):
         """Model ids are free text by catalog policy (catalog.py:22-24)."""
-        plan = DevFlowModelPlan.model_validate(
-            {"dev_pool": [{"agent": "nova", "model": "totally-made-up-model"}]}
-        )
+        plan = DevFlowModelPlan.model_validate({"dev_pool": [{"agent": "nova", "model": "totally-made-up-model"}]})
         assert plan.dev_pool[0].model == "totally-made-up-model"
 
 
@@ -166,9 +160,7 @@ class TestResolveModelPlan:
         """Setting one partner field must not freeze the others."""
         resolved = resolve_model_plan(
             DevFlowModelPlan(research_partner=ResearchPartnerPlan(enabled=True)),
-            config_getter=_getter(
-                {ENV_PARTNER_ENABLED: "false", ENV_PARTNER_MODEL: "nova-2-lite"}
-            ),
+            config_getter=_getter({ENV_PARTNER_ENABLED: "false", ENV_PARTNER_MODEL: "nova-2-lite"}),
         )
         assert resolved.research_partner.enabled is True
         assert resolved.research_partner.model == "nova-2-lite"
@@ -178,15 +170,11 @@ class TestResolveModelPlan:
         [("1", True), ("true", True), ("yes", True), ("0", False), ("false", False), ("", False)],
     )
     def test_partner_enabled_env_coercion(self, raw: str, expected: bool):
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_PARTNER_ENABLED: raw})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_PARTNER_ENABLED: raw}))
         assert resolved.research_partner.enabled is expected
 
     def test_partner_backend_from_env(self):
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_PARTNER_BACKEND: "nova"})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_PARTNER_BACKEND: "nova"}))
         assert resolved.research_partner.backend == "nova"
 
     def test_dev_pool_from_env_json(self):
@@ -216,9 +204,7 @@ class TestResolveModelPlan:
 
     def test_env_pool_unknown_backend_fails_fast(self):
         with pytest.raises(ValueError, match="unknown dev agent backend"):
-            resolve_model_plan(
-                None, config_getter=_getter({ENV_DEV_POOL: '[{"agent": "bogus"}]'})
-            )
+            resolve_model_plan(None, config_getter=_getter({ENV_DEV_POOL: '[{"agent": "bogus"}]'}))
 
     def test_env_pool_invalid_json_raises(self):
         with pytest.raises(ValueError, match="JSON array"):
@@ -226,14 +212,10 @@ class TestResolveModelPlan:
 
     def test_env_pool_non_array_json_raises(self):
         with pytest.raises(ValueError, match="JSON \\*array\\*"):
-            resolve_model_plan(
-                None, config_getter=_getter({ENV_DEV_POOL: '{"agent": "nova"}'})
-            )
+            resolve_model_plan(None, config_getter=_getter({ENV_DEV_POOL: '{"agent": "nova"}'}))
 
     def test_blank_env_value_falls_back_to_builtin(self):
-        resolved = resolve_model_plan(
-            None, config_getter=_getter({ENV_RESEARCH_PRIMARY: "   "})
-        )
+        resolved = resolve_model_plan(None, config_getter=_getter({ENV_RESEARCH_PRIMARY: "   "}))
         assert resolved.research_primary == DEFAULT_RESEARCH_PRIMARY
 
     def test_explicit_review_pair_survives(self):

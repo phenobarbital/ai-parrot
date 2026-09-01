@@ -201,21 +201,15 @@ class TestPlanParsing:
 
     def test_unknown_review_primary_rejected(self, server_dev):
         with pytest.raises(ValueError, match="cannot serve as the primary reviewer"):
-            server_dev._parse_model_plan(
-                {"review": {"primary": {"agent": "nova"}}}
-            )
+            server_dev._parse_model_plan({"review": {"primary": {"agent": "nova"}}})
 
     def test_model_ids_are_free_text(self, server_dev):
         """Catalog model lists are a suggestion, never a whitelist."""
-        plan = server_dev._parse_model_plan(
-            {"dev_agents": [{"agent": "nova", "model": "not-in-any-catalog-list"}]}
-        )
+        plan = server_dev._parse_model_plan({"dev_agents": [{"agent": "nova", "model": "not-in-any-catalog-list"}]})
         assert plan.dev_pool[0].model == "not-in-any-catalog-list"
 
     def test_partner_only_payload(self, server_dev):
-        plan = server_dev._parse_model_plan(
-            {"research_partner": {"enabled": True}}
-        )
+        plan = server_dev._parse_model_plan({"research_partner": {"enabled": True}})
         assert plan.research_partner.enabled is True
         assert plan.dev_pool == []
 
@@ -224,19 +218,20 @@ class TestPlanParsing:
 class TestRunEndpoint:
     async def test_run_accepts_a_valid_plan(self, make_client):
         client = await make_client()
-        resp = await client.post("/api/flow/run", json=_nl_form(
-            dev_agents=[{"agent": "nova", "model": "zai.glm-5", "count": 1}],
-            research_primary="claude-opus-5",
-        ))
+        resp = await client.post(
+            "/api/flow/run",
+            json=_nl_form(
+                dev_agents=[{"agent": "nova", "model": "zai.glm-5", "count": 1}],
+                research_primary="claude-opus-5",
+            ),
+        )
         assert resp.status == 200
         body = await resp.json()
         assert body["model_plan"]["research_primary"] == "claude-opus-5"
 
     async def test_run_rejects_unknown_backend_with_supported_list(self, make_client):
         client = await make_client()
-        resp = await client.post(
-            "/api/flow/run", json=_nl_form(dev_agents=[{"agent": "bogus"}])
-        )
+        resp = await client.post("/api/flow/run", json=_nl_form(dev_agents=[{"agent": "bogus"}]))
         assert resp.status == 400
         error = (await resp.json())["error"]
         assert "bogus" in error
@@ -244,18 +239,16 @@ class TestRunEndpoint:
 
     async def test_run_rejects_unknown_review_primary(self, make_client):
         client = await make_client()
-        resp = await client.post(
-            "/api/flow/run", json=_nl_form(review={"primary": {"agent": "nova"}})
-        )
+        resp = await client.post("/api/flow/run", json=_nl_form(review={"primary": {"agent": "nova"}}))
         assert resp.status == 400
         assert "primary reviewer" in (await resp.json())["error"]
 
     async def test_response_echoes_the_effective_plan(self, make_client):
         """A differing request must be told what will REALLY run."""
         client = await make_client()
-        resp = await client.post("/api/flow/run", json=_nl_form(
-            dev_agents=[{"agent": "claude-code", "model": "", "count": 1}]
-        ))
+        resp = await client.post(
+            "/api/flow/run", json=_nl_form(dev_agents=[{"agent": "claude-code", "model": "", "count": 1}])
+        )
         body = await resp.json()
         # The server's build-time plan, not the submitted one.
         assert [(r["agent"], r["model"]) for r in body["model_plan"]["dev_agents"]] == [
@@ -281,9 +274,7 @@ class TestUiSurfacesTheOverride:
 
     @staticmethod
     def _dev_html() -> str:
-        return (_REPO_ROOT / "examples" / "dev_loop" / "static" / "dev.html").read_text(
-            encoding="utf-8"
-        )
+        return (_REPO_ROOT / "examples" / "dev_loop" / "static" / "dev.html").read_text(encoding="utf-8")
 
     def test_mismatch_warning_helper_exists(self):
         source = self._dev_html()
@@ -297,7 +288,7 @@ class TestUiSurfacesTheOverride:
     def test_warning_does_not_use_the_collapsed_form_error_box(self):
         """#form-err lives inside #request-form, hidden once a run starts."""
         source = self._dev_html()
-        warn_fn = source[source.index("function showPlanWarning("):]
+        warn_fn = source[source.index("function showPlanWarning(") :]
         warn_fn = warn_fn[: warn_fn.index("\nasync function submit")]
         assert "form-err" not in warn_fn
         assert "exec-section" in warn_fn

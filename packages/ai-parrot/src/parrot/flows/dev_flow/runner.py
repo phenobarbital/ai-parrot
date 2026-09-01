@@ -336,10 +336,7 @@ class DevFlowRunner(DevLoopRunner):
         model_plan = kwargs.get("model_plan")
         if model_plan is not None:
             policy["model_plan"] = {
-                "dev_pool": [
-                    {"agent": spec.agent, "count": spec.count}
-                    for spec in model_plan.dev_pool
-                ],
+                "dev_pool": [{"agent": spec.agent, "count": spec.count} for spec in model_plan.dev_pool],
                 "review_primary_agent": model_plan.review.primary.agent,
                 "research_partner_enabled": model_plan.research_partner.enabled,
             }

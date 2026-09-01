@@ -115,9 +115,7 @@ class TestPoolThreading:
 
     def test_plan_opts_into_env_resolution(self, monkeypatch):
         """Supplying *any* plan enables ``DEV_FLOW_*`` env resolution."""
-        monkeypatch.setenv(
-            "DEV_FLOW_DEV_POOL", '[{"agent": "nova", "model": "zai.glm-5"}]'
-        )
+        monkeypatch.setenv("DEV_FLOW_DEV_POOL", '[{"agent": "nova", "model": "zai.glm-5"}]')
         node = _development_node(_flow(model_plan=DevFlowModelPlan()))
         assert node._pool_config is not None
         assert [s.model for s in node._pool_config.agents] == ["zai.glm-5"]
@@ -133,11 +131,7 @@ class TestPoolThreading:
 
     def test_unknown_backend_fails_before_build(self):
         with pytest.raises(ValueError, match="unknown dev agent backend"):
-            _flow(
-                model_plan=DevFlowModelPlan.model_validate(
-                    {"dev_pool": [{"agent": "bogus"}]}
-                )
-            )
+            _flow(model_plan=DevFlowModelPlan.model_validate({"dev_pool": [{"agent": "bogus"}]}))
 
 
 class TestExecutionPolicyFingerprint:
@@ -175,30 +169,18 @@ class TestExecutionPolicyFingerprint:
         assert one != two
 
     def test_worker_count_change_moves_the_fingerprint(self):
-        a = self._policy(
-            model_plan=DevFlowModelPlan(dev_pool=[DevAgentSpec(agent="nova", count=1)])
-        )
-        b = self._policy(
-            model_plan=DevFlowModelPlan(dev_pool=[DevAgentSpec(agent="nova", count=2)])
-        )
+        a = self._policy(model_plan=DevFlowModelPlan(dev_pool=[DevAgentSpec(agent="nova", count=1)]))
+        b = self._policy(model_plan=DevFlowModelPlan(dev_pool=[DevAgentSpec(agent="nova", count=2)]))
         assert a != b
 
     def test_partner_toggle_moves_the_fingerprint(self):
         off = self._policy(model_plan=DevFlowModelPlan())
-        on = self._policy(
-            model_plan=DevFlowModelPlan(
-                research_partner=ResearchPartnerPlan(enabled=True)
-            )
-        )
+        on = self._policy(model_plan=DevFlowModelPlan(research_partner=ResearchPartnerPlan(enabled=True)))
         assert off != on
 
     def test_review_backend_change_moves_the_fingerprint(self):
         claude = self._policy(model_plan=DevFlowModelPlan())
-        codex = self._policy(
-            model_plan=DevFlowModelPlan(
-                review=ReviewPairPlan(primary=DevAgentSpec(agent="codex"))
-            )
-        )
+        codex = self._policy(model_plan=DevFlowModelPlan(review=ReviewPairPlan(primary=DevAgentSpec(agent="codex"))))
         assert claude != codex
 
     def test_fingerprint_excludes_nonrouting_model_strings(self):

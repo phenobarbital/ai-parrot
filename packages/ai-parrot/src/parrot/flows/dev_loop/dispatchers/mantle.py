@@ -221,9 +221,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
                 ai_message = await self._client.ask(
                     prompt,
                     model=profile.model,
-                    max_tokens=effective_max_tokens(
-                        profile.model, profile.max_tokens, self.logger
-                    ),
+                    max_tokens=effective_max_tokens(profile.model, profile.max_tokens, self.logger),
                     use_tools=False,
                     structured_output=CodeReviewVerdict,
                 )
@@ -239,9 +237,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
                     f"CodeReviewVerdict (got {type(verdict).__name__})"
                 )
         except Exception as exc:  # noqa: BLE001 - degrade-on-infra-error, mirrors code_review.py:145-157
-            self.logger.warning(
-                "%s code-review dispatch failed: %s", self.agent_name, exc
-            )
+            self.logger.warning("%s code-review dispatch failed: %s", self.agent_name, exc)
             return CodeReviewVerdict(
                 passed=True,
                 findings=[
@@ -253,16 +249,16 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
             )
 
         tagged_findings = [
-            finding
-            if isinstance(finding, AdversarialFinding)
-            else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            (
+                finding
+                if isinstance(finding, AdversarialFinding)
+                else AdversarialFinding(**finding.model_dump(), source=self.agent_name)
+            )
             for finding in verdict.findings
         ]
         # files_modified is FORCED empty: an advisory seat has no tools and
         # must never claim an edit, whatever the model asserts.
-        return verdict.model_copy(
-            update={"files_modified": [], "findings": tagged_findings}
-        )
+        return verdict.model_copy(update={"files_modified": [], "findings": tagged_findings})
 
     def _bind_event_registry(self, run_id: str) -> None:
         """Bind the run's ``EventRegistry`` onto the client, if resolvable.
@@ -277,9 +273,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         if registry is not None and hasattr(self._client, "_events_registry"):
             self._client._events_registry = registry  # documented injection point
 
-    async def _collect_diff(
-        self, cwd: str, profile: MantleAdversarialReviewProfile
-    ) -> str:
+    async def _collect_diff(self, cwd: str, profile: MantleAdversarialReviewProfile) -> str:
         """Compute the review diff for ``profile.review_scope``.
 
         Mirrors ``NovaAdversarialReviewDispatcher._collect_diff`` — kept
@@ -313,8 +307,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         stdout_b, stderr_b = await process.communicate()
         if process.returncode != 0:
             raise DispatchExecutionError(
-                f"git diff failed (exit {process.returncode}): "
-                f"{stderr_b.decode('utf-8', errors='replace')[:2000]}"
+                f"git diff failed (exit {process.returncode}): " f"{stderr_b.decode('utf-8', errors='replace')[:2000]}"
             )
         diff_text = stdout_b.decode("utf-8", errors="replace")
         return self._truncate_diff(diff_text, profile.max_diff_chars)
@@ -324,10 +317,7 @@ class MantleAdversarialReviewDispatcher(AbstractCodeReviewDispatcher):
         """Deterministically truncate ``diff_text``, never silently."""
         if len(diff_text) <= max_diff_chars:
             return diff_text
-        return (
-            diff_text[:max_diff_chars]
-            + f"\n\n[... diff truncated at {max_diff_chars} characters ...]"
-        )
+        return diff_text[:max_diff_chars] + f"\n\n[... diff truncated at {max_diff_chars} characters ...]"
 
     @staticmethod
     def _build_prompt(brief: BaseModel, diff_text: str) -> str:

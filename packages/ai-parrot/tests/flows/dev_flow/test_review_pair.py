@@ -32,12 +32,8 @@ def _qa_node(**kwargs: Any) -> Any:
     from parrot.flows.dev_loop.flow import _NullAgentRegistry
 
     definition = build_dev_flow_definition()
-    factories = build_dev_flow_node_factories(
-        dispatcher=MagicMock(), redis_url="redis://x", **kwargs
-    )
-    staged = AgentsFlow.from_definition(
-        definition, agent_registry=_NullAgentRegistry(), node_factories=factories
-    )
+    factories = build_dev_flow_node_factories(dispatcher=MagicMock(), redis_url="redis://x", **kwargs)
+    staged = AgentsFlow.from_definition(definition, agent_registry=_NullAgentRegistry(), node_factories=factories)
     return staged._materialize_nodes()[QA]
 
 
@@ -82,19 +78,13 @@ class TestPairAssembly:
         assert adversary.advisory is True
 
     def test_counter_model_is_configurable(self):
-        node = _qa_node(
-            model_plan=DevFlowModelPlan(
-                review=ReviewPairPlan(counter_model="openai.gpt-oss-120b")
-            )
-        )
+        node = _qa_node(model_plan=DevFlowModelPlan(review=ReviewPairPlan(counter_model="openai.gpt-oss-120b")))
         assert node._codereview_dispatcher._adversary._model == "openai.gpt-oss-120b"
 
     def test_primary_model_is_configurable(self):
         node = _qa_node(
             model_plan=DevFlowModelPlan(
-                review=ReviewPairPlan(
-                    primary=DevAgentSpec(agent="claude-code", model="claude-haiku-4-5")
-                )
+                review=ReviewPairPlan(primary=DevAgentSpec(agent="claude-code", model="claude-haiku-4-5"))
             )
         )
         assert node._codereview_dispatcher._primary._model == "claude-haiku-4-5"
@@ -110,9 +100,7 @@ class TestPairAssembly:
             build_dev_flow_node_factories(
                 dispatcher=MagicMock(),
                 redis_url="redis://x",
-                model_plan=DevFlowModelPlan(
-                    review=ReviewPairPlan(primary=DevAgentSpec(agent="nova"))
-                ),
+                model_plan=DevFlowModelPlan(review=ReviewPairPlan(primary=DevAgentSpec(agent="nova"))),
             )
 
 
@@ -121,9 +109,7 @@ class TestPrecedence:
 
     def test_explicit_dispatcher_wins_over_plan(self):
         sentinel = MagicMock()
-        node = _qa_node(
-            model_plan=DevFlowModelPlan(), codereview_dispatcher=sentinel
-        )
+        node = _qa_node(model_plan=DevFlowModelPlan(), codereview_dispatcher=sentinel)
         assert node._codereview_dispatcher is sentinel
 
     def test_no_plan_keeps_qanodes_own_fallback(self):
@@ -133,9 +119,7 @@ class TestPrecedence:
         """
         node = _qa_node()
         assert isinstance(node._codereview_dispatcher, ClaudeCodeReviewDispatcher)
-        assert not isinstance(
-            node._codereview_dispatcher, ParallelPerspectiveReviewDispatcher
-        )
+        assert not isinstance(node._codereview_dispatcher, ParallelPerspectiveReviewDispatcher)
 
     def test_explicit_dispatcher_without_plan_unchanged(self):
         sentinel = MagicMock()

@@ -138,9 +138,7 @@ def _console_default_model_plan() -> DevFlowModelPlan:
     Returns:
         The resolved plan the console builds its flow with.
     """
-    return resolve_model_plan(
-        DevFlowModelPlan.model_validate({"dev_pool": CONSOLE_DEFAULT_DEV_POOL})
-    )
+    return resolve_model_plan(DevFlowModelPlan.model_validate({"dev_pool": CONSOLE_DEFAULT_DEV_POOL}))
 
 
 def _parse_model_plan(form: dict[str, Any]) -> DevFlowModelPlan | None:
@@ -207,9 +205,7 @@ def _parse_model_plan(form: dict[str, Any]) -> DevFlowModelPlan | None:
                         "reviewer — supported: "
                         f"{', '.join(llm_catalog.PRIMARY_REVIEW_BACKENDS)}"
                     )
-                review_kwargs["primary"] = DevAgentSpec(
-                    agent=agent, model=(primary.get("model") or "").strip()
-                )
+                review_kwargs["primary"] = DevAgentSpec(agent=agent, model=(primary.get("model") or "").strip())
         counter_model = (review.get("counter_model") or "").strip()
         if counter_model:
             review_kwargs["counter_model"] = counter_model
@@ -305,9 +301,7 @@ async def handle_index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(STATIC_DIR / "dev.html")
 
 
-def _model_plan_payload(
-    plan: DevFlowModelPlan, *, review_pair_active: bool = True
-) -> dict[str, Any]:
+def _model_plan_payload(plan: DevFlowModelPlan, *, review_pair_active: bool = True) -> dict[str, Any]:
     """Serialise a :class:`DevFlowModelPlan` for ``/api/config``.
 
     Field names mirror the model exactly, so the console can post the same
@@ -332,10 +326,7 @@ def _model_plan_payload(
         "review_pair_active": review_pair_active,
         "research_primary": plan.research_primary,
         "research_partner": plan.research_partner.model_dump(mode="json"),
-        "dev_agents": [
-            {"agent": spec.agent, "model": spec.model, "count": spec.count}
-            for spec in plan.dev_pool
-        ],
+        "dev_agents": [{"agent": spec.agent, "model": spec.model, "count": spec.count} for spec in plan.dev_pool],
         "review": {
             "primary": {
                 "agent": plan.review.primary.agent,
@@ -446,9 +437,7 @@ async def handle_run(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
-    effective_plan: DevFlowModelPlan = request.app.get(
-        "model_plan"
-    ) or _console_default_model_plan()
+    effective_plan: DevFlowModelPlan = request.app.get("model_plan") or _console_default_model_plan()
 
     kind = getattr(brief, "kind", "")
     if kind == "feature":
@@ -691,13 +680,9 @@ async def _on_startup(app: web.Application) -> None:
     model_plan = _console_default_model_plan()
     app["model_plan"] = model_plan
     logger.info(
-        "dev-flow model plan: research=%s | dev pool=%s | review=%s/%s + "
-        "%s (read-only) | research partner %s",
+        "dev-flow model plan: research=%s | dev pool=%s | review=%s/%s + " "%s (read-only) | research partner %s",
         model_plan.research_primary,
-        ", ".join(
-            f"{spec.agent}:{spec.model or '<default>'}x{spec.count}"
-            for spec in model_plan.dev_pool
-        )
+        ", ".join(f"{spec.agent}:{spec.model or '<default>'}x{spec.count}" for spec in model_plan.dev_pool)
         or "<single-agent>",
         model_plan.review.primary.agent,
         model_plan.review.primary.model or "<default>",

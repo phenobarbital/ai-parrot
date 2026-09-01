@@ -142,9 +142,7 @@ class TestMultiAgentEndToEnd:
         )
 
         with caplog.at_level(logging.INFO):
-            result = await node.execute(
-                {"run_id": "run-486", "research_output": _research(str(tmp_path))}
-            )
+            result = await node.execute({"run_id": "run-486", "research_output": _research(str(tmp_path))})
 
         # 1. Both configured workers were materialized and dispatched to.
         assert len(built) == 2
@@ -181,9 +179,7 @@ class TestMultiAgentEndToEnd:
             dispatcher_builder=_builder,
         )
         with caplog.at_level(logging.INFO):
-            await node.execute(
-                {"run_id": "run-486", "research_output": _research(str(tmp_path))}
-            )
+            await node.execute({"run_id": "run-486", "research_output": _research(str(tmp_path))})
 
         assert len(built) == 1
         assert "collapsing" in caplog.text
@@ -230,9 +226,7 @@ class TestCheckpointResumeWithPlan:
     def test_changed_review_backend_misses(self):
         base = self._fingerprint(model_plan=DevFlowModelPlan())
         other = self._fingerprint(
-            model_plan=DevFlowModelPlan(
-                review=ReviewPairPlan(primary=DevAgentSpec(agent="codex"))
-            )
+            model_plan=DevFlowModelPlan(review=ReviewPairPlan(primary=DevAgentSpec(agent="codex")))
         )
         assert base != other
 
@@ -328,9 +322,7 @@ class TestReviewPairEndToEnd:
 
         adversary._collect_diff = _no_git
         primary = _StubPrimaryReviewer(primary_verdict)
-        pair = CodeReviewDispatcherFactory.create(
-            "parallel", primary=primary, adversary=adversary
-        )
+        pair = CodeReviewDispatcherFactory.create("parallel", primary=primary, adversary=adversary)
         return pair, primary, adversary, client
 
     async def test_qa_path_invokes_both_seats(self):
@@ -339,9 +331,7 @@ class TestReviewPairEndToEnd:
             CodeReviewVerdict(passed=True, findings=[]),
         )
         assert isinstance(pair, ParallelPerspectiveReviewDispatcher)
-        await pair.review(
-            brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt"
-        )
+        await pair.review(brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt")
         assert primary.calls == 1
         assert len(client.calls) == 1
 
@@ -350,16 +340,10 @@ class TestReviewPairEndToEnd:
             CodeReviewVerdict(passed=True, findings=[]),
             CodeReviewVerdict(
                 passed=False,
-                findings=[
-                    CodeReviewFinding(
-                        message="unbounded retry loop", severity="major"
-                    )
-                ],
+                findings=[CodeReviewFinding(message="unbounded retry loop", severity="major")],
             ),
         )
-        verdict = await pair.review(
-            brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt"
-        )
+        verdict = await pair.review(brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt")
         # `passed` is the AND of both sides — the adversary can veto.
         assert verdict.passed is False
         assert any("unbounded retry loop" in f.message for f in verdict.findings)
@@ -368,13 +352,9 @@ class TestReviewPairEndToEnd:
         """files_modified is always the primary's; the adversary has no tools."""
         pair, _primary, _adversary, client = self._pair(
             CodeReviewVerdict(passed=True, findings=[], files_modified=["src/fixed.py"]),
-            CodeReviewVerdict(
-                passed=True, findings=[], files_modified=["src/adversary_lied.py"]
-            ),
+            CodeReviewVerdict(passed=True, findings=[], files_modified=["src/adversary_lied.py"]),
         )
-        verdict = await pair.review(
-            brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt"
-        )
+        verdict = await pair.review(brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt")
         assert verdict.files_modified == ["src/fixed.py"]
         assert "src/adversary_lied.py" not in verdict.files_modified
         # And the adversary was never given tools in the first place.
@@ -400,7 +380,5 @@ class TestReviewPairEndToEnd:
             primary=_StubPrimaryReviewer(CodeReviewVerdict(passed=True, findings=[])),
             adversary=adversary,
         )
-        verdict = await pair.review(
-            brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt"
-        )
+        verdict = await pair.review(brief=_research("/tmp/wt"), run_id="run-486", node_id="qa", cwd="/tmp/wt")
         assert verdict.passed is True

@@ -28,9 +28,7 @@ def _ideation_node(**kwargs: Any) -> IdeationNode:
     from parrot.flows.dev_flow.definition import IDEATION, build_dev_flow_definition
     from parrot.flows.dev_loop.flow import _NullAgentRegistry
 
-    factories = build_dev_flow_node_factories(
-        dispatcher=MagicMock(), redis_url="redis://x", **kwargs
-    )
+    factories = build_dev_flow_node_factories(dispatcher=MagicMock(), redis_url="redis://x", **kwargs)
     staged = AgentsFlow.from_definition(
         build_dev_flow_definition(),
         agent_registry=_NullAgentRegistry(),
@@ -79,9 +77,7 @@ class TestModelResolution:
 
     def test_blank_override_falls_through(self):
         """An empty string must not dispatch with an empty model id."""
-        assert IdeationNode(dispatcher=MagicMock(), model="")._resolve_model() == (
-            "claude-opus-5"
-        )
+        assert IdeationNode(dispatcher=MagicMock(), model="")._resolve_model() == ("claude-opus-5")
 
     def test_conf_is_read_late_not_at_construction(self, monkeypatch):
         node = IdeationNode(dispatcher=MagicMock())
@@ -101,16 +97,12 @@ class TestFactoryThreading:
         assert node._resolve_model() == "claude-opus-5"
 
     def test_plan_override_threads_through(self):
-        node = _ideation_node(
-            model_plan=DevFlowModelPlan(research_primary="claude-haiku-4-5")
-        )
+        node = _ideation_node(model_plan=DevFlowModelPlan(research_primary="claude-haiku-4-5"))
         assert node._resolve_model() == "claude-haiku-4-5"
 
     def test_plan_beats_conf(self, monkeypatch):
         monkeypatch.setattr(conf, "DEV_FLOW_IDEATION_MODEL", "from-conf")
-        node = _ideation_node(
-            model_plan=DevFlowModelPlan(research_primary="from-plan")
-        )
+        node = _ideation_node(model_plan=DevFlowModelPlan(research_primary="from-plan"))
         assert node._resolve_model() == "from-plan"
 
     def test_no_plan_honours_conf(self, monkeypatch):

@@ -143,7 +143,12 @@ class PlannerNode(DevLoopNode):
             # Write: it scaffolds spec/task files under sdd/. Read/Grep/Glob
             # for reading the document, Bash for git worktree plumbing.
             allowed_tools=[
-                "Read", "Grep", "Glob", "Bash", "Write", "SlashCommand",
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash",
+                "Write",
+                "SlashCommand",
             ],
             model="claude-sonnet-4-6",
         )
@@ -167,9 +172,7 @@ class PlannerNode(DevLoopNode):
 
         # Jira passthrough only — this node NEVER creates a Jira issue.
         if not planner_out.jira_issue_key and brief.jira_issue_key:
-            planner_out = planner_out.model_copy(
-                update={"jira_issue_key": brief.jira_issue_key}
-            )
+            planner_out = planner_out.model_copy(update={"jira_issue_key": brief.jira_issue_key})
         if planner_out.jira_issue_key:
             shared["jira_issue_key"] = planner_out.jira_issue_key
 
@@ -249,9 +252,7 @@ class PlannerNode(DevLoopNode):
     # Internal — dev-agent pool sizing (FEAT-323 parity)
     # ------------------------------------------------------------------
 
-    async def _resolve_pool(
-        self, brief: FeatureBrief, planner_out: PlannerOutput
-    ) -> DevAgentPoolConfig:
+    async def _resolve_pool(self, brief: FeatureBrief, planner_out: PlannerOutput) -> DevAgentPoolConfig:
         """Resolve the effective :class:`DevAgentPoolConfig`.
 
         Brief override wins; otherwise size from the width of the first
@@ -285,19 +286,18 @@ class PlannerNode(DevLoopNode):
         if brief.dev_agents:
             self.logger.info(
                 "Pool sizing for %s: using brief override (%d agent spec(s)).",
-                planner_out.feat_id, len(brief.dev_agents),
+                planner_out.feat_id,
+                len(brief.dev_agents),
             )
             return DevAgentPoolConfig(agents=list(brief.dev_agents))
 
         feature_slug = Path(planner_out.task_index_path).stem
-        scheduler = await asyncio.to_thread(
-            TaskScheduler.from_worktree, planner_out.worktree_path, feature_slug
-        )
+        scheduler = await asyncio.to_thread(TaskScheduler.from_worktree, planner_out.worktree_path, feature_slug)
         if scheduler is None:
             self.logger.info(
-                "No readable per-spec task index at %s for %s; defaulting "
-                "to a single-agent pool.",
-                planner_out.task_index_path, planner_out.feat_id,
+                "No readable per-spec task index at %s for %s; defaulting " "to a single-agent pool.",
+                planner_out.task_index_path,
+                planner_out.feat_id,
             )
             return DevAgentPoolConfig(agents=self._derive_specs(1))
 
@@ -305,9 +305,11 @@ class PlannerNode(DevLoopNode):
         width = max(1, len(wave))
         count = min(width, self._pool_max)
         self.logger.info(
-            "Pool sizing for %s: wave-1 width=%d, capped at "
-            "development_pool_max=%d -> count=%d",
-            planner_out.feat_id, width, self._pool_max, count,
+            "Pool sizing for %s: wave-1 width=%d, capped at " "development_pool_max=%d -> count=%d",
+            planner_out.feat_id,
+            width,
+            self._pool_max,
+            count,
         )
         return DevAgentPoolConfig(agents=self._derive_specs(count))
 
@@ -337,11 +339,7 @@ class PlannerNode(DevLoopNode):
         slots = [0] * len(configured)
         for i in range(count):
             slots[i % len(configured)] += 1
-        return [
-            spec.model_copy(update={"count": allocated})
-            for spec, allocated in zip(configured, slots)
-            if allocated
-        ]
+        return [spec.model_copy(update={"count": allocated}) for spec, allocated in zip(configured, slots) if allocated]
 
 
 __all__ = ["PlannerNode"]

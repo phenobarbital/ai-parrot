@@ -82,9 +82,7 @@ class TestReadOnlyByConstruction:
     @pytest.mark.asyncio
     async def test_no_tools_passed_to_the_model(self):
         client = FakeMantleClient(verdict=CodeReviewVerdict(passed=True, findings=[]))
-        await _dispatcher(client).review(
-            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
-        )
+        await _dispatcher(client).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
         call = client.calls[0]
         assert call["use_tools"] is False
         assert "tools" not in call
@@ -99,9 +97,7 @@ class TestReadOnlyByConstruction:
                 files_modified=["src/lied_about.py"],
             )
         )
-        verdict = await _dispatcher(client).review(
-            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
-        )
+        verdict = await _dispatcher(client).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
         assert verdict.files_modified == []
         assert verdict.passed is False
 
@@ -113,18 +109,14 @@ class TestReadOnlyByConstruction:
                 findings=[CodeReviewFinding(message="nit", severity="nit")],
             )
         )
-        verdict = await _dispatcher(client).review(
-            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
-        )
+        verdict = await _dispatcher(client).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
         assert verdict.findings[0].source == "mantle-adversarial"
 
 
 class TestModelAndProfile:
     def test_default_model_gpt_5_6_sol(self):
         assert MANTLE_DEFAULT_REVIEW_MODEL == "gpt-5.6-sol"
-        assert MantleAdversarialReviewDispatcher(
-            client=FakeMantleClient()
-        )._model == "gpt-5.6-sol"
+        assert MantleAdversarialReviewDispatcher(client=FakeMantleClient())._model == "gpt-5.6-sol"
 
     def test_conf_key_literal_is_pinned_equal(self):
         """conf.py duplicates the literal (it must not import parrot.flows)."""
@@ -135,15 +127,11 @@ class TestModelAndProfile:
         assert conf.DEV_LOOP_ADVERSARIAL_MODEL != MANTLE_DEFAULT_REVIEW_MODEL
 
     def test_explicit_model_wins(self):
-        d = MantleAdversarialReviewDispatcher(
-            model="openai.gpt-oss-120b", client=FakeMantleClient()
-        )
+        d = MantleAdversarialReviewDispatcher(model="openai.gpt-oss-120b", client=FakeMantleClient())
         assert d.build_review_profile().model == "openai.gpt-oss-120b"
 
     def test_profile_carries_scope(self):
-        d = MantleAdversarialReviewDispatcher(
-            review_scope="base", review_base="dev", client=FakeMantleClient()
-        )
+        d = MantleAdversarialReviewDispatcher(review_scope="base", review_base="dev", client=FakeMantleClient())
         profile = d.build_review_profile()
         assert profile.review_scope == "base"
         assert profile.review_base == "dev"
@@ -164,9 +152,7 @@ class TestDegradation:
     @pytest.mark.asyncio
     async def test_client_error_degrades_to_passing_nit(self):
         client = FakeMantleClient(raises=RuntimeError("401 Unauthorized"))
-        verdict = await _dispatcher(client).review(
-            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
-        )
+        verdict = await _dispatcher(client).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
         assert verdict.passed is True
         assert verdict.findings[0].severity == "nit"
         assert "401 Unauthorized" in verdict.findings[0].message
@@ -174,9 +160,7 @@ class TestDegradation:
     @pytest.mark.asyncio
     async def test_bad_structured_output_degrades(self):
         client = FakeMantleClient(verdict={"not": "a verdict"})
-        verdict = await _dispatcher(client).review(
-            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
-        )
+        verdict = await _dispatcher(client).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
         assert verdict.passed is True
         assert verdict.findings[0].severity == "nit"
 
@@ -188,40 +172,31 @@ class TestTelemetryBinding:
     async def test_registry_bound_when_resolver_supplied(self):
         sentinel = object()
         client = FakeMantleClient(verdict=CodeReviewVerdict(passed=True, findings=[]))
-        await _dispatcher(
-            client, event_registry_resolver=lambda _rid: sentinel
-        ).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
+        await _dispatcher(client, event_registry_resolver=lambda _rid: sentinel).review(
+            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
+        )
         assert client._events_registry is sentinel
 
     @pytest.mark.asyncio
     async def test_no_resolver_leaves_client_untouched(self):
         client = FakeMantleClient(verdict=CodeReviewVerdict(passed=True, findings=[]))
-        await _dispatcher(client).review(
-            brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt"
-        )
+        await _dispatcher(client).review(brief=_brief(), run_id="r1", node_id="qa.counter", cwd="/tmp/wt")
         assert client._events_registry is None
 
 
 class TestFactoryAndTriad:
     def test_factory_registration(self):
-        dispatcher = CodeReviewDispatcherFactory.create(
-            "mantle-adversarial", client=FakeMantleClient()
-        )
+        dispatcher = CodeReviewDispatcherFactory.create("mantle-adversarial", client=FakeMantleClient())
         assert isinstance(dispatcher, MantleAdversarialReviewDispatcher)
 
     def test_triad_resolves_mantle(self):
-        resolved = llm_catalog.resolve_adversarial_backend(
-            lambda key, fallback="": "mantle"
-        )
+        resolved = llm_catalog.resolve_adversarial_backend(lambda key, fallback="": "mantle")
         assert resolved == "mantle"
 
     def test_triad_default_is_still_codex(self):
         """[R3]: an operator who configures nothing sees no change."""
         assert llm_catalog.ADVERSARIAL_BACKEND == "codex"
-        assert (
-            llm_catalog.resolve_adversarial_backend(lambda key, fallback="": fallback)
-            == "codex"
-        )
+        assert llm_catalog.resolve_adversarial_backend(lambda key, fallback="": fallback) == "codex"
 
     def test_triad_still_rejects_unknown(self):
         with pytest.raises(ValueError, match="codex, nova, mantle"):

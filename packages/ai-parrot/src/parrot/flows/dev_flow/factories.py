@@ -43,9 +43,7 @@ def _with_graph(node: DevLoopNode, deps: set, succs: set) -> DevLoopNode:
     Same helper as ``dev_loop.factories._with_graph`` (kept local rather than
     importing a private symbol across packages).
     """
-    return node.model_copy(
-        update={"dependencies": set(deps), "successors": set(succs)}
-    )
+    return node.model_copy(update={"dependencies": set(deps), "successors": set(succs)})
 
 
 def _build_primary_reviewer(spec: Any, shared_dispatcher: Any) -> Any:
@@ -117,9 +115,7 @@ def _assemble_review_pair(plan: DevFlowModelPlan, shared_dispatcher: Any) -> Any
 
     primary = _build_primary_reviewer(plan.review.primary, shared_dispatcher)
     adversary = MantleAdversarialReviewDispatcher(model=plan.review.counter_model)
-    return CodeReviewDispatcherFactory.create(
-        "parallel", primary=primary, adversary=adversary
-    )
+    return CodeReviewDispatcherFactory.create("parallel", primary=primary, adversary=adversary)
 
 
 def build_dev_flow_node_factories(
@@ -230,12 +226,8 @@ def build_dev_flow_node_factories(
         )
     )
 
-    def dev_intake_factory(
-        nd: NodeDefinition, deps: set, succs: set
-    ) -> DevLoopNode:
-        return _with_graph(
-            DevIntakeNode(redis_url=redis_url, name=nd.id), deps, succs
-        )
+    def dev_intake_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
+        return _with_graph(DevIntakeNode(redis_url=redis_url, name=nd.id), deps, succs)
 
     def ideation_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(

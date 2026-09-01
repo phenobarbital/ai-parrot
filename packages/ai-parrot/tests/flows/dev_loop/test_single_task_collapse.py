@@ -116,9 +116,7 @@ class TestSingleTaskCollapse:
             # The planner suggests the SECOND configured backend — the
             # collapse rule must honour the suggestion, not just take
             # `pool_cfg.agents[0]`.
-            "planner_output": _planner_output(
-                DevAgentPoolConfig(agents=[TWO_SEATS[1]])
-            ),
+            "planner_output": _planner_output(DevAgentPoolConfig(agents=[TWO_SEATS[1]])),
         }
         with caplog.at_level(logging.INFO):
             await node.execute(ctx)
@@ -145,9 +143,7 @@ class TestSingleTaskCollapse:
             dispatcher_builder=builder,
         )
         with caplog.at_level(logging.INFO):
-            await node.execute(
-                {"run_id": "r1", "research_output": _research(str(tmp_path))}
-            )
+            await node.execute({"run_id": "r1", "research_output": _research(str(tmp_path))})
 
         assert len(seen) == 1
         assert seen[0].model == "zai.glm-5"
@@ -196,9 +192,7 @@ class TestSingleTaskCollapse:
             {
                 "run_id": "r1",
                 "research_output": _research(str(tmp_path)),
-                "planner_output": _planner_output(
-                    DevAgentPoolConfig(agents=[TWO_SEATS[1]])
-                ),
+                "planner_output": _planner_output(DevAgentPoolConfig(agents=[TWO_SEATS[1]])),
             }
         )
         assert [s.model for s in seen] == [
@@ -221,9 +215,7 @@ class TestSingleTaskCollapse:
             dispatcher_builder=builder,
         )
         with caplog.at_level(logging.INFO):
-            await node.execute(
-                {"run_id": "r1", "research_output": _research(str(tmp_path))}
-            )
+            await node.execute({"run_id": "r1", "research_output": _research(str(tmp_path))})
         assert len(seen) == 1
         assert "collapsing" not in caplog.text
 
@@ -266,9 +258,7 @@ class TestSingleTaskCollapse:
             dispatcher_builder=builder,
         )
         with caplog.at_level(logging.INFO):
-            await node.execute(
-                {"run_id": "r1", "research_output": _research(str(tmp_path))}
-            )
+            await node.execute({"run_id": "r1", "research_output": _research(str(tmp_path))})
         assert "No readable per-spec task index" in caplog.text
         assert "degrading to single-agent" in caplog.text
         # Degradation, not collapse — neither FEAT-486 log fired.
@@ -307,9 +297,7 @@ class TestPoolDeploymentLog:
             dispatcher_builder=_spec_recording_builder()[0],
         )
         with caplog.at_level(logging.INFO):
-            await node.execute(
-                {"run_id": "r1", "research_output": _research(str(tmp_path))}
-            )
+            await node.execute({"run_id": "r1", "research_output": _research(str(tmp_path))})
 
         assert "Deploying 2 dev sub-agent(s)" in caplog.text
         assert "w1=nova:zai.glm-5" in caplog.text
@@ -327,15 +315,11 @@ class TestPoolDeploymentLog:
         )
         node = DevelopmentNode(
             dispatcher=MagicMock(),
-            pool_config=DevAgentPoolConfig(
-                agents=[DevAgentSpec(agent="claude-code", count=2)]
-            ),
+            pool_config=DevAgentPoolConfig(agents=[DevAgentSpec(agent="claude-code", count=2)]),
             dispatcher_builder=_spec_recording_builder()[0],
         )
         with caplog.at_level(logging.INFO):
-            await node.execute(
-                {"run_id": "r1", "research_output": _research(str(tmp_path))}
-            )
+            await node.execute({"run_id": "r1", "research_output": _research(str(tmp_path))})
         assert "w1=claude-code:<backend default>" in caplog.text
 
 
@@ -388,8 +372,6 @@ class TestPlannerPoolBackends:
 
     def test_configured_specs_are_not_mutated(self):
         configured = DevAgentPoolConfig(agents=TWO_SEATS)
-        node = PlannerNode(
-            dispatcher=MagicMock(), development_pool_config=configured
-        )
+        node = PlannerNode(dispatcher=MagicMock(), development_pool_config=configured)
         node._derive_specs(5)
         assert [s.count for s in configured.agents] == [1, 1]

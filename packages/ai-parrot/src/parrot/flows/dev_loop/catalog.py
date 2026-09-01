@@ -83,15 +83,14 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
             — names the valid options.
     """
     getter = config_getter or (lambda key, fallback="": conf.config.get(key, fallback=fallback))
-    value = str(
-        getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND
-    )
+    value = str(getter("DEV_LOOP_ADVERSARIAL_BACKEND", ADVERSARIAL_BACKEND) or ADVERSARIAL_BACKEND)
     if value not in _ADVERSARIAL_BACKEND_CHOICES:
         raise ValueError(
             f"Invalid DEV_LOOP_ADVERSARIAL_BACKEND={value!r}; must be one "
             f"of {_ADVERSARIAL_BACKEND_CHOICES} (codex, nova, mantle)."
         )
     return value
+
 
 # Non-judge review dispatchers registered in ``CodeReviewDispatcherFactory``
 # that can serve as the *primary* reviewer of a bug-mode run.
@@ -157,8 +156,7 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         models=("gpt-5.5", "gpt-5.5-codex"),
         requires="`codex` CLI on $PATH (or OPENAI_API_KEY)",
         roles=("development", "judge", "primary_review", "adversarial"),
-        notes="Only backend with a read-only `sdd-secondopinion` profile — "
-              "it holds the mandatory adversarial seat.",
+        notes="Only backend with a read-only `sdd-secondopinion` profile — " "it holds the mandatory adversarial seat.",
     ),
     BackendInfo(
         id="gemini",
@@ -253,13 +251,13 @@ BACKENDS: Tuple[BackendInfo, ...] = (
         requires="AWS credentials with Bedrock model access (+ Bedrock API key for bedrock-mantle)",
         roles=("development", "adversarial"),
         notes="Dev seat routes MiniMax/Kimi/GLM/Qwen3-coder via "
-              "bedrock-mantle; the adversarial seat is a read-only, "
-              "no-tools call — Converse on Nova 2 Lite via "
-              "DEV_LOOP_ADVERSARIAL_BACKEND='nova', or Chat Completions "
-              "on bedrock-mantle (gpt-5.6-sol, FEAT-486) via "
-              "DEV_LOOP_ADVERSARIAL_BACKEND='mantle'. The us.anthropic.* "
-              "ids remain selectable but require the per-account "
-              "Anthropic use-case form on Bedrock.",
+        "bedrock-mantle; the adversarial seat is a read-only, "
+        "no-tools call — Converse on Nova 2 Lite via "
+        "DEV_LOOP_ADVERSARIAL_BACKEND='nova', or Chat Completions "
+        "on bedrock-mantle (gpt-5.6-sol, FEAT-486) via "
+        "DEV_LOOP_ADVERSARIAL_BACKEND='mantle'. The us.anthropic.* "
+        "ids remain selectable but require the per-account "
+        "Anthropic use-case form on Bedrock.",
     ),
 )
 

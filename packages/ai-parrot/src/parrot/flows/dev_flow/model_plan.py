@@ -215,10 +215,7 @@ class DevFlowModelPlan(BaseModel):
             if agent is None:
                 continue
             if str(agent) not in supported:
-                raise ValueError(
-                    f"unknown dev agent backend {str(agent)!r} — supported: "
-                    f"{', '.join(supported)}"
-                )
+                raise ValueError(f"unknown dev agent backend {str(agent)!r} — supported: " f"{', '.join(supported)}")
         return value
 
     def to_pool_config(self) -> DevAgentPoolConfig | None:
@@ -290,8 +287,7 @@ def _pool_from_env(raw: Any) -> list[dict[str, Any]] | None:
         # got wrong, and `resolve_model_plan`'s documented contract raises
         # ValueError for every bad plan input.
         raise ValueError(  # noqa: TRY004
-            f"{ENV_DEV_POOL} must be a JSON *array* of dev-agent rows, got "
-            f"{type(decoded).__name__}."
+            f"{ENV_DEV_POOL} must be a JSON *array* of dev-agent rows, got " f"{type(decoded).__name__}."
         )
     return decoded or None
 
@@ -336,9 +332,7 @@ def resolve_model_plan(
         )
 
     # ── research partner (FEAT-482 passthrough) ─────────────────────
-    partner_explicit = (
-        base.research_partner.model_fields_set if "research_partner" in explicit else frozenset()
-    )
+    partner_explicit = base.research_partner.model_fields_set if "research_partner" in explicit else frozenset()
     partner = base.research_partner
     partner_kwargs: dict[str, Any] = {}
     if "enabled" in partner_explicit:
@@ -349,15 +343,13 @@ def resolve_model_plan(
         partner_kwargs["backend"] = partner.backend
     else:
         partner_kwargs["backend"] = (
-            str(getter(ENV_PARTNER_BACKEND, fallback=DEFAULT_PARTNER_BACKEND) or "").strip()
-            or DEFAULT_PARTNER_BACKEND
+            str(getter(ENV_PARTNER_BACKEND, fallback=DEFAULT_PARTNER_BACKEND) or "").strip() or DEFAULT_PARTNER_BACKEND
         )
     if "model" in partner_explicit:
         partner_kwargs["model"] = partner.model
     else:
         partner_kwargs["model"] = (
-            str(getter(ENV_PARTNER_MODEL, fallback=DEFAULT_PARTNER_MODEL) or "").strip()
-            or DEFAULT_PARTNER_MODEL
+            str(getter(ENV_PARTNER_MODEL, fallback=DEFAULT_PARTNER_MODEL) or "").strip() or DEFAULT_PARTNER_MODEL
         )
 
     # ── development pool ────────────────────────────────────────────
@@ -379,8 +371,7 @@ def resolve_model_plan(
             ).strip()
             or DEFAULT_REVIEW_PRIMARY_BACKEND,
             model=str(
-                getter(ENV_REVIEW_PRIMARY_MODEL, fallback=DEFAULT_REVIEW_PRIMARY_MODEL)
-                or DEFAULT_REVIEW_PRIMARY_MODEL
+                getter(ENV_REVIEW_PRIMARY_MODEL, fallback=DEFAULT_REVIEW_PRIMARY_MODEL) or DEFAULT_REVIEW_PRIMARY_MODEL
             ).strip()
             or DEFAULT_REVIEW_PRIMARY_MODEL,
         )
