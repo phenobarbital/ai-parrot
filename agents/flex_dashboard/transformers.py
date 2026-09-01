@@ -67,15 +67,20 @@ def _apply_filters(df: pd.DataFrame, filters: dict[str, Any]) -> pd.DataFrame:
 
     Args:
         df: Input frame.
-        filters: Column -> value. A ``None`` value means "no filter" and is
-            skipped (per-section filter rule: an absent param never narrows
-            a transformer's own dataset).
+        filters: Column -> value. A falsy value (``None`` OR ``""``) means
+            "no filter" and is skipped (per-section filter rule: an absent
+            param never narrows a transformer's own dataset). Empty string
+            is ALSO treated as unset (not just ``None``) because a published
+            recipe's declared ``RecipeParam`` for an optional filter MUST
+            have a concrete, non-``None`` default (`resolve_params` raises
+            otherwise — see `agents/flex_dashboard.py`'s `recipe_params()`,
+            TASK-2697) — ``""`` is that sentinel "no value" default.
 
     Returns:
         The filtered frame (a view/copy per pandas boolean indexing).
     """
     for column, value in filters.items():
-        if value is not None:
+        if value:
             df = df[df[column] == value]
     return df
 

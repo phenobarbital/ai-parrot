@@ -1,0 +1,233 @@
+"""Descriptor validity + refresh-tool tests for `FlexDashboard` (FEAT-491 TASK-2697)."""
+
+import importlib.util
+import re
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+
+# Worktree-safe file-path loading — same technique used across this
+# feature's other test files (see test_flex_dashboard_agent.py's longer
+# comment for why "agents.flex_dashboard" is reserved for the real
+# package and the agent FILE is loaded under its own distinct name).
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_AGENTS_DIR = _REPO_ROOT / "agents"
+_FLEX_DIR = _AGENTS_DIR / "flex_dashboard"
+_AGENT_FILE = _AGENTS_DIR / "flex_dashboard.py"
+
+
+def _load_package(name: str, init_path: Path, search_dir: Path):
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(
+        name, init_path, submodule_search_locations=[str(search_dir)]
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load package {name!r} from {init_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def _load_module(name: str, path: Path):
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module
+
+
+def _load_flex_dashboard_module():
+    _load_package("agents", _AGENTS_DIR / "__init__.py", _AGENTS_DIR)
+    _load_package("agents.flex_dashboard", _FLEX_DIR / "__init__.py", _FLEX_DIR)
+    _load_module("agents.flex_dashboard.normalize", _FLEX_DIR / "normalize.py")
+    _load_module("agents.flex_dashboard.transformers", _FLEX_DIR / "transformers.py")
+    return _load_module("flex_dashboard_agent_under_test", _AGENT_FILE)
+
+
+@pytest.fixture(scope="module")
+def flex_dashboard_module():
+    return _load_flex_dashboard_module()
+
+
+@pytest.fixture(scope="module")
+def descriptor(flex_dashboard_module):
+    return flex_dashboard_module.FlexDashboard.dashboard_descriptor()
+
+
+_EXPECTED_SECTION_ORDER = [
+    "payroll_hero",
+    "worked_hours_by_month",
+    "payroll_by_month",
+    "revenue_by_month",
+    "payroll_pct_by_month",
+    "pay_code_hours",
+    "pay_code_allocation",
+    "rep_utilization_by_region",
+    "proximity_staffing",
+    "flex_narrative_facts",
+]
+
+
+class TestDashboardDescriptor:
+    def test_every_section_resolves_to_a_transformer(self, descriptor):
+        """This is what makes publish_recipe return a recipe, not a GapReport."""
+        for section in descriptor.sections:
+            name = re.sub(r"\W+", "_", section.name).strip("_")
+            transformer_registry.get(name)  # raises KeyError if unmapped
+
+    def test_section_order(self, descriptor):
+        names = [s.name for s in descriptor.sections]
+        assert names == _EXPECTED_SECTION_ORDER
+
+    def test_layout_is_infographic(self, descriptor):
+        assert descriptor.layout.component == "Infographic"
+
+    def test_layout_satisfies_catalog_required_keys(self, descriptor):
+        props = descriptor.layout.props
+        assert "title" in props and "sections" in props
+
+    def test_hero_bindings(self, descriptor):
+        props = descriptor.layout.props
+        hero_section = props["sections"][0]
+        bindings = {
+            c["properties"]["label"]: c["properties"]["value"]["path"]
+            for c in hero_section["components"]
+        }
+        assert bindings == {
+            "Worked Hours": "/payroll_hero/worked_hours_total",
+            "Payroll": "/payroll_hero/payroll_total",
+            "P&L Revenue": "/payroll_hero/revenue_total",
+            "Payroll % to Revenue": "/payroll_hero/payroll_pct",
+        }
+
+    def test_declares_narrative(self, flex_dashboard_module, descriptor):
+        assert descriptor.narrative.skill == flex_dashboard_module.FlexDashboard.narrative_skill
+        assert descriptor.narrative.facts_key == "flex_narrative_facts"
+
+    def test_narrative_binds_are_optional(self, descriptor):
+        """A no-narrator replay must not abort at the drift check.
+
+        v2 (FEAT-470 TASK-2542): a binding is a plain ``{"path": ...}`` — its
+        ``optional``-ness is declared by listing the pointer in the layout's
+        own ``metadata.extensions.parrot_optional``.
+        """
+        layout = descriptor.layout
+        optional_pointers = set(
+            (
+                layout.metadata.extensions.root.get("parrot_optional")
+                if layout.metadata and layout.metadata.extensions
+                else None
+            )
+            or []
+        )
+        found = []
+
+        def walk(v):
+            if isinstance(v, dict):
+                if "path" in v and "/narrative" in str(v["path"]):
+                    found.append(v["path"])
+                for i in v.values():
+                    walk(i)
+            elif isinstance(v, list):
+                for i in v:
+                    walk(i)
+
+        walk(layout.props)
+        assert found, "expected at least one narrative binding"
+        for pointer in found:
+            assert pointer in optional_pointers, f"non-optional narrative bind: {pointer}"
+
+    def test_narrative_facts_last_and_inputs_are_output_keys(self, descriptor):
+        names = [s.name for s in descriptor.sections]
+        assert names[-1] == "flex_narrative_facts"
+        last = descriptor.sections[-1]
+        for dep in ("payroll_hero", "worked_hours_by_month", "rep_utilization_by_region"):
+            assert dep in last.datasets
+            assert names.index(dep) < len(names) - 1
+
+    def test_frozen_dataset_aliases_used_verbatim(self, descriptor):
+        by_name = {s.name: s for s in descriptor.sections}
+        assert by_name["payroll_hero"].datasets == ["hours", "finance"]
+        assert by_name["proximity_staffing"].datasets == ["msl", "employees"]
+        assert by_name["rep_utilization_by_region"].datasets == [
+            "rep_utilization",
+            "region_utilization",
+        ]
+
+    def test_recipe_params_have_concrete_defaults(self, flex_dashboard_module):
+        """resolve_params() raises when a declared param has no default and
+        no override — every declared param here must have one."""
+        for param in flex_dashboard_module.FlexDashboard.recipe_params():
+            assert param.default is not None, f"{param.name} has no default"
+
+    def test_descriptor_param_templates_match_declared_params(
+        self, flex_dashboard_module, descriptor
+    ):
+        declared_names = {p.name for p in flex_dashboard_module.FlexDashboard.recipe_params()}
+        template_names = set(descriptor.params)
+        assert template_names == declared_names
+
+
+class TestRefreshDashboardTool:
+    @pytest.mark.asyncio
+    async def test_refresh_tool_args_win_over_surface_state(self, flex_dashboard_module):
+        RefreshDashboardTool = flex_dashboard_module.RefreshDashboardTool
+
+        fake_artifact = SimpleNamespace(artifact_id="art-1", content=b"<html/>")
+        runner = SimpleNamespace(run=AsyncMock(return_value=fake_artifact))
+        tool = RefreshDashboardTool(runner=runner, pctx="fake-pctx")
+
+        surface_state = SimpleNamespace(
+            data_model={"filters": {"month": "2025-09", "pay_code": "Field Time"}}
+        )
+
+        # `_execute` looks up `current_a2ui_surface_state` as a name in
+        # `agents/flex_dashboard.py`'s OWN module namespace (imported there
+        # via `from parrot.tools.abstract import ... current_a2ui_surface_state`)
+        # — patch it there directly.
+        original = flex_dashboard_module.current_a2ui_surface_state
+        flex_dashboard_module.current_a2ui_surface_state = lambda: surface_state
+        try:
+            result = await tool._execute(month="2025-10")
+        finally:
+            flex_dashboard_module.current_a2ui_surface_state = original
+
+        # Explicit arg (month="2025-10") wins over surface state ("2025-09");
+        # surface state fills in the rest (pay_code).
+        assert result["filters"]["month"] == "2025-10"
+        assert result["filters"]["pay_code"] == "Field Time"
+        assert result["filter_source"] == "args"
+        runner.run.assert_awaited_once()
+        _, kwargs = runner.run.call_args
+        assert kwargs["pctx"] == "fake-pctx"
+
+    @pytest.mark.asyncio
+    async def test_refresh_tool_defaults_with_no_state_no_args(self, flex_dashboard_module):
+        RefreshDashboardTool = flex_dashboard_module.RefreshDashboardTool
+
+        fake_artifact = SimpleNamespace(artifact_id="art-2", content=b"<html/>")
+        runner = SimpleNamespace(run=AsyncMock(return_value=fake_artifact))
+        tool = RefreshDashboardTool(runner=runner, pctx="fake-pctx")
+
+        original = flex_dashboard_module.current_a2ui_surface_state
+        flex_dashboard_module.current_a2ui_surface_state = lambda: None
+        try:
+            result = await tool._execute()
+        finally:
+            flex_dashboard_module.current_a2ui_surface_state = original
+
+        assert result["filters"] == {}
+        assert result["filter_source"] == "defaults"
+
+    def test_distinct_recipe_name_constant(self, flex_dashboard_module):
+        assert flex_dashboard_module.FlexDashboard.DASHBOARD_RECIPE_NAME == "flex-program-dashboard"

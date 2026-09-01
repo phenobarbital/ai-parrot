@@ -27,8 +27,17 @@ from typing import Any, ClassVar
 from aiohttp import web
 from parrot.bots.data import PandasAgent
 from parrot.bots.mixins import InfographicAuthoringMixin, NarrativeMixin
+from parrot.outputs.a2ui.recipes.models import LayoutSpec, NarrativeSpec, RecipeParam
 from parrot.registry import register_agent
+from parrot.tools.abstract import (
+    AbstractTool,
+    AbstractToolArgsSchema,
+    current_a2ui_surface_state,
+)
+from parrot.tools.infographic_recipes.runner import RecipeRunner
+from parrot.tools.infographic_sections import SectionDescriptor, SectionSpec
 from parrot.tools.working_memory import WorkingMemoryToolkit
+from pydantic import Field
 
 # Import side effect ONLY: registers the Flex transformers (payroll_hero,
 # worked_hours_by_month, ..., flex_narrative_facts) on the shared
@@ -236,3 +245,444 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         await self.register_datasets()
         await super().configure(app=app, queries=queries)
         await self._load_kb_docs()
+
+    # ── Dashboard recipe (TASK-2697, spec §3 Module 4) ──────────────────
+
+    @classmethod
+    def _transform_sections(cls) -> list[SectionSpec]:
+        """Sections whose NAMES are registered transformer names.
+
+        Order matters: ``publish_recipe`` preserves ``descriptor.sections``
+        order into ``TransformStep`` order, and ``flex_narrative_facts``
+        consumes the other steps' outputs — it must come last
+        (FinanceReporter pattern, ``agents/finance_reporter.py:189-223``).
+        """
+        return [
+            SectionSpec(
+                name="payroll_hero",
+                target="/payroll_hero",
+                datasets=["hours", "finance"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="worked_hours_by_month",
+                target="/worked_hours_by_month",
+                datasets=["hours"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="payroll_by_month",
+                target="/payroll_by_month",
+                datasets=["finance"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="revenue_by_month",
+                target="/revenue_by_month",
+                datasets=["finance"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="payroll_pct_by_month",
+                target="/payroll_pct_by_month",
+                datasets=["finance"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="pay_code_hours",
+                target="/pay_code_hours",
+                datasets=["hours"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="pay_code_allocation",
+                target="/pay_code_allocation",
+                datasets=["hours"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="rep_utilization_by_region",
+                target="/rep_utilization_by_region",
+                datasets=["rep_utilization", "region_utilization"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="proximity_staffing",
+                target="/proximity_staffing",
+                datasets=["msl", "employees"],
+                shape="mapping",
+            ),
+            SectionSpec(
+                name="flex_narrative_facts",
+                target="/flex_narrative_facts",
+                # Prior-step output_keys, NOT dataset aliases — the generic
+                # shape resolved in FEAT-420 Module 1 (spec §2 Overview).
+                datasets=["payroll_hero", "worked_hours_by_month", "rep_utilization_by_region"],
+                shape="mapping",
+            ),
+        ]
+
+    @classmethod
+    def _narrative_spec(cls) -> NarrativeSpec:
+        """Declarative narrative step — optional, replays with no narrator."""
+        return NarrativeSpec(skill=cls.narrative_skill, facts_key="flex_narrative_facts")
+
+    #: Descriptor-level ``{param}`` templates, applied IDENTICALLY to every
+    #: ``TransformStep`` by ``publish_recipe`` — each transformer only reads
+    #: the keys it declared support for (per-section filter rule, spec
+    #: proposal U1, enforced in ``agents/flex_dashboard/transformers.py``).
+    _RECIPE_PARAM_TEMPLATE: ClassVar[dict[str, str]] = {
+        "month": "{month}",
+        "flex_type": "{flex_type}",
+        "pay_code": "{pay_code}",
+        "cost_center": "{cost_center}",
+        "category": "{category}",
+        "radius_miles": "{radius_miles}",
+        "nearest_n": "{nearest_n}",
+    }
+
+    @classmethod
+    def recipe_params(cls) -> list[RecipeParam]:
+        """Declared, overridable filter params for the published recipe.
+
+        ``resolve_params`` (``parrot.outputs.a2ui.recipes.params``) raises
+        when a declared param has no default AND no override is supplied —
+        every param below therefore needs a concrete, non-``None`` default.
+        Optional filters default to ``""``, which
+        ``agents/flex_dashboard/transformers.py``'s ``_apply_filters``
+        treats the same as "unset" (falsy check) — the sentinel that makes
+        an unfiltered replay work with no caller-supplied overrides.
+        """
+        return [
+            RecipeParam(name="month", default="", description="YYYY-MM filter."),
+            RecipeParam(
+                name="flex_type", default="", description="Employee Flex Type filter."
+            ),
+            RecipeParam(name="pay_code", default="", description="Pay code filter."),
+            RecipeParam(
+                name="cost_center", default="", description="Cost center filter."
+            ),
+            RecipeParam(
+                name="category",
+                default="",
+                description="Rep utilization category filter.",
+            ),
+            RecipeParam(
+                name="radius_miles",
+                default="50",
+                description="Proximity Staffing coverage radius, miles.",
+            ),
+            RecipeParam(
+                name="nearest_n",
+                default="3",
+                description="Proximity Staffing nearest-N count.",
+            ),
+        ]
+
+    @classmethod
+    def dashboard_descriptor(cls) -> SectionDescriptor:
+        """Flex program dashboard: hero row + month series + pay-code +
+        utilization + proximity sections, LayoutSpec v2."""
+        return SectionDescriptor(
+            template="unused-with-layout",  # layout below is used verbatim
+            mode="data-splice",
+            sections=cls._transform_sections(),
+            params=dict(cls._RECIPE_PARAM_TEMPLATE),
+            # v2 LayoutSpec (FEAT-470 TASK-2542): props top-level, `{"path"}`
+            # bindings; nested Infographic section-component descriptors
+            # keep their OWN "properties" wrapper (the composite's own
+            # authored-descriptor shape, not the wire Component shape
+            # LayoutSpec mirrors — agents/finance_reporter.py:267-273
+            # comment); a binding's `optional` marker moves to the layout's
+            # own `metadata.extensions.parrot_optional`.
+            layout=LayoutSpec(
+                component="Infographic",
+                title="Flex Program Dashboard",
+                sections=[
+                    {
+                        "heading": "Payroll Contribution — Hero",
+                        "components": [
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "Worked Hours",
+                                    "value": {"path": "/payroll_hero/worked_hours_total"},
+                                },
+                            },
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "Payroll",
+                                    "value": {"path": "/payroll_hero/payroll_total"},
+                                },
+                            },
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "P&L Revenue",
+                                    "value": {"path": "/payroll_hero/revenue_total"},
+                                },
+                            },
+                            {
+                                "component": "KPICard",
+                                "properties": {
+                                    "label": "Payroll % to Revenue",
+                                    "value": {"path": "/payroll_hero/payroll_pct"},
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        "heading": "Payroll Contribution — Month Series",
+                        "components": [
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "title": "Worked Hours by Month",
+                                    "type": "line",
+                                    "x": "month",
+                                    "y": ["worked_hours"],
+                                    "data": {"path": "/worked_hours_by_month/series"},
+                                },
+                            },
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "title": "Payroll by Month",
+                                    "type": "line",
+                                    "x": "month",
+                                    "y": ["payroll"],
+                                    "data": {"path": "/payroll_by_month/series"},
+                                },
+                            },
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "title": "P&L Revenue by Month",
+                                    "type": "line",
+                                    "x": "month",
+                                    "y": ["revenue"],
+                                    "data": {"path": "/revenue_by_month/series"},
+                                },
+                            },
+                            {
+                                "component": "Chart",
+                                "properties": {
+                                    "title": "Payroll % to Revenue by Month",
+                                    "type": "line",
+                                    "x": "month",
+                                    "y": ["payroll_pct"],
+                                    "data": {"path": "/payroll_pct_by_month/series"},
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        "heading": "Pay Code",
+                        "components": [
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [{"name": "pay_code"}, {"name": "hours"}],
+                                    "data": {"path": "/pay_code_hours/records"},
+                                },
+                            },
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [
+                                        {"name": "pay_code"},
+                                        {"name": "hours"},
+                                        {"name": "share_pct"},
+                                    ],
+                                    "data": {"path": "/pay_code_allocation/records"},
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        "heading": "Rep Utilization",
+                        "components": [
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [
+                                        {"name": "region"},
+                                        {"name": "category"},
+                                        {"name": "month"},
+                                        {"name": "utilization"},
+                                        {"name": "cross_check_utilization"},
+                                    ],
+                                    "data": {"path": "/rep_utilization_by_region/records"},
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        "heading": "Proximity Staffing",
+                        "text": {"path": "/narrative"},
+                        "components": [
+                            {
+                                "component": "Map",
+                                "properties": {
+                                    "title": "Store & Employee Proximity",
+                                    "layers": [
+                                        {
+                                            "layer": "stores",
+                                            "labelField": "store_name",
+                                            "markerColor": "#1f77b4",
+                                            "dataShape": "rows",
+                                            "columns": [
+                                                {"name": "store_name"},
+                                                {"name": "latitude"},
+                                                {"name": "longitude"},
+                                            ],
+                                            "data": {"path": "/proximity_staffing/store_layer"},
+                                        },
+                                        {
+                                            "layer": "employees",
+                                            "labelField": "display_name",
+                                            "markerColor": "#ff7f0e",
+                                            "dataShape": "rows",
+                                            "columns": [
+                                                {"name": "display_name"},
+                                                {"name": "latitude"},
+                                                {"name": "longitude"},
+                                            ],
+                                            "data": {
+                                                "path": "/proximity_staffing/employee_layer"
+                                            },
+                                        },
+                                    ],
+                                },
+                            },
+                            {
+                                "component": "DataTable",
+                                "properties": {
+                                    "columns": [
+                                        {"name": "store_name"},
+                                        {"name": "nearest_employees"},
+                                        {"name": "employees_within_radius"},
+                                    ],
+                                    "data": {"path": "/proximity_staffing/coverage"},
+                                },
+                            },
+                        ],
+                    },
+                ],
+                metadata={"extensions": {"parrot_optional": ["/narrative"]}},
+            ),
+            narrative=cls._narrative_spec(),
+        )
+
+    # ── Refresh lane (FEAT-469 pattern) ─────────────────────────────────
+
+    def build_refresh_tool(self, pctx: Any) -> RefreshDashboardTool:
+        """Build and register the ``refresh_dashboard`` tool.
+
+        Requires a recipe store to already be wired (``recipe_store=`` at
+        construction, or a toolkit configured with one) — raises via
+        ``_require_recipe_store()`` otherwise.
+
+        Args:
+            pctx: A real ``PermissionContext`` (e.g. from
+                ``build_principal_context``). ``RecipeRunner.run`` fails
+                OPEN on a falsy ``pctx`` (its own docstring warning) — never
+                pass ``None`` here.
+
+        Returns:
+            The registered :class:`RefreshDashboardTool` instance.
+        """
+        runner = RecipeRunner(self._require_recipe_store(), self._dataset_manager)
+        tool = RefreshDashboardTool(runner=runner, pctx=pctx)
+        self.tool_manager.add_tool(tool)
+        return tool
+
+
+class RefreshDashboardArgs(AbstractToolArgsSchema):
+    """Arguments the renderer may pass on ``callAgentFunction``."""
+
+    month: str | None = Field(default=None, description="YYYY-MM filter.")
+    flex_type: str | None = Field(default=None, description="Employee Flex Type filter.")
+    pay_code: str | None = Field(default=None, description="Pay code filter.")
+    cost_center: str | None = Field(default=None, description="Cost center filter.")
+    category: str | None = Field(
+        default=None, description="Rep utilization category filter."
+    )
+    radius_miles: float | None = Field(
+        default=None, description="Proximity Staffing coverage radius, miles."
+    )
+    nearest_n: int | None = Field(
+        default=None, description="Proximity Staffing nearest-N count."
+    )
+
+
+class RefreshDashboardTool(AbstractTool):
+    """Deterministically re-render the Flex dashboard, optionally filtered.
+
+    Filter precedence per call (FEAT-469 example pattern): explicit args
+    (the renderer's inline filter widget) → the surface's last persisted
+    ``dataModel.filters`` (read via ``current_a2ui_surface_state()``) →
+    the recipe's own declared defaults (empty-string "no filter" / 50 / 3).
+    """
+
+    name = "refresh_dashboard"
+    description = (
+        "Re-render the Flex program dashboard deterministically via its "
+        "published recipe. Optional filters: month, flex_type, pay_code, "
+        "cost_center, category, radius_miles, nearest_n."
+    )
+    args_schema = RefreshDashboardArgs
+
+    def __init__(self, runner: RecipeRunner, pctx: Any, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._runner = runner
+        self._pctx = pctx
+
+    async def _execute(
+        self,
+        month: str | None = None,
+        flex_type: str | None = None,
+        pay_code: str | None = None,
+        cost_center: str | None = None,
+        category: str | None = None,
+        radius_miles: float | None = None,
+        nearest_n: int | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        state = current_a2ui_surface_state()
+        state_filters: dict[str, Any] = {}
+        if state is not None:
+            state_filters = dict(state.data_model.get("filters") or {})
+
+        def _pick(arg: Any, key: str) -> Any:
+            if arg is not None:
+                return arg
+            return state_filters.get(key)
+
+        params: dict[str, Any] = {}
+        for key, arg in (
+            ("month", month),
+            ("flex_type", flex_type),
+            ("pay_code", pay_code),
+            ("cost_center", cost_center),
+            ("category", category),
+            ("radius_miles", radius_miles),
+            ("nearest_n", nearest_n),
+        ):
+            value = _pick(arg, key)
+            if value is not None:
+                params[key] = value
+
+        artifact = await self._runner.run(
+            FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=self._pctx
+        )
+        return {
+            "filters": params,
+            "filter_source": "args" if any(
+                v is not None
+                for v in (month, flex_type, pay_code, cost_center, category, radius_miles, nearest_n)
+            ) else ("surface_state" if state_filters else "defaults"),
+            "artifact_id": artifact.artifact_id,
+            "bytes": len(artifact.content or b""),
+        }
