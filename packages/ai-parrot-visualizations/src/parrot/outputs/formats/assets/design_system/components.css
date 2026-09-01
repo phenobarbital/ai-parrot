@@ -35,9 +35,13 @@
 }
 
 /* ---------- KPI hero row ---------- */
+/* A static, print-safe fallback column count. layout-analytics.css
+ * overrides this with a responsive column count for screen surfaces —
+ * kept static here so the print layout's composed sheet never carries a
+ * responsive grid function. */
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--density-gap, 1rem);
     margin-bottom: var(--density-gap, 1rem);
 }

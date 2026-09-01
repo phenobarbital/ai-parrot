@@ -1,0 +1,60 @@
+/* ─────────────────────────────────────────────
+ * Design system — layout-print.css (FEAT-493)
+ * Forced by PDFRenderer (TASK-2713). No shadows, no responsive grid
+ * functions (WeasyPrint support for those is not assumed — TASK-2713
+ * verifies empirically), real @page rules, and break-avoidance on
+ * cards/panels/table rows. Fixed column counts replace the responsive
+ * grid used on screen surfaces.
+ * ───────────────────────────────────────────── */
+
+@page {
+    size: A4;
+    margin: 16mm 14mm;
+}
+
+.ds-page[data-layout="print"] {
+    --shadow: none;
+    padding: 0;
+}
+
+/* No drop shadows anywhere in print. */
+.ds-page[data-layout="print"] .a2ui-card,
+.ds-page[data-layout="print"] .panel,
+.ds-page[data-layout="print"] .report-card,
+.ds-page[data-layout="print"] .kpi-card {
+    box-shadow: none;
+    border: 1px solid var(--panel-border);
+    break-inside: avoid;
+}
+
+/* Fixed column counts — never a responsive grid function on a paginated medium. */
+.ds-page[data-layout="print"] .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .ds-page[data-layout="print"] .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Table rows must not split across a page break. */
+.ds-page[data-layout="print"] table {
+    break-inside: auto;
+}
+.ds-page[data-layout="print"] tbody tr {
+    break-inside: avoid;
+}
+.ds-page[data-layout="print"] thead {
+    display: table-header-group;
+}
+
+/* Sections avoid splitting where practical. */
+.ds-page[data-layout="print"] .panel,
+.ds-page[data-layout="print"] .report-card,
+.ds-page[data-layout="print"] .timeline-block,
+.ds-page[data-layout="print"] .progress-block {
+    break-inside: avoid;
+}

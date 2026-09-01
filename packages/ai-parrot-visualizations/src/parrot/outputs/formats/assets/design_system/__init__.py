@@ -54,10 +54,10 @@ def _read_asset(name: str) -> str | None:
 _BASE_CSS: str = _read_asset("base.css") or ""
 _COMPONENTS_CSS: str = _read_asset("components.css") or ""
 
-#: One entry per declared layout name, even for layouts this task does not
-#: author (``report`` / ``print`` ship in TASK-2708). A missing file is
-#: ``None`` here and handled as a warn-and-fall-back case by
-#: ``DesignSystem._resolve_layout``.
+#: One entry per declared layout name. A missing file is ``None`` here and
+#: handled as a warn-and-fall-back case by ``DesignSystem._resolve_layout``
+#: — this keeps the composer importable even if a layout asset is absent
+#: (e.g. mid-migration, before TASK-2708 shipped ``report``/``print``).
 _LAYOUT_CSS: dict[str, str | None] = {
     "report": _read_asset("layout-report.css"),
     "analytics": _read_asset("layout-analytics.css"),
