@@ -52,7 +52,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "dev_loop-only files (development.py, planner.py) \u2014 shares no files or imports with TASK-2651/2652/2654; could run in a separate worktree, though per-spec sequential is the recommended isolation.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2653-single-task-collapse-deploy-log.md"
+      "completed_at": "2026-09-01T00:31:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2653-single-task-collapse-deploy-log.md"
     },
     {
       "id": "TASK-2654",
