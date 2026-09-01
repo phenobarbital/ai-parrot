@@ -46,9 +46,9 @@ config, while an unset one falls through.
 | Key | Seat | Default |
 |---|---|---|
 | `DEV_FLOW_IDEATION_MODEL` | research primary | `claude-opus-5` |
-| `DEV_FLOW_RESEARCH_PARTNER_ENABLED` | partner on/off | `false` |
-| `DEV_FLOW_RESEARCH_PARTNER_BACKEND` | partner selector (`gpt` \| `nova`) | `gpt` |
-| `DEV_FLOW_RESEARCH_PARTNER_MODEL` | partner model | `gpt-5.6-sol` |
+| `DEV_FLOW_RESEARCH_PARTNER` | partner on/off **and** backend in one key — `""` = disabled, else `gpt` \| `nova` | `""` (disabled) |
+| `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` | partner model for the `gpt` backend | `gpt-5.6-sol` |
+| `DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL` | partner model for the `nova` backend | `us.amazon.nova-2-lite-v1:0` |
 | `DEV_FLOW_DEV_POOL` | dev pool (JSON array of `{agent, model, count}`) | *(unset)* |
 | `DEV_FLOW_REVIEW_PRIMARY_BACKEND` | review primary backend | `claude-code` |
 | `DEV_FLOW_REVIEW_PRIMARY_MODEL` | review primary model | `claude-opus-5` |
@@ -57,6 +57,22 @@ config, while an unset one falls through.
 
 `DEV_FLOW_IDEATION_MODEL` is deliberately **shared** with FEAT-482 rather
 than duplicated.
+
+The research-partner keys are **FEAT-482's, not this feature's** (FEAT-487).
+FEAT-486 briefly shipped its own `DEV_FLOW_RESEARCH_PARTNER_ENABLED` /
+`_BACKEND` / `_MODEL`; those are **retired and inert** — setting them does
+nothing. Two properties of FEAT-482's shape are worth knowing:
+
+* **One key carries both enable and backend.** `DEV_FLOW_RESEARCH_PARTNER=""`
+  (the default) disables the seat; any other value is the backend. The two
+  cannot disagree because there is only one of them.
+* **The model key is per backend.** The plan resolves the backend first and
+  then that backend's model key, so a `nova` partner gets a Nova model
+  rather than inheriting a `gpt-*` default.
+
+`DevFlowModelPlan.research_partner` keeps its `enabled` / `backend` / `model`
+*fields* — a plan names exactly one backend, so one `model` field is enough.
+An explicit plan value still beats config.
 
 > **Env keys only apply when a plan is supplied.** An omitted `model_plan`
 > ignores `DEV_FLOW_DEV_POOL` entirely, so a stray env var can never turn

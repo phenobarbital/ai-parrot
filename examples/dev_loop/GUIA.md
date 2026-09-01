@@ -476,7 +476,8 @@ Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
 | `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL del gate `open_questions`; al expirar el run **falla** |
 | `DEV_FLOW_IDEATION_MODEL` | `claude-opus-5` | Modelo del asiento de research primario (compartida con FEAT-482) |
 | `DEV_FLOW_DEV_POOL` | *(sin valor)* | Pool como array JSON de `{agent, model, count}`. Solo se lee si hay `model_plan` |
-| `DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` | `false` / `gpt` / `gpt-5.6-sol` | Passthrough del research partner (FEAT-482) |
+| `DEV_FLOW_RESEARCH_PARTNER` | `""` (apagado) | Research partner (FEAT-482): `""` apaga el asiento, cualquier otro valor es el backend (`gpt` o `nova`). Activación **y** backend en una sola variable |
+| `DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL` / `_NOVA_MODEL` | `gpt-5.6-sol` / `us.amazon.nova-2-lite-v1:0` | Modelo del partner, **por backend**. Las variables `_ENABLED`/`_BACKEND`/`_MODEL` de FEAT-486 quedaron retiradas por FEAT-487 y ya no hacen nada |
 | `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Revisor primario (con permisos de escritura) |
 | `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Contra-revisor de solo lectura, sobre Bedrock Mantle |
 | `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | Modelo propio del contra-revisor Mantle. Distinta de `DEV_LOOP_ADVERSARIAL_MODEL` (la del asiento codex) |

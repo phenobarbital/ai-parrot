@@ -14,9 +14,8 @@ import pytest
 from parrot.flows.dev_flow.model_plan import (
     DEFAULT_RESEARCH_PRIMARY,
     ENV_DEV_POOL,
-    ENV_PARTNER_BACKEND,
-    ENV_PARTNER_ENABLED,
-    ENV_PARTNER_MODEL,
+    ENV_PARTNER_GPT_MODEL,
+    ENV_PARTNER_NOVA_MODEL,
     ENV_RESEARCH_PRIMARY,
     ENV_REVIEW_COUNTER_MODEL,
     ENV_REVIEW_PRIMARY_MODEL,
@@ -27,6 +26,10 @@ from parrot.flows.dev_flow.model_plan import (
     supported_dev_pool_backends,
 )
 from parrot.flows.dev_loop.models.base import DevAgentPoolConfig, DevAgentSpec
+
+#: FEAT-482's authoritative key. Not re-exported by model_plan (which no
+#: longer owns any partner enable/backend key), so named here.
+ENV_RESEARCH_PARTNER = "DEV_FLOW_RESEARCH_PARTNER"
 
 
 def _getter(values: dict[str, Any]):
@@ -157,25 +160,29 @@ class TestResolveModelPlan:
         assert resolved.research_primary == "claude-opus-5"
 
     def test_explicit_nested_field_beats_env_sibling_still_resolves(self):
-        """Setting one partner field must not freeze the others."""
+        """Setting one partner field must not freeze the others.
+
+        FEAT-487: the sibling now resolves from FEAT-482's per-backend
+        model key rather than a partner-specific ``_MODEL`` key.
+        """
         resolved = resolve_model_plan(
             DevFlowModelPlan(research_partner=ResearchPartnerPlan(enabled=True)),
-            config_getter=_getter({ENV_PARTNER_ENABLED: "false", ENV_PARTNER_MODEL: "nova-2-lite"}),
+            config_getter=_getter(
+                {ENV_RESEARCH_PARTNER: "", ENV_PARTNER_GPT_MODEL: "openai.gpt-oss-120b"}
+            ),
         )
+        # `enabled` was explicit, so the (disabled) config must not win...
         assert resolved.research_partner.enabled is True
-        assert resolved.research_partner.model == "nova-2-lite"
-
-    @pytest.mark.parametrize(
-        "raw,expected",
-        [("1", True), ("true", True), ("yes", True), ("0", False), ("false", False), ("", False)],
-    )
-    def test_partner_enabled_env_coercion(self, raw: str, expected: bool):
-        resolved = resolve_model_plan(None, config_getter=_getter({ENV_PARTNER_ENABLED: raw}))
-        assert resolved.research_partner.enabled is expected
+        # ...while `model` still resolves from config.
+        assert resolved.research_partner.model == "openai.gpt-oss-120b"
 
     def test_partner_backend_from_env(self):
-        resolved = resolve_model_plan(None, config_getter=_getter({ENV_PARTNER_BACKEND: "nova"}))
+        """FEAT-487: one key carries enable AND backend."""
+        resolved = resolve_model_plan(
+            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "nova"})
+        )
         assert resolved.research_partner.backend == "nova"
+        assert resolved.research_partner.enabled is True
 
     def test_dev_pool_from_env_json(self):
         resolved = resolve_model_plan(
@@ -249,3 +256,110 @@ class TestExports:
 
         assert pkg.DevFlowModelPlan is DevFlowModelPlan
         assert "DevFlowModelPlan" in pkg.__all__
+
+
+class TestPartnerKeyDedup:
+    """FEAT-487 — one key set for the research-partner seat.
+
+    FEAT-486 shipped `DEV_FLOW_RESEARCH_PARTNER_ENABLED`/`_BACKEND`/`_MODEL`
+    alongside FEAT-482's `DEV_FLOW_RESEARCH_PARTNER` + per-backend model
+    keys. These pin the retired keys dead and the survivors live.
+    """
+
+    def test_partner_enabled_from_feat482_key(self):
+        resolved = resolve_model_plan(
+            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"})
+        )
+        assert resolved.research_partner.enabled is True
+        assert resolved.research_partner.backend == "gpt"
+
+    def test_partner_disabled_when_key_unset(self):
+        """The pure-addition guarantee: unset ⇒ the seat does not run."""
+        resolved = resolve_model_plan(None, config_getter=_getter({}))
+        assert resolved.research_partner.enabled is False
+
+    def test_partner_disabled_when_key_blank(self):
+        resolved = resolve_model_plan(
+            None, config_getter=_getter({ENV_RESEARCH_PARTNER: ""})
+        )
+        assert resolved.research_partner.enabled is False
+
+    def test_partner_model_follows_backend_nova(self):
+        """THE bug FEAT-487 fixes: a nova partner must not default to gpt-*."""
+        resolved = resolve_model_plan(
+            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "nova"})
+        )
+        assert resolved.research_partner.model == "us.amazon.nova-2-lite-v1:0"
+        assert not resolved.research_partner.model.startswith("gpt-")
+
+    def test_partner_model_follows_backend_gpt(self):
+        resolved = resolve_model_plan(
+            None, config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"})
+        )
+        assert resolved.research_partner.model == "gpt-5.6-sol"
+
+    def test_per_backend_model_keys_are_honoured(self):
+        for backend, key, value in (
+            ("gpt", ENV_PARTNER_GPT_MODEL, "openai.gpt-oss-120b"),
+            ("nova", ENV_PARTNER_NOVA_MODEL, "us.amazon.nova-pro-v1:0"),
+        ):
+            resolved = resolve_model_plan(
+                None,
+                config_getter=_getter({ENV_RESEARCH_PARTNER: backend, key: value}),
+            )
+            assert resolved.research_partner.model == value
+
+    def test_explicit_plan_still_beats_config(self):
+        resolved = resolve_model_plan(
+            DevFlowModelPlan(
+                research_partner=ResearchPartnerPlan(
+                    enabled=True, backend="nova", model="pinned-model"
+                )
+            ),
+            config_getter=_getter({ENV_RESEARCH_PARTNER: "gpt"}),
+        )
+        assert resolved.research_partner.backend == "nova"
+        assert resolved.research_partner.model == "pinned-model"
+
+    def test_retired_keys_are_ignored(self):
+        """The FEAT-486 keys must be inert — they no longer enable the seat."""
+        resolved = resolve_model_plan(
+            None,
+            config_getter=_getter(
+                {
+                    "DEV_FLOW_RESEARCH_PARTNER_ENABLED": "1",
+                    "DEV_FLOW_RESEARCH_PARTNER_BACKEND": "nova",
+                    "DEV_FLOW_RESEARCH_PARTNER_MODEL": "ignored-model",
+                }
+            ),
+        )
+        assert resolved.research_partner.enabled is False
+        assert resolved.research_partner.backend == "gpt"
+        assert resolved.research_partner.model == "gpt-5.6-sol"
+
+    def test_retired_constants_are_gone(self):
+        """Guard against a well-meaning re-introduction."""
+        from parrot.flows.dev_flow import model_plan
+
+        for name in ("ENV_PARTNER_ENABLED", "ENV_PARTNER_BACKEND", "ENV_PARTNER_MODEL"):
+            assert not hasattr(model_plan, name), f"{name} was re-added"
+
+    def test_invalid_backend_surfaces_feat482_error(self):
+        """Delegation means FEAT-482's own error text, not a second dialect."""
+        with pytest.raises(ValueError, match="gpt, nova"):
+            resolve_model_plan(
+                None, config_getter=_getter({ENV_RESEARCH_PARTNER: "bogus"})
+            )
+
+    def test_anthropic_partner_model_rejected(self):
+        """The family guard now reaches the plan resolver via delegation."""
+        with pytest.raises(ValueError, match="research-partner seat"):
+            resolve_model_plan(
+                None,
+                config_getter=_getter(
+                    {
+                        ENV_RESEARCH_PARTNER: "nova",
+                        ENV_PARTNER_NOVA_MODEL: "us.anthropic.claude-opus-5",
+                    }
+                ),
+            )
