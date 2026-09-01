@@ -270,11 +270,7 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
         return False
     command = entry.get("command")
     bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name
-    return (
-        isinstance(command, str)
-        and command.endswith(bin_name)
-        and entry.get("args") == ["mcp-local", name]
-    )
+    return isinstance(command, str) and command.endswith(bin_name) and entry.get("args") == ["mcp-local", name]
 
 
 def _install_mcp_json(root: Path) -> str:

@@ -6,6 +6,7 @@ of the pre-existing wikitoolkit entry — add/update/remove managed
 entries, never touch foreign entries, and skip (with a stderr warning) a
 foreign entry whose name collides with a managed one.
 """
+
 import json
 from pathlib import Path
 
@@ -103,9 +104,7 @@ def test_foreign_entry_untouched(tmp_root_with_config):
     """A foreign entry with an unrelated name is never modified."""
     root = tmp_root_with_config
     foreign = {"command": "some-other-cli", "args": ["serve"], "env": {}}
-    (root / ".mcp.json").write_text(
-        json.dumps({"mcpServers": {"other-tool": foreign}}), encoding="utf-8"
-    )
+    (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"other-tool": foreign}}), encoding="utf-8")
 
     _install_mcp_json(root)
 
@@ -116,9 +115,7 @@ def test_colliding_foreign_entry_skipped_with_warning(tmp_root_with_config, caps
     """A `parrot-<name>` entry not in our managed shape is left untouched."""
     root = tmp_root_with_config
     foreign = {"command": "some-other-cli", "args": ["serve"], "env": {}}
-    (root / ".mcp.json").write_text(
-        json.dumps({"mcpServers": {"parrot-stub": foreign}}), encoding="utf-8"
-    )
+    (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"parrot-stub": foreign}}), encoding="utf-8")
 
     _install_mcp_json(root)
 

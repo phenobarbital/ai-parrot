@@ -176,9 +176,8 @@ def permission_rules(root: Path) -> tuple[str, ...]:
     resolved = resolve_wikitoolkit_bin(root)
     if resolved == "wikitoolkit":
         return PERMISSION_RULES
-    return PERMISSION_RULES + (
-        f"Bash({resolved}:*)",
-    )
+    return PERMISSION_RULES + (f"Bash({resolved}:*)",)
+
 
 # --------------------------------------------------------------------------
 # CLAUDE.md managed section
@@ -325,7 +324,7 @@ GIT_HOOK_NEW_FILE = f"""#!/bin/sh
 NUDGE_TEXT = (
     "STOP — this repository has an LLM-wiki knowledge graph and CLAUDE.md "
     "requires querying it BEFORE raw file scans (Grep/Glob/Read or "
-    "grep/rg/find via Bash). Run `wikitoolkit query \"<question>\"` first "
+    'grep/rg/find via Bash). Run `wikitoolkit query "<question>"` first '
     "(ranked, token-budgeted page stubs), then `wikitoolkit page <id>` / "
     "`wikitoolkit related <id>` to drill in. Only fall back to raw search "
     "after a query AND a page/related follow-up came up empty."
