@@ -234,3 +234,34 @@ async def test_review_brief_carries_deterministic_qa_results(ctx):
         {"name": "run", "kind": "flowtask", "exit_code": 0, "passed": True}
     ]
     assert review_brief.qa_lint_passed is True
+
+
+@pytest.mark.asyncio
+async def test_advisory_review_runs_after_qa_not_concurrently(ctx):
+    """Order is the guarantee, not an incidental scheduling detail.
+
+    An advisory reviewer runs read-only and cannot execute a criterion
+    itself, so it must see the deterministic gate's recorded results.
+    Running the two concurrently withholds that evidence structurally —
+    the regression this pins against (bf2693e20 undoing df9f21053).
+    """
+    calls: list[str] = []
+
+    async def _qa_dispatch(**kwargs):
+        calls.append("qa")
+        return QAReport(passed=True, criterion_results=[], lint_passed=True)
+
+    async def _review(**kwargs):
+        calls.append("review")
+        assert "qa" in calls, "review must not start before QA has recorded its results"
+        return CodeReviewVerdict(passed=True, findings=[])
+
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(side_effect=_qa_dispatch)
+    reviewer = MagicMock()
+    reviewer.advisory = True
+    reviewer.review = AsyncMock(side_effect=_review)
+
+    await QANode(dispatcher=dispatcher, codereview_dispatcher=reviewer).execute(ctx)
+
+    assert calls == ["qa", "review"]

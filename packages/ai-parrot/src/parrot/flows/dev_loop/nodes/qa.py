@@ -230,20 +230,31 @@ class QANode(DevLoopNode):
 
         # FEAT-250 G4 / FEAT-270, optimised pipeline:
         #
-        # - Advisory reviewers (read-only): run deterministic QA and code
-        #   review CONCURRENTLY — the reviewer never modifies files, so
-        #   there is no race with the QA subagent reading the worktree.
+        # - Advisory reviewers (read-only): run deterministic QA FIRST,
+        #   then hand its recorded results to the review as evidence. An
+        #   advisory reviewer runs in a sandbox where nothing is writable
+        #   — not even /tmp — so it cannot execute a single acceptance
+        #   criterion itself; denied the recorded exit codes it attempts
+        #   them anyway and retry-spirals for ~10 minutes (df9f21053).
+        #   Running the two concurrently (bf2693e20) saved 3-5 minutes of
+        #   wall clock by structurally withholding that evidence, which
+        #   costs more than it saves and silently regressed df9f21053's
+        #   fix — the reviewer never modifies files, so ordering it after
+        #   QA needs no re-run either way.
         #
         # - Write-enabled reviewers: run code review FIRST so its fixes
         #   are committed before the single deterministic QA pass. This
         #   replaces the old QA → review → re-run-QA three-step with a
         #   two-step (review → QA), eliminating the redundant re-run.
+        #   There are no QA results to hand it yet by construction, and it
+        #   needs none: it can run the criteria itself.
         if is_advisory:
-            self.logger.info("Advisory reviewer — running deterministic QA and code review concurrently")
-            qa_coro = self._run_deterministic_qa(shared, research, brief, executable)
-            cr_coro = self._run_code_review(shared, research, brief)
-            report, (cr_passed, cr_findings, files_modified) = await asyncio.gather(qa_coro, cr_coro)
+            self.logger.info("Advisory reviewer — running deterministic QA first, then review on its evidence")
+            report = await self._run_deterministic_qa(shared, research, brief, executable)
             deterministic_passed = report.passed
+            cr_passed, cr_findings, files_modified = await self._run_code_review(
+                shared, research, brief, qa_report=report
+            )
         else:
             cr_passed, cr_findings, files_modified = await self._run_code_review(shared, research, brief)
 
