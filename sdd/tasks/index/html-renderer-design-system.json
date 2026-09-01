@@ -14,25 +14,25 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Root of the graph: every other task composes CSS from these tokens.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2706-themeconfig-layout-tokens.md"
     },
     {
       "id": "TASK-2707",
       "slug": "design-system-composer",
-      "title": "Design-system package \u2014 composer, base CSS, analytics layout, packaging",
+      "title": "Design-system package — composer, base CSS, analytics layout, packaging",
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Creates the assets and DesignSystem; everything downstream imports it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2707-design-system-composer.md"
     },
@@ -52,16 +52,16 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-2707"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches only new .css files + the composer's asset table \u2014 disjoint from TASK-2709's renderer edits, so the two can run concurrently after 2707.",
+      "parallelism_notes": "Touches only new .css files + the composer's asset table — disjoint from TASK-2709's renderer edits, so the two can run concurrently after 2707.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2708-layout-report-print-css.md"
     },
@@ -72,16 +72,16 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-2707"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches the two renderer modules only \u2014 disjoint from TASK-2708's CSS files.",
+      "parallelism_notes": "Touches the two renderer modules only — disjoint from TASK-2708's CSS files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2709-shared-document-shell.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,18 +101,18 @@
       "parallel": false,
       "parallelism_notes": "Edits the same two renderer modules as 2709 and must land after it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2710-variant-role-class-mapping.md"
     },
     {
       "id": "TASK-2711",
       "slug": "rich-datatable",
-      "title": "Rich DataTable \u2014 typed numerics, formatting, sticky header, totals, truncation, search/pagination",
+      "title": "Rich DataTable — typed numerics, formatting, sticky header, totals, truncation, search/pagination",
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -121,7 +121,7 @@
       "parallel": false,
       "parallelism_notes": "Shares interactive_html.py/ssr_html.py with TASK-2715; sequencing avoids conflicts in _render_datatable and _BEHAVIOR_JS.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2711-rich-datatable.md"
     },
@@ -132,16 +132,16 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-2708"
       ],
       "parallel": true,
-      "parallelism_notes": "Sole owner of formats/infographic_html.py \u2014 no file overlap with 2713/2714.",
+      "parallelism_notes": "Sole owner of formats/infographic_html.py — no file overlap with 2713/2714.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2712-infographic-html-migration.md"
     },
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -160,9 +160,9 @@
         "TASK-2709"
       ],
       "parallel": true,
-      "parallelism_notes": "Sole owner of pdf.py + layout-print.css \u2014 no overlap with 2712/2714.",
+      "parallelism_notes": "Sole owner of pdf.py + layout-print.css — no overlap with 2712/2714.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2713-pdf-print-layout.md"
     },
@@ -173,16 +173,16 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-2709"
       ],
       "parallel": true,
-      "parallelism_notes": "Sole owner of runner.py + recipes/models.py (core) \u2014 no overlap with 2712/2713.",
+      "parallelism_notes": "Sole owner of runner.py + recipes/models.py (core) — no overlap with 2712/2713.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2714-recipe-runner-theme-layout.md"
     },
@@ -193,7 +193,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,7 +202,7 @@
       "parallel": false,
       "parallelism_notes": "The only task permitted to add a catalog/ file and a golden fixture; also edits ssr_html.py, so it is sequenced against TASK-2711.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2715-filterbar-composite.md"
     },
@@ -213,7 +213,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "L",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": false,
       "parallelism_notes": "Last in the graph and the spec's designated cut line: the only non-presentational module, and nothing depends on it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-01T20:42:43+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-2716-filterbar-client-filtering.md"
     }
