@@ -52,7 +52,7 @@
       "feature_id": "FEAT-491",
       "feature": "flex-agent-infographic-a2ui",
       "spec": "sdd/specs/flex-agent-infographic-a2ui.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Pure markdown from spec §2 formulas; shares no code files with TASK-2693/2694 (only the agents/flex_dashboard/ directory). Can run any time before TASK-2696.",
       "assigned_to": null,
       "started_at": "2026-09-01T16:59:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2695-flex-kb-documents.md"
+      "completed_at": "2026-09-01T17:44:43+00:00",
+      "file": "sdd/tasks/completed/TASK-2695-flex-kb-documents.md"
     },
     {
       "id": "TASK-2696",

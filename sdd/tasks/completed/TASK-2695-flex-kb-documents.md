@@ -162,10 +162,17 @@ def test_kb_docs_present_and_structured():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Authored all five kb docs under `agents/flex_dashboard/kb/`
+(`payroll_contribution.md`, `pay_code_allocation.md`,
+`rep_utilization.md`, `proximity_staffing.md`, `datasets.md`), each with
+the six required sections. All worked-example numbers were computed by
+hand from the single sample row per dataset in
+`sdd/state/FEAT-517/source.md` (payroll % = `20682.27/137456.85`, rep
+utilization = `12/63`, region cross-check = `11/75.5`, proximity haversine
+distance computed via the exact formula documented in
+`proximity_staffing.md` and cross-checked with a throwaway numpy snippet —
+no invented figures). 4 unit tests pass; `ruff check` is clean.
 
 **Deviations from spec**: none
