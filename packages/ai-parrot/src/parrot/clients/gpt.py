@@ -32,13 +32,14 @@ from ..models.openai import (
 from ..models.outputs import ProductReview
 from ..models.detections import DetectionBox, ShelfRegion, IdentifiedProduct
 
-getLogger("httpx").setLevel("WARNING")
+# The httpx/httpcore families are quieted by parrot.clients.openai_base at
+# import time (it covers the httpx2/httpcore2 names the OpenAI SDK actually
+# uses); only the SDK's own logger is set here.
+getLogger("openai").setLevel("INFO")
 
 # Module-level deduplication cache for deprecation warnings (spec §3 Module 2).
 # set.add is atomic under the GIL; no async lock needed.
 _warned: set[str] = set()
-getLogger("httpcore").setLevel("WARNING")
-getLogger("openai").setLevel("INFO")
 
 # Reasoning models available via the Responses API only.
 # NOTE: spec §8 Q1 open — search-preview / deep-research IDs are
