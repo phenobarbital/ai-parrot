@@ -422,12 +422,64 @@ abre un gate `plan_approval` que se contesta en el mismo panel (aprobar/
 rechazar + comentario). Es **por run**: manda sobre el valor con el que se
 construyó el servidor, sin reconstruir el flujo.
 
-### 9.7. Variables nuevas
+### 9.7. Selectores de LLM por asiento (FEAT-486)
+
+Cada asiento LLM del dev-flow es configurable. La consola trae defaults
+opinionados y expone tres grupos de selectores más un toggle:
+
+| Grupo | Pestaña | Default de la consola |
+|---|---|---|
+| Modelo de research primario | *Ideation & gates* | `claude-opus-5` |
+| Research partner (activar + backend + modelo) | *Ideation & gates* | **apagado**; `gpt` / `gpt-5.6-sol` al activarlo |
+| Pool de agentes de desarrollo | *Agents & models* | `nova:zai.glm-5` + `nova:qwen.qwen3-coder-480b-a35b-v1:0` (ambos Bedrock vía `bedrock-mantle`) |
+| Pareja de revisión adversarial | *Review & judges* | primario `claude-code`/`claude-opus-5` + contra-revisor `gpt-5.6-sol` |
+
+`GET /api/config` devuelve el plan **ya resuelto** del servidor en
+`defaults.model_plan`, así que la UI enseña lo que de verdad se va a
+ejecutar, no lo que está escrito en el fuente. `POST /api/flow/run` acepta
+esa misma forma de vuelta (`dev_agents`, `research_primary`,
+`research_partner`, `review`).
+
+**Los backends se validan estrictamente; los modelos son texto libre.** Un
+backend desconocido devuelve `400` nombrando todos los soportados. Un
+modelo mal escrito falla en el proveedor, en ese asiento — las listas de
+modelos son una sugerencia, nunca una whitelist.
+
+Dos comportamientos que conviene saber:
+
+* **Una feature con un solo `TASK-` colapsa a un único sub-agente**, sea
+  cual sea el pool declarado. La señal es el número de tareas; no hay flag.
+* **NVIDIA NIM sigue siendo seleccionable pero nunca es default.** Ahora
+  mismo devuelve `401 Unauthorized` en esta cuenta. `kimi-k3` se alcanza
+  por el backend `moonshot`, no por NIM.
+
+> **Dos limitaciones, dichas claramente.**
+> 1. `model_plan` es un parámetro de **construcción**: los asientos quedan
+>    fijados en los constructores de los nodos, y esta consola construye un
+>    único flujo al arrancar. Un plan enviado en el run se valida entero y
+>    se devuelve en la respuesta, y cualquier diferencia con el plan del
+>    servidor se registra como warning — pero el run usa el plan del
+>    **servidor**. Reinicia la consola con las `DEV_FLOW_*` que quieras.
+> 2. Esta consola usa el **judge panel** de FEAT-378 como revisor de QA, y
+>    un revisor explícito gana al plan por diseño. La pareja de revisión
+>    queda configurada y validada pero no es el revisor activo aquí:
+>    `defaults.model_plan.review_pair_active` lo reporta como `false` y la
+>    UI lo dice.
+
+Referencia completa: `docs/dev_loop/dev-flow-model-plan.md`.
+
+### 9.8. Variables nuevas
 
 | Variable | Default | Para qué |
 |---|---|---|
 | `DEV_FLOW_IDEATION_MAX_ROUNDS` | `2` | Rondas máximas de Open Questions por run |
 | `DEV_FLOW_GATE_TTL_QUESTIONS` | `86400` (24 h) | TTL del gate `open_questions`; al expirar el run **falla** |
+| `DEV_FLOW_IDEATION_MODEL` | `claude-opus-5` | Modelo del asiento de research primario (compartida con FEAT-482) |
+| `DEV_FLOW_DEV_POOL` | *(sin valor)* | Pool como array JSON de `{agent, model, count}`. Solo se lee si hay `model_plan` |
+| `DEV_FLOW_RESEARCH_PARTNER_ENABLED` / `_BACKEND` / `_MODEL` | `false` / `gpt` / `gpt-5.6-sol` | Passthrough del research partner (FEAT-482) |
+| `DEV_FLOW_REVIEW_PRIMARY_BACKEND` / `_MODEL` | `claude-code` / `claude-opus-5` | Revisor primario (con permisos de escritura) |
+| `DEV_FLOW_REVIEW_COUNTER_MODEL` | `gpt-5.6-sol` | Contra-revisor de solo lectura, sobre Bedrock Mantle |
+| `DEV_LOOP_MANTLE_REVIEW_MODEL` | `gpt-5.6-sol` | Modelo propio del contra-revisor Mantle. Distinta de `DEV_LOOP_ADVERSARIAL_MODEL` (la del asiento codex) |
 
 El resto se reutiliza tal cual de las `DEV_LOOP_*` que ya conoces
 (`DEV_LOOP_QA_MAX_RETRIES`, `DEV_LOOP_GATE_PARK`, `DEV_LOOP_JUDGE_PANEL`,
