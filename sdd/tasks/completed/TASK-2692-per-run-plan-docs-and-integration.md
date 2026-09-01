@@ -99,10 +99,52 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: Replaced `docs/dev_loop/dev-flow-model-plan.md`'s "Known
+limitation" section (the only build-time-only claim left in the doc —
+verified by grepping for "build-time" before and after) with a new
+"Per-run application (FEAT-490)" section covering: the per-run mechanism
+and how it composes with FEAT-480 checkpointing (fresh cache-miss rebuilds
+with the plan merged in; never stored on the runner instance); the resume
+rule (a resumed run keeps its original seats, reported via
+`result.metadata`'s `model_plan_requested`/`model_plan_effective`/
+`run_mode`); the dev console's always-fresh-by-default behaviour plus its
+resume opt-in (correcting the same stale "no resume endpoint" premise
+TASK-2688 already had to correct in code); the accepted fingerprint
+limitation, pinned by TASK-2687's test; and the ops library seam
+(Module 7/8) existing without its console.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Added the integration coverage spec §4 names that spans multiple tasks and
+wasn't fully closed by any single earlier one: `test_run_endpoint_applies_
+ideation_model_end_to_end` (`TestEndToEndAppliesThePerSeatSelection` in
+`test_server_dev_model_plan.py`) drives the REAL recovery-enabled
+`DevFlowRunner` (not the lightweight `_StubFlow`-only harness every other
+test in that file uses) through the actual HTTP endpoint, with
+`build_dev_flow` patched via `DevFlowRunner._dev_loop_flow_factory.
+__globals__` to capture what it's called with — proving the full chain
+POST → `handle_run` → `runner.run(model_plan=...)` → `build_dev_flow(
+model_plan=...)` for a differing `research_primary`, closing the loop
+between TASK-2686 (runner accepts the plan) and TASK-2688 (console passes
+it) that neither task's own tests fully exercised together. A companion
+control test confirms the no-submission case still reaches `build_dev_flow`
+with the server's construction-time plan, byte-identical to before.
+`test_console_run_id_is_always_fresh`'s corrected form
+(`test_console_mints_a_fresh_run_id_when_none_is_supplied`) already exists
+from TASK-2688/2689 — not duplicated here.
 
-**Deviations from spec**: none | describe if any
+Caught and fixed one test-authoring bug during this task: a bare
+`MagicMock()` used as `dev_loop_flow_kwargs["model_plan"]` crashed
+`_execution_policy_for_fingerprint()` (iterates `model_plan.dev_pool`) with
+`TypeError: Object of type MagicMock is not JSON serializable` before
+`run()` ever reached `flow_factory` — replaced with a real, minimal
+`DevFlowModelPlan(research_primary="claude-opus-5")` instance.
+
+`pytest packages/ai-parrot/tests/flows/dev_flow packages/ai-parrot/tests/flows/dev_loop -v`
+(the exact acceptance-criterion command): 1769 passed, 3 pre-existing
+unrelated failures (`test_qa_codereview`, `test_secondopinion_brief`,
+`test_subagent_parity` — the same three every other task in this feature
+has verified failing identically on `dev` before this branch). `ruff
+check` clean on the test file (the doc file is Markdown, not lint-checked).
+
+**Deviations from spec**: none.
