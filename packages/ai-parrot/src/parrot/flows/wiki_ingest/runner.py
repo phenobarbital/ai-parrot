@@ -438,9 +438,7 @@ async def _process_one_meeting(
     touched_paths.append(daily_result.vault_path)
 
     validation_ctx.private_accessed = any(p.startswith("Private/") or p == "Private" for p in touched_paths)
-    validation_ctx.obsidian_dir_modified = any(
-        p.startswith(".obsidian/") or p == ".obsidian" for p in touched_paths
-    )
+    validation_ctx.obsidian_dir_modified = any(p.startswith(".obsidian/") or p == ".obsidian" for p in touched_paths)
 
     validation_result = validate(validation_ctx)
     return _MeetingOutcome(
