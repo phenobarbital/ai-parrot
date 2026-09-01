@@ -295,3 +295,101 @@ require a further signature change to `register_agent_resources`/
 `handle_resources_read` beyond this task's already-expanded scope. The
 tool *catalog* resource (distinct from `tools/list` itself) is therefore
 unfiltered by real PBAC today — a concrete, scoped follow-up.
+
+---
+
+## Post-review remediation (2026-09-01, before push)
+
+An adversarial `code-reviewer` pass on the full FEAT-477 diff (per
+CLAUDE.md's mandated review step) found **two CRITICAL issues** in this
+task's own PBAC-wiring work above, both fixed before push (see commit
+`fix(mcp-as-agent): close critical PBAC bypass on aggregate endpoint +
+BotManager wiring`):
+
+1. **`_AggregateMCPServer` never inherited the `_guard()`/`PBACGuard`
+   treatment `_AgentBoundMCPServer` got.** It called the raw, unguarded
+   core `handle_tools_list`/`handle_tools_call` directly and its
+   `MCPServerConfig` was never built via `_build_server_config()` —
+   `auth_method` defaulted to `NONE`. With `aggregate_enabled=True`, `/mcp`
+   was a fully unauthenticated, PBAC-free endpoint listing and executing
+   every tool from every mounted agent — a direct contradiction of the
+   spec's own "naming sugar, never its own authorization path" invariant
+   and this document's shipped claim of the same. **Fixed**: `PBACGuard`
+   gained an optional `resource_resolver` override (defaults to the
+   existing single-agent `resource_for`); `_AggregateMCPServer` now
+   overrides `_guard()` identically to `_AgentBoundMCPServer` and builds
+   its own `PBACGuard` with `resource_resolver=resource_from_aggregate`,
+   so an aggregate name re-verifies against the exact same canonical
+   resource a per-agent call would. Its config now flows through
+   `_build_server_config()` too. Verified end-to-end with a new
+   `test_aggregate_endpoint_requires_auth_and_pbac` (real
+   `TestClient`/`TestServer`, no credentials -> 401, credentialed
+   permitted call -> success).
+
+2. **`BotManager.setup(agent_mount_config=...)` — the spec's own named
+   integration point — had no way to actually secure the mount it
+   builds.** No `auth_template`/`pbac_resolver`/`audit_sink` parameter
+   existed; every agent-mount request through this path got
+   `AuthMethod.NONE` (rejected, but non-functional) with a `None`
+   resolver (denies everything). Zero test coverage (confirmed by grep:
+   `agent_mount_config` appeared only in `manager.py`, nowhere in any
+   test). Not a security bypass (fail-closed by accident), but a real,
+   undisclosed, untested gap in a named integration point. **Fixed**:
+   `setup()` gained three new keyword-only parameters
+   (`agent_mount_auth_template`, `agent_mount_pbac_resolver`,
+   `agent_mount_audit_sink`), threaded through a new `_wire_agent_mount()`
+   helper extracted from `setup()`'s body so the wiring is independently
+   testable without exercising `setup()`'s much larger, unrelated route
+   registration. Verified with 5 new tests in
+   `tests/manager/test_agent_mount_wiring.py`, including one exercising
+   the **real** `BotManager.setup()` end-to-end (no mocks on
+   `AgentMCPMount`) against a real aiohttp app.
+
+One **IMPORTANT** finding was also fixed: the tool-catalog resource
+(`agent://{name}/tools`) stayed fail-open by default even with a real
+`pbac_resolver` configured, because `policy_filter` was a *separate*
+parameter nothing ever auto-derived from it — following this very
+document's own "Minimal mount" example exactly (which wires
+`pbac_resolver` but never mentions `policy_filter`) still left the catalog
+listing every tool to every principal regardless of PBAC scope, despite
+the resource's own registered description ("Policy-filtered tool
+catalog..."). **Fixed**: `AgentMCPMount._effective_policy_filter()` now
+derives a `policy_filter` from `pbac_resolver` (reading `_pctx_var`, the
+same mechanism `tools/list` already uses) whenever an explicit
+`policy_filter` isn't given. Verified with
+`test_tool_catalog_resource_is_pbac_filtered_by_default`. Docs updated to
+state this explicitly rather than leave it as an undocumented default.
+
+**Findings reviewed and consciously left as disclosed follow-ups, not
+fixed in this pass** (documented in `docs/mcp/agent-as-mcp-server.md` and
+here, not silently dropped):
+
+- **G7's job-handle trio (`agent_jobs.py`, TASK-2607) is not reachable
+  through the live mount.** `agent_mount.py` never imports or instantiates
+  `AgentJobs`; no test drives a `start_*`/`*_status`/`*_result` flow
+  through an actual mounted server. TASK-2607's own completion note
+  already flagged this as awaiting mount integration; this task did not
+  pick it up. An agent author has no framework-provided way to expose a
+  long-running method through the live mount today — they would need to
+  hand-wire `AgentJobs` themselves with no documented pattern for doing
+  so. Concrete follow-up: a `start_*`/`*_status`/`*_result` dispatch path
+  in `_AgentBoundMCPServer` (or a sibling module) backed by `AgentJobs`.
+- **No audit trail is persisted by default even after this fix**, since
+  `agent_mount_audit_sink`/`pbac_resolver`'s own `audit_sink` remain `None`
+  unless the caller explicitly wires one — `self.logger.info(...)` is the
+  only default record. This is a real, distinct gap from TASK-2605's
+  audit-ledger schema-mismatch rationale (which the reviewer independently
+  confirmed as sound): the schema mismatch explains why `AuditLedger
+  .append()` isn't called directly; it doesn't change the fact that the
+  wired-up production default persists nothing queryable. A concrete
+  follow-up: ship a default `audit_sink` (e.g. writing to a durable,
+  purpose-built table/store) rather than requiring every deployment to
+  supply its own.
+- **Real-Redis integration test.** `RedisSessionStore`'s "hard requirement
+  for agent MCP endpoints" claim is unit-verified against `_FakeRedis`
+  (TASK-2609), never against a real Redis instance. A follow-up smoke test
+  against a real `redis.asyncio` client would close this gap.
+
+Full `packages/ai-parrot-server/tests/mcp/` + `tests/manager/` suites (198
+tests) green after the fixes above; `ruff check` clean on every
+touched/new file.
