@@ -105,6 +105,7 @@ async def run_meeting_page(
     summary_sha256: str,
     transcript_sha256: str,
     meeting_date_local: str | None = None,
+    contradictions: list[str] | None = None,
 ) -> MeetingPageResult:
     """Extract + render the canonical §17 meeting source page.
 
@@ -124,6 +125,9 @@ async def run_meeting_page(
             (§8.4) for the filename — defaults to ``meeting.meeting_date``
             when the caller has not resolved the original-tz date (e.g.
             no ``meeting_date_iso`` was available).
+        contradictions: Bare titles of contradiction pages this meeting's
+            own detection pass created/updated (Module 11) — linked into
+            ``## Contradictions`` per contract §22 rule 6.
 
     Returns:
         The :class:`MeetingPageResult`.
@@ -188,6 +192,7 @@ async def run_meeting_page(
         ),
         clients=clients,
         concepts=classification.concepts,
+        contradictions=contradictions,
         verified_quotes=verified_quotes,
     )
 

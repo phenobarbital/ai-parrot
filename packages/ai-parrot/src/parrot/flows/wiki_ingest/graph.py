@@ -117,4 +117,11 @@ async def rebuild_graph_index(
         being stale must never block ingest or a fetch decision (D3/R1);
         callers should catch and log, not abort the operation.
     """
-    return await toolkit.ingest_obsidian_vault(wiki_name, str(vault_path), incremental=True)
+    # Contract rule #1 (spec references, obsidian-wiki-operating-contract.md
+    # line 36): "Never access Private/. Do not read, list, search, index,
+    # summarize, move, modify, or traverse it." The loader's own defaults
+    # only exclude .obsidian/.trash/.git — Private/ must be excluded here
+    # explicitly, or every derived-plane rebuild would silently index it.
+    return await toolkit.ingest_obsidian_vault(
+        wiki_name, str(vault_path), incremental=True, extra_skip_patterns=["Private"]
+    )

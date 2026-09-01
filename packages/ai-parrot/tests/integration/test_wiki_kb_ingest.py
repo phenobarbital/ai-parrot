@@ -252,3 +252,233 @@ async def test_ingest_validation_failure_rolls_back(tmp_path: Path, monkeypatch:
     processed_root = tmp_path / conf.WIKI_KB_RAW_ROOT / "Processed"
     transcript_files = list(processed_root.rglob("transcript.md"))
     assert len(transcript_files) == 1
+
+    # A §34 validation failure always queues exactly one review item —
+    # never zero (previously silently dropped when no other review item
+    # pre-existed) and never one per unrelated pre-existing review item
+    # (previously duplicated the same "Validation failed" entry).
+    queue_path = tmp_path / "Wiki" / "Review Queue.md"
+    assert queue_path.exists()
+    queue_content = queue_path.read_text()
+    assert queue_content.count("Validation failed for") == 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_mid_pipeline_exception_rolls_back_and_stays_recoverable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unhandled exception AFTER compiled writes have started (e.g. in
+    daily synthesis) must roll back every compiled write made so far and
+    report a normal §34-style failure — never leave partial pages in the
+    vault with no registry/log entry and no review item (which would make
+    the source permanently, silently un-recoverable via the raw-id gate).
+    """
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    strong_client = _make_strong_client()
+    cheap_client = _make_cheap_client()
+    agent = _make_agent(listing, strong_client, cheap_client)
+
+    from parrot.flows.wiki_ingest.nodes import daily as daily_module
+
+    monkeypatch.setattr(
+        daily_module, "run_daily_synthesis", AsyncMock(side_effect=RuntimeError("boom mid-pipeline"))
+    )
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    assert report.processed == 0
+    assert report.failed == 1
+    assert any("boom mid-pipeline" in e for e in report.errors)
+
+    # The meeting page (written before the daily-synthesis crash) was
+    # rolled back — never left dangling in the vault.
+    meetings_dir = tmp_path / "Wiki" / "Sources" / "Meetings"
+    assert not any(meetings_dir.iterdir()) if meetings_dir.exists() else True
+
+    # No successful ingest log entry for this meeting.
+    log_path = tmp_path / "Wiki" / "log.md"
+    if log_path.exists():
+        assert "ingest |" not in log_path.read_text()
+
+    # A review item was queued — the failure is surfaced, not silent.
+    queue_path = tmp_path / "Wiki" / "Review Queue.md"
+    assert queue_path.exists()
+    assert "boom mid-pipeline" in queue_path.read_text()
+
+    # Raw bytes are still present (immutable regardless of outcome) — but
+    # crucially the meeting was never marked "processed" in the registry,
+    # so a re-run with the same fetch-gate can still surface it for review
+    # rather than the source being silently, permanently lost.
+    processed_root = tmp_path / conf.WIKI_KB_RAW_ROOT / "Processed"
+    assert list(processed_root.rglob("transcript.md"))
+
+
+@pytest.mark.asyncio
+async def test_ingest_links_contradiction_from_meeting_and_project_pages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Contract §22 rule 6 — a detected contradiction must be linked from
+    BOTH the new meeting source page's ``## Contradictions`` section AND
+    the affected project's ``## Unresolved Contradictions`` section, not
+    just exist as a standalone ``Wiki/Contradictions/`` page.
+    """
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    # Seed an existing project page so contradiction detection has
+    # something to compare the new meeting's claims against.
+    from parrot.flows.wiki_ingest import vault as vault_module
+
+    toolkit = vault_module.build_vault_toolkit(str(tmp_path))
+    await vault_module.initialize_vault(toolkit)
+    from parrot.flows.wiki_ingest.models import ProjectFrontmatter
+    from parrot.flows.wiki_ingest.render.project import (
+        ProjectState,
+        render_project_page,
+    )
+
+    frontmatter = ProjectFrontmatter(
+        id="project:acme-rollout",
+        title="Acme Rollout",
+        status="active",
+        source_pages=["Wiki/Sources/Meetings/Prior Meeting"],
+        last_meeting="2026-08-01",
+        created="2026-08-01T00:00:00+00:00",
+        updated="2026-08-01T00:00:00+00:00",
+    )
+    state = ProjectState(
+        current_decisions=[
+            {"text": "Ship v1 by Q3.", "source": "Wiki/Sources/Meetings/Prior Meeting", "superseded": False}
+        ]
+    )
+    await toolkit.create_note("Projects/Acme Rollout/Acme Rollout.md", render_project_page(frontmatter, state))
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    strong_client = _make_strong_client()
+
+    from parrot.flows.wiki_ingest.nodes.contradictions import ConflictCandidate
+
+    async def _invoke_with_conflict(prompt, *, output_type=None, **kwargs):
+        if output_type is ContradictionDetectionResult:
+            return _FakeInvokeResult(
+                ContradictionDetectionResult(
+                    conflicts=[
+                        ConflictCandidate(
+                            title="Ship Date Conflict",
+                            existing_claim_text="Ship v1 by Q3.",
+                            new_claim_text="Ship v2 by Q4.",
+                            why_conflict="The shipping quarter changed.",
+                            impact="Timeline commitment shifted.",
+                            severity="high",
+                            resolution_needed="Confirm the authoritative ship date with stakeholders.",
+                        )
+                    ]
+                )
+            )
+        return await _make_strong_client().invoke(prompt, output_type=output_type, **kwargs)
+
+    strong_client.invoke = AsyncMock(side_effect=_invoke_with_conflict)
+    cheap_client = _make_cheap_client()
+    agent = _make_agent(listing, strong_client, cheap_client)
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    assert report.processed == 1
+    assert report.contradictions
+
+    meeting_pages = list((tmp_path / "Wiki" / "Sources" / "Meetings").glob("*.md"))
+    assert len(meeting_pages) == 1
+    meeting_content = meeting_pages[0].read_text()
+    assert "[[Wiki/Contradictions/Ship Date Conflict|Ship Date Conflict]]" in meeting_content
+
+    project_content = (tmp_path / "Projects" / "Acme Rollout" / "Acme Rollout.md").read_text()
+    assert "[[Wiki/Contradictions/Ship Date Conflict|Ship Date Conflict]]" in project_content
+
+
+@pytest.mark.asyncio
+async def test_ingest_preserves_action_items_in_daily_note(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Action items extracted onto the meeting page must survive the
+    orchestrator's re-parse of that page and reach the daily-synthesis
+    call as real content — never silently dropped as an always-empty
+    list (owners/due dates/commitments)."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    strong_client = _make_strong_client()
+
+    from parrot.flows.wiki_ingest.models import ActionItem
+
+    async def _cheap_invoke(prompt, *, output_type=None, **kwargs):
+        if output_type is MeetingPageExtraction:
+            return _FakeInvokeResult(
+                MeetingPageExtraction(
+                    executive_summary="A productive sync.",
+                    purpose="Align on rollout.",
+                    decisions=["Ship v2 by Q4."],
+                    requirements=["Support SSO."],
+                    action_items=[ActionItem(action="Follow up with legal", owner="Bob", due_date="2026-09-01")],
+                )
+            )
+        if output_type is DailySynthesisProposal:
+            return _FakeInvokeResult(DailySynthesisProposal(daily_summary="Acme progressed the rollout."))
+        return _FakeInvokeResult(None)
+
+    cheap_client = AsyncMock()
+    cheap_client.invoke = AsyncMock(side_effect=_cheap_invoke)
+    agent = _make_agent(listing, strong_client, cheap_client)
+
+    from parrot.flows.wiki_ingest.nodes import daily as daily_module
+
+    original_run_daily_synthesis = daily_module.run_daily_synthesis
+    captured_kwargs: dict = {}
+
+    async def _spy(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return await original_run_daily_synthesis(*args, **kwargs)
+
+    monkeypatch.setattr(daily_module, "run_daily_synthesis", _spy)
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    assert report.processed == 1
+    # The action item survived the meeting page's re-parse (previously
+    # `_extraction_from_meeting` hardcoded `action_items=[]`) and reached
+    # the daily-synthesis call as real content, not an empty list.
+    assert any("Follow up with legal" in line and "Bob" in line for line in captured_kwargs["new_action_items"])
+
+
+@pytest.mark.asyncio
+async def test_ingest_wiki_index_lists_nested_project_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """§24.1 — ``Wiki/index.md`` must list canonical project pages, which
+    live nested one level under ``Projects/<Name>/<Name>.md`` — a
+    non-recursive listing of ``Projects/`` always finds none."""
+    monkeypatch.setattr(conf, "WIKI_KB_VAULT_PATH", str(tmp_path))
+    monkeypatch.setattr(conf, "WIKI_KB_PARTICIPANTS", [])
+
+    listing = _LISTING_TEMPLATE.format(
+        count=1, entries=_listing_entry("id-1", "Acme Weekly Sync", "2026-08-20T10:00:00-05:00")
+    )
+    strong_client = _make_strong_client()
+    cheap_client = _make_cheap_client()
+    agent = _make_agent(listing, strong_client, cheap_client)
+
+    ctx = WikiIngestContext(agent=agent)
+    report = await run_ingest(ctx)
+
+    assert report.processed == 1
+    index_content = (tmp_path / "Wiki" / "index.md").read_text()
+    assert "Acme Rollout" in index_content
+    assert "None yet" not in index_content

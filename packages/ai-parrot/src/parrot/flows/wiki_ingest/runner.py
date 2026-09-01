@@ -23,7 +23,7 @@ import asyncio
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -181,6 +181,44 @@ def _project_vault_path(project_name: str) -> str:
     return f"Projects/{name}/{name}.md"
 
 
+async def _queue_review_item(
+    toolkit: Any,
+    report: IngestReport,
+    *,
+    review_type: str,
+    title: str,
+    source_id: str,
+    issue: str,
+    evidence: str,
+    recommended_action: str,
+) -> None:
+    """Append one ``Wiki/Review Queue.md`` entry and record it on the report.
+
+    Single source of truth for the read-append-write pattern, shared by
+    every review-queue write site in this module — a validation failure
+    always gets exactly one such entry, independent of any other
+    pre-existing review items (fixes the prior duplicate-or-missing bug).
+    """
+    try:
+        queue_note = await toolkit.read_note("Wiki/Review Queue.md")
+        queue_content = queue_note["content"]
+    except FileNotFoundError:
+        queue_content = "# Review Queue\n\n"
+    entry = review_queue_node.render_review_item(
+        review_type=review_type,
+        timestamp=now_iso(),
+        title=title[:80],
+        source_id=source_id,
+        related_pages=[],
+        issue=issue,
+        evidence=evidence,
+        recommended_action=recommended_action,
+    )
+    queue_content = review_queue_node.append_review_item(queue_content, entry)
+    await toolkit.update_note("Wiki/Review Queue.md", queue_content, preserve_frontmatter=False)
+    report.review_items.append(issue)
+
+
 async def _process_one_meeting(
     agent: Any,
     toolkit: Any,
@@ -275,182 +313,206 @@ async def _process_one_meeting(
     )
     meeting_source_link = f"Wiki/Sources/Meetings/{filename[:-3]}"
 
-    # --- §9/§22 contradiction detection (before destination/meeting page) -
-    contradiction_links: list[str] = []
-    if classification.primary_project:
-        project_path = _project_vault_path(classification.primary_project)
-        touched_paths.append(project_path)
-        try:
-            existing_note = await toolkit.read_note(project_path)
-            existing_state = parse_project_page(existing_note["content"])
-            existing_claims = [
-                contradictions_node.ExistingClaimRef(
-                    text=c.text, source=c.source, date=existing_note["frontmatter"].get("last_meeting", "")
-                )
-                for c in (*existing_state.current_decisions, *existing_state.current_requirements)
-            ]
-            new_claims = [meeting.summary_text] if meeting.summary_text else []
-            pages = await contradictions_node.run_contradiction_detection(
-                agent.strong_client,
-                existing_claims,
-                new_claims,
-                new_claim_source=meeting_source_link,
-                new_claim_date=meeting.meeting_date,
-                affected_pages=[project_path],
-            )
-            for page in pages:
-                await _write_note(toolkit, page.vault_path, page.content, writes)
-                contradiction_links.append(page.vault_path)
-                validation_ctx.new_wikilinks.append(page.vault_path.removesuffix(".md"))
-                validation_ctx.existing_or_queued_pages.append(page.vault_path.removesuffix(".md"))
-                if page.review_item:
-                    review_items.append(page.review_item)
-        except FileNotFoundError:
-            pass
-
-    # --- §17 meeting page ---------------------------------------------------
-    meeting_result = await meeting_page_node.run_meeting_page(
-        agent.cheap_client,
-        meeting,
-        classification_result,
-        raw_summary_path=processed.summary_path or "",
-        raw_transcript_path=processed.transcript_path,
-        summary_sha256=hashes.summary_sha256 or "",
-        transcript_sha256=hashes.transcript_sha256,
-        meeting_date_local=meeting_date_local,
-    )
-    await _write_note(toolkit, meeting_result.vault_path, meeting_result.content, writes)
-    touched_paths.append(meeting_result.vault_path)
-    validation_ctx.new_wikilinks.append(meeting_result.vault_path.removesuffix(".md"))
-    validation_ctx.existing_or_queued_pages.append(meeting_result.vault_path.removesuffix(".md"))
-    validation_ctx.written_filenames.append(Path(meeting_result.vault_path).name)
-    meeting_extraction = _extraction_from_meeting(meeting_result)
-
-    # --- §16/§19 project reconcile / new project -----------------------------
-    projects_touched: list[str] = []
-    if classification.primary_project:
-        project_path = _project_vault_path(classification.primary_project)
-        touched_paths.append(project_path)
-        existing_content = None
-        existing_frontmatter = None
-        locked = False
-        try:
-            note = await toolkit.read_note(project_path)
-            existing_content = note["content"]
-            locked = bool(note["frontmatter"].get("locked", False))
-            from .models import ProjectFrontmatter
-
-            existing_frontmatter = ProjectFrontmatter(**{k: v for k, v in note["frontmatter"].items() if k != "locked"})
-        except FileNotFoundError:
-            pass
-
-        reconcile_result = await project_reconcile_node.run_project_reconcile(
-            agent.strong_client,
-            existing_content=existing_content,
-            existing_frontmatter=existing_frontmatter,
-            locked=locked,
-            project_name=classification.primary_project,
-            meeting=meeting,
-            meeting_extraction=meeting_extraction,
-            meeting_source_link=meeting_source_link,
-            classification=classification,
-        )
-        validation_ctx.diff_guard_violations.extend(reconcile_result.diff_guard_violations)
-        if reconcile_result.review_item:
-            review_items.append(reconcile_result.review_item)
-        if reconcile_result.content and reconcile_result.vault_path:
-            await _write_note(toolkit, reconcile_result.vault_path, reconcile_result.content, writes)
-            validation_ctx.new_wikilinks.append(reconcile_result.vault_path.removesuffix(".md"))
-            validation_ctx.existing_or_queued_pages.append(reconcile_result.vault_path.removesuffix(".md"))
-            projects_touched.append(classification.primary_project)
-
-    # --- §20/§21 entities + concepts -----------------------------------------
-    entity_candidates: list[tuple[str, str]] = [(p, "person") for p in classification.people]
-    entity_candidates += [(p, "product") for p in classification.products]
-    if classification.primary_client:
-        entity_candidates.append((classification.primary_client, "company"))
-
-    for name, kind in entity_candidates:
-        try:
-            entity_result = await entities_node.run_entity_resolve(
-                agent.strong_client,
-                toolkit,
-                name,
-                kind,  # type: ignore[arg-type]
-                project_name=classification.primary_project,
-                meeting_source_link=meeting_source_link,
-                meeting_summary=meeting.summary_text or "",
-            )
-            if entity_result.content and entity_result.vault_path:
-                await _write_note(toolkit, entity_result.vault_path, entity_result.content, writes)
-                touched_paths.append(entity_result.vault_path)
-                validation_ctx.new_wikilinks.append(entity_result.vault_path.removesuffix(".md"))
-                validation_ctx.existing_or_queued_pages.append(entity_result.vault_path.removesuffix(".md"))
-                validation_ctx.written_filenames.append(Path(entity_result.vault_path).name)
-        except Exception:
-            logger.warning("Entity resolve failed for %r", name, exc_info=True)
-
-    for concept_name in classification.concepts:
-        try:
-            concept_result = await concepts_node.run_concept_resolve(
-                agent.strong_client,
-                toolkit,
-                concept_name,
-                project_name=classification.primary_project,
-                meeting_source_link=meeting_source_link,
-                meeting_summary=meeting.summary_text or "",
-            )
-            if concept_result.content and concept_result.vault_path:
-                await _write_note(toolkit, concept_result.vault_path, concept_result.content, writes)
-                touched_paths.append(concept_result.vault_path)
-                validation_ctx.new_wikilinks.append(concept_result.vault_path.removesuffix(".md"))
-                validation_ctx.existing_or_queued_pages.append(concept_result.vault_path.removesuffix(".md"))
-                validation_ctx.written_filenames.append(Path(concept_result.vault_path).name)
-        except Exception:
-            logger.warning("Concept resolve failed for %r", concept_name, exc_info=True)
-
-    # --- §23 daily synthesis --------------------------------------------------
-    daily_path = f"Diary/Daily Notes/{meeting.meeting_date}.md"
-    touched_paths.append(daily_path)
-    existing_daily = None
+    # §34 gate — everything from here on writes compiled pages that
+    # must be atomically rolled back (never Raw/, which is immutable
+    # regardless of outcome) if ANY step raises. Without this, a raw
+    # bundle already moved to Raw/Processed/ combined with a mid-
+    # pipeline exception would leave partial compiled writes in place
+    # with no registry/log entry, and the fetch-gate's raw-id scan
+    # would then permanently skip the source on every future run —
+    # an unrecoverable, silent partial ingest.
     try:
-        note = await toolkit.read_note(daily_path)
-        existing_daily = note["content"]
-    except FileNotFoundError:
-        pass
-    action_item_lines = [
-        f"{a.action} - {a.owner} - {a.due_date} - {classification.primary_project or 'Unknown'}"
-        for a in meeting_extraction.action_items
-    ]
-    daily_result = await daily_node.run_daily_synthesis(
-        agent.cheap_client,
-        existing_content=existing_daily,
-        day=meeting.meeting_date,
-        meeting_source_link=meeting_source_link,
-        project_name=classification.primary_project,
-        new_project_updates=meeting_extraction.decisions + meeting_extraction.requirements,
-        new_decisions=meeting_extraction.decisions,
-        new_action_items=action_item_lines,
-        new_risks=meeting_extraction.risks,
-        new_contradictions_and_review=contradiction_links,
-    )
-    await _write_note(toolkit, daily_result.vault_path, daily_result.content, writes)
-    touched_paths.append(daily_result.vault_path)
+        # --- §9/§22 contradiction detection (before destination/meeting page) -
+        contradiction_links: list[str] = []
+        if classification.primary_project:
+            project_path = _project_vault_path(classification.primary_project)
+            touched_paths.append(project_path)
+            try:
+                existing_note = await toolkit.read_note(project_path)
+                existing_state = parse_project_page(existing_note["content"])
+                existing_claims = [
+                    contradictions_node.ExistingClaimRef(
+                        text=c.text, source=c.source, date=existing_note["frontmatter"].get("last_meeting", "")
+                    )
+                    for c in (*existing_state.current_decisions, *existing_state.current_requirements)
+                ]
+                new_claims = [meeting.summary_text] if meeting.summary_text else []
+                pages = await contradictions_node.run_contradiction_detection(
+                    agent.strong_client,
+                    existing_claims,
+                    new_claims,
+                    new_claim_source=meeting_source_link,
+                    new_claim_date=meeting.meeting_date,
+                    affected_pages=[project_path],
+                )
+                for page in pages:
+                    await _write_note(toolkit, page.vault_path, page.content, writes)
+                    contradiction_links.append(page.vault_path)
+                    validation_ctx.new_wikilinks.append(page.vault_path.removesuffix(".md"))
+                    validation_ctx.existing_or_queued_pages.append(page.vault_path.removesuffix(".md"))
+                    if page.review_item:
+                        review_items.append(page.review_item)
+            except FileNotFoundError:
+                pass
 
-    validation_ctx.private_accessed = any(p.startswith("Private/") or p == "Private" for p in touched_paths)
-    validation_ctx.obsidian_dir_modified = any(p.startswith(".obsidian/") or p == ".obsidian" for p in touched_paths)
+        # §22 rule 6 — bare contradiction-page titles, for linking this
+        # meeting's own source page and the affected project back to them.
+        contradiction_titles = [Path(p).stem for p in contradiction_links]
 
-    validation_result = validate(validation_ctx)
-    return _MeetingOutcome(
-        validation_passed=validation_result.passed,
-        validation_failures=validation_result.failures,
-        writes=writes,
-        review_items=review_items,
-        meeting_source_link=meeting_source_link,
-        processing_mode=classification_result.processing_mode,
-        projects=projects_touched,
-        contradiction_links=contradiction_links,
-    )
+        # --- §17 meeting page ---------------------------------------------------
+        meeting_result = await meeting_page_node.run_meeting_page(
+            agent.cheap_client,
+            meeting,
+            classification_result,
+            raw_summary_path=processed.summary_path or "",
+            raw_transcript_path=processed.transcript_path,
+            summary_sha256=hashes.summary_sha256 or "",
+            transcript_sha256=hashes.transcript_sha256,
+            meeting_date_local=meeting_date_local,
+            contradictions=contradiction_titles,
+        )
+        await _write_note(toolkit, meeting_result.vault_path, meeting_result.content, writes)
+        touched_paths.append(meeting_result.vault_path)
+        validation_ctx.new_wikilinks.append(meeting_result.vault_path.removesuffix(".md"))
+        validation_ctx.existing_or_queued_pages.append(meeting_result.vault_path.removesuffix(".md"))
+        validation_ctx.written_filenames.append(Path(meeting_result.vault_path).name)
+        meeting_extraction = _extraction_from_meeting(meeting_result)
+
+        # --- §16/§19 project reconcile / new project -----------------------------
+        projects_touched: list[str] = []
+        if classification.primary_project:
+            project_path = _project_vault_path(classification.primary_project)
+            touched_paths.append(project_path)
+            existing_content = None
+            existing_frontmatter = None
+            locked = False
+            try:
+                note = await toolkit.read_note(project_path)
+                existing_content = note["content"]
+                locked = bool(note["frontmatter"].get("locked", False))
+                from .models import ProjectFrontmatter
+
+                existing_frontmatter = ProjectFrontmatter(**{k: v for k, v in note["frontmatter"].items() if k != "locked"})
+            except FileNotFoundError:
+                pass
+
+            reconcile_result = await project_reconcile_node.run_project_reconcile(
+                agent.strong_client,
+                existing_content=existing_content,
+                existing_frontmatter=existing_frontmatter,
+                locked=locked,
+                project_name=classification.primary_project,
+                meeting=meeting,
+                meeting_extraction=meeting_extraction,
+                meeting_source_link=meeting_source_link,
+                classification=classification,
+                contradiction_titles=contradiction_titles,
+            )
+            validation_ctx.diff_guard_violations.extend(reconcile_result.diff_guard_violations)
+            if reconcile_result.review_item:
+                review_items.append(reconcile_result.review_item)
+            if reconcile_result.content and reconcile_result.vault_path:
+                await _write_note(toolkit, reconcile_result.vault_path, reconcile_result.content, writes)
+                validation_ctx.new_wikilinks.append(reconcile_result.vault_path.removesuffix(".md"))
+                validation_ctx.existing_or_queued_pages.append(reconcile_result.vault_path.removesuffix(".md"))
+                projects_touched.append(classification.primary_project)
+
+        # --- §20/§21 entities + concepts -----------------------------------------
+        entity_candidates: list[tuple[str, str]] = [(p, "person") for p in classification.people]
+        entity_candidates += [(p, "product") for p in classification.products]
+        if classification.primary_client:
+            entity_candidates.append((classification.primary_client, "company"))
+
+        for name, kind in entity_candidates:
+            try:
+                entity_result = await entities_node.run_entity_resolve(
+                    agent.strong_client,
+                    toolkit,
+                    name,
+                    kind,  # type: ignore[arg-type]
+                    project_name=classification.primary_project,
+                    meeting_source_link=meeting_source_link,
+                    meeting_summary=meeting.summary_text or "",
+                )
+                if entity_result.content and entity_result.vault_path:
+                    await _write_note(toolkit, entity_result.vault_path, entity_result.content, writes)
+                    touched_paths.append(entity_result.vault_path)
+                    validation_ctx.new_wikilinks.append(entity_result.vault_path.removesuffix(".md"))
+                    validation_ctx.existing_or_queued_pages.append(entity_result.vault_path.removesuffix(".md"))
+                    validation_ctx.written_filenames.append(Path(entity_result.vault_path).name)
+            except Exception:
+                logger.warning("Entity resolve failed for %r", name, exc_info=True)
+
+        for concept_name in classification.concepts:
+            try:
+                concept_result = await concepts_node.run_concept_resolve(
+                    agent.strong_client,
+                    toolkit,
+                    concept_name,
+                    project_name=classification.primary_project,
+                    meeting_source_link=meeting_source_link,
+                    meeting_summary=meeting.summary_text or "",
+                )
+                if concept_result.content and concept_result.vault_path:
+                    await _write_note(toolkit, concept_result.vault_path, concept_result.content, writes)
+                    touched_paths.append(concept_result.vault_path)
+                    validation_ctx.new_wikilinks.append(concept_result.vault_path.removesuffix(".md"))
+                    validation_ctx.existing_or_queued_pages.append(concept_result.vault_path.removesuffix(".md"))
+                    validation_ctx.written_filenames.append(Path(concept_result.vault_path).name)
+            except Exception:
+                logger.warning("Concept resolve failed for %r", concept_name, exc_info=True)
+
+        # --- §23 daily synthesis --------------------------------------------------
+        daily_path = f"Diary/Daily Notes/{meeting.meeting_date}.md"
+        touched_paths.append(daily_path)
+        existing_daily = None
+        try:
+            note = await toolkit.read_note(daily_path)
+            existing_daily = note["content"]
+        except FileNotFoundError:
+            pass
+        action_item_lines = [
+            f"{a.action} - {a.owner} - {a.due_date} - {classification.primary_project or 'Unknown'}"
+            for a in meeting_extraction.action_items
+        ]
+        daily_result = await daily_node.run_daily_synthesis(
+            agent.cheap_client,
+            existing_content=existing_daily,
+            day=meeting.meeting_date,
+            meeting_source_link=meeting_source_link,
+            project_name=classification.primary_project,
+            new_project_updates=meeting_extraction.decisions + meeting_extraction.requirements,
+            new_decisions=meeting_extraction.decisions,
+            new_action_items=action_item_lines,
+            new_risks=meeting_extraction.risks,
+            new_contradictions_and_review=contradiction_links,
+        )
+        await _write_note(toolkit, daily_result.vault_path, daily_result.content, writes)
+        touched_paths.append(daily_result.vault_path)
+
+        validation_ctx.private_accessed = any(p.startswith("Private/") or p == "Private" for p in touched_paths)
+        validation_ctx.obsidian_dir_modified = any(p.startswith(".obsidian/") or p == ".obsidian" for p in touched_paths)
+
+        validation_result = validate(validation_ctx)
+        return _MeetingOutcome(
+            validation_passed=validation_result.passed,
+            validation_failures=validation_result.failures,
+            writes=writes,
+            review_items=review_items,
+            meeting_source_link=meeting_source_link,
+            processing_mode=classification_result.processing_mode,
+            projects=projects_touched,
+            contradiction_links=contradiction_links,
+        )
+    except Exception as exc:
+        logger.exception("Unhandled error compiling meeting %s; rolling back partial writes", meeting.source_id)
+        await _rollback(toolkit, writes)
+        return _MeetingOutcome(
+            validation_passed=False,
+            validation_failures=[f"Unhandled exception while compiling meeting: {exc}"],
+            writes=[],
+            review_items=review_items,
+        )
 
 
 def _extraction_from_meeting(meeting_result: Any) -> Any:
@@ -466,7 +528,7 @@ def _extraction_from_meeting(meeting_result: Any) -> Any:
     from Module 8's internals (this task's own "NOT in scope: the node
     internals" boundary) at the cost of a light re-parse.
     """
-    from .models import MeetingExtraction
+    from .models import ActionItem, MeetingExtraction
     from .render.project import _parse_section
 
     body = meeting_result.content.split("---", 2)[-1]
@@ -479,10 +541,40 @@ def _extraction_from_meeting(meeting_result: Any) -> Any:
             if line.startswith("- ") and line[2:].strip().lower() not in {"none identified", "not established"}
         ]
 
+    def _action_items(heading: str) -> list[ActionItem]:
+        # ``render_action_items_table`` renders a Markdown table, not
+        # bullets — parse its rows back, skipping the header, the
+        # ``| --- | ... |`` separator, and the "None identified" placeholder.
+        text = _parse_section(body, heading)
+        items: list[ActionItem] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not (stripped.startswith("|") and stripped.endswith("|")):
+                continue
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if len(cells) != 5:
+                continue
+            action, owner, due_date, status, confidence = cells
+            if action.lower() == "action" or action.strip("-: ") == "" or action.lower() == "none identified":
+                continue
+            valid_confidence: Literal["High", "Medium", "Low"] = (
+                confidence if confidence in ("High", "Medium", "Low") else "Medium"  # type: ignore[assignment]
+            )
+            items.append(
+                ActionItem(
+                    action=action,
+                    owner=owner or "Unknown",
+                    due_date=due_date or "Unknown",
+                    status=status or "Open",
+                    source_confidence=valid_confidence,
+                )
+            )
+        return items
+
     return MeetingExtraction(
         decisions=_bullets("Decisions"),
         requirements=_bullets("Requirements"),
-        action_items=[],
+        action_items=_action_items("Action Items"),
         risks=_bullets("Risks and Blockers"),
         open_questions=_bullets("Open Questions"),
     )
@@ -567,47 +659,46 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
             await _rollback(toolkit, outcome.writes)
             report.failed += 1
             report.errors.extend(outcome.validation_failures)
+            # Exactly one validation-failure entry, independent of
+            # `outcome.review_items` — a §34 gate failure with no other
+            # collected review item must still be surfaced (previously
+            # silently dropped); several unrelated review items must not
+            # duplicate this entry once per item (previously did).
+            await _queue_review_item(
+                toolkit,
+                report,
+                review_type="unsupported-format",
+                title=f"Validation failed for {meeting.title}",
+                source_id=meeting.source_id,
+                issue="§34 post-operation validation failed",
+                evidence="; ".join(outcome.validation_failures),
+                recommended_action="Review the failure and re-run ingest for this meeting.",
+            )
             for item in outcome.review_items:
-                try:
-                    queue_note = await toolkit.read_note("Wiki/Review Queue.md")
-                    queue_content = queue_note["content"]
-                except FileNotFoundError:
-                    queue_content = "# Review Queue\n\n"
-                entry = review_queue_node.render_review_item(
-                    review_type="unsupported-format",
-                    timestamp=now_iso(),
-                    title=f"Validation failed for {meeting.title}",
-                    source_id=meeting.source_id,
-                    related_pages=[],
-                    issue="§34 post-operation validation failed",
-                    evidence="; ".join(outcome.validation_failures),
-                    recommended_action="Review the failure and re-run ingest for this meeting.",
+                await _queue_review_item(
+                    toolkit,
+                    report,
+                    review_type=item.review_type,
+                    title=item.issue,
+                    source_id=item.source_id,
+                    issue=item.issue,
+                    evidence=item.evidence,
+                    recommended_action="See issue/evidence above.",
                 )
-                queue_content = review_queue_node.append_review_item(queue_content, entry)
-                await toolkit.update_note("Wiki/Review Queue.md", queue_content, preserve_frontmatter=False)
-                report.review_items.append(item.issue)
             continue
 
         # §34 passed — persist review items (best-effort, not gated) + registry + log.
         for item in outcome.review_items:
-            try:
-                queue_note = await toolkit.read_note("Wiki/Review Queue.md")
-                queue_content = queue_note["content"]
-            except FileNotFoundError:
-                queue_content = "# Review Queue\n\n"
-            entry = review_queue_node.render_review_item(
+            await _queue_review_item(
+                toolkit,
+                report,
                 review_type=item.review_type,
-                timestamp=now_iso(),
-                title=item.issue[:80],
+                title=item.issue,
                 source_id=item.source_id,
-                related_pages=[],
                 issue=item.issue,
                 evidence=item.evidence,
                 recommended_action="See issue/evidence above.",
             )
-            queue_content = review_queue_node.append_review_item(queue_content, entry)
-            await toolkit.update_note("Wiki/Review Queue.md", queue_content, preserve_frontmatter=False)
-            report.review_items.append(item.issue)
 
         await registry.record_synced(
             fireflies_id=meeting.fireflies_id,
@@ -685,13 +776,20 @@ async def run_ingest(ctx: WikiIngestContext) -> IngestReport:
 async def _rebuild_wiki_index(toolkit: Any, report: IngestReport) -> None:
     """§24.1 — rebuild ``Wiki/index.md`` after this run's write operations."""
     try:
-        listing = await toolkit.list_notes(folder="Projects", recursive=False)
+        # Canonical project pages live one level nested — Projects/<Name>/
+        # <Name>.md (see _project_vault_path) — so a non-recursive listing
+        # of Projects/ always returns an empty set. List recursively and
+        # keep only paths matching that exact canonical shape.
+        listing = await toolkit.list_notes(folder="Projects", recursive=True)
     except FileNotFoundError:
         listing = {"notes": []}
 
     projects: list[tuple[str, str]] = []
     for note in listing.get("notes", []):
-        name = Path(note["path"]).stem
+        note_path = Path(note["path"])
+        if len(note_path.relative_to("Projects").parts) != 2 or note_path.stem != note_path.parent.name:
+            continue
+        name = note_path.stem
         try:
             project_note = await toolkit.read_note(_project_vault_path(name))
             status = project_note["frontmatter"].get("status", "unknown")

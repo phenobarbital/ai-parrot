@@ -260,6 +260,7 @@ async def run_project_reconcile(
     meeting_extraction: MeetingExtraction,
     meeting_source_link: str,
     classification: Classification,
+    contradiction_titles: list[str] | None = None,
 ) -> ProjectReconcileResult:
     """Reconcile (or create) one project page for one meeting (§16/§19).
 
@@ -277,6 +278,12 @@ async def run_project_reconcile(
         meeting_extraction: The Module 8 :class:`MeetingExtraction`.
         meeting_source_link: Wikilink target of the meeting source page.
         classification: The Module 7 :class:`Classification`.
+        contradiction_titles: Bare titles of contradiction pages this
+            meeting's own detection pass created/updated against this
+            project — merged into ``unresolved_contradictions`` so the
+            project links back per contract §22 rule 6 ("Link the
+            contradiction from every affected project, entity, concept,
+            and source page").
 
     Returns:
         The :class:`ProjectReconcileResult`.
@@ -284,6 +291,7 @@ async def run_project_reconcile(
     project_name = title_case_name(project_name)
     vault_path = f"Projects/{project_name}/{project_name}.md"
     now = now_iso()
+    contradiction_titles = contradiction_titles or []
 
     if existing_content is not None and locked:
         return ProjectReconcileResult(
@@ -304,6 +312,7 @@ async def run_project_reconcile(
         state = _fresh_state_from_extraction(
             meeting_extraction, classification, meeting_source_link=meeting_source_link
         )
+        state.unresolved_contradictions = _merge_unique(state.unresolved_contradictions, contradiction_titles)
         frontmatter = ProjectFrontmatter(
             id=f"project:{project_name.lower().replace(' ', '-')}",
             title=project_name,
@@ -328,6 +337,9 @@ async def run_project_reconcile(
     if is_older:
         updated_state = _chronological_historical_update(
             existing_state, meeting=meeting, meeting_source_link=meeting_source_link
+        )
+        updated_state.unresolved_contradictions = _merge_unique(
+            updated_state.unresolved_contradictions, contradiction_titles
         )
         frontmatter = existing_frontmatter.model_copy(update={"updated": now})
         content = render_project_page(frontmatter, updated_state)
@@ -383,6 +395,9 @@ async def run_project_reconcile(
             "recent_source_updates": _merge_unique(
                 existing_state.recent_source_updates,
                 [f"{meeting.meeting_date} - [[{meeting_source_link}]] - {proposal.change_summary}"],
+            ),
+            "unresolved_contradictions": _merge_unique(
+                existing_state.unresolved_contradictions, contradiction_titles
             ),
         }
     )
