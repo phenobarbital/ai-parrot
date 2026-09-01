@@ -6,7 +6,7 @@ and the backend selector triad in ``parrot.flows.dev_loop.catalog``.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 from parrot import conf
@@ -256,6 +256,37 @@ class TestBedrockResearchPartner:
         mock_nova.assert_called_once_with(model=conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL)
         _, kwargs = client.ask.call_args
         assert kwargs["thinking_budget"] == conf.DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET
+
+    async def test_the_client_is_opened_before_ask(self, tmp_path):
+        """AbstractClient.__aenter__ is what builds the SDK client.
+
+        Without it OpenAIBaseClient.ask() dereferences `self.client.chat`
+        on None, and the coordinator's degradation boundary turns that
+        into a one-line warning — complementary research degraded on
+        EVERY run and read as a flaky backend.
+        """
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        with patch(
+            "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+            return_value=client,
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            await partner.research(
+                brief=_FakeBrief(),
+                question="q",
+                cwd=str(tmp_path),
+                run_id="run-1",
+                node_id="node-1",
+            )
+
+        client.__aenter__.assert_awaited_once()
+        client.__aexit__.assert_awaited_once()
+        # And the call really happened inside the context, not after it.
+        assert client.mock_calls.index(call.__aenter__()) < client.mock_calls.index(
+            call.ask(
+                *client.ask.call_args.args, **client.ask.call_args.kwargs
+            )
+        )
 
     async def test_both_backends_share_one_call_shape(self, tmp_path):
         """Both invoke ask(use_tools=True, structured_output=ResearchFindings)
