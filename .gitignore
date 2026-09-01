@@ -100,6 +100,11 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+# MagicMock.__fspath__() returns "MagicMock/<mock name>/<id>", so a mock
+# reaching a Path(...).mkdir() in a test materialises this tree in the CWD.
+# Belt-and-braces only: the test that creates it must delete it (see the
+# _cleanup_mock_fspath_artifacts fixture in packages/ai-parrot/tests/conftest.py).
+MagicMock/
 
 # Translations
 *.mo
