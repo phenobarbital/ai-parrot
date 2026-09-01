@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -162,8 +162,78 @@ class TestMantleAdversarial:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- Placement followed the task's hint ("follow where
+  `NovaAdversarialReviewDispatcher` lives"): a new
+  `dev_loop/dispatchers/mantle.py`, structured as a deliberate mirror of
+  `dispatchers/nova.py:239-410` — same class shape, same
+  `@CodeReviewDispatcherFactory.register` idiom, same
+  degrade-on-infra-error contract. Only the transport differs (Chat
+  Completions over bedrock-mantle vs. Converse over Nova).
+- **Read-only in three independent structural layers**, documented in the
+  module docstring and each covered by a test: (1)
+  `MantleAdversarialReviewProfile` is a fresh `BaseModel` with no
+  `tools`/`allowed_commands`/`sandbox` field — a tool config cannot be
+  *expressed*; (2) the single `ask()` passes `use_tools=False` and no
+  `tools` kwarg; (3) the returned verdict is rewritten with
+  `files_modified=[]` regardless of what the model claims.
+- Default model `gpt-5.6-sol` via the NEW conf key
+  `DEV_LOOP_MANTLE_REVIEW_MODEL`. The existing
+  `DEV_LOOP_ADVERSARIAL_MODEL` (codex seat, fallback `gpt-5.5`) was NOT
+  repointed — asserted by `test_codex_adversarial_model_key_not_repointed`.
+  The literal is duplicated in `conf.py` (which must never import
+  `parrot.flows`) and pinned equal by test, exactly as
+  `_NOVA_DEFAULT_CONVERSE_MODEL` already is.
+- `max_tokens` runs through the existing `effective_max_tokens()`; the
+  unmapped `gpt-5.6-sol` passes through unclamped ("unknown is not
+  wrong"), asserted by test.
+- FEAT-479: the client call is wrapped in
+  `usage_attribution(run_id, seat=node_id)`, and an optional
+  `event_registry_resolver` constructor arg binds the run's registry onto
+  the client's `_events_registry` — the documented injection point at
+  `dispatchers/llm.py:389-390`. Without it a self-constructed client
+  would silently emit into its own isolated registry and never reach the
+  run ledger. Both branches are tested.
+- Missing bearer key (`BEDROCK_MANTLE_API_KEY` → `AWS_NOVA_API_KEY`) or
+  any outage degrades to a passing verdict with a nit-level finding —
+  the inherited review contract, not a crash. Tested.
+- **catalog.py changes are provably additive**, guarded by a dedicated
+  `TestCatalogAdditivity` class: backend ids list unchanged; the nova
+  `models` tuple's first 8 entries asserted byte-identical with the two
+  new ids appended (`qwen.qwen3-coder-480b-a35b-v1:0`, `gpt-5.6-sol`);
+  nova's `default_model`/`model_env`/`roles` unchanged; `JUDGE_BACKENDS`
+  and `PRIMARY_REVIEW_BACKENDS` unchanged (judge panel explicitly
+  untouched); codex's model tuple deliberately NOT extended with
+  `gpt-5.6-sol` (spec-resolved: the Codex CLI cannot run it).
+- Triad widened to `("codex", "nova", "mantle")`; `ADVERSARIAL_BACKEND`
+  default stays `"codex"`, so an unconfigured deployment is byte-identical.
+- No new `BackendInfo` row was added for "mantle": `catalog_payload`
+  already exposes the adversarial role as `[resolved_adversarial_backend]`
+  (catalog.py:368), so the triad alone makes it selectable — and adding a
+  row would have leaked a non-`DevAgentBackend` id into the console's
+  development-pool picker.
+- 25 unit tests pass first run. `tests/flows/dev_loop/` +
+  `tests/flows/dev_flow/`: 1466 passed, 6 skipped, and the same 3
+  pre-existing `dev` failures documented in TASK-2653's note.
+- Ruff: **zero delta** on all three pre-existing files (catalog.py 24→24,
+  conf.py 2→2, dispatchers/__init__.py 1→1); both new files clean, with
+  one justified `# noqa: TRY004` where the mirrored nova template raises
+  `ValueError` (immediately caught by the degradation handler two lines
+  below, so the class is immaterial and matching the template is worth
+  more).
 
-**Deviations from spec**: none
+**Deviations from spec**: none in behaviour. Two file-list notes:
+1. `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/__init__.py`
+   was modified (3 lines: import, `__all__`, docstring) although not
+   listed. This is mechanically REQUIRED: factory registration happens via
+   the `@CodeReviewDispatcherFactory.register` class decorator, which only
+   runs when the module is imported — exactly how `nova-adversarial`
+   becomes available today (`dispatchers/__init__.py:29-32`). Without it
+   the dispatcher would be unreachable through the factory.
+2. `code_review.py` was listed as MODIFY "Factory registration" but needed
+   **no change**, for the same reason: registration is decorator-based in
+   the dispatcher module. Editing it would have meant either a redundant
+   second registration or a circular import (`mantle.py` already imports
+   `code_review`). Left untouched deliberately.

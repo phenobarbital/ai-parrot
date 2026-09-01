@@ -70,7 +70,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -78,8 +78,8 @@
       "parallelism_notes": "Touches code_review.py/dispatchers/catalog.py/conf.py \u2014 disjoint from TASK-2651/2652/2653 file sets.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2654-mantle-adversarial-dispatcher.md"
+      "completed_at": "2026-09-01T00:39:42+00:00",
+      "file": "sdd/tasks/completed/TASK-2654-mantle-adversarial-dispatcher.md"
     },
     {
       "id": "TASK-2655",
