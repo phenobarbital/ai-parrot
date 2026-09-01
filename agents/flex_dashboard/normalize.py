@@ -169,9 +169,7 @@ def month_period(df: pd.DataFrame, *, source: str) -> pd.DataFrame:
 
     date_column = next((c for c in candidates if c in df.columns), None)
     if date_column is None:
-        raise KeyError(
-            f"No date column found for source={source!r}; expected one of {candidates}"
-        )
+        raise KeyError(f"No date column found for source={source!r}; expected one of {candidates}")
 
     result = df.copy()
     dates = pd.to_datetime(result[date_column])

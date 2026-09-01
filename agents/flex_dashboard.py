@@ -174,9 +174,7 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         self._dataset_manager.add_query(
             name="hours",
             query_slug=DATASET_SLUGS["hours"],
-            description=(
-                "Hours/wages by month, program, pay_code, cost_center."
-            ),
+            description=("Hours/wages by month, program, pay_code, cost_center."),
             usage_guidance={
                 "do": [
                     "Worked Hours by Month",
@@ -187,17 +185,14 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         self._dataset_manager.add_query(
             name="employees",
             query_slug=DATASET_SLUGS["employees"],
-            description=(
-                "Employee roster with lat/lon, Flex Type, service tenure."
-            ),
+            description=("Employee roster with lat/lon, Flex Type, service tenure."),
             usage_guidance={"do": ["Proximity Staffing employee-side geo lookups"]},
         )
         self._dataset_manager.add_query(
             name="region_utilization",
             query_slug=DATASET_SLUGS["region_utilization"],
             description=(
-                "Regional monthly employee utilization (BOP/EOP dates); "
-                "precomputed Employee Utilization column."
+                "Regional monthly employee utilization (BOP/EOP dates); " "precomputed Employee Utilization column."
             ),
             usage_guidance={
                 "do": ["Cross-check for recomputed Rep Utilization — never the source of truth"],
@@ -206,10 +201,7 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         self._dataset_manager.add_query(
             name="rep_utilization",
             query_slug=DATASET_SLUGS["rep_utilization"],
-            description=(
-                "Rep utilization by region/state/category per month "
-                "(raw 'catagory' typo column)."
-            ),
+            description=("Rep utilization by region/state/category per month " "(raw 'catagory' typo column)."),
             usage_guidance={
                 "do": ["Rep Utilization = employees_worked / average_active, recomputed"],
             },
@@ -355,13 +347,9 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
         """
         return [
             RecipeParam(name="month", default="", description="YYYY-MM filter."),
-            RecipeParam(
-                name="flex_type", default="", description="Employee Flex Type filter."
-            ),
+            RecipeParam(name="flex_type", default="", description="Employee Flex Type filter."),
             RecipeParam(name="pay_code", default="", description="Pay code filter."),
-            RecipeParam(
-                name="cost_center", default="", description="Cost center filter."
-            ),
+            RecipeParam(name="cost_center", default="", description="Cost center filter."),
             RecipeParam(
                 name="category",
                 default="",
@@ -575,9 +563,7 @@ class FlexDashboard(NarrativeMixin, InfographicAuthoringMixin, PandasAgent):
                                                 {"name": "latitude"},
                                                 {"name": "longitude"},
                                             ],
-                                            "data": {
-                                                "path": "/proximity_staffing/employee_layer"
-                                            },
+                                            "data": {"path": "/proximity_staffing/employee_layer"},
                                         },
                                     ],
                                 },
@@ -635,15 +621,9 @@ class RefreshDashboardArgs(AbstractToolArgsSchema):
     flex_type: str | None = Field(default=None, description="Employee Flex Type filter.")
     pay_code: str | None = Field(default=None, description="Pay code filter.")
     cost_center: str | None = Field(default=None, description="Cost center filter.")
-    category: str | None = Field(
-        default=None, description="Rep utilization category filter."
-    )
-    radius_miles: float | None = Field(
-        default=None, description="Proximity Staffing coverage radius, miles."
-    )
-    nearest_n: int | None = Field(
-        default=None, description="Proximity Staffing nearest-N count."
-    )
+    category: str | None = Field(default=None, description="Rep utilization category filter.")
+    radius_miles: float | None = Field(default=None, description="Proximity Staffing coverage radius, miles.")
+    nearest_n: int | None = Field(default=None, description="Proximity Staffing nearest-N count.")
 
 
 class RefreshDashboardTool(AbstractTool):
@@ -703,15 +683,16 @@ class RefreshDashboardTool(AbstractTool):
             if value is not None:
                 params[key] = value
 
-        artifact = await self._runner.run(
-            FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=self._pctx
-        )
+        artifact = await self._runner.run(FlexDashboard.DASHBOARD_RECIPE_NAME, params=params, pctx=self._pctx)
         return {
             "filters": params,
-            "filter_source": "args" if any(
-                v is not None
-                for v in (month, flex_type, pay_code, cost_center, category, radius_miles, nearest_n)
-            ) else ("surface_state" if state_filters else "defaults"),
+            "filter_source": (
+                "args"
+                if any(
+                    v is not None for v in (month, flex_type, pay_code, cost_center, category, radius_miles, nearest_n)
+                )
+                else ("surface_state" if state_filters else "defaults")
+            ),
             "artifact_id": artifact.artifact_id,
             "bytes": len(artifact.content or b""),
         }

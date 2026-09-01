@@ -26,9 +26,7 @@ _FLEX_DIR = _AGENTS_DIR / "flex_dashboard"
 def _load_package(name: str, init_path: Path, search_dir: Path):
     if name in sys.modules:
         return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(
-        name, init_path, submodule_search_locations=[str(search_dir)]
-    )
+    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load package {name!r} from {init_path}")
     module = importlib.util.module_from_spec(spec)
@@ -125,17 +123,13 @@ class TestMonthSeriesTransformers:
         assert series["2025-10"] == pytest.approx(137456.85)
 
     def test_payroll_pct_by_month(self, loaded_flex_transformers, flex_frames):
-        out = loaded_flex_transformers.payroll_pct_by_month(
-            {"finance": flex_frames["finance"]}, {}
-        )
+        out = loaded_flex_transformers.payroll_pct_by_month({"finance": flex_frames["finance"]}, {})
         series = {row["month"]: row["payroll_pct"] for row in out["series"]}
         assert series["2025-09"] == pytest.approx(18000.0 / 120000.0, rel=1e-6)
         assert series["2025-10"] == pytest.approx(20682.27 / 137456.85, rel=1e-6)
 
     def test_month_filter_narrows_series(self, loaded_flex_transformers, flex_frames):
-        out = loaded_flex_transformers.payroll_by_month(
-            {"finance": flex_frames["finance"]}, {"month": "2025-10"}
-        )
+        out = loaded_flex_transformers.payroll_by_month({"finance": flex_frames["finance"]}, {"month": "2025-10"})
         assert [row["month"] for row in out["series"]] == ["2025-10"]
 
 
@@ -147,23 +141,17 @@ class TestPayCodeSections:
         assert records["Field Time"] == pytest.approx(1800.0 + 1900.0)
 
     def test_pay_code_hours_respects_pay_code_param(self, loaded_flex_transformers, flex_frames):
-        out = loaded_flex_transformers.pay_code_hours(
-            {"hours": flex_frames["hours"]}, {"pay_code": "Admin Time"}
-        )
+        out = loaded_flex_transformers.pay_code_hours({"hours": flex_frames["hours"]}, {"pay_code": "Admin Time"})
         assert [r["pay_code"] for r in out["records"]] == ["Admin Time"]
 
     def test_pay_code_allocation(self, loaded_flex_transformers, flex_frames):
-        out = loaded_flex_transformers.pay_code_allocation(
-            {"hours": flex_frames["hours"]}, {}
-        )
+        out = loaded_flex_transformers.pay_code_allocation({"hours": flex_frames["hours"]}, {})
         shares = {row["pay_code"]: row["share_pct"] for row in out["records"]}
         assert sum(shares.values()) == pytest.approx(100.0, abs=0.01)
 
     def test_per_section_filters(self, loaded_flex_transformers, flex_frames):
         """A flex_type param must never reach/alter a finance-only transformer."""
-        baseline = loaded_flex_transformers.payroll_by_month(
-            {"finance": flex_frames["finance"]}, {}
-        )
+        baseline = loaded_flex_transformers.payroll_by_month({"finance": flex_frames["finance"]}, {})
         with_bogus_filter = loaded_flex_transformers.payroll_by_month(
             {"finance": flex_frames["finance"]}, {"flex_type": "Flex"}
         )
@@ -248,9 +236,7 @@ class TestProximityStaffing:
         assert norridge["nearest_employees"][0]["distance_miles"] < 5.0
         assert norridge["employees_within_radius"] >= 1
 
-    def test_proximity_staffing_radius_and_nearest_n_params(
-        self, loaded_flex_transformers, flex_frames
-    ):
+    def test_proximity_staffing_radius_and_nearest_n_params(self, loaded_flex_transformers, flex_frames):
         out = loaded_flex_transformers.proximity_staffing(
             {"msl": flex_frames["msl"], "employees": flex_frames["employees"]},
             {"radius_miles": 1, "nearest_n": 1},
@@ -274,9 +260,7 @@ class TestNarrativeFacts:
         hero = loaded_flex_transformers.payroll_hero(
             {"hours": flex_frames["hours"], "finance": flex_frames["finance"]}, {}
         )
-        worked_hours = loaded_flex_transformers.worked_hours_by_month(
-            {"hours": flex_frames["hours"]}, {}
-        )
+        worked_hours = loaded_flex_transformers.worked_hours_by_month({"hours": flex_frames["hours"]}, {})
         utilization = loaded_flex_transformers.rep_utilization_by_region(
             {
                 "rep_utilization": flex_frames["rep_utilization"],

@@ -23,9 +23,7 @@ _AGENT_FILE = _AGENTS_DIR / "flex_dashboard.py"
 def _load_package(name: str, init_path: Path, search_dir: Path):
     if name in sys.modules:
         return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(
-        name, init_path, submodule_search_locations=[str(search_dir)]
-    )
+    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load package {name!r} from {init_path}")
     module = importlib.util.module_from_spec(spec)
@@ -99,10 +97,7 @@ class TestDashboardDescriptor:
     def test_hero_bindings(self, descriptor):
         props = descriptor.layout.props
         hero_section = props["sections"][0]
-        bindings = {
-            c["properties"]["label"]: c["properties"]["value"]["path"]
-            for c in hero_section["components"]
-        }
+        bindings = {c["properties"]["label"]: c["properties"]["value"]["path"] for c in hero_section["components"]}
         assert bindings == {
             "Worked Hours": "/payroll_hero/worked_hours_total",
             "Payroll": "/payroll_hero/payroll_total",
@@ -176,9 +171,7 @@ class TestDashboardDescriptor:
         for param in flex_dashboard_module.FlexDashboard.recipe_params():
             assert param.default is not None, f"{param.name} has no default"
 
-    def test_descriptor_param_templates_match_declared_params(
-        self, flex_dashboard_module, descriptor
-    ):
+    def test_descriptor_param_templates_match_declared_params(self, flex_dashboard_module, descriptor):
         declared_names = {p.name for p in flex_dashboard_module.FlexDashboard.recipe_params()}
         template_names = set(descriptor.params)
         assert template_names == declared_names
@@ -193,9 +186,7 @@ class TestRefreshDashboardTool:
         runner = SimpleNamespace(run=AsyncMock(return_value=fake_artifact))
         tool = RefreshDashboardTool(runner=runner, pctx="fake-pctx")
 
-        surface_state = SimpleNamespace(
-            data_model={"filters": {"month": "2025-09", "pay_code": "Field Time"}}
-        )
+        surface_state = SimpleNamespace(data_model={"filters": {"month": "2025-09", "pay_code": "Field Time"}})
 
         # `_execute` looks up `current_a2ui_surface_state` as a name in
         # `agents/flex_dashboard.py`'s OWN module namespace (imported there

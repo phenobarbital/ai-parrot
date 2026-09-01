@@ -55,6 +55,7 @@ Usage::
    The ``interactive-html`` renderer output needs an HTTP origin — opening
    the files as ``file://`` breaks Chart.js canvas rendering. Use ``--serve``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -229,9 +230,7 @@ async def lane_publish(agent: FlexDashboard, recipe_store: FileRecipeStore) -> b
     """Publish the dashboard recipe and declare its run-time filter params."""
     rule("1 — publish_recipe: sections → registered transformers → recipe")
 
-    recipe = await agent.publish_recipe(
-        RECIPE_NAME, FlexDashboard.dashboard_descriptor(), overwrite=True
-    )
+    recipe = await agent.publish_recipe(RECIPE_NAME, FlexDashboard.dashboard_descriptor(), overwrite=True)
     if isinstance(recipe, GapReport):
         print("  ✗ GAPS — unregistered transformers:")
         for gap in recipe.gaps:
@@ -274,9 +273,7 @@ async def lane_deterministic_replay(runner: RecipeRunner, pctx: Any) -> None:
 
     first = await runner.run(RECIPE_NAME, pctx=pctx)
     second = await runner.run(RECIPE_NAME, pctx=pctx)
-    identical = _normalize_render(first.content or b"") == _normalize_render(
-        second.content or b""
-    )
+    identical = _normalize_render(first.content or b"") == _normalize_render(second.content or b"")
     print(f"  replay #1     : {len(first.content or b''):,} bytes")
     print(f"  replay #2     : {len(second.content or b''):,} bytes")
     print(f"  identical     : {identical}  (modulo the renderer's per-render DOM")
@@ -288,12 +285,9 @@ async def lane_deterministic_replay(runner: RecipeRunner, pctx: Any) -> None:
 
     (OUTPUT_DIR / "01_dashboard_default.html").write_bytes(first.content or b"")
 
-    filtered = await runner.run(
-        RECIPE_NAME, params={"month": "2025-10", "pay_code": "Field Time"}, pctx=pctx
-    )
+    filtered = await runner.run(RECIPE_NAME, params={"month": "2025-10", "pay_code": "Field Time"}, pctx=pctx)
     (OUTPUT_DIR / "02_dashboard_2025-10_field-time.html").write_bytes(filtered.content or b"")
-    print(f"  filtered      : month=2025-10 pay_code='Field Time' → "
-          f"{len(filtered.content or b''):,} bytes")
+    print(f"  filtered      : month=2025-10 pay_code='Field Time' → " f"{len(filtered.content or b''):,} bytes")
 
     try:
         await runner.run(RECIPE_NAME, params={"moth": "oops"}, pctx=pctx)
@@ -431,9 +425,7 @@ async def main() -> None:
 
     executor = ToolManagerExecutor(agent.tool_manager)
     surfaces = InMemorySurfaceStore()
-    runtime = A2UIRuntime(
-        executor=executor, surfaces=surfaces, pending=InMemoryPendingCalls()
-    )
+    runtime = A2UIRuntime(executor=executor, surfaces=surfaces, pending=InMemoryPendingCalls())
     ctx = A2UICallContext(
         agent_id="flex_dashboard",
         user_id="demo-user",

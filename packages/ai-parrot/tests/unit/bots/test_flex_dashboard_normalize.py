@@ -108,16 +108,12 @@ class TestMonthAlignment:
 
 class TestColumnCanonicalization:
     def test_column_canonicalization(self, normalize, flex_frames):
-        rep_out = normalize.canonicalize_columns(
-            flex_frames["rep_utilization"], source="rep_utilization"
-        )
+        rep_out = normalize.canonicalize_columns(flex_frames["rep_utilization"], source="rep_utilization")
         assert "category" in rep_out.columns
         assert "catagory" not in rep_out.columns
         assert rep_out["category"].iloc[0] == "Flex"
 
-        region_out = normalize.canonicalize_columns(
-            flex_frames["region_utilization"], source="region_utilization"
-        )
+        region_out = normalize.canonicalize_columns(flex_frames["region_utilization"], source="region_utilization")
         assert "region" in region_out.columns
         assert "state" in region_out.columns
         assert "employees_worked" in region_out.columns

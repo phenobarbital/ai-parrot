@@ -124,9 +124,7 @@ class TestSkillsDiscovered:
         def _load_package(name, init_path, search_dir):
             if name in sys.modules:
                 return sys.modules[name]
-            spec = importlib.util.spec_from_file_location(
-                name, init_path, submodule_search_locations=[str(search_dir)]
-            )
+            spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
             module = importlib.util.module_from_spec(spec)
             sys.modules[name] = module
             spec.loader.exec_module(module)

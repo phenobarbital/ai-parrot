@@ -29,9 +29,7 @@ _AGENT_FILE = _AGENTS_DIR / "flex_dashboard.py"
 def _load_package(name: str, init_path: Path, search_dir: Path):
     if name in sys.modules:
         return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(
-        name, init_path, submodule_search_locations=[str(search_dir)]
-    )
+    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load package {name!r} from {init_path}")
     module = importlib.util.module_from_spec(spec)
@@ -89,9 +87,7 @@ class TestAgentConstruction:
         assert flex_agent.use_kb is True
         assert flex_agent.kb_store is not None
 
-    def test_working_memory_and_infographic_toolkits_attached(
-        self, flex_agent, flex_dashboard_module
-    ):
+    def test_working_memory_and_infographic_toolkits_attached(self, flex_agent, flex_dashboard_module):
         from parrot.tools.infographic_toolkit import InfographicToolkit
         from parrot.tools.working_memory import WorkingMemoryToolkit
 
@@ -100,8 +96,7 @@ class TestAgentConstruction:
         # `bound_method.__self__` (same technique
         # `ToolManager.cleanup_toolkits` uses, manager.py:2183-2184).
         parents = {
-            getattr(getattr(t, "bound_method", None), "__self__", None)
-            for t in flex_agent.tool_manager.tools.values()
+            getattr(getattr(t, "bound_method", None), "__self__", None) for t in flex_agent.tool_manager.tools.values()
         }
         assert any(isinstance(p, WorkingMemoryToolkit) for p in parents)
         assert any(isinstance(p, InfographicToolkit) for p in parents)

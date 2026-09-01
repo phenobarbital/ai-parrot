@@ -63,9 +63,7 @@ _EXAMPLES_DIR = _REPO_ROOT / "examples" / "agents" / "a2ui"
 def _load_package(name: str, init_path: Path, search_dir: Path):
     if name in sys.modules:
         return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(
-        name, init_path, submodule_search_locations=[str(search_dir)]
-    )
+    spec = importlib.util.spec_from_file_location(name, init_path, submodule_search_locations=[str(search_dir)])
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load package {name!r} from {init_path}")
     module = importlib.util.module_from_spec(spec)
@@ -149,12 +147,10 @@ def pctx():
 
 @pytest.fixture
 async def published_recipe(wired_agent, recipe_store):
-    recipe = await wired_agent.publish_recipe(
-        RECIPE_NAME, FlexDashboard.dashboard_descriptor(), overwrite=True
-    )
-    assert not isinstance(recipe, GapReport), (
-        f"expected a full recipe, got a GapReport: {getattr(recipe, 'gaps', None)}"
-    )
+    recipe = await wired_agent.publish_recipe(RECIPE_NAME, FlexDashboard.dashboard_descriptor(), overwrite=True)
+    assert not isinstance(
+        recipe, GapReport
+    ), f"expected a full recipe, got a GapReport: {getattr(recipe, 'gaps', None)}"
     recipe.params = FlexDashboard.recipe_params()
     await recipe_store.save(recipe)
     return recipe
@@ -177,9 +173,7 @@ class TestFlexDashboardPublishReplay:
             "flex_narrative_facts",
         }
 
-    async def test_flex_dashboard_publish_replay(
-        self, wired_agent, recipe_store, published_recipe, pctx
-    ):
+    async def test_flex_dashboard_publish_replay(self, wired_agent, recipe_store, published_recipe, pctx):
         """Two replays with identical (default) params produce byte-identical
         HTML — no narrator configured, proving the narrative step is
         genuinely optional (spec §5)."""
@@ -193,21 +187,15 @@ class TestFlexDashboardPublishReplay:
 
 
 class TestFlexDashboardFilteredReplay:
-    async def test_flex_dashboard_filtered_replay(
-        self, wired_agent, recipe_store, published_recipe, pctx
-    ):
+    async def test_flex_dashboard_filtered_replay(self, wired_agent, recipe_store, published_recipe, pctx):
         """A params override (month/pay_code) gives a deterministic filtered
         variant — repeated with the SAME override still byte-identical, and
         different from the unfiltered default replay."""
         runner = RecipeRunner(recipe_store, wired_agent._dataset_manager)
 
         default = await runner.run(RECIPE_NAME, pctx=pctx)
-        filtered_a = await runner.run(
-            RECIPE_NAME, params={"month": "2025-10", "pay_code": "Field Time"}, pctx=pctx
-        )
-        filtered_b = await runner.run(
-            RECIPE_NAME, params={"month": "2025-10", "pay_code": "Field Time"}, pctx=pctx
-        )
+        filtered_a = await runner.run(RECIPE_NAME, params={"month": "2025-10", "pay_code": "Field Time"}, pctx=pctx)
+        filtered_b = await runner.run(RECIPE_NAME, params={"month": "2025-10", "pay_code": "Field Time"}, pctx=pctx)
 
         assert _normalize_render(filtered_a.content) == _normalize_render(filtered_b.content)
         assert _normalize_render(filtered_a.content) != _normalize_render(default.content)

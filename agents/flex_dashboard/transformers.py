@@ -85,9 +85,7 @@ def _apply_filters(df: pd.DataFrame, filters: dict[str, Any]) -> pd.DataFrame:
     return df
 
 
-def _haversine_miles(
-    lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2: np.ndarray
-) -> np.ndarray:
+def _haversine_miles(lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2: np.ndarray) -> np.ndarray:
     """Great-circle distance in miles between two (arrays of) coordinates.
 
     Pure numpy implementation (spec §7 External Dependencies: no new
@@ -155,9 +153,7 @@ def payroll_hero(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dic
         "cost_center": {"type": "string"},
     },
 )
-def worked_hours_by_month(
-    inputs: dict[str, pd.DataFrame], params: dict[str, Any]
-) -> dict[str, Any]:
+def worked_hours_by_month(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
     df = month_period(inputs["hours"], source="hours")
     df = _apply_filters(
@@ -170,8 +166,7 @@ def worked_hours_by_month(
     )
     grouped = df.groupby("month", as_index=False)["hours"].sum().sort_values("month")
     series = [
-        {"month": row.month, "worked_hours": round(float(row.hours), 2)}
-        for row in grouped.itertuples(index=False)
+        {"month": row.month, "worked_hours": round(float(row.hours), 2)} for row in grouped.itertuples(index=False)
     ]
     return {"series": series}
 
@@ -188,10 +183,7 @@ def payroll_by_month(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) ->
     df = normalize_currency_columns(df, ["Payroll"])
     df = _apply_filters(df, {"month": params.get("month")})
     grouped = df.groupby("month", as_index=False)["Payroll"].sum().sort_values("month")
-    series = [
-        {"month": row.month, "payroll": round(float(row.Payroll), 2)}
-        for row in grouped.itertuples(index=False)
-    ]
+    series = [{"month": row.month, "payroll": round(float(row.Payroll), 2)} for row in grouped.itertuples(index=False)]
     return {"series": series}
 
 
@@ -207,10 +199,7 @@ def revenue_by_month(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) ->
     df = normalize_currency_columns(df, ["Revenue"])
     df = _apply_filters(df, {"month": params.get("month")})
     grouped = df.groupby("month", as_index=False)["Revenue"].sum().sort_values("month")
-    series = [
-        {"month": row.month, "revenue": round(float(row.Revenue), 2)}
-        for row in grouped.itertuples(index=False)
-    ]
+    series = [{"month": row.month, "revenue": round(float(row.Revenue), 2)} for row in grouped.itertuples(index=False)]
     return {"series": series}
 
 
@@ -223,16 +212,12 @@ def revenue_by_month(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) ->
     ),
     params_schema={"month": {"type": "string", "description": "YYYY-MM filter."}},
 )
-def payroll_pct_by_month(
-    inputs: dict[str, pd.DataFrame], params: dict[str, Any]
-) -> dict[str, Any]:
+def payroll_pct_by_month(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
     df = month_period(inputs["finance"], source="finance")
     df = normalize_currency_columns(df, ["Payroll", "Revenue"])
     df = _apply_filters(df, {"month": params.get("month")})
-    grouped = df.groupby("month", as_index=False)[["Payroll", "Revenue"]].sum().sort_values(
-        "month"
-    )
+    grouped = df.groupby("month", as_index=False)[["Payroll", "Revenue"]].sum().sort_values("month")
     series = [
         {
             "month": row.month,
@@ -267,8 +252,7 @@ def pay_code_hours(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> d
     )
     grouped = df.groupby("pay_code", as_index=False)["hours"].sum().sort_values("pay_code")
     records = [
-        {"pay_code": row.pay_code, "hours": round(float(row.hours), 2)}
-        for row in grouped.itertuples(index=False)
+        {"pay_code": row.pay_code, "hours": round(float(row.hours), 2)} for row in grouped.itertuples(index=False)
     ]
     return {"records": records}
 
@@ -276,23 +260,16 @@ def pay_code_hours(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> d
 @infographic_transformer(
     "pay_code_allocation",
     requires_columns={"hours": ["pay_code", "hours"]},
-    description=(
-        "Worked Hours by Pay Code Allocation: each pay_code's share (%) of "
-        "total worked hours."
-    ),
+    description=("Worked Hours by Pay Code Allocation: each pay_code's share (%) of " "total worked hours."),
     params_schema={
         "month": {"type": "string", "description": "YYYY-MM filter."},
         "cost_center": {"type": "string"},
     },
 )
-def pay_code_allocation(
-    inputs: dict[str, pd.DataFrame], params: dict[str, Any]
-) -> dict[str, Any]:
+def pay_code_allocation(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
     df = month_period(inputs["hours"], source="hours")
-    df = _apply_filters(
-        df, {"month": params.get("month"), "cost_center": params.get("cost_center")}
-    )
+    df = _apply_filters(df, {"month": params.get("month"), "cost_center": params.get("cost_center")})
     total_hours = float(df["hours"].sum())
     grouped = df.groupby("pay_code", as_index=False)["hours"].sum().sort_values("pay_code")
     records = [
@@ -329,31 +306,21 @@ def pay_code_allocation(
         "category": {"type": "string"},
     },
 )
-def rep_utilization_by_region(
-    inputs: dict[str, pd.DataFrame], params: dict[str, Any]
-) -> dict[str, Any]:
+def rep_utilization_by_region(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
     rep = canonicalize_columns(inputs["rep_utilization"], source="rep_utilization")
     rep = month_period(rep, source="fm")
-    rep = _apply_filters(
-        rep, {"month": params.get("month"), "category": params.get("category")}
-    )
+    rep = _apply_filters(rep, {"month": params.get("month"), "category": params.get("category")})
     rep_grouped = (
-        rep.groupby(["region", "category", "month"], as_index=False)[
-            ["employees_worked", "average_active"]
-        ]
+        rep.groupby(["region", "category", "month"], as_index=False)[["employees_worked", "average_active"]]
         .sum()
         .sort_values(["region", "month"])
     )
 
     cross = canonicalize_columns(inputs["region_utilization"], source="region_utilization")
     cross = month_period(cross, source="fm")
-    cross = _apply_filters(
-        cross, {"month": params.get("month"), "category": params.get("category")}
-    )
-    cross_grouped = cross.groupby(["region", "category", "month"], as_index=False)[
-        "employee_utilization"
-    ].mean()
+    cross = _apply_filters(cross, {"month": params.get("month"), "category": params.get("category")})
+    cross_grouped = cross.groupby(["region", "category", "month"], as_index=False)["employee_utilization"].mean()
     cross_lookup = {
         (row.region, row.category, row.month): float(row.employee_utilization)
         for row in cross_grouped.itertuples(index=False)
@@ -361,11 +328,7 @@ def rep_utilization_by_region(
 
     records = []
     for row in rep_grouped.itertuples(index=False):
-        utilization = (
-            float(row.employees_worked) / float(row.average_active)
-            if row.average_active
-            else 0.0
-        )
+        utilization = float(row.employees_worked) / float(row.average_active) if row.average_active else 0.0
         key = (row.region, row.category, row.month)
         records.append(
             {
@@ -403,9 +366,7 @@ def rep_utilization_by_region(
         "flex_type": {"type": "string"},
     },
 )
-def proximity_staffing(
-    inputs: dict[str, pd.DataFrame], params: dict[str, Any]
-) -> dict[str, Any]:
+def proximity_staffing(inputs: dict[str, pd.DataFrame], params: dict[str, Any]) -> dict[str, Any]:
     """See the ``@infographic_transformer`` description above."""
     radius_miles = float(params.get("radius_miles") or 50)
     nearest_n = int(params.get("nearest_n") or 3)
@@ -451,9 +412,7 @@ def proximity_staffing(
             )
             continue
 
-        distances = _haversine_miles(
-            float(store.latitude), float(store.longitude), emp_lat, emp_lon
-        )
+        distances = _haversine_miles(float(store.latitude), float(store.longitude), emp_lat, emp_lon)
         order = np.argsort(distances, kind="stable")
         nearest = [
             {
