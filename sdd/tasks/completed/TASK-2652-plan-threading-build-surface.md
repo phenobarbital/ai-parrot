@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2651
@@ -161,8 +161,48 @@ class TestPlanThreading:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- `build_dev_flow(model_plan=...)` and
+  `build_dev_flow_node_factories(model_plan=...)` added as keyword-only
+  optionals with `None` defaults, placed just before `name` / after
+  `ideation_max_rounds` respectively.
+- Contract re-verified: `build_dev_loop_node_factories` **already**
+  accepts `development_pool_config` (factories.py:51) and passes it
+  straight to `DevelopmentNode(pool_config=...)` (:167), so no dev_loop
+  signature change was needed — dev_flow just stops leaving the parameter
+  unset. `agent_builder.build_dispatcher` is imported lazily, inside the
+  branch that needs it, so a plan-less build does not pay for importing
+  every coding-agent client.
+- **Backward-compat decision**: `resolve_model_plan()` runs only when a
+  plan was actually supplied. An omitted/`None` plan therefore ignores
+  `DEV_FLOW_DEV_POOL` entirely, which is what makes the
+  "no breaking changes" acceptance criterion literally true (test:
+  `test_omitted_plan_ignores_env_pool`). Passing an all-defaults
+  `DevFlowModelPlan()` is the explicit opt-in to env resolution.
+- An explicit `development_dispatcher_builder` still wins over the
+  plan-derived `build_dispatcher` (test:
+  `test_explicit_builder_beats_plan_derived`).
+- `_execution_policy_for_fingerprint` gains a `model_plan` sub-dict
+  **only when a plan is present** — pre-FEAT-486 fingerprints are
+  bit-stable. Routing-relevant fields included: per-spec
+  `(agent, count)` for the pool, `review.primary.agent`, and
+  `research_partner.enabled`. Deliberately excluded (non-routing, so a
+  model swap is a resume *hit*): `research_primary`, per-spec `model`,
+  `review.counter_model`. Mirrors the conditional-key precedent at
+  `dev_loop/runner.py:1383-1389`.
+- `DevFlowRunner` needed no `__init__` and no new attribute: the plan
+  rides `self._dev_loop_flow_kwargs`, which `_dev_loop_flow_factory`
+  already splats into `build_dev_flow` — so checkpoint recovery rebuilds
+  the flow with the same plan for free.
+- `TOPOLOGY_VERSION` not bumped; `_SHARED_DATA_ALLOWLIST` untouched.
+- 20 new unit tests pass; full `tests/flows/dev_flow/` suite green
+  (235 passed). `ruff check` clean on all three modified files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none. One pre-existing lint artifact noted:
+`dev_flow/flow.py` carries a `# noqa: PLC0415` that bare `ruff check`
+reports as RUF100 (the repo ships no ruff config, so PLC0415 is not
+enabled by default). It is present on `dev` before this task and was
+left alone rather than "fixed" as out-of-scope; my own new lazy import
+therefore carries no `noqa`.

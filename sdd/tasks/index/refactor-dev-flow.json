@@ -32,7 +32,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports TASK-2651's models; touches dev_flow flow.py/factories.py/runner.py.",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2652-plan-threading-build-surface.md"
+      "completed_at": "2026-09-01T00:22:44+00:00",
+      "file": "sdd/tasks/completed/TASK-2652-plan-threading-build-surface.md"
     },
     {
       "id": "TASK-2653",
