@@ -52,7 +52,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Shared vault I/O layer used by all renderers.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2662-vault-access-init-mirror-naming.md"
+      "completed_at": "2026-09-01T02:46:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2662-vault-access-init-mirror-naming.md"
     },
     {
       "id": "TASK-2663",
