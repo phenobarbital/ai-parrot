@@ -17,6 +17,7 @@ from parrot.flows.dev_flow.research_partner import (
     ResearchFinding,
     ResearchFindings,
     ResearchPartnerFactory,
+    resolve_backend_model,
 )
 from parrot.flows.dev_loop.catalog import (
     RESEARCH_PARTNER_BACKENDS,
@@ -159,6 +160,14 @@ def test_research_partner_backends_catalog_surfaces_both_ids():
         assert "research_partner" in backend.roles
 
 
+def test_resolve_backend_model_shared_between_partner_and_coordinator():
+    """Code-review follow-up: this is the single source of truth for the
+    backend->model mapping, used by both BedrockResearchPartner and
+    ComplementaryResearchCoordinator."""
+    assert resolve_backend_model("gpt") == conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL
+    assert resolve_backend_model("nova") == conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL
+
+
 def test_get_backend_resolves_gpt():
     """Code-review follow-up: get_backend() must see RESEARCH_PARTNER_BACKENDS
     too, not just BACKENDS — "gpt" has no build_dispatcher branch but is a
@@ -292,6 +301,39 @@ class TestBedrockResearchPartner:
         _, nova_kwargs = nova_client.ask.call_args
         assert "thinking_budget" in nova_kwargs
 
+    async def test_effort_set_warns_when_unused_on_gpt(self, tmp_path, monkeypatch, caplog):
+        """Code-review follow-up: an operator who changes EFFORT away from
+        its default should be warned it has no effect on the mantle path."""
+        import logging
+
+        monkeypatch.setattr(conf, "DEV_FLOW_RESEARCH_PARTNER_EFFORT", "low")
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        with (
+            patch(
+                "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+                return_value=client,
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            await partner.research(brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n")
+        assert any("DEV_FLOW_RESEARCH_PARTNER_EFFORT" in r.message for r in caplog.records)
+
+    async def test_effort_default_does_not_warn(self, tmp_path, caplog):
+        import logging
+
+        client = _make_client_mock(ResearchFindings(summary="ok"))
+        with (
+            patch(
+                "parrot.flows.dev_flow.research_partner.BedrockMantleClient",
+                return_value=client,
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            partner = BedrockResearchPartner(backend="gpt")
+            await partner.research(brief=_FakeBrief(), question="q", cwd=str(tmp_path), run_id="r", node_id="n")
+        assert not any("DEV_FLOW_RESEARCH_PARTNER_EFFORT" in r.message for r in caplog.records)
+
     async def test_prompt_excludes_primary_reasoning(self, tmp_path):
         """NEUTRALITY GUARD: prompt carries brief/root/question and none of the
         primary seat's framing, hypotheses, or preferred conclusion."""
@@ -339,3 +381,15 @@ class TestBedrockResearchPartner:
     def test_registered_under_both_factory_names(self):
         assert ResearchPartnerFactory.create("gpt", backend="gpt").backend == "gpt"
         assert ResearchPartnerFactory.create("nova", backend="nova").backend == "nova"
+
+    def test_direct_construction_still_rejects_anthropic_model(self, monkeypatch):
+        """Code-review follow-up (defense-in-depth): constructing the
+        partner directly with an explicit backend= bypasses
+        resolve_research_partner_backend() entirely, so _build_client()
+        must independently re-validate the resolved model."""
+        monkeypatch.setattr(
+            conf, "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL", "us.anthropic.claude-opus-5"
+        )
+        partner = BedrockResearchPartner(backend="nova")
+        with pytest.raises(ValueError, match="(?s)decorrel.*400|400.*decorrel"):
+            partner._build_client()

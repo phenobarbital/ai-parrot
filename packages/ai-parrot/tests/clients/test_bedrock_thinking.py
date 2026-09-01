@@ -14,7 +14,6 @@ that is NOT in that family (the "no regression" acceptance criterion).
 from unittest.mock import patch
 
 import pytest
-
 from parrot.clients.bedrock import BedrockConverseClient, _requires_adaptive_thinking
 
 ADAPTIVE_MODELS = [
@@ -167,10 +166,12 @@ class TestThinkingShapeSelection:
             captured_payloads.append(payload)
             return tool_response if len(captured_payloads) == 1 else final_response
 
-        with patch.object(client, "_sdk_create", side_effect=fake_sdk_create):
-            with patch.object(client, "_execute_tool", return_value="Sunny, 25C"):
-                result = await client.ask("What's the weather in NYC?", use_tools=True, thinking_budget=4096)
-                assert result.output == "NYC is sunny."
+        with (
+            patch.object(client, "_sdk_create", side_effect=fake_sdk_create),
+            patch.object(client, "_execute_tool", return_value="Sunny, 25C"),
+        ):
+            result = await client.ask("What's the weather in NYC?", use_tools=True, thinking_budget=4096)
+            assert result.output == "NYC is sunny."
 
         second_payload_messages = captured_payloads[1]["messages"]
         assistant_turn = next(m for m in second_payload_messages if m["role"] == "assistant")

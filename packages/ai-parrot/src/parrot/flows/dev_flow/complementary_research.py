@@ -48,6 +48,7 @@ from parrot.flows.dev_flow.research_partner import (
     ComplementaryFindings,
     ResearchFindings,
     ResearchPartnerFactory,
+    resolve_backend_model,
 )
 from parrot.flows.dev_loop.catalog import resolve_research_partner_backend
 from parrot.flows.dev_loop.session_state import SessionHost
@@ -213,15 +214,12 @@ class ComplementaryResearchCoordinator:
     def _resolve_model_for_backend(backend: str) -> str:
         """Return the model id the partner used for `backend`.
 
-        Mirrors `BedrockResearchPartner._build_client()`'s model
-        resolution (`research_partner.py`, TASK-2631) — duplicated
-        deliberately rather than reading a private attribute off the
-        partner instance, since both read the same two conf keys and stay
-        trivially easy to keep in sync.
+        Delegates to the shared :func:`resolve_backend_model` (also used
+        by `BedrockResearchPartner._build_client()`) rather than
+        duplicating the two-branch mapping here — code-review follow-up
+        (the two copies had been kept in sync by hand until now).
         """
-        if backend == "gpt":
-            return conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL
-        return conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL
+        return resolve_backend_model(backend)
 
     @staticmethod
     def _render_markdown(*, findings: ResearchFindings, backend: str, model: str, slug: str) -> str:

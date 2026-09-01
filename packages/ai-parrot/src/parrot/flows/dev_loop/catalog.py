@@ -93,15 +93,6 @@ def resolve_adversarial_backend(config_getter: Optional[ConfigGetter] = None) ->
 # that can serve as the *primary* reviewer of a bug-mode run.
 PRIMARY_REVIEW_BACKENDS: Tuple[str, ...] = ("claude-code", "codex", "gemini", "google_coding")
 
-# FEAT-482: the complementary research-partner seat's static,
-# no-behaviour-change default — the backend used once the seat is
-# EXPLICITLY enabled without further qualification. Unlike
-# ``ADVERSARIAL_BACKEND`` (mandatory, always resolves to a real backend),
-# the research-partner seat is opt-in: unset ``DEV_FLOW_RESEARCH_PARTNER``
-# resolves to the empty-string "disabled" sentinel, not to this constant —
-# see :func:`resolve_research_partner_backend`.
-RESEARCH_PARTNER_BACKEND: str = "gpt"
-
 # Valid values for the config-resolved research-partner backend selector
 # (FEAT-482 Module 1). Both reach Bedrock on the SAME ``AWS_NOVA_API_KEY``
 # credential — "gpt" via bedrock-mantle (``BedrockMantleClient``), "nova"
@@ -127,8 +118,17 @@ _ANTHROPIC_PARTNER_MODEL_PREFIXES: Tuple[str, ...] = (
 )
 
 
-def _reject_anthropic_partner_model(model: str) -> None:
+def validate_research_partner_model(model: str) -> None:
     """Hard-reject an Anthropic model configured for the research-partner seat.
+
+    Standalone (not private, not folded into any resolver) precisely so it
+    is independently unit-testable and reusable at every site that could
+    end up driving Bedrock with a research-partner model id — currently
+    :func:`resolve_research_partner_backend` (config-driven path) and
+    :class:`~parrot.flows.dev_flow.research_partner.BedrockResearchPartner`
+    (defense-in-depth for direct construction with an explicit ``backend``,
+    which bypasses the resolver entirely). A third backend added later can
+    call this same function without duplicating the policy.
 
     Args:
         model: The resolved partner model id (e.g. from
@@ -188,7 +188,7 @@ def resolve_research_partner_backend(config_getter: Optional[ConfigGetter] = Non
         model_key = "DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL"
         default_model = conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL
     model = str(getter(model_key, default_model) or default_model)
-    _reject_anthropic_partner_model(model)
+    validate_research_partner_model(model)
     return value
 
 
@@ -536,7 +536,6 @@ __all__ = [
     "BackendInfo",
     "JUDGE_BACKENDS",
     "PRIMARY_REVIEW_BACKENDS",
-    "RESEARCH_PARTNER_BACKEND",
     "RESEARCH_PARTNER_BACKENDS",
     "backends_for_role",
     "catalog_payload",
@@ -545,4 +544,5 @@ __all__ = [
     "get_backend",
     "resolve_adversarial_backend",
     "resolve_research_partner_backend",
+    "validate_research_partner_model",
 ]

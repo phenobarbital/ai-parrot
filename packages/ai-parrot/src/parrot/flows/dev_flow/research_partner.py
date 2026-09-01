@@ -29,7 +29,10 @@ from parrot import conf
 from parrot.clients.base import AbstractClient
 from parrot.clients.nova.client import NovaClient
 from parrot.clients.nova.mantle import BedrockMantleClient
-from parrot.flows.dev_loop.catalog import resolve_research_partner_backend
+from parrot.flows.dev_loop.catalog import (
+    resolve_research_partner_backend,
+    validate_research_partner_model,
+)
 from parrot.flows.dev_loop.session_state import SessionHost
 from parrot.tools.repo import ReadOnlyRepoToolkit
 
@@ -165,6 +168,30 @@ class ResearchPartnerFactory:
         return cls._registry[name](**kwargs)
 
 
+def resolve_backend_model(backend: str) -> str:
+    """Return the configured model id for ``backend`` (``"gpt"``/``"nova"``).
+
+    The single source of truth for this two-branch mapping — shared by
+    :meth:`BedrockResearchPartner._build_client` and
+    :class:`~parrot.flows.dev_flow.complementary_research.
+    ComplementaryResearchCoordinator._resolve_model_for_backend` (which
+    needs to know the model actually used to stamp
+    ``ComplementaryFindings.model``, without importing a private method
+    off a partner instance). Extracted here, rather than duplicated in
+    both call sites, per code review.
+
+    Args:
+        backend: ``"gpt"`` or ``"nova"``.
+
+    Returns:
+        ``conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL`` for ``"gpt"``,
+        otherwise ``conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL``.
+    """
+    if backend == "gpt":
+        return conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL
+    return conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL
+
+
 @ResearchPartnerFactory.register("gpt")
 @ResearchPartnerFactory.register("nova")
 class BedrockResearchPartner(AbstractResearchPartner):
@@ -211,15 +238,25 @@ class BedrockResearchPartner(AbstractResearchPartner):
     def _build_client(self) -> AbstractClient:
         """Construct the backend-appropriate client, model pre-configured.
 
+        Defense-in-depth: re-validates the resolved model against the
+        Anthropic family guard (:func:`validate_research_partner_model`)
+        even though :func:`resolve_research_partner_backend` already does
+        so — that resolver is bypassed entirely when this class is
+        constructed directly with an explicit ``backend=`` (e.g. by a
+        future caller that doesn't go through the config-driven path), so
+        the guard must not depend on the resolver having run first.
+
         Returns:
             A :class:`BedrockMantleClient` (``"gpt"``) or
             :class:`NovaClient` (``"nova"``) — both share the same
             ``AWS_NOVA_API_KEY`` credential; no ``OPENAI_API_KEY`` is
             read, and no Codex CLI is involved.
         """
+        model = resolve_backend_model(self.backend)
+        validate_research_partner_model(model)
         if self.backend == "gpt":
-            return BedrockMantleClient(model=conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL)
-        return NovaClient(model=conf.DEV_FLOW_RESEARCH_PARTNER_NOVA_MODEL)
+            return BedrockMantleClient(model=model)
+        return NovaClient(model=model)
 
     def _reasoning_kwargs(self) -> dict[str, Any]:
         """Return the backend-appropriate reasoning knob only.
@@ -240,6 +277,19 @@ class BedrockResearchPartner(AbstractResearchPartner):
         """
         if self.backend == "nova":
             return {"thinking_budget": conf.DEV_FLOW_RESEARCH_PARTNER_THINKING_BUDGET}
+        # Code-review follow-up: an operator who explicitly changed EFFORT
+        # away from its documented default would reasonably expect it to
+        # do something. Since it currently doesn't (see the docstring
+        # above), warn once per call rather than silently ignoring an
+        # operator's explicit configuration.
+        if conf.DEV_FLOW_RESEARCH_PARTNER_EFFORT != "high":
+            self.logger.warning(
+                "DEV_FLOW_RESEARCH_PARTNER_EFFORT=%r is set but has no "
+                "effect on the 'gpt' (bedrock-mantle) backend — "
+                "BedrockMantleClient has no effort/reasoning_effort "
+                "parameter to forward it through today.",
+                conf.DEV_FLOW_RESEARCH_PARTNER_EFFORT,
+            )
         return {}
 
     @staticmethod
@@ -349,4 +399,5 @@ __all__ = [
     "ResearchFinding",
     "ResearchFindings",
     "ResearchPartnerFactory",
+    "resolve_backend_model",
 ]

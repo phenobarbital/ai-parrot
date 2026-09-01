@@ -12,8 +12,9 @@ from typing import Any
 
 import pytest
 from parrot import conf
+from parrot.flows.dev_flow._subagent_defs import load_subagent_definition
 from parrot.flows.dev_flow.models import DevRequestBrief, IdeationOutput
-from parrot.flows.dev_flow.nodes.ideation import IdeationNode
+from parrot.flows.dev_flow.nodes.ideation import IdeationNode, _slugify
 from parrot.flows.dev_flow.research_partner import (
     ComplementaryFindings,
     ResearchFindings,
@@ -149,7 +150,17 @@ class TestIdeationPartnerSeam:
 
     async def test_unchanged_when_coordinator_none(self, doc):
         """GUARD: dispatch payload's partner fields are empty, and every other
-        field is unaffected, when no coordinator is injected (default)."""
+        field is unaffected, when no coordinator is injected (default).
+
+        Scope note (code-review follow-up): "byte-identical" here is scoped
+        to Module 5 (the coordinator/partner seam) specifically — the
+        `_IdeationBrief` fields this test asserts. It does NOT cover
+        Module 6's `DEV_FLOW_IDEATION_MODEL` / `mcp_servers` /
+        `allowed_tools` additions to the dispatch *profile*, which change
+        unconditionally regardless of `DEV_FLOW_RESEARCH_PARTNER` — that is
+        Module 6's own explicit, separately-tested acceptance criterion
+        (see `test_ideation_graph_search.py`), not a regression here.
+        """
         dispatcher = ScriptedDispatcher([_output()])
         node = IdeationNode(dispatcher=dispatcher)  # no coordinator kwarg at all
 
@@ -204,3 +215,30 @@ class TestIdeationPartnerSeam:
         assert len(dispatcher.calls) == 3
         # The coordinator still only ran once, on round 1.
         assert len(coordinator.calls) == 1
+
+
+class TestSlugifyMatchesPromptAlgorithm:
+    """Code-review follow-up: `_slugify()` (Python, runs BEFORE the real
+    dispatch) and the `sdd-ideation` prompt's own Step 1 algorithm (LLM,
+    runs DURING the dispatch) must independently produce the same slug
+    for the same title — that's what lets the coordinator's provisional
+    `sdd/proposals/<slug>.research.md` name match the document the
+    subagent goes on to write. There is no way to share code between a
+    Python function and an LLM-followed prompt, so this canary test
+    cross-checks the worked example the prompt itself documents: if
+    either side's algorithm ever changes without the other, this test
+    is the tripwire that catches the drift."""
+
+    def test_matches_the_prompts_own_worked_example(self):
+        # Verbatim from the sdd-ideation prompt's "Step 1" section.
+        assert _slugify("Compression Budget Telemetry!") == "compression-budget-telemetry"
+
+    def test_prompt_still_documents_the_same_algorithm_description(self):
+        """If this description text changes, a human must re-verify
+        `_slugify()` still matches it — this assertion is the trigger."""
+        body = load_subagent_definition("sdd-ideation")
+        assert (
+            "lowercase, non-alphanumerics" in body
+            and "single hyphens" in body
+            and ("no leading" in body and "trailing hyphen" in body)
+        ), "sdd-ideation's slugify algorithm description changed — re-verify _slugify() still matches it"
