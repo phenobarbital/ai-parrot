@@ -19,6 +19,7 @@ No token counter exists anywhere in ``parrot.mcp`` — :func:`_approx_tokens`
 uses a documented character-count heuristic (``_CHARS_PER_TOKEN``), not a
 real tokenizer.
 """
+
 import asyncio
 import json
 import logging
@@ -169,16 +170,11 @@ def apply_size_policy(result: Any, cap: int) -> dict[str, Any]:
     # string form (a prefix — order-independent, always identical).
     max_chars = max(1, cap * _CHARS_PER_TOKEN)
     truncated_str = serialized[:max_chars]
-    note = (
-        f"Result truncated to ~{cap} tokens "
-        f"(serialized length {len(serialized)} chars)."
-    )
+    note = f"Result truncated to ~{cap} tokens " f"(serialized length {len(serialized)} chars)."
     return {"result": truncated_str, "truncated": True, "note": note}
 
 
-async def run_with_deadline(
-    fn: Callable[[], Awaitable[T]], deadline: float, name: str
-) -> T:
+async def run_with_deadline(fn: Callable[[], Awaitable[T]], deadline: float, name: str) -> T:
     """Run `fn()` under `call_deadline_seconds`, naming `name` on timeout.
 
     Args:
@@ -201,9 +197,7 @@ async def run_with_deadline(
     try:
         return await asyncio.wait_for(fn(), timeout=deadline)
     except TimeoutError as exc:
-        raise MCPToolError(
-            f"Tool {name!r} exceeded its {deadline}s call deadline"
-        ) from exc
+        raise MCPToolError(f"Tool {name!r} exceeded its {deadline}s call deadline") from exc
 
 
 __all__ = [

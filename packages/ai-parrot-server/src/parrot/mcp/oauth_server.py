@@ -4,6 +4,7 @@ These classes require ai-parrot-server to be installed. They provide the
 full OAuth2 Authorization Server implementation, API key management,
 external OAuth validator, and OAuth routes mixin for MCP server transports.
 """
+
 import os
 import sys
 import logging
@@ -17,6 +18,7 @@ import secrets
 import json
 from urllib.parse import urlencode
 from aiohttp import web, ClientSession
+
 # Consumer-side classes imported from core
 from parrot.mcp.oauth import (
     _b64url,
@@ -39,9 +41,7 @@ from parrot.mcp.oauth import (
 WELL_KNOWN_PRM_PATH = "/.well-known/oauth-protected-resource"
 
 
-def _build_protected_resource_metadata(
-    resource: str, auth_servers: "list[str]", scopes: "list[str]"
-) -> Dict[str, Any]:
+def _build_protected_resource_metadata(resource: str, auth_servers: "list[str]", scopes: "list[str]") -> Dict[str, Any]:
     """Build an RFC 9728 protected-resource metadata document.
 
     Prefers navigator-auth's real ``build_protected_resource_metadata``
@@ -74,6 +74,7 @@ def _build_protected_resource_metadata(
 @dataclass
 class APIKeyRecord:
     """Record for an issued API key."""
+
     key: str
     user_id: str
     created_at: float
@@ -95,11 +96,7 @@ class APIKeyStore:
         self._sessions: list[Dict[str, Any]] = []
 
     def issue_key(
-        self,
-        user_id: str,
-        scopes: Optional[list[str]] = None,
-        ttl: Optional[int] = None,
-        description: str = ""
+        self, user_id: str, scopes: Optional[list[str]] = None, ttl: Optional[int] = None, description: str = ""
     ) -> APIKeyRecord:
         """
         Issue a new API key for a user.
@@ -129,11 +126,7 @@ class APIKeyStore:
         return record
 
     def add_key(
-        self,
-        key: str,
-        user_id: str,
-        scopes: Optional[list[str]] = None,
-        description: str = ""
+        self, key: str, user_id: str, scopes: Optional[list[str]] = None, description: str = ""
     ) -> APIKeyRecord:
         """
         Register an existing API key.
@@ -148,7 +141,7 @@ class APIKeyStore:
             APIKeyRecord for the added key
         """
         now = _now()
-        
+
         record = APIKeyRecord(
             key=key,
             user_id=user_id,
@@ -207,18 +200,16 @@ class APIKeyStore:
             user_id: User identifier
             timestamp: Session start timestamp
         """
-        self._sessions.append({
-            "key": key[:16] + "...",  # Truncate for security
-            "user_id": user_id,
-            "started_at": timestamp,
-            "started_at_iso": time.strftime(
-                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp)
-            ),
-        })
+        self._sessions.append(
+            {
+                "key": key[:16] + "...",  # Truncate for security
+                "user_id": user_id,
+                "started_at": timestamp,
+                "started_at_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp)),
+            }
+        )
 
-    def get_sessions(
-        self, user_id: Optional[str] = None, limit: int = 100
-    ) -> list[Dict[str, Any]]:
+    def get_sessions(self, user_id: Optional[str] = None, limit: int = 100) -> list[Dict[str, Any]]:
         """
         Get session logs.
 
@@ -251,6 +242,7 @@ class APIKeyStore:
 
 
 # ---- External OAuth2 Integration ----
+
 
 class ExternalOAuthValidator:
     """
@@ -349,9 +341,7 @@ class ExternalOAuthValidator:
             ) as response:
                 if response.status != 200:
                     text = await response.text()
-                    raise RuntimeError(
-                        f"Introspection failed: {response.status} - {text}"
-                    )
+                    raise RuntimeError(f"Introspection failed: {response.status} - {text}")
 
                 info = await response.json()
 
@@ -369,6 +359,7 @@ class ExternalOAuthValidator:
 
 
 # ---- OAuth Client Models ----
+
 
 @dataclass
 class OAuthClient:
@@ -633,9 +624,7 @@ class OAuthRoutesMixin:
     def _add_oauth_routes(self, router: web.UrlDispatcher):
         paths = self._oauth_paths()
         router.add_get(paths["discovery"], self._handle_discovery)
-        router.add_get(
-            paths["protected_resource"], self._handle_protected_resource_metadata
-        )
+        router.add_get(paths["protected_resource"], self._handle_protected_resource_metadata)
         router.add_post(paths["register"], self._handle_registration)
         router.add_get(paths["authorize"], self._handle_authorize)
         router.add_post(paths["token"], self._handle_token)
@@ -665,14 +654,10 @@ class OAuthRoutesMixin:
         server serves the document.
         """
         base_url = f"{request.scheme}://{request.host}"
-        resource = self.config.oauth2_resource_server_url or (
-            f"{base_url}{self.base_path}"
-        )
+        resource = self.config.oauth2_resource_server_url or (f"{base_url}{self.base_path}")
         issuer = self.config.oauth2_issuer_url or base_url
         scopes = getattr(self.config, "oauth_scope", None) or []
-        return web.json_response(
-            _build_protected_resource_metadata(resource, [issuer], scopes)
-        )
+        return web.json_response(_build_protected_resource_metadata(resource, [issuer], scopes))
 
     async def _handle_registration(self, request: web.Request) -> web.Response:
         """RFC 7591: Dynamic Client Registration."""

@@ -1,4 +1,5 @@
 """Unit tests for result size policy + per-call deadline (FEAT-477, TASK-2606)."""
+
 import asyncio
 import json
 

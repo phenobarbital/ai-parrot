@@ -1,4 +1,5 @@
 """Unit tests for job handles for long-running agent methods (FEAT-477, TASK-2607)."""
+
 import asyncio
 import json
 import time
@@ -57,9 +58,7 @@ def store(fake_redis):
 
 
 def _pctx(user_id: str = "user-1", tenant_id: str = "acme") -> PermissionContext:
-    return PermissionContext(
-        session=UserSession(user_id=user_id, tenant_id=tenant_id, roles=frozenset())
-    )
+    return PermissionContext(session=UserSession(user_id=user_id, tenant_id=tenant_id, roles=frozenset()))
 
 
 @pytest.fixture

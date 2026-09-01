@@ -16,6 +16,7 @@ registered into the owning agent's ``ToolManager``. Decorating a method
 changes what MCP clients can call and nothing else — it does not make the
 method LLM-callable inside its own agent.
 """
+
 import inspect
 import weakref
 from collections.abc import Callable
@@ -78,10 +79,7 @@ class MCPToolDeclaration(BaseModel):
             TypeError: If `value` is not a class, or not a `BaseModel` subclass.
         """
         if not (inspect.isclass(value) and issubclass(value, BaseModel)):
-            raise TypeError(
-                "args_schema/returns must be a Pydantic BaseModel subclass, "
-                f"got {value!r}"
-            )
+            raise TypeError("args_schema/returns must be a Pydantic BaseModel subclass, " f"got {value!r}")
         return value
 
     @field_validator("name", "description", "scope")
@@ -151,9 +149,7 @@ def mcp_tool(
 
     def decorator(fn: F) -> F:
         if not inspect.iscoroutinefunction(fn):
-            raise TypeError(
-                f"@mcp_tool requires an async method: {fn.__qualname__}"
-            )
+            raise TypeError(f"@mcp_tool requires an async method: {fn.__qualname__}")
         declaration = MCPToolDeclaration(
             name=name,
             description=description,
@@ -223,9 +219,7 @@ class AgentMethodTool(AbstractTool):
         """
         agent = self._agent_ref()
         if agent is None:
-            raise RuntimeError(
-                f"agent for MCP tool {self.name!r} has been garbage-collected"
-            )
+            raise RuntimeError(f"agent for MCP tool {self.name!r} has been garbage-collected")
         method = getattr(agent, self._method_name)
         return await method(**kwargs)
 
@@ -262,9 +256,7 @@ def build_exposure_set(agent: Any) -> list[AgentMethodTool]:
     declared_by_method: dict[str, MCPToolDeclaration] = {}
     name_to_method: dict[str, str] = {}
 
-    for method_name, member in inspect.getmembers(
-        type(agent), predicate=inspect.iscoroutinefunction
-    ):
+    for method_name, member in inspect.getmembers(type(agent), predicate=inspect.iscoroutinefunction):
         declaration = getattr(member, MCP_TOOL_ATTR, None)
         if declaration is None:
             continue

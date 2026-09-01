@@ -1,5 +1,7 @@
 """MCP integration for AI-Parrot."""
+
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
 # FEAT-403: local MCP server hierarchy (tool adapter, resources, JSON-RPC
@@ -75,15 +77,14 @@ _SERVER_CLASSES = {
 def __getattr__(name: str):
     if name in _CORE_CLASSES:
         import importlib
+
         mod = importlib.import_module(_CORE_CLASSES[name], package=__name__)
         return getattr(mod, name)
     if name in _SERVER_CLASSES:
         from parrot._imports import load_satellite_attr
 
         module_path, cls_name = _SERVER_CLASSES[name]
-        return load_satellite_attr(
-            name, module_path, install="ai-parrot-server", attr=cls_name
-        )
+        return load_satellite_attr(name, module_path, install="ai-parrot-server", attr=cls_name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

@@ -1,6 +1,7 @@
 """Unit tests for the Redis-backed shared session + event store
 (FEAT-477, TASK-2609).
 """
+
 import pytest
 from aiohttp.test_utils import make_mocked_request
 from parrot.mcp.config import MCPServerConfig
@@ -138,9 +139,7 @@ class TestSessionStore:
         assert await fresh_store_client.get_session(sid) is not None
 
     async def test_ttl_and_buffer_size_honoured(self, shared_backend, cfg):
-        store = RedisSessionStore(
-            shared_backend, ttl=cfg.session_ttl, max_events=cfg.event_buffer_size
-        )
+        store = RedisSessionStore(shared_backend, ttl=cfg.session_ttl, max_events=cfg.event_buffer_size)
         assert store.ttl == cfg.session_ttl
         assert store.max_events == cfg.event_buffer_size
 

@@ -1,4 +1,5 @@
 """Unit tests for `AgentMCPMountConfig` (FEAT-477, TASK-2601)."""
+
 import pytest
 from parrot.mcp.config import AgentMCPMountConfig, MCPServerConfig
 from pydantic import ValidationError
@@ -8,9 +9,7 @@ class TestAgentMCPMountConfig:
     """Validation tests for `AgentMCPMountConfig`."""
 
     def test_defaults(self):
-        c = AgentMCPMountConfig(
-            agents=["finance"], resource_server_url="https://h/mcp/agents/finance"
-        )
+        c = AgentMCPMountConfig(agents=["finance"], resource_server_url="https://h/mcp/agents/finance")
         assert c.base_path == "/mcp/agents"
         assert c.aggregate_enabled is False
         assert c.max_result_tokens == 25_000

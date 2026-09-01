@@ -111,6 +111,7 @@ from ..handlers.comm_center import CommCenterHandler
 
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
+
 # FEAT-477: agent-as-MCP-server mount (Module 2, TASK-2602)
 from ..mcp.agent_mount import AgentMCPMount
 from ..mcp.config import AgentMCPMountConfig
@@ -2196,12 +2197,8 @@ class BotManager:
         # ai-parrot-server also exposes /api/v1/agent_tools; idempotent
         # against a host app (e.g. repo-root app.py) that still registers
         # it directly.
-        if 'tools_list' not in self.app.router.named_resources():
-            self.app.router.add_view(
-                '/api/v1/agent_tools',
-                ToolList,
-                name='tools_list'
-            )
+        if "tools_list" not in self.app.router.named_resources():
+            self.app.router.add_view("/api/v1/agent_tools", ToolList, name="tools_list")
         # Bot Handler
         router.add_view("/api/v1/chatbots", BotHandler)
         router.add_view("/api/v1/chatbots/{name}", BotHandler)

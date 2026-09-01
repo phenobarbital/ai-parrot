@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator
 
 class AuthMethod(str, Enum):
     """Authentication method for MCP server."""
+
     NONE = "none"
     API_KEY = "api_key"  # Header-based API key validation
     OAUTH2_INTERNAL = "oauth2_internal"  # In-memory OAuthAuthorizationServer
@@ -66,10 +67,7 @@ class AgentMCPMountConfig(BaseModel):
         """
         for name in value:
             if "__" in name:
-                raise ValueError(
-                    f"agent name {name!r} must not contain the aggregate "
-                    "separator '__'"
-                )
+                raise ValueError(f"agent name {name!r} must not contain the aggregate " "separator '__'")
         return value
 
     @field_validator("resource_server_url")
@@ -88,9 +86,7 @@ class AgentMCPMountConfig(BaseModel):
         """
         parsed = urlparse(value)
         if not (parsed.scheme and parsed.netloc):
-            raise ValueError(
-                f"resource_server_url must be an absolute URI, got {value!r}"
-            )
+            raise ValueError(f"resource_server_url must be an absolute URI, got {value!r}")
         return value
 
     @field_validator("call_deadline_seconds")
@@ -108,10 +104,7 @@ class AgentMCPMountConfig(BaseModel):
             ValueError: If `value` is at or above the 300s client ceiling.
         """
         if value >= 300:
-            raise ValueError(
-                "call_deadline_seconds must be below the 300s client "
-                f"ceiling, got {value}"
-            )
+            raise ValueError("call_deadline_seconds must be below the 300s client " f"ceiling, got {value}")
         return value
 
     @field_validator("max_result_tokens")
@@ -130,16 +123,14 @@ class AgentMCPMountConfig(BaseModel):
                 connector ceiling.
         """
         if value >= 30_000:
-            raise ValueError(
-                "max_result_tokens must be below the ~30000-token "
-                f"connector ceiling, got {value}"
-            )
+            raise ValueError("max_result_tokens must be below the ~30000-token " f"connector ceiling, got {value}")
         return value
 
 
 @dataclass
 class MCPServerConfig:
     """Configuration for MCP server."""
+
     name: str = "ai-parrot-mcp-server"
     version: str = "1.0.0"
     description: str = "AI-Parrot Tools via MCP Protocol"
@@ -207,7 +198,7 @@ class MCPServerConfig:
     # opens one; beyond the cap the least useful are evicted so a busy
     # session cannot accumulate buffers for the whole of its TTL.
     max_streams_per_session: int = 64
-    
+
     # For Future gRPC implementation (expected)
     grpc_host: Optional[str] = None
     grpc_port: Optional[int] = None

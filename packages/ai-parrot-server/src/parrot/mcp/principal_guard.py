@@ -42,6 +42,7 @@ mirrored into a shared ``AuditLedger`` for correlation. (See this task's
 Completion Note for the full rationale.) ``parrot.auth.audit`` — the
 **deprecated** module — is never imported here.
 """
+
 import contextlib
 import hashlib
 import json
@@ -153,9 +154,7 @@ async def resolve_principal(
     """
     mcp_user = request.get("mcp_user")
     if not isinstance(mcp_user, dict) or not mcp_user.get("user_id"):
-        await _run_audit_hook(
-            audit_hook, {"decision": "principal_unresolved", "reason": "no mcp_user"}
-        )
+        await _run_audit_hook(audit_hook, {"decision": "principal_unresolved", "reason": "no mcp_user"})
         return _unauthorized("No authenticated principal for this request")
 
     principal = mcp_user["user_id"]
@@ -173,9 +172,7 @@ async def resolve_principal(
         return _unauthorized("Tenant could not be resolved for this request")
 
     roles = frozenset(mcp_user.get("scopes") or [])
-    return build_principal_context(
-        principal, channel=MCP_CHANNEL, tenant_id=tenant_id, roles=roles
-    )
+    return build_principal_context(principal, channel=MCP_CHANNEL, tenant_id=tenant_id, roles=roles)
 
 
 def runtime_key(pctx: PermissionContext) -> tuple[str, str]:
@@ -215,6 +212,7 @@ async def published_principal(pctx: PermissionContext) -> AsyncIterator[Permissi
 # TASK-2605: PBAC filtering, re-verification and audit
 # ---------------------------------------------------------------------------
 
+
 #: Canonical PBAC resource for one agent/tool pair. Both the per-agent and
 #: aggregate `{agent}__{tool}` name forms resolve to the same string — the
 #: aggregate is naming sugar, never its own authorization path. Mirrors
@@ -249,10 +247,7 @@ def resource_from_aggregate(aggregate_name: str) -> str:
     """
     agent_name, sep, tool_name = aggregate_name.partition("__")
     if not sep:
-        raise ValueError(
-            f"{aggregate_name!r} is not an aggregate name "
-            "('{agent}__{tool}' expected)"
-        )
+        raise ValueError(f"{aggregate_name!r} is not an aggregate name " "('{agent}__{tool}' expected)")
     return resource_for(agent_name, tool_name)
 
 
@@ -288,9 +283,7 @@ def _mcp_error(message: str) -> dict[str, Any]:
 #: shape (`can_execute(context, tool_name, required_permissions) -> bool`);
 #: pass a bound `resolver.can_execute` (with `required_permissions=set()`)
 #: or an equivalent async callable.
-PBACResolver = Callable[
-    [PermissionContext, str, "set[str]"], "bool | Awaitable[bool]"
-]
+PBACResolver = Callable[[PermissionContext, str, "set[str]"], "bool | Awaitable[bool]"]
 
 #: Sink for one audited `tools/call` decision. Called with
 #: `{"principal", "tenant_id", "agent", "tool", "argument_hash",
@@ -328,9 +321,7 @@ def audit_ledger_sink(ledger: Any) -> AuditSink:
             channel=f"mcp:{entry['agent']}",
             tool=str(entry["tool"]),
             provider=f"pbac:{entry['decision']}",
-            credential_material=(
-                f"{entry['argument_hash']}:{entry['duration']:.6f}"
-            ),
+            credential_material=(f"{entry['argument_hash']}:{entry['duration']:.6f}"),
         )
 
     return _sink
@@ -498,8 +489,7 @@ class PBACGuard:
             "duration": duration,
         }
         logger.info(
-            "MCP tools/call audit: agent=%s tool=%s principal=%s decision=%s "
-            "duration=%.4fs",
+            "MCP tools/call audit: agent=%s tool=%s principal=%s decision=%s " "duration=%.4fs",
             self._agent_name,
             tool_name,
             pctx.user_id,
@@ -508,9 +498,7 @@ class PBACGuard:
         )
         await _call_hook(self._audit_sink, entry)
 
-    async def tools_list(
-        self, params: dict[str, Any], pctx: PermissionContext
-    ) -> dict[str, Any]:
+    async def tools_list(self, params: dict[str, Any], pctx: PermissionContext) -> dict[str, Any]:
         """Policy-filtered `tools/list` — omits tools `pctx` may not call.
 
         Args:
@@ -527,9 +515,7 @@ class PBACGuard:
                 visible.append(adapter.to_mcp_tool_definition())
         return {"tools": visible}
 
-    async def tools_call(
-        self, params: dict[str, Any], pctx: PermissionContext
-    ) -> dict[str, Any]:
+    async def tools_call(self, params: dict[str, Any], pctx: PermissionContext) -> dict[str, Any]:
         """Re-verified, audited, size/deadline-policed `tools/call`.
 
         Never trusts `tools/list` as an authorization record — re-evaluates
@@ -561,13 +547,9 @@ class PBACGuard:
             await self._audit(pctx, tool_name, arguments, decision, duration)
             return _mcp_error(f"Not permitted to call tool {tool_name!r}")
 
-        deadline = getattr(
-            self._mount_config, "call_deadline_seconds", None
-        ) or self._DEFAULT_DEADLINE_SECONDS
+        deadline = getattr(self._mount_config, "call_deadline_seconds", None) or self._DEFAULT_DEADLINE_SECONDS
         try:
-            result = await run_with_deadline(
-                lambda: self._server.handle_tools_call(params), deadline, tool_name
-            )
+            result = await run_with_deadline(lambda: self._server.handle_tools_call(params), deadline, tool_name)
         except MCPToolError as exc:
             result = _mcp_error(str(exc))
         finally:

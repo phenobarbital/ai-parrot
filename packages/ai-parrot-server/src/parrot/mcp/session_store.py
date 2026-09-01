@@ -24,6 +24,7 @@ This module defines the storage abstraction and two implementations:
 Both honor `MCPServerConfig.session_ttl` / `.event_buffer_size` — no new
 configuration knobs are introduced.
 """
+
 import json
 import logging
 import secrets
@@ -177,9 +178,7 @@ class SessionStore:
         """
         raise NotImplementedError
 
-    async def append_event(
-        self, session_id: str, stream_id: str, message: dict[str, Any]
-    ) -> StreamEventRecord:
+    async def append_event(self, session_id: str, stream_id: str, message: dict[str, Any]) -> StreamEventRecord:
         """Buffer one outbound message for `(session_id, stream_id)`.
 
         Args:
@@ -197,9 +196,7 @@ class SessionStore:
         """
         raise NotImplementedError
 
-    async def events_after(
-        self, session_id: str, stream_id: str, sequence: int
-    ) -> list[StreamEventRecord]:
+    async def events_after(self, session_id: str, stream_id: str, sequence: int) -> list[StreamEventRecord]:
         """Return buffered events with `sequence > sequence`.
 
         Args:
@@ -260,9 +257,7 @@ class InMemorySessionStore(SessionStore):
     async def touch_session(self, session_id: str) -> None:
         record = self._sessions.get(session_id)
         if record is not None:
-            self._sessions[session_id] = record.model_copy(
-                update={"last_seen": time.time()}
-            )
+            self._sessions[session_id] = record.model_copy(update={"last_seen": time.time()})
 
     async def delete_session(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
@@ -270,22 +265,16 @@ class InMemorySessionStore(SessionStore):
             self._events.pop(key, None)
             self._sequences.pop(key, None)
 
-    async def append_event(
-        self, session_id: str, stream_id: str, message: dict[str, Any]
-    ) -> StreamEventRecord:
+    async def append_event(self, session_id: str, stream_id: str, message: dict[str, Any]) -> StreamEventRecord:
         key = (session_id, stream_id)
         self._sequences[key] = self._sequences.get(key, 0) + 1
-        record = StreamEventRecord(
-            stream_id=stream_id, sequence=self._sequences[key], message=message
-        )
+        record = StreamEventRecord(stream_id=stream_id, sequence=self._sequences[key], message=message)
         events = self._events.setdefault(key, [])
         events.append(record)
         del events[: max(0, len(events) - self.max_events)]
         return record
 
-    async def events_after(
-        self, session_id: str, stream_id: str, sequence: int
-    ) -> list[StreamEventRecord]:
+    async def events_after(self, session_id: str, stream_id: str, sequence: int) -> list[StreamEventRecord]:
         events = self._events.get((session_id, stream_id), [])
         return [e for e in events if e.sequence > sequence]
 
@@ -387,24 +376,18 @@ class RedisSessionStore(SessionStore):
         updated = record.model_copy(update={"last_seen": time.time()})
         await self._call(
             "touch_session",
-            self.redis.setex(
-                self._session_key(session_id), self.ttl, updated.model_dump_json()
-            ),
+            self.redis.setex(self._session_key(session_id), self.ttl, updated.model_dump_json()),
         )
 
     async def delete_session(self, session_id: str) -> None:
         await self._call("delete_session", self.redis.delete(self._session_key(session_id)))
 
-    async def append_event(
-        self, session_id: str, stream_id: str, message: dict[str, Any]
-    ) -> StreamEventRecord:
+    async def append_event(self, session_id: str, stream_id: str, message: dict[str, Any]) -> StreamEventRecord:
         seq_key = self._seq_key(session_id, stream_id)
         events_key = self._events_key(session_id, stream_id)
         sequence = await self._call("append_event", self.redis.incr(seq_key))
         record = StreamEventRecord(stream_id=stream_id, sequence=sequence, message=message)
-        await self._call(
-            "append_event", self.redis.rpush(events_key, json.dumps(record.model_dump()))
-        )
+        await self._call("append_event", self.redis.rpush(events_key, json.dumps(record.model_dump())))
         await self._call("append_event", self.redis.ltrim(events_key, -self.max_events, -1))
         # Keep the counters and event log alive for at least `ttl` seconds
         # after the last write, mirroring session retention.
@@ -412,12 +395,8 @@ class RedisSessionStore(SessionStore):
         await self._call("append_event", self.redis.expire(seq_key, self.ttl))
         return record
 
-    async def events_after(
-        self, session_id: str, stream_id: str, sequence: int
-    ) -> list[StreamEventRecord]:
-        raw_events = await self._call(
-            "events_after", self.redis.lrange(self._events_key(session_id, stream_id), 0, -1)
-        )
+    async def events_after(self, session_id: str, stream_id: str, sequence: int) -> list[StreamEventRecord]:
+        raw_events = await self._call("events_after", self.redis.lrange(self._events_key(session_id, stream_id), 0, -1))
         records = [StreamEventRecord.model_validate_json(raw) for raw in raw_events]
         return [r for r in records if r.sequence > sequence]
 

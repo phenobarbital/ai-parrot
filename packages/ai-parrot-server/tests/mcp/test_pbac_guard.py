@@ -11,6 +11,7 @@ instances and require `_pctx_var` to already be published, which is
 `_guard()`'s job, not this unit test's. A plain server keeps this file's
 `PBACGuard` unit tests focused on `PBACGuard` itself.
 """
+
 import json
 
 import pytest
@@ -47,23 +48,17 @@ class _FinanceAgent:
     def __init__(self):
         self.tool_manager = _FakeToolManager({})
 
-    @mcp_tool(
-        name="forecast", description="d", args_schema=Args, returns=Ret, scope="finance:read"
-    )
+    @mcp_tool(name="forecast", description="d", args_schema=Args, returns=Ret, scope="finance:read")
     async def forecast(self, q: str) -> dict:
         return {"forecast": q}
 
-    @mcp_tool(
-        name="restricted_tool", description="d", args_schema=Args, returns=Ret, scope="finance:admin"
-    )
+    @mcp_tool(name="restricted_tool", description="d", args_schema=Args, returns=Ret, scope="finance:admin")
     async def restricted(self, q: str) -> dict:
         return {"restricted": q}
 
 
 def _pctx(user_id: str) -> PermissionContext:
-    return PermissionContext(
-        session=UserSession(user_id=user_id, tenant_id="acme", roles=frozenset())
-    )
+    return PermissionContext(session=UserSession(user_id=user_id, tenant_id="acme", roles=frozenset()))
 
 
 class _PolicyResolver:
@@ -129,9 +124,7 @@ def ledger_spy():
 
 @pytest.fixture
 def guard_with_ledger(server, ledger_spy):
-    return PBACGuard(
-        "finance", server, resolver=_PolicyResolver().can_execute, audit_sink=ledger_spy
-    )
+    return PBACGuard("finance", server, resolver=_PolicyResolver().can_execute, audit_sink=ledger_spy)
 
 
 class TestPBACGuard:
@@ -151,9 +144,7 @@ class TestPBACGuard:
         assert ledger_spy.last["decision"] == "deny"
 
     async def test_every_call_audited_with_arg_hash(self, guard_with_ledger, ok_pctx, ledger_spy):
-        await guard_with_ledger.tools_call(
-            {"name": "forecast", "arguments": {"q": "secret"}}, ok_pctx
-        )
+        await guard_with_ledger.tools_call({"name": "forecast", "arguments": {"q": "secret"}}, ok_pctx)
         entry = ledger_spy.last
         assert entry["decision"] == "allow"
         assert "duration" in entry
@@ -170,9 +161,7 @@ class TestPBACGuard:
         assert resp["isError"] is True
 
     def test_aggregate_name_same_resource(self, guard):
-        assert guard.resource_from_aggregate("finance__forecast") == guard.resource_for(
-            "forecast"
-        )
+        assert guard.resource_from_aggregate("finance__forecast") == guard.resource_for("forecast")
         assert resource_from_aggregate("finance__forecast") == resource_for("finance", "forecast")
 
     async def test_permitted_call_executes_and_returns_result(self, guard, ok_pctx):

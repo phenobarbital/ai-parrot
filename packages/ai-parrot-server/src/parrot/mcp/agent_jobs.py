@@ -22,6 +22,7 @@ declared ``start_*`` -> ``job_id``, ``*_status``, ``*_result`` trio:
 force agent jobs through the HITL-specific ``SuspendedExecution`` record
 type, which this module has no business depending on.
 """
+
 import asyncio
 import json
 import logging
@@ -254,9 +255,7 @@ class AgentJobs:
             status="pending",
         )
         await self._store.save(record, effective_ttl)
-        task = asyncio.create_task(
-            self._run(job_id, agent_name, tool_name, arguments, effective_ttl)
-        )
+        task = asyncio.create_task(self._run(job_id, agent_name, tool_name, arguments, effective_ttl))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
         return job_id
@@ -300,25 +299,17 @@ class AgentJobs:
             method = self._method_resolver(agent_name, tool_name)
             raw_result = await method(**arguments)
         except Exception as exc:
-            self.logger.exception(
-                "Agent job %s failed: agent=%s tool=%s", job_id, agent_name, tool_name
-            )
-            await self._store.save(
-                record.model_copy(update={"status": "failed", "error": str(exc)}), ttl
-            )
+            self.logger.exception("Agent job %s failed: agent=%s tool=%s", job_id, agent_name, tool_name)
+            await self._store.save(record.model_copy(update={"status": "failed", "error": str(exc)}), ttl)
             return
 
         await self._store.save(
-            record.model_copy(
-                update={"status": "succeeded", "manifest": _project_manifest(raw_result)}
-            ),
+            record.model_copy(update={"status": "succeeded", "manifest": _project_manifest(raw_result)}),
             ttl,
         )
 
     @staticmethod
-    def _scoped(
-        record: "AgentJobRecord | None", pctx: PermissionContext
-    ) -> "AgentJobRecord | None":
+    def _scoped(record: "AgentJobRecord | None", pctx: PermissionContext) -> "AgentJobRecord | None":
         """Return `record` only if it belongs to `pctx`'s `(tenant_id, principal)`.
 
         Args:

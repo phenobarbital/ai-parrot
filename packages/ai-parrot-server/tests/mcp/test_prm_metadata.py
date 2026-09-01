@@ -1,6 +1,7 @@
 """Unit tests for RFC 9728 protected-resource metadata + 401 `resource_metadata`
 (FEAT-477, TASK-2608).
 """
+
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
@@ -61,9 +62,7 @@ class TestPRM:
         assert doc["authorization_servers"] == ["https://auth.example.com"]
 
     async def test_scopes_omitted_when_empty(self, client_no_scopes):
-        doc = await (
-            await client_no_scopes.get(f"/mcp{WELL_KNOWN_PRM_PATH}")
-        ).json()
+        doc = await (await client_no_scopes.get(f"/mcp{WELL_KNOWN_PRM_PATH}")).json()
         assert "scopes_supported" not in doc
 
     async def test_scopes_included_when_configured(self):

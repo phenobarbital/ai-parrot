@@ -1,4 +1,5 @@
 """Unit tests for `AgentMCPMount` (FEAT-477, TASK-2602)."""
+
 import pytest
 from aiohttp import web
 from parrot.mcp.agent_mount import AgentMCPMount
@@ -60,9 +61,7 @@ class _FinanceAgent:
     def __init__(self):
         self.tool_manager = _FakeToolManager([_ToJsonTool(), _OrdinaryTool()])
 
-    @mcp_tool(
-        name="forecast", description="d", args_schema=Args, returns=Ret, scope="finance:read"
-    )
+    @mcp_tool(name="forecast", description="d", args_schema=Args, returns=Ret, scope="finance:read")
     async def forecast(self, q: str) -> dict:
         return {"forecast": q}
 
@@ -112,9 +111,7 @@ def cfg_bad_name() -> AgentMCPMountConfig:
     # to exercise `AgentMCPMount`'s own defense-in-depth check at mount time
     # (this task's own acceptance criterion), simulating a config that
     # reached the mount without going through normal validation.
-    return AgentMCPMountConfig.model_construct(
-        agents=["fin__ance"], resource_server_url="https://h/mcp/agents"
-    )
+    return AgentMCPMountConfig.model_construct(agents=["fin__ance"], resource_server_url="https://h/mcp/agents")
 
 
 @pytest.fixture
@@ -144,8 +141,9 @@ class TestAgentMCPMount:
         assert "finance__to_json" not in m._servers["__aggregate__"].tools
 
     def test_both_forms_same_pbac_resource(self, mount):
-        assert mount.canonical_resource("finance", "forecast") == \
-            mount.canonical_resource_from_aggregate("finance__forecast")
+        assert mount.canonical_resource("finance", "forecast") == mount.canonical_resource_from_aggregate(
+            "finance__forecast"
+        )
 
     def test_rejects_separator_in_agent_name(self, app, bot_manager, cfg_bad_name):
         with pytest.raises(ValueError, match="__"):
@@ -178,7 +176,4 @@ class TestAgentMCPMount:
     def test_no_declared_agents_registers_nothing(self, app, bot_manager):
         empty_cfg = AgentMCPMountConfig(agents=[], resource_server_url="https://h/x")
         AgentMCPMount(bot_manager, empty_cfg).setup(app)
-        assert not any(
-            "/mcp/agents/" in (r.resource.canonical if r.resource else "")
-            for r in app.router.routes()
-        )
+        assert not any("/mcp/agents/" in (r.resource.canonical if r.resource else "") for r in app.router.routes())

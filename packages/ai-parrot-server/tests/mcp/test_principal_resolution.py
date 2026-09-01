@@ -1,4 +1,5 @@
 """Unit tests for principal resolution + tenant binding (FEAT-477, TASK-2604)."""
+
 import pytest
 from aiohttp import web
 from parrot.auth.context import _pctx_var

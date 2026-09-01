@@ -1,4 +1,5 @@
 """Unit tests for agent metadata MCP resources (FEAT-477, TASK-2603)."""
+
 import json
 
 import pytest
@@ -73,9 +74,7 @@ class TestAgentResources:
         assert len(listed["resources"]) == 3
 
     async def test_identity_card_fields(self, server):
-        card = _read_json(
-            await server.handle_resources_read({"uri": "agent://finance/identity"})
-        )
+        card = _read_json(await server.handle_resources_read({"uri": "agent://finance/identity"}))
         assert {"name", "role", "goal", "capabilities", "description"} <= set(card)
         assert card["name"] == "finance"
         assert card["role"] == "Financial Analyst"
@@ -92,9 +91,7 @@ class TestAgentResources:
             assert agent.rationale not in body
 
     async def test_tool_catalog_is_policy_filtered(self, server):
-        cat = _read_json(
-            await server.handle_resources_read({"uri": "agent://finance/tools"})
-        )
+        cat = _read_json(await server.handle_resources_read({"uri": "agent://finance/tools"}))
         assert "restricted_tool" not in cat["tools"]
         assert "public_tool" in cat["tools"]
         assert "forecast" in cat["tools"]
@@ -102,19 +99,13 @@ class TestAgentResources:
     async def test_tool_catalog_unfiltered_when_no_policy(self, agent):
         srv = StreamableHttpMCPServer(MCPServerConfig(name="test-agent-mcp-2"))
         register_agent_resources(srv, "finance", agent, exposure_names=["forecast"])
-        cat = _read_json(
-            await srv.handle_resources_read({"uri": "agent://finance/tools"})
-        )
+        cat = _read_json(await srv.handle_resources_read({"uri": "agent://finance/tools"}))
         assert "restricted_tool" in cat["tools"]
 
     async def test_kb_descriptors_from_knowledge_bases(self, server, agent):
-        kbs = _read_json(
-            await server.handle_resources_read({"uri": "agent://finance/kbs"})
-        )
+        kbs = _read_json(await server.handle_resources_read({"uri": "agent://finance/kbs"}))
         assert len(kbs["knowledge_bases"]) == len(agent.knowledge_bases)
-        assert {"finance-kb", "market-kb"} == {
-            kb["name"] for kb in kbs["knowledge_bases"]
-        }
+        assert {"finance-kb", "market-kb"} == {kb["name"] for kb in kbs["knowledge_bases"]}
 
     async def test_reregistration_overwrites_stale_agent_closures(self, server):
         """A rebuild (OQ5) must serve the new agent, not the old one."""
@@ -122,7 +113,5 @@ class TestAgentResources:
         new_agent.name = "finance"
         new_agent.role = "Reloaded Analyst"
         register_agent_resources(server, "finance", new_agent, exposure_names=["forecast"])
-        card = _read_json(
-            await server.handle_resources_read({"uri": "agent://finance/identity"})
-        )
+        card = _read_json(await server.handle_resources_read({"uri": "agent://finance/identity"}))
         assert card["role"] == "Reloaded Analyst"

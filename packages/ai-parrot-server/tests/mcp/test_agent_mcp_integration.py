@@ -6,6 +6,7 @@ merge time. The OAuth path is tested with the introspection and PRM legs
 **mocked**; a live conformance run against a real navigator-auth deployment
 is a post-release gate, not a merge blocker.
 """
+
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from parrot.a2a.server import A2AServer
@@ -42,9 +43,7 @@ class _FinanceAgent:
     def __init__(self):
         self.tool_manager = _FakeToolManager({})
 
-    @mcp_tool(
-        name="forecast", description="d", args_schema=Args, returns=Ret, scope="finance:read"
-    )
+    @mcp_tool(name="forecast", description="d", args_schema=Args, returns=Ret, scope="finance:read")
     async def forecast(self, q: str) -> dict:
         return {"forecast": q}
 
@@ -103,18 +102,14 @@ class TestAgentMCPIntegration:
         api_key_store = APIKeyStore()
         record = api_key_store.issue_key(user_id="dev-user")
 
-        auth_template = MCPServerConfig(
-            auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
-        )
+        auth_template = MCPServerConfig(auth_method=AuthMethod.API_KEY, api_key_store=api_key_store)
         bot_manager = _FakeBotManager({"finance": _FinanceAgent()})
         cfg = AgentMCPMountConfig(
             agents=["finance"],
             resource_server_url="https://h/mcp/agents/finance",
             default_tenant_id="acme",
         )
-        mount = AgentMCPMount(
-            bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template
-        )
+        mount = AgentMCPMount(bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template)
         app = web.Application()
         mount.setup(app)
 
@@ -125,9 +120,7 @@ class TestAgentMCPIntegration:
             r = await client.post("/mcp/agents/finance", json=_INIT_REQ, headers=headers)
             assert r.status == 200
 
-            listed = await (
-                await client.post("/mcp/agents/finance", json=_LIST_REQ, headers=headers)
-            ).json()
+            listed = await (await client.post("/mcp/agents/finance", json=_LIST_REQ, headers=headers)).json()
             assert "forecast" in [t["name"] for t in listed["result"]["tools"]]
 
             called = await (
@@ -144,18 +137,14 @@ class TestAgentMCPIntegration:
     async def test_api_key_rejected_without_key(self):
         """No navigator-auth dependency — a missing API key is a clean 401."""
         api_key_store = APIKeyStore()
-        auth_template = MCPServerConfig(
-            auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
-        )
+        auth_template = MCPServerConfig(auth_method=AuthMethod.API_KEY, api_key_store=api_key_store)
         bot_manager = _FakeBotManager({"finance": _FinanceAgent()})
         cfg = AgentMCPMountConfig(
             agents=["finance"],
             resource_server_url="https://h/mcp/agents/finance",
             default_tenant_id="acme",
         )
-        mount = AgentMCPMount(
-            bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template
-        )
+        mount = AgentMCPMount(bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template)
         app = web.Application()
         mount.setup(app)
 
@@ -184,9 +173,7 @@ class TestAgentMCPIntegration:
             resource_server_url="https://h/mcp/agents/finance",
             default_tenant_id="acme",
         )
-        mount = AgentMCPMount(
-            bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template
-        )
+        mount = AgentMCPMount(bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template)
         app = web.Application()
         mount.setup(app)
 
@@ -214,9 +201,7 @@ class TestAgentMCPIntegration:
             r = await client.post("/mcp/agents/finance", json=_INIT_REQ, headers=headers)
             assert r.status == 200
 
-            listed = await (
-                await client.post("/mcp/agents/finance", json=_LIST_REQ, headers=headers)
-            ).json()
+            listed = await (await client.post("/mcp/agents/finance", json=_LIST_REQ, headers=headers)).json()
             assert "forecast" in [t["name"] for t in listed["result"]["tools"]]
 
             called = await (
@@ -258,9 +243,7 @@ class TestAgentMCPIntegration:
         finance_mount = AgentMCPMount(
             finance_bot_manager, finance_cfg, pbac_resolver=_allow_all, auth_template=auth_template
         )
-        hr_mount = AgentMCPMount(
-            hr_bot_manager, hr_cfg, pbac_resolver=_allow_all, auth_template=auth_template
-        )
+        hr_mount = AgentMCPMount(hr_bot_manager, hr_cfg, pbac_resolver=_allow_all, auth_template=auth_template)
         app = web.Application()
         finance_mount.setup(app)
         hr_mount.setup(app)
@@ -283,9 +266,7 @@ class TestAgentMCPIntegration:
             ok = await client.post("/mcp/agents/finance", json=_INIT_REQ, headers=headers)
             assert ok.status == 200
 
-            denied = await client.post(
-                "/mcp/agents/hr", json=_call_req("roster", {"q": "x"}), headers=headers
-            )
+            denied = await client.post("/mcp/agents/hr", json=_call_req("roster", {"q": "x"}), headers=headers)
             assert denied.status == 401
         finally:
             await client.close()

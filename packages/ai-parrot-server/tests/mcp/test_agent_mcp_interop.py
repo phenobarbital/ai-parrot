@@ -9,6 +9,7 @@ Gated behind the ``mcp`` extra (``requires_mcp_sdk``, already registered by
 PR #1274 — do NOT re-add the marker). Run with
 ``uv run --extra mcp pytest ...`` or after ``uv pip install mcp``.
 """
+
 import asyncio
 
 import pytest
@@ -76,18 +77,14 @@ async def agent_endpoint_url():
     api_key_store = APIKeyStore()
     record = api_key_store.issue_key(user_id="dev-user")
 
-    auth_template = MCPServerConfig(
-        auth_method=AuthMethod.API_KEY, api_key_store=api_key_store
-    )
+    auth_template = MCPServerConfig(auth_method=AuthMethod.API_KEY, api_key_store=api_key_store)
     bot_manager = _FakeBotManager({"finance": _FinanceAgent()})
     cfg = AgentMCPMountConfig(
         agents=["finance"],
         resource_server_url="https://h/mcp/agents/finance",
         default_tenant_id="acme",
     )
-    mount = AgentMCPMount(
-        bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template
-    )
+    mount = AgentMCPMount(bot_manager, cfg, pbac_resolver=_allow_all, auth_template=auth_template)
     app = web.Application()
     mount.setup(app)
 
@@ -113,7 +110,5 @@ async def test_mcp_sdk_interop(agent_endpoint_url):
         tools = await asyncio.wait_for(session.list_tools(), timeout=10)
         assert any(t.name == "forecast" for t in tools.tools)
 
-        result = await asyncio.wait_for(
-            session.call_tool("forecast", {"q": "revenue"}), timeout=10
-        )
+        result = await asyncio.wait_for(session.call_tool("forecast", {"q": "revenue"}), timeout=10)
         assert not result.isError

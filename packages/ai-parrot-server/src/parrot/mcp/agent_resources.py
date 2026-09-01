@@ -16,6 +16,7 @@ excluded outright. Each resource is built from an explicit **allowlist**
 of fields, never a denylist, so a future agent attribute cannot leak in by
 default. Publishing guardrail wording hands an attacker the bypass design.
 """
+
 import inspect
 import json
 import logging
@@ -53,9 +54,7 @@ def _identity_card(agent_name: str, agent: Any) -> dict[str, Any]:
     }
 
 
-async def _resolve_filter(
-    policy_filter: ToolPolicyFilter | None, agent_name: str, tool_name: str
-) -> bool:
+async def _resolve_filter(policy_filter: ToolPolicyFilter | None, agent_name: str, tool_name: str) -> bool:
     """Evaluate `policy_filter` for one tool, awaiting it if needed.
 
     Args:
@@ -97,11 +96,7 @@ async def _tool_catalog(
     own_names = list(tool_manager.list_tools()) if tool_manager is not None else []
     # De-duplicate while preserving order (exposure set first).
     all_names = list(dict.fromkeys([*exposure_names, *own_names]))
-    visible = [
-        tool_name
-        for tool_name in all_names
-        if await _resolve_filter(policy_filter, agent_name, tool_name)
-    ]
+    visible = [tool_name for tool_name in all_names if await _resolve_filter(policy_filter, agent_name, tool_name)]
     return {"tools": visible}
 
 

@@ -36,6 +36,7 @@ all. ``oauth2_resource_server_url`` is always taken from the mount's own
 *mount*-level concept per the spec's data model) even when the template
 carries no OAuth settings of its own.
 """
+
 import logging
 from dataclasses import replace
 from typing import Any
@@ -161,9 +162,7 @@ class _AgentBoundMCPServer(StreamableHttpMCPServer):
         error = await super()._guard(request)
         if error:
             return error
-        resolved = await resolve_principal(
-            request, self._mount._config, audit_hook=self._mount._audit_sink
-        )
+        resolved = await resolve_principal(request, self._mount._config, audit_hook=self._mount._audit_sink)
         if isinstance(resolved, web.Response):
             return resolved
         _pctx_var.set(resolved)
@@ -183,9 +182,7 @@ class _AgentBoundMCPServer(StreamableHttpMCPServer):
         pctx = _pctx_var.get()
         if pctx is None:
             return {
-                "content": [
-                    {"type": "text", "text": "No authenticated principal for this call"}
-                ],
+                "content": [{"type": "text", "text": "No authenticated principal for this call"}],
                 "isError": True,
             }
         return await self._pbac_guard.tools_call(params, pctx)
@@ -314,16 +311,11 @@ class AgentMCPMount:
         """
         for name in self._config.agents:
             if "__" in name:
-                raise ValueError(
-                    f"agent name {name!r} contains the aggregate separator "
-                    "'__'"
-                )
+                raise ValueError(f"agent name {name!r} contains the aggregate separator " "'__'")
             path = f"{self._config.base_path}/{name}"
             self._reject_if_path_claimed(app, path)
             server_config = self._build_server_config(name, path)
-            server = _AgentBoundMCPServer(
-                server_config, mount=self, agent_name=name, parent_app=app
-            )
+            server = _AgentBoundMCPServer(server_config, mount=self, agent_name=name, parent_app=app)
             self._register_agent_tools(server, name)
             self._last_agent_id[name] = id(self._bots.get_bots()[name])
             server._register_routes(app.router, path)
@@ -370,9 +362,7 @@ class AgentMCPMount:
             self._last_agent_id[name] = id(agent)
         return agent
 
-    def _register_agent_tools(
-        self, server: StreamableHttpMCPServer, name: str, agent: Any = None
-    ) -> None:
+    def _register_agent_tools(self, server: StreamableHttpMCPServer, name: str, agent: Any = None) -> None:
         """(Re)register `name`'s exposure set plus its own tools onto `server`.
 
         Args:
@@ -424,9 +414,7 @@ class AgentMCPMount:
                         continue
                     own_tool = tool_manager.get_tool(tool_name)
                     if own_tool is not None:
-                        server.register_tool(
-                            _AggregateToolProxy(own_tool, f"{name}__{tool_name}")
-                        )
+                        server.register_tool(_AggregateToolProxy(own_tool, f"{name}__{tool_name}"))
 
     def canonical_resource(self, agent_name: str, tool_name: str) -> str:
         """Build the canonical PBAC resource string for `agent_name`/`tool_name`.
@@ -458,10 +446,7 @@ class AgentMCPMount:
         """
         agent_name, sep, tool_name = aggregate_name.partition("__")
         if not sep:
-            raise ValueError(
-                f"{aggregate_name!r} is not an aggregate name "
-                "('{agent}__{tool}' expected)"
-            )
+            raise ValueError(f"{aggregate_name!r} is not an aggregate name " "('{agent}__{tool}' expected)")
         return self.canonical_resource(agent_name, tool_name)
 
     def _reject_if_path_claimed(self, app: web.Application, path: str) -> None:
@@ -482,17 +467,11 @@ class AgentMCPMount:
             ValueError: If `path` collides with an existing or configured
                 route.
         """
-        claimed = {
-            route.resource.canonical
-            for route in app.router.routes()
-            if route.resource is not None
-        }
+        claimed = {route.resource.canonical for route in app.router.routes() if route.resource is not None}
         parrot_mcp_server = app.get("parrot_mcp_server")
         if parrot_mcp_server is not None:
             default_base_path = MCPServerConfig().base_path
-            for transport_config in getattr(
-                parrot_mcp_server, "transport_configs", {}
-            ).values():
+            for transport_config in getattr(parrot_mcp_server, "transport_configs", {}).values():
                 if not getattr(transport_config, "enabled", True):
                     continue
                 claimed.add(transport_config.base_path or default_base_path)
