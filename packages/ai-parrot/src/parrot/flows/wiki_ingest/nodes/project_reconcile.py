@@ -396,9 +396,7 @@ async def run_project_reconcile(
                 existing_state.recent_source_updates,
                 [f"{meeting.meeting_date} - [[{meeting_source_link}]] - {proposal.change_summary}"],
             ),
-            "unresolved_contradictions": _merge_unique(
-                existing_state.unresolved_contradictions, contradiction_titles
-            ),
+            "unresolved_contradictions": _merge_unique(existing_state.unresolved_contradictions, contradiction_titles),
         }
     )
 

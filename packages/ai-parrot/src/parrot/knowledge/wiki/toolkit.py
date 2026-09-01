@@ -134,12 +134,8 @@ class LLMWikiToolkit(AbstractToolkit):
                 resolve_arango_params,
             )
 
-            arango_params = resolve_arango_params(
-                WikiProjectConfig(wiki_name=config.wiki_name)
-            )
-            self._store = ArangoDBWikiStore(
-                arango_params, wiki_name=config.wiki_name
-            )
+            arango_params = resolve_arango_params(WikiProjectConfig(wiki_name=config.wiki_name))
+            self._store = ArangoDBWikiStore(arango_params, wiki_name=config.wiki_name)
         else:
             self._store = create_wiki_store(
                 config.storage_dir,
@@ -151,9 +147,7 @@ class LLMWikiToolkit(AbstractToolkit):
         # writes. Keep keying it on the config, as before.
         sources_dir = config.storage_dir / "sources"
         if config.storage_backend == "sqlite":
-            self._sources = SourceCollectionManager(
-                sources_dir, db_path=config.storage_dir / "wiki.db"
-            )
+            self._sources = SourceCollectionManager(sources_dir, db_path=config.storage_dir / "wiki.db")
         elif config.storage_backend == "arangodb":
             # arango_store (not arango_db): __init__ is synchronous and
             # cannot await self._store.initialize() itself — the manager
@@ -164,17 +158,11 @@ class LLMWikiToolkit(AbstractToolkit):
             # would report every source as missing.
             arango_local = self._local_arango_store()
             if arango_local is None:
-                self._sources = SourceCollectionManager(
-                    sources_dir, backend="json"
-                )
+                self._sources = SourceCollectionManager(sources_dir, backend="json")
             else:
-                self._sources = SourceCollectionManager(
-                    sources_dir, backend="arangodb", arango_store=arango_local
-                )
+                self._sources = SourceCollectionManager(sources_dir, backend="arangodb", arango_store=arango_local)
         else:
-            self._sources = SourceCollectionManager(
-                sources_dir, backend="json"
-            )
+            self._sources = SourceCollectionManager(sources_dir, backend="json")
         self._bookkeeper = WikiBookkeeper()
         self._search = WikiCombinedSearch(
             pageindex_toolkit,
@@ -283,13 +271,9 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: source_id, pages_created, graph_nodes_created,
             duration_ms, status.
         """
-        self.logger.info(
-            "Ingesting source into wiki '%s': %s", wiki_name, source_path
-        )
+        self.logger.info("Ingesting source into wiki '%s': %s", wiki_name, source_path)
         effective_config = self._local_config_for(wiki_name)
-        report: IngestReport = await self._ingest_orch.ingest(
-            source_path, effective_config
-        )
+        report: IngestReport = await self._ingest_orch.ingest(source_path, effective_config)
         return report.model_dump()
 
     async def ingest_obsidian_vault(
@@ -332,24 +316,18 @@ class LLMWikiToolkit(AbstractToolkit):
             ObsidianVaultLoader,
         )
 
-        self.logger.info(
-            "Ingesting Obsidian vault into wiki '%s': %s", wiki_name, vault_path
-        )
+        self.logger.info("Ingesting Obsidian vault into wiki '%s': %s", wiki_name, vault_path)
         effective_config = self._local_config_for(wiki_name)
         loader = ObsidianVaultLoader(vault_path)
         if extra_skip_patterns:
             loader.vault.skip_patterns = loader.vault.skip_patterns | frozenset(extra_skip_patterns)
         if incremental:
-            raw_report = await loader.incremental_update(
-                self._pi, wiki_name, self._sources
-            )
+            raw_report = await loader.incremental_update(self._pi, wiki_name, self._sources)
         else:
             raw_report = await loader.ingest(self._pi, wiki_name, self._sources)
 
         # Phase 1b — wikilink graph import (best-effort, no LLM).
-        graph_summary: dict[str, Any] = {
-            "nodes_imported": 0, "edges_imported": 0, "errors": []
-        }
+        graph_summary: dict[str, Any] = {"nodes_imported": 0, "edges_imported": 0, "errors": []}
         if self._gi is not None:
             notes, canvases = await loader.discover()
             bridge = ObsidianGraphBridge(
@@ -376,24 +354,18 @@ class LLMWikiToolkit(AbstractToolkit):
                     id_map[node.node_id] = created["node_id"]
                     graph_summary["nodes_imported"] += 1
                 else:
-                    graph_summary["errors"].append(
-                        f"{node.node_id}: {created!r}"
-                    )
+                    graph_summary["errors"].append(f"{node.node_id}: {created!r}")
             for edge in edges:
                 source_id = id_map.get(edge.source_id)
                 target_id = id_map.get(edge.target_id)
                 if not source_id or not target_id:
                     continue
                 try:
-                    linked = await self._gi.link_nodes(
-                        source_id, target_id, edge.kind.value
-                    )
+                    linked = await self._gi.link_nodes(source_id, target_id, edge.kind.value)
                     if isinstance(linked, dict) and not linked.get("error"):
                         graph_summary["edges_imported"] += 1
                 except Exception as exc:  # noqa: BLE001
-                    graph_summary["errors"].append(
-                        f"{edge.source_id}->{edge.target_id}: {exc}"
-                    )
+                    graph_summary["errors"].append(f"{edge.source_id}->{edge.target_id}: {exc}")
             graph_summary["errors"] = graph_summary["errors"][:10]
 
         result: dict[str, Any] = {
@@ -434,9 +406,7 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             Dict with keys: question, answer, sources, filed_page_id.
         """
-        results = await self._search.search(
-            question, mode=mode, top_k=10, tree_name=wiki_name
-        )
+        results = await self._search.search(question, mode=mode, top_k=10, tree_name=wiki_name)
         packed = pack_results(results, budget_tokens=DEFAULT_BUDGET_TOKENS)
         answer = self._synthesise_answer(question, packed.text)
 
@@ -496,14 +466,8 @@ class LLMWikiToolkit(AbstractToolkit):
         # to the registry's pages_generated when the pages table is empty
         # for that source but ids were recorded (e.g. store sync skipped).
         all_sources = await asyncio.to_thread(self._sources.list_sources)
-        recorded = {
-            s.source_id for s in all_sources if s.pages_generated
-        }
-        orphan_sources = [
-            sid
-            for sid in await self._store.orphan_sources()
-            if sid not in recorded
-        ]
+        recorded = {s.source_id for s in all_sources if s.pages_generated}
+        orphan_sources = [sid for sid in await self._store.orphan_sources() if sid not in recorded]
         # is_stale does file I/O (stat + optional hash) — offload to thread pool
         stale_sources: list[str] = []
         for s in all_sources:
@@ -521,12 +485,10 @@ class LLMWikiToolkit(AbstractToolkit):
 
         # Cross-reference issues: broken edges + pages without bodies.
         cross_ref_issues: list[dict[str, Any]] = [
-            {"kind": "broken_edge", **edge}
-            for edge in await self._store.broken_edges()
+            {"kind": "broken_edge", **edge} for edge in await self._store.broken_edges()
         ]
         cross_ref_issues.extend(
-            {"kind": "missing_body", "concept_id": cid}
-            for cid in await self._store.missing_bodies()
+            {"kind": "missing_body", "concept_id": cid} for cid in await self._store.missing_bodies()
         )
 
         report = WikiLintReport(
@@ -541,8 +503,7 @@ class LLMWikiToolkit(AbstractToolkit):
             self._bookkeeper.log_operation,
             self._config_for(wiki_name).storage_dir,
             "LINT",
-            f"issues: {report.total_issues}, orphans: {len(orphan_sources)}, "
-            f"stale: {len(stale_sources)}",
+            f"issues: {report.total_issues}, orphans: {len(orphan_sources)}, " f"stale: {len(stale_sources)}",
         )
         return report.model_dump()
 
@@ -586,9 +547,7 @@ class LLMWikiToolkit(AbstractToolkit):
                 created.append(str(d))
 
         # Initialise empty index.md and log.md (file writes offloaded to thread)
-        await asyncio.to_thread(
-            self._bookkeeper.write_index, storage_dir, tree_name=wiki_name
-        )
+        await asyncio.to_thread(self._bookkeeper.write_index, storage_dir, tree_name=wiki_name)
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
             storage_dir,
@@ -636,9 +595,7 @@ class LLMWikiToolkit(AbstractToolkit):
             wikis.append(
                 {
                     "wiki_name": name,
-                    "storage_dir": (
-                        str(handle.storage_dir) if handle.storage_dir else None
-                    ),
+                    "storage_dir": (str(handle.storage_dir) if handle.storage_dir else None),
                     "kind": handle.kind,
                     "backend": handle.backend,
                     "origin": handle.origin,
@@ -699,9 +656,7 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             Dict with keys: status, wiki_name, message.
         """
-        self.logger.warning(
-            "delete_wiki called for '%s' — clearing manifest only", wiki_name
-        )
+        self.logger.warning("delete_wiki called for '%s' — clearing manifest only", wiki_name)
         # Remove all manifest entries
         for entry in await asyncio.to_thread(self._sources.list_sources):
             await asyncio.to_thread(self._sources.remove_source, entry.source_id)
@@ -736,9 +691,7 @@ class LLMWikiToolkit(AbstractToolkit):
         store = self._store_for(wiki_name)
         try:
             if search:
-                return await store.search_fts(
-                    search, category=category, limit=20
-                )
+                return await store.search_fts(search, category=category, limit=20)
             return await store.list_pages(category=category, limit=20)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("browse_pages failed: %s", exc)
@@ -771,9 +724,7 @@ class LLMWikiToolkit(AbstractToolkit):
         page = await self._store_for(wiki_name).get_page(page_id)
         if page is None:
             return {"error": "not_found", "page_id": page_id}
-        content, truncated = truncate_to_tokens(
-            page.get("body", ""), max_tokens
-        )
+        content, truncated = truncate_to_tokens(page.get("body", ""), max_tokens)
         return {
             "page_id": page["concept_id"],
             "node_id": page.get("node_id"),
@@ -829,9 +780,7 @@ class LLMWikiToolkit(AbstractToolkit):
             )
         else:
             try:
-                pi_result = await self._pi.insert_markdown(
-                    wiki_name, markdown, doc_name=title
-                )
+                pi_result = await self._pi.insert_markdown(wiki_name, markdown, doc_name=title)
                 if isinstance(pi_result, dict):
                     # PageIndexToolkit.insert_markdown() contract:
                     # {"tree_name", "new_node_ids"}
@@ -859,9 +808,7 @@ class LLMWikiToolkit(AbstractToolkit):
             )
             await self._store.upsert_pages([record])
             if related_pages:
-                await self._store.add_edges(
-                    [(page_id, str(rp), "references") for rp in related_pages]
-                )
+                await self._store.add_edges([(page_id, str(rp), "references") for rp in related_pages])
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("create_page WikiStore upsert failed: %s", exc)
 
@@ -875,9 +822,7 @@ class LLMWikiToolkit(AbstractToolkit):
                     domain_tags={"wiki": wiki_name, "category": category},
                 )
             except Exception as exc:  # noqa: BLE001
-                self.logger.warning(
-                    "create_page GraphIndex create_node failed: %s", exc
-                )
+                self.logger.warning("create_page GraphIndex create_node failed: %s", exc)
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
@@ -980,9 +925,7 @@ class LLMWikiToolkit(AbstractToolkit):
         import hashlib
 
         title = (title or text.strip().splitlines()[0][:80]).strip()
-        page_id = "mem-" + hashlib.sha1(
-            f"{title}::{category}".encode("utf-8")
-        ).hexdigest()[:12]
+        page_id = "mem-" + hashlib.sha1(f"{title}::{category}".encode("utf-8")).hexdigest()[:12]
 
         existing = await self._store.get_page(page_id, include_body=False)
         record = WikiPageRecord(
@@ -998,9 +941,7 @@ class LLMWikiToolkit(AbstractToolkit):
         )
         await self._store.upsert_pages([record])
         if related_pages:
-            await self._store.add_edges(
-                [(page_id, str(rp), "references", "asserted") for rp in related_pages]
-            )
+            await self._store.add_edges([(page_id, str(rp), "references", "asserted") for rp in related_pages])
 
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
@@ -1151,9 +1092,7 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             List of :class:`WikiSearchResult` dicts sorted by score (desc).
         """
-        results = await self._search_for(wiki_name).search(
-            query, mode=mode, top_k=15, tree_name=wiki_name
-        )
+        results = await self._search_for(wiki_name).search(query, mode=mode, top_k=15, tree_name=wiki_name)
         return [r.model_dump() for r in results]
 
     async def search_compact(
@@ -1180,9 +1119,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: context (packed text), stubs, tokens_used,
             results_packed, total_available, truncated.
         """
-        results = await self._search_for(wiki_name).search(
-            query, mode=mode, top_k=25, tree_name=wiki_name
-        )
+        results = await self._search_for(wiki_name).search(query, mode=mode, top_k=25, tree_name=wiki_name)
         packed = pack_results(results, budget_tokens=budget_tokens)
         return {
             "context": packed.text,
@@ -1213,9 +1150,7 @@ class LLMWikiToolkit(AbstractToolkit):
             Dict with keys: page_id, context, stubs, tokens_used,
             total_available, truncated.
         """
-        neighbours = await self._store_for(wiki_name).neighbors(
-            page_id, rel=rel
-        )
+        neighbours = await self._store_for(wiki_name).neighbors(page_id, rel=rel)
         packed = pack_results(neighbours, budget_tokens=budget_tokens)
         return {
             "page_id": page_id,
@@ -1242,9 +1177,7 @@ class LLMWikiToolkit(AbstractToolkit):
         Returns:
             List of neighbour node dicts from GraphIndexToolkit.
         """
-        return await self._search_for(wiki_name).find_related(
-            page_id, depth=depth
-        )
+        return await self._search_for(wiki_name).find_related(page_id, depth=depth)
 
     # ------------------------------------------------------------------
     # OKF export boundary
@@ -1274,9 +1207,7 @@ class LLMWikiToolkit(AbstractToolkit):
         from parrot.knowledge.wiki.export import export_okf_bundle
 
         self._config_for(wiki_name)
-        report = await export_okf_bundle(
-            self._store, Path(output_dir), wiki_name=wiki_name
-        )
+        report = await export_okf_bundle(self._store, Path(output_dir), wiki_name=wiki_name)
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
             self._config.storage_dir,
@@ -1316,9 +1247,7 @@ class LLMWikiToolkit(AbstractToolkit):
             String containing up to ``last_n`` log lines.
         """
         storage_dir = self._config_for(wiki_name).storage_dir
-        return await asyncio.to_thread(
-            self._bookkeeper.read_log, storage_dir, last_n=last_n
-        )
+        return await asyncio.to_thread(self._bookkeeper.read_log, storage_dir, last_n=last_n)
 
     async def rebuild_index(self, wiki_name: str) -> dict[str, Any]:
         """Regenerate index.md from the current wiki state.
@@ -1405,17 +1334,11 @@ class LLMWikiToolkit(AbstractToolkit):
         Raises:
             ValueError: When ``wiki_name`` does not match the configured wiki.
         """
-        if wiki_name != self._config.wiki_name and not self._is_namespace(
-            wiki_name
-        ):
+        if wiki_name != self._config.wiki_name and not self._is_namespace(wiki_name):
             known = ""
             federated = self._federated
             if federated is not None and federated.namespaces:
-                known = (
-                    " Federated namespaces: "
-                    + ", ".join(sorted(federated.namespaces))
-                    + "."
-                )
+                known = " Federated namespaces: " + ", ".join(sorted(federated.namespaces)) + "."
             raise ValueError(
                 f"Wiki '{wiki_name}' is not managed by this toolkit "
                 f"(configured for '{self._config.wiki_name}').{known} "
@@ -1443,8 +1366,5 @@ class LLMWikiToolkit(AbstractToolkit):
             A synthesised answer string.
         """
         if not packed_context:
-            return (
-                f"No relevant wiki pages found for: {question!r}. "
-                "Try ingesting more sources first."
-            )
+            return f"No relevant wiki pages found for: {question!r}. " "Try ingesting more sources first."
         return f"Based on the wiki knowledge base:\n\n{packed_context}"

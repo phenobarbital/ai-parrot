@@ -285,9 +285,7 @@ async def test_ingest_mid_pipeline_exception_rolls_back_and_stays_recoverable(
 
     from parrot.flows.wiki_ingest.nodes import daily as daily_module
 
-    monkeypatch.setattr(
-        daily_module, "run_daily_synthesis", AsyncMock(side_effect=RuntimeError("boom mid-pipeline"))
-    )
+    monkeypatch.setattr(daily_module, "run_daily_synthesis", AsyncMock(side_effect=RuntimeError("boom mid-pipeline")))
 
     ctx = WikiIngestContext(agent=agent)
     report = await run_ingest(ctx)
