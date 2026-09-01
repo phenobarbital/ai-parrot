@@ -224,7 +224,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -236,8 +236,8 @@
       "parallelism_notes": "Separate connective-tissue node files.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2670-daily-indexes-review-log.md"
+      "completed_at": "2026-09-01T04:01:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2670-daily-indexes-review-log.md"
     },
     {
       "id": "TASK-2671",
