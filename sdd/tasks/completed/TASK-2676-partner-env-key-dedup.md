@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-487 — Collapse the duplicate research-partner env keys
 **Spec**: `sdd/specs/dev-flow-partner-env-key-dedup.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -181,8 +181,67 @@ class TestPartnerKeyDedup:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- Contract verified before any edit: every declared anchor
+  (`model_plan.py:66,67,81-83,109`, `catalog.py:124,157`,
+  `conf.py:1131,1137,1141`) matched exactly, and the `ENV_PARTNER` grep
+  confirmed the only importers were `model_plan.py` and
+  `test_model_plan.py` — so the constants were safe to delete.
+- **A stale anchor did bite once, harmlessly**: my first edit script
+  targeted `_pool_from_env(raw: Any) -> Optional[...]`, but FEAT-486's
+  post-merge `black` pass had modernized it to `list[dict[str, Any]] | None`.
+  The assertion failed and — because the file write is the last statement —
+  nothing was written. Re-anchored and re-applied atomically.
+- `resolve_model_plan()`'s partner block now calls
+  `catalog.resolve_research_partner_backend(getter)` for enable+backend.
+  Delegating rather than re-parsing buys three things: one parse of one key;
+  the Anthropic family guard now fires at plan-resolution time (before, an
+  Anthropic partner model passed the plan resolver silently and only failed
+  later inside the partner); and FEAT-482's own error text
+  ("must be one of ('gpt','nova')") instead of a second dialect.
+- **The latent mismatch is fixed.** FEAT-486's single backend-agnostic
+  `_MODEL` meant a `nova` partner defaulted to `gpt-5.6-sol`. The backend is
+  resolved FIRST, then the model default from that backend's key, so `nova`
+  now yields `us.amazon.nova-2-lite-v1:0`. It was never a live bug only
+  because `_resolve_research_coordinator` passes `model or None` and
+  FEAT-482 re-resolves per backend downstream — but the plan was reporting a
+  model it would not use.
+- `_partner_model_default()` deliberately does NOT import FEAT-482's
+  `resolve_backend_model()`: that reads `conf.*` module attributes directly
+  and would ignore the injected `config_getter`, breaking the hermetic
+  dict-lambda pattern every other default in this module uses. The
+  duplication is one two-branch `if`, documented as such.
+- **Nothing downstream changed**, as the spec required:
+  `ResearchPartnerPlan`'s `enabled`/`backend`/`model` fields,
+  `factories._resolve_research_coordinator()` and the console
+  `/api/config` payload all consume FIELDS, not keys — neither
+  `factories.py` nor `server_dev.py` was touched, and their 50 tests pass.
+- No import cycle introduced: `dev_loop.catalog` imports only `parrot.conf`.
+- 11 new tests (`TestPartnerKeyDedup`), notably
+  `test_retired_keys_are_ignored` (old keys inert),
+  `test_retired_constants_are_gone` (guards a well-meaning
+  re-introduction), `test_partner_model_follows_backend_nova` (the mismatch
+  fix) and `test_anthropic_partner_model_rejected`.
+  `test_partner_enabled_env_coercion` was DELETED along with the boolean key
+  it existed to test — the new key has no boolean form.
+- `test_model_plan.py`: 41 passed. Full
+  `packages/ai-parrot/tests/flows/`: 1825 passed, 15 skipped, 4 failed —
+  the four pre-existing `dev` failures (`test_qa_codereview`,
+  `test_secondopinion_brief`, `test_subagent_parity[sdd-secondopinion]`,
+  `test_dev_recovery_integration`). ruff clean on both code files.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in scope — exactly the 5 declared files.
+
+Two notes on acceptance criteria:
+1. The AC "`grep -rn DEV_FLOW_RESEARCH_PARTNER_ENABLED` returns nothing"
+   still matches ONE line: `docs/dev_loop/dev-flow-model-plan.md:62`, which
+   is the deliberate "FEAT-486 briefly shipped its own ... those are retired
+   and inert" note. Documenting the retirement is more useful to an operator
+   who has the old key in an `.env` than silence would be, so it was kept.
+2. Spec §8's open question — whether to emit a deprecation warning for the
+   retired keys for one release — was resolved as **no**. They shipped only
+   in FEAT-486, unreleased, on the same day; a warning path would outlive
+   its own audience. `test_retired_keys_are_ignored` pins the silent-inert
+   behaviour instead.
