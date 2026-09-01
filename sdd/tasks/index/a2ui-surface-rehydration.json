@@ -111,7 +111,7 @@
       "feature_id": "FEAT-492",
       "feature": "a2ui-surface-rehydration",
       "spec": "sdd/specs/a2ui-surface-rehydration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Exercises every seam; must run last.",
       "assigned_to": null,
       "started_at": "2026-09-01T17:52:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2705-integration-tests.md"
+      "completed_at": "2026-09-01T18:45:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2705-integration-tests.md"
     }
   ]
 }
