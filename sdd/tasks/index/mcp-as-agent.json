@@ -52,7 +52,7 @@
       "feature_id": "FEAT-477",
       "feature": "mcp-as-agent",
       "spec": "sdd/specs/mcp-as-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Touches only mcp/config.py; shares no files with the M1 core module. Can run alongside TASK-2599/2600.",
       "assigned_to": null,
       "started_at": "2026-08-30T23:52:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2601-agent-mount-config.md"
+      "completed_at": "2026-09-01T13:34:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2601-agent-mount-config.md"
     },
     {
       "id": "TASK-2602",

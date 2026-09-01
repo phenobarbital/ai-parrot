@@ -147,8 +147,25 @@ class TestAgentMCPMountConfig:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `AgentMCPMountConfig(BaseModel)` added to `config.py` field-for-field per
+spec §2 Data Models, with `field_validator`s rejecting: agent names containing
+`__`, a non-absolute `resource_server_url` (checked via `urlparse` scheme+netloc),
+`call_deadline_seconds >= 300`, and `max_result_tokens >= 30_000`. `MCPServerConfig`
+(dataclass) extended with one new optional field, `agent_mount:
+Optional[AgentMCPMountConfig] = None`, satisfying the integration-table entry
+("MCPServerConfig extends: agent-mount settings") without touching any existing
+field or default — `test_existing_config_untouched` pins `base_path`, `session_ttl`,
+and the new field's `None` default. 9/9 new tests pass; full
+`packages/ai-parrot-server/tests/mcp/` suite (90 tests) still green — no regressions.
+`ruff check config.py` shows only pre-existing findings (35 baseline, confirmed via
+`git stash` diff before/after) plus one new `Optional[...]` vs `X | None` style
+finding on the new field, consistent with the file's existing (unconverted) style.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — the "Extend `MCPServerConfig`" scope bullet is
+satisfied via one new optional field wrapping `AgentMCPMountConfig`, since no
+other task consumes `MCPServerConfig.agent_mount` directly (TASK-2602's
+`AgentMCPMount` takes an `AgentMCPMountConfig` as its own constructor arg); this
+field exists so `ParrotMCPServer`/`BotManager.setup()` has a settled place to read
+it from later if wired that way.
