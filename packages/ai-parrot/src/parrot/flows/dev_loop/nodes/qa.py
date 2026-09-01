@@ -20,8 +20,10 @@ The node returns the report regardless of ``passed`` — the flow factory
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shlex
+from pathlib import PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
@@ -213,6 +215,16 @@ class QANode(DevLoopNode):
         executable: List[AcceptanceCriterion] = [
             c for c in brief.acceptance_criteria if not isinstance(c, ManualCriterion)
         ]
+        if not brief.acceptance_criteria:
+            # Briefless topologies (feature-mode / dev-flow, see _NoBugBrief)
+            # declare no criteria anywhere, which used to make this gate a
+            # no-op: `_run_deterministic_qa` returns a synthetic pass when
+            # `executable` is empty, so the run's ONLY test execution was
+            # whatever SynthesisNode happened to run. Derive a real one.
+            # Note the condition is "nobody declared anything", not "nothing
+            # executable": a brief that declares only manual criteria said
+            # so deliberately, and is left alone.
+            executable = await self._default_criteria(shared, research)
 
         is_advisory = getattr(self._codereview_dispatcher, "advisory", False)
 
@@ -456,6 +468,89 @@ class QANode(DevLoopNode):
             # dispatch() call for the same pattern/rationale).
             session_host=shared.get("session_host"),
         )
+
+    # ------------------------------------------------------------------
+    # Default criterion derivation (briefless topologies)
+    # ------------------------------------------------------------------
+
+    async def _default_criteria(
+        self,
+        shared: Dict[str, Any],
+        research: ResearchOutput,
+    ) -> List[AcceptanceCriterion]:
+        """Derive one executable criterion for a run that declared none.
+
+        Runs pytest scoped to the test tree of every workspace package the
+        change actually touched — the whole-monorepo suite is minutes of
+        wall clock for a change that usually lands in one distribution.
+
+        Changed files come from ``DevelopmentOutput.files_changed`` when
+        development published one, falling back to a ``git diff`` against
+        the merge base (the same helper the lint scoping uses). A change
+        that touched no Python file at all yields NO criterion — a
+        docs-only run has nothing to verify with pytest, and inventing a
+        whole-repo run for it is exactly the waste this method exists to
+        avoid.
+
+        The command bypasses ``ACCEPTANCE_CRITERION_ALLOWLIST`` for the
+        same reason the runner's revision path does (runner.py, the
+        ``ruff check .`` injection): it is composed here from internal
+        state and run via exec, never assembled from user input.
+
+        Args:
+            shared: The run's shared state (read-only here).
+            research: Upstream research output, for the worktree path.
+
+        Returns:
+            A single-element list holding the derived ``ShellCriterion``,
+            or an empty list when nothing pytest-shaped changed.
+        """
+        worktree = research.worktree_path
+        development = shared.get("development_output")
+        files = [f for f in (getattr(development, "files_changed", None) or []) if f.endswith(".py")]
+        if not files:
+            files = await self._get_changed_files(worktree)
+        if not files:
+            self.logger.info(
+                "No changed Python files for %s — deriving no default QA criterion.",
+                research.feat_id or research.jira_issue_key,
+            )
+            return []
+
+        targets = self._pytest_targets(files, worktree)
+        command = "pytest " + " ".join(shlex.quote(t) for t in targets) if targets else "pytest"
+        self.logger.info(
+            "No acceptance criteria declared for %s — derived deterministic criterion: %s",
+            research.feat_id or research.jira_issue_key,
+            command,
+        )
+        return [ShellCriterion(name="pytest (derived: changed packages)", command=command)]
+
+    @staticmethod
+    def _pytest_targets(files: List[str], worktree_path: str) -> List[str]:
+        """Map changed files to the test trees of the packages they touch.
+
+        Each ``packages/<dist>/...`` path contributes
+        ``packages/<dist>/tests``, deduped and sorted. A target that does
+        not exist on disk is dropped — pytest exits 4 ("file or directory
+        not found") on a missing path, which would fail the gate for a
+        package that simply ships no tests.
+
+        Args:
+            files: Changed file paths, repo-relative.
+            worktree_path: Root the paths are relative to, for existence
+                checks.
+
+        Returns:
+            Existing test directories, sorted; empty when nothing mapped
+            (the caller then falls back to an unscoped ``pytest``).
+        """
+        targets: set = set()
+        for path in files:
+            parts = PurePosixPath(path).parts
+            if len(parts) >= 2 and parts[0] == "packages":
+                targets.add(f"packages/{parts[1]}/tests")
+        return sorted(t for t in targets if os.path.isdir(os.path.join(worktree_path, t)))
 
     # ------------------------------------------------------------------
     # Lint scoping helpers

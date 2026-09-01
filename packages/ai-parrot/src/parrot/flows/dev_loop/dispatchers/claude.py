@@ -338,6 +338,40 @@ class ClaudeCodeDispatcher:
                     )
                     raise DispatchExecutionError(self._compose_session_error(exc, err_detail)) from exc
 
+                # A session cut short by its turn cap is a distinct
+                # failure with a distinct fix (raise the cap, or find out
+                # why the dispatch needed that many turns). Check it before
+                # the generic error/validation paths, which would otherwise
+                # report the symptom — an unparseable final payload.
+                if self._max_turns_exhausted(messages):
+                    cap = self._effective_max_turns(profile)
+                    message = f"Dispatch hit its max_turns cap ({cap})"
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "MaxTurnsExhausted",
+                            "error_message": message,
+                            "max_turns": cap,
+                        },
+                    )
+                    self.logger.error(
+                        "Dispatch hit max_turns=%s for run=%s node=%s",
+                        cap,
+                        run_id,
+                        node_id,
+                    )
+                    await self._emit_failure_event(
+                        messages,
+                        run_id=run_id,
+                        node_id=node_id,
+                        profile=profile,
+                        error_type="MaxTurnsExhausted",
+                    )
+                    raise DispatchExecutionError(message)
+
                 # Even when the SDK does NOT raise (some CLI versions emit
                 # the erroring result and close the stream cleanly), an
                 # ``is_error`` ResultMessage must fail the dispatch — never
@@ -530,6 +564,7 @@ class ClaudeCodeDispatcher:
 
         return ClaudeAgentRunOptions(
             cwd=cwd,
+            max_turns=self._effective_max_turns(profile),
             permission_mode=profile.permission_mode,
             allowed_tools=list(profile.allowed_tools) or None,
             agents=agents_dict,
@@ -545,6 +580,51 @@ class ClaudeCodeDispatcher:
             # byte-identical to pre-Module-6 behavior.
             mcp_servers=profile.mcp_servers,
         )
+
+    @staticmethod
+    def _effective_max_turns(profile: ClaudeCodeDispatchProfile) -> Optional[int]:
+        """Resolve the turn cap for a dispatch: profile first, then conf.
+
+        ``ClaudeCodeDispatchProfile.max_turns`` is the per-dispatch cap set
+        by the node that knows how bounded its own task is (SynthesisNode).
+        ``conf.DEV_LOOP_CLAUDE_MAX_TURNS`` is the operator's blanket
+        backstop for every dispatch that declares none. Both unset (the
+        default) means no cap, byte-identical to pre-cap behavior.
+
+        Args:
+            profile: The dispatch profile being translated.
+
+        Returns:
+            The cap to forward as ``ClaudeAgentRunOptions.max_turns``, or
+            ``None`` for an uncapped session.
+        """
+        if profile.max_turns is not None:
+            return profile.max_turns
+        return getattr(conf, "DEV_LOOP_CLAUDE_MAX_TURNS", 0) or None
+
+    @staticmethod
+    def _max_turns_exhausted(messages: List[Any]) -> bool:
+        """Whether the session terminated by hitting its turn cap.
+
+        The SDK's terminal ``ResultMessage`` reports this as
+        ``subtype="error_max_turns"``. Without this check the truncated
+        session reaches :meth:`_validate_output`, which reports the
+        *symptom* ("could not locate a JSON object in the assistant
+        output") rather than the cause. Duck-typed on ``subtype`` for the
+        same reason as :meth:`_extract_result_error` — no eager SDK import.
+
+        Args:
+            messages: Every message buffered from the stream, in order.
+
+        Returns:
+            True when the terminal result says the cap was hit.
+        """
+        for msg in reversed(messages):
+            subtype = getattr(msg, "subtype", None)
+            if subtype is None:
+                continue
+            return str(subtype) == "error_max_turns"
+        return False
 
     def _resolve_dispatch_env(self) -> Dict[str, str]:
         """Compute env overrides that steer the subprocess auth method.

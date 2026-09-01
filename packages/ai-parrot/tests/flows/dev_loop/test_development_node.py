@@ -851,3 +851,40 @@ class TestPoolPath:
             await node.execute(ctx)
 
         assert created_managers[0].cleanup_calls == [True]
+
+    async def test_merge_performed_stamped_only_when_a_merge_ran(self, tmp_path, monkeypatch):
+        """DevelopmentOutput must record whether sub-worktrees were merged.
+
+        SynthesisNode reads this to decide whether post-merge
+        reconciliation has any subject matter at all — inferring it from
+        the worker count alone cannot distinguish "two workers, shared
+        tree" (nothing merged) from "two workers, isolated trees".
+        """
+        _write_index(
+            tmp_path,
+            "FEAT-323",
+            "my-feature",
+            [
+                {"id": "TASK-1", "status": "pending", "depends_on": []},
+                {"id": "TASK-2", "status": "pending", "depends_on": []},
+            ],
+        )
+        research = _research(str(tmp_path))
+        monkeypatch.setattr(conf, "WORKTREE_BASE_PATH", str(tmp_path))
+        monkeypatch.setattr(development_module, "SubWorktreeManager", lambda **kw: FakeManager(**kw))
+
+        def _node(isolation: str) -> DevelopmentNode:
+            return DevelopmentNode(
+                dispatcher=MagicMock(),
+                pool_config=DevAgentPoolConfig(
+                    agents=[DevAgentSpec(agent="claude-code", count=2)],
+                    isolation_mode=isolation,
+                ),
+                dispatcher_builder=_dispatcher_builder_factory([FakeDispatcher(), FakeDispatcher()]),
+            )
+
+        isolated_out = await _node("isolated").execute({"run_id": "r1", "research_output": research})
+        assert isolated_out.merge_performed is True
+
+        shared_out = await _node("shared").execute({"run_id": "r2", "research_output": research})
+        assert shared_out.merge_performed is False

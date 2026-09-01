@@ -813,6 +813,12 @@ class DevelopmentNode(DevLoopNode):
 
         manager: Optional[SubWorktreeManager] = None
         worker_cwds: Dict[str, str] = {}
+        # Whether a sub-worktree merge actually happened. Stamped onto the
+        # aggregated DevelopmentOutput so SynthesisNode can tell a real merge
+        # point from a run that never had one (shared isolation, or a pool
+        # collapsed to a single seat) instead of reconciling seams that
+        # cannot exist.
+        merged_any = False
         if pool_cfg.isolation_mode == "isolated":
             manager = SubWorktreeManager(
                 base_worktree=research.worktree_path,
@@ -890,6 +896,7 @@ class DevelopmentNode(DevLoopNode):
 
                 if manager is not None:
                     await manager.merge_sequential(resolver=_resolver)
+                    merged_any = True
                     # Propagate this wave's merged output into every
                     # sub-worktree so the next wave's tasks (which may
                     # depend_on a task another worker just finished) build
@@ -909,6 +916,8 @@ class DevelopmentNode(DevLoopNode):
             )
 
         dev_out = aggregate_outputs(wave_results, incomplete)
+        if merged_any:
+            dev_out = dev_out.model_copy(update={"merge_performed": True})
         shared["development_output"] = dev_out
         return dev_out
 

@@ -702,3 +702,87 @@ class TestSemaphore:
         results = await asyncio.gather(*tasks)
         assert len(results) == 4
         assert active["max"] == 2
+
+
+class TestMaxTurnsCap:
+    """FEAT cost guard: bound a dispatch that never stops on its own.
+
+    ``timeout_seconds`` bounds a session that hangs; this bounds one that
+    keeps looking busy forever on a task with no natural stopping point.
+    """
+
+    def test_profile_cap_forwarded_to_run_options(self, dispatcher, _patch_worktree_base):
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(max_turns=30), str(_patch_worktree_base)
+        )
+        assert opts.max_turns == 30
+
+    def test_uncapped_by_default(self, dispatcher, monkeypatch, _patch_worktree_base):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
+            0,
+            raising=False,
+        )
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
+        )
+        assert opts.max_turns is None
+
+    def test_conf_default_applies_when_profile_is_silent(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
+            50,
+            raising=False,
+        )
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(), str(_patch_worktree_base)
+        )
+        assert opts.max_turns == 50
+
+    def test_profile_cap_wins_over_conf_default(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.conf.DEV_LOOP_CLAUDE_MAX_TURNS",
+            50,
+            raising=False,
+        )
+        opts = dispatcher._resolve_run_options(
+            ClaudeCodeDispatchProfile(max_turns=10), str(_patch_worktree_base)
+        )
+        assert opts.max_turns == 10
+
+    @pytest.mark.asyncio
+    async def test_exhausted_cap_names_itself_in_the_error(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        """The failure must name the cap, not the unparseable payload it left."""
+        truncated = _ResultMessage(success=True)
+        truncated.subtype = "error_max_turns"
+        messages = [
+            _AssistantMessage(content=[_TextBlock("Let me check the imports...")]),
+            truncated,
+        ]
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatchers.claude.LLMFactory.create",
+            lambda *a, **kw: _FakeClient(messages),
+        )
+        brief = ResearchOutput(
+            jira_issue_key="OPS-0",
+            spec_path="x",
+            feat_id="FEAT-0",
+            branch_name="b",
+            worktree_path=str(_patch_worktree_base),
+        )
+
+        with pytest.raises(DispatchExecutionError, match=r"max_turns cap \(7\)"):
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=ClaudeCodeDispatchProfile(max_turns=7),
+                output_model=ResearchOutput,
+                run_id="run-1",
+                node_id="synthesis",
+                cwd=str(_patch_worktree_base),
+            )

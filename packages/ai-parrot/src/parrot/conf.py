@@ -931,6 +931,19 @@ DEV_LOOP_REQUIRE_PLAN_APPROVAL: bool = config.getboolean("DEV_LOOP_REQUIRE_PLAN_
 # False (default) preserves the full QA gate.
 DEV_LOOP_SKIP_QA: bool = config.getboolean("DEV_LOOP_SKIP_QA", fallback=False)
 
+# Global default cap on reasoning turns for a Claude Code dispatch whose
+# profile leaves ``ClaudeCodeDispatchProfile.max_turns`` unset. 0 (default)
+# means no global cap — byte-identical to the pre-cap behavior. Hitting the
+# cap fails the dispatch loudly rather than truncating its output silently,
+# so raise it rather than leaving a legitimate long dispatch to die on it.
+DEV_LOOP_CLAUDE_MAX_TURNS: int = config.getint("DEV_LOOP_CLAUDE_MAX_TURNS", fallback=0)
+
+# Turn cap for the post-merge synthesis reconciliation dispatch specifically.
+# Reconciliation is bounded work (inspect the seams, run the suite, commit
+# the fixes); an unbounded session is how a 40-turn seam hunt happens. 0
+# disables the per-node cap and falls back to DEV_LOOP_CLAUDE_MAX_TURNS.
+DEV_LOOP_SYNTHESIS_MAX_TURNS: int = config.getint("DEV_LOOP_SYNTHESIS_MAX_TURNS", fallback=30)
+
 # FEAT-377 (TASK-1917): release a run's FLOW_MAX_CONCURRENT_RUNS slot while
 # it is `awaiting_gate` (ANY gate kind, uniformly — no per-kind allowlist),
 # re-acquiring it once the gate resolves. True (default) per spec §2 —
