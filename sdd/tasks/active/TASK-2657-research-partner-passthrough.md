@@ -8,16 +8,11 @@
 **Depends-on**: TASK-2651, TASK-2656
 **Assigned-to**: unassigned
 
-> **⛔ EXTERNAL GATE — FEAT-482 must be merged first.** This task wires
-> `model_plan.research_partner` into FEAT-482's
-> `ComplementaryResearchCoordinator` seam. As of 2026-09-01 FEAT-482 is in
-> progress upstream and its modules (`dev_flow/research_partner.py`,
-> `complementary_research.py`, the `IdeationNode` coordinator kwarg) do NOT
-> exist. **Do not start this task until they are on `dev`** — verify with:
-> `ls packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py`.
-> If FEAT-482 is still unmerged when every other FEAT-486 task is done,
-> ship the feature without this task (spec §Worktree Strategy contingency)
-> and leave it pending.
+> **✅ GATE CLEARED (2026-09-01).** FEAT-482 merged to `dev` via PR #1281/#1282
+> and was merged into this feature branch (merge commit `c3feae208`).
+> `dev_flow/research_partner.py` and `dev_flow/complementary_research.py` are
+> on disk in this worktree; the contract below has been RE-ANCHORED to their
+> real signatures, which differ materially from the ones this task predicted.
 
 ---
 
@@ -57,6 +52,8 @@ contingency).
 |---|---|---|
 | `packages/ai-parrot/src/parrot/flows/dev_flow/factories.py` | MODIFY | coordinator build + inject |
 | `packages/ai-parrot/tests/flows/dev_flow/test_partner_passthrough.py` | CREATE | Unit tests |
+| `packages/ai-parrot/src/parrot/flows/dev_flow/complementary_research.py` | MODIFY | **Option B** — additive `backend=`/`model=` injection points (both `None` ⇒ today's conf path) |
+| `packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py` | MODIFY | **Option B** — additive `model=` on `BedrockResearchPartner` |
 
 ---
 
@@ -67,24 +64,76 @@ contingency).
 from parrot.flows.dev_flow.model_plan import DevFlowModelPlan  # TASK-2651
 ```
 
-### Signatures expected FROM FEAT-482 (unverified — VERIFY ON DISK before starting)
+### FEAT-482 signatures — VERIFIED ON DISK 2026-09-01
 ```python
-# Per sdd/specs/devflow-complementary-research.spec.md §2 (approved design):
-# dev_flow/research_partner.py — AbstractResearchPartner, ResearchPartnerFactory,
-#   resolve_research_partner_backend(), BedrockResearchPartner
-# dev_flow/complementary_research.py — ComplementaryResearchCoordinator
-# dev_flow/nodes/ideation.py — one optional coordinator kwarg
-# conf keys DEV_FLOW_RESEARCH_PARTNER* ("" disabled default, "gpt", "nova")
-# resolve_research_partner_backend() REJECTS Anthropic partner models
-#   (us.anthropic.*/global.anthropic.*/claude-*) — do not route claude models here.
+# packages/ai-parrot/src/parrot/flows/dev_loop/catalog.py
+def validate_research_partner_model(model: str) -> None: ...          # :124
+#   raises ValueError for us.anthropic.* / global.anthropic.* / claude-*
+def resolve_research_partner_backend(config_getter=None) -> str: ...  # :157
+#   reads DEV_FLOW_RESEARCH_PARTNER; "" (unset) = DISABLED, else "gpt"|"nova";
+#   also validates the resolved model via validate_research_partner_model.
+#   NOTE: takes an INJECTABLE config_getter (same pattern as
+#   resolve_adversarial_backend and TASK-2651's resolve_model_plan).
+RESEARCH_PARTNER_BACKENDS: Tuple[BackendInfo, ...]   # separate from BACKENDS
+#   (TASK-2629 Deviation 2: a non-coding backend in BACKENDS broke an
+#   existing development-capability invariant)
+
+# packages/ai-parrot/src/parrot/flows/dev_flow/research_partner.py
+class AbstractResearchPartner(ABC):                                   # :87
+    partner_name: str; advisory: bool = True
+    async def research(*, brief, question, cwd, run_id, node_id,
+                       session_host=None) -> ResearchFindings: ...    # :105
+class ResearchPartnerFactory:                                         # :132
+    register(name) / create(name, **kwargs)                           # :142,:152
+def resolve_backend_model(backend: str) -> str: ...                   # :171
+#   conf.DEV_FLOW_RESEARCH_PARTNER_GPT_MODEL | _NOVA_MODEL — module
+#   attributes, NOT read through a config_getter.
+class BedrockResearchPartner(AbstractResearchPartner):                # :197
+    def __init__(self, *, backend: str | None = None) -> None: ...    # :216
+    def _build_client(self) -> AbstractClient: ...                    # :238
+#   _build_client's own docstring anticipates "a future caller that doesn't
+#   go through the config-driven path" constructing this with explicit
+#   backend= — that is THIS task.
+
+# packages/ai-parrot/src/parrot/flows/dev_flow/complementary_research.py
+class ComplementaryResearchCoordinator:                               # :68
+    def __init__(self) -> None: ...                                   # :77
+    async def research(*, brief, question, cwd, slug, run_id, node_id,
+                       session_host=None) -> ComplementaryFindings|None  # :80
+#   Resolves the backend from conf INSIDE research() (:117) and builds the
+#   partner itself (:127). Never raises.
+    @staticmethod _resolve_model_for_backend(backend) -> str           # :214
+
+# packages/ai-parrot/src/parrot/flows/dev_flow/factories.py (post-merge)
+#   :140 research_coordinator kwarg; :241 unconditional
+#   `ComplementaryResearchCoordinator()` fallback; :253 coordinator=... on
+#   IdeationNode. :139 model_plan kwarg (FEAT-486).
 ```
 
-### Does NOT Exist (as of 2026-09-01 — the gate)
-- ~~`dev_flow/research_partner.py`~~, ~~`dev_flow/complementary_research.py`~~,
-  ~~`ComplementaryResearchCoordinator`~~, ~~`IdeationNode(coordinator=...)`~~,
-  ~~`DEV_FLOW_RESEARCH_PARTNER*` conf keys~~ — FEAT-482 not yet landed.
-  Re-verify every one of these before starting; update this contract with
-  real file:line anchors once they exist.
+### Contract corrections vs. what this task predicted
+| Predicted | Reality |
+|---|---|
+| `resolve_research_partner_backend()` in `research_partner.py` | lives in `dev_loop/catalog.py:157` |
+| coordinator built "using the plan's backend and model" | `ComplementaryResearchCoordinator.__init__(self)` took **no parameters** |
+| a partner accepting a model | `BedrockResearchPartner.__init__(*, backend=None)` — model was conf-only, via `resolve_backend_model` |
+| conf keys `DEV_FLOW_RESEARCH_PARTNER_ENABLED/_BACKEND/_MODEL` | shipped as `DEV_FLOW_RESEARCH_PARTNER` (`""`\|`gpt`\|`nova`) + `_GPT_MODEL`/`_NOVA_MODEL` |
+
+### Authorized scope extension (Option B, approved by the user 2026-09-01)
+Delivering this task's AC ("enabled ⇒ coordinator built with plan
+backend/model; plan overrides env") is IMPOSSIBLE without an injection point
+on the coordinator. Implementing it inside this task's original two-file
+list would instead have produced a console toggle that can **veto** the
+partner but never **enable** it (conf `DEV_FLOW_RESEARCH_PARTNER` defaults to
+`""`, so a plan-enabled coordinator still resolves to disabled and returns
+`None`) — a silent no-op toggle, contradicting spec G6. The user approved
+Option B: add additive, `None`-defaulted injection points to FEAT-482's two
+modules. An unconfigured deployment stays byte-identical.
+
+### Does NOT Exist
+- ~~FEAT-482 unmerged~~ — CLEARED, see the gate banner above.
+- A `model` override anywhere in FEAT-482's partner chain — ADDED by this
+  task (Option B), not assumed.
+- Any `JudgeSpec` / judge-panel involvement — out of scope, as always.
 
 ---
 
