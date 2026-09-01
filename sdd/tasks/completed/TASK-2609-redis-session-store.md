@@ -188,8 +188,74 @@ class TestSessionStore:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: `session_store.py` defines the abstraction (`SessionStore`) and two
+implementations: `InMemorySessionStore` (today's behavior, an explicit
+opt-in — never an automatic fallback) and `RedisSessionStore` (shared,
+cross-worker-visible). Both are keyed on `SessionRecord` (wall-clock
+`created_at`/`last_seen`, since `McpStreamSession`'s `time.monotonic()`
+values are meaningless across a process boundary) and `StreamEventRecord`
+(preserves the same `stream_id:sequence` numbering `StreamEvent.event_id`
+uses, so `Last-Event-ID` continuity holds after a cross-worker replay).
+`RedisSessionStore` wraps every Redis call in `_call()`, translating any
+exception into `SessionStoreUnavailable` — **fail closed**, no local-dict
+fallback (verified: `broken_redis_store` raises on every operation, and
+`InMemorySessionStore`/`RedisSessionStore` share zero state). `session_ttl`/
+`event_buffer_size` are threaded in as constructor args (`ttl`/`max_events`)
+— no new `MCPServerConfig` fields. 15/15 new tests pass, including a real
+`TestCrossWorkerServerSimulation` class instantiating two independent
+`StreamableHttpMCPServer`s sharing one fake-Redis backend (not just the bare
+store) to exercise the literal "two-client cross-worker simulation"
+requirement end to end.
 
-**Deviations from spec**: none | describe if any
+**`streamable_http.py` integration** (real, but deliberately scoped — see
+Deviations): `StreamableHttpMCPServer.__init__` gained an optional
+`session_store: SessionStore | None = None` param, defaulting to a fresh
+`InMemorySessionStore` — **G11 by construction**: zero behavior change for
+every existing caller (verified: full `test_streamable_http.py` +
+`test_streamable_http_interop.py` + `test_transport_integration.py`, 67
+tests, unchanged and green). `_create_session` mirrors the new session's
+metadata into the store (control-plane, fail-closed — propagates
+`SessionStoreUnavailable`); `_get_session` falls through to the store on a
+local miss and adopts a fresh local `McpStreamSession` shell on a hit
+(verified end-to-end in `TestCrossWorkerServerSimulation`); `_teardown_session`
+mirror-deletes from the store (best-effort — local cleanup must complete
+regardless of store health) so a pruned/deleted session cannot "resurrect"
+via the cross-worker fallback. `_dispatch_to_stream` mirrors each buffered
+response into the store via a new `_mirror_event()` helper (best-effort —
+a durability hiccup must not fail an in-process response actually being
+delivered right now). `_handle_streamable_get`'s `Last-Event-ID` handling
+falls back to `self._session_store.events_after(...)` when the stream isn't
+held locally, rehydrating a `StreamBuffer` with the store's original
+sequence numbers before replaying. All 4 `_get_session`/`_create_session`
+call sites in the three JSON-RPC handlers (`POST`/`GET`/`DELETE`) now catch
+`SessionStoreUnavailable` and return a clean 503
+(`_session_store_unavailable_response()`) — verified not to affect any
+existing test (default store never raises).
+
+**Deviations from spec — scope disclosure, not a shortcut taken quietly:**
+`McpStreamSession`'s live coordination primitives (`asyncio.Event` wakeup,
+per-request `asyncio.Task` dispatch tracking, the `live_stream` flag) are
+fundamentally per-process — no Redis operation can signal an `asyncio.Event`
+in a different OS process. A session adopted cross-worker therefore gets a
+**fresh** local shell: its principal/protocol_version resolve correctly
+(the security/correctness-critical piece — no more spurious "session not
+found" 404s or bypassed ownership checks across workers) and its **buffered
+event history replays** via the store fallback, but any dispatch task that
+was still *running* on the original worker at the moment of a cross-worker
+reconnect is not itself transplanted (it keeps running to completion on its
+original worker and its result gets mirrored into the store as soon as it
+finishes — the exact "launch a long call, disconnect, reconnect elsewhere,
+collect the result" scenario spec §7 highlights works correctly once that
+mirrored event lands). A live, in-progress SSE push arriving on a
+*different* worker than the one currently driving that dispatch is not
+relayed in real time — that would need a pub/sub broadcast layer (Redis
+Pub/Sub or Streams) driving cross-process wakeups, a materially larger
+architectural change than "swap the session/event store" implies, and out
+of proportion to this task's effort budget and file list (`session_store.py`
++ `streamable_http.py` only — no new transport-level pub/sub module was
+scoped). Flagging this explicitly, per CLAUDE.md's Cardinal Rule 4, as a
+concrete scoped follow-up rather than silently under-delivering on "shared
+session store" or silently overreaching into a pub/sub rewrite neither the
+task nor the spec's file list actually asked for.
