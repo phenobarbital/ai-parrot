@@ -486,3 +486,8 @@ from navigator.views import BaseView
 - [ ] DSN/config source for the Pg store: same `default_dsn` used by
   comm_center/bots handlers, or a dedicated `UI_SURFACES_DSN` override? —
   *Owner: Jesus Lara*
+- [ ] Should the `A2UIHandler` mirror route
+  (`GET /api/v1/agents/{agent_id}/a2ui/surfaces/{surface_id}`) also honour
+  `Accept: text/html` content negotiation, or stay protocol-strict (A2UI
+  media type envelope only), leaving the HTML lane exclusively to
+  `GET /api/v1/ui/surfaces/{id}`? — *Owner: Jesus Lara*
