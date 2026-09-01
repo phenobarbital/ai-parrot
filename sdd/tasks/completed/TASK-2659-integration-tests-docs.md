@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-2652, TASK-2653, TASK-2655, TASK-2656, TASK-2658
@@ -120,8 +120,56 @@ class TestFeat486Integration:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- `test_feat486_integration.py` — 13 tests over the three spec §4 rows.
+  Everything external is stubbed (no provider, no git, no Redis); what is
+  NOT stubbed is the machinery under test: the real `DevelopmentNode` /
+  `DevAgentPool` wave loop, the real `RunLedgerRecorder`, the real
+  `compute_input_fingerprint`, and the real
+  `ParallelPerspectiveReviewDispatcher` merge.
+- **Multi-agent e2e**: a 2-spec plan + 2-task index asserts all three
+  contracts at once — both workers materialize and dispatch, the FEAT-486
+  INFO log names `w1=nova:zai.glm-5` / `w2=nova:qwen...`, and FEAT-479
+  attribution lands `development.w1` / `development.w2` on the ledger's
+  `by_seat()`. The dispatcher double reproduces the real attribution
+  contract rather than faking it: it enters
+  `usage_attribution(run_id, seat=node_id)` exactly as
+  `dispatchers/llm.py:215` does, and builds its `UsageRecord` off the same
+  `current_run_id` / `current_seat` ContextVars the real
+  `UsageRecordingSubscriber` reads. (`RunLedgerRecorder.record` is a
+  coroutine — awaited inside the block, as the real fan-out does.)
+  A companion test proves the SAME plan collapses to one seat on a
+  1-task index.
+- **Checkpoint**: fingerprints computed through the real
+  `compute_input_fingerprint`. Same plan ⇒ identical digest (hit);
+  changed pool shape or review backend ⇒ different digest (fresh run);
+  model-string-only change ⇒ SAME digest (hit, as designed). Plus two
+  guard tests: `TOPOLOGY_VERSION == "1"` and `_SHARED_DATA_ALLOWLIST`
+  asserted member-for-member. And a regression test proving a run with NO
+  plan produces the byte-identical digest a pre-FEAT-486 deployment would.
+- **Review pair**: both seats invoked; the adversary's `passed=False` vetoes
+  the merged verdict; `files_modified` is the primary's only, even when
+  the adversary claims an edit; `use_tools=False` with no `tools` kwarg;
+  and a Mantle outage degrades without failing the gate.
+- **Docs**: new `docs/dev_loop/dev-flow-model-plan.md` (207 lines,
+  following `nova-backend.md`'s operator-reference tone) — seat table,
+  the nine conf keys, validation posture, collapse rule, deployment log,
+  the read-only counter-reviewer's three structural layers, the
+  fingerprint in/out table, planner interaction, the NIM caveat, and the
+  build-time limitation. `examples/dev_loop/README.md` and `GUIA.md`
+  (Spanish, matching its register) each gain a selector-group table, the
+  defaults, the NIM caveat and the two stated limitations, plus the new
+  keys in their variables tables.
+- Full `packages/ai-parrot/tests/flows/` suite: **1727 passed**, 10
+  skipped, 4 failed — all four verified to fail IDENTICALLY on unmodified
+  `dev` with the same command (the three documented in TASK-2653 plus
+  `test_dev_recovery_integration.py::test_runtime_entrypoints_build_per_run_flows`,
+  which passes in isolation and is an ordering artifact). Net: +160
+  passing tests, zero new failures. `ruff check` clean on the new test
+  file.
 
-**Deviations from spec**: none
+**Deviations from spec**: none. Note that the partner e2e is deliberately
+absent (out of scope, and TASK-2657 is gated on FEAT-482) — no test
+asserts an `ideation.partner` seat.
