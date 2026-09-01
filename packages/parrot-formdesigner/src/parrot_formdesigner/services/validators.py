@@ -513,6 +513,12 @@ class FormValidator:
 
         ft = field.field_type
 
+        # FEAT-488: pass dict values through unchanged for fields that
+        # declare accept_content_types (e.g. VoiceAnswerEnvelope payloads).
+        # Parsing responsibility belongs to the consumer.
+        if field.accept_content_types is not None and isinstance(value, dict):
+            return value
+
         if ft in (
             FieldType.TEXT,
             FieldType.TEXT_AREA,
