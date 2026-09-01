@@ -129,10 +129,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-01
+**Notes**: In `DevFlowRunner.run()`, introduced a `mode: Literal["fresh",
+"resumed"] = "fresh"` local (default applies when recovery is disabled —
+inherently a plain fresh run) and a `model_plan_applied = model_plan is not
+None and mode != "resumed"` flag, documented with an explicit comment
+tracing WHY the resume rule already holds by construction:
+`DevCheckpointCoordinator.prepare()` never calls `flow_factory` on the
+resume branch (only on a cache miss), so a resumed run's seats were never
+going to be rebuilt with the newly submitted plan in the first place —
+TASK-2686's `flow_kwargs_overrides` only ever reaches `build_dev_flow` on
+the fresh path. Extended the metadata recording added in TASK-2686 with
+`result.metadata["model_plan_effective"]` (the requested plan's dump when
+`model_plan_applied`, else `None`) and `result.metadata["run_mode"]` (the
+`mode` value). `_execution_policy_for_fingerprint()` is untouched — `git
+diff` on that method shows no lines changed, confirmed. Added 6 tests to
+`test_runner.py`: a resumed run running the coordinator's own returned flow
+object directly (no rebuild), a resumed run reporting
+`model_plan_effective=None` with `model_plan_requested` still populated, a
+symmetric fresh-run control, the accepted-limitation fingerprint test (two
+runs with different per-run plans produce byte-identical
+`execution_policy` dicts, and neither contains a `model_plan` key since
+none was supplied at construction time), and a structural guard pinning
+`_execution_policy_for_fingerprint`'s signature still takes no per-run
+argument. `pytest packages/ai-parrot/tests/flows/dev_flow -q`: 443 passed.
+`pytest packages/ai-parrot/tests/flows/dev_loop -q`: 1296 passed, 3
+pre-existing unrelated failures (same as TASK-2685/2686). `ruff check`
+clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
