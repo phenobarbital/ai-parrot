@@ -9,6 +9,8 @@ shared mechanism, not a fork).
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -97,6 +99,8 @@ def _make_node(
     tmp_path,
     *,
     coordinator: _FakeCoordinator | None = None,
+    wiki_search: Any | None = None,
+    graph_memory: Any | None = None,
 ) -> tuple[ResearchNode, MagicMock]:
     monkeypatch.setattr(
         "parrot.flows.dev_loop.nodes.research.conf.WORKTREE_BASE_PATH",
@@ -110,6 +114,8 @@ def _make_node(
         jira_toolkit=jira,
         log_toolkits={},
         coordinator=coordinator,
+        wiki_search=wiki_search,
+        graph_memory=graph_memory,
     )
     return node, dispatcher
 
@@ -191,3 +197,61 @@ class TestResearchNodePartnerSeam:
 
         profile = dispatcher.dispatch.call_args.kwargs["profile"]
         assert profile.allowed_tools == ["Read", "Grep", "Glob", "Bash", "Write", "SlashCommand"]
+
+    async def test_wiki_graph_and_partner_context_run_concurrently(
+        self, good_brief, research_out_fixture, monkeypatch, tmp_path
+    ):
+        """Code-review follow-up: wiki search, graph memory, and the partner
+        must be gathered, not awaited sequentially — each is independently
+        slow (the partner alone up to DEV_FLOW_RESEARCH_PARTNER_TIMEOUT,
+        default 600s), so stacking them serially would multiply the added
+        latency on every dispatch."""
+        delay = 0.1
+
+        class _SlowWiki:
+            async def build_research_context(self, _query):
+                await asyncio.sleep(delay)
+                return "wiki context"
+
+        class _SlowGraphMemory:
+            async def build_research_context(self, _brief):
+                await asyncio.sleep(delay)
+                return "graph context"
+
+        class _SlowCoordinator:
+            calls = 0
+
+            async def research(self, **_kwargs):
+                self.calls += 1
+                await asyncio.sleep(delay)
+                return _findings()
+
+        coordinator = _SlowCoordinator()
+        node, dispatcher = _make_node(
+            research_out_fixture,
+            monkeypatch,
+            tmp_path,
+            coordinator=coordinator,
+            wiki_search=_SlowWiki(),
+            graph_memory=_SlowGraphMemory(),
+        )
+        # Stub the plan-summary client so no real (network) LLM call runs —
+        # it would otherwise add unrelated, variable latency ahead of the
+        # gather block this test measures.
+        node._plan_client = MagicMock()
+        node._plan_client.ask = AsyncMock(return_value=MagicMock(response="Step 1."))
+
+        start = time.perf_counter()
+        await node.execute(ctx={"run_id": "r1", "bug_brief": good_brief})
+        elapsed = time.perf_counter() - start
+
+        # Sequential would take >= 3 * delay (0.3s); concurrent stays close
+        # to one delay (0.1s). 2 * delay is a comfortable, non-flaky cutoff.
+        assert elapsed < 2 * delay, (
+            f"expected concurrent context-gathering (~{delay}s), "
+            f"took {elapsed:.3f}s — looks sequential"
+        )
+        sent_brief = dispatcher.dispatch.call_args.kwargs["brief"]
+        assert "## Wiki context\nwiki context" in sent_brief.description
+        assert "## Graph memory context\ngraph context" in sent_brief.description
+        assert "## Complementary research findings" in sent_brief.description

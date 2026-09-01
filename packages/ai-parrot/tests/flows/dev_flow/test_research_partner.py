@@ -159,6 +159,35 @@ def test_research_partner_backends_catalog_surfaces_both_ids():
         assert "research_partner" in backend.roles
 
 
+def test_get_backend_resolves_gpt():
+    """Code-review follow-up: get_backend() must see RESEARCH_PARTNER_BACKENDS
+    too, not just BACKENDS — "gpt" has no build_dispatcher branch but is a
+    real, selectable research-partner backend."""
+    from parrot.flows.dev_loop.catalog import get_backend
+
+    backend = get_backend("gpt")
+    assert backend is not None
+    assert backend.id == "gpt"
+    assert "research_partner" in backend.roles
+
+
+def test_backends_for_role_research_partner_lists_both():
+    from parrot.flows.dev_loop.catalog import backends_for_role
+
+    ids = {b.id for b in backends_for_role("research_partner")}
+    assert ids == {"gpt", "nova"}
+
+
+def test_catalog_payload_surfaces_research_partner_role():
+    from parrot.flows.dev_loop.catalog import catalog_payload
+
+    getter = lambda key, fallback=None: fallback
+    payload = catalog_payload(getter)
+    assert payload["research_partner_backend"] == ""
+    assert set(payload["roles"]["research_partner"]) == {"gpt", "nova"}
+    assert "gpt" in {b["id"] for b in payload["backends"]}
+
+
 def test_complementary_findings_requires_findings_and_rendered():
     findings = ComplementaryFindings(
         backend="nova",

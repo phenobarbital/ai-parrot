@@ -17,10 +17,18 @@ Mirrors the best-effort contract of
 raises." The composition shape (fan a second seat out, merge) mirrors
 ``ParallelPerspectiveReviewDispatcher`` (``code_review.py:341``), though
 this coordinator wraps a single partner call under a deadline rather than
-an ``asyncio.gather`` of two review seats — the concurrent-with-the-
-primary-seat composition happens one layer up, in the calling node
-(``asyncio.gather(primary_dispatch, coordinator.research(...))``), not
-inside this class.
+an ``asyncio.gather`` of two review seats.
+
+**Concurrency note**: the primary Claude dispatch itself needs the
+partner's findings as *input* (they ride in the first dispatch's payload),
+so it can never run concurrently with ``coordinator.research()`` — that
+would be a race, not a fan-out. What each calling node DOES run this
+coordinator concurrently with is its own other best-effort context-
+gathering work (wiki search, graph memory) via ``asyncio.gather``, since
+this coordinator's own deadline (``DEV_FLOW_RESEARCH_PARTNER_TIMEOUT``,
+default 600s) can dominate those calls' latency if awaited sequentially
+after them. See ``IdeationNode.execute()`` and ``ResearchNode.execute()``
+for the two call sites.
 
 See ``sdd/specs/devflow-complementary-research.spec.md`` §3 Module 4.
 """

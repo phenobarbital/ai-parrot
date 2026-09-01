@@ -382,11 +382,27 @@ RESEARCH_PARTNER_BACKENDS: Tuple[BackendInfo, ...] = (
     _BY_ID["nova"],
 )
 
+# FEAT-482 code-review follow-up: extend the lookup dict with the
+# research-partner-only entries ("gpt"; "nova" is already present and is
+# the SAME object, not a duplicate) so get_backend()/backends_for_role()/
+# catalog_payload() can actually surface the seat, per Module 1's own
+# intent ("Add a BackendInfo entry ... so the catalog surfaces the seat").
+# BACKENDS itself is intentionally left untouched (see the comment above)
+# — this only widens the id->BackendInfo lookup, not the "one entry per
+# build_dispatcher branch" tuple.
+_BY_ID.update({b.id: b for b in RESEARCH_PARTNER_BACKENDS})
+
 ConfigGetter = Callable[..., Any]
 
 
 def get_backend(backend_id: str) -> Optional[BackendInfo]:
-    """Return the :class:`BackendInfo` for ``backend_id``, or ``None``."""
+    """Return the :class:`BackendInfo` for ``backend_id``, or ``None``.
+
+    Looks across both ``BACKENDS`` (coding dev-loop backends) and
+    ``RESEARCH_PARTNER_BACKENDS`` (FEAT-482) — e.g. ``get_backend("gpt")``
+    resolves even though ``"gpt"`` is not itself a ``build_dispatcher``
+    branch.
+    """
     return _BY_ID.get(backend_id)
 
 
@@ -395,12 +411,15 @@ def backends_for_role(role: str) -> List[BackendInfo]:
 
     Args:
         role: One of ``development``, ``judge``, ``primary_review``,
-            ``adversarial``, ``planner``.
+            ``adversarial``, ``planner``, ``research_partner``.
 
     Returns:
-        The matching backends, in catalog order.
+        The matching backends, in catalog order. Searches across both
+        ``BACKENDS`` and ``RESEARCH_PARTNER_BACKENDS`` (FEAT-482) — "nova"
+        appears in both but is the same object, so it is never duplicated
+        in the result.
     """
-    return [b for b in BACKENDS if role in b.roles]
+    return [b for b in _BY_ID.values() if role in b.roles]
 
 
 def effective_default_model(backend: BackendInfo, config_getter: Optional[ConfigGetter] = None) -> str:
@@ -486,16 +505,27 @@ def catalog_payload(config_getter: Optional[ConfigGetter] = None) -> Dict[str, A
         backend mapping, and the resolved review/judge defaults.
     """
     resolved_adversarial_backend = resolve_adversarial_backend(config_getter)
+    # FEAT-482: resolved separately from the "roles" membership list below —
+    # unlike "adversarial" (mandatory, always exactly one active backend),
+    # the research-partner seat is opt-in, so "" (disabled) is a valid,
+    # common resolution here.
+    resolved_research_partner_backend = resolve_research_partner_backend(config_getter)
     return {
-        "backends": [_backend_payload(b, config_getter) for b in BACKENDS],
+        # FEAT-482 code-review follow-up: iterate _BY_ID (BACKENDS +
+        # RESEARCH_PARTNER_BACKENDS, deduplicated) rather than BACKENDS
+        # alone, so "gpt" — which has no build_dispatcher branch — is still
+        # visible to any console/CLI surface rendering a backend picker.
+        "backends": [_backend_payload(b, config_getter) for b in _BY_ID.values()],
         "roles": {
             "development": [b.id for b in backends_for_role("development")],
             "judge": [b.id for b in backends_for_role("judge")],
             "primary_review": [b.id for b in backends_for_role("primary_review")],
             "adversarial": [resolved_adversarial_backend],
+            "research_partner": [b.id for b in backends_for_role("research_partner")],
         },
         "adversarial_backend": resolved_adversarial_backend,
         "adversarial_model": conf.DEV_LOOP_ADVERSARIAL_MODEL,
+        "research_partner_backend": resolved_research_partner_backend,
         "default_judge_panel": default_judge_panel_payload(config_getter),
     }
 

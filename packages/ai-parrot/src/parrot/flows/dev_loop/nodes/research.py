@@ -412,32 +412,35 @@ class ResearchNode(DevLoopNode):
 
         # Prepend knowledge-base context to the dispatch brief so the
         # subagent starts with oriented, ranked codebase pointers instead
-        # of a cold grep sweep.  Two independent seams — wiki (SQLite
-        # retrieval plane) and graph memory (GraphIndex) — each contribute
-        # a section when configured and when something relevant is found.
+        # of a cold grep sweep. Three independent seams — wiki (SQLite
+        # retrieval plane), graph memory (GraphIndex), and the FEAT-482
+        # complementary research partner — each contribute a section when
+        # configured and when something relevant is found. Run concurrently
+        # via asyncio.gather: the partner alone may take up to
+        # DEV_FLOW_RESEARCH_PARTNER_TIMEOUT (default 600s) under its own
+        # deadline, and stacking it after two more sequential awaits would
+        # add that latency to every dispatch on top of the others' cost.
         # The ORIGINAL `brief` (used above for the Jira ticket description)
         # is untouched; only this local dispatch copy carries the context.
-        extra_context_parts: list[str] = []
 
-        if self._wiki_search is not None:
+        async def _wiki_ctx() -> str:
+            if self._wiki_search is None:
+                return ""
             wiki_query = f"{brief.affected_component} {brief.summary}"
-            wiki_context = await self._wiki_search.build_research_context(wiki_query)
-            if wiki_context:
-                extra_context_parts.append(f"## Wiki context\n{wiki_context}")
+            return await self._wiki_search.build_research_context(wiki_query) or ""
 
-        if self._graph_memory is not None:
-            graph_context = await self._graph_memory.build_research_context(brief)
-            if graph_context:
-                extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+        async def _graph_ctx() -> str:
+            if self._graph_memory is None:
+                return ""
+            return await self._graph_memory.build_research_context(brief) or ""
 
-        # FEAT-482 Module 5: the complementary research partner, if wired,
-        # contributes one more best-effort section — same mechanism as the
-        # wiki/graph-memory context above, not a new field on the shared
-        # brief model. No defensive try/except: the coordinator already
-        # owns its own degradation end-to-end and is contracted to never
-        # raise (spec §3 Module 4).
-        if self._coordinator is not None:
-            partner_findings = await self._coordinator.research(
+        async def _partner_findings() -> Any:
+            # FEAT-482 Module 5: no defensive try/except here — the
+            # coordinator already owns its own degradation end-to-end and
+            # is contracted to never raise (spec §3 Module 4).
+            if self._coordinator is None:
+                return None
+            return await self._coordinator.research(
                 brief=brief,
                 question=f"{brief.summary}\n\n{brief.description}".strip(),
                 cwd=dispatch_cwd,
@@ -446,8 +449,18 @@ class ResearchNode(DevLoopNode):
                 node_id=self.name,
                 session_host=shared.get("session_host"),
             )
-            if partner_findings is not None:
-                extra_context_parts.append(f"## Complementary research findings\n{partner_findings.rendered}")
+
+        wiki_context, graph_context, partner_findings = await asyncio.gather(
+            _wiki_ctx(), _graph_ctx(), _partner_findings()
+        )
+
+        extra_context_parts: list[str] = []
+        if wiki_context:
+            extra_context_parts.append(f"## Wiki context\n{wiki_context}")
+        if graph_context:
+            extra_context_parts.append(f"## Graph memory context\n{graph_context}")
+        if partner_findings is not None:
+            extra_context_parts.append(f"## Complementary research findings\n{partner_findings.rendered}")
 
         dispatch_brief = brief
         if extra_context_parts:
