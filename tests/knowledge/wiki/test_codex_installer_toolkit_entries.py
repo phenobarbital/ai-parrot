@@ -8,6 +8,7 @@ disappear because the block is fully regenerated); uninstall removes the
 whole marker block (everything managed) in one step; a foreign table
 outside the block with a colliding name is left untouched and reported.
 """
+
 import tomllib
 from pathlib import Path
 
