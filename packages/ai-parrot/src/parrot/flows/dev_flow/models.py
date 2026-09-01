@@ -14,6 +14,10 @@ This module defines only the three new contracts (spec §2 Data Models):
 * :class:`IdeationOutput` — the ``sdd-ideation`` subagent's final JSON
   contract.
 
+FEAT-486 adds a fourth: the per-seat LLM configuration plan, defined in
+``dev_flow.model_plan`` and re-exported here so callers have one import
+site for every dev-flow contract.
+
 Everything else (dev-agent pool specs, judge panels, planner/QA outputs)
 is imported from ``dev_loop.models`` — dev-flow reuses those wholesale.
 """
@@ -24,6 +28,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from parrot.flows.dev_flow.model_plan import (
+    DevFlowModelPlan,
+    ResearchPartnerPlan,
+    ReviewPairPlan,
+    resolve_model_plan,
+)
 from parrot.flows.dev_loop.models import (
     DevAgentSpec,
     FeatureBrief,
@@ -32,10 +42,14 @@ from parrot.flows.dev_loop.models import (
 
 __all__ = [
     "DevFlowBrief",
+    "DevFlowModelPlan",
     "DevRequestBrief",
     "DevRequestKind",
     "IdeationOutput",
+    "ResearchPartnerPlan",
+    "ReviewPairPlan",
     "parse_dev_brief",
+    "resolve_model_plan",
 ]
 
 

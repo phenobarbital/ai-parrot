@@ -27,18 +27,26 @@ from typing import Any
 
 from parrot.flows.dev_flow.models import (
     DevFlowBrief,
+    DevFlowModelPlan,
     DevRequestBrief,
     DevRequestKind,
     IdeationOutput,
+    ResearchPartnerPlan,
+    ReviewPairPlan,
     parse_dev_brief,
+    resolve_model_plan,
 )
 
 __all__ = [
     "DevFlowBrief",
+    "DevFlowModelPlan",
     "DevRequestBrief",
     "DevRequestKind",
     "IdeationOutput",
+    "ResearchPartnerPlan",
+    "ReviewPairPlan",
     "parse_dev_brief",
+    "resolve_model_plan",
 ]
 
 # Lazily-resolved exports: attribute name -> submodule it lives in. Keeping
