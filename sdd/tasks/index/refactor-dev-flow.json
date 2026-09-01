@@ -152,7 +152,7 @@
       "feature_id": "FEAT-486",
       "feature": "refactor-dev-flow",
       "spec": "sdd/specs/refactor-dev-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "Consumes the whole config surface; partner toggle ships here even if TASK-2657 is still gated (toggle no-ops until 2657 lands).",
       "assigned_to": null,
       "started_at": "2026-09-01T00:12:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2658-console-llm-selectors.md"
+      "completed_at": "2026-09-01T00:53:49+00:00",
+      "file": "sdd/tasks/completed/TASK-2658-console-llm-selectors.md"
     },
     {
       "id": "TASK-2659",

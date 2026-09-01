@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-486 — Refactor Dev-Flow — Per-Seat LLM Configuration, Multi-Agent Development Pool, Configurable Review
 **Spec**: `sdd/specs/refactor-dev-flow.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-2651, TASK-2652, TASK-2655, TASK-2656
@@ -142,8 +142,62 @@ class TestServerDevModelPlan:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (Claude Opus 5)
+**Date**: 2026-09-01
 **Notes**:
+- `_console_default_model_plan()` builds the console's opinionated plan —
+  the two-seat Bedrock pool (`nova:zai.glm-5` +
+  `nova:qwen.qwen3-coder-480b-a35b-v1:0`), Opus 5 research primary,
+  partner off, review pair Opus 5 + `gpt-5.6-sol` — then runs it through
+  `resolve_model_plan()`, so any `DEV_FLOW_*` env key overrides it
+  without editing this file. The library's own default plan keeps an
+  EMPTY pool (backward compatibility); the console is where the
+  opinionated default lives.
+- That plan is threaded into `build_dev_flow(model_plan=...)` at
+  `build_app` time, so the console's defaults are **live**: the pool
+  really deploys through `agent_builder.build_dispatcher`, and ideation
+  really runs on Opus 5. Logged at startup, one line, per seat.
+- The stale `build_dev_flow` comment ("deliberately takes no
+  development_pool_config ... NOT injected") was corrected — FEAT-486
+  superseded it. `DEV_LOOP_DEV_AGENTS` is now described as the ops
+  console's knob, with `DEV_FLOW_DEV_POOL` as dev-flow's equivalent.
+- `/api/config` gains `defaults.model_plan` with the resolved plan plus
+  the selectable backend lists. `_parse_model_plan(form)` parses the run
+  payload: pool rows reuse `ops_server._parse_dev_agents` (import, never
+  copy — `server_dev.py:30-34`), research/review get small parsers with
+  the same posture — **backends strict, models free text**
+  (`catalog.py:22-24`). Unknown backends 400 with the supported list.
+- NIM: still in `backends` and in `roles.development` (selectable), never
+  in the default pool — asserted by `test_nim_listed_not_default`.
+- `dev.html` gains all three selector groups + the partner toggle:
+  research primary + partner (ideation tab), pool provenance note
+  (agents tab), review pair (review tab). The form is seeded from
+  `/api/config` at boot and posts back field names that mirror
+  `DevFlowModelPlan` exactly. Model inputs are free text with datalist
+  suggestions. Validated with `node --check` on both script blocks.
+- 22 tests pass; full `tests/flows/dev_flow/` green (286 passed);
+  `ruff check examples/dev_loop/server_dev.py` clean.
 
-**Deviations from spec**: none
+**Deviations from spec**: none in files touched. TWO honest limitations
+recorded rather than papered over — both flagged for the PR reviewer:
+
+1. **A per-run plan cannot change the seats.** `model_plan` is a
+   BUILD-time input, because the seats it selects are baked into node
+   constructors (`DevelopmentNode.pool_config`, `IdeationNode.model`,
+   `QANode.codereview_dispatcher`), and this console builds ONE flow at
+   startup. A submitted plan is therefore fully parsed and validated
+   (which is what the AC asks for — "run payload parses into
+   DevFlowModelPlan; unknown backend rejected"), the run response echoes
+   the plan that will REALLY run, and any difference is logged as a
+   WARNING naming both. It is never silently ignored. Making it truly
+   per-run needs a `model_plan` seam in `DevFlowRunner`/`DevelopmentNode`
+   that no FEAT-486 task authorizes — worth a follow-up spec.
+2. **The review pair is configured but not the active reviewer here.**
+   `server_dev.py` passes an explicit `judge_panel_dispatcher`, and an
+   explicit `codereview_dispatcher` wins over the plan by TASK-2655's
+   designed precedence. Rather than silently changing this console's QA
+   behaviour from the FEAT-378 judge panel to the pair (a redesign no
+   task asked for), the payload carries
+   `model_plan.review_pair_active: false` and the UI says so in plain
+   words. Whether the dev console should switch its reviewer to the pair
+   is a product decision for the reviewer, not a builder's call.
