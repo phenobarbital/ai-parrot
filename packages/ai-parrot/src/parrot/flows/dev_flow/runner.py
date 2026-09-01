@@ -31,6 +31,7 @@ from parrot.bots.flows.core.context import FlowContext
 # Same module the base runner imports FlowResult from (runner.py:36).
 from parrot.bots.flows.core.result import FlowResult
 from parrot.flows.dev_flow.flow import build_dev_flow
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
 from parrot.flows.dev_flow.models import DevRequestBrief
 from parrot.flows.dev_loop.models import FeatureBrief
 from parrot.flows.dev_loop.runner import DevLoopRunner
@@ -83,6 +84,7 @@ class DevFlowRunner(DevLoopRunner):
         run_id: str | None = None,
         initial_task: str = "",
         extra_shared: dict[str, Any] | None = None,
+        model_plan: DevFlowModelPlan | None = None,
     ) -> FlowResult:
         """Execute one dev-flow run for *brief*, respecting the run cap.
 
@@ -105,6 +107,14 @@ class DevFlowRunner(DevLoopRunner):
             extra_shared: Extra entries merged into ``shared_data`` — this is
                 how the server passes per-run knobs such as
                 ``require_plan_approval`` and ``skip_qa``.
+            model_plan: FEAT-490 — optional per-run ideation model / review
+                pair selection. Reaches ``build_dev_flow`` for THIS run only
+                on the fresh (cache-miss) checkpoint path, via the TASK-2685
+                overrides seam — never stored on ``self``, so concurrent
+                runs never leak seats into each other. On a resumed run
+                (``mode == "resumed"``) this is not applied; the run keeps
+                the seats it was created with (spec §8 Q1). ``None`` (the
+                default) leaves every existing caller byte-identical.
 
         Returns:
             The aggregated :class:`FlowResult` for the run.
@@ -159,6 +169,12 @@ class DevFlowRunner(DevLoopRunner):
             shared_data=shared,
         )
 
+        # FEAT-490: a per-run plan travels as a call argument into the
+        # per-call factory closure below — never assigned to `self`, so
+        # concurrent runs with different plans never leak seats into each
+        # other (spec §2 Overview step 2, §7 "Concurrency leak" risk).
+        flow_kwargs_overrides = {"model_plan": model_plan} if model_plan is not None else None
+
         flow = self.flow
         if recovery_enabled:
             flow, mode = await self._checkpoint_coordinator.prepare(
@@ -166,7 +182,7 @@ class DevFlowRunner(DevLoopRunner):
                 run_id=rid,
                 brief=brief,
                 live_context=ctx,
-                flow_factory=self._dev_loop_flow_factory(),
+                flow_factory=self._dev_loop_flow_factory(flow_kwargs_overrides),
                 execution_policy=self._execution_policy_for_fingerprint(),
             )
             # spec §5: recovered runs must be distinguishable in session
@@ -226,6 +242,12 @@ class DevFlowRunner(DevLoopRunner):
             self._pending_gate_count.pop(rid, None)
 
         self.logger.info("Dev-flow run %s finished status=%s", rid, result.status)
+        # FEAT-490: record what was requested so a caller (or an embedder
+        # reusing a stable run_id) can tell what actually ran, without
+        # guessing from the flow's build kwargs. Recorded on the fresh path
+        # only here — TASK-2687 refines this for a resumed run, where the
+        # newly submitted plan does NOT take effect.
+        result.metadata["model_plan_requested"] = model_plan.model_dump(mode="json") if model_plan is not None else None
         await self._close_host(host, result, ctx)
         if not completion.done():
             completion.set_result(result)
@@ -294,11 +316,18 @@ class DevFlowRunner(DevLoopRunner):
     # attribute name stays generic across both workflows; only the
     # factory function it is applied to differs).
 
-    def _dev_loop_flow_factory(self) -> Callable[[Any], AgentsFlow]:
+    def _dev_loop_flow_factory(self, overrides: dict[str, Any] | None = None) -> Callable[[Any], AgentsFlow]:
         """Build the ``flow_factory`` closure for ``DevCheckpointCoordinator.prepare()``.
 
         See ``DevLoopRunner._dev_loop_flow_factory()`` for the full
         rationale — identical here except it calls ``build_dev_flow``.
+
+        Args:
+            overrides: FEAT-490 — optional per-run overrides (e.g.
+                ``{"model_plan": ...}``) merged over
+                ``self._dev_loop_flow_kwargs`` for THIS call only. Captured
+                in the closure's local ``kwargs`` dict, never assigned to
+                ``self``.
 
         Returns:
             A ``(definition) -> AgentsFlow`` callable.
@@ -313,6 +342,8 @@ class DevFlowRunner(DevLoopRunner):
                 "to have been passed to DevFlowRunner.__init__()."
             )
         kwargs = dict(self._dev_loop_flow_kwargs)
+        if overrides:
+            kwargs.update(overrides)
 
         def _factory(_definition: Any) -> AgentsFlow:
             return build_dev_flow(

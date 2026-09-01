@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from parrot import conf
+from parrot.bots.flows.core.checkpoint import CheckpointStore, FlowCheckpoint
 from parrot.bots.flows.core.result import FlowResult
 from parrot.bots.flows.core.types import FlowStatus
+from parrot.flows.dev_flow.model_plan import DevFlowModelPlan
 from parrot.flows.dev_flow.models import DevRequestBrief
 from parrot.flows.dev_flow.runner import DevFlowRunner
 from parrot.flows.dev_loop.models import FeatureBrief
@@ -372,3 +375,151 @@ async def test_rejected_gate_fails_the_run(nl_brief):
     await rejecter
 
     assert result.status == FlowStatus.FAILED
+
+
+# ---------------------------------------------------------------------------
+# FEAT-490 TASK-2686: per-run model_plan on DevFlowRunner.run
+# ---------------------------------------------------------------------------
+
+
+class _FakeCheckpointStore(CheckpointStore):
+    """Minimal in-memory ``CheckpointStore`` — always a cache miss for a
+    run_id it has never seen (which every run below uses fresh)."""
+
+    def __init__(self) -> None:
+        self._by_flow: dict[str, list[FlowCheckpoint]] = {}
+        self._leases: dict[str, str] = {}
+
+    async def put(self, checkpoint: FlowCheckpoint) -> None:
+        self._by_flow.setdefault(checkpoint.flow_id, []).append(checkpoint)
+
+    async def latest(self, flow_id: str):
+        history = self._by_flow.get(flow_id, [])
+        return history[-1] if history else None
+
+    async def get(self, flow_id: str, checkpoint_id: int):
+        return None
+
+    async def history(self, flow_id: str, limit: int = 10):
+        return []
+
+    async def list_flows(self, status=None):
+        return []
+
+    async def delete_flow(self, flow_id: str) -> None:
+        self._by_flow.pop(flow_id, None)
+
+    async def acquire_lease(self, flow_id: str, holder: str, ttl: int = 60) -> bool:
+        return True
+
+    async def renew_lease(self, flow_id: str, holder: str, ttl: int = 60) -> bool:
+        return True
+
+    async def release_lease(self, flow_id: str, holder: str) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
+
+def _plan(**kwargs) -> DevFlowModelPlan:
+    kwargs.setdefault("research_primary", "zai.glm-5")
+    return DevFlowModelPlan(**kwargs)
+
+
+def _patched_build_dev_flow(captured: list[dict]):
+    """A drop-in replacement for ``build_dev_flow`` that records its kwargs
+    and returns a stub flow completing immediately."""
+
+    def _fake(**kwargs):
+        captured.append(kwargs)
+        return _CapturingFlow()
+
+    return _fake
+
+
+def _recovery_runner(**dev_loop_flow_kwargs) -> DevFlowRunner:
+    return DevFlowRunner(
+        _CapturingFlow(),
+        redis_url="redis://x",
+        checkpoint_store=_FakeCheckpointStore(),
+        dev_loop_flow_kwargs={"dispatcher": MagicMock(), "redis_url": "redis://x", **dev_loop_flow_kwargs},
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_without_plan_is_byte_identical(nl_brief):
+    """No ``model_plan`` -> ``build_dev_flow`` receives exactly today's kwargs."""
+    captured: list[dict] = []
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        result = await runner.run(nl_brief, run_id="run-no-plan")
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert result.status == FlowStatus.COMPLETED
+    assert len(captured) == 1
+    assert "model_plan" not in captured[0]
+    assert result.metadata["model_plan_requested"] is None
+
+
+@pytest.mark.asyncio
+async def test_per_run_plan_reaches_build_dev_flow(nl_brief):
+    """A submitted plan appears in the factory's ``model_plan`` kwarg."""
+    captured: list[dict] = []
+    plan = _plan()
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        result = await runner.run(nl_brief, run_id="run-with-plan", model_plan=plan)
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert len(captured) == 1
+    assert captured[0]["model_plan"] is plan
+    assert result.metadata["model_plan_requested"] == plan.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_plan_is_not_stored_on_the_instance(nl_brief):
+    """Inspect the runner after a run: no per-run plan left behind on ``self``."""
+    plan = _plan()
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow([])
+    try:
+        runner = _recovery_runner()
+        await runner.run(nl_brief, run_id="run-plan-not-stored", model_plan=plan)
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert "model_plan" not in runner._dev_loop_flow_kwargs
+    assert not hasattr(runner, "_model_plan")
+    assert not hasattr(runner, "_current_model_plan")
+
+
+def test_concurrent_runs_do_not_leak_seats():
+    """Two closures built back-to-back with different plans each build with
+    their own — the per-call closure is what makes concurrent runs safe."""
+    captured: list[dict] = []
+    plan_a = _plan(research_primary="zai.glm-5")
+    plan_b = _plan(research_primary="qwen.qwen3-coder-480b-a35b-v1:0")
+    target_globals = DevFlowRunner._dev_loop_flow_factory.__globals__
+    original = target_globals["build_dev_flow"]
+    target_globals["build_dev_flow"] = _patched_build_dev_flow(captured)
+    try:
+        runner = _recovery_runner()
+        factory_a = runner._dev_loop_flow_factory({"model_plan": plan_a})
+        factory_b = runner._dev_loop_flow_factory({"model_plan": plan_b})
+        factory_a(None)
+        factory_b(None)
+    finally:
+        target_globals["build_dev_flow"] = original
+
+    assert captured[0]["model_plan"] is plan_a
+    assert captured[1]["model_plan"] is plan_b
