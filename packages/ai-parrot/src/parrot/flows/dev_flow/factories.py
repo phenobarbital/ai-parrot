@@ -49,6 +49,47 @@ def _with_graph(node: DevLoopNode, deps: set, succs: set) -> DevLoopNode:
     return node.model_copy(update={"dependencies": set(deps), "successors": set(succs)})
 
 
+def _resolve_research_coordinator(
+    explicit: ComplementaryResearchCoordinator | None,
+    plan: DevFlowModelPlan | None,
+) -> ComplementaryResearchCoordinator | None:
+    """Resolve the complementary-research coordinator for this flow.
+
+    FEAT-486 TASK-2657 — precedence, highest first:
+
+    1. An explicit ``research_coordinator`` argument always wins (FEAT-482's
+       own injection path, untouched).
+    2. A ``model_plan`` decides: ``research_partner.enabled`` False (the
+       default) means **no coordinator at all** — the plan is an explicit
+       statement that this seat does not run, so it must be able to veto a
+       deployment-level ``DEV_FLOW_RESEARCH_PARTNER``. Enabled means a
+       coordinator carrying the plan's ``backend``/``model``, which is what
+       makes the console toggle actually enable the seat rather than build
+       an inert coordinator that re-resolves an unset env var to "disabled".
+    3. No plan ⇒ FEAT-482's original behaviour: always construct a
+       coordinator, itself inert until ``DEV_FLOW_RESEARCH_PARTNER`` is set.
+
+    Args:
+        explicit: The caller-supplied coordinator, if any.
+        plan: The already-resolved model plan, if any.
+
+    Returns:
+        A coordinator, or ``None`` when the plan disables the seat.
+        ``IdeationNode`` treats ``None`` as "no partner ever runs".
+    """
+    if explicit is not None:
+        return explicit
+    if plan is None:
+        return ComplementaryResearchCoordinator()
+    partner = plan.research_partner
+    if not partner.enabled:
+        return None
+    return ComplementaryResearchCoordinator(
+        backend=partner.backend or None,
+        model=partner.model or None,
+    )
+
+
 def _build_primary_reviewer(spec: Any, shared_dispatcher: Any) -> Any:
     """Build the write-enabled primary reviewer named by ``spec``.
 
@@ -186,7 +227,10 @@ def build_dev_flow_node_factories(
             (FEAT-482) injected into :class:`IdeationNode`. ``None``
             (default) builds a fresh one — itself an inert no-op until
             ``DEV_FLOW_RESEARCH_PARTNER`` is configured, so omitting this
-            kwarg preserves the pure-addition guarantee.
+            kwarg preserves the pure-addition guarantee. FEAT-486: an
+            explicit value here still wins over ``model_plan``'s
+            ``research_partner`` group; see
+            :func:`_resolve_research_coordinator` for the full precedence.
 
     Returns:
         A factory map covering the two ``dev_flow.*`` types plus every
@@ -238,7 +282,7 @@ def build_dev_flow_node_factories(
     def dev_intake_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(DevIntakeNode(redis_url=redis_url, name=nd.id), deps, succs)
 
-    coordinator = research_coordinator if research_coordinator is not None else ComplementaryResearchCoordinator()
+    coordinator = _resolve_research_coordinator(research_coordinator, resolved_plan)
 
     def ideation_factory(nd: NodeDefinition, deps: set, succs: set) -> DevLoopNode:
         return _with_graph(
