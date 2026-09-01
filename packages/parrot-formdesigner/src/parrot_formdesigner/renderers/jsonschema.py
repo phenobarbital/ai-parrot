@@ -666,6 +666,12 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         elif field.default is not None:
             prop["default"] = field.default
 
+        # Content type extensions (FEAT-488)
+        if field.content_type is not None:
+            prop["x-content-type"] = field.content_type
+        if field.accept_content_types is not None:
+            prop["x-accept-content-types"] = field.accept_content_types
+
         return prop
 
     def _field_type_to_json_type(self, field_type: FieldType) -> str:
