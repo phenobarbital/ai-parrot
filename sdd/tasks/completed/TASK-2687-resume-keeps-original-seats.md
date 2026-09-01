@@ -159,3 +159,94 @@ pre-existing unrelated failures (same as TASK-2685/2686). `ruff check`
 clean.
 
 **Deviations from spec**: none
+
+**POST-REVIEW CORRECTION (same session, before push) — CRITICAL, read this
+in full.** The adversarial code-reviewer (Claude `code-reviewer` subagent,
+cross-checked with `codex` per CLAUDE.md's Adversarial Second Opinion
+protocol) found that the premise this task's whole implementation rested
+on was FALSE, and I independently verified the finding by reading the
+actual source before accepting it (not taking the reviewer's word alone).
+
+**The false premise**: this task's original notes above (and code
+comments in `dev_flow/runner.py`/`dev_loop/runner.py` at the time) stated
+"`DevCheckpointCoordinator.prepare()` never calls `flow_factory` on the
+resume branch (only on a cache miss)" — citing `dev_loop/checkpoint.py`'s
+cache-miss branch (`flow_factory(None)` on line ~555) as if it were the
+ONLY branch that calls `flow_factory` at all.
+
+**What is actually true**, verified by reading
+`packages/ai-parrot/src/parrot/flows/dev_loop/checkpoint.py:560-577` and
+`packages/ai-parrot/src/parrot/bots/flows/flow/flow.py:1554-1556`
+directly: on a checkpoint HIT (the resume branch), `prepare()` calls
+`AgentsFlow.resume(..., flow_factory=flow_factory, ...)`, and
+`AgentsFlow.resume()` itself does
+`flow = flow_factory(checkpoint.definition)` unconditionally — the exact
+SAME closure, called with a non-`None` definition instead of `None`. Only
+the previously-COMPLETED nodes' *results* are preserved (via
+`seed_ctx.mark_completed(...)`); every node that has NOT yet completed is
+constructed fresh from whatever `flow_factory` returns THIS call — i.e.
+with THIS call's `flow_kwargs_overrides`/`model_plan`, not the original
+run's.
+
+**Consequence**: with the code as originally written by this task and
+TASK-2685/2686, a resumed run's not-yet-completed nodes silently ADOPTED
+a newly submitted `model_plan`, while `result.metadata["model_plan_
+effective"]`/`run_mode` (this task's own deliverable) reported the exact
+OPPOSITE — a direct violation of the acceptance criterion "A resumed run
+keeps the seats it was created with, and the response says so
+explicitly," and the reverse of spec §8 Q1's resolved rule. None of this
+task's 6 tests (nor TASK-2688's console-level resume tests) caught it,
+because every one of them mocks `_checkpoint_coordinator.prepare()` (or
+`inspect_checkpoint`/`prepare` at the HTTP layer) directly, which bypasses
+the exact code path — the real `flow_factory(checkpoint.definition)` call
+inside `AgentsFlow.resume()` — where the bug lived. A mocked `prepare()`
+can only ever return `(some_flow, "resumed")`; it never actually invokes
+the closure with a non-`None` definition, so it cannot exercise the
+closure's own logic at all.
+
+**The fix** (in `dev_loop/runner.py` and `dev_flow/runner.py`'s
+`_dev_loop_flow_factory()`, i.e. TASK-2685/2686's code): the
+`overrides`/`model_plan` merge now happens INSIDE the returned closure,
+gated on `_definition is None` — the only signal available at that call
+site for "is this rebuild fresh or resuming." `factory(None)` (the
+cache-miss shape) still applies overrides; `factory(<anything else>)` (the
+shape `AgentsFlow.resume()` always uses) builds with ONLY the
+construction-time `self._dev_loop_flow_kwargs`, ignoring the override
+entirely. This makes the resume rule genuinely TRUE rather than merely
+asserted — and now `mode`/`model_plan_applied`'s reporting logic (this
+task's own code, otherwise unchanged) is correct because the underlying
+behavior finally matches it.
+
+**Verification, not just trust**: added a targeted regression test per
+runner (`test_overrides_do_not_reach_a_resumed_rebuild`, in both
+`test_recovery_lifecycle.py` and `test_runner.py`) that drives the closure
+with a non-`None` definition object directly — the same call shape
+`AgentsFlow.resume()` uses — and confirmed via `git stash` that it FAILS
+against the pre-fix code and PASSES after. This is a stronger guarantee
+than merely re-reading the diff: the test is a falsifiable, executable
+proof the bug is gone, not just an assertion that it is.
+
+**Known test-depth limitation, stated plainly**: the regression tests
+added are closure-level unit tests (constructing `_definition` as `None`
+vs. a plain sentinel object) rather than a full end-to-end test driving a
+REAL `FakeCheckpointStore`-backed resume through the real dev-flow/dev-loop
+node graph. This is a deliberate scope/time tradeoff: the bug and its fix
+are entirely local to `_dev_loop_flow_factory()`'s closure body (a pure
+function of `_definition`), so a closure-level test exercising both
+branches is a complete, deterministic proof of the fix — but it does not
+by itself prove that `AgentsFlow.resume()` truly always passes a non-`None`
+`checkpoint.definition` (verified instead by direct source reading, cited
+above, not by an executable test in THIS diff). A genuine end-to-end
+resume test (real checkpoint write via a real `AgentsFlow` with
+`checkpoint=True`, second `run()` call resuming it with a differing
+`model_plan`, asserting on which model a not-yet-completed node's
+dispatcher actually receives) would close this last gap and is a
+reasonable follow-up if this feature sees an ops embedder reuse a stable
+`run_id` in practice — the console itself never does (spec §1 Non-Goals,
+confirmed by `test_console_mints_a_fresh_run_id_when_none_is_supplied`),
+so the console's own default flow is unaffected either way.
+
+**Deviations from spec, corrected list**: the resume rule (spec §8 Q1) is
+still the target behavior and is now genuinely implemented, not merely
+documented — this correction fixes an implementation bug, it does not
+change the spec's intent.

@@ -148,3 +148,16 @@ has verified failing identically on `dev` before this branch). `ruff
 check` clean on the test file (the doc file is Markdown, not lint-checked).
 
 **Deviations from spec**: none.
+
+**POST-REVIEW CORRECTION (same session, before push)**: the adversarial
+code-reviewer found that the resume rule this doc's new "Per-run
+application (FEAT-490)" section describes (a resumed run keeps its
+original seats) was not actually enforced by the code at the time this
+task completed — `AgentsFlow.resume()` rebuilds a resumed run's
+not-yet-completed nodes through the SAME `flow_factory` closure a fresh
+build uses, so a per-run override was silently reaching them too. Fixed
+in `dev_loop/runner.py`/`dev_flow/runner.py` (TASK-2685/2686's files);
+full analysis in TASK-2687's completion note. The documentation added by
+THIS task required no changes — it describes the rule as intended, and
+the fix makes the code match what it already said, rather than the other
+way around.

@@ -170,3 +170,23 @@ file (e.g. `dev_loop_flow_kwargs: Optional[Dict[str, Any]] = None`) rather
 than a drive-by modernization.
 
 **Deviations from spec**: none
+
+**POST-REVIEW CORRECTION (same session, before push)**: the adversarial
+code-reviewer found a CRITICAL bug in the override-merge logic added by
+this task. `_dev_loop_flow_factory(overrides)` merged `overrides` into
+`kwargs` UNCONDITIONALLY before returning the closure. This is wrong
+because `AgentsFlow.resume()` (`bots/flows/flow/flow.py:1556`) calls the
+SAME closure — `flow_factory(checkpoint.definition)` — to rebuild the
+topology of a run's not-yet-completed nodes on a RESUME, not only
+`DevCheckpointCoordinator.prepare()`'s fresh/cache-miss branch
+(`flow_factory(None)`). The original merge therefore applied per-run
+overrides to a resumed run's rebuild too — harmless for THIS task in
+isolation (its own tests only ever call `factory(None)`), but load-bearing
+for TASK-2687's resume rule built on top of this seam. Fixed by moving the
+merge INSIDE the closure, gated on `_definition is None` (the only signal
+available at the call site distinguishing "fresh" from "resuming").
+Verified the fix is real (not cosmetic) by writing a regression test,
+confirming it FAILS against the pre-fix code via `git stash`, then passes
+after. See TASK-2687's completion note for the full analysis — this note
+exists so a reader of TASK-2685 alone sees the correction too, since the
+buggy code originated here.

@@ -201,3 +201,17 @@ Q4 text should be corrected in a follow-up doc pass to acknowledge the
 resume endpoint exists (TASK-2692, docs/dev_loop/dev-flow-model-plan.md,
 already covers documenting the resume rule — this note flags that its
 "no resume endpoint" framing needs the same correction applied here).
+
+**POST-REVIEW CORRECTION (same session, before push)**: the console's
+`model_plan_ignored` reporting logic added by this task is unaffected and
+required no change, but it depended on a runner-level guarantee
+(TASK-2685/2687) that turned out to be broken — a resumed run's
+not-yet-completed nodes were silently adopting the newly submitted plan
+despite the reported `model_plan_ignored` diff. Fixed at the runner layer
+(`dev_loop/runner.py`/`dev_flow/runner.py`'s `_dev_loop_flow_factory()`);
+see TASK-2687's completion note for the full analysis. This task's own
+`TestRunResponseReportsIgnoredSeats` resume tests
+(`test_ignored_seat_is_reported_on_resume` etc.) still mock
+`_checkpoint_coordinator.prepare()` directly and therefore still do not
+exercise the fixed code path themselves — they remain valid tests of the
+HTTP-layer reporting logic, which was never the buggy part.

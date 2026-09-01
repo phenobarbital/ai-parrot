@@ -169,3 +169,18 @@ module reason documented there. `pytest packages/ai-parrot/tests/flows/dev_flow 
 before this feature). `ruff check` clean on both modified files.
 
 **Deviations from spec**: none
+
+**POST-REVIEW CORRECTION (same session, before push)**: same bug as
+TASK-2685 (this file's `_dev_loop_flow_factory` override, added by this
+task, had the identical unconditional-merge defect). Fixed identically:
+the merge of `overrides` (here, `{"model_plan": model_plan}`) now happens
+INSIDE the closure, gated on `_definition is None`, so a per-run
+`model_plan` never reaches a RESUMED run's node rebuild via
+`AgentsFlow.resume()`'s `flow_factory(checkpoint.definition)` call. Added
+3 regression tests to `test_runner.py`
+(`test_overrides_apply_on_the_fresh_definition_none_call`,
+`test_overrides_do_not_reach_a_resumed_rebuild`,
+`test_same_closure_applies_the_plan_only_to_its_fresh_call`), the second
+of which was confirmed to fail against the pre-fix code via `git stash`
+before being confirmed passing against the fix. Full details in
+TASK-2687's completion note.

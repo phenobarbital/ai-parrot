@@ -147,3 +147,19 @@ describing `_dev_loop_flow_factory()` as "hardcoded to build_dev_loop_flow
 + self._dev_loop_flow_kwargs" was already stale by the time this task
 started (TASK-2685, its own listed dependency, changed exactly that), which
 is precisely why no further runner code change was needed here.
+
+**POST-REVIEW CORRECTION (same session, before push)**: TASK-2685's
+`_dev_loop_flow_factory()` (which this task depends on unchanged) had a
+CRITICAL bug — it merged `overrides` unconditionally, so a per-run
+`model_plan` an ops embedder threads via `flow_kwargs_overrides` would
+have silently reached a RESUMED run's node rebuild too (via
+`AgentsFlow.resume()`'s `flow_factory(checkpoint.definition)` call), never
+the fresh-only behavior this task's own tests assumed. Fixed in
+TASK-2685's file (`dev_loop/runner.py`) by gating the merge on
+`_definition is None` inside the closure. This task's own 3 tests are
+unaffected (they only ever call the closure indirectly through `run()`'s
+fresh/cache-miss path, which the fix preserves byte-for-byte) — re-ran
+`pytest packages/ai-parrot/tests/flows/dev_loop/test_recovery_lifecycle.py -q`
+after the fix: still 15 passed (12 from this task's original run + 3 new
+closure-level regression tests added alongside the fix). Full analysis in
+TASK-2687's completion note.
