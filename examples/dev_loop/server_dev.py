@@ -620,6 +620,19 @@ async def handle_run(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
+    # FEAT-490: the server's static build-time plan — the baseline for a
+    # FRESH run (narrowed below to the submission itself, since a fresh
+    # run genuinely applies it) and for the resume-diff/log/response below.
+    # KNOWN LIMITATION (code review, accepted — not fixed here): for a
+    # RESUME specifically, this is NOT necessarily the plan the resumed
+    # run's checkpoint was actually created with — only an embedder that
+    # itself submitted a differing per-run plan on the ORIGINAL call and
+    # then reuses that same run_id would see a diff computed against the
+    # wrong baseline here. This console never does that (it mints a fresh
+    # run_id on every request that doesn't explicitly resume), so the
+    # common case is unaffected; a correct fix would need the original
+    # per-run plan persisted on the checkpoint and read back during the
+    # `inspect_checkpoint` preflight — out of scope for this pass.
     effective_plan: DevFlowModelPlan = request.app.get("model_plan") or _console_default_model_plan()
 
     kind = getattr(brief, "kind", "")

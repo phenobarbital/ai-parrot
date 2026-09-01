@@ -237,17 +237,22 @@ simultaneously). Omitting `model_plan` (the default) reaches
 `build_dev_flow` with exactly the kwargs the runner was constructed with —
 byte-identical to every caller that predates this feature.
 
-**The one case that stays fixed: a resume.** `DevCheckpointCoordinator.
-prepare()` only calls `flow_factory` on a cache miss — a **resumed** run
-(a caller-supplied `run_id` whose checkpoint the coordinator finds) never
-rebuilds a flow at all, so a newly submitted `model_plan` is validated and
-reported back, but does not take effect. The run keeps the seats it was
-created with: its already-completed nodes ran under those seats, and
-adopting a different plan mid-history would make the resumed bundle
-self-contradictory. `result.metadata` on the returned `FlowResult` records
-both `model_plan_requested` and `model_plan_effective` (`None` when a
-resume did not apply the submission) plus `run_mode` (`"fresh"` |
+**The one case that stays fixed: a resume.** A **resumed** run (a
+caller-supplied `run_id` whose checkpoint the coordinator finds) keeps the
+seats it was created with: its already-completed nodes ran under those
+seats, and adopting a different plan mid-history would make the resumed
+bundle self-contradictory. `result.metadata` on the returned `FlowResult`
+records both `model_plan_requested` and `model_plan_effective` (`None`
+when a resume did not apply the submission) plus `run_mode` (`"fresh"` |
 `"resumed"`), so a caller never has to guess which one actually ran.
+Mechanically: `AgentsFlow.resume()` DOES call the same `flow_factory`
+closure a fresh build uses — via `flow_factory(checkpoint.definition)`,
+to rebuild the topology of every not-yet-completed node — so the rule
+above is enforced *inside* that closure rather than by the coordinator
+skipping it: the closure only merges a per-run override when invoked with
+`_definition is None` (the fresh/cache-miss signal), never when
+`AgentsFlow.resume()` calls it with a real definition. A per-run
+`model_plan` therefore never reaches a resumed run's rebuild.
 
 **The dev console (`examples/dev_loop/server_dev.py`) always takes the
 fresh path** for the common case: `handle_run` mints its own `run_id`
@@ -260,6 +265,17 @@ succeed) — that is the one path where a submitted plan differing from the
 resumed run's seats is reported as ignored, exactly as this section
 describes. See `examples/dev_loop/README.md`'s "per-run" note for the
 operator-facing version of this same rule.
+
+**Known limitation of the console's resume diff.** The console computes
+what a resume "ignores" against its own static build-time plan (the same
+baseline a fresh run's diff uses), not against the plan the resumed
+checkpoint was actually created with — an embedder that itself submitted
+a differing per-run plan on the ORIGINAL call and then reuses that same
+`run_id` would see a diff computed against the wrong baseline. The console
+never does this (every request that doesn't explicitly resume mints a
+fresh `run_id`), so this does not affect normal console use; a correct
+fix would need the original per-run plan persisted on the checkpoint and
+surfaced during the `inspect_checkpoint` preflight.
 
 **The checkpoint fingerprint is unaffected — accepted, and pinned by a
 test.** `_execution_policy_for_fingerprint()` still derives solely from
