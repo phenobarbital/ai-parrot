@@ -32,7 +32,7 @@
       "feature_id": "FEAT-493",
       "feature": "html-renderer-design-system",
       "spec": "sdd/specs/html-renderer-design-system.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Creates the assets and DesignSystem; everything downstream imports it.",
       "assigned_to": null,
       "started_at": "2026-09-01T20:42:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2707-design-system-composer.md"
+      "completed_at": "2026-09-01T20:57:27+00:00",
+      "file": "sdd/tasks/completed/TASK-2707-design-system-composer.md"
     },
     {
       "id": "TASK-2708",

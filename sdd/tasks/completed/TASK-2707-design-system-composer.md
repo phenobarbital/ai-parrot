@@ -273,10 +273,40 @@ class TestDesignSystem:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-09-01
+**Notes**: Created the `design_system` package with `__init__.py`
+(`DesignSystem` composer: `LAYOUTS`, `DEFAULT_THEME`, `DEFAULT_LAYOUT`,
+`stylesheet()`, plus `_resolve_theme()`/`_resolve_layout()` warn-and-fall-
+back helpers), `base.css` (reset, typography, `.ds-page` shell, table
+skeleton), `components.css` (card variants, KPI grid/label/value/unit/
+delta, `ds-*` text-role classes, tabs, callouts, timeline, progress,
+filter-bar styles), and `layout-analytics.css` (dense dashboard: wide
+`--content-width` scoped under `[data-layout="analytics"]`, flat panels,
+sticky solid table headers, tabular-nums, responsive breakpoints).
+Extended `pyproject.toml` package-data with
+`"parrot.outputs.formats.assets.design_system" = ["*.css"]` and verified
+with an actual `python -m build --wheel` that all four files (including
+`__init__.py`) land in the wheel — the one check source-tree testing
+cannot catch. `layout-report.css`/`layout-print.css` are absent by design
+(TASK-2708); `_resolve_layout()` warns and falls back to `analytics` for
+both, verified by `test_unknown_layout_falls_back_with_warning`. All 12
+unit tests pass; `ruff check` is clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- `mypy` could not be run standalone on the new `__init__.py`: the
+  repository's `mypy.ini` has no `namespace_packages`/
+  `explicit_package_bases` configuration, so mypy fails on *any* file in
+  `parrot.outputs.formats.*` while following the sibling
+  `formats/jinja2.py`'s relative import ("No parent module — cannot
+  perform relative import"). Reproduced the identical failure against
+  `dev`'s pre-existing `infographic_html.py`, confirming this is a
+  repo-wide mypy-invocation gap, not something introduced by this task.
+  `ruff check` is clean on all new/changed files.
+- Resolved the spec's open question ("Should `layout-analytics.css` set a
+  fixed `content_width` or inherit the theme's token unmodified?") by
+  widening `--content-width` to `1400px`, scoped under
+  `.ds-page[data-layout="analytics"]` only — the theme's own token stays
+  the default for `report`/`print`, and this can be revisited once a real
+  dashboard renders per the spec's own guidance that this does not block
+  the design.
