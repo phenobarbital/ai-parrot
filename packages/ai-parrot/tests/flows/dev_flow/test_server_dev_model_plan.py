@@ -268,3 +268,36 @@ class TestRunEndpoint:
         resp = await client.post("/api/flow/run", json=_nl_form())
         assert resp.status == 200
         assert "model_plan" in await resp.json()
+
+
+class TestUiSurfacesTheOverride:
+    """Code-review fix: a silently-ignored selection is a UX trap.
+
+    The server already logs the mismatch and echoes the effective plan;
+    these guard the browser side actually telling the operator, since a
+    changed selector that does nothing and says nothing is worse than no
+    selector at all.
+    """
+
+    @staticmethod
+    def _dev_html() -> str:
+        return (_REPO_ROOT / "examples" / "dev_loop" / "static" / "dev.html").read_text(
+            encoding="utf-8"
+        )
+
+    def test_mismatch_warning_helper_exists(self):
+        source = self._dev_html()
+        assert "function planMismatchWarning(" in source
+        assert "function showPlanWarning(" in source
+
+    def test_warning_is_driven_by_the_run_response(self):
+        source = self._dev_html()
+        assert "planMismatchWarning(payload, data.model_plan)" in source
+
+    def test_warning_does_not_use_the_collapsed_form_error_box(self):
+        """#form-err lives inside #request-form, hidden once a run starts."""
+        source = self._dev_html()
+        warn_fn = source[source.index("function showPlanWarning("):]
+        warn_fn = warn_fn[: warn_fn.index("\nasync function submit")]
+        assert "form-err" not in warn_fn
+        assert "exec-section" in warn_fn
