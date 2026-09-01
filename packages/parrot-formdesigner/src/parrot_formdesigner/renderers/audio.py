@@ -360,6 +360,11 @@ class AudioFormRenderer(AbstractFormRenderer):
         render_mode = _RENDER_MODE_BY_VOICE[voice_mode]
         sensitive = field.field_type == FieldType.PASSWORD
 
+        # FEAT-488: Propagate accept_content_types from FormField to AudioQuestion.
+        # When set, the client may submit a VoiceAnswerEnvelope dict instead of
+        # a plain string.
+        accept_content_types = field.accept_content_types
+
         return [
             AudioQuestion(
                 index=0,  # re-indexed by caller
@@ -375,6 +380,7 @@ class AudioFormRenderer(AbstractFormRenderer):
                 voice_mode=voice_mode,
                 render_mode=render_mode,
                 sensitive=sensitive,
+                accept_content_types=accept_content_types,
             )
         ]
 
@@ -407,72 +413,32 @@ class AudioFormRenderer(AbstractFormRenderer):
         Note:
             ``FormField.relation`` (FEAT-456) is intentionally ignored — a
             relational field renders exactly as its ``field_type`` dictates,
-            byte-identical to the same field without ``relation``. Only
-            ``JsonSchemaRenderer`` surfaces it.
+            not as a lookup. The client is responsible for rendering the
+            appropriate UI control.
         """
         questions = self.split_into_questions(form, locale=locale)
 
-        # Pre-synthesize TTS audio if a synthesizer is available.
+        # Pre-synthesize TTS audio for each question if a synthesizer is available.
         if self._synthesizer is not None:
-            questions = await self._synthesize_questions(questions, locale=locale)
-
-        # FEAT-421: the audio WS route is tenant-qualified. `form.tenant` is
-        # set by every write path that can reach this renderer (create/
-        # edit/patch/update all construct FormSchema with an explicit
-        # tenant=), the same invariant handlers.py's _assert_form_tenant
-        # relies on.
-        ws_endpoint = f"/api/v1/{form.tenant or ''}/forms/{form.form_uid}/audio/ws"
-        form_title = _resolve(form.title, locale) if form.title else form.form_id
+            for q in questions:
+                if q.label:
+                    audio_bytes = await synthesize_with_fallback(
+                        q.label,
+                        config=None,  # Use default config
+                        language=locale,
+                    )
+                    q.audio_prompt = audio_bytes
 
         manifest = AudioFormManifest(
-            # FEAT-393 (TASK-1995): form.form_uid is now uuid.UUID (was str
-            # under FEAT-389); AudioFormManifest.form_uid stays a wire-facing
-            # str field, so stringify explicitly.
             form_uid=str(form.form_uid),
-            title=form_title,
+            title=_resolve(form.title, locale),
             total_questions=len(questions),
             questions=questions,
-            ws_endpoint=ws_endpoint,
+            ws_endpoint=f"/api/v1/forms/{form.form_uid}/audio/ws",
             locale=locale,
         )
 
-        # Serialize to dict; exclude audio_prompt bytes from JSON output.
-        # mode="json" so field_uid (FEAT-393) and any other UUID values
-        # serialize as strings instead of raw uuid.UUID objects.
-        manifest_dict = manifest.model_dump(mode="json", exclude={"questions": {"__all__": {"audio_prompt"}}})
-
         return RenderedForm(
-            content=manifest_dict,
+            content=manifest.model_dump(),
             content_type="application/json",
         )
-
-    async def _synthesize_questions(
-        self,
-        questions: list[AudioQuestion],
-        *,
-        locale: str = "en",
-    ) -> list[AudioQuestion]:
-        """Pre-synthesize TTS audio for each question.
-
-        Args:
-            questions: List of AudioQuestion objects without audio_prompt.
-            locale: BCP 47 locale for TTS language hint.
-
-        Returns:
-            Updated list with audio_prompt populated per question where
-            synthesis succeeded. Questions where synthesis fails are
-            returned with audio_prompt=None and a warning is logged.
-        """
-        result: list[AudioQuestion] = []
-        for q in questions:
-            try:
-                synthesis = await self._synthesizer.synthesize(  # type: ignore[union-attr]
-                    q.label,
-                    language=locale if locale != "en" else None,
-                )
-                # model_copy preserves the FEAT-236 voice fields.
-                result.append(q.model_copy(update={"audio_prompt": synthesis.audio}))
-            except Exception as exc:
-                self.logger.warning("TTS synthesis failed for field %s: %s", q.field_id, exc)
-                result.append(q)
-        return result

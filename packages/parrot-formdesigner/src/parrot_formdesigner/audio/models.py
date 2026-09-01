@@ -96,6 +96,9 @@ class AudioQuestion(BaseModel):
             value (e.g. password fields).
         fallback_html: Pre-rendered single-field HTML for VISUAL_FALLBACK
             questions, or None.
+        accept_content_types: List of acceptable MIME types for this field's
+            answer. When set, the client may submit a VoiceAnswerEnvelope dict
+            instead of a plain string (FEAT-488).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -114,6 +117,7 @@ class AudioQuestion(BaseModel):
     render_mode: Literal["voice", "select", "visual"] = "voice"
     sensitive: bool = False
     fallback_html: Optional[str] = None
+    accept_content_types: Optional[list[str]] = None
 
 
 class AudioFormManifest(BaseModel):
